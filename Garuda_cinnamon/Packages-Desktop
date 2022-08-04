@@ -1,0 +1,116 @@
+####---->> AUDIO
+pavucontrol
+playerctl
+
+
+####---->> NETWORK
+blueberry
+modem-manager-gui
+network-manager-applet
+ufw
+
+####---->> INPUT
+numlockx
+wmctrl
+xautolock
+xbindkeys
+xcape
+xdotool
+
+
+####---->> GARUDA THEMING & SETTINGS
+grub-theme-garuda
+plymouth-theme-garuda
+garuda-zsh-config
+garuda-fish-config
+
+
+####---->> UTILITIES
+autorandr
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+
+
+####---->> XORG
+xorg-server
+xorg-server-xephyr
+xorg-xbacklight
+xorg-xhost
+xorg-xinit
+xorg-xinput
+xorg-xkill
+xorg-xprop
+xorg-xrandr
+xorg-xsetroot
+xorg-xwininfo
+
+####---->> DESKTOP THEMING
+beautyline
+garuda-cinnamon-settings
+gtk-engine-murrine
+kvantum-qt5
+qt5ct
+sweet-theme-full-git
+
+####---->> DISPLAY MANAGER
+accountsservice  # Enhanced user accounts handling
+festival
+lightdm
+lightdm-settings
+lightdm-slick-greeter
+mousetweaks
+onboard
+orca
+
+
+####---->> DESKTOP ENVIRONMENT
+argyllcms
+cinnamon
+gnome-calculator
+gnome-color-manager
+gnome-logs
+gnome-online-accounts
+gnome-screenshot
+gnome-terminal-transparency
+nemo
+nemo-fileroller
+nemo-image-converter
+nemo-preview
+nemo-seahorse
+nemo-share
+warpinator
+webapp-manager
+xed
+xreader
+xviewer
+xviewer-plugins
+
+
+####---->> DESKTOP ENVIRONMENT APPS
+ffmpegthumbnailer
+gvfs
+gvfs-afc
+gvfs-goa
+gvfs-google
+gvfs-gphoto2
+gvfs-mtp
+gvfs-nfs
+gvfs-smb
+libgsf
+libopenraw
+librsvg
+
+
+####---->> OTHER APPS
+bleachbit
+celluloid
+gnome-keyring
+gparted
+lollypop
+mintstick
+catfish
+meld
+deluge-gtk
+
+####---->> INTERNET
+firedragon
