@@ -107,7 +107,9 @@ files() {
         heading blue "SEARCH FILES"
 
         echo -e "${grn}pacman${r}${yel} -Fs${r} ${cyn}keyword${r}\t  # Search for package filenames that contain a keyword"
+        echo -e "${grn}pacman${r}${yel} -Q | grep -i${r} ${cyn}keyword${r}\t  # Search for installed packages"
         echo -e "${grn}pacman${r}${yel} -Fl${r} ${cyn}package-name${r}\t  # Show all files installed by a remote package"
+        echo -e "${grn}pacman${r}${yel} -Q${r}\t  # Show all packages installed"
         echo -e "${grn}pacman${r}${yel} -Fo${r} ${cyn}/path/filename${r} # Show which remote package a file belongs to"
         echo -e "${grn}paccheck${r}${yel} --md5sum --quiet${r} ${r} # Show all changed files from packages"
         echo -e "${grn}lsof${r}${yel} +c 0 | grep -w DEL | awk '1 { print $1 ": " $NF }' | sort -u ${r} ${cyn}${r} # Show apps using old libraries"
