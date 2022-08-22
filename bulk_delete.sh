@@ -3,7 +3,7 @@
 # Purpose: Delete a file using shell script in bulk
 # -------------------------------------------------- 
 ## SET ME FIRST ##
-_input="/home/andro/syms"
+_input="/home/andro/cinnamonfiles.txt"
  
 ## No editing below ##
 [ ! -f "$_input" ] && { echo "File ${_input} not found."; exit 1; }
