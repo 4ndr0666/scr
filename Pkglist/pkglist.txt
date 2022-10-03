@@ -21,8 +21,6 @@ bind
 binutils
 bison
 bleachbit
-blueberry
-bluetooth-support
 brave-bin
 bridge-utils
 btrfs-progs
@@ -63,7 +61,6 @@ ecryptfs-utils
 efibootmgr
 egl-wayland
 ethtool
-exfat-utils
 f2fs-tools
 fail2ban
 fakeroot
@@ -262,10 +259,7 @@ perl-file-mimeinfo
 perl-locale-gettext
 persepolis
 photoflare
-photoprism
 pigz
-pipewire-media-session
-pipewire-support
 pitivi
 pix
 pkgconf
@@ -290,7 +284,6 @@ reiserfsprogs
 rsync
 sed
 shadow
-shotcut
 smplayer
 smplayer-skins
 smplayer-themes
@@ -346,7 +339,6 @@ vim-spell-en
 virt-manager-meta
 vlc
 w3m
-warpinator
 webapp-manager
 wget
 which
