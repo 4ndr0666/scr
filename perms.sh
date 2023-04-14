@@ -17,11 +17,23 @@ case "$1" in
     -f) 
         find "$2" -type f -exec chmod $fmode "{}" +
         ;;
+    -c)
+        # Check package permissions against current permissions
+        echo "Checking package permissions against current permissions..."
+        pacman -Qlq | while read file; do
+            if [ -e "$file" ]; then
+                if [ "$(stat -c "%a" "$file")" != "$(pacman -Qkk "$file" | awk '{print $2}')" ]; then
+                    echo "Mismatch: $file"
+                fi
+            fi
+        done
+        ;;
     *)
         printf "Usage: $(basename $0) option [directory]
   -a \t set permissions of files and directories to $fmode, resp. $dmode.
   -d \t set permissions of directories to $dmode.
   -f \t set permissions of files to $fmode.
+  -c \t compare package permissions against current permissions.
   -h \t print this help.
 "
         ;;
