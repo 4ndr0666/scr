@@ -6,43 +6,43 @@ import shutil
 
 
 shittyfiles = [
-    '~/.adobe',              # Flash crap
-    '~/.macromedia',         # Flash crap
+    '~/.adobe',
+    '~/.macromedia',
     '~/.recently-used',
     '~/.local/share/recently-used.xbel',
-    '~/Desktop',             # Firefox creates this
+    '~/Desktop',
     '~/.thumbnails',
     '~/.gconfd',
     '~/.gconf',
     '~/.local/share/gegl-0.2',
-    '~/.FRD/log/app.log',   # FRD
-    '~/.FRD/links.txt',     # FRD
-    '~/.objectdb',          # FRD
+    '~/.FRD/log/app.log',
+    '~/.FRD/links.txt',
+    '~/.objectdb',
     '~/.gstreamer-0.10',
     '~/.pulse',
     '~/.esd_auth',
     '~/.config/enchant',
-    '~/.spicec',            # contains only log file; unconfigurable
+    '~/.spicec',
     '~/.dropbox-dist',
     '~/.parallel',
     '~/.dbus',
-    '~/ca2',                # WTF?
-    '~/ca2~',               # WTF?
-    '~/.distlib/',          # contains another empty dir, don't know which software creates it
-    '~/.bazaar/',           # bzr insists on creating files holding default values
+    '~/ca2',
+    '~/ca2~',
+    '~/.distlib/',
+    '~/.bazaar/',
     '~/.bzr.log',
     '~/.nv/',
-    '~/.viminfo',           # configured to be moved to ~/.cache/vim/viminfo, but it is still sometimes created...
-    '~/.npm/',              # npm cache
+    '~/.viminfo',
+    '~/.npm/',
     '~/.java/',
     '~/.swt/',
     '~/.oracle_jre_usage/',
     '~/.jssc/',
-    '~/.tox/',              # cache directory for tox
+    '~/.tox/',
     '~/.pylint.d/',
     '~/.qute_test/',
     '~/.QtWebEngineProcess/',
-    '~/.qutebrowser/',      # created empty, only with webengine backend
+    '~/.qutebrowser/',
     '~/.asy/',
     '~/.cmake/',
     '~/.gnome/',
@@ -50,7 +50,7 @@ shittyfiles = [
     '~/.texlive/',
     '~/.w3m/',
     '~/.subversion/',
-    '~/nvvp_workspace/',    # created empty even when the path is set differently in nvvp
+    '~/nvvp_workspace/',
     '~/.ansible/',
     '~/.fltk/',
     '~/.vnc/',
@@ -75,15 +75,10 @@ def yesno(question, default="n"):
 
 
 def rmshit():
-    print("Found shittyfiles:")
-    found = []
-    for f in shittyfiles:
-        absf = os.path.expanduser(f)
-        if os.path.exists(absf):
-            found.append(absf)
-            print("    %s" % f)
+    print("Found shitty files:")
+    found = [os.path.expanduser(f) for f in shittyfiles if os.path.exists(os.path.expanduser(f))]
 
-    if len(found) == 0:
+    if not found:
         print("No shitty files found :)")
         return
 
@@ -100,3 +95,4 @@ def rmshit():
 
 if __name__ == '__main__':
     rmshit()
+
