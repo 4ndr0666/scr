@@ -1,6 +1,13 @@
 #!/bin/bash
 
-VERSION="1.0"
+# Prompt user for SEARCHPATH
+read -p "Enter the search path (default: $PWD): " SEARCHPATH
+SEARCHPATH=${SEARCHPATH:-$PWD}
+
+# Prompt user for IGNORE
+read -p "Enter directories to ignore (default: 'Third-Party', separate by spaces): " -a IGNORE
+IGNORE=${IGNORE:-('Third-Party')}
+
 
 # Set the search path
 if [[ -z "$1" ]]; then
