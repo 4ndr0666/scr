@@ -1,6 +1,10 @@
 #!/bin/bash
 
-## Anything in /tmp can be deleted any time, as long as it is not accessed.
-## This script deletes any file (no folders) that has not been accessed for over 10 days.
-sudo find /tmp -type f -atime +10 -delete
+# Cleanup script to remove files from /tmp directory
+# Files that haven't been accessed in 3 days will be deleted
 
+sudo find /tmp -type f -atime +2 -delete
+
+# Note: This script can be run as a daily cronjob to ensure regular cleanup of /tmp directory.
+# Example cronjob entry to run this script every day at 2am:
+# 0 2 * * * /path/to/script.sh
