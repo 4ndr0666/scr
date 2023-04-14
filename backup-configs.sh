@@ -1,7 +1,8 @@
 #! /bin/bash
 
-backup_dir="/home/andro/Documents/Backups/backups-configs"
+backup_dir="$HOME/Documents/Backups/backups-configs"
 base_name="configs-$(date +%Y-%m-%d@%H:%M:%S)"
+archive="${backup_dir}/${base_name}.tar.gz"
 
 [ ! -d "$backup_dir" ] && mkdir -p "$backup_dir"
 
@@ -23,8 +24,4 @@ paths=(
     "$HOME/.xinitrc"
 )
 
-for path in "${paths[@]}"; do
-    tar -rpf "${backup_dir}/${base_name}.tar" -C / "${path#/}"
-done
-gzip "${backup_dir}/${base_name}.tar"
- 
+tar -czf "$archive" -C / "${paths[@]/#/.}"
