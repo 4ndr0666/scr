@@ -1,13 +1,18 @@
 #!/bin/bash
 # Author: 4ndr0666
-# Purpose: Delete a file using shell script in bulk
+# Purpose: Delete multiple files from a list
 # -------------------------------------------------- 
 ## SET ME FIRST ##
-_input="/home/andro/cinnamonfiles.txt"
+_input="/path/to/list.txt"
  
-## No editing below ##
-[ ! -f "$_input" ] && { echo "File ${_input} not found."; exit 1; }
-while IFS= read -r line
+if [ ! -f "$_input" ]; then
+    echo "File ${_input} not found."
+    exit 1
+fi
+ 
+while read -r line
 do 
-	[ -f "$line" ] && rm -f "$line"
-done < "${_input}"
+    if [ -f "$line" ]; then
+        rm -f "$line"
+    fi
+done < "$_input"
