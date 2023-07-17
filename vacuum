@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# Check if the user is root
+if [[ "$EUID" = 0 ]]; then
+    echo "(1) already root"
+else
+    sudo -nk # make sure to ask for password on next sudo
+    if sudo -n true; then
+        echo "(2) correct password"
+    else
+        echo "(3) wrong password"
+        exit 1
+    fi
+fi
+
+# Vacuum journalctl
+sudo journalctl --vacuum-time=3d
+echo "Clear journalctl: OK"
+
+# Clear cache
+sudo find ~/.cache/ -type f -atime +3 -delete
+echo "Clear cache: OK"
+
+# Clear trash
+sudo rm -vrf ~/.local/share/Trash/*
+echo "Clear Trash: OK"
+
+# Clear docker images
+sudo docker image prune -f || true
+echo "Clear docker: OK"
+
+# Clear temp folder
+sudo find /tmp -type f -atime +2 -delete
+echo "Clear temp folder: OK"
+
+# Remove dead symlinks
+find . -type l -xtype l -delete
+echo "Remove dead symlinks: OK"
+
+# Run rmshit.py
+python3 /usr/local/bin/rmshit.py
+echo "Run rmshit.py: OK"
+
+# Remove SSH known hosts entries older than 14 days
+find ~/.ssh/known_hosts -mtime +14 -exec sed -i "{}d" {} \;
+echo "Remove old SSH known hosts entries: OK"
+
+# Remove orphan Vim undo files
+find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] || rm "$0"' {} \;
+echo "Remove orphan Vim undo files: OK"
+
+# Show disk usage
+sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs 
+echo "Disk usage: OK"
+
+# Update permissions
+chmod 755 lib lib64 bin sbin srv home dev run boot etc usr
+chmod 775 /home/andro/
+chmod 700 lost+found
+chmod 750 root
+chmod 555 proc sys
+chmod 1777 tmp
+echo "Permissions updated successfully."
+
+# Force log rotation
+sudo logrotate -f /etc/logrotate.conf
+echo "Log rotation: OK"
+
+echo "System vacuumed"
+
+# Check for failed systemd units using sysz
+#if command -v sysz >/dev/null 2>&1; then
+#    echo "Checking failed systemd units using sysz:"
+#    sysz --sys s
+#else
+#    echo "sysz is not installed. To install, visit: https://github.com/joehillen/sysz"
+#fi

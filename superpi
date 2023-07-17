@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Define default values for flags
+FORCE=""
+DEV=""
+PROD=""
+HELP=""
+
+# Define function to print help message
+print_help() {
+    echo "Usage: $0 [-f] [-d|-p] [-h]"
+    echo "    -f, --force         Force uninstallation without prompting"
+    echo "    -d, --dev           Install development dependencies"
+    echo "    -p, --prod          Install production dependencies"
+    echo "    -h, --help          Show this help message"
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -f|--force)
+        FORCE="-y"
+        shift
+        ;;
+        -d|--dev)
+        DEV="1"
+        shift
+        ;;
+        -p|--prod)
+        PROD="1"
+        shift
+        ;;
+        -h|--help)
+        HELP="1"
+        shift
+        ;;
+        *)
+        echo "Unknown option: $1"
+        print_help
+        exit 1
+        ;;
+    esac
+done
+
+# If help flag is present, print help message and exit
+if [ -n "$HELP" ]; then
+    print_help
+    exit 0
+fi
+
+# Check if required tools are installed
+command -v python3 >/dev/null 2>&1 || { echo >&2 "Python3 is required but not installed. Aborting."; exit 1; }
+command -v pip >/dev/null 2>&1 || { echo >&2 "pip is required but not installed. Aborting."; exit 1; }
+command -v poetry >/dev/null 2>&1 || { echo >&2 "Poetry is required but not installed. Aborting."; exit 1; }
+
+# Create virtual environment
+echo "Creating virtual environment..."
+python3 -m venv venv
+source venv/bin/activate
+
+# Upgrade pip within the virtual environment
+echo "Upgrading pip within the virtual environment..."
+python -m pip install --upgrade pip
+
+# Install Meta Package Manager (MPM)
+echo "Installing Meta Package Manager (MPM)..."
+python -m pip install meta-package-manager
+
+# Take snapshot of installed packages before installation
+echo "Taking snapshot of installed packages before installation..."
+mpm --output-format toml snapshot > ~/.config/mpm/packages_before.toml
+
+# Update all outdated packages within the virtual environment
+echo "Updating outdated packages within the virtual environment..."
+python -m pip install --upgrade $(pip list outdated --format=freeze | grep -v '^-e' | cut -d = -f 1)
+
+# Install dependencies
+if [ -n "$DEV" ] || [ -n "$PROD" ]; then
+    echo "Installing dependencies..."
+    poetry install $(if [ -n "$DEV" ]; then echo "--no-root"; fi) $(if [ -n "$PROD" ]; then echo "--no-dev --no-root"; fi)
+fi
+
+# Upgrade pipx packages
+echo "Upgrading pipx packages..."
+pipx upgrade-all --include-injected
+
+# Install packages from requirements.txt
+if [ -f "requirements.txt" ]; then
+    echo "Installing packages from requirements.txt..."
+    python -m pip install --no-deps -r requirements.txt
+fi
+
+# Take snapshot of installed packages after installation
+echo "Taking snapshot of installed packages after installation..."
+mpm --output-format toml snapshot > ~/.config/mpm/packages_after.toml
+
+echo "Done!"
