@@ -60,24 +60,17 @@ fi
 # Check for python3 and rmshit.py
 if command -v python3 >/dev/null 2>&1 && [ -f /usr/local/bin/rmshit.py ]; then
     python3 /usr/local/bin/rmshit.py || { echo "Error: Failed to run rmshit.py"; exit 1; }
-    echo "Run rmshit.py: OK"
 else
     echo "python3 or rmshit.py not found. Skipping."
 fi
 
-# Run rmshit.py
-echo "Running rmshit.py to clean unnecessary files..."
-python3 /usr/local/bin/rmshit.py
-if [ $? -eq 0 ]; then
-  echo "rmshit.py: OK"
+# Remove SSH known hosts entries older than 14 days
+if [ -f "$HOME/.ssh/known_hosts" ]; then
+  find "$HOME/.ssh/known_hosts" -mtime +14 -exec sed -i "{}d" {} \; || { echo "Error: Failed to remove old SSH known hosts entries"; exit 1; }
 else
-  echo "Error: Failed to run rmshit.py"
-  exit 1
+  echo "No SSH known hosts file found. Skipping."
 fi
 
-# Remove SSH known hosts entries older than 14 days
-find ~/.ssh/known_hosts -mtime +14 -exec sed -i "{}d" {} \; || { echo "Error: Failed to remove old SSH known hosts entries"; exit 1; }
-echo "Remove old SSH known hosts entries: OK"
 
 # Remove orphan Vim undo files
 find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] || rm "$0"' {} \; || { echo "Error: Failed to remove orphan Vim undo files"; exit 1; }
@@ -87,43 +80,46 @@ echo "Remove orphan Vim undo files: OK"
 sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || { echo "Error: Failed to show disk usage"; exit 1; }
 echo "Disk usage: OK"
 
-# Update permissions based on original package permissions
-echo "Checking permissions and offering to restore original package permissions..."
+# Check permissions and offer to restore original package permissions
+read -p "Do you want to check and restore original package permissions? (y/n): " choice
+if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+  echo "Checking permissions and offering to restore original package permissions..."
+  # List of directories to check
+  declare -a directories=("lib" "lib64" "bin" "sbin" "srv" "home" "dev" "run" "boot" "etc" "usr")
 
-# List of directories to check
-declare -a directories=("lib" "lib64" "bin" "sbin" "srv" "home" "dev" "run" "boot" "etc" "usr")
-
-# Iterate through the directories and check permissions
-for dir in "${directories[@]}"; do
-  # Find all files in the directory owned by a package
-  $FIND "/$dir" -exec pacman -Qo {} >/dev/null 2>&1 \; -print | while read -r file; do
-    # Get the original permissions from the package database
-    original_permissions=$(pacman -Qkk "$file" 2>&1 | grep "Mode" | $AWK '{print $2}')
-    
-    # Check if original_permissions is empty
-    if [ -z "$original_permissions" ]; then
-      echo "No original permissions found for $file. Skipping."
-      continue
-    fi
-
-    # Get the current permissions
-    current_permissions=$($STAT -c "%a" "$file")
-    
-    # Compare original and current permissions
-    if [ "$original_permissions" != "$current_permissions" ]; then
-      echo "Mismatched permissions for $file (current: $current_permissions, original: $original_permissions)"
+  # Iterate through the directories and check permissions
+  for dir in "${directories[@]}"; do
+    find "/$dir" -type f -exec pacman -Qo {} >/dev/null 2>&1 \; -print0 | xargs -0 -I {} bash -c '
+      file="{}"
+      original_permissions=$(pacman -Qkk "$file" 2>&1 | grep "Mode" | awk "{print \$2}")
       
-      # Offer to restore original permissions
-      read -p "Do you want to restore the original permissions for this file? (y/n): " choice
-      if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
-        $CHMOD "$original_permissions" "$file" || { echo "Error: Failed to update permissions for $file"; exit 1; }
-        echo "Permissions for $file restored successfully."
-      else
-        echo "Skipping restore of permissions for $file."
+      # Check if original_permissions is empty
+      if [ -z "$original_permissions" ]; then
+        echo "No original permissions found for $file. Skipping."
+        continue
       fi
-    fi
+
+      # Get the current permissions
+      current_permissions=$(stat -c "%a" "$file")
+      
+      # Compare original and current permissions
+      if [ "$original_permissions" != "$current_permissions" ]; then
+        echo "Mismatched permissions for $file (current: $current_permissions, original: $original_permissions)"
+        
+        # Offer to restore original permissions
+        read -p "Do you want to restore the original permissions for this file? (y/n): " choice
+        if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+          chmod "$original_permissions" "$file" || { echo "Error: Failed to update permissions for $file"; exit 1; }
+          echo "Permissions for $file restored successfully."
+        else
+          echo "Skipping restore of permissions for $file."
+        fi
+      fi
+    '
   done
-done
+else
+  echo "Skipping permission check and restore."
+fi
 
 # Additional permissions updates (customize as needed)
 chmod 700 /root || { echo "Error: Failed to update permissions for /root"; exit 1; }
