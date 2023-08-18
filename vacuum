@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Full paths for commands
+FIND=$(which find)
+CHMOD=$(which chmod)
+AWK=$(which awk)
+STAT=$(which stat)
+
 # Check if the user is root
 if [[ "$EUID" = 0 ]]; then
     echo "(1) already root"
@@ -14,64 +20,149 @@ else
 fi
 
 # Vacuum journalctl
-sudo journalctl --vacuum-time=3d
+sudo journalctl --vacuum-time=3d || { echo "Error: Failed to vacuum journalctl"; exit 1; }
 echo "Clear journalctl: OK"
 
 # Clear cache
-sudo find ~/.cache/ -type f -atime +3 -delete
+sudo $FIND ~/.cache/ -type f -atime +3 -delete || { echo "Error: Failed to clear cache"; exit 1; }
 echo "Clear cache: OK"
 
 # Clear trash
-sudo rm -vrf ~/.local/share/Trash/*
-echo "Clear Trash: OK"
+read -p "Do you want to clear the trash? (y/n): " choice
+if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+    sudo rm -vrf ~/.local/share/Trash/* || { echo "Error: Failed to clear trash"; exit 1; }
+    echo "Clear Trash: OK"
+else
+    echo "Skipping trash clear."
+fi
 
 # Clear docker images
-sudo docker image prune -f || true
-echo "Clear docker: OK"
+if command -v docker >/dev/null 2>&1; then
+  sudo docker image prune -f || { echo "Error: Failed to clear docker images"; exit 1; }
+  echo "Clear docker: OK"
+else
+  echo "Docker is not installed. Skipping docker image cleanup."
+fi
 
 # Clear temp folder
-sudo find /tmp -type f -atime +2 -delete
+sudo find /tmp -type f -atime +2 -delete || { echo "Error: Failed to clear temp folder"; exit 1; }
 echo "Clear temp folder: OK"
 
 # Remove dead symlinks
-find . -type l -xtype l -delete
-echo "Remove dead symlinks: OK"
+read -p "Do you want to remove dead symlinks? (y/n): " choice
+if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+    find . -type l -xtype l -delete || { echo "Error: Failed to remove dead symlinks"; exit 1; }
+    echo "Remove dead symlinks: OK"
+else
+    echo "Skipping dead symlink removal."
+fi
+
+# Check for python3 and rmshit.py
+if command -v python3 >/dev/null 2>&1 && [ -f /usr/local/bin/rmshit.py ]; then
+    python3 /usr/local/bin/rmshit.py || { echo "Error: Failed to run rmshit.py"; exit 1; }
+    echo "Run rmshit.py: OK"
+else
+    echo "python3 or rmshit.py not found. Skipping."
+fi
 
 # Run rmshit.py
+echo "Running rmshit.py to clean unnecessary files..."
 python3 /usr/local/bin/rmshit.py
-echo "Run rmshit.py: OK"
+if [ $? -eq 0 ]; then
+  echo "rmshit.py: OK"
+else
+  echo "Error: Failed to run rmshit.py"
+  exit 1
+fi
 
 # Remove SSH known hosts entries older than 14 days
-find ~/.ssh/known_hosts -mtime +14 -exec sed -i "{}d" {} \;
+find ~/.ssh/known_hosts -mtime +14 -exec sed -i "{}d" {} \; || { echo "Error: Failed to remove old SSH known hosts entries"; exit 1; }
 echo "Remove old SSH known hosts entries: OK"
 
 # Remove orphan Vim undo files
-find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] || rm "$0"' {} \;
+find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] || rm "$0"' {} \; || { echo "Error: Failed to remove orphan Vim undo files"; exit 1; }
 echo "Remove orphan Vim undo files: OK"
 
 # Show disk usage
-sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs 
+sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || { echo "Error: Failed to show disk usage"; exit 1; }
 echo "Disk usage: OK"
 
-# Update permissions
-chmod 755 lib lib64 bin sbin srv home dev run boot etc usr
-chmod 775 /home/andro/
-chmod 700 lost+found
-chmod 750 root
-chmod 555 proc sys
-chmod 1777 tmp
+# Update permissions based on original package permissions
+echo "Checking permissions and offering to restore original package permissions..."
+
+# List of directories to check
+declare -a directories=("lib" "lib64" "bin" "sbin" "srv" "home" "dev" "run" "boot" "etc" "usr")
+
+# Iterate through the directories and check permissions
+for dir in "${directories[@]}"; do
+  # Find all files in the directory owned by a package
+  $FIND "/$dir" -exec pacman -Qo {} >/dev/null 2>&1 \; -print | while read -r file; do
+    # Get the original permissions from the package database
+    original_permissions=$(pacman -Qkk "$file" 2>&1 | grep "Mode" | $AWK '{print $2}')
+    
+    # Check if original_permissions is empty
+    if [ -z "$original_permissions" ]; then
+      echo "No original permissions found for $file. Skipping."
+      continue
+    fi
+
+    # Get the current permissions
+    current_permissions=$($STAT -c "%a" "$file")
+    
+    # Compare original and current permissions
+    if [ "$original_permissions" != "$current_permissions" ]; then
+      echo "Mismatched permissions for $file (current: $current_permissions, original: $original_permissions)"
+      
+      # Offer to restore original permissions
+      read -p "Do you want to restore the original permissions for this file? (y/n): " choice
+      if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+        $CHMOD "$original_permissions" "$file" || { echo "Error: Failed to update permissions for $file"; exit 1; }
+        echo "Permissions for $file restored successfully."
+      else
+        echo "Skipping restore of permissions for $file."
+      fi
+    fi
+  done
+done
+
+# Additional permissions updates (customize as needed)
+chmod 700 /root || { echo "Error: Failed to update permissions for /root"; exit 1; }
+chmod 1777 /tmp || { echo "Error: Failed to update permissions for /tmp"; exit 1; }
 echo "Permissions updated successfully."
 
 # Force log rotation
-sudo logrotate -f /etc/logrotate.conf
+sudo logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
 echo "Log rotation: OK"
 
 echo "System vacuumed"
 
 # Check for failed systemd units using sysz
-#if command -v sysz >/dev/null 2>&1; then
-#    echo "Checking failed systemd units using sysz:"
-#    sysz --sys s
-#else
-#    echo "sysz is not installed. To install, visit: https://github.com/joehillen/sysz"
-#fi
+if command -v sysz >/dev/null 2>&1; then
+    echo "Checking failed systemd units using sysz:"
+    sysz --sys s || { echo "Error: Failed to check failed systemd units using sysz"; exit 1; }
+else
+    echo "sysz is not installed. To install, visit: https://github.com/joehillen/sysz"
+fi
+
+# Force log rotation
+sudo logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
+echo "Log rotation: OK"
+
+echo "System vacuumed"
+
+# Check for failed systemd units using sysz
+if command -v sysz >/dev/null 2>&1; then
+    echo "Checking failed systemd units using sysz:"
+    sysz --sys --state failed || { echo "Error: Failed to check failed systemd units using sysz"; exit 1; }
+    
+    # Offer options to restart failed units
+    read -p "Do you want to restart the failed system units? (y/n): " choice
+    if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+        sysz --sys --state failed restart || { echo "Error: Failed to restart failed systemd units using sysz"; exit 1; }
+        echo "Failed system units restarted successfully."
+    else
+        echo "Skipping restart of failed system units."
+    fi
+else
+    echo "sysz is not installed. To install, visit: https://github.com/joehillen/sysz"
+fi

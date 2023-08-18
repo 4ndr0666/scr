@@ -8,9 +8,9 @@ import shutil
 shittyfiles = [
     '~/.adobe',
     '~/.macromedia',
-    '~/.recently-used',
-    '~/.local/share/recently-used.xbel',
-    '~/Desktop',
+#    '~/.recently-used',
+#    '~/.local/share/recently-used.xbel',
+#    '~/Desktop',
     '~/.thumbnails',
     '~/.gconfd',
     '~/.gconf',
@@ -75,24 +75,16 @@ def yesno(question, default="n"):
 
 
 def rmshit():
-    print("Found shitty files:")
     found = [os.path.expanduser(f) for f in shittyfiles if os.path.exists(os.path.expanduser(f))]
-
     if not found:
-        print("No shitty files found :)")
-        return
+        print("No unnecessary files found :)")
+        return 0 # Success code
 
-    if yesno("Remove all?", default="n"):
-        for f in found:
-            if os.path.isfile(f):
-                os.remove(f)
-            else:
-                shutil.rmtree(f)
-        print("All cleaned")
-    else:
-        print("No file removed")
+    for item in found:
+        remove_item(item)
 
+    print("Cleanup complete")
+    return 0 # Success code
 
 if __name__ == '__main__':
-    rmshit()
-
+    sys.exit(rmshit())
