@@ -8,10 +8,21 @@
 - [{{.Name}}]({{.URL}}) - {{.Description}}
 {{- end}}
 
+### <i class="fa-duotone fa-box-open"></i>  Latest Repos
+{{range recentRepos 10}}
+Name: {{.Name}}
+Description: {{.Description}}
+URL: {{.URL}})
+Stars: {{.Stargazers}}
+{{end}}
+
 #### 🍴 Recent forks
 {{range recentForks 10}}
-- [{{.Name}}]({{.URL}}) - {{.Description}}
-{{- end}}
+Name: {{.Name}}
+Description: {{.Description}}
+URL: {{.URL}})
+Stars: {{.Stargazers}}
+{{end}}
 
 #### 🔨 Last Pull Requests
 {{range recentPullRequests 10}}
