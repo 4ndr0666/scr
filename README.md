@@ -1,4 +1,4 @@
-#### 👷 Currently
+#### :skull: Currently
 
 - [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (today)
 - [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (2 days ago)
@@ -11,7 +11,7 @@
 - [4ndr0666/Best-Arch](https://github.com/4ndr0666/Best-Arch) - My arch config (9 months ago)
 - [4ndr0666/My-appimages](https://github.com/4ndr0666/My-appimages) - custom made appimages (11 months ago)
 
-#### 🌱 Latest projects
+#### :dizzy: Latest projects
 
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension.
 - [4ndr0666/FFmpeg](https://github.com/4ndr0666/FFmpeg) - This custom FFmpeg upscaling project aims to provide an easy-to-use solution for upscaling videos. By utilizing a Docker container, we streamline the installation and setup process, making it more accessible for users on different platforms. This project is designed for users who want to enhance the quality of their videos using FFmpeg.
@@ -24,7 +24,7 @@
 - [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts
 - [4ndr0666/Best-Arch](https://github.com/4ndr0666/Best-Arch) - My arch config
 
-### <i class="fa-duotone fa-box-open"></i>  Latest Repos
+### :boom:  Latest Repos
 
 Name: 4ndr0666/autojdownload
 Description: Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension.
@@ -111,7 +111,7 @@ Stars: 0
 - [TopazLabs/FFmpeg](https://github.com/TopazLabs/FFmpeg) - Mirror of https://git.ffmpeg.org/ffmpeg.git (1 week ago)
 - [baskerville/bspwm](https://github.com/baskerville/bspwm) - A tiling window manager based on binary space partitioning (1 month ago)
 
-#### 👯 Recent followers
+#### :globe_with_meridians: Recent followers
 
 - [AlejandrosTesla8](https://github.com/AlejandrosTesla8)
 - [Ttamez68A](https://github.com/Ttamez68A)
