@@ -16,14 +16,6 @@ URL: {{.URL}})
 Stars: {{.Stargazers}}
 {{end}}
 
-#### 🍴 Recent forks
-{{range recentForks 10}}
-Name: {{.Name}}
-Description: {{.Description}}
-URL: {{.URL}})
-Stars: {{.Stargazers}}
-{{end}}
-
 #### 🔨 Last Pull Requests
 {{range recentPullRequests 10}}
 - [{{.Title}}]({{.URL}}) on [{{.Repo.Name}}]({{.Repo.URL}}) ({{humanize .CreatedAt}})
