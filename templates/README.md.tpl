@@ -1,14 +1,14 @@
-#### 👷 Currently
+#### :skull: Currently
 {{range recentContributions 10}}
 - [{{.Repo.Name}}]({{.Repo.URL}}) - {{.Repo.Description}} ({{humanize .OccurredAt}})
 {{- end}}
 
-#### 🌱 Latest projects
+#### :dizzy: Latest projects
 {{range recentRepos 10}}
 - [{{.Name}}]({{.URL}}) - {{.Description}}
 {{- end}}
 
-### <i class="fa-duotone fa-box-open"></i>  Latest Repos
+### :boom:  Latest Repos
 {{range recentRepos 10}}
 Name: {{.Name}}
 Description: {{.Description}}
@@ -31,7 +31,7 @@ Stars: {{.Stargazers}}
 - [{{.Repo.Name}}]({{.Repo.URL}}) - {{.Repo.Description}} ({{humanize .StarredAt}})
 {{- end}}
 
-#### 👯 Recent followers
+#### :globe_with_meridians: Recent followers
 {{range followers 5}}
 - [{{.Login}}]({{.URL}})
 {{- end}}
