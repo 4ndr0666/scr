@@ -14,7 +14,7 @@ jobs:
 
       - uses: muesli/readme-scribe@v0.1
         env:
-          GITHUB_TOKEN: ${{ secrets.markscribe }}
+          GITHUB_TOKEN: ${{ secrets.MARKSCRIBE }}
         with:
           template: "templates/README.md.tpl"
           writeTo: "README.md"
