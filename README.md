@@ -1,6 +1,6 @@
 #### :skull: Currently
 
-- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (1 day ago)
+- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (2 days ago)
 - [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (2 weeks ago)
 - [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (1 month ago)
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension. (3 months ago)
