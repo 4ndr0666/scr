@@ -100,6 +100,7 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
+- [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (today)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (1 week ago)
 - [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (2 weeks ago)
 - [netbootxyz/netboot.xyz](https://github.com/netbootxyz/netboot.xyz) - Your favorite operating systems in one place.  A network-based bootable operating system installer based on iPXE. (2 weeks ago)
@@ -109,7 +110,6 @@ Stars: 0
 - [techwithtim/Python-Security-System](https://github.com/techwithtim/Python-Security-System) - A security system build with Python and OpenCV. (3 weeks ago)
 - [dr460nf1r3/school-rpi](https://github.com/dr460nf1r3/school-rpi) - This repo contains stuff used to complete school assignments with a Raspberry Pi (3 weeks ago)
 - [NickeManarin/ScreenToGif](https://github.com/NickeManarin/ScreenToGif) - 🎬 ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video. (3 weeks ago)
-- [TopazLabs/FFmpeg](https://github.com/TopazLabs/FFmpeg) - Mirror of https://git.ffmpeg.org/ffmpeg.git (3 weeks ago)
 
 #### :globe_with_meridians: Recent followers
 
