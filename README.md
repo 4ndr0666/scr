@@ -100,6 +100,7 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
+- [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (today)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 day ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (2 weeks ago)
 - [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (3 weeks ago)
@@ -109,7 +110,6 @@ Stars: 0
 - [Alex313031/thorium](https://github.com/Alex313031/thorium) - Chromium fork named after radioactive element No. 90. Windows and MacOS/Raspi/Android/Special builds are in different repositories, links are towards the top of the README.md. (3 weeks ago)
 - [techwithtim/Python-Security-System](https://github.com/techwithtim/Python-Security-System) - A security system build with Python and OpenCV. (3 weeks ago)
 - [dr460nf1r3/school-rpi](https://github.com/dr460nf1r3/school-rpi) - This repo contains stuff used to complete school assignments with a Raspberry Pi (3 weeks ago)
-- [NickeManarin/ScreenToGif](https://github.com/NickeManarin/ScreenToGif) - 🎬 ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video. (3 weeks ago)
 
 #### :globe_with_meridians: Recent followers
 
