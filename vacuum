@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 
-# Full paths for commands
+# Initialize log file
+log_file="$HOME/.local/share/permissions/$(date +%Y%d%m_%H%M%S)_permissions.log"
+
+# Function to set up cron job for deleting old logs
+setup_cron_job() {
+    (crontab -l 2>/dev/null; echo "0 0 * * * find $HOME/.local/share/permissions/ -name '*_permissions.log' -mtime +30 -exec rm {} \;") | crontab -
+    echo "Cron job set up to delete old logs." | tee -a $log_file
+}
+
 FIND=$(which find)
 CHMOD=$(which chmod)
 AWK=$(which awk)
@@ -19,6 +27,63 @@ else
     fi
 fi
 
+# Check if cron job exists, if not set it up
+if ! crontab -l | grep -q "find $HOME/.local/share/permissions/ -name '*_permissions.log' -mtime +30 -exec rm {} \;"; then
+    echo "Cron job for deleting old logs not found. Setting up..." | tee -a $log_file
+    setup_cron_job
+else
+    echo "Cron job for deleting old logs already exists." | tee -a $log_file
+fi
+
+# Function to generate the reference file
+generate_reference_file() {
+    echo "Generating reference file..." | tee -a $log_file
+    reference_file="$HOME/.local/share/permissions/archcraft_permissions_reference.txt"
+    echo "Starting find command..." | tee -a $log_file  # Debugging statement added
+    timeout 60s sudo find / -type f ! -path "/etc/skel/*" ! -path "/proc/*" ! -path "/run/*" -exec stat -c "%a %n" {} \; > $reference_file 2>>$log_file
+    if [ $? -eq 0 ]; then
+        echo "Find command completed." | tee -a $log_file  # Debugging statement added
+    else
+        echo "An error occurred during the find command" | tee -a $log_file
+    fi
+    echo "Reference file generated." | tee -a $log_file
+}
+
+# Check if reference file exists, if not generate it
+if [ ! -f "$HOME/.local/share/permissions/archcraft_permissions_reference.txt" ]; then
+    echo "Reference file not found. Generating..." | tee -a $log_file
+    generate_reference_file
+else
+    echo "Reference file found." | tee -a $log_file
+fi
+
+# Ask user if they want to regenerate the reference file
+read -p "Do you want to regenerate the reference file? (y/n): " choice
+if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+    generate_reference_file
+else
+    echo "Skipping reference file regeneration." | tee -a $log_file
+fi
+
+# Function to set permissions based on the reference file
+set_permissions_from_reference() {
+    echo "Setting permissions from reference file..." | tee -a $log_file
+    reference_file="$HOME/.local/share/permissions/archcraft_permissions_reference.txt"
+    while read -r perm file; do
+        chmod "$perm" "$file" 2>>$log_file
+        echo "Set permission $perm for $file" | tee -a $log_file
+    done < "$reference_file"
+    echo "Permissions set from reference file: OK" | tee -a $log_file
+}
+
+# Ask user if they want to correct permissions based on reference file
+read -p "Do you want to correct permissions based on the reference file? (y/n): " choice
+if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
+    set_permissions_from_reference
+else
+    echo "Skipping permission correction." | tee -a $log_file
+fi
+
 # Vacuum journalctl
 sudo journalctl --vacuum-time=3d || { echo "Error: Failed to vacuum journalctl"; exit 1; }
 echo "Clear journalctl: OK"
@@ -26,6 +91,11 @@ echo "Clear journalctl: OK"
 # Clear cache
 sudo $FIND ~/.cache/ -type f -atime +3 -delete || { echo "Error: Failed to clear cache"; exit 1; }
 echo "Clear cache: OK"
+
+# Update font cache
+echo "Updating font cache..."
+sudo fc-cache -fv || { echo "Error: Failed to update font cache"; exit 1; }
+echo "Font cache updated: OK"
 
 # Clear trash
 read -p "Do you want to clear the trash? (y/n): " choice
@@ -71,7 +141,6 @@ else
   echo "No SSH known hosts file found. Skipping."
 fi
 
-
 # Remove orphan Vim undo files
 find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] || rm "$0"' {} \; || { echo "Error: Failed to remove orphan Vim undo files"; exit 1; }
 echo "Remove orphan Vim undo files: OK"
@@ -79,66 +148,6 @@ echo "Remove orphan Vim undo files: OK"
 # Show disk usage
 sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || { echo "Error: Failed to show disk usage"; exit 1; }
 echo "Disk usage: OK"
-
-# Check permissions and offer to restore original package permissions
-read -p "Do you want to check and restore original package permissions? (y/n): " choice
-if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
-  echo "Checking permissions and offering to restore original package permissions..."
-  # List of directories to check
-  declare -a directories=("lib" "lib64" "bin" "sbin" "srv" "home" "dev" "run" "boot" "etc" "usr")
-
-  # Iterate through the directories and check permissions
-  for dir in "${directories[@]}"; do
-    find "/$dir" -type f -exec pacman -Qo {} >/dev/null 2>&1 \; -print0 | xargs -0 -I {} bash -c '
-      file="{}"
-      original_permissions=$(pacman -Qkk "$file" 2>&1 | grep "Mode" | awk "{print \$2}")
-      
-      # Check if original_permissions is empty
-      if [ -z "$original_permissions" ]; then
-        echo "No original permissions found for $file. Skipping."
-        continue
-      fi
-
-      # Get the current permissions
-      current_permissions=$(stat -c "%a" "$file")
-      
-      # Compare original and current permissions
-      if [ "$original_permissions" != "$current_permissions" ]; then
-        echo "Mismatched permissions for $file (current: $current_permissions, original: $original_permissions)"
-        
-        # Offer to restore original permissions
-        read -p "Do you want to restore the original permissions for this file? (y/n): " choice
-        if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
-          chmod "$original_permissions" "$file" || { echo "Error: Failed to update permissions for $file"; exit 1; }
-          echo "Permissions for $file restored successfully."
-        else
-          echo "Skipping restore of permissions for $file."
-        fi
-      fi
-    '
-  done
-else
-  echo "Skipping permission check and restore."
-fi
-
-# Additional permissions updates (customize as needed)
-chmod 700 /root || { echo "Error: Failed to update permissions for /root"; exit 1; }
-chmod 1777 /tmp || { echo "Error: Failed to update permissions for /tmp"; exit 1; }
-echo "Permissions updated successfully."
-
-# Force log rotation
-sudo logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
-echo "Log rotation: OK"
-
-echo "System vacuumed"
-
-# Check for failed systemd units using sysz
-if command -v sysz >/dev/null 2>&1; then
-    echo "Checking failed systemd units using sysz:"
-    sysz --sys s || { echo "Error: Failed to check failed systemd units using sysz"; exit 1; }
-else
-    echo "sysz is not installed. To install, visit: https://github.com/joehillen/sysz"
-fi
 
 # Force log rotation
 sudo logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
