@@ -100,6 +100,7 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
+- [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (today)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 day ago)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (2 days ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (2 weeks ago)
@@ -109,7 +110,6 @@ Stars: 0
 - [Z4nzu/hackingtool](https://github.com/Z4nzu/hackingtool) - ALL IN ONE Hacking Tool For Hackers (3 weeks ago)
 - [Alex313031/thorium](https://github.com/Alex313031/thorium) - Chromium fork named after radioactive element No. 90. Windows and MacOS/Raspi/Android/Special builds are in different repositories, links are towards the top of the README.md. (3 weeks ago)
 - [techwithtim/Python-Security-System](https://github.com/techwithtim/Python-Security-System) - A security system build with Python and OpenCV. (3 weeks ago)
-- [dr460nf1r3/school-rpi](https://github.com/dr460nf1r3/school-rpi) - This repo contains stuff used to complete school assignments with a Raspberry Pi (3 weeks ago)
 
 #### :globe_with_meridians: Recent followers
 
