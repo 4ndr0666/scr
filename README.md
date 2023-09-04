@@ -1,6 +1,6 @@
 #### :skull: Currently
 
-- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (1 day ago)
+- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (2 days ago)
 - [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (2 weeks ago)
 - [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (1 month ago)
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension. (4 months ago)
@@ -92,7 +92,7 @@ Stars: 0
 
 #### 📓 Latest Gists
 
-- [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (4 weeks ago)
+- [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (1 month ago)
 - [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (1 month ago)
 - [Regexp to find HQ videos from reddit](https://gist.github.com/17861fde61b7e817543c68b552f1658c) (1 month ago)
 - [Google Search Operators](https://gist.github.com/2eef7f425e61110e8f1eb2232a918fb9) (1 month ago)
@@ -100,9 +100,9 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
-- [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (today)
-- [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 day ago)
-- [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (2 days ago)
+- [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 day ago)
+- [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (2 days ago)
+- [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (3 days ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (2 weeks ago)
 - [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (3 weeks ago)
 - [netbootxyz/netboot.xyz](https://github.com/netbootxyz/netboot.xyz) - Your favorite operating systems in one place.  A network-based bootable operating system installer based on iPXE. (3 weeks ago)
