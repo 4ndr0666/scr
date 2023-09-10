@@ -100,9 +100,9 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
-- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (today)
-- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (1 day ago)
-- [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (6 days ago)
+- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (1 day ago)
+- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (2 days ago)
+- [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 week ago)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 week ago)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 week ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (3 weeks ago)
