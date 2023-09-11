@@ -100,14 +100,14 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
-- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (1 day ago)
-- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (2 days ago)
+- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (2 days ago)
+- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (3 days ago)
 - [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 week ago)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 week ago)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 week ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (3 weeks ago)
-- [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (4 weeks ago)
-- [netbootxyz/netboot.xyz](https://github.com/netbootxyz/netboot.xyz) - Your favorite operating systems in one place.  A network-based bootable operating system installer based on iPXE. (4 weeks ago)
+- [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (1 month ago)
+- [netbootxyz/netboot.xyz](https://github.com/netbootxyz/netboot.xyz) - Your favorite operating systems in one place.  A network-based bootable operating system installer based on iPXE. (1 month ago)
 - [ubergeek42/weechat-android](https://github.com/ubergeek42/weechat-android) - Simple Weechat-Relay Android Client (1 month ago)
 - [Z4nzu/hackingtool](https://github.com/Z4nzu/hackingtool) - ALL IN ONE Hacking Tool For Hackers (1 month ago)
 
