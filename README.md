@@ -9,7 +9,7 @@
 - [4ndr0666/dotfiles](https://github.com/4ndr0666/dotfiles) - 4ndr0666 Dotfiles (5 months ago)
 - [4ndr0666/KDE-html-clock](https://github.com/4ndr0666/KDE-html-clock) -  (7 months ago)
 - [4ndr0666/Best-Arch](https://github.com/4ndr0666/Best-Arch) - My arch config (10 months ago)
-- [4ndr0666/My-appimages](https://github.com/4ndr0666/My-appimages) - custom made appimages (11 months ago)
+- [4ndr0666/My-appimages](https://github.com/4ndr0666/My-appimages) - custom made appimages (1 year ago)
 
 #### :dizzy: Latest projects
 
@@ -100,8 +100,8 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
-- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (2 days ago)
-- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (3 days ago)
+- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (3 days ago)
+- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (4 days ago)
 - [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 week ago)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 week ago)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 week ago)
