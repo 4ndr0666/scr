@@ -92,11 +92,11 @@ Stars: 0
 
 #### 📓 Latest Gists
 
+- [dl insta profile pics](https://gist.github.com/3b10939b30c0b7fe076c6d65f393280a) (today)
 - [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (1 month ago)
 - [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (1 month ago)
 - [Regexp to find HQ videos from reddit](https://gist.github.com/17861fde61b7e817543c68b552f1658c) (2 months ago)
 - [Google Search Operators](https://gist.github.com/2eef7f425e61110e8f1eb2232a918fb9) (2 months ago)
-- [index of terminalcv demo site](https://gist.github.com/d40bd312e19a7dd7ea6bc879552aeaf0) (2 months ago)
 
 #### ⭐ Recent Stars
 
