@@ -1,9 +1,9 @@
 #### :skull: Currently
 
 - [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (today)
+- [4ndr0666/Arch-reference-files](https://github.com/4ndr0666/Arch-reference-files) - for compare.sh (today)
 - [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (1 day ago)
 - [4ndr0666/fixboot](https://github.com/4ndr0666/fixboot) - Tools for boot repair (2 days ago)
-- [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (4 weeks ago)
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension. (4 months ago)
 - [4ndr0666/FFmpeg](https://github.com/4ndr0666/FFmpeg) - This custom FFmpeg upscaling project aims to provide an easy-to-use solution for upscaling videos. By utilizing a Docker container, we streamline the installation and setup process, making it more accessible for users on different platforms. This project is designed for users who want to enhance the quality of their videos using FFmpeg. (4 months ago)
 - [4ndr0666/5cripts_in_progress](https://github.com/4ndr0666/5cripts_in_progress) - scripts im working on (4 months ago)
@@ -17,7 +17,7 @@
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension.
 - [4ndr0666/FFmpeg](https://github.com/4ndr0666/FFmpeg) - This custom FFmpeg upscaling project aims to provide an easy-to-use solution for upscaling videos. By utilizing a Docker container, we streamline the installation and setup process, making it more accessible for users on different platforms. This project is designed for users who want to enhance the quality of their videos using FFmpeg.
 - [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools.
-- [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh
+- [4ndr0666/Arch-reference-files](https://github.com/4ndr0666/Arch-reference-files) - for compare.sh
 - [4ndr0666/KDE-html-clock](https://github.com/4ndr0666/KDE-html-clock) - 
 - [4ndr0666/dotfiles](https://github.com/4ndr0666/dotfiles) - 4ndr0666 Dotfiles
 - [4ndr0666/5cripts_in_progress](https://github.com/4ndr0666/5cripts_in_progress) - scripts im working on
@@ -46,9 +46,9 @@ Description: Collection of transcripts, scripts and tools.
 URL: https://github.com/4ndr0666/4ndr0site)
 Stars: 0
 
-Name: 4ndr0666/archlinux-default-files
+Name: 4ndr0666/Arch-reference-files
 Description: for compare.sh
-URL: https://github.com/4ndr0666/archlinux-default-files)
+URL: https://github.com/4ndr0666/Arch-reference-files)
 Stars: 0
 
 Name: 4ndr0666/KDE-html-clock
