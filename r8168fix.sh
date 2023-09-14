@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# Function to display colored ASCII art
+display_ascii_art() {
+    echo -e "\e[32m" # Set color to green
+    cat << "EOF"
+          ______  ____  ________  ______  
+  _______ /  __  \/_   |/  _____/ /  __  \ 
+  \_  __ \>      < |   /   __  \  >      < 
+   |  | \/   --   \|   \  |__\  \/   --   \
+   |__|  \______  /|___|\_____  /\______  /
+                \/            \/        \/ 
+EOF
+    echo -e "\e[0m" # Reset color
+}
+
+# Call the function to display the ASCII art
+display_ascii_art
+
 # Detect current kernel version
 current_kernel=$(uname -r)
 echo "Current Kernel Version: $current_kernel"
