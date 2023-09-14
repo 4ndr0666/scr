@@ -1,8 +1,8 @@
 #### :skull: Currently
 
-- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (today)
-- [4ndr0666/fixboot](https://github.com/4ndr0666/fixboot) - Tools for boot repair (1 day ago)
-- [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (3 weeks ago)
+- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (1 day ago)
+- [4ndr0666/fixboot](https://github.com/4ndr0666/fixboot) - Tools for boot repair (2 days ago)
+- [4ndr0666/archlinux-default-files](https://github.com/4ndr0666/archlinux-default-files) - for compare.sh (4 weeks ago)
 - [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (1 month ago)
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension. (4 months ago)
 - [4ndr0666/FFmpeg](https://github.com/4ndr0666/FFmpeg) - This custom FFmpeg upscaling project aims to provide an easy-to-use solution for upscaling videos. By utilizing a Docker container, we streamline the installation and setup process, making it more accessible for users on different platforms. This project is designed for users who want to enhance the quality of their videos using FFmpeg. (4 months ago)
@@ -92,7 +92,7 @@ Stars: 0
 
 #### 📓 Latest Gists
 
-- [dl insta profile pics](https://gist.github.com/3b10939b30c0b7fe076c6d65f393280a) (today)
+- [dl insta profile pics](https://gist.github.com/3b10939b30c0b7fe076c6d65f393280a) (1 day ago)
 - [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (1 month ago)
 - [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (1 month ago)
 - [Regexp to find HQ videos from reddit](https://gist.github.com/17861fde61b7e817543c68b552f1658c) (2 months ago)
@@ -100,10 +100,10 @@ Stars: 0
 
 #### ⭐ Recent Stars
 
-- [meganz/MEGAcmd](https://github.com/meganz/MEGAcmd) - Command Line Interactive and Scriptable Application to access MEGA (today)
-- [openai/plugins-quickstart](https://github.com/openai/plugins-quickstart) - Get a ChatGPT plugin up and running in under 5 minutes! (1 day ago)
-- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (4 days ago)
-- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (5 days ago)
+- [meganz/MEGAcmd](https://github.com/meganz/MEGAcmd) - Command Line Interactive and Scriptable Application to access MEGA (1 day ago)
+- [openai/plugins-quickstart](https://github.com/openai/plugins-quickstart) - Get a ChatGPT plugin up and running in under 5 minutes! (2 days ago)
+- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (5 days ago)
+- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (6 days ago)
 - [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 week ago)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 week ago)
 - [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 week ago)
