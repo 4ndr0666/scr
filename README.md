@@ -92,7 +92,7 @@ Stars: 0
 
 #### 📓 Latest Gists
 
-- [Backup](https://gist.github.com/3362509f90976becb3b1442c29ae6117) (today)
+- [Wrapper for backups using rsync](https://gist.github.com/3362509f90976becb3b1442c29ae6117) (today)
 - [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (1 month ago)
 - [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (1 month ago)
 - [Regexp to find HQ videos from reddit](https://gist.github.com/17861fde61b7e817543c68b552f1658c) (2 months ago)
