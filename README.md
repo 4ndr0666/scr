@@ -1,9 +1,9 @@
 #### :skull: Currently
 
-- [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (today)
-- [4ndr0666/Arch-reference-files](https://github.com/4ndr0666/Arch-reference-files) - for compare.sh (today)
-- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (1 day ago)
-- [4ndr0666/fixboot](https://github.com/4ndr0666/fixboot) - Tools for boot repair (2 days ago)
+- [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) - Collection of transcripts, scripts and tools. (1 day ago)
+- [4ndr0666/Arch-reference-files](https://github.com/4ndr0666/Arch-reference-files) - for compare.sh (1 day ago)
+- [4ndr0666/4ndr0666-Scripts](https://github.com/4ndr0666/4ndr0666-Scripts) - My Scripts (2 days ago)
+- [4ndr0666/fixboot](https://github.com/4ndr0666/fixboot) - Tools for boot repair (3 days ago)
 - [4ndr0666/autojdownload](https://github.com/4ndr0666/autojdownload) - Workflow for Jdownloader that scrapes multiple links from a given site by hoster or extension. (4 months ago)
 - [4ndr0666/FFmpeg](https://github.com/4ndr0666/FFmpeg) - This custom FFmpeg upscaling project aims to provide an easy-to-use solution for upscaling videos. By utilizing a Docker container, we streamline the installation and setup process, making it more accessible for users on different platforms. This project is designed for users who want to enhance the quality of their videos using FFmpeg. (4 months ago)
 - [4ndr0666/5cripts_in_progress](https://github.com/4ndr0666/5cripts_in_progress) - scripts im working on (4 months ago)
@@ -88,25 +88,25 @@ Stars: 0
 - [V1.0](https://github.com/4ndr0666/UserScripts/pull/6) on [4ndr0666/UserScripts](https://github.com/4ndr0666/UserScripts) (2 months ago)
 - [updating rules](https://github.com/hoothin/UserScripts/pull/392) on [hoothin/UserScripts](https://github.com/hoothin/UserScripts) (2 months ago)
 - [Merge pull request #1 from 4ndr0666/4ndr0666-patch-1 (#2)](https://github.com/4ndr0666/UserScripts/pull/5) on [4ndr0666/UserScripts](https://github.com/4ndr0666/UserScripts) (2 months ago)
-- [Update config.yml](https://github.com/4ndr0666/4ndr0site/pull/33) on [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) (2 months ago)
+- [Update config.yml](https://github.com/4ndr0666/4ndr0site/pull/33) on [4ndr0666/4ndr0site](https://github.com/4ndr0666/4ndr0site) (3 months ago)
 
 #### 📓 Latest Gists
 
-- [Wrapper for backups using rsync](https://gist.github.com/3362509f90976becb3b1442c29ae6117) (today)
+- [Wrapper for backups using rsync](https://gist.github.com/3362509f90976becb3b1442c29ae6117) (1 day ago)
 - [Mpv config](https://gist.github.com/3b374e66eeb82b8d049b9fb70c5f2b16) (1 month ago)
-- [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (1 month ago)
+- [SysAdmin Commands](https://gist.github.com/cc2c3e025404fd8c30ffa4bbdf21b26f) (2 months ago)
 - [Regexp to find HQ videos from reddit](https://gist.github.com/17861fde61b7e817543c68b552f1658c) (2 months ago)
 - [Google Search Operators](https://gist.github.com/2eef7f425e61110e8f1eb2232a918fb9) (2 months ago)
 
 #### ⭐ Recent Stars
 
-- [meganz/MEGAcmd](https://github.com/meganz/MEGAcmd) - Command Line Interactive and Scriptable Application to access MEGA (1 day ago)
-- [openai/plugins-quickstart](https://github.com/openai/plugins-quickstart) - Get a ChatGPT plugin up and running in under 5 minutes! (2 days ago)
-- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (5 days ago)
-- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (6 days ago)
+- [meganz/MEGAcmd](https://github.com/meganz/MEGAcmd) - Command Line Interactive and Scriptable Application to access MEGA (2 days ago)
+- [openai/plugins-quickstart](https://github.com/openai/plugins-quickstart) - Get a ChatGPT plugin up and running in under 5 minutes! (3 days ago)
+- [larsmagne/mplayer](https://github.com/larsmagne/mplayer) - Private extensions to mplayer (6 days ago)
+- [honestbleeps/Reddit-Enhancement-Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite) - Reddit Enhancement Suite (1 week ago)
 - [mtorromeo/r8168](https://github.com/mtorromeo/r8168) - Linux device driver for Realtek Ethernet controllers (unofficial mirror) (1 week ago)
 - [polybar/polybar-scripts](https://github.com/polybar/polybar-scripts) - This is a community project. We write and collect scripts for polybar! (1 week ago)
-- [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (1 week ago)
+- [Mabox-Linux/mabox-docs](https://github.com/Mabox-Linux/mabox-docs) - Mabox Linux manual https://manual.maboxlinux.org/ (2 weeks ago)
 - [luisbocanegra/kde-material-you-colors](https://github.com/luisbocanegra/kde-material-you-colors) - Automatic Material You Colors Generator from your wallpaper for the Plasma Desktop (3 weeks ago)
 - [netbootxyz/netboot.xyz-custom](https://github.com/netbootxyz/netboot.xyz-custom) - Create your own custom github menu for netboot.xyz (1 month ago)
 - [netbootxyz/netboot.xyz](https://github.com/netbootxyz/netboot.xyz) - Your favorite operating systems in one place.  A network-based bootable operating system installer based on iPXE. (1 month ago)
