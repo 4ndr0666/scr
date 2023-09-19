@@ -142,6 +142,7 @@ if [ $? -ne 0 ]; then
     log "Error remaking boot images!"
     exit 1
 fi
-
-prominent "$EXPLOSION Completed $EXPLOSION Don't forget to reboot!"
+ 
+prominent "Don't forget to reboot!"
+prominent "$EXPLOSION Completed $EXPLOSION"
 exit 0
