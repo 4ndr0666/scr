@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Automatically escalate privileges if not running as root
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
 
 # Initialize log file
 log_file="$HOME/.local/share/permissions/$(date +%Y%d%m_%H%M%S)_permissions.log"
@@ -13,19 +18,6 @@ FIND=$(which find)
 CHMOD=$(which chmod)
 AWK=$(which awk)
 STAT=$(which stat)
-
-# Check if the user is root
-if [[ "$EUID" = 0 ]]; then
-    echo "(1) already root"
-else
-    sudo -nk # make sure to ask for password on next sudo
-    if sudo -n true; then
-        echo "(2) correct password"
-    else
-        echo "(3) wrong password"
-        exit 1
-    fi
-fi
 
 # Check if cron job exists, if not set it up
 if ! crontab -l | grep -q "find $HOME/.local/share/permissions/ -name '*_permissions.log' -mtime +30 -exec rm {} \;"; then
@@ -85,22 +77,22 @@ else
 fi
 
 # Vacuum journalctl
-sudo journalctl --vacuum-time=3d || { echo "Error: Failed to vacuum journalctl"; exit 1; }
+journalctl --vacuum-time=3d || { echo "Error: Failed to vacuum journalctl"; exit 1; }
 echo "Clear journalctl: OK"
 
 # Clear cache
-sudo $FIND ~/.cache/ -type f -atime +3 -delete || { echo "Error: Failed to clear cache"; exit 1; }
+$FIND ~/.cache/ -type f -atime +3 -delete || { echo "Error: Failed to clear cache"; exit 1; }
 echo "Clear cache: OK"
 
 # Update font cache
 echo "Updating font cache..."
-sudo fc-cache -fv || { echo "Error: Failed to update font cache"; exit 1; }
+fc-cache -fv || { echo "Error: Failed to update font cache"; exit 1; }
 echo "Font cache updated: OK"
 
 # Clear trash
 read -p "Do you want to clear the trash? (y/n): " choice
 if [ "$choice" == "y" ] || [ "$choice" == "Y" ]; then
-    sudo rm -vrf ~/.local/share/Trash/* || { echo "Error: Failed to clear trash"; exit 1; }
+    rm -vrf ~/.local/share/Trash/* || { echo "Error: Failed to clear trash"; exit 1; }
     echo "Clear Trash: OK"
 else
     echo "Skipping trash clear."
@@ -108,14 +100,14 @@ fi
 
 # Clear docker images
 if command -v docker >/dev/null 2>&1; then
-  sudo docker image prune -f || { echo "Error: Failed to clear docker images"; exit 1; }
+  docker image prune -f || { echo "Error: Failed to clear docker images"; exit 1; }
   echo "Clear docker: OK"
 else
   echo "Docker is not installed. Skipping docker image cleanup."
 fi
 
 # Clear temp folder
-sudo find /tmp -type f -atime +2 -delete || { echo "Error: Failed to clear temp folder"; exit 1; }
+find /tmp -type f -atime +2 -delete || { echo "Error: Failed to clear temp folder"; exit 1; }
 echo "Clear temp folder: OK"
 
 # Remove dead symlinks
@@ -146,11 +138,11 @@ find . -type f -iname '*.un~' -exec bash -c 'file=${0%.un~}; [[ -e "$file" ]] ||
 echo "Remove orphan Vim undo files: OK"
 
 # Show disk usage
-sudo df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || { echo "Error: Failed to show disk usage"; exit 1; }
+df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || { echo "Error: Failed to show disk usage"; exit 1; }
 echo "Disk usage: OK"
 
 # Force log rotation
-sudo logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
+logrotate -f /etc/logrotate.conf || { echo "Error: Failed to force log rotation"; exit 1; }
 echo "Log rotation: OK"
 
 echo "System vacuumed"
