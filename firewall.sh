@@ -1,186 +1,248 @@
 #!/bin/bash
 
-# -- Advanced UFW Rules (Comments):
-# sudo ufw limit proto tcp from any to any port 22
-# sudo ufw allow from 192.168.0.0/24
-# sudo ufw deny from 192.168.1.0/24
-# sudo ufw allow ssh
-# sudo ufw allow in on eth0 to any port 80
-# sudo ufw logging on
+# Script Name: firewall.sh
+# Description: Automatically escalates privileges and hardens the system.
+# Author: github.com/4ndr0666
+# Version: 1.0
+# Date: 10-03-2023
+# Usage: ./firewall.sh
 
-# --- Automatically escalate privileges if not running as root
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
+echo -e "\033[34m"
+cat << "EOF"
+#  ___________.__                              .__  .__              .__     
+#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__  
+#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \ 
+#   |     \   |  ||  | \/\  ___/\     /  / __ \|  |_|  |__     \___ \|   Y  \
+#   \___  /   |__||__|    \___  >\/\_/  (____  /____/____/ /\ /____  >___|  /
+#       \/                    \/             \/            \/      \/     \/ 
+EOF
+echo -e "\033[0m"
 
-# --- Function to handle errors
+# Initialize the rollback stack
+ROLLBACK_STACK=()
+
+# Function to add a command to the rollback stack
+push_to_rollback() {
+  ROLLBACK_STACK+=("$1")
+}
+
+# Function to execute the rollback
+execute_rollback() {
+  for cmd in "${ROLLBACK_STACK[@]}"; do
+    eval "$cmd"
+  done
+}
+
+# Function to handle errors and offer rollback
 handle_error() {
   if [ $? -ne 0 ]; then
-    echo "Error: $1"
+    echo "An error occurred. Would you like to rollback? [y/N]"
+    read -r answer
+    if [[ "$answer" == "y" ]]; then
+      execute_rollback
+    fi
     exit 1
   fi
 }
 
-# --- Check and set permissions for /var/log
-chmod 755 "/var/log"
-chown root:root "/var/log"
-echo "Permissions and ownership set for /var/log"
-handle_error "Failed to set permissions for /var/log"
-
-# --- Cleanup: Keep only the most recent backup and remove older ones
-cleanup_backups() {
-    cd /etc/ufw
-    for rule_file in before.rules before6.rules after.rules after6.rules user.rules user6.rules; do
-        # Sort the files by modification time in reverse order and skip the first one (most recent backup)
-        ls -t ${rule_file}.* 2>/dev/null | tail -n +2 | xargs -r -I {} rm -- {}
-    done
-    cd -
+# Set proper permissions on /etc and /var
+permissions_config() {
+  UFW_DIR="/etc/ufw/"
+  LOG_DIR="/var/log/"
+  if [ -d "$UFW_DIR" ] && [ -d "$LOG_DIR" ]; then
+    chmod 700 "$UFW_DIR" "$LOG_DIR"
+    chown root:root "$UFW_DIR" "$LOG_DIR"
+    echo "Proper permission and ownership set"
+  else
+    echo "Couldn't correct permissions"
+  fi
+  handle_error
 }
 
-# --- Check status
-sysctl -a | grep disable_ipv6
-
-# --- Harden /etc/sysctl.conf
-sysctl kernel.modules_disabled=1
-sysctl net.ipv4.conf.all.rp_filter=1
-sysctl -a
-sysctl -A
-# sudo sysctl mib  # Commented out due to error
-
-# --- 1. Ensure only ExpressVPN is running
-if systemctl list-units --type=service | grep -q "openvpn.service"; then
-    systemctl stop openvpn
-    systemctl disable openvpn
-fi
-
-# --- 2. If not using dynamic IP addressing, stop and disable dhcpcd
-if systemctl list-units --type=service | grep -q "dhcpcd.service"; then
-    systemctl stop dhcpcd
-    systemctl disable dhcpcd
-fi
-
-# --- 3. Restrict SSH to localhost if only needed for Git
-sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config
-sed -i 's/^#ListenAddress ::/ListenAddress ::1/' /etc/ssh/sshd_config
-systemctl restart sshd
-
-# --- 4. UFW Setup (with megasync rule)
-# Check and set permissions for UFW directory
-UFW_DIR="/etc/ufw/"
-
-if [ -d "$UFW_DIR" ]; then
-    chmod 700 "$UFW_DIR"  # Changed to 700 for directory and files
-    echo "Permissions set for $UFW_DIR"
-else
-    echo "Directory $UFW_DIR does not exist"
-fi
-
-# Check and set permissions for UFW rules files
-UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" 
-           "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
-
-for file in "${UFW_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        chmod 600 "$file"
-        echo "Permissions set for $file"
-    else
-        echo "File $file does not exist"
+# Ensure UFW rules exist
+rules_config() {
+  UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
+  for file in "${UFW_FILES[@]}"; do
+    if [ ! -f "$file" ]; then
+      echo "File $file does not exist. Creating with default rules."
+      echo "# Default rules" > "$file"
+      chmod 600 "$file"
     fi
-done
+  done
+  handle_error
+}
 
-# --- Disable UFW and reset all rules
-ufw --force reset
+# Function to configure UFW
+ufw_config() {
+  ufw --force reset
+  handle_error
+  ufw limit proto tcp from any to any port 22
+  handle_error
+  ufw allow 6341/tcp # Megasync
+  handle_error
+  ufw default deny incoming
+  handle_error
+  ufw default allow outgoing
+  handle_error
+  ufw default deny incoming v6
+  handle_error
+  ufw default allow outgoing v6
+  handle_error
+  ufw logging on
+  handle_error
+  ufw --force enable  # Activate UFW
+  handle_error
+  systemctl enable ufw --now
+  handle_error
+}
 
-# --- IPv6-related UFW settings, skip entirely if IPv6 is disabled
-# 3.1 Robust check for IPv6
-if [ $(cat /proc/sys/net/ipv6/conf/all/disable_ipv6) -eq 1 ]; then
-    echo "IPv6 is disabled. Skipping IPv6 setup."
-else
-    ufw limit from any to any port 22 proto ipv6
-    ufw default deny incoming v6
-    ufw default deny outgoing v6
-fi
-handle_error "Failed to configure IPv6 in UFW" 
+# Function to configure sysctl
+sysctl_config() {
+  sysctl kernel.modules_disabled=1
+  handle_error
+  sysctl -a
+  handle_error
+  sysctl -A
+  handle_error
+  sysctl -w net.ipv4.conf.all.accept_redirects=0
+  handle_error
+  sysctl -w net.ipv4.conf.all.send_redirects=0
+  handle_error
+  sysctl -w net.ipv4.ip_forward=0
+  handle_error
+  sysctl net.ipv4.conf.all.rp_filter
+  handle_error
+  # Prevent IP Spoofs
+  echo "order bind,hosts" >> /etc/host.conf
+  echo "multi on" >> /etc/host.conf
+  handle_error
+}
 
-# --- Enter rules
-ufw limit 22/tcp
-ufw limit from any to any port 22 proto ipv6
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 6341/tcp  # Allow megasync
-ufw default deny incoming v6
-ufw default deny outgoing v6
-ufw enable
-
-# --- Check for existence of /etc/ufw/user.rules
-# Declare an array of UFW rule files to check
-UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" 
-           "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
-
-# Loop through each file to create a backup
-for file in "${UFW_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        backup_file="${file}.bak"  # Append '.bak' for backup
-        cp "$file" "$backup_file"
-        echo "Backup created: $backup_file"
-    else
-        echo "File $file does not exist. Skipping backup."
+# Function to handle IPv6
+ipv6_config() {
+  echo "IPv6 on by default."
+  echo -n "Would you like to disable it? [y/n]: "
+  read -r change_ipv6
+  if [ "$change_ipv6" == "y" ]; then
+    echo "1. Enable IPv6"
+    echo "2. Disable IPv6"
+    read -r choice
+    case "$choice" in
+      "1")
+        sysctl -w net.ipv6.conf.all.disable_ipv6=0
+        sysctl -w net.ipv6.conf.default.disable_ipv6=0
+        ;;
+      "2")
+        sysctl -w net.ipv6.conf.all.disable_ipv6=1
+        sysctl -w net.ipv6.conf.default.disable_ipv6=1
+        sleep 2 # Allow time for sysctl to propagate changes
+        ;;
+      *)
+        echo "Invalid choice. IPv6 will be left as-is."
+        ;;
+    esac
+    # Check if IPv6 is really disabled
+    ipv6_status=$(sysctl -n net.ipv6.conf.all.disable_ipv6)
+    if [ "$ipv6_status" -ne 1 ]; then
+      echo "Failed to disable IPv6."
+      handle_error
     fi
-done
+  fi
+}
 
-# Invoke the cleanup function here (assumes cleanup_backups is defined elsewhere in your script)
-cleanup_backups  
+# Function to configure fail2ban
+fail2ban_config() {
+  cp jail.local /etc/fail2ban/jail.local
+  handle_error
+  systemctl enable fail2ban
+  handle_error
+  systemctl restart fail2ban
+  handle_error
+}
 
-# --- PREVENT IP SPOOFS
-cat <<EOF | sudo tee /etc/host.conf
-order bind,hosts
-multi on
-EOF
+# --- Restrict SSH to localhost if only needed for Git (Testing)
+ssh_config() {
+  sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config
+  sed -i 's/^#ListenAddress ::/ListenAddress ::1/' /etc/ssh/sshd_config
+  systemctl restart sshd
+  handle_error
+}
 
-# --- Enable fail2ban
-if [ -x "$(command -v fail2ban-client)" ]; then
-    # 4.2 Write jail.local directly to /etc/fail2ban/
-    cat <<EOF > /etc/fail2ban/jail.local
-    [DEFAULT]
-    ignoreip = 127.0.0.1/8
-    findtime = 600
-    bantime = 3600
-    maxretry = 5
+# Function to disable unneeded filesystems
+filesystem_config() {
+  echo "install cramfs /bin/true" >> /etc/modprobe.d/disable-filesystems.conf
+  push_to_rollback "sed -i '/install cramfs \/bin\/true/d' /etc/modprobe.d/disable-filesystems.conf"
+  handle_error
+  echo "install freevxfs /bin/true" >> /etc/modprobe.d/disable-filesystems.conf
+  push_to_rollback "sed -i '/install freevxfs \/bin\/true/d' /etc/modprobe.d/disable-filesystems.conf"
+  handle_error
+  echo "install jffs2 /bin/true" >> /etc/modprobe.d/disable-filesystems.conf
+  push_to_rollback "sed -i '/install jffs2 \/bin\/true/d' /etc/modprobe.d/disable-filesystems.conf"
+  handle_error
+}
 
-    [sshd]
-    enabled = true
-    port = ssh
-    filter = sshd
-    logpath = /var/log/auth.log
-    maxretry = 3
+# Function to set sticky bit on specific system directories
+stickybit_config() {
+  essential_dirs=("/etc" "/var" "/usr" "/bin" "/sbin" "/lib" "/lib64" "/sys")
 
-    [ufw]
-    enabled = true
-    port = all
-    filter = ufw
-    logpath = /var/log/ufw.log
-    maxretry = 5
-EOF
-    handle_error "Failed to configure Fail2Ban"  # 1.1
+  for dir in "${essential_dirs[@]}"; do
+    echo "Scanning directory: $dir"
 
-    systemctl enable fail2ban
-    systemctl restart fail2ban
-else
-    echo "Fail2Ban is not installed. Skipping Fail2Ban configuration."
+    # Check if the directory exists before proceeding
+    if [ -d "$dir" ]; then
+      find "$dir" -xdev -type d -perm -0002 2>/dev/null | while read -r d; do
+        if [ -d "$d" ]; then
+          echo "Setting sticky bit for $d"
+          chmod a+t "$d"
+          if [ $? -ne 0 ]; then
+            echo "Failed to set sticky bit for $d"
+            handle_error
+          fi
+        else
+          echo "Directory $d no longer exists"
+        fi
+      done
+    else
+      echo "Directory $dir does not exist, skipping."
+    fi
+  done
+}
+
+
+
+
+# Main Script Execution
+if [ "$(id -u)" -ne 0 ]; then
+  sudo "$0" "$@"
+  exit $?
 fi
 
-# --- Restart Fail2Ban to apply new policies
-sudo systemctl enable fail2ban
-sudo systemctl restart fail2ban
+# Initiate system hardening
+echo "Initiating system hardening..."
 
-# --- Human-readable summary of the portscan
-echo "-----------------------------------"
-echo "HUMAN-READABLE SUMMARY OF PORTSCAN:"
-echo "-----------------------------------"
-sudo netstat -tunlp | grep LISTEN | awk '{print $1, $4, $7}' | sed 's/:::/IPv6 /' | sed 's/0.0.0.0:/IPv4 /'
+permissions_config
+handle_error
+rules_config
+handle_error
+ufw_config
+handle_error
+sysctl_config
+handle_error
+ipv6_config
+handle_error
+fail2ban_config
+handle_error
+ssh_config
+handle_error
+filesystem_config
+handle_error
+stickybit_config
+handle_error
 
-# --- Exit with success status
+# --- Portscan Summary
+echo "### -------- // Portscan Summary // -------- ###"
+netstat -tunlp
+echo "### -------- // Active UFW rules // -------- ###"
+ufw status numbered
+
 exit 0
-
-
