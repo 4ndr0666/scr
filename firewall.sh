@@ -95,7 +95,6 @@ ufw_config() {
   systemctl enable ufw --now
   handle_error
 }
-
 # Function to configure sysctl
 sysctl_config() {
   sysctl kernel.modules_disabled=1
@@ -118,7 +117,7 @@ sysctl_config() {
   handle_error
 }
 
-# Function to handle IPv6
+# Function to handle IPv6 and IP version preference
 ipv6_config() {
   echo "IPv6 on by default."
   echo -n "Would you like to disable it? [y/n]: "
@@ -182,31 +181,31 @@ filesystem_config() {
 }
 
 # Function to set sticky bit on specific system directories
-stickybit_config() {
-  essential_dirs=("/etc" "/var" "/usr" "/bin" "/sbin" "/lib" "/lib64" "/sys")
+#stickybit_config() {
+#  essential_dirs=("/etc" "/var" "/usr" "/bin" "/sbin" "/lib" "/lib64" "/sys")
 
-  for dir in "${essential_dirs[@]}"; do
-    echo "Scanning directory: $dir"
+#  for dir in "${essential_dirs[@]}"; do
+#    echo "Scanning directory: $dir"
 
     # Check if the directory exists before proceeding
-    if [ -d "$dir" ]; then
-      find "$dir" -xdev -type d -perm -0002 2>/dev/null | while read -r d; do
-        if [ -d "$d" ]; then
-          echo "Setting sticky bit for $d"
-          chmod a+t "$d"
-          if [ $? -ne 0 ]; then
-            echo "Failed to set sticky bit for $d"
-            handle_error
-          fi
-        else
-          echo "Directory $d no longer exists"
-        fi
-      done
-    else
-      echo "Directory $dir does not exist, skipping."
-    fi
-  done
-}
+#    if [ -d "$dir" ]; then
+#      find "$dir" -xdev -type d -perm -0002 2>/dev/null | while read -r d; do
+#        if [ -d "$d" ]; then
+#          echo "Setting sticky bit for $d"
+#          chmod a+t "$d"
+#          if [ $? -ne 0 ]; then
+#            echo "Failed to set sticky bit for $d"
+#            handle_error
+#          fi
+#        else
+#          echo "Directory $d no longer exists"
+#        fi
+#      done
+#    else
+#      echo "Directory $dir does not exist, skipping."
+#    fi
+#  done
+#}
 
 
 
@@ -235,8 +234,6 @@ handle_error
 ssh_config
 handle_error
 filesystem_config
-handle_error
-stickybit_config
 handle_error
 
 # --- Portscan Summary
