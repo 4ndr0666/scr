@@ -1,6 +1,9 @@
 import vapoursynth as vs
 core = vs.get_core()
 
+# Ask the user for the video file
+#video_file = input("Enter the path to your video file: ")
+
 # --- Load the source video:
 clip = core.ffms2.Source(source='input.mp4')
 

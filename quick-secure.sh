@@ -1,159 +1,50 @@
 #!/bin/bash
-#
-# Copyright 2014, Timothy Marcinowski (marshyski@gmail.com), USA
-# Web site: https://github.com/marshyski/quick-secure
-#
-# Quick NIX Secure Script comes with ABSOLUTELY NO WARRANTY. This is free
-# software, and you are welcome to redistribute it under the terms of the
-# GNU General Public License. See LICENSE file for usage of this software.
-#
-################################################################################
-#
-# Quick NIX Secure Script is meant to quickly secure UNIX/Linux systems
-# GNU GENERAL PUBLIC LICENSE Version 3
-#
-################################################################################
-#
-# Review script's comments "#" if you want to apply any other best practices
-# to your system, uncomment.  Want to better this or recommend fixes? Submit
-# a pull request or email PoC above.
-#
-#################################################################################
 
-#Check if script is running with root permissions
-if [[ $UID != "0" ]]; then
+# Check if script is running with root permissions
+if [[ $UID != 0 ]]; then
   echo "Sorry, must sudo or be root to run this."
-  exit
+  exit 1
 fi
 
-
-#Display commented out items and variables for review
-if [[ $1 = "-c" ]]; then
-  echo ""
-  echo "==VARIABLES OF QUICK NIX SECURE SCRIPT=="
-  cat $0 | grep ^[A-Z]
-  echo ""
-  echo "==COMMENTED OUT SECTION OF SCRIPT=="
-  grep ^#[Aa-Zz] $0
-  exit
-fi
-
-if [[ $1 = "-u" ]]; then
-  echo ""
-  cat $0 | sed 's/^[ \t]*//;s/[ \t]*$//' | grep '.' | grep -v ^#
-  exit
-fi
-
-
-#Set variables of script
+# Set variables of script
 PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/opt/local/bin:/opt/local/sbin"
-PASS_EXP="60" #used to set password expire in days
-PASS_WARN="14" #used to set password warning in days
-PASS_CHANG="1" #used to set how often you can change password in days
-SELINUX=`grep ^SELINUX= /etc/selinux/config 2>/dev/null | awk -F'=' '{ print $2 }'`
 
+# Verify admin wants to harden system
+read -p "Are you sure you want to quick secure `hostname` (y/N)? " ANSWER
 
-#Disclaimer
-cat << 'DISC'
-Quick NIX Secure Script Copyright (C) 2014 Timothy Marcinowski
-
-# QUICK NIX SECURE SCRIPT HAS NO WARRANTY OF ANY KIND       #
-# PLEASE REVIEW SCRIPT BEFORE SECURING YOUR SYSTEM(S)       #
-# PLEASE USE WITH CAUTION AND DILIGENCE!!!                  #
-
-  quick-secure -c | Review what's commented out in script
-  quick-secure -u | Review what's being applied to system
-  quick-secure -f | Force settings, never prompt question
-
-# THIS WILL BREAK RHEL/CENTOS 6 GNOME GUI!!!                #
-DISC
-
-#Verify admin wants to harden system
-if [[ $1 != "-f" ]]; then
-  echo -n "Are you sure you want to quick secure `hostname` (y/N)? "
-  read ANSWER
-  if [[ $ANSWER != "y" ]]; then
+if [[ $ANSWER != "y" ]]; then
     echo ""
-    exit
-  fi
-
-  if [[ $ANSWER = "n" ]] || [[ $ANSWER = "" ]]; then
-    echo ""
-    exit
-  fi
-
-  echo ""
+    exit 1
 fi
 
-
-#Set audit group variable
-if [[ `grep -i ^audit /etc/group` != "" ]]; then
-  AUDIT=`grep -i ^audit /etc/group | awk -F":" '{ print $1 }' | head -n 1`
-else
-  AUDIT="root"
-fi
+# Set audit group variable
+AUDIT=$(getent group audit | cut -d: -f1)
+AUDIT=${AUDIT:-root}
 
 echo "Audit group is set to '$AUDIT'"
 echo ""
 
-
-#Turn off selinux before setting configurations
-if [[ `getenforce 2>/dev/null` = "Enforcing" ]]; then
-  setenforce 0
-fi
-
-if [[ -f /etc/sysconfig/selinux ]]; then
-  sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
-  echo "SELINUX=disabled" > /etc/sysconfig/selinux
-  echo "SELINUXTYPE=targeted" >> /etc/sysconfig/selinux
-  chmod -f 0640 /etc/sysconfig/selinux
-fi
-
-
-#Setup /etc/motd and /etc/issues
+# Setup /etc/motd and /etc/issues
 echo "I've read & consent to terms in IS user agreem't." > /etc/motd # STIG V-38593
 echo "I've read & consent to terms in IS user agreem't." > /etc/issue* # STIG V-38593
-#rm -f /etc/issue /etc/issue.net
-#ln -s /etc/motd /etc/issue
-#ln -s /etc/motd /etc/issue.net
-chown -f root:root /etc/motd /etc/issue*
-chmod -f 0444 /etc/motd /etc/issue*
 
+chown root:root /etc/motd /etc/issue*
+chmod 0444 /etc/motd /etc/issue*
 
-#Cron setup
-if [[ -f /etc/cron.allow ]]; then
-  if [[ `grep root /etc/cron.allow 2>/dev/null` != "root" ]]; then
-    echo "root" > /etc/cron.allow
-    rm -f /etc/at.deny
-  else
-    echo "root is already in /etc/cron.allow"
-    echo ""
-  fi
-fi
+# Cron setup (simplified)
+touch /etc/cron.allow /etc/at.allow
+echo "root" >| /etc/cron.allow
+echo "root" >| /etc/at.allow
 
-if [[ -f /etc/cron.allow ]]; then
-  if [[ ! -f /etc/at.allow ]]; then
-    touch /etc/at.allow
-  fi
-fi
+rm -f /etc/at.deny
+rm -f /etc/cron.deny
 
-if [[ `grep root /etc/at.allow 2>/dev/null` != "root" ]]; then
-  echo "root" > /etc/at.allow
-  rm -f /etc/at.deny
-else
-  echo "root is already in /etc/at.allow"
-  echo ""
-fi
+chmod 0400 /etc/cron.allow
+chmod 0400 /etc/at.allow
 
-if [[ `cat /etc/at.deny 2>/dev/null` = "" ]]; then
-  rm -f /etc/at.deny
-fi
-
-if [[ `cat /etc/cron.deny 2>/dev/null` = "" ]]; then
-  rm -f /etc/cron.deny
-fi
-
-
+# File permissions and ownerships (simplified)
+chown root:root /var/crash
+chmod 0600 /var/crash
 chmod -f 0700 /etc/cron.monthly/*
 chmod -f 0700 /etc/cron.weekly/*
 chmod -f 0700 /etc/cron.daily/*
@@ -401,154 +292,27 @@ chmod -f 0755 /usr/bin/sh
 chmod -f 1777 /var/mail
 chmod -f 1777 /var/spool/uucppublic
 
-
 #Set all files in ``.ssh`` to ``600``
 chmod 700 ~/.ssh && chmod 600 ~/.ssh/*
 
-
-##Disable ctrl-alt-delete RHEL 6+
-#if [[ -f /etc/init/control-alt-delete.conf ]]; then
-#  if [[ `grep ^exec /etc/init/control-alt-delete.conf` != "" ]]; then
-#    sed -i 's/^exec/#exec/g' /etc/init/control-alt-delete.conf
-#  fi
-#fi
-
-
-#Disable ctrl-alt-delete RHEL 5+
-#if [[ -f /etc/inittab ]]; then
-#  if [[ `grep ^ca:: /etc/inittab` != "" ]]; then
-#    sed -i 's/^ca::/#ca::/g' /etc/inittab
-#  fi
-#fi
-
-
-#Remove security related packages
+# Remove security related packages
 if [[ -f /bin/yay ]]; then
-  yay -Rdd nc 2>/dev/null
-  yay -Rdd vsftpd 2>/dev/null
-  yay -Rdd nmap 2>/dev/null
-  yay -Rdd telnet-server 2>/dev/null
-  yay -Rdd rdate 2>/dev/null
-  yay -Rdd tcpdump 2>/dev/null
-  yay -Rdd vnc-server 2>/dev/null
-  yay -Rdd tigervnc-server 2>/dev/null
-  yay -Rdd wireshark 2>/dev/null
-  yay -Rdd wireless-tools 2>/dev/null
-  yay -Rdd telnetd 2>/dev/null
-  yay -Rdd rdate 2>/dev/null
-  yay -Rdd vnc4server 2>/dev/null
-  yay -Rdd vino 2>/dev/null
-  yay -Rdd bind9-host 2>/dev/null
-  yay -Rdd libbind9-90 2>/dev/null
+  for pkg in nc vsftpd telnet-server rdate tcpdump vnc-server tigervnc-server wireshark wireless-tools telnetd rdate vnc4server vino bind9-host libbind9-90; do
+    yay -Rdd $pkg 2>/dev/null
+  done
 fi
 
-
-#Account management and cleanup
-if [[ `which userdel 2>/dev/null` != "" ]]; then
-  userdel -f games 2>/dev/null
-  userdel -f news 2>/dev/null
-  userdel -f gopher 2>/dev/null
-  userdel -f tcpdump 2>/dev/null
-  userdel -f shutdown 2>/dev/null
-  userdel -f halt 2>/dev/null
-  userdel -f sync 2>/dev/null
-  userdel -f ftp 2>/dev/null
-  userdel -f operator 2>/dev/null
-  userdel -f lp 2>/dev/null
-  userdel -f uucp 2>/dev/null
-  userdel -f irc 2>/dev/null
-  userdel -f gnats 2>/dev/null
-  userdel -f pcap 2>/dev/null
-  userdel -f netdump 2>/dev/null
+# Account management and cleanup
+if [[ $(which userdel 2>/dev/null) != "" ]]; then
+  for user in games news gopher tcpdump shutdown halt sync ftp operator lp uucp irc gnats pcap netdump; do
+    userdel -f $user 2>/dev/null
+  done
 fi
 
-
-#GDM user RHEL 5 is unlocked out-of-the-box
-passwd -l gdm 2>/dev/null
-
-
-#Set password settings for all accounts in shadow
-#sed -i 's/0:99999:7/'"$PASS_CHANG:$PASS_EXP:$PASS_WARN"'/' /etc/shadow
-
-
-#Disable fingerprint in PAM and authconfig
-if [[ `which authconfig 2>/dev/null` != "" ]]; then
-  authconfig --disablefingerprint --update
-fi
-
-
-#Start-up chkconfig levels set
-if [[ -f /sbin/chkconfig ]]; then
-  /sbin/chkconfig --level 12345 auditd on 2>/dev/null
-  #  /sbin/chkconfig yum-updatesd off 2>/dev/null
-  /sbin/chkconfig isdn off 2>/dev/null
-  /sbin/chkconfig bluetooth off 2>/dev/null
-  /sbin/chkconfig haldaemon off 2>/dev/null #NEEDED ON FOR RHEL6 GUI
-fi
-
-
-#Change mount point security to nodev, noexec, nosuid (only tested on RHEL)
-#/boot
-#sed -i "s/\( \/boot.*`grep " \/boot " /etc/fstab | awk '{print $4}'`\)/\1,nodev,noexec,nosuid/" /etc/fstab
-
-#/dev/shm
-#sed -i "s/\( \/dev\/shm.*`grep " \/dev\/shm " /etc/fstab | awk '{print $4}'`\)/\1,nodev,noexec,nosuid/" /etc/fstab
-
-#/var
-#sed -i "s/\( \/var\/log.*`grep " \/var " /etc/fstab | awk '{print $4}'`\)/\1,nodev,noexec,nosuid/" /etc/fstab
-
-#/var/log
-#sed -i "s/\( \/var\/log.*`grep " \/var\/log " /etc/fstab | awk '{print $4}'`\)/\1,nodev,noexec,nosuid/" /etc/fstab
-
-#/tmp
-#sed -i "s/\( \/tmp.*`grep " \/tmp " /etc/fstab | awk '{print $4}'`\)/\1,nodev,noexec,nosuid/" /etc/fstab
-
-#/home
-#sed -i "s/\( \/home.*`grep " \/home " /etc/fstab | awk '{print $4}'`\)/\1,nodev,nosuid/" /etc/fstab
-
-
-#Misc settings and permissions
-chmod -Rf o-w /usr/local/src/*
-rm -f /etc/security/console.perms
-
-
-#Remove rpmnew and rpmsave files
-if [[ `which pac 2>/dev/null` != "" ]]; then
-  find / -noleaf 2>/dev/null | grep -v '/net\|/proc' | grep '\.pacsave'
-  find / -noleaf 2>/dev/null | grep -v '/net\|/proc' | grep '\.pacnew'
-fi
-
-
-#Set background image permissions
-#if [[ -d /usr/share/backgrounds ]]; then
-#  chmod -f 0444 /usr/share/backgrounds/default*
-#  chmod -f 0444 /usr/share/backgrounds/images/default*
-#fi
-
-if [[ $SELINUX = enforcing || $SELINUX = permissive ]]; then
-  setenforce 1
-fi
-
-#Permit ssh login from root
-rootLogin='PermitRootLogin'
-sshConfig='/etc/ssh/ssh_config'
-
-if [[ -f ${sshConfig?} ]]; then
-  if grep -q ${rootLogin?} ${sshConfig?}; then
-    sed -i 's/.*PermitRootLogin.*/\tPermitRootLogin no/g' ${sshConfig?}
-  else
-    echo -e '\tPermitRootLogin no' >> ${sshConfig?}
-  fi
-fi
-
-#Set home directories to 0700 permissions
-if [[ -d /home ]]; then
-  for x in `find /home -maxdepth 1 -mindepth 1 -type d`; do chmod -f 0700 $x; done
-fi
-
-if [[ -d /export/home ]]; then
-  for x in `find /export/home -maxdepth 1 -mindepth 1 -type d`; do chmod -f 0700 $x; done
-fi
+# Set basic kernel parameters
+if [[ $(which sysctl 2>/dev/null) != "" ]]; then
+  # Turn on ASLR Conservative Randomization
+  sysctl -w kernel.randomize_va_space=1
 
 #Set basic kernel parameters
 if [[ `which sysctl 2>/dev/null` != "" ]]; then
@@ -592,7 +356,41 @@ if [[ `which sysctl 2>/dev/null` != "" ]]; then
 #  sysctl -p
 fi
 
-echo ""
-echo "WARNING!WARNING!WARNING!"
-echo "CHANGE ROOT'S PASSWORD AFTER RUNNING QUICK NIX SECURE SCRIPT, JUST IN CASE."
-echo "WARNING!WARNING!WARNING!"
+#Disable fingerprint in PAM and authconfig
+if [[ `which authconfig 2>/dev/null` != "" ]]; then
+  authconfig --disablefingerprint --update
+fi
+
+#Start-up chkconfig levels set
+if [[ -f /sbin/chkconfig ]]; then
+  /sbin/chkconfig --level 12345 auditd on 2>/dev/null
+  /sbin/chkconfig isdn off 2>/dev/null
+  /sbin/chkconfig bluetooth off 2>/dev/null
+  /sbin/chkconfig haldaemon off 2>/dev/null #NEEDED ON FOR RHEL6 GUI
+fi
+
+#Misc settings and permissions
+chmod -Rf o-w /usr/local/src/*
+rm -f /etc/security/console.perms
+
+# Permit ssh login from root
+rootLogin='PermitRootLogin'
+sshConfig='/etc/ssh/sshd_config'
+
+if [[ -f ${sshConfig?} ]]; then
+  if grep -q ${rootLogin?} ${sshConfig?}; then
+    sed -i 's/.*PermitRootLogin.*/PermitRootLogin no/g' ${sshConfig?}
+  else
+    echo 'PermitRootLogin no' >> ${sshConfig?}
+  fi
+
+systemctl restart sshd.service
+fi
+
+# Set home directories to 0700 permissions (simplified)
+for dir in /home/* /export/home/*; do
+   [ -d "$dir" ] && chmod 0700 "$dir"
+done
+
+echo "Starting pacdigg to handle .pacnew and .pacsave files..."
+nohup pacdiff > /dev/null 2>&1 &
