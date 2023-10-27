@@ -27,6 +27,12 @@ log() {
     echo "$(date): $1" >> /var/log/r8169_module_script.log
 }
 
+# --- Auto escalate:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
+
 # Print ASCII art in green
 echo -e "${GREEN}"
 cat << "EOF"
@@ -38,12 +44,6 @@ cat << "EOF"
 #         \__>             \/     \/              \/     \/     \/                   \/  \/      \/     \/
 EOF
 echo -e "${NC}"
-
-# --- Check for root:
-if [[ $UID != "0" ]]; then
-  prominent "$INFO Escalate your privileges."
-  exit
-fi
 
 # --- Display disabled lines as options:
 if [[ $1 = "-c" ]]; then
@@ -69,21 +69,24 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/opt/local/bi
 PASS_EXP="60" #used to set password expire in days
 PASS_WARN="14" #used to set password warning in days
 PASS_CHANG="1" #used to set how often you can change password in days
-SELINUX=`grep ^SELINUX= /etc/selinux/config 2>/dev/null | awk -F'=' '{ print $2 }'
+SELINUX=`grep ^SELINUX= /etc/selinux/config 2>/dev/null | awk -F'=' '{ print $2 }'`
 
-# --- Menu:
-prominent "$INFO"
+# --- Disclaimer:
+prominent "$INFO $EXPLOSION $EXPLOSION $EXPLOSION auto-escalating to root."
+
 cat << 'DISC'
-# === // CHOOSE INSTALLATION METHOD //
+   === // ALWAYS REVIEW A SCRIPT BEFORE DEPLOYMENT // ===
 
-  quick-secure -c | Review what's commented out in script
-  quick-secure -u | Review what's being applied to system
-  quick-secure -f | Force settings, never prompt question
+-  quick-secure -c | Review disabled actions
+
+-  quick-secure -u | Review enabled actions
+
+-  quick-secure -f | Proceed with noconfirm
 DISC
 
 # --- Confirmation:
 if [[ $1 != "-f" ]]; then
-  prominent "$INFO -n Begin system scan on `hostname` (y/N)? "
+  prominent "$INFO Initiate fully automated deployment on target `hostname` (y/N)? "
   read ANSWER
   if [[ $ANSWER != "y" ]]; then
     echo ""
@@ -95,7 +98,7 @@ if [[ $1 != "-f" ]]; then
     exit
   fi
 
-  prominent ""
+  echo ""
 fi
 
 # --- Set audit group variable:
@@ -105,8 +108,8 @@ else
   AUDIT="root"
 fi
 
-prominent "$INFO Audit group is set to '$AUDIT' $EXPLOSION"
-prominent ""
+  prominent "$INFO Audit group is set to '$AUDIT' $EXPLOSION"
+  echo ""
 
 
 # --- Temp disable selinux:
@@ -128,7 +131,7 @@ if [[ -f /etc/cron.allow ]]; then
     rm -f /etc/at.deny
   else
     prominent "$FAILURE qroot is already in /etc/cron.allow"
-    prominent ""
+    echo ""
   fi
 fi
 
@@ -419,7 +422,7 @@ if [[ $(which userdel 2>/dev/null) != "" ]]; then
 fi
 
 # --- Disable fingerprint in PAM and authconfig:
-if [[ `which authconfig 2>/dev/null` != "" ]]; then
+if [[ $(which authconfig 2>/dev/null) != "" ]]; then
   authconfig --disablefingerprint --update
 fi
 
@@ -482,7 +485,7 @@ if [[ -f ${sshConfig?} ]]; then
   if grep -q ${rootLogin?} ${sshConfig?}; then
     sed -i 's/.*PermitRootLogin.*/PermitRootLogin no/g' ${sshConfig?}
   else
-    echo 'PermitRootLogin no' >> ${sshConfig?}
+    echo -e '\tPermitRootLogin no' >> ${sshConfig?}
   fi
   systemctl restart sshd.service
 fi
@@ -493,12 +496,11 @@ if [[ -d /home ]]; then
 fi
 
 if [[ -d /export/home ]]; then
-  for x in `find /export/home -maxdepth 1 -mindepth 1 -type d`; do chmod -f 0700 $
-x; done
+  for x in `find /export/home -maxdepth 1 -mindepth 1 -type d`; do chmod -f 0700 $x; done
 fi
 
 # --- Kernel parameters:
-if [[ `which sysctl 2>/dev/null` != "" ]]; then
+if [[ $(which sysctl 2>/dev/null) != "" ]]; then
   # --- Turn on ASLR Conservative Randomization:
   sysctl -w kernel.randomize_va_space=1
   # --- Hide Kernel Pointers:
@@ -537,8 +539,8 @@ if [[ `which sysctl 2>/dev/null` != "" ]]; then
   sysctl -p
 fi
 
-prominent "$SUCCESS SCAN COMPLETED... $EXPLOSION"
+prominent "$SUCCESS SCAN COMPLETED..."
 
-prominent "$EXPLOSION SYSTEM QUICKLY SECURED $EXPLOSION"
+prominent "$EXPLOSION SYSTEM WAS QUICKLY SECURED $EXPLOSION"
 
 exit 0
