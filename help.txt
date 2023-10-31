@@ -1,0 +1,42 @@
+Linux Permissions Help
+----------------------
+
+Permissions in Linux are managed through a system of ownership and predefined permissions associated with objects like files and directories. The permissions system is divided into three distinct scopes: Owner, Group, and Others.
+
+Understanding Permissions:
+Permissions are represented as a three-digit number, where each digit corresponds to the permissions for the Owner, Group, and Others respectively.
+
+Each scope can have the following permissions:
+- Read (r): Permission to read the contents.
+- Write (w): Permission to modify or delete.
+- Execute (x): Permission to execute.
+
+Numerically, these permissions are represented as follows:
+- Read: 4
+- Write: 2
+- Execute: 1
+
+Common Permission Modes:
+- chmod 751: +rwx for owner, +rx for group, +x for others
+- chmod 755: +rwx for owner, +rwx for group, +rx for others
+- chmod 744: +wx for owner, no permissions for group, +r for others
+- ... and so on.
+
+Menu Options Explained:
+1. Change Ownership (Chown): Changes the ownership of the specified directory recursively.
+2. Compare Permissions: Checks system files and compares their current permissions against the package defaults.
+3. Get ACL (Access Control List): Displays the ACL for the specified directory.
+4. Help on Permissions: Displays this help documentation.
+5. Reset Permissions to Defaults: Resets permissions on certain system directories to sensible defaults.
+6. Exit: Exits the script.
+
+Usage:
+1. Launch the script.
+2. Follow the on-screen prompts to select an option from the menu.
+3. For Chown and Get ACL options, you may be prompted to enter a directory path if not provided as an argument when launching the script.
+
+Note:
+- It's advisable to have a backup before making changes to permissions, especially on system directories.
+- Incorrect permissions can lead to system instability or security risks.
+
+Press any key to return to the main menu.
