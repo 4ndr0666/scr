@@ -1,39 +1,47 @@
 #!/bin/bash
 
 # Script Name: firewall.sh
-# Description: Automatically escalates privileges and hardens the system.
+# Description: Automatically escalates privileges and hardens the system via ufw, fail2ban, systemctl.
 # Author: github.com/4ndr0666
 # Version: 1.0
 # Date: 10-03-2023
 # Usage: ./firewall.sh
 
+# -- Escalate
+if [ "$(id -u)" -ne 0 ]; then
+  sudo "$0" "$@"
+  exit $?
+fi
+
+# --- Banner
 echo -e "\033[34m"
 cat << "EOF"
-#  ___________.__                              .__  .__              .__     
-#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__  
-#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \ 
+#  ___________.__                              .__  .__              .__
+#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__
+#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \
 #   |     \   |  ||  | \/\  ___/\     /  / __ \|  |_|  |__     \___ \|   Y  \
 #   \___  /   |__||__|    \___  >\/\_/  (____  /____/____/ /\ /____  >___|  /
-#       \/                    \/             \/            \/      \/     \/ 
+#       \/                    \/             \/            \/      \/     \/
 EOF
 echo -e "\033[0m"
+sleep 1
 
-# Initialize the rollback stack
+# --- Initialize the rollback stack
 ROLLBACK_STACK=()
 
-# Function to add a command to the rollback stack
+# --- Function to add a command to the rollback stack
 push_to_rollback() {
   ROLLBACK_STACK+=("$1")
 }
 
-# Function to execute the rollback
+# --- Function to execute the rollback
 execute_rollback() {
   for cmd in "${ROLLBACK_STACK[@]}"; do
     eval "$cmd"
   done
 }
 
-# Function to handle errors and offer rollback
+# --- Function to handle errors and offer rollback
 handle_error() {
   if [ $? -ne 0 ]; then
     echo "An error occurred. Would you like to rollback? [y/N]"
@@ -45,35 +53,39 @@ handle_error() {
   fi
 }
 
-# Set proper permissions on /etc and /var
+# --- Set proper permissions on /etc and /var
 permissions_config() {
   UFW_DIR="/etc/ufw/"
   LOG_DIR="/var/log/"
   if [ -d "$UFW_DIR" ] && [ -d "$LOG_DIR" ]; then
-    chmod 700 "$UFW_DIR" "$LOG_DIR"
+    chmod 755 "$UFW_DIR" "$LOG_DIR"
     chown root:root "$UFW_DIR" "$LOG_DIR"
-    echo "Proper permission and ownership set"
+    echo "Setting proper permissions for /etc and /var..."
   else
     echo "Couldn't correct permissions"
   fi
   handle_error
 }
 
-# Ensure UFW rules exist
+# --- Ensure UFW rules exist and set perms
 rules_config() {
   UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
+  chmod 644 $UFW_FILES
+
   for file in "${UFW_FILES[@]}"; do
     if [ ! -f "$file" ]; then
       echo "File $file does not exist. Creating with default rules."
       echo "# Default rules" > "$file"
-      chmod 600 "$file"
+      chmod 644 "$file"
     fi
   done
   handle_error
 }
 
-# Function to configure UFW
+# --- Function to configure UFW
 ufw_config() {
+  echo "Configuring UFW..."
+  sleep 2
   ufw --force reset
   handle_error
   ufw limit proto tcp from any to any port 22
@@ -90,13 +102,15 @@ ufw_config() {
   handle_error
   ufw logging on
   handle_error
-  ufw --force enable  # Activate UFW
-  handle_error
+  ufw --force enable
   systemctl enable ufw --now
   handle_error
 }
-# Function to configure sysctl
+
+# --- Function to configure sysctl:
 sysctl_config() {
+  echo "Updating sysctl..."
+  sleep 2
   sysctl kernel.modules_disabled=1
   handle_error
   sysctl -a
@@ -111,13 +125,16 @@ sysctl_config() {
   handle_error
   sysctl net.ipv4.conf.all.rp_filter
   handle_error
-  # Prevent IP Spoofs
+  echo "Correcting host..."
+  sleep 2
+
+  # --- Prevent IP Spoofs:
   echo "order bind,hosts" >> /etc/host.conf
   echo "multi on" >> /etc/host.conf
   handle_error
 }
 
-# Function to handle IPv6 and IP version preference
+# --- Handle IPv6 and IP version preference:
 ipv6_config() {
   echo "IPv6 on by default."
   echo -n "Would you like to disable it? [y/n]: "
@@ -134,13 +151,14 @@ ipv6_config() {
       "2")
         sysctl -w net.ipv6.conf.all.disable_ipv6=1
         sysctl -w net.ipv6.conf.default.disable_ipv6=1
-        sleep 2 # Allow time for sysctl to propagate changes
-        ;;
+        alacritty -e ipv6off
+	;;
       *)
         echo "Invalid choice. IPv6 will be left as-is."
         ;;
     esac
-    # Check if IPv6 is really disabled
+
+    # --- Check if IPv6 is really disabled:
     ipv6_status=$(sysctl -n net.ipv6.conf.all.disable_ipv6)
     if [ "$ipv6_status" -ne 1 ]; then
       echo "Failed to disable IPv6."
@@ -149,9 +167,11 @@ ipv6_config() {
   fi
 }
 
-# Function to configure fail2ban
+# --- Configure fail2ban:
 fail2ban_config() {
-  cp jail.local /etc/fail2ban/jail.local
+  echo "Hardening with fail2ban..."
+  sleep 2
+  cp /usr/local/bin/jail2.local /etc/fail2ban/jail.local
   handle_error
   systemctl enable fail2ban
   handle_error
@@ -161,6 +181,8 @@ fail2ban_config() {
 
 # --- Restrict SSH to localhost if only needed for Git (Testing)
 ssh_config() {
+  echo "Restricting SSH to localhost for GitHub..."
+  sleep 2
   sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config
   sed -i 's/^#ListenAddress ::/ListenAddress ::1/' /etc/ssh/sshd_config
   systemctl restart sshd
@@ -169,6 +191,8 @@ ssh_config() {
 
 # Function to disable unneeded filesystems
 filesystem_config() {
+  echo "Disabling unneeded filesystems..."
+  sleep 2
   echo "install cramfs /bin/true" >> /etc/modprobe.d/disable-filesystems.conf
   push_to_rollback "sed -i '/install cramfs \/bin\/true/d' /etc/modprobe.d/disable-filesystems.conf"
   handle_error
@@ -207,39 +231,35 @@ filesystem_config() {
 #  done
 #}
 
-
-
-
-# Main Script Execution
-if [ "$(id -u)" -ne 0 ]; then
-  sudo "$0" "$@"
-  exit $?
-fi
-
-# Initiate system hardening
+# ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
 echo "Initiating system hardening..."
 
 permissions_config
-handle_error
-rules_config
-handle_error
-ufw_config
-handle_error
-sysctl_config
-handle_error
-ipv6_config
-handle_error
-fail2ban_config
-handle_error
-ssh_config
-handle_error
-filesystem_config
-handle_error
 
-# --- Portscan Summary
-echo "### -------- // Portscan Summary // -------- ###"
+rules_config
+
+ufw_config
+
+sysctl_config
+
+ipv6_config
+
+fail2ban_config
+
+ssh_config
+
+filesystem_config
+
+sleep 2
+
+# --- Portscan Summary:
+echo "### ============================== // LISTENING PORTS // ============================== ###"
 netstat -tunlp
-echo "### -------- // Active UFW rules // -------- ###"
+sleep 4
+
+# --- UFW Status:
+echo "### ============ // UFW SUMMARY // ============ ###"
 ufw status numbered
+sleep 4
 
 exit 0
