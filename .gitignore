@@ -33,3 +33,4 @@ zsh_history
 *.local
 *.cache
 *.config
+vapoursynth
