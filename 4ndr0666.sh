@@ -8,6 +8,7 @@ dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
 progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/progs.csv"
 aurhelper="yay"
 repobranch="main"
+export TERM=ansi
 
 ### FUNCTIONS ###
 
@@ -31,7 +32,7 @@ welcomemsg() {
 }
 
 getuserandpass() {
-	# Prompts user for a new username and password.
+	# Prompts user for new username an password.
 	name=$(whiptail --inputbox "First, please enter a name for the user account." 10 60 3>&1 1>&2 2>&3 3>&1) || exit 1
 	while ! echo "$name" | grep -q "^[a-z_][a-z0-9_-]*$"; do
 		name=$(whiptail --nocancel --inputbox "Username not valid. Give a username beginning with a letter, with only lowercase letters, - or _." 10 60 3>&1 1>&2 2>&3 3>&1)
@@ -40,8 +41,8 @@ getuserandpass() {
 	pass2=$(whiptail --nocancel --passwordbox "Retype password." 10 60 3>&1 1>&2 2>&3 3>&1)
 	while ! [ "$pass1" = "$pass2" ]; do
 		unset pass2
-		pass1=$(whiptail --nocancel --passwordbox "Passwords do not match.\\n\\nEnter the password again." 10 60 3>&1 1>&2 2>&3 3>&1)
-		pass2=$(whiptail --nocancel --passwordbox "Retype the password." 10 60 3>&1 1>&2 2>&3 3>&1)
+		pass1=$(whiptail --nocancel --passwordbox "Passwords do not match.\\n\\nEnter password again." 10 60 3>&1 1>&2 2>&3 3>&1)
+		pass2=$(whiptail --nocancel --passwordbox "Retype password." 10 60 3>&1 1>&2 2>&3 3>&1)
 	done
 }
 
@@ -74,49 +75,31 @@ adduserandpass() {
 }
 
 refreshkeys() {
-    case "$(readlink -f /sbin/init)" in
-    *systemd*)
-        # For systems with systemd
-        whiptail --infobox "Refreshing Arch Keyring..." 7 40
-        pacman --noconfirm -S archlinux-keyring >/dev/null 2>&1
-
+	case "$(readlink -f /sbin/init)" in
+	*systemd*)
+		whiptail --infobox "Refreshing Arch Keyring..." 7 40
+		pacman --noconfirm -S archlinux-keyring >/dev/null 2>&1
         # Importing Chaotic AUR Key
-        whiptail --infobox "Importing Chaotic AUR Key..." 7 40
-        sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
-        sudo pacman-key --lsign-key 3056513887B78AEB
+		whiptail --infobox "Importing Chaotic AUR Key..." 7 40
+                sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
+                sudo pacman-key --lsign-key 3056513887B78AEB
 
         # Installing Chaotic AUR Keyring and Mirrorlist
-        whiptail --infobox "Installing Chaotic AUR Keyring and Mirrorlist..." 7 40
-        sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
-        ;;
-    *)
+                whiptail --infobox "Installing Chaotic AUR Keyring and Mirrorlist..." 7 40
+		sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
+		;;
+        *)
         # For systems without systemd
-        whiptail --infobox "Enabling Arch Repositories..." 7 40
-        if ! grep -q "^\[universe\]" /etc/pacman.conf; then
-            echo "[universe]
-Server = https://universe.artixlinux.org/\$arch
-Server = https://mirror1.artixlinux.org/universe/\$arch
-Server = https://mirror.pascalpuffke.de/artix-universe/\$arch
-Server = https://artixlinux.qontinuum.space/artixlinux/universe/os/\$arch
-Server = https://mirror1.cl.netactuate.com/artix/universe/\$arch
-Server = https://ftp.crifo.org/artix-universe/" >>/etc/pacman.conf
-            pacman -Sy --noconfirm >/dev/null 2>&1
-        fi
-        pacman --noconfirm --needed -S \
-            artix-keyring artix-archlinux-support >/dev/null 2>&1
-        for repo in extra community; do
-            grep -q "^\[$repo\]" /etc/pacman.conf ||
-                echo "[$repo]
+                 whiptail --infobox "Enabling Arch Repositories..." 7 40
+		pacman --noconfirm --needed -S \
+			artix-keyring artix-archlinux-support >/dev/null 2>&1
+		grep -q "^\[extra\]" /etc/pacman.conf ||
+			echo "[extra]
 Include = /etc/pacman.d/mirrorlist-arch" >>/etc/pacman.conf
-        done
-        ;;
-    esac
-
-    # Common steps for all systems
-    pacman-key --init
-    pacman-key --populate archlinux >/dev/null 2>&1
-    whiptail --infobox "Refreshing Pacman Database..." 7 40
-    pacman -Sy >/dev/null 2>&1
+		pacman -Sy --noconfirm >/dev/null 2>&1
+		pacman-key --populate archlinux >/dev/null 2>&1
+		;;
+	esac
 }
 
 manualinstall() {
@@ -132,13 +115,13 @@ manualinstall() {
 			sudo -u "$name" git pull --force origin master
 		}
 	cd "$repodir/$1" || exit 1
-	sudo -u "$name" makepkg --noconfirm -si >/dev/null 2>&1 || return 1
+	sudo -u "$name" -D "$repodir/$1" \
+		makepkg --noconfirm -si >/dev/null 2>&1 || return 1
 }
 
 maininstall() {
 	# Installs all needed programs from the main repo.
-	whiptail --title "4ndr0666 Installation" \
-		--infobox "Installing \`$1\` ($n of $total). $1 $2" 9 70
+	whiptail --title "4ndr0666 Installation" --infobox "Installing \`$1\` ($n of $total). $1 $2" 9 70
 	installpkg "$1"
 }
 
@@ -206,7 +189,6 @@ putgitrepo() {
 }
 
 vimplugininstall() {
-	# TODO remove shortcuts error message
 	# Installs vim plugins.
 	whiptail --infobox "Installing neovim plugins..." 7 60
 	mkdir -p "/home/$name/.config/nvim/autoload"
@@ -216,12 +198,31 @@ vimplugininstall() {
 }
 
 makeuserjs(){
+	# Get the Arkenfox user.js and prepare it.
 	arkenfox="$pdir/arkenfox.js"
-	larbs="/home/$name/.config/firefox/larbs.js"
+	overrides="$pdir/user-overrides.js"
 	userjs="$pdir/user.js"
+	ln -fs "/home/$name/.config/firefox/larbs.js" "$overrides"
 	[ ! -f "$arkenfox" ] && curl -sL "https://raw.githubusercontent.com/arkenfox/user.js/master/user.js" > "$arkenfox"
-	cat "$arkenfox" "$larbs" > "$userjs"
+	cat "$arkenfox" "$overrides" > "$userjs"
 	chown "$name:wheel" "$arkenfox" "$userjs"
+	# Install the updating script.
+	mkdir -p /usr/local/lib /etc/pacman.d/hooks
+	cp "/home/$name/.local/bin/arkenfox-auto-update" /usr/local/lib/
+	chown root:root /usr/local/lib/arkenfox-auto-update
+	chmod 755 /usr/local/lib/arkenfox-auto-update
+	# Trigger the update when needed via a pacman hook.
+	echo "[Trigger]
+Operation = Upgrade
+Type = Package
+Target = firefox
+Target = librewolf
+Target = librewolf-bin
+[Action]
+Description=Update Arkenfox user.js
+When=PostTransaction
+Depends=arkenfox-user.js
+Exec=/usr/local/lib/arkenfox-auto-update" > /etc/pacman.d/hooks/arkenfox.hook
 }
 
 installffaddons(){
@@ -231,14 +232,19 @@ installffaddons(){
 	IFS=' '
 	sudo -u "$name" mkdir -p "$pdir/extensions/"
 	for addon in $addonlist; do
-		addonurl="$(curl --silent "https://addons.mozilla.org/en-US/firefox/addon/${addon}/" | grep -o 'https://addons.mozilla.org/firefox/downloads/file/[^"]*')"
+		if [ "$addon" = "ublock-origin" ]; then
+			addonurl="$(curl -sL https://api.github.com/repos/gorhill/uBlock/releases/latest | grep -E 'browser_download_url.*\.firefox\.xpi' | cut -d '"' -f 4)"
+		else
+			addonurl="$(curl --silent "https://addons.mozilla.org/en-US/firefox/addon/${addon}/" | grep -o 'https://addons.mozilla.org/firefox/downloads/file/[^"]*')"
+		fi
 		file="${addonurl##*/}"
 		sudo -u "$name" curl -LOs "$addonurl" > "$addontmp/$file"
 		id="$(unzip -p "$file" manifest.json | grep "\"id\"")"
 		id="${id%\"*}"
 		id="${id##*\"}"
-		sudo -u "$name" mv "$file" "$pdir/extensions/$id.xpi"
+		mv "$file" "$pdir/extensions/$id.xpi"
 	done
+	chown -R "$name:$name" "$pdir/extensions"
 	# Fix a Vim Vixen bug with dark mode not fixed on upstream:
 	sudo -u "$name" mkdir -p "$pdir/chrome"
 	[ ! -f  "$pdir/chrome/userContent.css" ] && sudo -u "$name" echo ".vimvixen-console-frame { color-scheme: light !important; }
@@ -249,6 +255,8 @@ finalize() {
 	whiptail --title "4ndr0666 Deployed!" \
 		--msgbox "4ndr0666.sh completed successfully and all the programs and configuration files should be in place.\\n\\nTo run the new graphical environment, log out and log back in as your new user, then run the command \"startx\" to start the graphical environment (it will start automatically in tty1).\\n\\n.t 4ndr0666" 13 80
 }
+### THE ACTUAL SCRIPT ###
+### This is how everything happens in an intuitive format and order.
 
 # Check if user is root on Arch distro. Install whiptail.
 pacman --noconfirm --needed -Sy libnewt ||
@@ -288,8 +296,8 @@ adduserandpass || error "Error adding username and/or password."
 
 # Allow user to run sudo without password. Since AUR programs must be installed
 # in a fakeroot environment, this is required for all builds with AUR.
-trap 'rm -f /etc/sudoers.d/andr0666-temp' HUP INT QUIT TERM PWR EXIT
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/andr0666-temp
+trap 'rm -f /etc/sudoers.d/larbs-temp' HUP INT QUIT TERM PWR EXIT
+echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/larbs-temp
 
 # Make pacman colorful, concurrent downloads and Pacman eye-candy.
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
@@ -298,7 +306,9 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 # Use all cores for compilation.
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
-manualinstall yay || error "Failed to install AUR helper."
+manualinstall $aurhelper || error "Failed to install AUR helper."
+# Make sure .*-git AUR packages get updated automatically.
+$aurhelper -Y --save --devel
 
 # The command that does all the installing. Reads the progs.csv file and
 # installs each needed program the way required. Be sure to run this only after
@@ -350,7 +360,7 @@ profilesini="$browserdir/profiles.ini"
 # Start librewolf headless so it generates a profile. Then get that profile in a variable.
 sudo -u "$name" librewolf --headless >/dev/null 2>&1 &
 sleep 1
-profile="$(sed -n "/Default=.*.default-release/ s/.*=//p" "$profilesini")"
+profile="$(sed -n "/Default=.*.default-default/ s/.*=//p" "$profilesini")"
 pdir="$browserdir/$profile"
 
 [ -d "$pdir" ] && makeuserjs
@@ -365,6 +375,8 @@ pkill -u "$name" librewolf
 echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-larbs-wheel-can-sudo
 echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-larbs-cmds-without-password
 echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-larbs-visudo-editor
+mkdir -p /etc/sysctl.d
+echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
 # Last message! Install complete!
 finalize
