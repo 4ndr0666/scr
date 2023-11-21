@@ -7,7 +7,7 @@
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
 progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/progs.csv"
 aurhelper="yay"
-repobranch="main"
+repobranch="master"
 export TERM=ansi
 
 ### FUNCTIONS ###
@@ -23,12 +23,13 @@ error() {
 }
 
 welcomemsg() {
-	whiptail --title "Neo?" \
-		--msgbox "Initiating 4ndr0666 Rice Script!\\n\\nThis script will automatically install a fully-featured Linux desktop, which I use as my main machine.\\n\\n-4ndr0666" 10 60
+	whiptail --title "4ndr0666.sh" \
+		--msgbox "  Auto-Ricing logic is valid and ready for execution!\
+		          \n\\n\\n\\n-4ndr0666" 10 60
 
-	whiptail --title "Important Note!" --yes-button "All ready!" \
-		--no-button "Return..." \
-		--yesno "Be sure the computer you are using has current pacman updates and refreshed Arch keyrings.\\n\\nIf it does not, the installation of some programs might fail." 8 70
+	whiptail --title "!WARNING!" --yes-button "Deploy!" \
+		--no-button "Abort & Update" \
+		--yesno "   You must run Pacman -Syu prior to deploying this script!" 8 70
 }
 
 getuserandpass() {
@@ -49,14 +50,14 @@ getuserandpass() {
 usercheck() {
 	! { id -u "$name" >/dev/null 2>&1; } ||
 		whiptail --title "WARNING" --yes-button "CONTINUE" \
-			--no-button "No, wait..." \
-			--yesno "The user \`$name\` already exists on this system. 4ndr0666.sh can install for a user already existing, but it will OVERWRITE any conflicting settings/dotfiles on the user account.\\n\\n4ndr0666.sh will NOT overwrite your user files, documents, videos, etc., so don't worry about that, but only click <CONTINUE> if you don't mind your settings being overwritten.\\n\\nNote also that 4ndr0666.sh will change $name's password to the one you just gave." 14 70
+			--no-button "ABORT!" \
+			--yesno "The user \`$name\` has an existing account on this machine. 4ndr0666.sh is able to install for this user but all config files will be OVERWRITEN! However, \`$name's\` personal data and folders will remain unaltered. \\n\\nPlease confirm acknowledgement and select <CONTINUE> to deploy 4ndr0666.sh. \\n\\n!Changing \`$name's\` password to the one you just provided!" 14 70
 }
 
 preinstallmsg() {
-	whiptail --title "Initiate 4ndr0666 Ricing!" --yes-button "Initiate" \
+	whiptail --title "4ndr0666.sh" --yes-button "Lauch!" \
 		--no-button "Abort" \
-		--yesno "Click <Initiate> to start the deployment..." 10 60 || {
+		--yesno "Your required interaction is now concluded. 4ndr0666.sh will now commence auto-ricing of the machine with your specific entries. Please select:" 10 60 || {
 		clear
 		exit 1
 	}
@@ -144,14 +145,14 @@ gitmakeinstall() {
 }
 
 aurinstall() {
-	whiptail --title "4ndr0666 Installation" \
+	whiptail --title "4ndr0666.sh Executing" \
 		--infobox "Installing \`$1\` ($n of $total) from the AUR. $1 $2" 9 70
 	echo "$aurinstalled" | grep -q "^$1$" && return 1
 	sudo -u "$name" $aurhelper -S --noconfirm "$1" >/dev/null 2>&1
 }
 
 pipinstall() {
-	whiptail --title "4ndr0666 Installation" \
+	whiptail --title "4ndr0666 Executing" \
 		--infobox "Installing the Python package \`$1\` ($n of $total). $1 $2" 9 70
 	[ -x "$(command -v "pip")" ] || installpkg python-pip >/dev/null 2>&1
 	yes | pip install "$1"
@@ -252,8 +253,8 @@ installffaddons(){
 }
 
 finalize() {
-	whiptail --title "4ndr0666 Deployed!" \
-		--msgbox "4ndr0666.sh completed successfully and all the programs and configuration files should be in place.\\n\\nTo run the new graphical environment, log out and log back in as your new user, then run the command \"startx\" to start the graphical environment (it will start automatically in tty1).\\n\\n.t 4ndr0666" 13 80
+	whiptail --title "4ndr0666.sh Complete" \
+		--msgbox "4ndr0666.sh successfully deployed on your machine and all the programs and config files are in place.\\n\\nTo run the new graphical environment, log out and log back in as your new user, then run the command \"startx\" to start the graphical environment (it will start automatically in tty1).\\n\\n.t 4ndr0666" 13 80
 }
 ### THE ACTUAL SCRIPT ###
 ### This is how everything happens in an intuitive format and order.
@@ -296,8 +297,8 @@ adduserandpass || error "Error adding username and/or password."
 
 # Allow user to run sudo without password. Since AUR programs must be installed
 # in a fakeroot environment, this is required for all builds with AUR.
-trap 'rm -f /etc/sudoers.d/larbs-temp' HUP INT QUIT TERM PWR EXIT
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/larbs-temp
+trap 'rm -f /etc/sudoers.d/andr0666-temp' HUP INT QUIT TERM PWR EXIT
+echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/andr0666-temp
 
 # Make pacman colorful, concurrent downloads and Pacman eye-candy.
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
