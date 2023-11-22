@@ -24,12 +24,11 @@ error() {
 
 welcomemsg() {
 	whiptail --title "4ndr0666.sh" \
-		--msgbox "  Auto-Ricing logic is valid and ready for execution!\
-		          \n\\n\\n\\n-4ndr0666" 10 60
+		--msgbox "  Validating code segments and checking dependenecies...\\n\\nValidated!" 10 60
 
-	whiptail --title "!WARNING!" --yes-button "Deploy!" \
-		--no-button "Abort & Update" \
-		--yesno "   You must run Pacman -Syu prior to deploying this script!" 8 70
+	whiptail --title "!WARNING!" --yes-button "CONTINUE" \
+		--no-button "ABORT & UPDATE" \
+		--yesno "   Pacman -Syu completion is required before 4ndr0666.sh can be deployed!" 8 70
 }
 
 getuserandpass() {
@@ -49,15 +48,15 @@ getuserandpass() {
 
 usercheck() {
 	! { id -u "$name" >/dev/null 2>&1; } ||
-		whiptail --title "WARNING" --yes-button "CONTINUE" \
-			--no-button "ABORT!" \
-			--yesno "The user \`$name\` has an existing account on this machine. 4ndr0666.sh is able to install for this user but all config files will be OVERWRITEN! However, \`$name's\` personal data and folders will remain unaltered. \\n\\nPlease confirm acknowledgement and select <CONTINUE> to deploy 4ndr0666.sh. \\n\\n!Changing \`$name's\` password to the one you just provided!" 14 70
+		whiptail --title "!WARNING!" --yes-button "CONTINUE" \
+			--no-button "ABORT" \
+			--yesno "The user \`$name\` currently has an existing account on this machine. 4ndr0666.sh will is OVERWRITE all but the config files if you continue. \\n\\nPlease confirm acknowledgement and continue to deploy 4ndr0666.sh. \\n\\n!Changing \`$name's\` password to the one you just provided!" 14 70
 }
 
 preinstallmsg() {
-	whiptail --title "4ndr0666.sh" --yes-button "Lauch!" \
-		--no-button "Abort" \
-		--yesno "Your required interaction is now concluded. 4ndr0666.sh will now commence auto-ricing of the machine with your specific entries. Please select:" 10 60 || {
+	whiptail --title "4ndr0666.sh Installation" --yes-button "INSTALL" \
+		--no-button "ABORT" \
+		--yesno "4ndr0666.sh will now automatically complete the installation process without any further intervention needed. Please allow pacman to recieve the Chaotic AUR keyring on the next page to deploy 4ndr0666.sh. \\n\\nNote: This is the last time you will be asked for input" 10 60 || {
 		clear
 		exit 1
 	}
@@ -89,9 +88,8 @@ refreshkeys() {
                 whiptail --infobox "Installing Chaotic AUR Keyring and Mirrorlist..." 7 40
 		sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
 		;;
-        *)
-        # For systems without systemd
-                 whiptail --infobox "Enabling Arch Repositories..." 7 40
+	*)
+		whiptail --infobox "Enabling Arch Repositories for more a more extensive software collection..." 7 40
 		pacman --noconfirm --needed -S \
 			artix-keyring artix-archlinux-support >/dev/null 2>&1
 		grep -q "^\[extra\]" /etc/pacman.conf ||
@@ -121,7 +119,7 @@ manualinstall() {
 }
 
 maininstall() {
-	# Installs all needed programs from the main repo.
+	# Installs all needed programs from main repo.
 	whiptail --title "4ndr0666 Installation" --infobox "Installing \`$1\` ($n of $total). $1 $2" 9 70
 	installpkg "$1"
 }
@@ -130,7 +128,7 @@ gitmakeinstall() {
 	progname="${1##*/}"
 	progname="${progname%.git}"
 	dir="$repodir/$progname"
-	whiptail --title "4ndr0666 Installation" \
+	whiptail --title "4ndr0666.sh Installation" \
 		--infobox "Installing \`$progname\` ($n of $total) via \`git\` and \`make\`. $(basename "$1") $2" 8 70
 	sudo -u "$name" git -C "$repodir" clone --depth 1 --single-branch \
 		--no-tags -q "$1" "$dir" ||
@@ -145,14 +143,14 @@ gitmakeinstall() {
 }
 
 aurinstall() {
-	whiptail --title "4ndr0666.sh Executing" \
+	whiptail --title "4ndr0666.sh Installation" \
 		--infobox "Installing \`$1\` ($n of $total) from the AUR. $1 $2" 9 70
 	echo "$aurinstalled" | grep -q "^$1$" && return 1
 	sudo -u "$name" $aurhelper -S --noconfirm "$1" >/dev/null 2>&1
 }
 
 pipinstall() {
-	whiptail --title "4ndr0666 Executing" \
+	whiptail --title "4ndr0666.sh Installation" \
 		--infobox "Installing the Python package \`$1\` ($n of $total). $1 $2" 9 70
 	[ -x "$(command -v "pip")" ] || installpkg python-pip >/dev/null 2>&1
 	yes | pip install "$1"
@@ -253,11 +251,9 @@ installffaddons(){
 }
 
 finalize() {
-	whiptail --title "4ndr0666.sh Complete" \
-		--msgbox "4ndr0666.sh successfully deployed on your machine and all the programs and config files are in place.\\n\\nTo run the new graphical environment, log out and log back in as your new user, then run the command \"startx\" to start the graphical environment (it will start automatically in tty1).\\n\\n.t 4ndr0666" 13 80
+	whiptail --title "4ndr0666.sh Installation" \
+		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n.t 4ndr0666" 13 80
 }
-### THE ACTUAL SCRIPT ###
-### This is how everything happens in an intuitive format and order.
 
 # Check if user is root on Arch distro. Install whiptail.
 pacman --noconfirm --needed -Sy libnewt ||
@@ -288,7 +284,7 @@ for x in curl ca-certificates base-devel git ntp zsh; do
 done
 
 whiptail --title "4ndr0666.sh Installation" \
-	--infobox "Synchronizing system time to ensure successful and secure installation of software..." 8 70
+	--infobox "Synchronizing system time..." 8 70
 ntpd -q -g >/dev/null 2>&1
 
 adduserandpass || error "Error adding username and/or password."
@@ -297,8 +293,8 @@ adduserandpass || error "Error adding username and/or password."
 
 # Allow user to run sudo without password. Since AUR programs must be installed
 # in a fakeroot environment, this is required for all builds with AUR.
-trap 'rm -f /etc/sudoers.d/andr0666-temp' HUP INT QUIT TERM PWR EXIT
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/andr0666-temp
+trap 'rm -f /etc/sudoers.d/4ndr0666-temp' HUP INT QUIT TERM PWR EXIT
+echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/4ndr0666-temp
 
 # Make pacman colorful, concurrent downloads and Pacman eye-candy.
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
@@ -373,9 +369,9 @@ pkill -u "$name" librewolf
 
 # Allow wheel users to sudo with password and allow several system commands
 # (like `shutdown` to run without password).
-echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-larbs-wheel-can-sudo
-echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-larbs-cmds-without-password
-echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-larbs-visudo-editor
+echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-4ndr0666-wheel-can-sudo
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-4ndr0666-cmds-without-password
+echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-4ndr0666-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
