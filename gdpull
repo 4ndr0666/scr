@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# gdpull - A script to recursively perform 'git pull' in directories
+# Version: 1.1.0
+
+# Usage: gdpull /path/to/folder
+
+# Default SEARCHPATH is the present working directory
+SEARCHPATH="${1:-$PWD}"
+
+# Ignore specific directories
+IGNORE=('Third-Party')
+
+# Check for Git and Git LFS installation
+if ! command -v git &> /dev/null; then
+    echo "Git is not installed. Please install Git."
+    exit 1
+fi
+
+if ! command -v git-lfs &> /dev/null; then
+    echo "Git LFS is not installed. Please install Git LFS."
+    exit 1
+fi
+
+# Function to handle Git pull
+perform_git_pull() {
+    local dir=$1
+    echo "Updating: $dir"
+    pushd "$dir" > /dev/null
+    git pull
+    git lfs pull
+    popd > /dev/null
+}
+
+# Recursively traverse directories and perform Git pull
+find_git_directories() {
+    local search_path=$1
+    find "$search_path" -type d -name .git | while read -r git_dir; do
+        local parent_dir=$(dirname "$git_dir")
+        local ignore_flag=0
+        for ignore_item in "${IGNORE[@]}"; do
+            if [[ "$parent_dir" == *"$ignore_item"* ]]; then
+                ignore_flag=1
+                break
+            fi
+        done
+        if [[ $ignore_flag -eq 0 ]]; then
+            perform_git_pull "$parent_dir"
+        fi
+    done
+}
+
+# Main execution
+echo "Running gdpull..."
+find_git_directories "$SEARCHPATH"
+echo "All repos in this dir are now up to date!"
