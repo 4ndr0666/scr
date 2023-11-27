@@ -1,36 +1,23 @@
 #!/usr/bin/env bash
-#-----------------------------------------------------------------------------------
-#          _ 
-#   __ ___| |___ _ _ ___
-#  / _/ _ \ / _ \ '_(_-<
-#  \__\___/_\___/_| /__/
 #
-#-----------------------------------------------------------------------------------
-# VERSION="1.2.2"
-#-----------------------------------------------------------------------------------
+# --- // COLORS.SH // ========
 #
-# Headings and colored text for shell scripts
+# Description: Headings and colored text for shell scripts
+# Version: 1.0
+# Author: 4ndr0666 <github.com/4ndr0666>
 #
-#-----------------------------------------------------------------------------------
-# Author:   Rick Ellis
-# URL:      https://github.com/rickellis/Shell-Scripts/colors
-# License:  MIT
-#-----------------------------------------------------------------------------------
-#
-# USAGE
+# Usage:
 #
 # To give a text string a color use:
-#
 #    echo -e "${green}This is green text${reset}
 #
 #    echo -e "${bold}${magenta}This is bold magenta text${reset}
-#  
-#  Shorter syntax
 #
+#  Shorter syntax
 #    echo -e "${pur}This is purple text${r}
 #
 #    echo -e "${b}${mag}This is bold magenta text${r}
-#   
+#
 #    NOTE: Make sure to reset the color at the end of the string.
 #
 # AVAILABLE TEXT COLORS
@@ -52,15 +39,12 @@
 #     reset       r
 #
 # To generate a heading with a colored background use:
-#
 #     heading <color> "Heading Text"
 #
 # For a heading with bold text use:
-#
 #     bheading <color> "Heading Text"
 #
 # For a heading with a randomly selected color use:
-#
 #     heading random "Heading Text"
 #
 # AVAILABLE HEADING COLORS
@@ -89,16 +73,11 @@
 #
 # The above colors can be used to generate your own colored strings.
 # For background colors just prefix "bg" to the color.
-#
 #   echo -e "${bgred}${b}${wht}Red background with bold white text${r}"
-#
-#-----------------------------------------------------------------------------------
-
 reset="\e[0m"                       # Reset all color values to default
 bold="\e[1m"                        # Bold
 
-# TEXT COLORS ----------------------------------------------------------------------
-
+# --- // TEXT_COLORS:
 white="\e[97m"                      # White
 black="\e[38;5;232m"                # Black
 grey="\e[37m"                       # Grey
@@ -111,8 +90,7 @@ orange="\e[38;5;208m"               # Orange
 magenta="\e[95m"                    # Magenta
 purple="\e[38;5;53m"                # Purple
 
-# BACKGROUND COLORS ----------------------------------------------------------------
-
+# --- //BACKGROUND_COLORS:
 bg_black="\e[40m"                   # Black
 bg_grey="\e[48;5;240m"              # Grey
 bg_charcoal="\e[48;5;237m"          # Charcoal
@@ -135,8 +113,7 @@ bg_magenta="\e[48;5;90m"            # Magenta
 bg_purple="\e[48;5;53m"             # Purple
 bg_white="\e[107m"                  # White
 
-# COLOR SHORTCUTS ------------------------------------------------------------------
-
+# --- // COLOR_SHORTCUTS:
 r=$reset
 b=$bold
 blk=$black
@@ -171,8 +148,7 @@ bgmag=$bg_magenta
 bgpur=$bg_purple
 bgwht=$bg_white
 
-# HEADING FUNCTION -----------------------------------------------------------------
-
+# --- // HEADING_AS_A_FUNCTION:
 heading() {
 
     if [ -z "$1" ] || [ -z "$2" ]; then
@@ -186,9 +162,8 @@ heading() {
         weight=$bold
     fi
 
-    local color="$1"
-    local color="${color,,}"  # lowercase
-    local hding="${2}"        # capture heading
+    local color=${1,,}        # lowercase
+    local hding=${2}          # capture heading
     local hdlen=${#hding}     # heading length
     local twidt=$(tput cols)  # terminal width
 
@@ -198,11 +173,11 @@ heading() {
     fi
 
     # Calculate the padding necessary on either side of the heading
-    l=$(( twidt - hdlen )) 
+    l=$(( twidt - hdlen ))
     d=$(( l / 2 ))
 
     local padding=""
-    for i in $(seq 1 ${d}); do 
+    for i in $(seq 1 ${d}); do
         padding+=" "
     done
 
@@ -218,8 +193,8 @@ heading() {
 
     # Random color generator
     if [ "$color" == 'rnd' ] || [ "$color" == "rand" ] || [ "$color" == "random" ]; then
-        colors=(   
-                    "gry" 
+        colors=(
+                    "gry"
                     "chr"
                     "red"
                     "grn"
@@ -236,7 +211,7 @@ heading() {
                     "org"
                     "pnk"
                     "lav"
-                    "mag" 
+                    "mag"
                     "pur"
                 )
 
@@ -275,15 +250,12 @@ heading() {
     echo
 }
 
-# BOLD HEADING FUNCTION ------------------------------------------------------------
-
+# --- // BOLD_HEADING_AS_A_FUNCTION:
 function bheading() {
     heading "$1" "$2" "bold"
 }
 
-
-# TESTS ----------------------------------------------------------------------------
-
+# --- // TESTS:
 # echo -e "${gry}Grey text${r}"
 # echo -e "${b}${gry}Bold Grey text${r}"
 # echo -e "${grn}Green text${r}"
@@ -300,7 +272,6 @@ function bheading() {
 # echo -e "${b}${cyn}Bold Cyan text${r}"
 # echo -e "${wht}White text${r}"
 # echo -e "${b}${wht}Bold White text${r}"
-
 
 # heading rnd "Random" # Random color
 # heading gry "Grey"

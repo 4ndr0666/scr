@@ -1,55 +1,102 @@
 #!/usr/bin/env bash
-# gdpull - A script to recursively perform 'git pull' in directories
-# Version: 1.1.0
+#
+# --- // GDPULL // ========
+# Description:  This script will recursively traverse all directories under a
+#               specified folder
+# Version: 2.0
+# Usage: gdpull.sh /path/to/folder
+# Author: 4ndr0666 <github.com/4ndr0666>
 
-# Usage: gdpull /path/to/folder
 
-# Default SEARCHPATH is the present working directory
-SEARCHPATH="${1:-$PWD}"
+# --- // LOG_FILE:
+LOG_FILE="/var/log/gdpull.log"
 
-# Ignore specific directories
+# --- // LOG_WITH_TIMESTAMP:
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# --- // DEFAULT_SEARCH_PATH ($PWD if empty):
+SEARCHPATH=""
+
+# --- // IGNORE_THESE_DIR/FILES:
 IGNORE=('Third-Party')
 
-# Check for Git and Git LFS installation
-if ! command -v git &> /dev/null; then
-    echo "Git is not installed. Please install Git."
+# --- // SOURCE_COLORS.SH:
+BASEPATH=$(dirname "$0")
+if [[ -f "${BASEPATH}/colors.sh" ]]; then
+    . "${BASEPATH}/colors.sh"
+else
+    heading() {
+        echo "---------------------------------------------------------------------"
+        echo "  $2"
+        echo "---------------------------------------------------------------------"
+        echo
+    }
+fi
+
+clear
+heading green "gdpull ${VERSION}"
+
+# Set the search path
+if [[ -z "$1" ]]; then
+    if [[ -z $SEARCHPATH ]]; then
+        SEARCHPATH=$PWD
+    fi
+else
+    if [[ $1 == '-p' ]]; then
+        SEARCHPATH=$PWD
+    else
+        SEARCHPATH="$1"
+    fi
+fi
+
+# Validate search path
+if [[ ! -d "$SEARCHPATH" ]]; then
+    log_message "The supplied path does not resolve to a valid directory"
+    log_message "Aborting..."
     exit 1
 fi
 
-if ! command -v git-lfs &> /dev/null; then
-    echo "Git LFS is not installed. Please install Git LFS."
-    exit 1
-fi
+# Change to the specified directory
+cd "$SEARCHPATH"
 
-# Function to handle Git pull
-perform_git_pull() {
-    local dir=$1
-    echo "Updating: $dir"
-    pushd "$dir" > /dev/null
-    git pull
-    git lfs pull
-    popd > /dev/null
-}
+# Preserve the old input field separator and set new one
+OLDIFS=$IFS
+IFS=$'\n'
 
-# Recursively traverse directories and perform Git pull
-find_git_directories() {
-    local search_path=$1
-    find "$search_path" -type d -name .git | while read -r git_dir; do
-        local parent_dir=$(dirname "$git_dir")
-        local ignore_flag=0
-        for ignore_item in "${IGNORE[@]}"; do
-            if [[ "$parent_dir" == *"$ignore_item"* ]]; then
-                ignore_flag=1
-                break
+# Recursive git pull
+dir_count=0
+for gitprojpath in `find . -type d -name .git | sort | sed "s/\/\.git//"`; do
+    if [ "${#IGNORE}" -gt 0 ]; then
+        localpath=${gitprojpath:2}
+        pathseg1=$(echo "$localpath" | sed "s/[\/].*//")
+        for dir in ${IGNORE[@]}; do
+            if [ "$localpath" == "$dir" ] || [ "$pathseg1" == "$dir" ]; then
+                continue 2
             fi
         done
-        if [[ $ignore_flag -eq 0 ]]; then
-            perform_git_pull "$parent_dir"
-        fi
-    done
-}
+    fi
 
-# Main execution
-echo "Running gdpull..."
-find_git_directories "$SEARCHPATH"
-echo "All repos in this dir are now up to date!"
+    (( dir_count++ ))
+    pushd . >/dev/null
+    cd $gitprojpath
+
+    # Log directory name
+    if [[ $gitprojpath == '.' ]]; then
+        log_message "Pulling in directory: ${PWD##*/}"
+    else
+        log_message "Pulling in directory: ${gitprojpath:2}"
+    fi
+
+    # Perform git pull
+    git pull | tee -a "$LOG_FILE"
+
+    popd >/dev/null
+done
+
+log_message "DIRECTORIES PROCESSED: $dir_count"
+
+# Restore original state
+IFS=$OLDIFS
+log_message "gdpull script finished"
