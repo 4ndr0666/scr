@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script Name: firewall.sh
-# Description: Automatically escalates privileges and hardens the system via ufw, fail2ban, systemctl.
+# Description: Automatically escalates privileges and hardens the system.
 # Author: github.com/4ndr0666
 # Version: 1.0
 # Date: 10-03-2023
@@ -16,12 +16,12 @@ fi
 # --- Banner
 echo -e "\033[34m"
 cat << "EOF"
-#  ___________.__                              .__  .__              .__
-#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__
-#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \
+#  ___________.__                              .__  .__              .__     
+#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__  
+#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \ 
 #   |     \   |  ||  | \/\  ___/\     /  / __ \|  |_|  |__     \___ \|   Y  \
 #   \___  /   |__||__|    \___  >\/\_/  (____  /____/____/ /\ /____  >___|  /
-#       \/                    \/             \/            \/      \/     \/
+#       \/                    \/             \/            \/      \/     \/ 
 EOF
 echo -e "\033[0m"
 sleep 1
@@ -70,13 +70,13 @@ permissions_config() {
 # --- Ensure UFW rules exist and set perms
 rules_config() {
   UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
-  chmod 644 $UFW_FILES
+  chmod 600 $UFW_FILES
 
   for file in "${UFW_FILES[@]}"; do
     if [ ! -f "$file" ]; then
       echo "File $file does not exist. Creating with default rules."
       echo "# Default rules" > "$file"
-      chmod 644 "$file"
+      chmod 600 "$file"
     fi
   done
   handle_error
@@ -103,7 +103,8 @@ ufw_config() {
   ufw logging on
   handle_error
   ufw --force enable
-  systemctl enable ufw --now
+  systemctl enable ufw.service --now
+  systemctl start ufw.service
   handle_error
 }
 
@@ -168,21 +169,19 @@ ipv6_config() {
 }
 
 # --- Configure fail2ban:
-fail2ban_config() {
-  echo "Hardening with fail2ban..."
-  sleep 2
-  cp /usr/local/bin/jail2.local /etc/fail2ban/jail.local
-  handle_error
-  systemctl enable fail2ban
-  handle_error
-  systemctl restart fail2ban
-  handle_error
-}
+#fail2ban_config() {
+#  echo "Hardening with fail2ban..."
+#  sleep 2
+#  cp /usr/local/bin/jail2.local /etc/fail2ban/jail.local
+#  handle_error
+#  systemctl enable fail2ban
+#  handle_error
+#  systemctl restart fail2ban
+#  handle_error
+#}
 
 # --- Restrict SSH to localhost if only needed for Git (Testing)
 ssh_config() {
-  echo "Restricting SSH to localhost for GitHub..."
-  sleep 2
   sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config
   sed -i 's/^#ListenAddress ::/ListenAddress ::1/' /etc/ssh/sshd_config
   systemctl restart sshd
@@ -232,6 +231,7 @@ filesystem_config() {
 #}
 
 # ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
+# Initiate system hardening
 echo "Initiating system hardening..."
 
 permissions_config
@@ -244,7 +244,7 @@ sysctl_config
 
 ipv6_config
 
-fail2ban_config
+#fail2ban_config
 
 ssh_config
 

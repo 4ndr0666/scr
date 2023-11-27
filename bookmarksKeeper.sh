@@ -22,7 +22,7 @@ function chromeBookmarks() {
 	else
 		echo "Google Chrome not found for ${USER} user" >&2
 	fi
-}	
+}
 
 # Mozilla Firefox
 function firefoxBookmarks() {
@@ -53,7 +53,8 @@ function braveBookmarks() {
 
 	# Check whether BraveSoftware/Brave-Browser folder exists in ~/.config folder or not
 	if [ -d "${HOME}/.config/BraveSoftware" -a -d "${HOME}/.config/BraveSoftware/Brave-Browser" ]; then
-		file_path=$(find "${HOME}/.config/BraveSoftware/Brave-Browser" -iname "Bookmarks")
+		file_path=$(find "${HOME}/.config/BraveSoftware/Brave-Browser/Default" -iname "Bookmarks")
+
 
 		# if the file does not exists then there are no bookmarks
 		if [ -z "$file_path" ]; then
@@ -70,7 +71,7 @@ function braveBookmarks() {
 	else
 		echo "Brave Browser not found for ${USER} user" >&2
 	fi
-}	
+}
 
 # Chromium
 function chromiumBookmarks() {

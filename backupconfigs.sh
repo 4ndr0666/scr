@@ -1,230 +1,232 @@
 #!/bin/bash
 
-# --- Escalate
+# Check if we are running as root
+if [ "$(id -u) -ne 0 ]; then
+    # Display colorful ASCII art
+    echo -e "\033[34m"
+    cat << "EOF"
+┏┓ ┏━┓┏━╸╻┏ ╻ ╻┏━┓╻ ╻┏━┓┏━╸┏━┓┏┓╻┏━╸╻┏━╸┏━┓ ┏━┓╻ ╻
+┣┻┓┣━┫┃  ┣┻┓┃ ┃┣━┛┃ ┃┣━┛┃  ┃ ┃┃┗┫┣╸ ┃┃╺┓┗━┓ ┗━┓┣━┫
+┗━┛╹ ╹┗━╸╹ ╹┗━┛╹  ┗━┛╹  ┗━╸┗━┛╹ ╹╹  ╹┗━┛┗━┛╹┗━┛╹ ╹
+EOF
+    echo -e "\033[0m"
+
+    sudo "$0" "$@"
+    exit $?
+fi
+
+# --- Initialize variables
+backup_dir="${HOME}/Backup"
+base_name="config-backup-$(date +'%Y%m%d%H%M%S')"
+log_file="${backup_dir}/backup.log"
+checksum_file="${backup_dir}/${base_name}/checksum.md5"
+config_file="${backup_dir}/backup_config_paths.txt"
+
+# Function definitions and other initial code
+
+# --- Function to check disk space
+check_disk_space() {
+  available_space=$(df --output=avail "$1" | tail -n 1)
+  if [ $available_space -le 102400 ]; then
+    echo "Warning: Low disk space. Proceed? [y/n]"
+    read -r proceed_choice
+    if [ "$proceed_choice" != "y" ]; then
+      exit 1
+    fi
+  fi
+}
+
+# --- Function to send backup failure alert
+send_backup_failure_alert() {
+  echo "Backup failed for $1. Check the log for details."
+}
+
+# --- Escalate privileges if not running as root user.
 if [ "$(id -u)" -ne 0 ]; then
   sudo "$0" "$@"
   exit $?
 fi
 
-# --- Banner
-echo -e "\033[34m"
-cat << "EOF"
-__________                __                                     _____.__                         .__
-\______   \_____    ____ |  | ____ ________   ____  ____   _____/ ____\__| ____  ______      _____|  |__
- |    |  _/\__  \ _/ ___\|  |/ /  |  \____ \_/ ___\/  _ \ /    \   __\|  |/ ___\/  ___/     /  ___/  |  \
- |    |   \ / __ \\  \___|    <|  |  /  |_> >  \__(  <_> )   |  \  |  |  / /_/  >___ \      \___ \|   Y  \
- |______  /(____  /\___  >__|_ \____/|   __/ \___  >____/|___|  /__|  |__\___  /____  > /\ /____  >___|  /
-        \/      \/     \/     \/     |__|        \/           \/        /_____/     \/  \/      \/     \/
-EOF
-echo -e "\033[0m"
-
-# Initialize variables
-LOG_DIR="/var/log/permissions_script"
-CONFIG_FILE="$(dirname "$0")/config.cfg"
-BACKUP_DIR="/var/backups/permissions"
-
-# Functions
-log() { echo "$(date): $1" | sudo tee -a "$LOG_DIR/log.txt" > /dev/null; }
-
-create_log_dir() {
-    [ ! -d "$LOG_DIR" ] && sudo mkdir -p "$LOG_DIR" && sudo touch "$LOG_DIR/log.txt";
-}
-
-load_config() {
-    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE" || CONFIGURED=false;
-}
-
-prompt_config() {
-    echo "First run configuration:"
-    echo -n "Enter default user: "
-    read -r user
-    echo -n "Enter default group: "
-    read -r group
-    save_config "$user" "$group"
-    echo "Configuration saved. Please rerun the script."
-    exit 0
-}
-
-save_config() {
-    echo "CONFIGURED=true" > "$CONFIG_FILE"
-    echo "DEFAULT_USER=$1" >> "$CONFIG_FILE"
-    echo "DEFAULT_GROUP=$2" >> "$CONFIG_FILE"
-}
-
-backup_file() {
-    local original_file="$1"
-    local backup_file="${original_file}.backup_$(date +%s)"
-    cp "$original_file" "$backup_file" || return 1
-    backup_stack+=("$backup_file")
-}
-
-rollback() {
-    for backup in "${backup_stack[@]}"; do
-        original="${backup%.backup_*}"
-        mv "$backup" "$original"
-    done
-    backup_stack=()
-}
-
+# --- Function to handle errors.
 handle_error() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        echo "Error occurred. Rolling back..."
-        rollback
-        log "Error occurred with exit code $exit_code. Rolled back changes."
-        exit $exit_code
-    fi
+  if [ $? -ne 0 ]; then
+    echo "Error encountered. Check ${log_file} for details."
+    exit 1
+  fi
 }
 
-validate_directory() {
-    local directory="$1"
-    if [[ ! -d "$directory" ]]; then
-        echo "Error: Directory '$directory' does not exist."
-        exit 1
-    fi
-}
-
+# --- Function for user confirmation.
 confirm_action() {
-    local message="$1"
-    echo -n "$message (y/n): "
-    read -r confirm
-    [[ "$confirm" == "y" || "$confirm" == "Y" ]]
+  read -p "$1 [y/n]: " choice
+  [[ "$choice" == "y" || "$choice" == "Y" ]]
 }
 
-set_directory_permissions() {
-    local mode=$1
-    shift
-    local directories=("$@")
-    echo "Setting mode $mode for ${directories[@]}"
-    sudo chmod $mode "${directories[@]}" || { echo "Failed to set directory permissions."; exit 1; }
+# Function to display a progress bar
+progress_bar() {
+    local total=$1
+    local current=$2
+    local width=50
+
+    # Calculate percentage
+    local percent=$((current * 100 / total))
+
+    # Calculate number of hashes to print in the progress bar
+    local hashes=$((current * width / total))
+
+    # Print the progress bar
+    printf "\r\033[38;5;6mProgress: [%-50s] %d%%\033[0m" "$(printf "%${hashes}s" | tr ' ' '#')" "$percent"
 }
 
-display_help() {
-    clear
-    cat help.txt | less
-    echo
-    echo "Press any key to return to the main menu."
-    read -n 1
-}
+#--- Create backup directory and log file.
+mkdir -p "${backup_dir}"
+echo "Backup Log - $(date)" > "${log_file}"
 
-spin() {
-    local pid=$1
-    local delay=0.05
-    local spinstr='|/-\\'
-    while kill -0 $pid 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf "\r[%c] Please wait... " "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-    done
-    echo -e "\nDone."
-}
+#--- Interactive backup method selection.
+echo "Choose a backup method:"
+echo "1: Targeted backup (only crucial config files)"
+echo "2: Comprehensive backup (entire /etc directory)"
+echo "3: Interactive mode (customize your backup)"
+read -r method
 
-change_ownership_permissions() {
-    local directory="$1"
-    if ! sudo chown "$DEFAULT_USER":"$DEFAULT_GROUP" -R "$directory"; then
-        echo "Failed to change ownership."
-        exit 1
-    fi
-
-    if ! sudo chmod ug+rwx -R "$directory"; then
-        echo "Failed to change permissions."
-        exit 1
-    fi
-
-    echo "Ownership and permissions updated successfully."
-}
-
-compare_package_permissions() {
-    echo "Checking package permissions against current permissions..."
-    sudo pacman -Qlq | while read -r file; do
-        if [ -e "$file" ]; then
-            if [ "$(stat -c "%a" "$file")" != "$(sudo pacman -Qkk "$file" | awk '{print $2}')" ]; then
-                echo "Mismatch: $file"
-            fi
-        fi
-    done
-}
-
-get_directory_acl() {
-    local directory="$1"
-    echo "Getting ACL of the directory..."
-    sudo getfacl -R "$directory"
-}
-
-reset_permissions() {
-    local backup_file="/var/backups/permissions/backup_$(date +%F_%T).acl"
-    echo "Initiating automatic backup..."
-    echo "Backup in progress..."
-    (sudo getfacl -R -p /lib /lib64 /bin /sbin /srv /home /dev /run /boot /etc /usr /root /proc /sys /tmp | sudo tee "$backup_file" > /dev/null 2>&1) & spin $!
-
-    echo "Backup completed successfully."
-    echo "$backup_file" >> "$backup_stack" || { echo "Backup failed! Aborting..."; exit 1; }
-    trap "echo; echo 'Operation aborted.'; exit 1" SIGINT SIGTERM
-
-    # Set directory permissions
-    set_directory_permissions 755 /lib /lib64 /bin /sbin /srv /home /dev /run /boot /etc "System directories"
-    set_directory_permissions 775 /usr "User commands directory"
-    set_directory_permissions 750 /root "Root user directory"
-    set_directory_permissions 555 /proc /sys "System status directories"
-    set_directory_permissions 1777 /tmp "Temporary directory"
-
-    [[ -d "/lost+found" ]] && set_directory_permissions 700 /lost+found "lost+found directory"
-
-    echo "Permissions updated successfully."
-}
-
-# Main Script Logic
-create_log_dir
-load_config
-
-if [[ "$CONFIGURED" != "true" ]]; then
-    prompt_config
+# --- Prompt for uploading a pre-existing config file.
+if confirm_action "Would you like to upload a pre-existing config file?"; then
+  echo "Please provide the full path to the config file:"
+  read -r config_upload_path
+  if [ -f "$config_upload_path" ]; then
+    while read -r line; do
+      paths+=("$line")
+    done < "$config_upload_path"
+  else
+    echo "Invalid file path, skipping..."
+  fi
 fi
 
-display_menu() {
-    printf "Menu:\n\
-    1. Chown %s:%s -R\n\
-    2. Compare package permissions against current permissions\n\
-    3. Getfacl\n\
-    4. Help on Permissions\n\
-    5. Reset Permissions to Defaults\n\
-    6. Exit\n\n\
-    Enter your choice: " "$DEFAULT_USER" "$DEFAULT_GROUP"
-}
+# --- Prompt to save current configuration to a file.
+if confirm_action "Would you like to save the current configuration for future use?"; then
+  echo "Please provide the full path where you would like to save the config file:"
+  read -r config_save_path
+  touch "$config_save_path"
+  for path in "${paths[@]}"; do
+    echo "$path" >> "$config_save_path"
+  done
+fi
 
-while true; do
-    display_menu
-    read -r choice
+# --- Initialize array with default backup paths.
+declare -a paths=(
+  "/etc/ssh"
+  "/etc/sysctl.conf"
+  "/etc/sysctl.d"
+  "/etc/security"
+  "/etc/cron*"
+  "/etc/fstab"
+  "/etc/resolv.conf"
+  "/etc/network"
+  "/etc/sudoers"
+  "/etc/ufw/"
+  "/etc/pulse/"
+  "/var/spool/cron/crontabs"
+  "/home/$USER/.local"
+  "/home/$USER/.config"
+  "/home/$USER/.ssh"
+  "/home/$USER/.oh-my-zsh"
+  "/home/$USER/.zshrc"
+  "/home/$USER/.icons"
+  "/home/$USER/Documents"
+  "/home/$USER/Downloads"
+  "/home/$USER/Music"
+  "/home/$USER/Pictures"
+  "/home/$USER/Videos"
+  "/home/$USER/.zsh_history"
+  "/home/$USER/.gtkrc-2.0"
+  "/home/$USER/.fehbg"
+  "/home/$USER/.face"
+  "/home/$USER/.config"
+  "home/$USER/.local/share"
+  "home/$USER/.ssh"
+  "/etc/pacman.conf"
+  "/etc/pacman.d"
+  "/etc/systemd/system"
+  "/etc/X11"
+  "/etc/default"
+  "/etc/environment"
+  "/home/${USER}/.bashrc"
+  "/home/${USER}/.zshrc"
+)
 
-    case $choice in
-        1)  # Change Ownership and Permissions
-            echo "Enter the directory path:"
-            read -e directory
-            validate_directory "$directory"
-            confirm_action "Change ownership to $DEFAULT_USER:$DEFAULT_GROUP recursively?" && change_ownership_permissions "$directory"
-            ;;
-        2)  # Compare Package Permissions
-            (compare_package_permissions & spin $!)
-            ;;
-        3)  # Get Directory ACL
-            echo "Enter the directory path:"
-            read -e directory
-            validate_directory "$directory"
-            get_directory_acl "$directory"
-            ;;
-        4)  # Display Help
-            display_help
-            ;;
-        5)  # Reset Permissions to Defaults
-            confirm_action "Create a backup before resetting permissions?" && reset_permissions
-            ;;
-        6)  # Exit Script
-            echo "Exiting..."
-            exit 0
-            ;;
-        *)  # Invalid Choice
-            echo "Invalid choice. Please try again."
-            ;;
-    esac
-done
+# --- Create a new directory for this backup.
+mkdir -p "${backup_dir}/${base_name}"
+
+case "$method" in
+1)
+    # --- Loop through each path and back them up.
+    for path in "${paths[@]}"; do
+      if [ -e "$path" ]; then
+        echo "Backing up ${path}..." >> "${log_file}"
+        cp -r "${path}" "${backup_dir}/${base_name}/" >> "${log_file}" 2>&1
+        handle_error
+        echo "Backup for ${path} completed." >> "${log_file}"
+      else
+        echo "Path ${path} does not exist, skipping..." >> "${log_file}"
+      fi
+    done
+
+    # --- Create checksum file for integrity verification.
+    find "${backup_dir}/${base_name}/" -type f -exec md5sum {} \\; > "${checksum_file}"
+    handle_error
+
+    # --- Implement Retention Policy: Keep last 5 backups and delete the rest.
+    ls -tp "${backup_dir}/" | grep '/$' | tail -n +6 | xargs -I {} rm -- "${backup_dir}/{}"
+
+    echo "Backup completed successfully. Check ${log_file} for details."
+
+    # --- Ask user for manual review of log file.
+    if confirm_action "Would you like to review the log file now?"; then
+      less "${log_file}"
+    fi
+    ;;
+2)
+    echo "Performing a comprehensive backup of the entire /etc directory. This might take some time..."
+
+    # Get total number of items.
+    total_items=$(find /etc -type f -o -type d | wc -l)
+
+    processed_items=0
+
+    # Start backup.
+    find /etc -type f -o -type d | while read -r item; do
+
+      cp -r "$item" "${backup_dir}/${base_name}/"
+
+      ((processed_items++))
+
+      # Call progress bar function here with total items and processed items.
+      progress_bar $total_items $processed_items
+
+     done
+
+     echo ""
+
+     echo "Backup completed successfully. Check ${log_file} for details."
+     ;;
+
+3)
+    echo "Please select the files or directories you wish to back up. Use [TAB] to mark multiple files and press [ENTER] to confirm."
+    custom_paths=$(find /etc -type f | fzf -m)
+    echo "You have selected the following paths:"
+    echo "$custom_paths"
+    paths+=($custom_paths)
+
+    if confirm_action "Would you like to save this configuration for future use?"; then
+      echo "# User-added backup paths" >> "$0"
+      for path in $custom_paths; do
+        echo "paths+=(\"$path\")" >> "$0"
+      done
+    fi
+esac
+
+# --- Include custom paths from config file if it exists.
+if [ -f "$config_file" ]; then
+  while read -r line; do
+    paths+=("$line")
+  done < "$config_file"
+fi
