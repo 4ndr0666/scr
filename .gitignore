@@ -23,6 +23,7 @@
 *~
 
 # Ignore user-specific files
+chatgpt.sh
 *.local
 *.cache
 grub/
