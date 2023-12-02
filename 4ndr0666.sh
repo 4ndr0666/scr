@@ -303,6 +303,19 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 # Use all cores for compilation.
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
+# In case yay failes to download:
+if ! command -v yay &> /dev/null
+then
+    echo "yay could not be found, installing it now..."
+    sudo pacman -S --needed git base-devel
+    git clone https://aur.archlinux.org/yay.git
+    cd yay
+    makepkg -si
+    cd ..
+    rm -rf yay
+else
+    echo "yay is already installed."
+fi
 manualinstall $aurhelper || error "Failed to install AUR helper."
 # Make sure .*-git AUR packages get updated automatically.
 $aurhelper -Y --save --devel
