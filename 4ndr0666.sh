@@ -1,8 +1,7 @@
 #!/bin/sh
-
-# 4ndr0666.sh
-# by 4ndr0666 <4ndr0666@github.com>
-# License: GNU GPLv3
+#
+# --- // 4ndr0666.sh <4ndr0666@github.com> // ========
+#
 
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
 progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/progs.csv"
@@ -10,7 +9,7 @@ aurhelper="yay"
 repobranch="master"
 export TERM=ansi
 
-### FUNCTIONS ###
+# --- // FUNCTIONS // ========
 
 installpkg() {
 	pacman --noconfirm --needed -S "$1" >/dev/null 2>&1
@@ -255,25 +254,23 @@ finalize() {
 		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n.t 4ndr0666" 13 80
 }
 
-# Check if user is root on Arch distro. Install whiptail.
+# --- // PRIVILEGE_CHECK_AND_WHIPTAIL:
 pacman --noconfirm --needed -Sy libnewt ||
 	error "Are you sure you're running this as the root user, are on an Arch-based distribution and have an internet connection?"
 
-# Welcome user and pick dotfiles.
+# --- // WELCOME:
 welcomemsg || error "User exited."
 
-# Get and verify username and password.
+# --- // USERNAME_AND_PASS:
 getuserandpass || error "User exited."
 
-# Give warning if user already exists.
+# --- // USER_VALIDATION:
 usercheck || error "User exited."
 
-# Last chance for user to back out before install.
+# --- // PREINSTALL:
 preinstallmsg || error "User exited."
 
-### The rest of the script requires no user input.
-
-# Refresh Arch keyrings.
+# --- // REFRESH_ARCHKEYS:
 refreshkeys ||
 	error "Error automatically refreshing Arch keyring. Consider doing so manually."
 
@@ -291,19 +288,18 @@ adduserandpass || error "Error adding username and/or password."
 
 [ -f /etc/sudoers.pacnew ] && cp /etc/sudoers.pacnew /etc/sudoers # Just in case
 
-# Allow user to run sudo without password. Since AUR programs must be installed
-# in a fakeroot environment, this is required for all builds with AUR.
+# --- // AUTO_ESCALATE:
 trap 'rm -f /etc/sudoers.d/4ndr0666-temp' HUP INT QUIT TERM PWR EXIT
 echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/4ndr0666-temp
 
-# Make pacman colorful, concurrent downloads and Pacman eye-candy.
+# --- // COLORIZE_PACMAN_AND_PARALLEL_DL:
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
 sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 
-# Use all cores for compilation.
+# --- // USE_ALL_CORES:
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
-# In case yay failes to download:
+# --- // JUST_IN_CASE_YAY_FAILS:
 if ! command -v yay &> /dev/null
 then
     echo "yay could not be found, installing it now..."
@@ -316,41 +312,35 @@ then
 else
     echo "yay is already installed."
 fi
+
 manualinstall $aurhelper || error "Failed to install AUR helper."
-# Make sure .*-git AUR packages get updated automatically.
+
+# --- // AUTOUPDATE_.*-git_AUR_PKGS:
 $aurhelper -Y --save --devel
 
-# The command that does all the installing. Reads the progs.csv file and
-# installs each needed program the way required. Be sure to run this only after
-# the user has been created and has priviledges to run sudo without a password
-# and all build dependencies are installed.
+# --- // INSTALL_LOGIC:
 installationloop
 
-# Install the dotfiles in the user's home directory, but remove .git dir and
-# other unnecessary files.
+# --- // DOTFILES_AND_CLEANUP:
 putgitrepo "$dotfilesrepo" "/home/$name" "$repobranch"
 rm -rf "/home/$name/.git/" "/home/$name/README.md" "/home/$name/LICENSE" "/home/$name/FUNDING.yml"
 
-# Install vim plugins if not alread present.
+# --- // VIM_PLUGINS:
 [ ! -f "/home/$name/.config/nvim/autoload/plug.vim" ] && vimplugininstall
 
-# Most important command! Get rid of the beep!
-rmmod pcspkr
-echo "blacklist pcspkr" >/etc/modprobe.d/nobeep.conf
-
-# Make zsh the default shell for the user.
+# --- // ZSH:
 chsh -s /bin/zsh "$name" >/dev/null 2>&1
 sudo -u "$name" mkdir -p "/home/$name/.cache/zsh/"
 sudo -u "$name" mkdir -p "/home/$name/.config/abook/"
 sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 
-# dbus UUID must be generated for Artix runit.
+# --- // DBUS_UUID_FOR_RUNIT_INIT_SYSTEMS:
 dbus-uuidgen >/var/lib/dbus/machine-id
 
-# Use system notifications for Brave on Artix
+# --- // PUSH_BRAVE_NOTIFICATIONS_TO_DBUS:
 echo "export \$(dbus-launch)" >/etc/profile.d/dbus.sh
 
-# Enable tap to click
+# --- // TAP_TO_CLICK:
 [ ! -f /etc/X11/xorg.conf.d/40-libinput.conf ] && printf 'Section "InputClass"
         Identifier "libinput touchpad catchall"
         MatchIsTouchpad "on"
@@ -360,8 +350,7 @@ echo "export \$(dbus-launch)" >/etc/profile.d/dbus.sh
 	Option "Tapping" "on"
 EndSection' >/etc/X11/xorg.conf.d/40-libinput.conf
 
-# All this below to get Librewolf installed with add-ons and non-bad settings.
-
+# --- // BROWSER:
 whiptail --infobox "Setting browser privacy settings and add-ons..." 7 60
 
 browserdir="/home/$name/.librewolf"
@@ -377,10 +366,9 @@ pdir="$browserdir/$profile"
 
 [ -d "$pdir" ] && installffaddons
 
-# Kill the now unnecessary librewolf instance.
 pkill -u "$name" librewolf
 
-# Allow wheel users to sudo with password and allow several system commands
+# --- // AUTO_ESCALATE:
 # (like `shutdown` to run without password).
 echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-4ndr0666-wheel-can-sudo
 echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-4ndr0666-cmds-without-password
@@ -388,5 +376,5 @@ echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-4ndr0666-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
-# Last message! Install complete!
+# --- // EOF:
 finalize
