@@ -6,20 +6,13 @@
 
 # Ignore shell history files
 .bash_history
-zsh_history
+.zsh_history
 
 # Ignore compiled files or executables
 *.o
 *.ko
 *.exe
 *.pyc
-
-# Ignore compressed or packaged files
-*.tar
-*.tar.*
-*.zip
-*.gz
-*.xz
 
 # Ignore log files
 *.log
@@ -32,5 +25,13 @@ zsh_history
 # Ignore user-specific files
 *.local
 *.cache
-*.config
-vapoursynth
+grub/
+Checkthese/
+archcraft*
+dmenu*
+dwm*
+run-*
+st
+stest
+st-copyout
+st-urlhandler

@@ -1,0 +1,3 @@
+#/bin/bash
+/etc/firewallsetup/iptables-flush
+/etc/firewallsetup/iptables-base
