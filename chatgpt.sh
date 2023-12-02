@@ -7,7 +7,6 @@ else 	set -o pipefail; shopt -s extglob checkwinsize cmdhist lithist
 fi
 
 # OpenAI API key
-OPENAI_API_KEY="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"
 
 # DEFAULTS
 # Text cmpls model
