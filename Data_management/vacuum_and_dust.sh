@@ -1,5 +1,24 @@
 #!/bin/bash
 
+# Dynamic color codes
+GREEN_COLOR='\033[0;32m'
+RED_COLOR='\033[0;31m'
+NO_COLOR='\033[0m' # No Color
+
+# Function to display prominent messages with dynamic color
+prominent() {
+    local message="$1"
+    local color="${2:-$GREEN_COLOR}"
+    echo -e "${BOLD}${color}$message${NO_COLOR}"
+}
+
+# Function for errors with dynamic color
+bug() {
+    local message="$1"
+    local color="${2:-$RED_COLOR}"
+    echo -e "${BOLD}${color}$message${NO_COLOR}"
+}
+
 GREEN='\033[0;32m'
 BOLD='\033[1m'
 RED='\033[0;31m'
@@ -10,16 +29,6 @@ SUCCESS="✔️"
 FAILURE="❌"
 INFO="➡️"
 EXPLOSION="💥"
-
-# Function to display prominent messages
-prominent() {
-    echo -e "${BOLD}${GREEN}$1${NC}"
-}
-
-# Function for errors
-bug() {
-    echo -e "${BOLD}${RED}$1${NC}"
-}
 
 # --- Auto escalate:
 if [ "$(id -u)" -ne 0 ]; then
@@ -193,17 +202,41 @@ force_log_rotation() {
 
 # --- // Sysz:
 check_failed_systemd_units() {
-    if command -v sysz >/dev/null 2>&1; then
-        sysz --sys --state failed || bug "$FAILURE Error: Failed to check failed systemd units using sysz" | tee -a "$log_file"
-        read -p "Do you want to restart the failed system units? (y/n): " choice
-        if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
-		 sysz --sys --state failed restart || bug "$FAILURE Error: Failed to restart failed systemd units using sysz" | tee -a "$log_file"
-            prominent "$SUCCESS Failed system units restarted successfully." | tee -a "$log_file"
-        else
-            bug "$FAILURE Skipping restart of failed system units." | tee -a "$log_file"
-        fi
+    prominent "Checking for failed systemd units..."
+
+    failed_units=$(systemctl --failed)
+    if [ -z "$failed_units" ]; then
+        prominent "${SUCCESS} No failed systemd units found."
     else
-        promiment "$INFO sysz is not installed. To install, visit: https://github.com/joehillen/sysz" | tee -a "$log_file"
+        bug "${FAILURE} Failed systemd units detected:"
+        echo "$failed_units"
+
+        prominent "Choose an option to handle failed units:"
+        echo "1) Interactive handling with sysz"
+        echo "2) Reset using 'sc-reset-failed' alias"
+        read -rp "Enter your choice: " choice
+
+        case $choice in
+            1)
+                if command -v sysz &> /dev/null; then
+                    sysz
+                    prominent "${SUCCESS} Interactive handling with sysz completed."
+                else
+                    bug "${FAILURE} sysz is not installed. Please install it first."
+                fi
+                ;;
+            2)
+                if alias sc-reset-failed &> /dev/null; then
+                    sc-reset-failed
+                    prominent "${SUCCESS} Failed systemd units reset using 'sc-reset-failed'."
+                else
+                    bug "${FAILURE} 'sc-reset-failed' alias is not available. Ensure systemd plugin is active in oh-my-zsh."
+                fi
+                ;;
+            *)
+                bug "${FAILURE} Invalid choice. No action taken."
+                ;;
+        esac
     fi
 }
 

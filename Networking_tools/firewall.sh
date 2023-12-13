@@ -16,12 +16,12 @@ fi
 # --- Banner
 echo -e "\033[34m"
 cat << "EOF"
-#  ___________.__                              .__  .__              .__     
-#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__  
-#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \ 
+#  ___________.__                              .__  .__              .__
+#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__
+#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \
 #   |     \   |  ||  | \/\  ___/\     /  / __ \|  |_|  |__     \___ \|   Y  \
 #   \___  /   |__||__|    \___  >\/\_/  (____  /____/____/ /\ /____  >___|  /
-#       \/                    \/             \/            \/      \/     \/ 
+#       \/                    \/             \/            \/      \/     \/
 EOF
 echo -e "\033[0m"
 sleep 1
@@ -90,6 +90,8 @@ ufw_config() {
   handle_error
   ufw limit proto tcp from any to any port 22
   handle_error
+  ufw allow 80/tcp
+  handle_error
   ufw allow 6341/tcp # Megasync
   handle_error
   ufw default deny incoming
@@ -118,21 +120,25 @@ sysctl_config() {
   handle_error
   sysctl -A
   handle_error
+  sysctl net.ipv4.conf.all.rp_filter
+  handle_error
+  sysctl -a --pattern 'net.ipv4.conf.(ethwlan)0.arp'
+  handle_error
   sysctl -w net.ipv4.conf.all.accept_redirects=0
   handle_error
   sysctl -w net.ipv4.conf.all.send_redirects=0
   handle_error
   sysctl -w net.ipv4.ip_forward=0
   handle_error
-  sysctl net.ipv4.conf.all.rp_filter
-  handle_error
   echo "Correcting host..."
   sleep 2
 
-  # --- Prevent IP Spoofs:
-  echo "order bind,hosts" >> /etc/host.conf
-  echo "multi on" >> /etc/host.conf
-  handle_error
+# --- Prevent IP Spoofs:
+cat <<EOF > /etc/host.conf
+order bind,hosts
+multi on
+EOF
+handle_error
 }
 
 # --- Handle IPv6 and IP version preference:
@@ -172,11 +178,11 @@ ipv6_config() {
 #fail2ban_config() {
 #  echo "Hardening with fail2ban..."
 #  sleep 2
-#  cp /usr/local/bin/jail2.local /etc/fail2ban/jail.local
+#  cp /usr/local/bin/jail.local /etc/fail2ban/
 #  handle_error
-#  systemctl enable fail2ban
+#  systemctl enable fail2ban.service
 #  handle_error
-#  systemctl restart fail2ban
+#  systemctl restart fail2ban.service
 #  handle_error
 #}
 
@@ -248,7 +254,7 @@ ipv6_config
 
 ssh_config
 
-filesystem_config
+#filesystem_config
 
 sleep 2
 
