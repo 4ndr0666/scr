@@ -299,21 +299,26 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 # --- // USE_ALL_CORES:
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
-# --- // JUST_IN_CASE_YAY_FAILS:
-if ! command -v yay &> /dev/null
-then
-    echo "yay could not be found, installing it now..."
-    sudo pacman -S --needed git base-devel
-    git clone https://aur.archlinux.org/yay.git
-    cd yay
-    makepkg -si
-    cd ..
-    rm -rf yay
+# --- // INSTALL_AURHELPER:
+manualinstall $aurhelper || error "Failed to install AUR helper."
+
+# --- // AURHELPER_FALLBACK:
+if ! command -v yay &> /dev/null; then
+    echo "Yay not found. Installing it..."
+    installpkg git
+    installpkg base-devel
+    git clone https://aur.archlinux.org/yay.git /tmp/yay
+    pushd /tmp/yay
+    makepkg -si || error "Failed to install yay."
+    popd
 else
-    echo "yay is already installed."
+    echo "Yay is already installed."
 fi
 
-manualinstall $aurhelper || error "Failed to install AUR helper."
+# Perform a simple test to confirm yay is working
+if ! yay -Syu --noconfirm; then
+    error "Yay installation seems to have failed or yay isn't working properly."
+fi
 
 # --- // AUTOUPDATE_.*-git_AUR_PKGS:
 $aurhelper -Y --save --devel
