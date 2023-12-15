@@ -88,7 +88,7 @@ refreshkeys() {
 		sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
 		;;
 	*)
-		whiptail --infobox "Enabling Arch Repositories for more a more extensive software collection..." 7 40
+		whiptail --infobox "Enabling Arch Repositories" 7 40
 		pacman --noconfirm --needed -S \
 			artix-keyring artix-archlinux-support >/dev/null 2>&1
 		grep -q "^\[extra\]" /etc/pacman.conf ||
@@ -251,7 +251,7 @@ installffaddons(){
 
 finalize() {
 	whiptail --title "4ndr0666.sh Installation" \
-		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n.t 4ndr0666" 13 80
+		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n -4ndr0666" 13 80
 }
 
 # --- // PRIVILEGE_CHECK_AND_WHIPTAIL:
