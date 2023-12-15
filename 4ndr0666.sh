@@ -4,7 +4,7 @@
 #
 
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
-progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/progs.csv"
+progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/main/progs.csv"
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
