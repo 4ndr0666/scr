@@ -300,7 +300,7 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
 # --- // INSTALL_AURHELPER:
-manualinstall $aurhelper || error "Failed to install AUR helper."
+manualinstall $aurhelper || echo 'Initial yay installation attempt failed. Trying fallback mechanism.' "Failed to install AUR helper."
 
 # --- // AURHELPER_FALLBACK:
 if ! command -v yay &> /dev/null; then
