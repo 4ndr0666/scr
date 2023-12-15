@@ -355,6 +355,20 @@ check_failed_systemd_units() {
     fi
 }
 
+# --- // Clean AUR Directory:
+clean_aur_directory() {
+    local aur_dir="/var/cache/pacman/pkg"  # Adjust this path according to your setup
+
+    if [ -f "/usr/local/bin/clean-aur-dir.py" ]; then
+        prominent "$INFO Cleaning AUR directory..." | tee -a "$log_file"
+        python3 /usr/local/bin/clean-aur-dir.py "$aur_dir" | tee -a "$log_file"
+        prominent "$SUCCESS AUR directory cleaned." | tee -a "$log_file"
+    else
+        bug "$FAILURE clean-aur-dir.py script not found." | tee -a "$log_file"
+    fi
+}
+
+
 # --- // Main:
 main() {
     prominent "$EXPLOSION Starting system maintenance script $EXPLOSION" | tee -a "$log_file"
@@ -368,6 +382,7 @@ main() {
     clear_trash
     optimize_databases
     clean_package_cache
+    clean_aur_directory
     handle_pacnew_pacsave
     verify_installed_packages
     check_failed_cron_jobs
