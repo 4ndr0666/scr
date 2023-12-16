@@ -175,16 +175,20 @@ ipv6_config() {
 }
 
 # --- Configure fail2ban:
-#fail2ban_config() {
-#  echo "Hardening with fail2ban..."
-#  sleep 2
-#  cp /usr/local/bin/jail.local /etc/fail2ban/
-#  handle_error
-#  systemctl enable fail2ban.service
-#  handle_error
-#  systemctl restart fail2ban.service
-#  handle_error
-#}
+fail2ban_config() {
+	echo "Hardening with fail2ban..."
+        sleep 2
+    echo "
+    [sshd]
+    enabled = true
+    port = 22
+    filter = sshd
+    logpath = /var/log/auth.log
+    maxretry = 4
+" >> /etc/fail2ban/jail.local
+systemctl enable fail2ban.service --now
+handle_error
+}
 
 # --- Restrict SSH to localhost if only needed for Git (Testing)
 ssh_config() {
@@ -250,11 +254,11 @@ sysctl_config
 
 ipv6_config
 
-#fail2ban_config
+fail2ban_config
 
-ssh_config
+#ssh_config
 
-#filesystem_config
+filesystem_config
 
 sleep 2
 
