@@ -3,12 +3,12 @@
 # Uninstall Nix: A script to completely remove Nix from the system.
 
 # Stop Nix daemon if it's running
-sudo systemctl stop nix-daemon.socket
-sudo systemctl stop nix-daemon.service
+sudo systemctl stop nix-daemon.socket 2>/dev/null
+sudo systemctl stop nix-daemon.service 2>/dev/null
 
 # Disable Nix daemon services
-sudo systemctl disable nix-daemon.socket
-sudo systemctl disable nix-daemon.service
+sudo systemctl disable nix-daemon.socket 2>/dev/null
+sudo systemctl disable nix-daemon.service 2>/dev/null
 
 # Remove Nix files and directories
 sudo rm -rf /nix
@@ -17,38 +17,38 @@ rm -rf ~/.nix-defexpr
 rm -rf ~/.nix-channels
 rm -rf ~/.config/nix
 
-# Remove Nix-related lines from shell configuration files
-# This step might need to be adjusted based on the shell and its configuration file
+# Remove Nix-related lines from user shell configuration files
 sed -i '/nix/d' ~/.bashrc
 sed -i '/nix/d' ~/.zshrc
 sed -i '/nix/d' ~/.profile
 
 # Reload the shell configuration
-source ~/.bashrc
-source ~/.zshrc
-source ~/.profile
+source ~/.bashrc 2>/dev/null
+source ~/.zshrc 2>/dev/null
+source ~/.profile 2>/dev/null
 
 # Remove Nix users and groups
-sudo userdel nixbld
-sudo groupdel nixbld
-
-# Remove any additional Nix build users (nixbld1, nixbld2, ...)
-for i in {1..32}; do
-  sudo userdel nixbld$i
-  sudo groupdel nixbld$i
+# Check if the user or group exists before attempting to delete
+for i in $(seq 1 32); do
+  if id "nixbld$i" &>/dev/null; then
+    sudo userdel "nixbld$i"
+  fi
+  if getent group "nixbld$i" &>/dev/null; then
+    sudo groupdel "nixbld$i"
+  fi
 done
 
-# Optional: Remove entries from /etc/passwd and /etc/group if they still exist
-# Caution: Only do this if you are sure about what you're doing
-# sudo sed -i '/nix/d' /etc/passwd
-# sudo sed -i '/nix/d' /etc/group
+# List Nix-related files and directories in the user's home
+echo "Listing Nix-related files and directories in the home directory:"
+find ~ -name '*nix*' -print
 
-# Clean up systemd units if they were installed
-sudo find /etc/systemd -name '*nix*' -delete
-
-# Clean up any remaining Nix-related files and directories
-sudo find /etc -name '*nix*' -delete
-find ~ -name '*nix*' -delete
+# Optional: Prompt for confirmation before deletion
+read -p "Do you want to delete these files? [y/N] " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    find ~ -name '*nix*' -exec rm -rf {} +
+fi
 
 # Notify user
 echo "Nix has been uninstalled from the system."
