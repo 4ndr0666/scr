@@ -1,9 +1,0 @@
-[Unit]
-Description=Monitor Memory Usage
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/System_utilities/memory_monitor.sh
-
-[Install]
-WantedBy=multi-user.target

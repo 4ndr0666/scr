@@ -1,9 +1,0 @@
-[Unit]
-Description=Free Cache when Memory is Low
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/System_utilities/freecache.sh
-
-[Install]
-WantedBy=multi-user.target
