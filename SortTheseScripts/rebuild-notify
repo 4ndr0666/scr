@@ -1,0 +1,16 @@
+#!/bin/bash
+
+targets=($(comm -23 <(pacman -Qq | sort) <(pacman -Slq core extra community | sort)))
+
+while read -r pkgname pkgver provides; do
+    pkgver="${pkgver#*:}"
+
+    for pkg in ${provides[@]}; do
+        ver=$(expac -q "%v" "$pkg" || continue)
+        ver="${ver#*:}"
+
+        if (( $(vercmp "$pkgver" "$ver") < 0 )); then
+            printf "\e[1;33mWarning:\e[0m old local package: %s=%s (remote: %s=%s)\n" "$pkgname" "$pkgver" "$pkg" "$ver"
+        fi
+    done
+done < <(expac -Q "%n %v %S" ${targets[@]})

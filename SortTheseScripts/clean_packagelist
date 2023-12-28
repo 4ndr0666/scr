@@ -1,0 +1,33 @@
+ #!/bin/bash
+
+ # Read raw package list from standard input
+ echo "Please paste the raw package list and press Ctrl-D:"
+ raw_packages=$(cat)
+
+ # Remove version information and numbers from the package list
+ cleaned_packages=$(echo "$raw_packages" | sed -E 's/-[0-9][^ ]*//g' | sed 's/[0-9]*//g')
+
+ # Format the package names in Pacman-readable order
+ pacman_packages=$(echo "$cleaned_packages" | tr '\n' ' ')
+
+ # Prompt to execute command or quit
+ echo "pacman -S $pacman_packages"
+ read -p "Press enter to execute or ESC to quit" -n 1 key
+
+ if [ "$key" = $'\e' ]; then
+     echo "Aborting..."
+     exit
+ fi
+
+ echo "Executing command..."
+
+ # Execute command and continue with next package if one fails
+ set +e
+ for package in $cleaned_packages; do
+     pacman -S "$package"
+     if [ $? -ne 0 ]; then
+         echo "Error installing $package, continuing with next package..."
+     fi
+ done
+
+ echo "All packages installed successfully."

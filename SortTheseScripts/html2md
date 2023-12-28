@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+
+import sys
+from bs4 import BeautifulSoup
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} <input_file>")
+    sys.exit(1)
+
+with open(sys.argv[1], 'r') as f:
+    soup = BeautifulSoup(f.read(), 'html.parser')
+
+print(soup.get_text())

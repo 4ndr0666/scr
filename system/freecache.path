@@ -1,0 +1,8 @@
+[Unit]
+Description=Monitor for Low Memory Condition
+
+[Path]
+PathExists=/tmp/low_memory
+
+[Install]
+WantedBy=multi-user.target
