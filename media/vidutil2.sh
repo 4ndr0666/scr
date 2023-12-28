@@ -1,6 +1,17 @@
-#!/bin/bash
+#!/bin/sh
+# --- // 4ndr0666_Video_Utility_Script // ========
 
-# Merged and Enhanced Video Processing Script
+# --- // BANNER:
+echo -e "\033[34m"
+cat << "EOF"
+  ____   ____.__    .___      __  .__.__              .__
+  \   \ /   /|__| __| _/_ ___/  |_|__|  |        _____|  |__
+   \   Y   / |  |/ __ |  |  \   __\  |  |       /  ___/  |  \
+    \     /  |  / /_/ |  |  /|  | |  |  |__     \___ \|   Y  \
+     \___/   |__\____ |____/ |__| |__|____/ /\ /____  >___|  /
+                     \/                     \/      \/     \/
+EOF
+echo -e "\033[0m"
 
 # Function to capture frames from a video file
 capture_frames() {
@@ -22,7 +33,7 @@ capture_frames() {
 
     ffmpeg -i "$video" -vf "fps=$fps" "${data_dir}/frame_%04d.png" 2>&1 | tee capture_frames.log
 
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         echo "Error: Failed to capture frames. Check capture_frames.log for details."
         return 1
     fi
@@ -44,7 +55,7 @@ cut_clip() {
 
     ffmpeg -i "$video" -ss "$start_time" -to "$end_time" -c copy "$output_file" 2>&1 | tee cut_clip.log
 
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         echo "Error: Failed to cut clip. Check cut_clip.log for details."
         return 1
     fi
@@ -55,17 +66,18 @@ cut_clip() {
 # Function to merge multiple video clips into one file
 merge_clips() {
     local output_file="${1:-merged_clip.mp4}"
+    local input_txt
+    input_txt="$(mktemp)"
     shift
     local input_files=("$@")
 
-    local input_txt="$(mktemp)"
     for clip in "${input_files[@]}"; do
         echo "file '$clip'" >> "$input_txt"
     done
 
     ffmpeg -f concat -safe 0 -i "$input_txt" -c copy "$output_file" 2>&1 | tee merge_clips.log
 
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         echo "Error: Failed to merge clips. Check merge_clips.log for details."
         return 1
     fi
@@ -77,17 +89,18 @@ merge_clips() {
 # Function to concatenate multiple videos end-to-end
 concatenate_videos() {
     local output_file="${1:-concatenated_video.mp4}"
+    local input_txt
+    input_txt="$(mktemp)"
     shift
     local videos=("$@")
 
-    local input_txt="$(mktemp)"
     for video in "${videos[@]}"; do
         echo "file '$video'" >> "$input_txt"
     done
 
     ffmpeg -f concat -safe 0 -i "$input_txt" -c copy "$output_file" 2>&1 | tee concatenate_videos.log
 
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         echo "Error: Failed to concatenate videos. Check concatenate_videos.log for details."
         return 1
     fi
@@ -98,21 +111,55 @@ concatenate_videos() {
 
 # Main menu for user interaction
 main_menu() {
-    echo "=== Video Processing Menu ==="
+    echo "=== // MENU // ==="
     echo "1. Capture Frames"
     echo "2. Cut a Clip"
     echo "3. Merge Clips"
     echo "4. Concatenate Videos"
     echo "5. Exit"
-    read -p "Select an option: " option
+    read -r -p "Select an option: " option
 
     case "$option" in
         1)
-            read -p "Enter video file path: " video_file
-            read -p "Enter FPS (leave blank for default 30): " fps
+            read -r -p "Enter video file path: " video_file
+            read -r -p "Enter FPS (leave blank for default 30): " fps
             capture_frames "$video_file" "$fps"
             ;;
         2)
-            read -p "Enter video file path: " video_file
-            read -p "Enter start time (format HH:MM:SS): " start_time
-            read -p "Enter end time (
+            read -r -p "Enter video file path: " video_file
+            read -r -p "Enter start time (format HH:MM:SS): " start_time
+            read -r -p "Enter end time (format HH:MM:SS): " end_time
+            read -r -p "Enter output file name (optional): " output_file
+            cut_clip "$video_file" "$start_time" "$end_time" "$output_file"
+            ;;
+        3)
+            read -r -p "Enter output file name (optional): " output_file
+            echo "Enter video clips to merge (end with an empty line):"
+            clips=()
+            while IFS= read -r clip; do
+            [[ $clip ]] || break
+            clips+=("$clip")
+            done
+            merge_clips "$output_file" "${clips[@]}"
+            ;;
+        4)
+            read -r -p "Enter output file name (optional): " output_file
+            echo "Enter videos to concatenate (end with an empty line):"
+            videos=()
+            while IFS= read -r video; do
+            [[ $video ]] || break
+            videos+=("$video")
+            done
+            concatenate_videos "$output_file" "${videos[@]}"
+            ;;
+        5)
+            echo "Exiting..."
+            exit 0
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            main_menu
+            ;;
+            esac
+}
+main_menu
