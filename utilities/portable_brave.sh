@@ -1,84 +1,80 @@
+
 #!/bin/bash
 
-# Define directories
-old_dir="$HOME/.config/BraveSoftware/Brave-Browser"
-backup_dir="$HOME/.config/BraveSoftware/Brave-Browser-Backup"
-temp_dir="/tmp/brave_temp"
-portable_dir="/path/to/portable/Brave-Browser"  # Define the path for portable directory
+# Color Coding for Output
+YEL='\033[1;33m' # Yellow
+RED='\033[1;31m' # Red
+GRE='\033[1;32m' # Green
+c0=$'\033[0m'    # Reset Text
 
-# Check if Brave is running
-is_brave_running() {
-    pgrep -x brave > /dev/null
-}
+# Global Definitions
+PROFILES_DIR="${HOME}/.config/BraveSoftware/Brave-Browser"
+BACKUP_DIR="${HOME}/BraveBackups"
+BOOKMARKS_LOCATION="${HOME}/bookmarks.md"
 
-# Confirm and backup existing Brave profile to a portable directory
-backup_to_portable() {
-    if [ -d "$portable_dir" ]; then
-        read -p "Portable backup already exists. Overwrite? (y/n): " overwrite_choice
-        if [[ ! "$overwrite_choice" =~ ^[Yy]$ ]]; then
-            return
-        fi
-    fi
+# Create Backup Directory if it doesn't exist
+[ ! -d "${BACKUP_DIR}" ] && mkdir -p "${BACKUP_DIR}"
 
-    if cp -r "$old_dir" "$portable_dir"; then
-        echo "Backup completed successfully."
-    else
-        echo "Error occurred during backup. Exiting."
-        exit 1
-    fi
-}
-
-# Rename and handle old directory
-handle_old_directory() {
-    if [ -d "$old_dir" ] && [ ! -d "$backup_dir" ]; then
-        mv "$old_dir" "$backup_dir"
-    elif [ ! -d "$old_dir" ]; then
-        echo "Old directory does not exist. Creating a new profile."
-        mkdir -p "$old_dir"
-    fi
-}
-
-# Start and manage Brave process
-manage_brave_process() {
-    if is_brave_running; then
-        echo "Brave is already running. Please close it before proceeding."
-        exit 1
-    fi
-
-    brave --user-data-dir="$temp_dir" &
-    sleep 10  # Wait for Brave to initialize
-
-    while is_brave_running; do
-        killall brave
-        sleep 5
+# List available profiles
+list_profiles() {
+    local profiles=($(find "${PROFILES_DIR}" -maxdepth 1 -type d -name 'Default' -o -name 'Profile [0-9]+' | xargs -n1 basename))
+    echo "...${#profiles[@]} total profiles available!"
+    local i=1
+    for profile in "${profiles[@]}"; do
+        echo "${i}. ${profile}"
+        ((i++))
     done
 }
 
-# Restore from portable profile
-restore_from_portable() {
-    if [ -d "$old_dir" ]; then
-        echo "The profile has already been restored."
-        return
-    fi
+# Error Handling Functions
+yell() { echo -e "${RED}$0: $*${c0}" >&2; }
+die() { yell "$*"; exit 111; }
 
-    read -p "Restore from portable profile? (y/n): " restore_choice
-    if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
-        if [ -d "$portable_dir" ]; then
-            cp -r "$portable_dir" "$old_dir"
-            echo "Brave profile restored from portable directory."
-        else
-            echo "Portable directory not found."
-        fi
-    fi
-}
+# ... (rest of the functions including select_profile, backup_profile, restore_profile, braveBookmarks, create_profile)
 
-# Main function to control the workflow
+# Main function with GUI enhancement
 main() {
-    backup_to_portable
-    handle_old_directory
-    manage_brave_process
-    restore_from_portable
-    echo "Brave setup completed."
+    clear
+    echo -e "${GRE}========================================================================================${c0}"
+    echo -e "${GRE}BRAVE PROFILE MANAGER${c0}"
+    echo -e "${GRE}========================================================================================${c0}"
+    list_profiles
+    echo "=============== // Main Menu // ====================="
+    echo "1) Backup             3) Create           0) Exit"
+    echo "2) Restore            4) Bookmarks"
+    echo "By your command:"
+    read -r command
+
+    case ${command} in
+        1)
+            local selected_profile
+            selected_profile=$(select_profile)
+            backup_profile "${selected_profile}"
+            ;;
+        2)
+            echo "List of backups:"
+            ls "${BACKUP_DIR}"
+            local backup_file
+            echo "Enter the backup file name:"
+            read -r backup_file
+            selected_profile=$(select_profile)
+            restore_profile "${selected_profile}" "${BACKUP_DIR}/${backup_file}"
+            ;;
+        3)
+            create_profile
+            ;;
+        4)
+            echo "Enter a keyword to search in bookmarks (leave blank for all):"
+            read -r keyword
+            braveBookmarks "$keyword"
+            ;;
+        0)
+            exit 0
+            ;;
+        *)
+            die "Invalid operation."
+            ;;
+    esac
 }
 
 # Run the main function
