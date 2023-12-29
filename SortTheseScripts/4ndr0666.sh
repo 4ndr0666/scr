@@ -23,11 +23,11 @@ error() {
 
 welcomemsg() {
 	whiptail --title "4ndr0666.sh" \
-		--msgbox "  Validating code segments and checking dependenecies...\\n\\nValidated!" 10 60
+		--msgbox " An Auto-Rice Bootstrapping Script...\\n\\nThis script will automatically install the configs per user 4ndr0666.sh" 10 60
 
 	whiptail --title "!WARNING!" --yes-button "CONTINUE" \
 		--no-button "ABORT & UPDATE" \
-		--yesno "   Pacman -Syu completion is required before 4ndr0666.sh can be deployed!" 8 70
+		--yesno "Ensure pacman -Syu has been completed before deploying 4ndr0666.sh!\\n\\nThis avoids program errors during installation." 8 70
 }
 
 getuserandpass() {
@@ -49,11 +49,11 @@ usercheck() {
 	! { id -u "$name" >/dev/null 2>&1; } ||
 		whiptail --title "!WARNING!" --yes-button "CONTINUE" \
 			--no-button "ABORT" \
-			--yesno "The user \`$name\` currently has an existing account on this machine. 4ndr0666.sh will is OVERWRITE all but the config files if you continue. \\n\\nPlease confirm acknowledgement and continue to deploy 4ndr0666.sh. \\n\\n!Changing \`$name's\` password to the one you just provided!" 14 70
+			--yesno "The user \`$name\` has an existing account on this machine. Continue and all conflicting files will be OVERWRITEN. \\n\\nConfirm acknowledgement and continue to deploy 4ndr0666.sh.\\n\\n$name's password will be changed to the one you just gave." 14 70
 }
 
 preinstallmsg() {
-	whiptail --title "4ndr0666.sh Installation" --yes-button "INSTALL" \
+	whiptail --title "Begin ricing!" --yes-button "INITIATE" \
 		--no-button "ABORT" \
 		--yesno "4ndr0666.sh will now automatically complete the installation process without any further intervention needed. Please allow pacman to recieve the Chaotic AUR keyring on the next page to deploy 4ndr0666.sh. \\n\\nNote: This is the last time you will be asked for input" 10 60 || {
 		clear
@@ -289,8 +289,8 @@ adduserandpass || error "Error adding username and/or password."
 [ -f /etc/sudoers.pacnew ] && cp /etc/sudoers.pacnew /etc/sudoers # Just in case
 
 # --- // AUTO_ESCALATE:
-trap 'rm -f /etc/sudoers.d/4ndr0666-temp' HUP INT QUIT TERM PWR EXIT
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/4ndr0666-temp
+trap 'rm -f /etc/sudoers.d/andro-temp' HUP INT QUIT TERM PWR EXIT
+echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/andro-temp
 
 # --- // COLORIZE_PACMAN_AND_PARALLEL_DL:
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
@@ -375,9 +375,9 @@ pkill -u "$name" librewolf
 
 # --- // AUTO_ESCALATE:
 # (like `shutdown` to run without password).
-echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-4ndr0666-wheel-can-sudo
-echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-4ndr0666-cmds-without-password
-echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-4ndr0666-visudo-editor
+echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-andro-wheel-can-sudo
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-andro-cmds-without-password
+echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-andro-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
