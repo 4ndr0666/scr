@@ -1,11 +1,9 @@
-
 #!/bin/bash
 
 # Color Coding for Output
-YEL='\033[1;33m' # Yellow
-RED='\033[1;31m' # Red
-GRE='\033[1;32m' # Green
-c0=$'\033[0m'    # Reset Text
+RED='\e[1;31m' # Red
+GRE='\e[1;32m' # Green
+c0='\e[0m'     # Reset Text
 
 # Global Definitions
 PROFILES_DIR="${HOME}/.config/BraveSoftware/Brave-Browser"
@@ -17,8 +15,16 @@ BOOKMARKS_LOCATION="${HOME}/bookmarks.md"
 
 # List available profiles
 list_profiles() {
-    local profiles=($(find "${PROFILES_DIR}" -maxdepth 1 -type d -name 'Default' -o -name 'Profile [0-9]+' | xargs -n1 basename))
-    echo "...${#profiles[@]} total profiles available!"
+    local profile_count=0
+    local profiles=()
+    for profile_path in "${PROFILES_DIR}"/Default "${PROFILES_DIR}"/Profile*; do
+        if [ -d "${profile_path}" ]; then
+            profiles+=("$(basename "${profile_path}")")
+            ((profile_count++))
+        fi
+    done
+
+    echo "...${profile_count} total profiles available!"
     local i=1
     for profile in "${profiles[@]}"; do
         echo "${i}. ${profile}"
@@ -30,7 +36,72 @@ list_profiles() {
 yell() { echo -e "${RED}$0: $*${c0}" >&2; }
 die() { yell "$*"; exit 111; }
 
-# ... (rest of the functions including select_profile, backup_profile, restore_profile, braveBookmarks, create_profile)
+# Select a profile
+select_profile() {
+    list_profiles
+    local choice
+    echo "Enter the profile number:"
+    read -r choice
+    if [[ "$choice" -gt 0 && "$choice" -le "${#profiles[@]}" ]]; then
+        echo "${profiles[$choice-1]}"
+    else
+        die "Invalid profile number."
+    fi
+}
+
+# Backup a profile
+backup_profile() {
+    local profile_name=$1
+    local profile_dir="${PROFILES_DIR}/${profile_name}"
+    local backup_path
+
+    if [ -d "${profile_dir}" ]; then
+        backup_path="${BACKUP_DIR}/${profile_name}-$(date +%Y%m%d%H%M%S)" # Assigning separately
+        cp -r "${profile_dir}" "${backup_path}"
+        echo "Profile ${profile_name} backed up successfully."
+    else
+        die "Profile ${profile_name} not found."
+    fi
+}
+
+# Restore a profile
+restore_profile() {
+    local profile_name=$1
+    local restore_file=$2
+
+    if [ -d "${PROFILES_DIR}/${profile_name}" ] && [ -f "${restore_file}" ]; then
+        cp -r "${restore_file}" "${PROFILES_DIR}/${profile_name}"
+        echo "Profile ${profile_name} restored successfully."
+    else
+        die "Backup file not found or profile does not exist."
+    fi
+}
+
+# Function to create a new profile
+create_profile() {
+    local new_profile_name
+    echo "Enter the new profile name:"
+    read -r new_profile_name
+    mkdir -p "${PROFILES_DIR}/${new_profile_name}"
+    echo "New profile ${new_profile_name} created."
+}
+
+# Extract and save Brave bookmarks to Markdown
+braveBookmarks() {
+    local word=$1
+    local file_path
+    file_path=$(find "${PROFILES_DIR}/Default" -iname "Bookmarks")
+
+    if [ -n "$file_path" ]; then
+        echo -e "## Brave Browser Bookmarks\n" > "${BOOKMARKS_LOCATION}"
+        local contents
+        contents=$(grep -oP '"url": "\K[^"]+' "${file_path}" | grep -i "$word")
+        echo "$contents" | awk '{print "-",$0}' >> "${BOOKMARKS_LOCATION}"
+        echo "Bookmarks exported to ${BOOKMARKS_LOCATION}."
+    else
+        die "No bookmarks found or Brave browser not installed."
+    fi
+}
 
 # Main function with GUI enhancement
 main() {
@@ -64,7 +135,7 @@ main() {
             create_profile
             ;;
         4)
-            echo "Enter a keyword to search in bookmarks (leave blank for all):"
+	    echo "Enter a keyword to search or select all:"
             read -r keyword
             braveBookmarks "$keyword"
             ;;
@@ -72,7 +143,7 @@ main() {
             exit 0
             ;;
         *)
-            die "Invalid operation."
+	    die "Invalid input"
             ;;
     esac
 }
