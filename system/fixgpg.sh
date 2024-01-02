@@ -231,11 +231,16 @@ automatedSecurityAudit() {
     fi
 
     # Check for improper permissions
-    if [ $(find ~/.gnupg -type f -not -perm 600 | wc -l) -gt 0 ]; then
-        echo "Warning: Improper file permissions found in .gnupg directory."
+    local hasIncorrectPermissions=0
+    find ~/.gnupg -type d ! -perm 700 -exec echo "Incorrect directory permissions: {}" \; -exec bash -c 'hasIncorrectPermissions=1' \;
+    find ~/.gnupg -type f ! -perm 600 -exec echo "Incorrect file permissions: {}" \; -exec bash -c 'hasIncorrectPermissions=1' \;
+
+    if [ "$hasIncorrectPermissions" -eq 1 ]; then
+        echo "Warning: Improper permissions found in .gnupg directory."
     else
-        echo "All file permissions are correctly set."
+        echo "All permissions are correctly set."
     fi
+
 
     echo "Automated security audit completed."
 }
