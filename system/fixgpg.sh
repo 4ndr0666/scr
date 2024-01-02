@@ -32,6 +32,7 @@ executeFunctionWithFeedback() {
     echo -e "\033[1;32m" # Green color
     echo "$1 completed successfully."
     echo -e "\033[0m" # Reset color
+    read -p "Press any key to continue..." -n 1
 }
 
 # --- // Set_trap_for_SIGINT:
@@ -45,11 +46,11 @@ cleanup() {
 # --- // Menu:
 display_menu() {
     clear
-    echo -e "${GRE}======================================================================================="
-    echo -e "${GRE}FIXGPG.SH"
-    echo -e "${GRE}======================================================================================="
-    echo -e "${c0}"
-    echo "=============== // Main Menu // ====================="
+    echo -e "${GRE}====================================================="
+    echo -e "${GRE}FIXGPG.SH - A gpg management script by 4ndr0666"
+    echo -e "${GRE}====================================================="
+
+    echo -e "${c0}=============== // ${GRE}Main Menu${c0} // ====================="
     echo "1) Backup .gnupg Directory"
     echo "2) Create New .gnupg Directory"
     echo "3) Restore GnuPG Data"
@@ -256,24 +257,80 @@ main() {
         fi
 
         case "$choice" in
-            1) executeFunctionWithFeedback "backupGnupgDir "/path/to/backup"" ;;
-            2) executeFunctionWithFeedback "createNewGnupgDir" ;;
-            3) executeFunctionWithFeedback "restoreGnupgData "/path/from/backup"" ;;
-            4) executeFunctionWithFeedback "setCorrectPermissions" ;;
-            5) executeFunctionWithFeedback "listGpgKeys" ;;
-            6) executeFunctionWithFeedback "generateGpgKey" ;;
-            7) executeFunctionWithFeedback "createArmoredKey" "key-id" ;;
-            8) executeFunctionWithFeedback "exportGpgKey "key-id"" ;;
-            9) executeFunctionWithFeedback "exportAndAddGpgKey "key-id" "service-name"" ;;
-            10) executeFunctionWithFeedback "reinitializeGpgAgent" ;;
-            11) executeFunctionWithFeedback "cleanUpTestDir "/path/to/test_dir"" ;;
-            12) executeFunctionWithFeedback "incrementalBackupGnupg "/path/to/incremental_backup"" ;;
-            13) executeFunctionWithFeedback "applySecurityTemplate "high-security"" ;;
-            14) executeFunctionWithFeedback "generateAdvancedGpgKey "RSA" 4096" ;;
-            15) executeFunctionWithFeedback "exportKeysToFormats "key-id" "ascii-armored"" ;;
-            16) executeFunctionWithFeedback "automatedSecurityAudit" ;;
-            17) echo "Exiting program."; cleanup; exit 0 ;;
-            *) echo "Invalid option. Please try again." ;;
+            1)
+	       read -p "Enter backup directory path: " backupDir
+	       executeFunctionWithFeedback "backupGnupgDir '$backupDir'"
+	       ;;
+            2)
+	       executeFunctionWithFeedback "createNewGnupgDir"
+	       ;;
+            3)
+	       read -p "Enter restore directory path: " restoreDir
+	       executeFunctionWithFeedback "restoreGnupgData '$restoreDir'"
+	       ;;
+            4) executeFunctionWithFeedback "setCorrectPermissions"
+	       ;;
+            5) executeFunctionWithFeedback "listGpgKeys"
+	       ;;
+            6) executeFunctionWithFeedback "generateGpgKey"
+	       ;;
+            7)
+	       read -p "Enter key ID for armored key creation: " keyId
+	       executeFunctionWithFeedback "createArmoredKey" '$keyId'"
+	       ;;
+            8)
+	       read -p "Enter key ID for exporting GPG key: " keyId
+	       executeFunctionWithFeedback "exportGpgKey '$keyId'"
+	       ;;
+            9)
+	       read -p "Enter key ID for exporting and adding to service: "keyId
+	       read -p "Enter service name: " serviceName
+	       executeFunctionWithFeedback "exportAndAddGpgKey '$keyId' '$serviceName'"
+	       ;;
+            10) executeFunctionWithFeedback "reinitializeGpgAgent"
+		;;
+            11)
+		read -p "Enter path to test dir for cleanup: " testDir
+		executeFunctionWithFeedback "cleanUpTestDir '$testDir'"
+		;;
+            12)
+		read -p "Enter path to incremental backup dir: " backupDir
+		executeFunctionWithFeedback "incrementalBackupGnupg '$backupDir'"
+		;;
+            13)
+		echo "Select security template: 1) high-security 2) standard"
+                read -p "Enter your choice (1 or 2): " templateChoice
+                if [ "$templateChoice" -eq 1 ]; then
+                    template="high-security"
+                else
+                    template="standard"
+                fi
+                executeFunctionWithFeedback "applySecurityTemplate '$template'"
+                ;;
+            14)
+		read -p "Enter key type for advanced GPG key (e.g., RSA): " keyType
+                read -p "Enter key length for advanced GPG key (e.g., 4096): " keyLength
+                executeFunctionWithFeedback "generateAdvancedGpgKey '$keyType' '$keyLength'"
+                ;;
+            15)
+		read -p "Enter key ID for export: " keyId
+                echo "Select format: 1) ascii-armored 2) binary"
+                read -p "Enter your choice (1 or 2): " formatChoice
+                if [ "$formatChoice" -eq 1 ]; then
+                    format="ascii-armored"
+                else
+                    format="binary"
+                fi
+                executeFunctionWithFeedback "exportKeysToFormats '$keyId' '$format'"
+                ;;
+            16) executeFunctionWithFeedback "automatedSecurityAudit"
+	        ;;
+            17) echo "Exiting program.";
+		cleanup;
+		exit 0
+		;;
+            *) echo "Invalid option. Please try again."
+		;;
     esac
 done
 }
