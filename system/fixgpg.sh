@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# --- // Auto_Escalate:
-if [ "$(id -u)" -ne 0 ]; then
-      sudo "$0" "$@"
-    exit $?
-fi
-
 # --- // Colors:
 GRE="\033[32m" # Green
 RED="\033[31m" # Red
@@ -276,14 +270,14 @@ main() {
 	       ;;
             7)
 	       read -p "Enter key ID for armored key creation: " keyId
-	       executeFunctionWithFeedback "createArmoredKey" '$keyId'"
+	       executeFunctionWithFeedback "createArmoredKey '$keyId'"
 	       ;;
             8)
 	       read -p "Enter key ID for exporting GPG key: " keyId
 	       executeFunctionWithFeedback "exportGpgKey '$keyId'"
 	       ;;
             9)
-	       read -p "Enter key ID for exporting and adding to service: "keyId
+	       read -p "Enter key ID for exporting and adding to service: " keyId
 	       read -p "Enter service name: " serviceName
 	       executeFunctionWithFeedback "exportAndAddGpgKey '$keyId' '$serviceName'"
 	       ;;
@@ -298,8 +292,9 @@ main() {
 		executeFunctionWithFeedback "incrementalBackupGnupg '$backupDir'"
 		;;
             13)
-		echo "Select security template: 1) high-security 2) standard"
-                read -p "Enter your choice (1 or 2): " templateChoice
+		printf "Select security template:\n1) high-security\n2) standard\n"
+                printf "Enter your choice (1 or 2): "
+                read templateChoice
                 if [ "$templateChoice" -eq 1 ]; then
                     template="high-security"
                 else
@@ -325,8 +320,8 @@ main() {
                 ;;
             16) executeFunctionWithFeedback "automatedSecurityAudit"
 	        ;;
-            17) echo "Exiting program.";
-		cleanup;
+            17) echo "Exiting program."
+		cleanup
 		exit 0
 		;;
             *) echo "Invalid option. Please try again."
