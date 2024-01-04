@@ -32,8 +32,12 @@ def parse_acl_file(filename):
     Returns:
         list: List of dictionaries representing ACL entries.
     """
-    with open(filename) as f:
-        lines = f.readlines()
+    try:
+        with open(filename) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        logging.error(f"ACL file '{filename}' not found.")
+        return []
 
     entries = []
     entry = {}
@@ -143,6 +147,7 @@ def audit_permissions(acl_entries):
         # Check owner
         try:
             process = run_command(["stat", "-c", "%U", filepath])
+            process = run_command(["stat", "-c", "%U", filepath])
             if process and process.stdout.strip() != entry["owner"]:
                 discrepancies.append(f"Owner of {filepath} is incorrect.")
         except Exception as e:
@@ -177,7 +182,7 @@ def audit_permissions(acl_entries):
 
 def pacman_fix_permissions():
     """
-    Run the 'pacman-fix-permissions' command.
+    Run pacman-fix-permissions command.
     """
     run_command(["sudo", "pacman-fix-permissions"])
 
@@ -212,16 +217,16 @@ if __name__ == "__main__":
             print("5) Exit")
             choice = input("By your command: ")
 
-        if choice == "1":
-            backup_file = input("Enter the name of the backup file (permissions will be saved in JSON format): ")
-            backup_permissions(acl_entries, backup_file)
-        elif choice == "2":
-            restore_permissions(acl_entries)
-        elif choice == "3":
-            audit_permissions(acl_entries)
-        elif choice == "4":
-            pacman_fix_permissions()
-        elif choice == "5":
-            break
-        else:
-            print("Invalid choice. Please choose a number from 1 to 5.")
+            if choice.lower() in ["1", "backup permissions"]:
+                backup_file = input("Enter the name of the backup file (permissions will be saved in JSON format): ")
+                backup_permissions(acl_entries, backup_file)
+            elif choice.lower() in ["2", "restore permissions"]:
+                restore_permissions(acl_entries)
+            elif choice.lower() in ["3", "audit permissions"]:
+                audit_permissions(acl_entries)
+            elif choice.lower() in ["4", "run pacman-fix-permissions"]:
+                pacman_fix_permissions()
+            elif choice.lower() in ["5", "exit"]:
+                break
+            else:
+                print("Invalid choice. Please choose a valid option from the menu.")
