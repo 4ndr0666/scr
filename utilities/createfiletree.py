@@ -1,12 +1,41 @@
 import os
-from datetime import datetime, timedelta
+import re
 import string
+from datetime import datetime, timedelta
 
 # Define colors
 RED = '\033[1;31m'
 GRE = '\033[1;32m'
 CYAN = '\033[1;36m'
 c0 = '\033[0m'
+
+def run_command(command):
+    """
+    Run a command and capture its output.
+
+    Args:
+        command (list): List containing the command and its arguments.
+
+    Returns:
+        CompletedProcess: CompletedProcess object with the result of the command.
+    """
+    try:
+        return subprocess.run(command, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Command '{e.cmd}' failed with error: {e.stderr.strip()}")
+        raise
+
+def validate_input(input_string, pattern, input_type="path"):
+    if not re.match(pattern, input_string):
+        print(f"{CYAN}⚠️ Invalid {input_type}. Please try again.{c0}")
+        return False
+    return True
+
+def get_valid_input(prompt, pattern, input_type="path"):
+    while True:
+        user_input = input(f"{CYAN}{prompt}{c0}")
+        if validate_input(user_input, pattern, input_type):
+            return user_input
 
 def create_directory(path):
     try:
@@ -16,18 +45,6 @@ def create_directory(path):
     except OSError:
         print(f"{RED}❌ Error: Creating directory {path} failed.{c0}")
         return False
-
-def validate_input(input_string, pattern, input_type="path"):
-    if not re.match(pattern, input_string):
-        print(f"{CYAN}⚠️ Invalid {input_type}. Please try again.{RESET}")
-        return False
-    return True
-
-def get_valid_input(prompt, pattern, input_type="path"):
-    while True:
-        user_input = input(f"{CYAN}{prompt}{RESET}")
-        if validate_input(user_input, pattern, input_type):
-            return user_input
 
 def create_datetime_structure(base_path, years=2):
     for year in range(datetime.now().year, datetime.now().year + years):
@@ -66,10 +83,10 @@ def create_project_structure():
         for folder in subfolders:
             subfolder_path = os.path.join(project_directory, folder)
             create_directory(subfolder_path)
-        print(f"{CYAN}📁 Project structure created at: {project_directory}{RESET}")
+        print(f"{CYAN}📁 Project structure created at: {project_directory}{c0}")
 
 def create_category_structure(base_path):
-    print(f"{CYAN}🗂 Gathering requirements for category creation.{RESET}")
+    print(f"{CYAN}🗂 Gathering requirements for category creation.{c0}")
     categories = gather_stakeholder_feedback()
     for category in categories:
         category_path = os.path.join(base_path, category)
@@ -77,18 +94,29 @@ def create_category_structure(base_path):
         for letter in string.ascii_uppercase:
             sub_path = os.path.join(category_path, letter)
             create_directory(sub_path)
-        print(f"{CYAN}🗃 Category '{category}' with subdirectories created successfully in '{category_path}'.{RESET}")
+        print(f"{CYAN}🗃 Category '{category}' with subdirectories created successfully in '{category_path}'.{c0}")
 
 def main():
     os.system('clear')
     print(f"{CYAN}====================================================={c0}")
     print(f"{CYAN}🌟 DIRECTORY STRUCTURE GENERATOR 🌟{c0}")
     print(f"{CYAN}====================================================={c0}")
-    print(f"{CYAN}=============== // Main Menu // ====================={c0}")
-    print(f"{CYAN}1) 📆 Date/time     3) 🔢 Numerical     5) 🏷 Tag{c0}")
-    print(f"{CYAN}2) 🔤 Alphabetical  4) 📂 Category      6) 📚 Project{c0}")
-    print(f"{CYAN}7) 🚪 Exit{c0}")
-    print(f"{CYAN}====================================================={c0}")
+
+    build_options = {
+        "1": create_datetime_structure,
+        "2": create_alphabetical_structure,
+        "3": create_numerical_structure,
+        "4": create_category_structure,
+        "5": create_custom_tag_structure,
+        "6": create_project_structure
+    }
+
+    while True:
+        print(f"{CYAN}=============== // Main Menu // ====================={c0}")
+        print(f"{CYAN}1) 📆 Date/time     3) 🔢 Numerical     5) 🏷 Tag{c0}")
+        print(f"{CYAN}2) 🔤 Alphabetical  4) 📂 Category      6) 📚 Project{c0}")
+        print(f"{CYAN}7) 🚪 Exit{c0}")
+        print(f"{CYAN}====================================================={c0}")
         command = input(f"{CYAN}👉 By your command: {c0}")
 
         if command == '7':
