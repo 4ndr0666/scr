@@ -57,8 +57,11 @@ backup_profile() {
 
     if [ -d "${profile_dir}" ]; then
         backup_path="${BACKUP_DIR}/${profile_name}-$(date +%Y%m%d%H%M%S)" # Assigning separately
-        cp -r "${profile_dir}" "${backup_path}"
-        echo "Profile ${profile_name} backed up successfully."
+        if cp -r "${profile_dir}" "${backup_path}"; then
+            echo "Profile ${profile_name} backed up successfully."
+        else
+            die "Failed to back up profile ${profile_name}."
+        fi
     else
         die "Profile ${profile_name} not found."
     fi
@@ -70,8 +73,11 @@ restore_profile() {
     local restore_file=$2
 
     if [ -d "${PROFILES_DIR}/${profile_name}" ] && [ -f "${restore_file}" ]; then
-        cp -r "${restore_file}" "${PROFILES_DIR}/${profile_name}"
-        echo "Profile ${profile_name} restored successfully."
+        if cp -r "${restore_file}" "${PROFILES_DIR}/${profile_name}"; then
+            echo "Profile ${profile_name} restored successfully."
+        else
+            die "Failed to restore profile ${profile_name}."
+        fi
     else
         die "Backup file not found or profile does not exist."
     fi
@@ -120,7 +126,11 @@ main() {
         1)
             local selected_profile
             selected_profile=$(select_profile)
-            backup_profile "${selected_profile}"
+            echo "Do you want to back up profile ${selected_profile}? (yes/no)"
+            read -r confirm
+            if [[ "${confirm}" == "yes" ]]; then
+                backup_profile "${selected_profile}"
+            fi
             ;;
         2)
             echo "List of backups:"
@@ -129,13 +139,17 @@ main() {
             echo "Enter the backup file name:"
             read -r backup_file
             selected_profile=$(select_profile)
-            restore_profile "${selected_profile}" "${BACKUP_DIR}/${backup_file}"
+            echo "Do you want to restore profile ${selected_profile} from ${BACKUP_DIR}/${backup_file}? (yes/no)"
+            read -r confirm
+            if [[ "${confirm}" == "yes" ]]; then
+                restore_profile "${selected_profile}" "${BACKUP_DIR}/${backup_file}"
+            fi
             ;;
         3)
             create_profile
             ;;
         4)
-	    echo "Enter a keyword to search or select all:"
+            echo "Enter a keyword to search or select all:"
             read -r keyword
             braveBookmarks "$keyword"
             ;;
@@ -143,7 +157,7 @@ main() {
             exit 0
             ;;
         *)
-	    die "Invalid input"
+            die "Invalid input"
             ;;
     esac
 }
