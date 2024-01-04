@@ -3,7 +3,6 @@ import os
 import subprocess
 import logging
 
-# Setup logging
 logging.basicConfig(filename='permissions_fix.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
 def run_command(command):
@@ -11,18 +10,17 @@ def run_command(command):
         return subprocess.run(command, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Command '{e.cmd}' failed with error: {e.stderr.strip()}")
-        return None
+        raise
 
 def main():
     if os.geteuid() != 0:
         logging.error("This script must be run as root.")
         print("This script must be run as root.")
         return
-        
-# Define the directories and their expected permissions and ownership
+
 directories = [
-    ("/4ndr0/TheCloud", "777", "$USER:wheel"),
-    ("/home/Build", "755", "$USER:wheel"),
+    ("/4ndr0/TheCloud", "777", f"{os.getlogin()}:wheel"),
+    ("/home/Build", "755", f"{os.getlogin()}:wheel"),
     ("/bin", "755", "root:root"),
     ("/boot", "755", "root:root"),
     ("/dev", "755", "root:root"),
@@ -41,27 +39,25 @@ directories = [
     ("/usr", "755", "root:root"),
     ("/usr/local/bin", "755", "root:root"),
     ("/var", "755", "root:root"),
-    ("/usr/lib/python3.10/site-packages", "755", "root:root"), 
+    ("/usr/lib/python3.10/site-packages", "755", "root:root"),
 ]
 
- for directory, expected_permissions, expected_ownership in directories:
-        if not os.path.exists(directory):
-            logging.warning(f"Directory {directory} does not exist.")
-            continue
+for directory, expected_permissions, expected_ownership in directories:
+    if not os.path.exists(directory):
+        logging.warning(f"Directory {directory} does not exist.")
+        continue
 
-        # Check and fix permissions
-        process = run_command(["stat", "-c", "%a", directory])
-        if process and process.stdout.strip() != expected_permissions:
-            run_command(["sudo", "chmod", expected_permissions, directory])
-            logging.info(f"Permissions fixed for directory: {directory}")
+    process = run_command(["stat", "-c", "%a", directory])
+    if process and process.stdout.strip() != expected_permissions:
+        run_command(["chmod", expected_permissions, directory])
+        logging.info(f"Permissions fixed for directory: {directory}")
 
-        # Check and fix ownership
-        process = run_command(["stat", "-c", "%U:%G", directory])
-        if process and process.stdout.strip() != expected_ownership:
-            run_command(["sudo", "chown", expected_ownership, directory])
-            logging.info(f"Ownership fixed for directory: {directory}")
+    process = run_command(["stat", "-c", "%U:%G", directory])
+    if process and process.stdout.strip() != expected_ownership:
+        run_command(["chown", expected_ownership, directory])
+        logging.info(f"Ownership fixed for directory: {directory}")
 
-    print("Directory permissions and ownership check and fix complete.")
+print("Directory permissions and ownership check and fix complete.")
 
 if __name__ == "__main__":
     main()
