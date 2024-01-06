@@ -241,8 +241,8 @@ clear_temp_folder() {
 
 # --- Check and Run rmshit.py:
 check_rmshit_script() {
-    if command -v python3 >/dev/null 2>&1 && [ -f /usr/local/bin/rmshit.py ]; then
-        python3 /usr/local/bin/rmshit.py || bug "$FAILURE Error: Failed to run rmshit.py" | tee -a "$log_file"
+    if command -v python3 >/dev/null 2>&1 && [ -f /usr/local/bin/clean/rmshit.py ]; then
+        python3 /usr/local/bin/clean/rmshit.py || bug "$FAILURE Error: Failed to run rmshit.py" | tee -a "$log_file"
     else
         prominent "$INFO python3 or rmshit.py not found. Skipping." | tee -a "$log_file"
     fi
