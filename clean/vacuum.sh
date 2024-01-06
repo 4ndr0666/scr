@@ -23,27 +23,26 @@ bug() {
 
 # --- Auto escalate:
 if [ "$(id -u)" -ne 0 ]; then
-      sudo "$0" "$@"
-    exit $?
+    exec sudo "$0" "$@"
 fi
 
 # Initialize log file
 log_dir="$HOME/.local/share/permissions"
-log_file="$log_dir/$(date +%Y%d%m_%H%M%S)_permissions.log"
+log_file="$log_dir/$(date +%Y%m%d_%H%M%S)_permissions.log"
 mkdir -p "$log_dir"  # Create log dir
 
 # Define utility variables
-FIND=$(which find)
-CHMOD=$(which chmod)
-AWK=$(which awk)
-STAT=$(which stat)
+FIND=$(command -v find)
+CHMOD=$(command -v chmod)
+AWK=$(command -v awk)
+STAT=$(command -v stat)
 dep_scan_log="/usr/local/bin/dependency_scan.log"
 
 # Process dependency scan log
 process_dep_scan_log() {
     prominent "$INFO Processing dependency scan log..." | tee -a "$log_file"
     if [ -f "$dep_scan_log" ]; then
-        while read -r line; do
+        while IFS= read -r line; do
             # Check for permission warnings
             if echo "$line" | grep -q "permission warning"; then
                 # Extract filename from the log line (assuming format: "permission warning: [filename]")
@@ -67,7 +66,7 @@ process_dep_scan_log() {
                 if sudo pacman -Sy --noconfirm "$dependency"; then
                     prominent "$SUCCESS Successfully installed missing dependency: $dependency" | tee -a "$log_file"
                 else
-                    bug "$FAILURE to install missing dependency: $dependency" | tee -a "$log_file"
+                    bug "$FAILURE Failed to install missing dependency: $dependency" | tee -a "$log_file"
                 fi
             fi
 
@@ -80,9 +79,9 @@ process_dep_scan_log() {
     prominent "$SUCCESS Dependency scan log processing completed." | tee -a "$log_file"
 }
 
-# --- // Manage Cron Job with Corrected Grep:
+# --- Manage Cron Job with Corrected Grep:
 manage_cron_job() {
-    local cron_command="find $log_dir -name '*_permissions.log' -mtime +30 -exec rm {} \\;"
+    local cron_command="find $log_dir -type f -name '*_permissions.log' -mtime +30 -exec rm {} \;"
     local cron_entry="0 0 * * * $cron_command"
 
     # Remove duplicate cron jobs if they exist
@@ -98,35 +97,30 @@ manage_cron_job() {
     fi
 }
 
-# --- // Remove Broken Symlinks with Spinner:
+# --- Remove Broken Symlinks with Spinner:
 remove_broken_symlinks() {
     prominent "$INFO Searching for broken symbolic links..." | tee -a "$log_file"
-    (
-        local links_found=$($FIND / -path /proc -prune -o -type l ! -exec test -e {} \; -print)
-        if [ -z "$links_found" ]; then
-            prominent "$INFO No broken symbolic links found." | tee -a "$log_file"
+    local links_found=$($FIND / -path /proc -prune -o -type l ! -exec test -e {} \; -print)
+    if [ -z "$links_found" ]; then
+        prominent "$INFO No broken symbolic links found." | tee -a "$log_file"
+    else
+        echo "$links_found" | tee -a "$log_file"
+        read -p "Do you wish to remove the above broken symbolic links? (y/n): " choice
+        if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
+            echo "$links_found" | xargs rm -v | tee -a "$log_file"
+            prominent "$SUCCESS Broken symbolic links removed." | tee -a "$log_file"
         else
-            echo "$links_found" | tee -a "$log_file"
-            read -p "Do you wish to remove the above broken symbolic links? (y/n): " choice
-            if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
-                echo "$links_found" | xargs rm -v | tee -a "$log_file"
-                prominent "$SUCCESS Broken symbolic links removed." | tee -a "$log_file"
-            else
-                prominent "$INFO Skipping removal of broken symbolic links." | tee -a "$log_file"
-            fi
+            prominent "$INFO Skipping removal of broken symbolic links." | tee -a "$log_file"
         fi
-    ) &
-
-    local pid=$!
-    spinner "$pid"
+    fi
 }
 
-# --- // Spinner Function:
+# --- Spinner Function:
 spinner() {
     local pid=$1
     local delay=0.1
     local spinstr='|/-\\'
-    while kill -0 "$pid" 2>/dev/null; do
+    while kill --0 "$pid" 2>/dev/null; do
         local temp=${spinstr#?}
         printf " [%c]  " "$spinstr"
         local spinstr=$temp${spinstr%"$temp"}
@@ -136,32 +130,32 @@ spinner() {
     printf "      \b\b\b\b\b\b"
 }
 
-# --- // Clean Up Old Kernel Images:
+# --- Clean Up Old Kernel Images:
 clean_old_kernels() {
     prominent "$INFO Cleaning up old kernel images..." | tee -a "$log_file"
     if sudo pacman -R $(pacman -Qdtq); then
         prominent "$SUCCESS Old kernel images cleaned up." | tee -a "$log_file"
     else
-        bug "$FAILURE Error: Failed to clean up old kernel images" | tee -a "$log_file"
+	bug "$FAILURE Error: Failed to clean up old kernel images" | tee -a "$log_file"
     fi
 }
 
-# --- // Vacuum Journalctl:
+# --- Vacuum Journalctl:
 vacuum_journalctl() {
     journalctl --vacuum-time=3d || bug "$FAILURE Error: Failed to vacuum journalctl" | tee -a "$log_file"
 }
 
-# --- // Clear Cache:
+# --- Clear Cache:
 clear_cache() {
     $FIND ~/.cache/ -type f -atime +3 -delete || bug "$FAILURE Error: Failed to clear cache" | tee -a "$log_file"
 }
 
-# --- // Update Font Cache:
+# --- Update Font Cache:
 update_font_cache() {
     fc-cache -fv || bug "$FAILURE Error: Failed to update font cache" | tee -a "$log_file"
 }
 
-# --- // Clear Trash:
+# --- Clear Trash:
 clear_trash() {
     read -p "Do you want to clear the trash? (y/n): " choice
     if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
@@ -171,17 +165,17 @@ clear_trash() {
     fi
 }
 
-# --- // Optimize Databases:
+# --- Optimize Databases:
 optimize_databases() {
     prominent "$INFO Optimizing system databases..." | tee -a "$log_file"
     if sudo pacman-optimize && sync; then
-        prominent "$SUCCESS System databases optimized." | tee -a "$log_file"
+	prominent "$SUCCESS System databases optimized." | tee -a "$log_file"
     else
         bug "$FAILURE Error: Failed to optimize databases" | tee -a "$log_file"
     fi
 }
 
-# --- // Clean Package Cache:
+# --- Clean Package Cache:
 clean_package_cache() {
     prominent "$INFO Cleaning package cache..." | tee -a "$log_file"
     if sudo paccache -rk2; then  # Keeps the last 2 versions of each package
@@ -191,7 +185,7 @@ clean_package_cache() {
     fi
 }
 
-# --- // Handle Pacnew and Pacsave Files:
+# --- Handle Pacnew and Pacsave Files:
 handle_pacnew_pacsave() {
     local pacnew_files=($($FIND /etc -type f -name "*.pacnew"))
     local pacsave_files=($($FIND /etc -type f -name "*.pacsave"))
@@ -204,14 +198,14 @@ handle_pacnew_pacsave() {
     fi
 
     if [ ${#pacsave_files[@]} -gt 0 ]; then
-        prominent "$INFO .pacsave files found. Consider reviewing:" | tee -a "$log_file"
+	prominent "$INFO .pacsave files found. Consider reviewing:" | tee -a "$log_file"
         printf "%s\n" "${pacsave_files[@]}" | tee -a "$log_file"
     else
         prominent "$INFO No .pacsave files found." | tee -a "$log_file"
     fi
 }
 
-# --- // Verify Installed Packages:
+# --- Verify Installed Packages:
 verify_installed_packages() {
     prominent "$INFO Verifying installed packages..." | tee -a "$log_file"
     if sudo pacman -Qkk; then
@@ -221,7 +215,7 @@ verify_installed_packages() {
     fi
 }
 
-# --- // Check Failed Cron Jobs:
+# --- Check Failed Cron Jobs:
 check_failed_cron_jobs() {
     prominent "$INFO Checking for failed cron jobs..." | tee -a "$log_file"
     if grep -i "cron.*error" /var/log/syslog; then
@@ -231,8 +225,7 @@ check_failed_cron_jobs() {
     fi
 }
 
-
-# --- // Clear Docker Images:
+# --- Clear Docker Images:
 clear_docker_images() {
     if command -v docker >/dev/null 2>&1; then
         docker image prune -f || bug "$FAILURE Error: Failed to clear docker images" | tee -a "$log_file"
@@ -241,12 +234,12 @@ clear_docker_images() {
     fi
 }
 
-# --- // Clear Temp Folder:
+# --- Clear Temp Folder:
 clear_temp_folder() {
     $FIND /tmp -type f -atime +2 -delete || bug "$FAILURE Error: Failed to clear temp folder" | tee -a "$log_file"
 }
 
-# --- // Check and Run rmshit.py:
+# --- Check and Run rmshit.py:
 check_rmshit_script() {
     if command -v python3 >/dev/null 2>&1 && [ -f /usr/local/bin/rmshit.py ]; then
         python3 /usr/local/bin/rmshit.py || bug "$FAILURE Error: Failed to run rmshit.py" | tee -a "$log_file"
@@ -255,18 +248,18 @@ check_rmshit_script() {
     fi
 }
 
-# --- // Remove Old SSH Known Hosts:
+# --- Remove Old SSH Known Hosts:
 remove_old_ssh_known_hosts() {
     if [ -f "$HOME/.ssh/known_hosts" ]; then
-        $FIND "$HOME/.ssh/known_hosts" -mtime +14 -exec sed -i "{}d" {} \; || bug "$FAILURE Error: Failed to remove old SSH known hosts entries" | tee -a "$log_file"
+        $FIND "$HOME/.ssh/known_hosts" -mtime +14 -exec sed -i "/^$/d" {} \; || bug "$FAILURE Error: Failed to remove old SSH known hosts entries" | tee -a "$log_file"
     else
         prominent "$INFO No SSH known hosts file found. Skipping." | tee -a "$log_file"
     fi
 }
 
-# --- // Remove Orphan Vim Undo Files:
+# --- Remove Orphan Vim Undo Files:
 remove_orphan_vim_undo_files() {
-    $FIND . -type f -iname '*.un~' | while read -r file; do
+    $FIND . -type f -iname '*.un~' -print0 | while IFS= read -r -d '' file; do
         local original_file=${file%.un~}
         if [[ ! -e "$original_file" ]]; then
             rm -v "$file" | tee -a "$log_file"
@@ -275,17 +268,17 @@ remove_orphan_vim_undo_files() {
     prominent "$SUCCESS Orphan Vim undo files removed." | tee -a "$log_file"
 }
 
-# --- // Show Disk Usage:
+# --- Show Disk Usage:
 show_disk_usage() {
     df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs || bug "$FAILURE Error: Failed to show disk usage" | tee -a "$log_file"
 }
 
-# --- // Force Log Rotation:
+# --- Force Log Rotation:
 force_log_rotation() {
     logrotate -f /etc/logrotate.conf || bug "$FAILURE Error: Failed to force log rotation" | tee -a "$log_file"
 }
 
-# --- // Configure ZRam:
+# --- Configure ZRam:
 configure_zram() {
     prominent "$INFO Configuring ZRam for better memory management..." | tee -a "$log_file"
     if command -v zramctl >/dev/null 2>&1; then
@@ -307,7 +300,7 @@ check_zram_configuration() {
     fi
 }
 
-# --- // Adjust Swappiness:
+# --- Adjust Swappiness:
 adjust_swappiness() {
     local swappiness_value=10  # Recommended for systems with low RAM
     prominent "$INFO Adjusting swappiness to $swappiness_value..." | tee -a "$log_file"
@@ -316,20 +309,20 @@ adjust_swappiness() {
     prominent "$SUCCESS Swappiness adjusted to $swappiness_value." | tee -a "$log_file"
 }
 
-# --- // Clear System Cache:
+# --- Clear System Cache:
 clear_system_cache() {
     prominent "$INFO Clearing PageCache, dentries, and inodes..." | tee -a "$log_file"
     echo 1 | sudo tee /proc/sys/vm/drop_caches
     prominent "$SUCCESS System caches cleared." | tee -a "$log_file"
 }
 
-# --- // Disable Unused Services:
+# --- Disable Unused Services:
 disable_unused_services() {
     prominent "$INFO Disabling unused services and daemons..." | tee -a "$log_file"
     # List of services to disable
     local services=("bluetooth.service" "cups.service")
     for service in "${services[@]}"; do
-        if systemctl is-enabled "$service"; then
+        if systemctl is-enabled "$service" > /dev/null 2>&1; then
             sudo systemctl disable "$service"
             prominent "$SUCCESS Disabled $service." | tee -a "$log_file"
         else
@@ -338,24 +331,23 @@ disable_unused_services() {
     done
 }
 
-
-# --- // Sysz:
+# --- Sysz:
 check_failed_systemd_units() {
     if command -v sysz >/dev/null 2>&1; then
         sysz --sys --state failed || bug "$FAILURE Error: Failed to check failed systemd units using sysz" | tee -a "$log_file"
         read -p "Do you want to restart the failed system units? (y/n): " choice
         if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
-		 sysz --sys --state failed restart || bug "$FAILURE Error: Failed to restart failed systemd units using sysz" | tee -a "$log_file"
-            prominent "$SUCCESS Failed system units restarted successfully." | tee -a "$log_file"
+            sysz --sys --state failed restart || bug "$FAILURE Error: Failed to restart failed systemd units using sysz" | tee -a "$log_file"
+	prominent "$SUCCESS Failed system units restarted successfully." | tee -a "$log_file"
         else
             bug "$FAILURE Skipping restart of failed system units." | tee -a "$log_file"
         fi
     else
-        promiment "$INFO sysz is not installed. To install, visit: https://github.com/joehillen/sysz" | tee -a "$log_file"
+        prominent "$INFO sysz is not installed. To install, visit: https://github.com/joehillen/sysz" | tee -a "$log_file"
     fi
 }
 
-# --- // Clean AUR Directory:
+# --- Clean AUR Directory:
 clean_aur_directory() {
     local aur_dir="/var/cache/pacman/pkg"  # Adjust this path according to your setup
 
@@ -368,11 +360,10 @@ clean_aur_directory() {
     fi
 }
 
-
-# --- // Main:
+# --- Main:
 main() {
     prominent "$EXPLOSION Starting system maintenance script $EXPLOSION" | tee -a "$log_file"
-#    process_dep_scan_log
+#    process_dep_scan_log  # Uncomment this if you want to process the dependency scan log
     manage_cron_job
     remove_broken_symlinks
     clean_old_kernels
