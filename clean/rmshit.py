@@ -1,4 +1,8 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
+
+"""
+A script to remove specified directories and files considered unnecessary or "shitty" from the user's home directory.
+"""
 
 import os
 import shutil
@@ -43,7 +47,7 @@ shittyfiles = [
     '~/.zoom/',
     '~/.Skype/',
     '~/.minecraft/logs/',
-    '~/.cache/thumbnails/',  # Redundant with '~/.thumbnails', consider keeping only one
+    '~/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
     '~/.local/share/Trash/',  # Trash directory, safe to empty if confirmed with the user
 #    '/var/tmp/',  # System temporary files, can be cleaned but might affect currently running processes
     # Be cautious with system-wide directories like '/tmp/', which may contain files needed by other users or system services
@@ -72,34 +76,39 @@ shittyfiles = [
 ]
 
 def yesno(question, default="n"):
-    """ Asks the user for YES or NO, always case insensitive.
-        Returns True for YES and False for NO.
     """
-    prompt = "%s (y/[n]) " % question
+    Asks the user for YES or NO, always case insensitive.
+    Returns True for YES and False for NO.
+    """
+    prompt = f"{question} (y/[n]) "
 
-    ans = input(prompt).strip().lower()
+    answer = input(prompt).strip().lower()
 
-    if not ans:
-        ans = default
+    if not answer:
+        answer = default
 
-    if ans == "y":
-        return True
-    return False
+    return answer == "y"
 
-def rmshit():
+def remove_shitty_files():
+    """
+    Removes the files and directories listed in 'shittyfiles'.
+    """
     print("Found shitty files:")
-    found = [os.path.expanduser(f) for f in shittyfiles if os.path.exists(os.path.expanduser(f))]
+    found_files = [os.path.expanduser(file_path) for file_path in shittyfiles if os.path.exists(os.path.expanduser(file_path))]
 
-    if not found:
+    if not found_files:
         print("No shitty files found :)")
         return
 
     if yesno("Remove all?", default="n"):
-        for f in found:
-            if os.path.isfile(f):
-                os.remove(f)
+        for file_path in found_files:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
             else:
-                shutil.rmtree(f, ignore_errors=True)
+                shutil.rmtree(file_path, ignore_errors=True)
         print("All cleaned")
     else:
         print("No file removed")
+
+if __name__ == "__main__":
+    remove_shitty_files()

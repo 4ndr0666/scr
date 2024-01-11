@@ -13,35 +13,23 @@ cat << "EOF"
 EOF
 echo -e "\033[0m"
 
-# Function to capture frames from a video file
-capture_frames() {
+verify_video_format() {
     local video=$1
-    local fps=${2:-30}  # Default FPS is 30 if not provided
-    local data_dir="frame_captures"
-
-    if [[ ! -f "$video" ]]; then
-        echo "Error: The video file does not exist."
-        return 1
-    fi
-
-    mkdir -p "$data_dir"
-
     if [[ ! $video =~ \.(mp4|avi|mkv)$ ]]; then
         echo "Error: Unsupported video format. Supported formats are MP4, AVI, and MKV."
         return 1
     fi
-
-    ffmpeg -i "$video" -vf "fps=$fps" "${data_dir}/frame_%04d.png" 2>&1 | tee capture_frames.log
-
-    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-        echo "Error: Failed to capture frames. Check capture_frames.log for details."
-        return 1
-    fi
-
-    echo "Frames have been saved in ${data_dir}."
+    return 0
 }
 
-# Function to cut a specific portion from a video file
+log_command() {
+    local logfile=$1
+    shift
+    local cmd=$*
+    mkdir -p logs
+    eval "$cmd" 2>&1 | tee "logs/$logfile"
+}
+
 cut_clip() {
     local video=$1
     local start_time=$2
@@ -53,17 +41,16 @@ cut_clip() {
         return 1
     fi
 
-    ffmpeg -i "$video" -ss "$start_time" -to "$end_time" -c copy "$output_file" 2>&1 | tee cut_clip.log
+    log_command cut_clip.log "ffmpeg -i \"$video\" -ss \"$start_time\" -to \"$end_time\" -c copy \"$output_file\""
 
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-        echo "Error: Failed to cut clip. Check cut_clip.log for details."
+        echo "Error: Failed to cut clip. Check 'logs/cut_clip.log' for details."
         return 1
     fi
 
     echo "Clip has been cut and saved as $output_file."
 }
 
-# Function to merge multiple video clips into one file
 merge_clips() {
     local output_file="${1:-merged_clip.mp4}"
     local input_txt
@@ -75,10 +62,10 @@ merge_clips() {
         echo "file '$clip'" >> "$input_txt"
     done
 
-    ffmpeg -f concat -safe 0 -i "$input_txt" -c copy "$output_file" 2>&1 | tee merge_clips.log
+    log_command merge_clips.log "ffmpeg -f concat -safe 0 -i \"$input_txt\" -c copy \"$output_file\""
 
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-        echo "Error: Failed to merge clips. Check merge_clips.log for details."
+        echo "Error: Failed to merge clips. Check 'logs/merge_clips.log' for details."
         return 1
     fi
 
@@ -86,7 +73,6 @@ merge_clips() {
     rm "$input_txt"
 }
 
-# Function to concatenate multiple videos end-to-end
 concatenate_videos() {
     local output_file="${1:-concatenated_video.mp4}"
     local input_txt
@@ -98,16 +84,17 @@ concatenate_videos() {
         echo "file '$video'" >> "$input_txt"
     done
 
-    ffmpeg -f concat -safe 0 -i "$input_txt" -c copy "$output_file" 2>&1 | tee concatenate_videos.log
+    log_command concatenate_videos.log "ffmpeg -f concat -safe 0 -i \"$input_txt\" -c copy \"$output_file\""
 
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-        echo "Error: Failed to concatenate videos. Check concatenate_videos.log for details."
+        echo "Error: Failed to concatenate videos. Check 'logs/concatenate_videos.log' for details."
         return 1
     fi
 
     echo "Videos have been concatenated into $output_file."
     rm "$input_txt"
 }
+
 
 # Main menu for user interaction
 main_menu() {
