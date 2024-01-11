@@ -54,7 +54,7 @@ def main():
         sys.exit()
 
     # --- // Process_dependency_scan_log:
-    def process_dep_scan_log(log_file):
+def process_dep_scan_log(log_file):
     prominent(f"{INFO} Processing dependency scan log...")
     dep_scan_log = "/usr/local/bin/dependency_scan.log"
     if os.path.isfile(dep_scan_log):
@@ -84,7 +84,7 @@ def main():
     prominent(f"{SUCCESS} Dependency scan log processing completed.")
 
     # --- // Manage_Cron_Job_with_Corrected_Grep:
-    def manage_cron_job(log_file):
+def manage_cron_job(log_file):
     cron_command = f"find {log_dir} -name '*_permissions.log' -mtime +30 -exec rm {{}} \\;"
     cron_entry = f"0 0 * * * {cron_command}"
 
@@ -109,7 +109,7 @@ def main():
         bug(f"{FAILURE} Error: {e.stderr.strip()}")
 
     # --- // Remove_Broken_Symlinks_wSpinner:
-    def remove_broken_symlinks(log_file):
+def remove_broken_symlinks(log_file):
     prominent(f"{INFO} Searching for broken symbolic links...")
     try:
         links_found = subprocess.check_output(["find", "/", "-path", "/proc", "-prune", "-o", "-type", "l", "!", "-exec", "test", "-e", "{}", ";", "-print"], text=True)
@@ -132,7 +132,7 @@ def main():
         bug(f"{FAILURE} Error: {e.stderr.strip()}")
 
     # --- // Cleanup_Old_Kernel_Images:
-    def clean_old_kernels(log_file):
+def clean_old_kernels(log_file):
     prominent(f"{INFO} Cleaning up old kernel images...")
     try:
         subprocess.run(["sudo", "pacman", "-R", "$(pacman", "-Qdtq)"], check=True)
@@ -141,29 +141,28 @@ def main():
         bug(f"{FAILURE} Error: {e.stderr.strip()}", log_file)
 
     # --- // Vacuum_Journalctl:
-    def vacuum_journalctl(log_file):
+def vacuum_journalctl(log_file):
     try:
         subprocess.run(["journalctl", "--vacuum-time=3d"], check=True)
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to vacuum journalctl", log_file)
 
     # --- // Clear_Cache:
-    def clear_cache(log_file):
+def clear_cache(log_file):
     try:
         subprocess.run(["find", "~/.cache/", "-type", "f", "-atime", "+3", "-delete"], check=True)
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to clear cache", log_file)
 
     # --- // Update_Font_Cache:
-    def update_font_cache(log_file):
+def update_font_cache(log_file):
     try:
         subprocess.run(["fc-cache", "-fv"], check=True)
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to update font cache", log_file)
 
-
     # --- // Clear_Trash:
-    def clear_trash(log_file):
+def clear_trash(log_file):
     choice = input("Do you want to clear the trash? (y/n): ")
     if choice.lower() == "y":
         try:
@@ -174,7 +173,7 @@ def main():
         prominent(f"{INFO} Skipping trash clear.", log_file)
 
     # --- // Optimize_Databases:
-    def optimize_databases(log_file):
+def optimize_databases(log_file):
     prominent(f"{INFO} Optimizing system databases...")
     try:
         subprocess.run(["sudo", "pacman-optimize"], check=True)
@@ -184,7 +183,7 @@ def main():
         bug(f"{FAILURE} Error: Failed to optimize databases", log_file)
 
     # --- // Clean_Package_Cache:
-    def clean_package_cache(log_file):
+def clean_package_cache(log_file):
     prominent(f"{INFO} Cleaning package cache...")
     try:
         subprocess.run(["sudo", "paccache", "-rk2"], check=True)
@@ -192,8 +191,8 @@ def main():
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to clean package cache", log_file)
 
-    # Clean AUR Directory
-    def clean_aur_directory(log_file):
+    # --- // Clean_AUR_dir:
+def clean_aur_directory(log_file):
     aur_dir = "/var/cache/pacman/pkg"  # Adjust this path according to your setup
     if os.path.isfile("/usr/local/bin/clean-aur-dir.py"):
         prominent(f"{INFO} Cleaning AUR directory...")
@@ -206,7 +205,7 @@ def main():
         bug(f"{FAILURE} clean-aur-dir.py script not found.", log_file)
 
     # --- // Handle_Pacnew_and_Pacsave_Files:
-    def handle_pacnew_pacsave(log_file):
+def handle_pacnew_pacsave(log_file):
     pacnew_files = subprocess.check_output(["find", "/etc", "-type", "f", "-name", "*.pacnew"], text=True).splitlines()
     pacsave_files = subprocess.check_output(["find", "/etc", "-type", "f", "-name", "*.pacsave"], text=True).splitlines()
 
@@ -225,7 +224,7 @@ def main():
         prominent(f"{INFO} No .pacsave files found.")
 
     # --- // Verify_Installed_Packages:
-    def verify_installed_packages(log_file):
+def verify_installed_packages(log_file):
     prominent(f"{INFO} Verifying installed packages...")
     try:
         subprocess.run(["sudo", "pacman", "-Qkk"], check=True)
@@ -234,7 +233,7 @@ def main():
         bug(f"{FAILURE} Error: Issues found with installed packages", log_file)
 
     # Check Failed Cron Jobs
-    def check_failed_cron_jobs(log_file):
+def check_failed_cron_jobs(log_file):
     prominent(f"{INFO} Checking for failed cron jobs...")
     try:
         subprocess.run(["grep", "-i", "cron.*error", "/var/log/syslog"], check=True)
@@ -243,7 +242,7 @@ def main():
         prominent(f"{INFO} No failed cron jobs detected.", log_file)
 
     # --- // Clear_Docker_Images:
-    def clear_docker_images(log_file):
+def clear_docker_images(log_file):
     if shutil.which("docker"):
         try:
             subprocess.run(["docker", "image", "prune", "-f"], check=True)
@@ -253,14 +252,14 @@ def main():
         prominent(f"{INFO} Docker is not installed. Skipping Docker image cleanup.", log_file)
 
     # --- // Clear_temp_folder:
-    def clear_temp_folder(log_file):
+def clear_temp_folder(log_file):
     try:
         subprocess.run(["find", "/tmp", "-type", "f", "-atime", "+2", "-delete"], check=True)
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to clear the temporary folder", log_file)
 
     # --- Run_rmshit.py:
-    def check_rmshit_script(log_file):
+def check_rmshit_script(log_file):
     if shutil.which("python3") and os.path.isfile("/usr/local/bin/rmshit.py"):
         try:
             subprocess.run(["python3", "/usr/local/bin/rmshit.py"], check=True)
@@ -270,7 +269,7 @@ def main():
         prominent(f"{INFO} python3 or rmshit.py not found. Skipping.", log_file)
 
     # --- // Remove_old_SSH_known_hosts:
-    def remove_old_ssh_known_hosts(log_file):
+def remove_old_ssh_known_hosts(log_file):
     ssh_known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
     if os.path.isfile(ssh_known_hosts_file):
         try:
@@ -281,7 +280,7 @@ def main():
         prominent(f"{INFO} No SSH known hosts file found. Skipping.", log_file)
 
     # --- Remove_orphan_Vim_undo_files:
-    def remove_orphan_vim_undo_files(log_file):
+def remove_orphan_vim_undo_files(log_file):
     for root, dirs, files in os.walk(".", topdown=False):
         for file in files:
             if file.endswith(".un~"):
@@ -294,14 +293,14 @@ def main():
     prominent(f"{SUCCESS} Orphan Vim undo files removed.", log_file)
 
     # --- // Force_log_rotation:
-    def force_log_rotation(log_file):
+def force_log_rotation(log_file):
     try:
         subprocess.run(["logrotate", "-f", "/etc/logrotate.conf"], check=True)
     except subprocess.CalledProcessError as e:
         bug(f"{FAILURE} Error: Failed to force log rotation", log_file)
 
     # --- // Configure_ZRam:
-    def configure_zram(log_file):
+def configure_zram(log_file):
     prominent(f"{INFO} Configuring ZRam for better memory management...")
     if shutil.which("zramctl"):
         try:
@@ -316,14 +315,14 @@ def main():
         bug(f"{FAILURE} ZRam not available. Consider installing it first.", log_file)
 
     # --- // Check_ZRam_configuration:
-    def check_zram_configuration(log_file):
+def check_zram_configuration(log_file):
     if not os.path.isfile("/proc/swaps") or "zram" not in open("/proc/swaps").read():
         configure_zram(log_file)
     else:
         prominent(f"{INFO} ZRam is already configured.", log_file)
 
     # --- // Adjust_swappiness:
-    def adjust_swappiness(log_file):
+def adjust_swappiness(log_file):
     swappiness_value = 10  # Recommended for systems with low RAM
     prominent(f"{INFO} Adjusting swappiness to {swappiness_value}...")
     try:
@@ -334,7 +333,7 @@ def main():
         bug(f"{FAILURE} Error: Failed to adjust swappiness", log_file)
 
     # --- // Clear_system_cache:
-    def clear_system_cache(log_file):
+def clear_system_cache(log_file):
     prominent(f"{INFO} Clearing PageCache, dentries, and inodes...")
     try:
         subprocess.run(["echo", "1", "|", "sudo", "tee", "/proc/sys/vm/drop_caches"], check=True)
@@ -343,7 +342,7 @@ def main():
         bug(f"{FAILURE} Error: Failed to clear system cache", log_file)
 
     # --- // Disable_unused_services:
-    def disable_unused_services(log_file):
+def disable_unused_services(log_file):
     services_to_disable = ["bluetooth.service", "cups.service"]  # List of services to disable
     for service in services_to_disable:
         try:
@@ -356,15 +355,15 @@ def main():
             bug(f"{FAILURE}Error:Failed to disable{service}",log_file)
 
     # --- // Check_failed_systemd_units:
-    def check_failed_systemd_units(log_file):
+def check_failed_systemd_units(log_file):
     prominent(f"{INFO} Checking for failed systemd units...")
-        try:
-            subprocess.run(["systemctl", "--failed"], check=True)
-            prominent(f"{FAILURE} Failed systemd units detected. Review systemctl --failed for details.")
-        except subprocess.CalledProcessError as e:
-            prominent(f"{INFO} No failed systemd units detected.", log_file)
+    try:
+        subprocess.run(["systemctl", "--failed"], check=True)
+        prominent(f"{FAILURE} Failed systemd units detected. Review systemctl --failed for details.")
+    except subprocess.CalledProcessError as e:
+        prominent(f"{INFO} No failed systemd units detected.", log_file)
 
-            prominent(f"{EXPLOSION} System maintenance completed {EXPLOSION}")
+        prominent(f"{EXPLOSION} System maintenance completed {EXPLOSION}")
 
 if __name__ == "__main__":
     main()
