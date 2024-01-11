@@ -94,6 +94,8 @@ ufw_config() {
   handle_error
   ufw allow 6341/tcp # Megasync
   handle_error
+  ufw allow 6800/tcp # Aria2c
+  handle_error
   ufw default deny incoming
   handle_error
   ufw default allow outgoing

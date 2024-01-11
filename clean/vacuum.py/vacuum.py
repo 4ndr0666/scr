@@ -5,6 +5,7 @@ import shutil
 import stat
 import time
 import datetime
+import re
 
 # --- // Color_scheme:
 GREEN = '\033[0;32m'
@@ -355,15 +356,18 @@ def disable_unused_services(log_file):
             bug(f"{FAILURE}Error:Failed to disable{service}",log_file)
 
     # --- // Check_failed_systemd_units:
-def check_failed_systemd_units(log_file):
-    prominent(f"{INFO} Checking for failed systemd units...")
-    try:
-        subprocess.run(["systemctl", "--failed"], check=True)
-        prominent(f"{FAILURE} Failed systemd units detected. Review systemctl --failed for details.")
-    except subprocess.CalledProcessError as e:
-        prominent(f"{INFO} No failed systemd units detected.", log_file)
+def check_and_restart_systemd_units(log_file):
+        prominent(f"{INFO} Checking and restarting systemd units...")
+        try:
+            # Use 'sysz' to check for failed units and restart them
+            result = execute_command(["sysz"], log_file)
+            if result == 0:
+                prominent(f"{SUCCESS} Systemd units checked and restarted successfully.")
+            else:
+                bug(f"{FAILURE} Error checking and restarting systemd units.")
+        except subprocess.CalledProcessError as e:
+            bug(f"{FAILURE} Error checking and restarting systemd units: {e.stderr.strip()}")
 
-        prominent(f"{EXPLOSION} System maintenance completed {EXPLOSION}")
 
 if __name__ == "__main__":
     main()
