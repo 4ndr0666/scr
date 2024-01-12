@@ -89,13 +89,13 @@ def process_dep_scan_log(log_file):
                     file_path = line.split(": ")[1].strip()
                     if os.path.isfile(file_path):
                         os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-                        prominent(f"{INFO}Fixed permissions for file: {file_path}")
+                        prominent(f"Fixed permissions for file: {file_path}")
                     elif os.path.isdir(file_path):
                         os.chmod(file_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-                        prominent(f"{INFO}Fixed permissions for directory: {file_path}")
+                        prominent(f"Fixed permissions for directory: {file_path}")
                 if "missing dependency" in line:
                     dependency = line.split(": ")[1].strip()
-                    prominent(f"{INFO}Attempting to install missing dependency: {dependency}")
+                    prominent(f"Attempting to install missing dependency: {dependency}")
                     result = execute_command(["sudo", "pacman", "-Sy", "--noconfirm", dependency], log_file)
                     if result == 0:
                         prominent(f"{SUCCESS} Successfully installed missing dependency: {dependency}")
@@ -323,8 +323,8 @@ def remove_orphan_vim_undo_files(log_file):
                     try:
                         os.remove(file)
                     except OSError as e:
-                        bug(f" {FAILURE}  Error: Failed to remove orphan Vim undo files: {e}", log_file)
-    prominent(f" {SUCCESS}  Orphan Vim undo files removed.", log_file)
+                        bug(f"{FAILURE} Error: Failed to remove orphan Vim undo files: {e}", log_file)
+    prominent(f"{SUCCESS} Orphan Vim undo files removed.", log_file)
 
 
 #20 --- // Force_log_rotation:
@@ -332,12 +332,12 @@ def force_log_rotation(log_file):
     try:
         subprocess.run(["logrotate", "-f", "/etc/logrotate.conf"], check=True)
     except subprocess.CalledProcessError as e:
-        bug(f" {FAILURE}  Error: Failed to force log rotation", log_file)
+        bug(f"{FAILURE} Error: Failed to force log rotation", log_file)
 
 
 #21 --- // Configure_ZRam:
 def configure_zram(log_file):
-    prominent(f" {INFO}  Configuring ZRam for better memory management...")
+    prominent(f"{INFO} Configuring ZRam for better memory management...")
     if shutil.which("zramctl"):
         try:
             mem_total = int(subprocess.check_output(["awk", "/MemTotal/{printf \"%d\n\", $2 * 1024 * 0.25}", "/proc/meminfo"]).decode().strip())
@@ -346,9 +346,9 @@ def configure_zram(log_file):
             subprocess.run(["sudo", "swapon", "/dev/zram0", "-p", "32767"], check=True)
             prominent(f"{SUCCESS} ZRam configured successfully.")
         except subprocess.CalledProcessError as e:
-            bug(f" {FAILURE}  Error: {e.stderr.strip()}", log_file)
+            bug(f"{FAILURE} Error: {e.stderr.strip()}", log_file)
     else:
-        bug(f" {FAILURE}  ZRam not available. Consider installing it first.", log_file)
+        bug(f"{FAILURE} ZRam not available. Consider installing it first.", log_file)
 
 
 #22 --- // Check_ZRam_configuration:
@@ -356,7 +356,7 @@ def check_zram_configuration(log_file):
     if not os.path.isfile("/proc/swaps") or "zram" not in open("/proc/swaps").read():
         configure_zram(log_file)
     else:
-        print(f" {INFO}  ZRam is already configured.", log_file)
+        prominent(f"{INFO} ZRam is already configured.", log_file)
 
 
 #23 --- // Adjust_swappiness:
