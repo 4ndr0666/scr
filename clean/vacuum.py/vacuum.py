@@ -216,17 +216,49 @@ def clean_package_cache(log_file):
 
 
 #11 --- // Clean_AUR_dir:
-def clean_aur_directory(log_file):
-    aur_dir = "/var/cache/pacman/pkg"  # Adjust this path according to your setup
-    if os.path.isfile("/usr/local/bin/clean-aur-dir.py"):
-        prominent(f" {INFO}  Cleaning AUR directory...")
-        try:
-            subprocess.run(["python3", "/usr/local/bin/clean-aur-dir.py", aur_dir], check=True)
-            prominent(f" {SUCCESS}  AUR directory cleaned.")
-        except subprocess.CalledProcessError as e:
-            bug(f" {FAILURE}  Error: Failed to clean AUR directory", log_file)
-    else:
-        bug(f" {FAILURE}  clean-aur-dir.py script not found.", log_file)
+def clean_aur_dir(log_file):
+    prominent(f"{INFO} Please enter the path to the AUR directory you want to clean:")
+    aur_dir = input("Path: ").strip()  # Prompt the user for the AUR directory path
+
+    if not os.path.isdir(aur_dir):
+        bug(f"{FAILURE} The specified path is not a directory.")
+        return
+
+    os.chdir(aur_dir)
+    files = {}
+
+    # Remove files that don't match pkgname_regex from further processing
+    for f in os.listdir():
+        if not os.path.isfile(f):
+            continue
+        match = pkgname_regex.match(f)
+        if match:
+            # Strip extension for future comparison with expac's output
+            files[f] = "{pkgname}-{pkgver}-{arch}".format(**match.groupdict())
+
+    # Get list of installed packages
+    try:
+        installed = subprocess.check_output(["expac", "-Qs", "%n-%v-%a"], universal_newlines=True).splitlines()
+    except subprocess.CalledProcessError as e:
+        bug(f"{FAILURE} Error obtaining installed packages list: {e}", log_file)
+        return
+
+    for f in sorted(files):
+        # Compare with the key instead of the whole filename
+        # (drops file extensions like .pkg.tar.{xz,gz,zst}{,.sig})
+        ff = files[f]
+
+        if ff not in installed:
+            prominent(f"{INFO} Deleted: {f}")
+            try:
+                os.remove(f)
+            except OSError as e:
+                bug(f"{FAILURE} Error deleting file {f}: {e}", log_file)
+            except Exception as e:
+                bug(f"{FAILURE} Unexpected error: {e}", log_file)
+
+    prominent(f"{SUCCESS} AUR directory cleaned.")
+
 
 
 #12 --- // Handle_Pacnew_and_Pacsave_Files:
@@ -420,7 +452,7 @@ menu_options = {
     '8': partial(clear_trash, log_file),
     '9': partial(optimize_databases, log_file),
     '10': partial(clean_package_cache, log_file),
-    '11': partial(clean_aur_directory, log_file),
+    '11': partial(clean_aur_dir, log_file),
     '12': partial(handle_pacnew_pacsave, log_file),
     '13': partial(verify_installed_packages, log_file),
     '14': partial(check_failed_cron_jobs, log_file),
@@ -481,6 +513,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-log_file.close()
