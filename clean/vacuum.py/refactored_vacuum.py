@@ -3,6 +3,7 @@ import subprocess
 import sys
 import shutil
 import stat
+import time
 import logging
 import datetime
 import re
@@ -16,6 +17,12 @@ SUCCESS = "✔️"
 FAILURE = "❌"
 INFO = "➡️"
 EXPLOSION = "💥"
+
+# --- // Logging_setup:
+log_dir = os.path.join(os.path.expanduser("~"), ".local/share/system_maintenance")
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"))
+logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 
 # --- // Helper_functions:
 def format_message(message, color):
@@ -47,21 +54,86 @@ log_dir = os.path.join(os.path.expanduser("~"), ".local/share/permissions")
 log_file = os.path.join(log_dir, datetime.datetime.now().strftime("%Y%d%m_%H%M%S") + "_permissions.log")
 os.makedirs(log_dir, exist_ok=True)
 
-
+# --- // Run_all_tasks:
+def run_all_tasks():
+    # This function will sequentially execute all the tasks
+    for func in [process_dependency_scan_log, manage_cron_job_with_corrected_grep, remove_broken_symlinks_wSpinner, ...]:  # Add all functions here
+        try:
+            func(log_file)
+        except Exception as e:
+            log_and_print(format_message(f"Error executing {func.__name__}: {e}", RED), 'error')
 
 
 # --- // MAIN_FUNCTION_DEFINITIONS // ======================================
 def main():
-    prominent(f"{EXPLOSION} Starting system maintenance script {EXPLOSION}")
+
+    menu_options = {
+    '1': process_dep_scan_log,
+    '2': manage_cron_job,
+    '3': remove_broken_symlinks,
+    '4': clean_old_kernels,
+    '5': vacuum_journalctl,
+    '6': clear_cache,
+    '7': update_font_cache,
+    '8': clear_trash,
+    '9': optimize_databases,
+    '10': clean_package_cache,
+    '11': clean_aur_directory,
+    '12': handle_pacnew_pacsave,
+    '13': verify_installed_packages,
+    '14': check_failed_cron_jobs,
+    '15': clear_docker_images,
+    '16': clear_temp_folder,
+    '17': check_rmshit_script,
+    '18': remove_old_ssh_known_hosts,
+    '19': remove_orphan_vim_undo_files,
+    '20': force_log_rotation,
+    '21': configure_zram,
+    '22': check_zram_configuration,
+    '23': adjust_swappiness,
+    '24': clear_system_cache,
+    '25': disable_unused_services,
+    '26': check_and_restart_systemd_units,
+    '0': run_all_tasks
+}
 
 
-    # --- // Auto_escalate:
-    if os.getuid() != 0:
-        try:
-            subprocess.run(["sudo", sys.executable] + sys.argv, check=True)
-        except subprocess.CalledProcessError as e:
-            bug(f"Failed to escalate privileges: {e.stderr.strip()}")
-        sys.exit()
+    while True:
+        os.system('clear')
+        print(f"{GREEN}=======================================================================================")
+        print("VACUUM.PY")
+        print("=======================================================================================")
+        print(f"{NC}=============== // Vacuum Main Menu // =====================")
+        print("1) Process Dependency Scan Log        14) Check Failed Cron Jobs")
+        print("2) Manage Cron Job with Corrected Grep15) Clear Docker Images")
+        print("3) Remove Broken Symlinks w/ Spinner  16) Clear Temp Folder")
+        print("4) Cleanup Old Kernel Images          17) Run rmshit.py Script")
+        print("5) Vacuum Journalctl                  18) Remove Old SSH Known Hosts")
+        print("6) Clear Cache                        19) Remove Orphan Vim Undo Files")
+        print("7) Update Font Cache                  20) Force Log Rotation")
+        print("8) Clear Trash                        21) Configure ZRam")
+        print("9) Optimize Databases                 22) Check ZRam Configuration")
+        print("10) Clean Package Cache               23) Adjust Swappiness")
+        print("11) Clean AUR Directory               24) Clear System Cache")
+        print("12) Handle Pacnew and Pacsave Files   25) Disable Unused Services")
+        print("13) Verify Installed Packages         26) Check Failed Systemd Units")
+        print("0) Run All Tasks                      Q) Quit")
+        print("By your command:")
+
+        command = input().strip().upper()
+
+        if command in menu_options:
+            try:
+                menu_options[command]()
+            except Exception as e:
+                log_and_print(format_message(f"Error executing option: {e}", RED), 'error')
+        elif command == 'Q':
+            break
+        else:
+            log_and_print(format_message("Invalid choice. Please try again.", RED), 'error')
+
+        input("Press Enter to continue...")
+
 
 
 #1 --- // Process_dependency_scan_log:
@@ -276,7 +348,7 @@ def clear_temp_folder(log_file):
         bug(f"{FAILURE} Error: Failed to clear the temporary folder", log_file)
 
 
-#17 --- // Run_rmshit.py:
+#17 --- Run_rmshit.py:
 def check_rmshit_script(log_file):
     if shutil.which("python3") and os.path.isfile("/usr/local/bin/rmshit.py"):
         try:
@@ -299,7 +371,7 @@ def remove_old_ssh_known_hosts(log_file):
         prominent(f"{INFO} No SSH known hosts file found. Skipping.", log_file)
 
 
-#19 --- // Remove_orphan_Vim_undo_files:
+#19 --- Remove_orphan_Vim_undo_files:
 def remove_orphan_vim_undo_files(log_file):
     for root, dirs, files in os.walk(".", topdown=False):
         for file in files:
@@ -347,7 +419,7 @@ def check_zram_configuration(log_file):
 
 #23 --- // Adjust_swappiness:
 def adjust_swappiness(log_file):
-    swappiness_value = 10  # --- // Recommended for systems with low RAM
+    swappiness_value = 10  # Recommended for systems with low RAM
     prominent(f"{INFO} Adjusting swappiness to {swappiness_value}...")
     try:
         subprocess.run(["echo", str(swappiness_value), "|", "sudo", "tee", "/proc/sys/vm/swappiness"], check=True)
@@ -369,7 +441,7 @@ def clear_system_cache(log_file):
 
 #25 --- // Disable_unused_services:
 def disable_unused_services(log_file):
-    services_to_disable = ["bluetooth.service", "cups.service"]  # --- // List of services to disable
+    services_to_disable = ["bluetooth.service", "cups.service"]  # List of services to disable
     for service in services_to_disable:
         try:
             if subprocess.run(["systemctl", "is-enabled", service], stdout=subprocess.PIPE).returncode == 0:
@@ -385,7 +457,7 @@ def disable_unused_services(log_file):
 def check_and_restart_systemd_units(log_file):
         prominent(f"{INFO} Checking and restarting systemd units...")
         try:
-            # --- // 'sysz' to check for failed units and restart them
+            # Use 'sysz' to check for failed units and restart them
             result = execute_command(["sysz"], log_file)
             if result == 0:
                 prominent(f"{SUCCESS} Systemd units checked and restarted successfully.")
