@@ -3,9 +3,11 @@ import subprocess
 import sys
 import shutil
 import stat
+import time
 import logging
 import datetime
 import re
+from functools import partial
 
 # --- // Colors_and_symbols:
 GREEN = '\033[0;32m'
@@ -16,6 +18,22 @@ SUCCESS = "✔️"
 FAILURE = "❌"
 INFO = "➡️"
 EXPLOSION = "💥"
+
+# --- // ECHO_WITH_COLOR:
+# Success:
+def prominent(message):
+    print(f"{GREEN}{message}{NC}")
+
+# Error:
+def bug(message):
+    print(f"{GREEN}{message}{NC}")
+
+
+# --- // Logging_setup:
+log_dir = os.path.join(os.path.expanduser("~"), ".local/share/system_maintenance")
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"))
+logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 
 # --- // Helper_functions:
 def format_message(message, color):
@@ -43,25 +61,21 @@ def execute_command(command, error_message=None):
         return None
 
 # --- // Init_logfile:
-log_dir = os.path.join(os.path.expanduser("~"), ".local/share/permissions")
-log_file = os.path.join(log_dir, datetime.datetime.now().strftime("%Y%d%m_%H%M%S") + "_permissions.log")
-os.makedirs(log_dir, exist_ok=True)
+system_maintenance_log_dir = os.path.join(os.path.expanduser("~"), ".local/share/system_maintenance")
+system_maintenance_log_file_path = os.path.join(system_maintenance_log_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"))
+os.makedirs(system_maintenance_log_dir, exist_ok=True)
 
-
-
-
-# --- // MAIN_FUNCTION_DEFINITIONS // ======================================
-def main():
-    prominent(f"{EXPLOSION} Starting system maintenance script {EXPLOSION}")
-
-
-    # --- // Auto_escalate:
-    if os.getuid() != 0:
+# --- // Open the Log File:
+log_file = open(system_maintenance_log_file_path, 'a')
+# --- // Run_all_tasks:
+def run_all_tasks(log_file):
+    # Sequentially execute all tasks
+    for key in [str(k) for k in range(1, 27)]:
         try:
-            subprocess.run(["sudo", sys.executable] + sys.argv, check=True)
-        except subprocess.CalledProcessError as e:
-            bug(f"Failed to escalate privileges: {e.stderr.strip()}")
-        sys.exit()
+            menu_options[key]()
+        except Exception as e:
+            log_and_print(format_message(f"Error executing task {key}: {e}", RED), 'error')
+
 
 
 #1 --- // Process_dependency_scan_log:
@@ -75,13 +89,13 @@ def process_dep_scan_log(log_file):
                     file_path = line.split(": ")[1].strip()
                     if os.path.isfile(file_path):
                         os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-                        prominent(f"Fixed permissions for file: {file_path}")
+                        prominent(f"{INFO}Fixed permissions for file: {file_path}")
                     elif os.path.isdir(file_path):
                         os.chmod(file_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-                        prominent(f"Fixed permissions for directory: {file_path}")
+                        prominent(f"{INFO}Fixed permissions for directory: {file_path}")
                 if "missing dependency" in line:
                     dependency = line.split(": ")[1].strip()
-                    prominent(f"{INFO} Attempting to install missing dependency: {dependency}")
+                    prominent(f"{INFO}Attempting to install missing dependency: {dependency}")
                     result = execute_command(["sudo", "pacman", "-Sy", "--noconfirm", dependency], log_file)
                     if result == 0:
                         prominent(f"{SUCCESS} Successfully installed missing dependency: {dependency}")
@@ -89,7 +103,7 @@ def process_dep_scan_log(log_file):
                         bug(f"{FAILURE} Failed to install missing dependency: {dependency}")
     else:
         bug(f"{FAILURE} Dependency scan log file not found.")
-    prominent(f"{SUCCESS} Dependency scan log processing completed.")
+    prominent(f"{SUCCESS} Dependency scan log processing completed.{SUCCESS}")
 
 
 #2 --- // Manage_Cron_Job_with_Corrected_Grep:
@@ -276,7 +290,7 @@ def clear_temp_folder(log_file):
         bug(f"{FAILURE} Error: Failed to clear the temporary folder", log_file)
 
 
-#17 --- // Run_rmshit.py:
+#17 --- Run_rmshit.py:
 def check_rmshit_script(log_file):
     if shutil.which("python3") and os.path.isfile("/usr/local/bin/rmshit.py"):
         try:
@@ -299,7 +313,7 @@ def remove_old_ssh_known_hosts(log_file):
         prominent(f"{INFO} No SSH known hosts file found. Skipping.", log_file)
 
 
-#19 --- // Remove_orphan_Vim_undo_files:
+#19 --- Remove_orphan_Vim_undo_files:
 def remove_orphan_vim_undo_files(log_file):
     for root, dirs, files in os.walk(".", topdown=False):
         for file in files:
@@ -309,8 +323,8 @@ def remove_orphan_vim_undo_files(log_file):
                     try:
                         os.remove(file)
                     except OSError as e:
-                        bug(f"{FAILURE} Error: Failed to remove orphan Vim undo files: {e}", log_file)
-    prominent(f"{SUCCESS} Orphan Vim undo files removed.", log_file)
+                        bug(f" {FAILURE}  Error: Failed to remove orphan Vim undo files: {e}", log_file)
+    prominent(f" {SUCCESS}  Orphan Vim undo files removed.", log_file)
 
 
 #20 --- // Force_log_rotation:
@@ -318,12 +332,12 @@ def force_log_rotation(log_file):
     try:
         subprocess.run(["logrotate", "-f", "/etc/logrotate.conf"], check=True)
     except subprocess.CalledProcessError as e:
-        bug(f"{FAILURE} Error: Failed to force log rotation", log_file)
+        bug(f" {FAILURE}  Error: Failed to force log rotation", log_file)
 
 
 #21 --- // Configure_ZRam:
 def configure_zram(log_file):
-    prominent(f"{INFO} Configuring ZRam for better memory management...")
+    prominent(f" {INFO}  Configuring ZRam for better memory management...")
     if shutil.which("zramctl"):
         try:
             mem_total = int(subprocess.check_output(["awk", "/MemTotal/{printf \"%d\n\", $2 * 1024 * 0.25}", "/proc/meminfo"]).decode().strip())
@@ -332,9 +346,9 @@ def configure_zram(log_file):
             subprocess.run(["sudo", "swapon", "/dev/zram0", "-p", "32767"], check=True)
             prominent(f"{SUCCESS} ZRam configured successfully.")
         except subprocess.CalledProcessError as e:
-            bug(f"{FAILURE} Error: {e.stderr.strip()}", log_file)
+            bug(f" {FAILURE}  Error: {e.stderr.strip()}", log_file)
     else:
-        bug(f"{FAILURE} ZRam not available. Consider installing it first.", log_file)
+        bug(f" {FAILURE}  ZRam not available. Consider installing it first.", log_file)
 
 
 #22 --- // Check_ZRam_configuration:
@@ -342,12 +356,12 @@ def check_zram_configuration(log_file):
     if not os.path.isfile("/proc/swaps") or "zram" not in open("/proc/swaps").read():
         configure_zram(log_file)
     else:
-        prominent(f"{INFO} ZRam is already configured.", log_file)
+        print(f" {INFO}  ZRam is already configured.", log_file)
 
 
 #23 --- // Adjust_swappiness:
 def adjust_swappiness(log_file):
-    swappiness_value = 10  # --- // Recommended for systems with low RAM
+    swappiness_value = 10  # Recommended for systems with low RAM
     prominent(f"{INFO} Adjusting swappiness to {swappiness_value}...")
     try:
         subprocess.run(["echo", str(swappiness_value), "|", "sudo", "tee", "/proc/sys/vm/swappiness"], check=True)
@@ -369,7 +383,7 @@ def clear_system_cache(log_file):
 
 #25 --- // Disable_unused_services:
 def disable_unused_services(log_file):
-    services_to_disable = ["bluetooth.service", "cups.service"]  # --- // List of services to disable
+    services_to_disable = ["bluetooth.service", "cups.service"]  # List of services to disable
     for service in services_to_disable:
         try:
             if subprocess.run(["systemctl", "is-enabled", service], stdout=subprocess.PIPE).returncode == 0:
@@ -385,7 +399,7 @@ def disable_unused_services(log_file):
 def check_and_restart_systemd_units(log_file):
         prominent(f"{INFO} Checking and restarting systemd units...")
         try:
-            # --- // 'sysz' to check for failed units and restart them
+            # Use 'sysz' to check for failed units and restart them
             result = execute_command(["sysz"], log_file)
             if result == 0:
                 prominent(f"{SUCCESS} Systemd units checked and restarted successfully.")
@@ -394,5 +408,79 @@ def check_and_restart_systemd_units(log_file):
         except subprocess.CalledProcessError as e:
             bug(f"{FAILURE} Error checking and restarting systemd units: {e.stderr.strip()}")
 
+# --- // Define_menuoptions_with_partial:
+menu_options = {
+    '1': partial(process_dep_scan_log, log_file),
+    '2': partial(manage_cron_job, log_file),
+    '3': partial(remove_broken_symlinks, log_file),
+    '4': partial(clean_old_kernels, log_file),
+    '5': partial(vacuum_journalctl, log_file),
+    '6': partial(clear_cache, log_file),
+    '7': partial(update_font_cache, log_file),
+    '8': partial(clear_trash, log_file),
+    '9': partial(optimize_databases, log_file),
+    '10': partial(clean_package_cache, log_file),
+    '11': partial(clean_aur_directory, log_file),
+    '12': partial(handle_pacnew_pacsave, log_file),
+    '13': partial(verify_installed_packages, log_file),
+    '14': partial(check_failed_cron_jobs, log_file),
+    '15': partial(clear_docker_images, log_file),
+    '16': partial(clear_temp_folder, log_file),
+    '17': partial(check_rmshit_script, log_file),
+    '18': partial(remove_old_ssh_known_hosts, log_file),
+    '19': partial(remove_orphan_vim_undo_files, log_file),
+    '20': partial(force_log_rotation, log_file),
+    '21': partial(configure_zram, log_file),
+    '22': partial(check_zram_configuration, log_file),
+    '23': partial(adjust_swappiness, log_file),
+    '24': partial(clear_system_cache, log_file),
+    '25': partial(disable_unused_services, log_file),
+    '26': partial(check_and_restart_systemd_units, log_file),
+    '0': partial(run_all_tasks, log_file)
+}
+
+# --- // MAIN_FUNCTION_DEFINITIONS // ======================================
+def main():
+    while True:
+        os.system('clear')
+        print(f"{GREEN}=======================================================================")
+        print("VACUUM.PY - a system maintenance script by 4ndr0666")
+        print("=======================================================================")
+        print(f"{NC}=============== // Vacuum Main Menu // =====================")
+        print("1) Process Dependeny Log              14) Check Failed Cron Jobs")
+        print("2) Manage Cron Job                    15) Clear Docker Images")
+        print("3) Remove Broken Symlinks             16) Clear Temp Folder")
+        print("4) Clean Old Kernel Images            17) Run rmshit.py")
+        print("5) Vacuum Journalctl                  18) Remove Old SSH Known Hosts")
+        print("6) Clear Cache                        19) Remove Orphan Vim Undo Files")
+        print("7) Update Font Cache                  20) Force Log Rotation")
+        print("8) Clear Trash                        21) Configure ZRam")
+        print("9) Optimize Databases                 22) Check ZRam Configuration")
+        print("10) Clean Package Cache               23) Adjust Swappiness")
+        print("11) Clean AUR Directory               24) Clear System Cache")
+        print("12) Handle Pacnew and Pacsave Files   25) Disable Unused Services")
+        print("13) Verify Installed Packages         26) Check Failed Systemd Units")
+        print("0) Run All Tasks                      Q) Quit")
+        print("By your command:")
+
+        command = input().strip().upper()
+
+        if command in menu_options:
+            try:
+                menu_options[command]()
+            except Exception as e:
+                log_and_print(format_message(f"Error executing option: {e}", RED), 'error')
+        elif command == 'Q':
+            break
+        else:
+            log_and_print(format_message("Invalid choice. Please try again.", RED), 'error')
+
+        input("Press Enter to continue...")
+
+
+
 if __name__ == "__main__":
     main()
+
+
+log.file.close()
