@@ -52,4 +52,4 @@ if __name__ == "__main__":
             try:
                 os.remove(f)
             except OSError as e:
-                print(f"Error deleting file {f: {e}", file=sys.stderr)
+                print(f"Error deleting file {f} {e}", file=sys.stderr)
