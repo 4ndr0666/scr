@@ -8,6 +8,30 @@ import logging
 import datetime
 import re
 from functools import partial
+import threading
+import itertools
+import time
+
+# --- // Spinner_function:
+def spinner():
+    spinner_running = True
+    spinner_symbols = itertools.cycle('|/-\\')
+
+    def spin():
+        while spinner_running:
+            print(next(spinner_symbols), end='\r', flush=True)
+            time.sleep(0.1)
+
+    spinner_thread = threading.Thread(target=spin)
+    spinner_thread.start()
+
+    def stop():
+        nonlocal spinner_running
+        spinner_running = False
+        spinner_thread.join()  # Wait for the spinner to finish
+        print(' ', end='\r')  # Clear the spinner line
+
+    return stop
 
 # --- // Colors_and_symbols:
 GREEN = '\033[0;32m'
@@ -66,96 +90,6 @@ def confirm_deletion(file_or_dir):
     return confirm == 'y'
 
 
-def check_rmshit_script():
-    """Clean up unnecessary files."""
-    log_and_print(f"{INFO} Cleaning up unnecessary files...")
-    shittyfiles = [
-            '~/.adobe',
-            '~/.macromedia',
-            '~/.thumbnails',
-            '~/.FRD/log/app.log',
-            '~/.FRD/links.txt',
-            '~/.objectdb',
-            '~/.gstreamer-0.10',
-            '~/.pulse',
-            '~/.esd_auth',
-            '~/.config/enchant',
-            '~/.spicec',
-            '~/.dropbox-dist',
-            '~/.parallel',
-            '~/.dbus',
-            '~/.distlib/',
-            '~/.bazaar/',
-            '~/.bzr.log',
-            '~/.nv/',
-            '~/.viminfo',
-            '~/.npm/',
-            '~/.java/',
-            '~/.swt/',
-            '~/.oracle_jre_usage/',
-            '~/.jssc/',
-            '~/.tox/',
-            '~/.pylint.d/',
-            '~/.qute_test/',
-            '~/.QtWebEngineProcess/',
-            '~/.qutebrowser/',
-            '~/.asy/',
-            '~/.cmake/',
-            '~/.cache/mozilla/',
-            '~/.cache/chromium/',
-            '~/.cache/google-chrome/',
-            '~/.cache/spotify/',
-            '~/.cache/steam/',
-            '~/.zoom/',
-            '~/.Skype/',
-            '~/.minecraft/logs/',
-            '~/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
-            '~/.local/share/Trash/',  # Trash directory, safe to empty if confirmed with the user
-           #'/var/tmp/',  # Be cautious with system-wide directories like '/tmp/', which may contain files needed by other users or system services
-            '~/.vim/.swp',
-            '~/.vim/.backup',
-            '~/.vim/.undo',
-            '~/.emacs.d/auto-save-list/',
-            '~/.cache/JetBrains/',
-            '~/.vscode/extensions/',
-            '~/.npm/_logs/',
-            '~/.npm/_cacache/',
-            '~/.composer/cache/',
-            '~/.gem/cache/',
-            '~/.cache/pip/',
-            '~/.gnupg/',
-            '~/.wget-hsts',
-            '~/.docker/',
-            '~/.local/share/baloo/',
-            '~/.kde/share/apps/okular/docdata/',
-            '~/.local/share/akonadi/',
-            '~/.xsession-errors',
-            '~/.cache/gstreamer-1.0/',
-            '~/.cache/fontconfig/',
-            '~/.cache/mesa/',
-            '~/.nv/ComputeCache/',
-            # ... (Add the rest of the default paths here)
-    ]
-
-    new_paths = input("Enter any additional paths to clean (separated by space): ").split()
-    shittyfiles.extend(new_paths)
-
-    for path in shittyfiles:
-        expanded_path = os.path.expanduser(path)
-        if os.path.exists(expanded_path) and confirm_deletion(expanded_path):
-            try:
-                if os.path.isfile(expanded_path):
-                    os.remove(expanded_path)
-                    log_and_print(f"{INFO} Deleted file: {expanded_path}")
-                elif os.path.isdir(expanded_path):
-                    shutil.rmtree(expanded_path)
-                    log_and_print(f"{INFO} Deleted directory: {expanded_path}")
-            except OSError as e:
-                log_and_print(f"{FAILURE} Error deleting {expanded_path}: {e}", 'error')
-
-    log_and_print(f"{SUCCESS} Unnecessary files cleaned up.")
-
-
 
 #1 --- // Process_dependency_scan_log:
 def process_dep_scan_log(log_file):
@@ -210,25 +144,32 @@ def manage_cron_job(log_file):
 
 #3 --- // Remove_Broken_Symlinks:
 def remove_broken_symlinks(log_file):
-            log_and_print(f"{INFO} Searching for broken symbolic links...", 'info')
-            try:
-                links_found = subprocess.check_output(["sudo", "find", "/", "-path", "/proc", "-prune", "-o", "-type", "l", "!", "-exec", "test", "-e", "{}", ";", "-print"], text=True)
-                links_found = links_found.strip()
-                if not links_found:
-                    log_and_print(f"{INFO} No broken symbolic links found.", 'info')
-                else:
-                    print(links_found)
-                    choice = input("Do you wish to remove the above broken symbolic links? (y/n): ")
-                    if choice.lower() == "y":
-                        try:
-                            subprocess.run(["sudo", "find", "/", "-path", "/proc", "-prune", "-o", "-type", "l", "!", "-exec", "test", "-e", "{}", ";", "-delete"], check=True)
-                            log_and_print(f"{SUCCESS} Broken symbolic links removed.", 'info')
-                        except subprocess.CalledProcessError as e:
-                            log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
-                    else:
-                        log_and_print(f"{INFO} Skipping removal of broken symbolic links.", 'info')
-            except subprocess.CalledProcessError as e:
-                log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
+    log_and_print(f"{INFO} Searching for broken symbolic links...", 'info')
+    try:
+        # Start the spinner
+        stop_spinner = spinner()
+
+        # Long-running command that searches for broken symlinks
+        broken_links = subprocess.check_output(
+            ["sudo", "find", "/", "-xtype", "l"],
+            stderr=subprocess.STDOUT,
+            text=True
+        ).strip()
+
+        # Stop the spinner once the command is done
+        stop_spinner()
+
+        if broken_links:
+            log_and_print(f"{INFO} Broken symbolic links found:\n{broken_links}", 'info')
+            # Add logic to handle removal of broken links here
+        else:
+            log_and_print(f"{SUCCESS} No broken symbolic links found.", 'info')
+    except subprocess.CalledProcessError as e:
+        # Stop the spinner if an error occurs
+        stop_spinner()
+        log_and_print(f"{FAILURE} Error searching for broken symbolic links: {e.output.strip()}", 'error')
+
+
 
 
 #4 --- // Cleanup_Old_Kernel_Images:
@@ -309,13 +250,26 @@ def clear_trash(log_file):
 
 #9 --- // Optimize_Databases:
 def optimize_databases(log_file):
-            log_and_print(f"{INFO} Optimizing system databases...", 'info')
-            try:
-                subprocess.run(["sudo", "pacman-optimize"], check=True)
-                subprocess.run(["sync"], check=True)
-                log_and_print(f"{SUCCESS} System databases optimized.", 'info')
-            except subprocess.CalledProcessError as e:
-                log_and_print(f"{FAILURE} Error: Failed to optimize databases: {e.stderr.strip()}", 'error')
+    log_and_print(f"{INFO} Optimizing system databases...", 'info')
+    try:
+        # Update the 'locate' database
+        subprocess.run(["sudo", "updatedb"], check=True)
+        log_and_print(f"{SUCCESS} 'locate' database updated.", 'info')
+
+        # Update the 'pkgfile' database
+        subprocess.run(["sudo", "pkgfile", "-u"], check=True)
+        log_and_print(f"{SUCCESS} 'pkgfile' database updated.", 'info')
+
+        # Refresh and optimize the pacman keyring
+        subprocess.run(["sudo", "pacman-key", "--refresh-keys"], check=True)
+        log_and_print(f"{SUCCESS} Pacman keyring refreshed.", 'info')
+
+        # Additional database optimization steps can be added here if necessary
+
+        log_and_print(f"{SUCCESS} System databases optimized.", 'info')
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.strip() if e.stderr else "Command failed without an error message"
+        log_and_print(f"{FAILURE} Error: Failed to optimize databases: {error_message}", 'error')
 
 
 #10 --- // Clean_Package_Cache:
@@ -435,12 +389,76 @@ def clear_temp_folder(log_file):
 
 
 #17 --- Run_rmshit.py:
-def check_rmshit_script():
+def check_rmshit_script(log_file=None):  # Add log_file parameter to accept the argument
     """Clean up unnecessary files."""
-    log_and_print(f"{INFO} Cleaning up unnecessary files...", 'info')
-    # Placeholder for the actual paths from the original 'shittyfiles' list
-    # ...
-
+    log_and_print(f"{INFO} Cleaning up unnecessary files...")
+    shittyfiles = [
+            '~/.adobe',
+            '~/.macromedia',
+            '~/.thumbnails',
+            '~/.FRD/log/app.log',
+            '~/.FRD/links.txt',
+            '~/.objectdb',
+            '~/.gstreamer-0.10',
+            '~/.pulse',
+            '~/.esd_auth',
+            '~/.config/enchant',
+            '~/.spicec',
+            '~/.dropbox-dist',
+            '~/.parallel',
+            '~/.dbus',
+            '~/.distlib/',
+            '~/.bazaar/',
+            '~/.bzr.log',
+            '~/.nv/',
+            '~/.viminfo',
+            '~/.npm/',
+            '~/.java/',
+            '~/.swt/',
+            '~/.oracle_jre_usage/',
+            '~/.jssc/',
+            '~/.tox/',
+            '~/.pylint.d/',
+            '~/.qute_test/',
+            '~/.QtWebEngineProcess/',
+            '~/.qutebrowser/',
+            '~/.asy/',
+            '~/.cmake/',
+            '~/.cache/mozilla/',
+            '~/.cache/chromium/',
+            '~/.cache/google-chrome/',
+            '~/.cache/spotify/',
+            '~/.cache/steam/',
+            '~/.zoom/',
+            '~/.Skype/',
+            '~/.minecraft/logs/',
+            '~/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
+            '~/.local/share/Trash/',  # Trash directory, safe to empty if confirmed with the user
+           #'/var/tmp/',  # Be cautious with system-wide directories like '/tmp/', which may contain files needed by other users or system services
+            '~/.vim/.swp',
+            '~/.vim/.backup',
+            '~/.vim/.undo',
+            '~/.emacs.d/auto-save-list/',
+            '~/.cache/JetBrains/',
+            '~/.vscode/extensions/',
+            '~/.npm/_logs/',
+            '~/.npm/_cacache/',
+            '~/.composer/cache/',
+            '~/.gem/cache/',
+            '~/.cache/pip/',
+            '~/.gnupg/',
+            '~/.wget-hsts',
+            '~/.docker/',
+            '~/.local/share/baloo/',
+            '~/.kde/share/apps/okular/docdata/',
+            '~/.local/share/akonadi/',
+            '~/.xsession-errors',
+            '~/.cache/gstreamer-1.0/',
+            '~/.cache/fontconfig/',
+            '~/.cache/mesa/',
+            '~/.nv/ComputeCache/',
+            # ... (Add the rest of the default paths here)
+    ]
     new_paths = input("Enter any additional paths to clean (separated by space): ").split()
     shittyfiles.extend(new_paths)
 
@@ -659,3 +677,105 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+## Additional maintenance functions:
+
+#def trim_ssd(log_file):
+#    log_and_print(f"{INFO} Trimming SSDs...", 'info')
+#    try:
+#        subprocess.run(["sudo", "fstrim", "-av"], check=True)
+#        log_and_print(f"{SUCCESS} SSDs trimmed successfully.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error trimming SSDs: {e.stderr.strip()}", 'error')
+
+#def check_failed_systemd_services(log_file):
+#    log_and_print(f"{INFO} Checking for failed systemd services...", 'info')
+#    try:
+#        output = subprocess.check_output(["systemctl", "--failed"], text=True).strip()
+#        if output:
+#            log_and_print(f"{FAILURE} Failed systemd services detected:\n{output}", 'error')
+#        else:
+#            log_and_print(f"{SUCCESS} No failed systemd services.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error checking for failed systemd services: {e.stderr.strip()}", 'error')
+
+#def check_journal_errors(log_file):
+#    log_and_print(f"{INFO} Checking for high-priority errors in system logs...", 'info')
+#    try:
+#        output = subprocess.check_output(["journalctl", "-p", "3", "-xb"], text=True).strip()
+#        if output:
+#            log_and_print(f"{FAILURE} High-priority errors found in system logs:\n{output}", 'error')
+#        else:
+#            log_and_print(f"{SUCCESS} No high-priority errors in system logs.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error checking system logs: {e.stderr.strip()}", 'error')
+
+#def analyze_disk_usage(log_file):
+#    log_and_print(f"{INFO} Analyzing disk usage...", 'info')
+#    try:
+#        # Replace '/path/to/analyze' with the path you want to analyze, or use '.' for current directory
+#        subprocess.run(["sudo", "du", "-sh", "/path/to/analyze"], check=True)
+#        # Alternatively, use ncdu for an interactive disk usage analyzer
+#        # subprocess.run(["sudo", "ncdu", "/path/to/analyze"], check=True)
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error analyzing disk usage: {e.stderr.strip()}", 'error')
+
+#def check_for_broken_packages(log_file):
+#    log_and_print(f"{INFO} Checking for broken packages...", 'info')
+#    try:
+#        subprocess.run(["sudo", "pacman", "-Syu"], check=True)
+#        log_and_print(f"{SUCCESS} System packages updated and checked for issues.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error updating system packages: {e.stderr.strip()}", 'error')
+
+# Example of how to integrate dbus-cleanup-sockets and zombie process killing
+#def cleanup_dbus_sockets(log_file):
+#    log_and_print(f"{INFO} Cleaning up D-Bus session sockets...", 'info')
+#    try:
+#        subprocess.run(["dbus-cleanup-sockets"], check=True)
+#        log_and_print(f"{SUCCESS} D-Bus session sockets cleaned up.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error cleaning up D-Bus session sockets: {e.stderr.strip()}", 'error')
+
+#def kill_zombie_processes(log_file):
+#    log_and_print(f"{INFO} Killing zombie processes...", 'info')
+#    try:
+#        zombies = subprocess.check_output(["ps", "-eo", "stat,pid | grep '^Z'"], text=True).strip()
+#        if zombies:
+#            for line in zombies.splitlines():
+#                pid = line.split()[1]
+#                subprocess.run(["sudo", "kill", "-9", pid], check=True)
+#            log_and_print(f"{SUCCESS} Zombie processes killed.", 'info')
+#        else:
+#            log_and_print(f"{INFO} No zombie processes found.", 'info')
+#    except subprocess.CalledProcessError as e:
+#        log_and_print(f"{FAILURE} Error killing zombie processes: {e.stderr.strip()}", 'error')
+        # Integrate the new functions into the menu_options dictionary
+
+
+
+
+#menu_options = {
+    # ... other menu options ...
+#    '27': partial(trim_ssd, log_file),
+#    '28': partial(check_failed_systemd_services, log_file),
+#    '29': partial(check_journal_errors, log_file),
+#    '30': partial(analyze_disk_usage, log_file),
+##    '31': partial(check_for_broken_packages, log_file),
+#    '32': partial(cleanup_dbus_sockets, log_file),
+#    '33': partial(kill_zombie_processes, log_file),
+    # ... any additional options ...
+#}
+
+# In the main function or wherever you handle menu option selections:
+#if command == '32':
+#    cleanup_dbus_sockets(log_file)
+#elif command == '33':
+#    kill_zombie_processes(log_fi
