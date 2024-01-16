@@ -1,9 +1,12 @@
 #!/bin/bash
 
-# Cleanup script to remove files from /tmp directory
-# Files that haven't been accessed in 3 days will be deleted
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
 
-sudo find /tmp -type f -atime +2 -delete
+find /tmp -type f -atime +2 -delete
 
 # Note: This script can be run as a daily cronjob to ensure regular cleanup of /tmp directory.
 # Example cronjob entry to run this script every day at 2am:

@@ -39,17 +39,26 @@ die() { yell "$*"; exit 111; }
 
 # Select a profile
 select_profile() {
-    list_profiles
-    local choice
     local profiles=($(ls "${PROFILES_DIR}" | grep 'Profile\|Default'))
+    local number_of_profiles=${#profiles[@]}
+    local choice
+
+    echo "...${number_of_profiles} total profiles available!"
+    echo "Available profiles:"
+    for (( i=1; i<=$number_of_profiles; i++ ))
+    do
+        echo "${i}. ${profiles[$i-1]}"
+    done
+
     echo "Enter the profile number:"
     read -r choice
-    if [[ "$choice" -gt 0 && "$choice" -le "${#profiles[@]}" ]]; then
+    if [[ "$choice" -gt 0 && "$choice" -le "${number_of_profiles}" ]]; then
         echo "${profiles[$choice-1]}"
     else
         die "Invalid profile number."
     fi
 }
+
 
 # Backup a profile
 backup_profile() {
@@ -93,10 +102,14 @@ create_profile() {
     if [ -d "${PROFILES_DIR}/${new_profile_name}" ]; then
         die "Profile ${new_profile_name} already exists."
     else
-        mkdir -p "${PROFILES_DIR}/${new_profile_name}"
-        echo -e "${GRE}New profile ${new_profile_name} created.${c0}"
+        if mkdir -p "${PROFILES_DIR}/${new_profile_name}"; then
+            echo -e "${GRE}New profile ${new_profile_name} created.${c0}"
+        else
+            die "Failed to create profile ${new_profile_name}. Error: $?"
+        fi
     fi
 }
+
 
 # Extract and save Brave bookmarks to Markdown
 braveBookmarks() {
@@ -132,23 +145,30 @@ main() {
         1)
             local selected_profile
             selected_profile=$(select_profile)
-            echo "Do you want to back up profile ${selected_profile}? (yes/no)"
-            read -r confirm
-            if [[ "${confirm}" == "yes" ]]; then
-                backup_profile "${selected_profile}"
+            if [[ -n "${selected_profile}" ]]; then
+                echo "Do you want to back up profile ${selected_profile}? (yes/no)"
+                read -r confirm
+                if [[ "${confirm}" == "yes" ]]; then
+                    backup_profile "${selected_profile}"
+                fi
+            else
+                die "Invalid profile selection."
             fi
             ;;
         2)
             echo "List of backups:"
             ls "${BACKUP_DIR}"
-            local backup_file
             echo "Enter the backup file name:"
             read -r backup_file
             selected_profile=$(select_profile)
-            echo "Do you want to restore profile ${selected_profile} from ${BACKUP_DIR}/${backup_file}? (yes/no)"
-            read -r confirm
-            if [[ "${confirm}" == "yes" ]]; then
-                restore_profile "${selected_profile}" "${backup_file}"
+            if [[ -n "${selected_profile}" ]]; then
+                echo "Do you want to restore profile ${selected_profile} from ${BACKUP_DIR}/${backup_file}? (yes/no)"
+                read -r confirm
+                if [[ "${confirm}" == "yes" ]]; then
+                    restore_profile "${selected_profile}" "${backup_file}"
+                fi
+            else
+                die "Invalid profile selection."
             fi
             ;;
         3)
