@@ -395,7 +395,6 @@ def check_rmshit_script(log_file=None):  # Add log_file parameter to accept the 
     shittyfiles = [
             '~/.adobe',
             '~/.macromedia',
-            '~/.thumbnails',
             '~/.FRD/log/app.log',
             '~/.FRD/links.txt',
             '~/.objectdb',
@@ -640,9 +639,8 @@ def main():
     while True:
         os.system('clear')
         print(f"{GREEN}===================================================================")
-        print("# --- // VACUUM.PY // ========                             4ndr0666")
+        print(f"{NC}================= // Vacuum.py Main Menu // =======================")
         print("===================================================================")
-        print(f"{NC}================= // Vacuum Main Menu // =======================")
         print(f"{GREEN}1{NC}) Process Dependeny Log              {GREEN}14{NC}) Check Failed Cron Jobs")
         print(f"{GREEN}2{NC}) Manage Cron Jobs                   {GREEN}15{NC}) Clear Docker Images")
         print(f"{GREEN}3{NC}) Remove Broken Symlinks             {GREEN}16{NC}) Clear Temp Folder")
