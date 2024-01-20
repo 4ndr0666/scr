@@ -261,8 +261,9 @@ fail2ban_config() {
     logpath = /var/log/auth.log
     maxretry = 4
 " >> /etc/fail2ban/jail.local
-systemctl enable fail2ban.service --now
-handle_error
+    systemctl restart fail2ban.service --now
+    systemctl daemon-reload
+    handle_error
 }
 
 # --- Restrict SSH to localhost if only needed for Git (Testing)
