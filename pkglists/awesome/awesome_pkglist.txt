@@ -1,0 +1,1 @@
+['alacritty', 'arcolinux-awesome-git', 'archlinux-logout-git', 'archlinux-wallpapers-git', 'awesome', 'dmenu', 'feh', 'noto-fonts', 'picom', 'polkit-gnome', 'thunar', 'thunar-archive-plugin', 'thunar-volman', 'ttf-hack', 'vicious', 'nano']
