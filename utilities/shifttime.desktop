@@ -1,10 +1,11 @@
 [Desktop Entry]
 Name=ShiftTime
 Comment=Revert pkg state to a previous date.
-GenericName=Revert pkg state to a previous date
-Exec=alacritty -e "zsh -c 'sudo /usr/local/bin/shifttime; exec zsh'"
+GenericName=Package Reverter
+Exec=alacritty -e "zsh -c 'sudo /usr/local/bin/shifttime_reverted; exec zsh'"
 Icon=system-software-install
 Type=Application
 NoDisplay=false
 StartupNotify=true
-Categories=Utility
+Categories=Utility;System;
+Keywords=package;rollback;arch;linux

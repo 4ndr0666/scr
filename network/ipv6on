@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
+
 echo "Enabling IPv6..."
 
 # Enable IPv6 globally

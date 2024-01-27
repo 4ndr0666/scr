@@ -157,6 +157,8 @@ display_help() {
     echo "- chmod 666: +rw for owner, +rw for group, +rw for others"
     echo "- chmod 600: +rw for owner, no permissions for group or others"
     echo "- chmod 400: +r for owner, no permissions for group or others"
+    echo "- chown -c root:root /etc/sudoers, default sudo permissions"
+    echo "- chmod -c 0440 /etc/sudoers, default sudo permissions"
     echo ""
     echo "Press any key to return to the main menu."
     read -rn 1
