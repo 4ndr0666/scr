@@ -13,7 +13,7 @@ BOOKMARKS_LOCATION="${HOME}/bookmarks.md"
 # Create Backup Directory if it doesn't exist
 [ ! -d "${BACKUP_DIR}" ] && mkdir -p "${BACKUP_DIR}"
 
-# List available profiles
+# Function to list available profiles
 list_profiles() {
     local profile_count=0
     local profiles=()
@@ -26,10 +26,8 @@ list_profiles() {
 
     echo "...${profile_count} total profiles available!"
     echo "Available profiles:"
-    local i=1
-    for profile in "${profiles[@]}"; do
-        echo "${i}. ${profile}"
-        ((i++))
+    for i in "${!profiles[@]}"; do
+        echo "$((i + 1)). ${profiles[i]}"
     done
 }
 
@@ -37,7 +35,7 @@ list_profiles() {
 yell() { echo -e "${RED}$0: $*${c0}" >&2; }
 die() { yell "$*"; exit 111; }
 
-# Select a profile
+# Function to select a profile
 select_profile() {
     local profiles=($(ls "${PROFILES_DIR}" | grep 'Profile\|Default'))
     local number_of_profiles=${#profiles[@]}
@@ -45,22 +43,20 @@ select_profile() {
 
     echo "...${number_of_profiles} total profiles available!"
     echo "Available profiles:"
-    for (( i=1; i<=$number_of_profiles; i++ ))
-    do
-        echo "${i}. ${profiles[$i-1]}"
+    for i in "${!profiles[@]}"; do
+        echo "$((i + 1)). ${profiles[i]}"
     done
 
     echo "Enter the profile number:"
     read -r choice
     if [[ "$choice" -gt 0 && "$choice" -le "${number_of_profiles}" ]]; then
-        echo "${profiles[$choice-1]}"
+        echo "${profiles[choice - 1]}"
     else
         die "Invalid profile number."
     fi
 }
 
-
-# Backup a profile
+# Function to backup a profile
 backup_profile() {
     local profile_name=$1
     local profile_dir="${PROFILES_DIR}/${profile_name}"
@@ -78,14 +74,14 @@ backup_profile() {
     fi
 }
 
-# Restore a profile
+# Function to restore a profile
 restore_profile() {
     local profile_name=$1
     local restore_file=$2
 
     if [ -d "${PROFILES_DIR}/${profile_name}" ] && [ -f "${restore_file}" ]; then
         if cp -r "${restore_file}" "${PROFILES_DIR}/${profile_name}"; then
-	echo -e "${GRE}Profile ${profile_name} restored successfully.${c0}"
+        echo -e "${GRE}Profile ${profile_name} restored successfully.${c0}"
         else
             die "Failed to restore profile ${profile_name}."
         fi
@@ -110,15 +106,14 @@ create_profile() {
     fi
 }
 
-
-# Extract and save Brave bookmarks to Markdown
+# Function to extract and save Brave bookmarks to Markdown
 braveBookmarks() {
     local word=$1
     local file_path
     file_path=$(find "${PROFILES_DIR}" -iname "Bookmarks" -print -quit)
 
     if [ -n "$file_path" ]; then
-        echo -e "## Brave Browser Bookmarks\n" > "${BOOKMARKS_LOCATION}"
+        echo -e "## Brave Browser Bookmarks\\n" > "${BOOKMARKS_LOCATION}"
         local contents
         contents=$(jq -r '.roots.bookmark_bar.children[] | select(.type=="url") | "- ["+.name+"]("+.url+")"' "$file_path" | grep -i "$word")
         echo "$contents" >> "${BOOKMARKS_LOCATION}"
@@ -141,7 +136,7 @@ main() {
     echo "By your command:"
     read -r command
 
-        case ${command} in
+    case ${command} in
         1)
             local selected_profile
             selected_profile=$(select_profile)
