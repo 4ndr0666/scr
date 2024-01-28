@@ -8,13 +8,11 @@
 # Edited: 01-26-2024
 # Usage: ./firewall.sh
 
-# -- Escalate
 if [ "$(id -u)" -ne 0 ]; then
   sudo "$0" "$@"
   exit $?
 fi
 
-# --- Banner
 echo -e "\033[34m"
 cat << "EOF"
 #  ___________.__                              .__  .__              .__
@@ -26,10 +24,6 @@ cat << "EOF"
 EOF
 echo -e "\033[0m"
 sleep 1
-
-
-
-
 
 # --- Set proper permissions on /etc and /var
 permissions_config() {
@@ -80,7 +74,6 @@ ufw_config() {
 sysctl_config() {
   echo "Updating sysctl..."
   sleep 2
-
   SYSCTL_SETTINGS="
 kernel.sysrq = 1
 fs.protected_hardlinks=1
@@ -130,43 +123,28 @@ net.ipv4.tcp_moderate_rcvbuf=1
 net.unix.max_dgram_qlen=50
 net.ipv4.neigh.default.gc_thresh3=2048
 net.ipv4.neigh.default.gc_thresh2=1024
-
 net.ipv4.neigh.default.gc_thresh1=32
-
 net.ipv4.neigh.default.gc_interval=30
 net.ipv4.neigh.default.proxy_qlen=96
 net.ipv4.neigh.default.unres_qlen=6
-
 net.ipv4.tcp_ecn=1
 net.ipv4.tcp_reordering=3
 net.ipv4.tcp_retries2=15
 net.ipv4.tcp_retries1=3
-
 net.ipv4.tcp_slow_start_after_idle=0
-
 net.ipv4.tcp_fastopen=3
-
 net.ipv4.route.flush=1
 net.ipv6.route.flush=1
 "
-
-  # Backup the current sysctl.conf
   cp /etc/sysctl.conf /etc/sysctl.conf.backup
-
-  # Append the settings to sysctl.conf
   echo "$SYSCTL_SETTINGS" >> /etc/sysctl.conf
-
-  # Apply the settings
   sysctl -p
-
 # --- PREVENT IP SPOOFS
 cat <<EOF > /etc/host.conf
 order bind,hosts
 multi on
 EOF
 }
-
-
 
 # --- Handle IPv6 and IP version preference:
 ipv6_config() {
@@ -185,13 +163,13 @@ ipv6_config() {
       "2")
         sysctl -w net.ipv6.conf.all.disable_ipv6=1
         sysctl -w net.ipv6.conf.default.disable_ipv6=1
-        alacritty -e ipv6off
+        sleep 1
+	alacritty -e ipv6off
 	;;
       *)
         echo "Invalid choice. IPv6 will be left as-is."
         ;;
     esac
-
     # --- Check if IPv6 is really disabled:
     ipv6_status=$(sysctl -n net.ipv6.conf.all.disable_ipv6)
     if [ "$ipv6_status" -ne 1 ]; then
@@ -206,43 +184,27 @@ fail2ban_config() {
         sleep 2
     echo "
     [DEFAULT]
-    ignoreip = 127.0.0.1/8
-    findtime = 600
+    ignoreip = 127.0.0.1/8 ::1
     bantime = 3600
-    logpath = /var/log/auth.log
+    findtime = 600
     maxretry = 5
+
+    [sshd]
+    enabled = true
 " >> /etc/fail2ban/jail.local
-    systemctl restart fail2ban.service --now
-    systemctl daemon-reload
+    systemctl enable fail2ban
+    systemctl start fail2ban
 }
 
-
-
-
-
-
-
-
-
 # ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
-# Initiate system hardening
 echo "Initiating system hardening..."
-
 #permissions_config
-
 rules_config
-
 ufw_config
-
 sysctl_config
-
 ipv6_config
-
 fail2ban_config
-
 #ssh_config
-
-
 sleep 2
 
 # --- Portscan Summary:
