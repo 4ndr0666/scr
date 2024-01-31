@@ -27,30 +27,44 @@ sleep 1
 
 # --- Set proper permissions on /etc and /var
 permissions_config() {
-  UFW_DIR="/etc/ufw/"
-  LOG_DIR="/var/log/"
-  if [ -d "$UFW_DIR" ] && [ -d "$LOG_DIR" ]; then
-    chmod 755 "$UFW_DIR" "$LOG_DIR"
-    chown root:root "$UFW_DIR" "$LOG_DIR"
-    echo "Setting proper permissions for /etc and /var..."
-  else
-    echo "Couldn't correct permissions"
-  fi
-  handle_error
+    UFW_DIR="/etc/ufw/"
+    LOG_DIR="/var/log/"
+
+    if [ -d "$UFW_DIR" ] && [ -d "$LOG_DIR" ]; then
+        current_permissions_ufw=$(stat -c "%a" "$UFW_DIR")
+        current_permissions_log=$(stat -c "%a" "$LOG_DIR")
+        current_owner_ufw=$(stat -c "%U:%G" "$UFW_DIR")
+        current_owner_log=$(stat -c "%U:%G" "$LOG_DIR")
+
+        if [ "$current_permissions_ufw" != "755" ] || [ "$current_permissions_log" != "755" ]; then
+            chmod 755 "$UFW_DIR" "$LOG_DIR"
+            echo "Changed permissions to 755 for /etc/ufw and /var/log."
+        fi
+
+        if [ "$current_owner_ufw" != "root:root" ] || [ "$current_owner_log" != "root:root" ]; then
+            chown root:root "$UFW_DIR" "$LOG_DIR"
+            echo "Changed owner to root:root for /etc/ufw and /var/log."
+        fi
+    else
+        echo "Could not set permissions on directories."
+    fi
 }
 
 # --- Ensure UFW rules exist and set perms
 rules_config() {
-  UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
-  chmod 600 $UFW_FILES
+    UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
 
-  for file in "${UFW_FILES[@]}"; do
-    if [ ! -f "$file" ]; then
-      echo "File $file does not exist. Creating with default rules."
-      echo "# Default rules" > "$file"
-      chmod 600 "$file"
-    fi
-  done
+    for file in "${UFW_FILES[@]}"; do
+        if [ ! -f "$file" ]; then
+            echo "File $file does not exist. Creating with default rules."
+            echo "# Default rules" > "$file"
+        fi
+        current_permissions=$(stat -c "%a" "$file")
+        if [ "$current_permissions" != "600" ]; then
+            chmod 600 "$file"
+            echo "Set permissions to 600 for $file."
+        fi
+    done
 }
 
 # --- Function to configure UFW
@@ -61,6 +75,7 @@ ufw_config() {
   ufw limit 22/tcp
   ufw allow 6341/tcp # Megasync
   ufw allow 6800/tcp # Aria2c
+  ufw allow 36545/tcp # VPN
   ufw default deny incoming
   ufw default allow outgoing
   ufw default deny incoming v6
@@ -72,69 +87,43 @@ ufw_config() {
 
 # --- // Sysctl_config:
 sysctl_config() {
+    echo "Checking sysctl configuration..."
+    sleep 2
+    SYSCTL_SETTINGS="
+kernel.sysrq = 1
+vm.swappiness=10
+kernel.nmi_watchdog = 0
+kernel.unprivileged_userns_clone=1
+kernel.printk = 3 3 3 3
+"
+    # Backup original sysctl.conf if not already backed up
+    if [ ! -f /etc/sysctl.conf.backup ]; then
+        cp /etc/sysctl.conf /etc/sysctl.conf.backup
+    fi
+
+    # Append settings only if they don't exist
+    while read -r line; do
+        grep -qF -- "$line" /etc/sysctl.conf || echo "$line" >> /etc/sysctl.conf
+    done <<< "$SYSCTL_SETTINGS"
+
+    sysctl -p
+
+    # Prevent IP Spoofs - only update if necessary
+    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
+    if ! grep -qF "$HOST_CONF_CONTENT" /etc/host.conf; then
+        echo "Updating host.conf to prevent IP spoofs..."
+        echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
+    fi
+}
+
+sysctl_config() {
   echo "Updating sysctl..."
   sleep 2
   SYSCTL_SETTINGS="
 kernel.sysrq = 1
-fs.protected_hardlinks=1
-fs.protected_symlinks=1
-fs.suid_dumpable=0
-kernel.core_uses_pid=1
-kernel.ctrl-alt-del=0
-kernel.dmesg_restrict=1
-kernel.kptr_restrict=2
-kernel.randomize_va_space=2
-#kernel.yama.ptrace_scope=3
-net.ipv4.conf.all.accept_redirects=0
-net.ipv4.conf.all.accept_source_route=0
-net.ipv4.conf.all.bootp_relay=0
-net.ipv4.conf.all.forwarding=0
-net.ipv4.conf.all.log_martians=1
-net.ipv4.conf.all.proxy_arp=0
-net.ipv4.conf.all.rp_filter=1
-net.ipv4.conf.all.send_redirects=0
-net.ipv4.conf.default.accept_redirects=0
-net.ipv4.conf.default.accept_source_route=0
-net.ipv4.conf.default.log_martians=1
-net.ipv4.icmp_echo_ignore_broadcasts=1
-net.ipv4.icmp_ignore_bogus_error_responses=1
-net.ipv4.tcp_syncookies=1
-net.ipv4.tcp_timestamps=0
-net.ipv6.conf.all.accept_redirects=0
-net.ipv6.conf.all.accept_source_route=0
-net.ipv6.conf.default.accept_redirects=0
-net.ipv6.conf.default.accept_source_route=0
-net.ipv4.tcp_ecn=0
-net.ipv4.tcp_window_scaling=1
-net.ipv4.tcp_rmem=8192 87380 16777216
-net.ipv4.tcp_wmem=8192 65536 16777216
-net.core.rmem_max=16777216
-net.core.wmem_max=16777216
-net.core.netdev_max_backlog=16384
-net.core.dev_weight=64
-net.core.somaxconn=32768
-net.core.optmem_max=65535
-net.ipv4.tcp_max_tw_buckets=1440000
-net.ipv4.tcp_tw_reuse=1
-net.ipv4.tcp_max_orphans=16384
-net.ipv4.tcp_orphan_retries=0
-net.ipv4.tcp_no_metrics_save=1
-net.ipv4.tcp_moderate_rcvbuf=1
-net.unix.max_dgram_qlen=50
-net.ipv4.neigh.default.gc_thresh3=2048
-net.ipv4.neigh.default.gc_thresh2=1024
-net.ipv4.neigh.default.gc_thresh1=32
-net.ipv4.neigh.default.gc_interval=30
-net.ipv4.neigh.default.proxy_qlen=96
-net.ipv4.neigh.default.unres_qlen=6
-net.ipv4.tcp_ecn=1
-net.ipv4.tcp_reordering=3
-net.ipv4.tcp_retries2=15
-net.ipv4.tcp_retries1=3
-net.ipv4.tcp_slow_start_after_idle=0
-net.ipv4.tcp_fastopen=3
-net.ipv4.route.flush=1
-net.ipv6.route.flush=1
+vm.swappiness=10
+kernel.nmi_watchdog = 0
+kernel.unprivileged_userns_clone=1
 "
   cp /etc/sysctl.conf /etc/sysctl.conf.backup
   echo "$SYSCTL_SETTINGS" >> /etc/sysctl.conf
@@ -159,12 +148,18 @@ ipv6_config() {
       "1")
         sysctl -w net.ipv6.conf.all.disable_ipv6=0
         sysctl -w net.ipv6.conf.default.disable_ipv6=0
+	for interface in $(ls /proc/sys/net/ipv6/conf/); do
+                    sysctl -w net.ipv6.conf.$interface.disable_ipv6=0
+                done
+	echo "IPv6 has been disabled on all interfaces."
         ;;
       "2")
         sysctl -w net.ipv6.conf.all.disable_ipv6=1
         sysctl -w net.ipv6.conf.default.disable_ipv6=1
-        sleep 1
-	alacritty -e ipv6off
+        for interface in $(ls /proc/sys/net/ipv6/conf/); do
+                    sysctl -w net.ipv6.conf.$interface.disable_ipv6=1
+                done
+	echo "IPv6 has been disabled on all interfaces."
 	;;
       *)
         echo "Invalid choice. IPv6 will be left as-is."
@@ -180,21 +175,21 @@ ipv6_config() {
 
 # --- // Configure fail2ban:
 fail2ban_config() {
-	echo "Hardening with fail2ban..."
-        sleep 2
-    echo "
-    [DEFAULT]
-    ignoreip = 127.0.0.1/8 ::1
-    bantime = 3600
-    findtime = 600
-    maxretry = 5
+    echo "Checking fail2ban configuration..."
+    sleep 2
 
-    [sshd]
-    enabled = true
-" >> /etc/fail2ban/jail.local
-    systemctl enable fail2ban
-    systemctl start fail2ban
+    systemctl is-active --quiet fail2ban
+    if [ $? -ne 0 ]; then
+        echo "Enabling and starting fail2ban..."
+        echo sleep 2
+	systemctl enable fail2ban
+        systemctl start fail2ban
+        fail2ban-client set sshd banaction iptables-multiport
+    else
+        echo "Fail2ban is already active and configured."
+    fi
 }
+
 
 # ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
 echo "Initiating system hardening..."
