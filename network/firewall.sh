@@ -75,7 +75,7 @@ ufw_config() {
   ufw limit 22/tcp
   ufw allow 6341/tcp # Megasync
   ufw allow 6800/tcp # Aria2c
-  ufw allow 36545/tcp # VPN
+  ufw allow 37295/tcp # VPN
   ufw default deny incoming
   ufw default allow outgoing
   ufw default deny incoming v6
@@ -114,25 +114,6 @@ kernel.printk = 3 3 3 3
         echo "Updating host.conf to prevent IP spoofs..."
         echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
     fi
-}
-
-sysctl_config() {
-  echo "Updating sysctl..."
-  sleep 2
-  SYSCTL_SETTINGS="
-kernel.sysrq = 1
-vm.swappiness=10
-kernel.nmi_watchdog = 0
-kernel.unprivileged_userns_clone=1
-"
-  cp /etc/sysctl.conf /etc/sysctl.conf.backup
-  echo "$SYSCTL_SETTINGS" >> /etc/sysctl.conf
-  sysctl -p
-# --- PREVENT IP SPOOFS
-cat <<EOF > /etc/host.conf
-order bind,hosts
-multi on
-EOF
 }
 
 # --- Handle IPv6 and IP version preference:
@@ -182,7 +163,7 @@ fail2ban_config() {
     if [ $? -ne 0 ]; then
         echo "Enabling and starting fail2ban..."
         echo sleep 2
-	systemctl enable fail2ban
+	systemctl enable fail2ban --now
         systemctl start fail2ban
         fail2ban-client set sshd banaction iptables-multiport
     else
@@ -193,13 +174,12 @@ fail2ban_config() {
 
 # ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
 echo "Initiating system hardening..."
-#permissions_config
+permissions_config
 rules_config
 ufw_config
 sysctl_config
 ipv6_config
 fail2ban_config
-#ssh_config
 sleep 2
 
 # --- Portscan Summary:

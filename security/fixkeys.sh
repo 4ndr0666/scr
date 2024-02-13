@@ -1,116 +1,96 @@
 #!/bin/bash
-#set -e
-##################################################################################################################
-# Author 	: Erik Dubois
-# Website   : https://www.erikdubois.be
-# Website   : https://www.alci.online
-# Website	: https://www.arcolinux.info
-# Website	: https://www.arcolinux.com
-# Website	: https://www.arcolinuxd.com
-# Website	: https://www.arcolinuxb.com
-# Website	: https://www.arcolinuxiso.com
-# Website	: https://www.arcolinuxforum.com
-##################################################################################################################
-#
-#   DO NOT JUST RUN THIS. EXAMINE AND JUDGE. RUN AT YOUR OWN RISK.
-#
-##################################################################################################################
-#tput setaf 0 = black
-#tput setaf 1 = red
-#tput setaf 2 = green
-#tput setaf 3 = yellow
-#tput setaf 4 = dark blue
-#tput setaf 5 = purple
-#tput setaf 6 = cyan
-#tput setaf 7 = gray
-#tput setaf 8 = light blue
-##################################################################################################################
+#File: fixkeys.sh
+#Author: 4ndr0666
+#Edited: 02-07-2024
 
-Online=0
-
-function check_connectivity() {
-
-    local test_ip
-    local test_count
-
-    test_ip="8.8.8.8"
-    test_count=1
-
-    if ping -c ${test_count} ${test_ip} > /dev/null; then
-       	tput setaf 2
-       	echo
-       	echo "You are online"
-       	echo
-       	tput sgr0
-       	Online=1
-    else
-    	tput setaf 1
-    	echo
-       	echo "You are not connected to the internet"
-       	echo "We can not download the latest archlinux-keyring package"
-       	echo
-       	echo "Make sure you are online to retrieve packages"
-       	echo
-       	tput sgr0
-       	Online=0
+# --- // AUTO_ESCALATE:
+auto_escalate() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$0" "$@"
+        exit $?
     fi
- }
+}
 
-check_connectivity
+# --- // BANNER:
+banner() {
+    echo -e "\033[34m"
+    cat << "EOF"
+    #
 
-if [ $Online -eq 1 ] ; then
-	tput setaf 2
-	echo
-	echo "Installing the latest archlinux-keyring package from the internet"
-	echo
-	tput sgr0
-	sudo pacman -Sy archlinux-keyring --noconfirm
-	echo
-fi
+    # --- //ASCII_ART//
+    #
+    EOF
+    echo -e "\033[0m"
+}
 
-echo "###############################################################################"
-echo "Removing the pacman databases at /var/lib/pacman/sync/*"
-echo "###############################################################################"
-echo
-sudo rm /var/lib/pacman/sync/*
-echo
+# --- // ECHO_WITH_COLOR:
+# Success:
+prominent() {
+    local message="$1"
+    local color="${2:-$GREEN_COLOR}"
+    echo -e "${BOLD}${color}$message${NO_COLOR}"
+}
 
-echo "###############################################################################"
-echo "Removing /etc/pacman.d/gnupg folder"
-echo "###############################################################################"
-echo
-sudo rm -rf /etc/pacman.d/gnupg/*
-echo
+# Error:
+bug() {
+    local message="$1"
+    local color="${2:-$RED_COLOR}"
+    echo -e "${BOLD}${color}$message${NO_COLOR}"
+}
 
-echo "###############################################################################"
-echo "Initialize pacman keys with pacman-key --init"
-echo "###############################################################################"
-echo
-sudo pacman-key --init
-echo
+# --- // FUNCTIONS:
+reinstall() {
+    prominent "${EXPLOSION}Reinstalling the arch-keyring..."
+    pacman -Sy archlinux-keyring --noconfirm
+}
 
-echo "###############################################################################"
-echo "Populating keyring with pacman-key --populate"
-echo "###############################################################################"
-echo
-sudo pacman-key --populate
-echo
+clean() {
+    prominent "${INFO} Removing old sync data and gpg dir..."
+    rm -rf /var/lib/pacman/sync/*
+    rm -rf /etc/pacman.d/gnupg/*
+    sleep 2
+}
 
-echo "###############################################################################"
-echo "Adding Ubuntu keyserver to /etc/pacman.d/gnupg/gpg.conf"
-echo "###############################################################################"
-echo
-echo "
-keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+init() {
+    prominent "${SUCCESS}Initializing new pacman key..."
+    pacman-key --init
+}
 
-echo
-echo "###############################################################################"
-echo "Getting new databases with pacman -Sy"
-echo "###############################################################################"
-echo
-sudo pacman -Sy
-echo
+populate() {
+    prominent "${SUCCESS}Populating the keyring and explicitly adding the ubuntu keyserver..."
+    pacman-key --populate
+    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+}
 
-echo "###############################################################################"
-echo "###                DONE - YOU CAN CLOSE THIS WINDOW                        ####"
-echo "###############################################################################"
+sync() {
+    prominent "${SUCCESS}Creating fresh repo databases..."
+    pacman -Sy
+}
+
+# --- // MAIN:
+main() {
+    # --- // DYNAMIC_COLOR:
+    GREEN_COLOR='\033[0;32m'
+    RED_COLOR='\033[0;31m'
+    NO_COLOR='\033[0m' # No Color
+
+    # --- // SYMBOLS:
+    SUCCESS="✔️"
+    FAILURE="❌"
+    INFO="➡️"
+    EXPLOSION="💥"
+
+    auto_escalate
+    banner
+    reinstall
+    clean
+    init
+    populate
+    sync
+
+    prominent "${EXPLOSION}done!${EXPLOSION}"
+    sleep 1
+    exit 0
+}
+
+main "$@"
