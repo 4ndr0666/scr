@@ -5,7 +5,7 @@ eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/id_rsa
 
 # --- // Start_here:
-cd /home/Build/git/clone
+cd $PWD
 
 # --- // Command_loop:
 for d in */ ; do
