@@ -11,18 +11,6 @@ auto_escalate() {
     fi
 }
 
-# --- // BANNER:
-banner() {
-    echo -e "\033[34m"
-    cat << "EOF"
-    #
-
-    # --- //ASCII_ART//
-    #
-    EOF
-    echo -e "\033[0m"
-}
-
 # --- // ECHO_WITH_COLOR:
 # Success:
 prominent() {
@@ -41,23 +29,26 @@ bug() {
 # --- // FUNCTIONS:
 reinstall() {
     prominent "${EXPLOSION}Reinstalling the arch-keyring..."
+    sleep 2
     pacman -Sy archlinux-keyring --noconfirm
 }
 
 clean() {
     prominent "${INFO} Removing old sync data and gpg dir..."
+    sleep 2
     rm -rf /var/lib/pacman/sync/*
     rm -rf /etc/pacman.d/gnupg/*
-    sleep 2
 }
 
 init() {
     prominent "${SUCCESS}Initializing new pacman key..."
+    sleep 2
     pacman-key --init
 }
 
 populate() {
     prominent "${SUCCESS}Populating the keyring and explicitly adding the ubuntu keyserver..."
+    sleep 2
     pacman-key --populate
     echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
 }

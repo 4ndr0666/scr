@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Check for jdupes installation
+if ! command -v jdupes &> /dev/null; then
+    echo "jdupes could not be found. Please install it before running this script."
+    exit 1
+fi
+
 # Configuration
 read -p "Enter the directory to search for duplicates: " search_directory
 read -p "Enter the directory for backups: " backup_directory
@@ -17,12 +23,14 @@ fi
 
 # Step 2: Backup duplicates before any operation (Optional)
 echo "Creating backups of duplicate files..."
-mkdir -p "$backup_directory"
+mkdir -p "$backup_directory" || { echo "Failed to create backup directory."; exit 1; }
+
 while IFS= read -r line; do
     if [[ -n $line ]]; then
-        cp --parents "$line" "$backup_directory"
+        cp --parents "$line" "$backup_directory" || echo "Failed to backup file: $line"
     fi
 done < "$log_file"
+
 echo "Backup completed."
 
 # Step 3: User review of duplicates
@@ -39,16 +47,16 @@ read -p "Enter your choice (1/2/3): " action
 case $action in
     1)
         echo "Deleting duplicates..."
-        jdupes -r -d -N "$search_directory"
+        jdupes -r -d -N "$search_directory" && echo "Duplicates deleted."
         ;;
     2)
         read -p "Enter the directory to move duplicates: " move_dir
-        mkdir -p "$move_dir"
-        jdupes -r -m "$search_directory" "$move_dir"
+        mkdir -p "$move_dir" || { echo "Failed to create move directory."; exit 1; }
+        jdupes -r -m "$search_directory" "$move_dir" && echo "Duplicates moved to $move_dir"
         ;;
     3)
         echo "Creating hardlinks..."
-        jdupes -r -l "$search_directory"
+        jdupes -r -l "$search_directory" && echo "Hardlinks created."
         ;;
     *)
         echo "Invalid option. No action taken."
