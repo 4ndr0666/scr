@@ -1,223 +1,132 @@
 #!/usr/bin/env bash
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-export PATH
 
-#=================================================
-#   System Required: Arch Linux
-#   Description: Fail2ban Manager
-#   Author: Hoothin (Adapted for Arch Linux)
-#=================================================
+# Fail2ban Management Script with Pre-configured Jails
+# Author: Adapted by User for Arch Linux
 
-filepath=$(cd "$(dirname "$0")"; pwd) # Get the directory where the current file $0 is located
+# Define paths
 jail_local_file="/etc/fail2ban/jail.local"
-Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
+apache_jail_file="/etc/fail2ban/jail.d/apache.local"
+nginx_jail_file="/etc/fail2ban/jail.d/nginx.local"
+postfix_jail_file="/etc/fail2ban/jail.d/postfix.local"
+
+# Define colors for echo
+Green_font_prefix="\\033[32m"
+Red_font_prefix="\\033[31m"
+Font_color_suffix="\\033[0m"
 Info="${Green_font_prefix}[Info]${Font_color_suffix}"
 Error="${Red_font_prefix}[Error]${Font_color_suffix}"
-Tip="${Green_font_prefix}[Note]${Font_color_suffix}"
-Separator_1="——————————————————————————————"
+Tip="${Green_font_prefix}[Tip]${Font_color_suffix}"
 
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${Error} This script must be run as root."
+    exit 1
+fi
 
-[[ $EUID != 0 ]] && echo -e "${Error} Current account is not ROOT (or does not have ROOT permissions), unable to continue operation. Please use ${Green_background_prefix} sudo su ${Font_color_suffix} to obtain temporary ROOT permissions." && exit 1
-
-menu_status(){
-    if [[ -e ${jail_local_file} ]]; then
-        PID=$(ps -ef | grep -v grep | grep fail2ban | awk '{print $2}')
-        if [[ ! -z "${PID}" ]]; then
-            echo -e " Current status: ${Green_font_prefix}Installed${Font_color_suffix} and ${Green_font_prefix}Started${Font_color_suffix}"
-        else
-            echo -e " Current status: ${Green_font_prefix}Installed${Font_color_suffix} but ${Red_font_prefix}Not Started${Font_color_suffix}"
-        fi
-    else
-        echo -e " Current status: ${Red_font_prefix}Not Installed${Font_color_suffix}"
-    fi
+# Function to install Fail2ban
+install_fail2ban() {
+    echo -e "${Info} Installing Fail2ban..."
+    pacman -Sy fail2ban
 }
 
-Install_Fail2ban(){
-    pacman -Sy --noconfirm fail2ban
+# Function to update Fail2ban
+update_fail2ban() {
+    echo -e "${Info} Updating Fail2ban..."
+    pacman -Syu fail2ban
 }
 
-Update_Fail2ban(){
-    pacman -Syu --noconfirm fail2ban
+# Function to uninstall Fail2ban
+uninstall_fail2ban() {
+    echo -e "${Info} Uninstalling Fail2ban..."
+    pacman -Rns fail2ban
 }
 
-Uninstall_Fail2ban(){
-    pacman -Rns --noconfirm fail2ban
-}
-
-View_Jail(){
-    jails=$(fail2ban-client status | grep "Jail list" | awk -F "Jail list:\t" '{print $2}' | tr "," " ")
-    PS3="Select the jail to view: "
-    select Jail in ALL $jails QUIT
-    do
-    if [[ $Jail = "ALL" ]]
-    then
-        fail2ban-client status
-    elif [[ $Jail = "QUIT" ]]
-    then
-        break
-    else
-        fail2ban-client status "$Jail"
-    fi
-    done
-}
-
-Start_Jail(){
-    jails=$(fail2ban-client status | grep "Jail list" | awk -F "Jail list:\t" '{print $2}' | tr "," " ")
-    PS3="Select the jail to start: "
-    select Jail in ALL $jails QUIT
-    do
-    if [[ $Jail = "ALL" ]]
-    then
-        fail2ban-client start
-    elif [[ $Jail = "QUIT" ]]
-    then
-        break
-    else
-        fail2ban-client start "$Jail"
-    fi
-    done
-}
-
-Stop_Jail(){
-    jails=$(fail2ban-client status | grep "Jail list" | awk -F "Jail list:\t" '{print $2}' | tr "," " ")
-    PS3="Select the jail to stop: "
-    select Jail in ALL $jails QUIT
-    do
-    if [[ $Jail = "ALL" ]]
-    then
-        fail2ban-client stop
-    elif [[ $Jail = "QUIT" ]]
-    then
-        break
-    else
-        fail2ban-client stop "$Jail"
-    fi
-    done
-}
-
-Modify_Filter_Config(){
-    read -p "Enter filter configuration name, e.g. 'nginx' > " filterName
-    if [[ ! -e /etc/fail2ban/filter.d/${filterName}.conf ]]
-    then
-        read -p "This configuration does not exist, do you want to create it? [Y/N] " create
-        if [[ $create = "Y" || $create = "y" ]]
-        then
-            echo -e "###\n# Include Configurations\n###\n[INCLUDES]\nbefore = common.conf\n# Include other files' configurations before loading this configuration file.\n\n###\n# Define Filters\n###\n[Definition]\n_daemon = sshd\n# Define a variable to describe the service name to be filtered.\nfailregex = ^%(__prefix_line)s(?:error: PAM: )?[aA]uthentication (?:failure|error) for .* from <HOST>( via \S+)?\s*$\n# Use regex to define hosts to be jailed (failed login hosts), marked with <HOST> for the IP address part.\nignoreregex = \n# Define hosts to ignore with regex.\n\n### \n# Initialize Filters\n###\n[Init]\nmaxlines = 10\n# Set how many lines the filter reads from the log at a time, 10 lines per match.\n# The number of lines buffered from the log for matching. If a large number of lines are read at once, the program may crash, and there may not be enough system memory.\njournalmatch = _SYSTEMD_UNIT=sshd.service + _COMM=sshd\n# This item is effective when the backend monitor defined in the jail configuration is systemd, defining a service name to get IP addresses from journal logs.">/etc/fail2ban/filter.d/${filterName}.conf
-        fi
-    fi
-    vim /etc/fail2ban/filter.d/${filterName}.conf
-}
-
-Modify_Jail_Local_Config(){
-    vim /etc/fail2ban/jail.local
-}
-
-Start_Fail2ban(){
+# Function to start Fail2ban service
+start_fail2ban() {
+    echo -e "${Info} Starting Fail2ban service..."
     systemctl start fail2ban
     systemctl enable fail2ban
 }
 
-Reload_Fail2ban(){
-    fail2ban-client reload
-}
-
-Stop_Fail2ban(){
+# Function to stop Fail2ban service
+stop_fail2ban() {
+    echo -e "${Info} Stopping Fail2ban service..."
     systemctl stop fail2ban
 }
 
-Restart_Fail2ban(){
+# Function to restart Fail2ban service
+restart_fail2ban() {
+    echo -e "${Info} Restarting Fail2ban service..."
     systemctl restart fail2ban
 }
 
-UnBan(){
-    fail2ban-client set ssh-iptables unbanip 192.168.1.1
-    jails=$(fail2ban-client status | grep "Jail list" | awk -F "Jail list:\t" '{print $2}' | tr "," " ")
-    PS3="Select the jail with the banned IP: "
-    select Jail in $jails QUIT
-    do
-    if [[ $Jail = "QUIT" ]]
-    then
-        break
-    else
-        ips=$(fail2ban-client status "$Jail" | grep "Banned IP list:" | awk -F "Banned IP list:\t" '{print $2}')
-        PS3="Select the IP to unban: "
-        select ip in $ips QUIT
-        do
-        if [[ $ip = "QUIT" ]]
-        then
-            break
-        else
-            fail2ban-client set "$Jail" unbanip "$ip"
-        fi
-        done
-    fi
-    done
+# Function to enable sshd jail
+enable_sshd_jail() {
+    echo -e "${Info} Enabling SSHD jail..."
+    cat > ${jail_local_file} <<EOF
+[sshd]
+enabled = true
+port    = ssh
+filter  = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+EOF
 }
 
-echo -e "  Fail2ban One-Click Management Script
-  ---- Hoothin ----
-  ---- fail2ban-regex /var/log/nginx/access.log \"<HOST> -.*- .*HTTP/1.* .* .*$\" ----
-  ---- fail2ban-regex /var/log/nginx/access.log /etc/fail2ban/filter.d/nginx-cc.conf ----
+# Function to enable Apache jail
+enable_apache_jail() {
+    echo -e "${Info} Enabling Apache jail..."
+    cat > ${apache_jail_file} <<EOF
+[apache-auth]
+enabled = true
+port    = http,https
+filter  = apache-auth
+logpath = /var/log/apache*/*error.log
+maxretry = 5
+EOF
+}
 
-  ${Green_font_prefix}1.${Font_color_suffix} Install Fail2ban
-  ${Green_font_prefix}2.${Font_color_suffix} Update Fail2ban
-  ${Green_font_prefix}3.${Font_color_suffix} Uninstall Fail2ban
-————————————
-  ${Green_font_prefix}4.${Font_color_suffix} View Jail Information
-  ${Green_font_prefix}5.${Font_color_suffix} Start Jail
-  ${Green_font_prefix}6.${Font_color_suffix} Stop Jail
-  ${Green_font_prefix}7.${Font_color_suffix} Edit Filter Configuration
-  ${Green_font_prefix}8.${Font_color_suffix} Edit jail.local
-————————————
- ${Green_font_prefix} 9.${Font_color_suffix} Start Fail2ban Service
- ${Green_font_prefix}10.${Font_color_suffix} Reload Configuration
- ${Green_font_prefix}11.${Font_color_suffix} Stop Fail2ban Service
- ${Green_font_prefix}12.${Font_color_suffix} Restart Fail2ban
- ${Green_font_prefix}13.${Font_color_suffix} Unban IP
- "
-menu_status
-echo && read -e -p "Please enter a number [1-13]：" num
-case "$num" in
-    1)
-    Install_Fail2ban
-    ;;
-    2)
-    Update_Fail2ban
-    ;;
-    3)
-    Uninstall_Fail2ban
-    ;;
-    4)
-    View_Jail
-    ;;
-    5)
-    Start_Jail
-    ;;
-    6)
-    Stop_Jail
-    ;;
-    7)
-    Modify_Filter_Config
-    ;;
-    8)
-    Modify_Jail_Local_Config
-    ;;
-    9)
-    Start_Fail2ban
-    ;;
-    10)
-    Reload_Fail2ban
-    ;;
-    11)
-    Stop_Fail2ban
-    ;;
-    12)
-    Restart_Fail2ban
-    ;;
-    13)
-    UnBan
-    ;;
-    *)
-    echo -e "${Error} Please enter the correct number [1-13]"
-    ;;
+# Function to enable Nginx jail
+enable_nginx_jail() {
+    echo -e "${Info} Enabling Nginx jail..."
+    cat > ${nginx_jail_file} <<EOF
+[nginx-http-auth]
+enabled = true
+port    = http,https
+filter  = nginx-http-auth
+logpath = /var/log/nginx/*error.log
+maxretry = 5
+EOF
+}
+
+# Function to enable Postfix jail
+enable_postfix_jail() {
+    echo -e "${Info} Enabling Postfix jail..."
+    cat > ${postfix_jail_file} <<EOF
+[postfix]
+enabled  = true
+port     = smtp,ssmtp
+filter   = postfix
+logpath  = /var/log/postfix.log
+maxretry = 5
+EOF
+}
+
+# Main menu
+echo -e "${Info} Fail2ban Management Script"
+echo -e "1. Install Fail2ban\\n2. Update Fail2ban\\n3. Uninstall Fail2ban\\n4. Start Fail2ban Service\\n5. Stop Fail2ban Service\\n6. Restart Fail2ban Service\\n7. Enable SSHD Jail\\n8. Enable Apache Jail\\n9. Enable Nginx Jail\\n10. Enable Postfix Jail"
+read -p "Enter choice [1-10]: " choice
+
+case $choice in
+    1) install_fail2ban ;;
+    2) update_fail2ban ;;
+    3) uninstall_fail2ban ;;
+    4) start_fail2ban ;;
+    5) stop_fail2ban ;;
+    6) restart_fail2ban ;;
+    7) enable_sshd_jail ;;
+    8) enable_apache_jail ;;
+    9) enable_nginx_jail ;;
+    10) enable_postfix_jail ;;
+    *) echo -e "${Error} Invalid choice." ;;
 esac
