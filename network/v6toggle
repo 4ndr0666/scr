@@ -1,0 +1,64 @@
+#!/bin/zsh
+
+# Function to backup sysctl configuration
+backup_sysctl_config() {
+    cp /etc/sysctl.conf /etc/sysctl.conf.backup
+    echo "Sysctl configuration backed up."
+}
+
+# Function to restore sysctl configuration from backup
+restore_sysctl_config() {
+    if [[ -f /etc/sysctl.conf.backup ]]; then
+        cp /etc/sysctl.conf.backup /etc/sysctl.conf
+        echo "Sysctl configuration restored from backup."
+        /sbin/sysctl --system
+    else
+        echo "Backup configuration not found."
+    fi
+}
+
+# Function to modify IPv6 settings
+modify_ipv6_setting() {
+    local setting=$1
+    echo "Modifying IPv6 settings to $setting..."
+
+    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6=$setting
+    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6=$setting
+
+    for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
+        if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
+            /sbin/sysctl -w net.ipv6.conf.$interface.disable_ipv6=$setting || {
+                echo "Error modifying IPv6 settings for interface $interface. Would you like to rollback? (y/n)"
+                read -r choice
+                if [[ "$choice" = "y" ]]; then
+                    restore_sysctl_config
+                fi
+                return 1
+            }
+        fi
+    done
+    echo "IPv6 settings modified successfully to $setting."
+}
+
+# Automatically escalate privileges if not run as root
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "This script needs to be run with superuser privileges."
+    sudo /bin/zsh "$0" "$@"
+    exit $?
+fi
+
+# Main script logic
+case "$1" in
+    "off")
+        backup_sysctl_config
+        modify_ipv6_setting 1
+        ;;
+    "on")
+        backup_sysctl_config
+        modify_ipv6_setting 0
+        ;;
+    *)
+        echo "Usage: $0 {on|off}"
+        exit 1
+        ;;
+esac
