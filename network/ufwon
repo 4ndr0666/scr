@@ -1,88 +1,87 @@
 #!/bin/bash
 # Script Name: ufwon
-# Description: Automatically escalates privileges sets ufw, sysctl and hosts.
+# Description: Automatically escalates privileges, sets UFW, sysctl, and hosts for enhanced security.
 # Author: 4ndr0666
-# Edited: 02-06-2024
+# Edited: 03-01-2024
 
+# Check for root privileges and re-execute with sudo if necessary
 if [ "$(id -u)" -ne 0 ]; then
-  sudo "$0" "$@"
-  exit $?
+    echo "Re-running script with sudo..."
+    sudo "$0" "$@"
+    exit $?
 fi
 
-echo -e "\033[34m"
-cat << "EOF"
-#  ___________.__                              .__  .__              .__
-#  \_   _____/|__|______   ______  _  _______  |  | |  |        _____|  |__
-#   |    __)  |  \_  __ \_/ __ \ \/ \/ /\__  \ |  | |  |       /  ___/  |  \
-#   |     \   |  ||  | \/\  ___/\     /  / __ \|  |_|  |__     \___ \|   Y  \
-#   \___  /   |__||__|    \___  >\/\_/  (____  /____/____/ /\ /____  >___|  /
-#       \/                    \/             \/            \/      \/     \/
-EOF
-echo -e "\033[0m"
-sleep 1
-
-# --- Function to configure UFW
+# Configuration function for UFW
 ufw_config() {
-  echo "Configuring UFW..."
-  sleep 2
-  ufw --force reset
-  ufw limit 22/tcp
-  ufw allow 80/tcp
-  ufw allow 443/tcp
-  ufw allow 6341/tcp # Megasync
-  ufw allow 6800/tcp # Aria2c
-  ufw default deny incoming
-  ufw default allow outgoing
-  ufw default deny incoming v6
-  ufw default allow outgoing v6
-  ufw enable
-}
-
-# --- Harden /etc/sysctl.conf
-sysctl_config() {
-    echo "Checking sysctl configuration..."
+    echo -e "\033[34mConfiguring UFW...\033[0m"
     sleep 2
-    SYSCTL_SETTINGS="
-sudo sysctl kernel.modules_disabled=1
-sudo sysctl -a
-sudo sysctl -A
-sudo sysctl mib
-sudo sysctl net.ipv4.conf.all.rp_filter
-sudo sysctl -a --pattern 'net.ipv4.conf.(eth|wlan)0.arp'
-kernel.sysrq = 1
-vm.swappiness=10
-kernel.nmi_watchdog = 0
-kernel.unprivileged_userns_clone=1
-kernel.printk = 3 3 3 3
-"
-    # Append settings only if they don't exist
-    while read -r line; do
-        grep -qF -- "$line" /etc/sysctl.conf || echo "$line" >> /etc/sysctl.conf
-    done <<< "$SYSCTL_SETTINGS"
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
 
-    sysctl -p
+    # Essential services
+    ufw limit 22/tcp # SSH with rate limiting
+    ufw allow 80/tcp # HTTP
+    ufw allow 443/tcp # HTTPS
 
-    # Prevent IP Spoofs - only update if necessary
-    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
-    if ! grep -qF "$HOST_CONF_CONTENT" /etc/host.conf; then
-        echo "Updating host.conf to prevent IP spoofs..."
-        echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
-    fi
+    # Local network services
+    ufw allow from 192.168.1.0/24 to any port 9666
+    ufw allow from 192.168.1.0/24 to any port 9665
+    ufw allow from 192.168.1.0/24 to any port 36501
+
+    # Enable UFW with logging
+    ufw logging on
+    ufw --force enable
+    ufw status verbose
 }
 
-# ----------------------------------------------------------------------------// SCRIPT_LOGIC //:
-echo "Initiating system hardening..."
-sleep 2
-ufw_config
-sysctl_config
-sleep 1
+# Configuration function for sysctl
+sysctl_config() {
+    echo -e "\033[34mChecking sysctl configuration...\033[0m"
+    sleep 2
 
-# --- Portscan Summary:
-echo "### ============================== // LISTENING PORTS // ============================== ###"
-netstat -tunlp
-sleep 3
+    # Define desired sysctl settings
+    declare -A sysctl_settings=(
+        ["kernel.modules_disabled"]="1"
+        ["vm.swappiness"]="10"
+        ["kernel.nmi_watchdog"]="0"
+        ["kernel.unprivileged_userns_clone"]="1"
+        ["kernel.printk"]="3 3 3 3"
+    )
 
-# --- UFW Status:
-echo "### ============ // UFW SUMMARY // ============ ###"
-ufw status numbered
-sleep 2
+    # Apply sysctl settings
+    for key in "${!sysctl_settings[@]}"; do
+        sysctl -w "$key=${sysctl_settings[$key]}"
+        echo "$key = ${sysctl_settings[$key]}" >> /etc/sysctl.conf
+    done
+
+    sysctl -p # Reload sysctl settings
+
+    # Prevent IP spoofing
+    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
+    echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
+    echo "Updated /etc/host.conf to prevent IP spoofing."
+}
+
+# Main script execution
+main() {
+    echo -e "\033[34mInitiating system hardening...\033[0m"
+    sleep 1
+
+    ufw_config
+    sysctl_config
+
+    echo -e "\033[34mSystem hardening complete.\033[0m"
+    sleep 1
+
+    # Display listening ports and UFW status as a summary
+    echo "### ============================== // LISTENING PORTS // ============================== ###"
+    netstat -tunlp
+    sleep 3
+
+    echo "### ============ // UFW SUMMARY // ============ ###"
+    ufw status numbered
+    sleep 2
+}
+
+main "$@"
