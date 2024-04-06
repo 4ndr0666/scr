@@ -1,0 +1,8 @@
+lib32-fluidsynth
+libclc
+python-pydantic
+rust
+rust-bindgen
+spirv-llvm-translator
+texlive-plaingeneric
+valgrind

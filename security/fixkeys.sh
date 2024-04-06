@@ -1,30 +1,37 @@
 #!/bin/bash
-#File: fixkeys.sh
+#
+##File: /usr/local/bin/fixkeys.sh
 #Author: 4ndr0666
 #Edited: 02-07-2024
 
-# --- // AUTO_ESCALATE:
+# ----------------------- // FIX_KEYS.SH // ========
 auto_escalate() {
     if [ "$(id -u)" -ne 0 ]; then
         sudo "$0" "$@"
         exit $?
     fi
 }
+    
+GREEN_COLOR='\033[0;32m'
+RED_COLOR='\033[0;31m'
+NO_COLOR='\033[0m' # No Color
+SUCCESS="✔️"
+FAILURE="❌"
+INFO="➡️"
+EXPLOSION="💥"
 
-# --- // ECHO_WITH_COLOR:
-# Success:
 prominent() {
     local message="$1"
     local color="${2:-$GREEN_COLOR}"
     echo -e "${BOLD}${color}$message${NO_COLOR}"
 }
 
-# Error:
 bug() {
     local message="$1"
     local color="${2:-$RED_COLOR}"
     echo -e "${BOLD}${color}$message${NO_COLOR}"
 }
+
 
 # --- // FUNCTIONS:
 reinstall() {
@@ -60,25 +67,13 @@ sync() {
 
 # --- // MAIN:
 main() {
-    # --- // DYNAMIC_COLOR:
-    GREEN_COLOR='\033[0;32m'
-    RED_COLOR='\033[0;31m'
-    NO_COLOR='\033[0m' # No Color
-
-    # --- // SYMBOLS:
-    SUCCESS="✔️"
-    FAILURE="❌"
-    INFO="➡️"
-    EXPLOSION="💥"
-
     auto_escalate
-    banner
+#    banner
     reinstall
     clean
     init
     populate
     sync
-
     prominent "${EXPLOSION}done!${EXPLOSION}"
     sleep 1
     exit 0

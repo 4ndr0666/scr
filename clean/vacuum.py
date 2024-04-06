@@ -12,19 +12,24 @@ import threading
 import itertools
 import time
 
-# --- // Spinner_function:
+# Set up basic logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# --- // Spinner function with docstring:
 def spinner():
+    """A simple console spinner for indicating progress."""
     spinner_running = True
     spinner_symbols = itertools.cycle('|/-\\')
-
+    
     def spin():
         while spinner_running:
-            print(next(spinner_symbols), end='\r', flush=True)
+            sys.stdout.write(next(spinner_symbols) + '\r')
+            sys.stdout.flush()
             time.sleep(0.1)
 
     spinner_thread = threading.Thread(target=spin)
     spinner_thread.start()
-
+    return spinner_thread, lambda: setattr(spinner, 'spinner_running', False)
+   
     def stop():
         nonlocal spinner_running
         spinner_running = False
