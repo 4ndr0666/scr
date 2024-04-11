@@ -7,23 +7,23 @@ import subprocess
 import logging
 from time import sleep
 import re
-
-# Importing 'rich' for enhanced CLI experience
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt
 from rich.progress import Progress
 
 console = Console()
-logging.basicConfig(filename='file_management.log', level=logging.INFO,
+logging.basicConfig(filename='file_management_v2_0.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 CONFIG = {
     "categories": {
         "Pictures": ["image"],
         "Media": ["audio", "video"],
-        "Documents": ["text", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-        "Archives": ["application/zip", "application/x-rar-compressed", "application/x-7z-compressed", "application/gzip", "application/x-tar"],
+        "Documents": ["text", "application/pdf", "application/msword",
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        "Archives": ["application/zip", "application/x-rar-compressed", "application/x-7z-compressed",
+                     "application/gzip", "application/x-tar"],
     },
     "extensions": {
         ".pdf": "Documents",
@@ -39,7 +39,7 @@ CONFIG = {
 }
 
 def generate_file_hash(file_path):
-    BUF_SIZE = 65536
+    BUF_SIZE = 65536  # reads in 64kb chunks
     sha256 = hashlib.sha256()
     with open(file_path, 'rb') as f:
         while chunk := f.read(BUF_SIZE):
@@ -57,7 +57,7 @@ def categorize_file(file_path):
 def handle_duplicates(file_path, target_directory):
     original_path = Path(file_path)
     new_path = target_directory / original_path.name
-    file_hash = generate_file_hash(file_path)[:8]
+    file_hash = generate_file_hash(file_path)[:8]  # using first 8 characters for brevity
     counter = 1
     while new_path.exists():
         new_path = target_directory / f"{original_path.stem}_{file_hash}_{counter}{original_path.suffix}"
@@ -86,6 +86,8 @@ def organize_files(directory, method):
         organize_by_type(directory_path)
     else:
         console.print(f"[bold red]Invalid organization method: {method}[bold red]")
+    # After organizing, check for duplicates
+    find_duplicates(directory)
 
 def organize_by_alphabet(directory_path):
     for file_path in directory_path.glob('*.*'):
@@ -94,6 +96,7 @@ def organize_by_alphabet(directory_path):
             target_dir = directory_path / first_letter
             target_dir.mkdir(exist_ok=True)
             shutil.move(str(file_path), str(target_dir / file_path.name))
+    # Print confirmation once after all files are processed
     console.print("[bold green]Files organized by alphabet successfully![/bold green]")
 
 def organize_by_date(directory_path):
@@ -104,6 +107,7 @@ def organize_by_date(directory_path):
             target_dir = directory_path / date_folder
             target_dir.mkdir(exist_ok=True)
             shutil.move(str(file_path), str(target_dir / file_path.name))
+    # Print confirmation once after all files are processed
     console.print("[bold green]Files organized by date successfully![/bold green]")
 
 def organize_by_type(directory_path):
@@ -113,11 +117,8 @@ def organize_by_type(directory_path):
             target_dir = directory_path / category
             target_dir.mkdir(exist_ok=True)
             shutil.move(str(file_path), str(target_dir / file_path.name))
+    # Move the print statement outside the loop to prevent repetition
     console.print("[bold green]Files organized by type successfully![/bold green]")
-
-import os
-import shutil
-from pathlib import Path
 
 def flatten_directory(directory):
     """
@@ -134,7 +135,6 @@ def flatten_directory(directory):
             src_path = Path(subdir) / file
             dest_path = directory_path / file
             if src_path != dest_path:
-                # Check if a file with the same name exists in the destination
                 if dest_path.exists():
                     dest_path = handle_duplicates(str(src_path), directory_path)
                 shutil.move(str(src_path), str(dest_path))
@@ -165,7 +165,7 @@ def main_menu():
     table.add_column("Description")
     table.add_row("[1]", "Organize Files")
     table.add_row("[2]", "Generate File Hash")
-    table.add_row("[3]", "Extract Archives")
+    table.add_row("[3]", "Check for Duplicates Only")
     table.add_row("[4]", "Flatten Directory")
     table.add_row("[5]", "Remove Empty Subdirectories")
     table.add_row("[Q]", "Quit")
@@ -177,14 +177,13 @@ def main_menu():
         directory = Prompt.ask("[bold cyan]Enter the directory path[/bold cyan]")
         method = Prompt.ask("[bold cyan]Choose organization method (alphabet/date/type)[/bold cyan]", choices=["alphabet", "date", "type"])
         organize_files(directory, method=method)
-        find_duplicates(directory)
     elif choice == '2':
         file_path = Prompt.ask("[bold cyan]Enter the file path[/bold cyan]")
         hash_result = generate_file_hash(file_path)
         console.print(f"[bold green]File hash: {hash_result}[/bold green]")
     elif choice == '3':
-        directory = Prompt.ask("[bold cyan]Enter the directory path for archive extraction[/bold cyan]")
-        extract_archive(directory)  # Assuming a corresponding function or logic exists
+        directory = Prompt.ask("[bold cyan]Enter the directory path for duplicate checking[/bold cyan]")
+        find_duplicates(directory)
     elif choice == '4':
         directory = Prompt.ask("[bold cyan]Enter the directory path to flatten[/bold cyan]")
         flatten_directory(directory)

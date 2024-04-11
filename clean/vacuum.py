@@ -14,12 +14,13 @@ import time
 
 # Set up basic logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # --- // Spinner function with docstring:
 def spinner():
     """A simple console spinner for indicating progress."""
     spinner_running = True
     spinner_symbols = itertools.cycle('|/-\\')
-    
+
     def spin():
         while spinner_running:
             sys.stdout.write(next(spinner_symbols) + '\r')
@@ -29,7 +30,7 @@ def spinner():
     spinner_thread = threading.Thread(target=spin)
     spinner_thread.start()
     return spinner_thread, lambda: setattr(spinner, 'spinner_running', False)
-   
+
     def stop():
         nonlocal spinner_running
         spinner_running = False
@@ -39,7 +40,8 @@ def spinner():
     return stop
 
 # --- // Colors_and_symbols:
-GREEN = '\033[0;32m'
+#GREEN='\033[38;5;10m'
+GREEN='\033[38;2;57;255;20m'
 BOLD = '\033[1m'
 RED = '\033[0;31m'
 NC = '\033[0m'  # No Color
@@ -639,12 +641,12 @@ menu_options = {
     '0': partial(run_all_tasks, log_file)
 }
 
-# --- // MAIN_FUNCTION_DEFINITIONS // ======================================
+# --- // MAIN_MENU:
 def main():
     while True:
         os.system('clear')
-        print(f"{GREEN}===================================================================")
-        print(f"{NC}================= // Vacuum.py Main Menu // =======================")
+        print(f"===================================================================")
+        print(f"    ================= {GREEN}// Vacuum Menu //{NC} =======================")
         print("===================================================================")
         print(f"{GREEN}1{NC}) Process Dependeny Log              {GREEN}14{NC}) Check Failed Cron Jobs")
         print(f"{GREEN}2{NC}) Manage Cron Jobs                   {GREEN}15{NC}) Clear Docker Images")
@@ -659,7 +661,8 @@ def main():
         print(f"{GREEN}11{NC}) Clean AUR Directory               {GREEN}24{NC}) Clear System Cache")
         print(f"{GREEN}12{NC}) Handle Pacnew and Pacsave Files   {GREEN}25{NC}) Disable Unused Services")
         print(f"{GREEN}13{NC}) Verify Installed Packages         {GREEN}26{NC}) Fix Systemd Units")
-        print("0) Run All Tasks                      Q) Quit")
+        print(f"{GREEN}0{NC}) Run All Tasks                      {GREEN}Q{NC}) Quit")
+
         print(f"{GREEN}By your command:{NC}")
 
         command = input().strip().upper()
@@ -688,47 +691,7 @@ if __name__ == "__main__":
 
 
 
-## Additional maintenance functions:
-
-#def trim_ssd(log_file):
-#    log_and_print(f"{INFO} Trimming SSDs...", 'info')
-#    try:
-#        subprocess.run(["sudo", "fstrim", "-av"], check=True)
-#        log_and_print(f"{SUCCESS} SSDs trimmed successfully.", 'info')
-#    except subprocess.CalledProcessError as e:
-#        log_and_print(f"{FAILURE} Error trimming SSDs: {e.stderr.strip()}", 'error')
-
-#def check_failed_systemd_services(log_file):
-#    log_and_print(f"{INFO} Checking for failed systemd services...", 'info')
-#    try:
-#        output = subprocess.check_output(["systemctl", "--failed"], text=True).strip()
-#        if output:
-#            log_and_print(f"{FAILURE} Failed systemd services detected:\n{output}", 'error')
-#        else:
-#            log_and_print(f"{SUCCESS} No failed systemd services.", 'info')
-#    except subprocess.CalledProcessError as e:
-#        log_and_print(f"{FAILURE} Error checking for failed systemd services: {e.stderr.strip()}", 'error')
-
-#def check_journal_errors(log_file):
-#    log_and_print(f"{INFO} Checking for high-priority errors in system logs...", 'info')
-#    try:
-#        output = subprocess.check_output(["journalctl", "-p", "3", "-xb"], text=True).strip()
-#        if output:
-#            log_and_print(f"{FAILURE} High-priority errors found in system logs:\n{output}", 'error')
-#        else:
-#            log_and_print(f"{SUCCESS} No high-priority errors in system logs.", 'info')
-#    except subprocess.CalledProcessError as e:
-#        log_and_print(f"{FAILURE} Error checking system logs: {e.stderr.strip()}", 'error')
-
-#def analyze_disk_usage(log_file):
-#    log_and_print(f"{INFO} Analyzing disk usage...", 'info')
-#    try:
-#        # Replace '/path/to/analyze' with the path you want to analyze, or use '.' for current directory
-#        subprocess.run(["sudo", "du", "-sh", "/path/to/analyze"], check=True)
-#        # Alternatively, use ncdu for an interactive disk usage analyzer
-#        # subprocess.run(["sudo", "ncdu", "/path/to/analyze"], check=True)
-#    except subprocess.CalledProcessError as e:
-#        log_and_print(f"{FAILURE} Error analyzing disk usage: {e.stderr.strip()}", 'error')
+## Todo Additional maintenance functions:
 
 #def check_for_broken_packages(log_file):
 #    log_and_print(f"{INFO} Checking for broken packages...", 'info')
@@ -760,25 +723,4 @@ if __name__ == "__main__":
 #            log_and_print(f"{INFO} No zombie processes found.", 'info')
 #    except subprocess.CalledProcessError as e:
 #        log_and_print(f"{FAILURE} Error killing zombie processes: {e.stderr.strip()}", 'error')
-        # Integrate the new functions into the menu_options dictionary
-
-
-
-
-#menu_options = {
-    # ... other menu options ...
-#    '27': partial(trim_ssd, log_file),
-#    '28': partial(check_failed_systemd_services, log_file),
-#    '29': partial(check_journal_errors, log_file),
-#    '30': partial(analyze_disk_usage, log_file),
-##    '31': partial(check_for_broken_packages, log_file),
-#    '32': partial(cleanup_dbus_sockets, log_file),
-#    '33': partial(kill_zombie_processes, log_file),
-    # ... any additional options ...
-#}
-
-# In the main function or wherever you handle menu option selections:
-#if command == '32':
-#    cleanup_dbus_sockets(log_file)
-#elif command == '33':
-#    kill_zombie_processes(log_fi
+# Integrate the new functions into the menu_options dictionary
