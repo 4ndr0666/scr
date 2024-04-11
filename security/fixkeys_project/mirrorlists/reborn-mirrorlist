@@ -1,0 +1,29 @@
+# --> RebornOS Mirrorlist from 20231119-1 <-- #
+
+# Name: RebornOS Main Mirror
+# Location: Global
+Server = https://repo.rebornos.org/RebornOS/
+
+# Name: RebornOS NL Mirror
+# Location: Netherlands, EU Central
+Server = https://nl-mirror.rebornos.org/RebornOS/
+
+# Name: SoulHarsh007 NY Mirror
+# Location: New York, US East
+Server = https://nyc-use.soulharsh007.dev/RebornOS/
+
+# Name: SoulHarsh007 LB Mirror
+# Location: SEA and US West Load Balanced
+Server = https://sea-usw-lb.soulharsh007.dev/RebornOS/
+
+# Name: FreeDif SG Mirror
+# Location: Singapore, SEA
+Server = https://mirror.freedif.org/rebornos/
+
+# Name: Clarkson US Mirror
+# Location: New York, US East
+Server = https://mirror.clarkson.edu/RebornOS/RebornOS/
+
+# Name: SourceForge Mirror
+# Location: Global
+Server = https://sourceforge.net/projects/rebornos/files/r/RebornOS/
