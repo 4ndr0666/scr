@@ -1,46 +1,38 @@
 #!/bin/bash
-# Script Name: ufwon
-# Description: Automatically escalates privileges, sets UFW, sysctl, and hosts for enhanced security.
-# Author: 4ndr0666
-# Edited: 03-01-2024
+#File: ufwon
+#Author: 4ndr0666
+#Edited: 04-11-2024
+#
+# --- // UFWON // ========
 
-# Check for root privileges and re-execute with sudo if necessary
+
+# --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Re-running script with sudo..."
-    sudo "$0" "$@"
-    exit $?
+  sudo "$0" "$@"
+  exit $?
 fi
 
-# Configuration function for UFW
 ufw_config() {
-    echo -e "\033[34mConfiguring UFW...\033[0m"
+    echo  "Configuring UFW..."
     sleep 2
     ufw --force reset
     ufw default deny incoming
     ufw default allow outgoing
-
-    # Essential services
+    ufw default deny incoming v6
+    ufw defulat deny outgoing v6
     ufw limit 22/tcp # SSH with rate limiting
-    ufw allow 80/tcp # HTTP
-    ufw allow 443/tcp # HTTPS
-
-    # Local network services
+    ufw allow 6800/tcp # Aria2c
+    ufw allow 37295/tcp # VPN
     ufw allow from 192.168.1.0/24 to any port 9666
     ufw allow from 192.168.1.0/24 to any port 9665
     ufw allow from 192.168.1.0/24 to any port 36501
-
-    # Enable UFW with logging
-    ufw logging on
     ufw --force enable
     ufw status verbose
 }
 
-# Configuration function for sysctl
 sysctl_config() {
-    echo -e "\033[34mChecking sysctl configuration...\033[0m"
+    echo "Checking sysctl configuration..."
     sleep 2
-
-    # Define desired sysctl settings
     declare -A sysctl_settings=(
         ["kernel.modules_disabled"]="1"
         ["vm.swappiness"]="10"
@@ -50,10 +42,15 @@ sysctl_config() {
     )
 
     # Apply sysctl settings
-    for key in "${!sysctl_settings[@]}"; do
-        sysctl -w "$key=${sysctl_settings[$key]}"
-        echo "$key = ${sysctl_settings[$key]}" >> /etc/sysctl.conf
-    done
+#    for key in "${!sysctl_settings[@]}"; do
+#        sysctl -w "$key=${sysctl_settings[$key]}"
+#        echo "$key = ${sysctl_settings[$key]}" >> /etc/sysctl.conf
+#    done
+
+     # Append settings only if they don't exist
+    while read -r line; do
+        grep -qF -- "$line" /etc/sysctl.conf || echo "$line" >> /etc/sysctl.conf
+    done <<< "$SYSCTL_SETTINGS"
 
     sysctl -p # Reload sysctl settings
 
@@ -63,18 +60,16 @@ sysctl_config() {
     echo "Updated /etc/host.conf to prevent IP spoofing."
 }
 
-# Main script execution
 main() {
-    echo -e "\033[34mInitiating system hardening...\033[0m"
+    echo  "Initiating system hardening..."
     sleep 1
 
     ufw_config
     sysctl_config
 
-    echo -e "\033[34mSystem hardening complete.\033[0m"
+    echo  "System hardening complete."
     sleep 1
 
-    # Display listening ports and UFW status as a summary
     echo "### ============================== // LISTENING PORTS // ============================== ###"
     netstat -tunlp
     sleep 3

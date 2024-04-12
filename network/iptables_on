@@ -2,6 +2,11 @@
 #
 # iptables example configuration script
 
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
+
 # Drop ICMP echo-request messages sent to broadcast or multicast addresses
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
 
