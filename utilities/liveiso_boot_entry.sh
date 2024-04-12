@@ -1,20 +1,20 @@
 #!/bin/bash
-#File: liveiso_boot_entry.sh
-#Author: 4ndr0666
-#Date: 04-11-2024
+# File: liveiso_boot_entry.sh
+# Author: 4ndr0666
+# Date: 04-11-2024
 #
 # --- // LIVEISO_BOOT_ENTRY.SH // ========
 
-
 # --- // COLORS:
+CYAN='\033[0;36m'
 GREEN='\033[0;32m'
-NC='\033[0m'
+NC='\033[0m'  # No Color
 
 # --- // TRAP:
 cleanup() {
-    echo "Cleaning up... Please wait."
+    echo -e "${CYAN}Cleaning up... Please wait."
     # Add any cleanup commands here
-    echo "Cleanup complete."
+    echo -e "Cleanup complete.${NC}"
     exit 1  # Ensure the script exits after cleanup
 }
 trap cleanup SIGINT SIGTERM EXIT
@@ -22,7 +22,7 @@ trap cleanup SIGINT SIGTERM EXIT
 # --- // ROOT:
 escalate() {
     if [ "$(id -u)" -ne 0 ]; then
-        echo "CAUTION: You are now superuser 💀... "
+        echo -e "${CYAN}CAUTION: You are now superuser 💀...${NC}"
         exec sudo "$0" "$@"
     fi
 }
@@ -32,7 +32,7 @@ dependencies() {
     local required_cmds="curl grep sed sha256sum tee cat find jq btrfs blkid findmnt grub-mkconfig wget"
     for cmd in $required_cmds; do
         if ! command -v $cmd &> /dev/null; then
-            echo "Error: Required command '$cmd' not found."
+            echo -e "${CYAN}Error: Required command '$cmd' not found.${NC}"
             exit 1
         fi
     done
@@ -42,12 +42,12 @@ dependencies() {
 filesystem_type() {
     read -r -p "Select your filesystem type for operations (ext4 or btrfs): " filesystem_type
     if [[ $filesystem_type != "ext4" && $filesystem_type != "btrfs" ]]; then
-        echo "Unsupported filesystem type. Exiting."
+        echo -e "${CYAN}Unsupported filesystem type. Exiting.${NC}"
         exit 1
     fi
 }
 
-# --- // CONSTANTS:
+# --- // VARIABLES:
 setup_variables() {
     subvol="@iso_subvol"
     folder="/mnt/iso_subvol"
@@ -58,20 +58,20 @@ setup_variables() {
 # --- // BOOTLOADER:
 check_bootloader() {
     if [ -d /boot/efi/loader/entries ]; then
-        echo "System is managed by systemd-boot."
+        echo -e "${CYAN}System is managed by systemd-boot.${NC}"
         bootloader="systemd"
     elif [ -d /boot/grub ]; then
-        echo "System uses GRUB."
+        echo -e "${CYAN}System uses GRUB.${NC}"
         bootloader="grub"
     else
-        echo "No supported bootloader found. Manual configuration required."
+        echo -e "${CYAN}No supported bootloader found. Manual configuration required.${NC}"
         exit 1
     fi
 }
 
 # --- // DISTROLIST:
 distrolist() {
-    echo "Fetching available distributions..."
+    echo -e "${CYAN}Fetching available distributions...${NC}"
     declare -A distros=(
             ["Ubuntu"]="https://www.ubuntu.com/download/desktop"
             ["Fedora"]="https://getfedora.org/en/workstation/download/"
@@ -111,7 +111,7 @@ distrolist() {
             ["Manjaro"]="https://download.manjaro.org/kde/23.1.4/manjaro-kde-23.1.4-240406-linux66.iso"
             ["Axyl"]="https://github.com/axyl-os/axylos-2-iso/releases/download/v2-beta-2024.04.11/axyl-v2-beta-2024.04.11-x86_64.iso"
             ["Archcraft"]="https://sourceforge.net/projects/archcraft/files/latest/download"
-            ["CachyOS"]="https://cachyos.org"
+            ["CachyOS"]="https://iso.cachyos.org/240401/cachyos-kde-linux-240401.iso"
             ["BigLinux"]="https://iso.biglinux.com.br/biglinux_2024-04-05_k68.iso"
             ["Artix"]="https://artixlinux.org/download.php"
             ["Stormos"]="https://sourceforge.net/projects/hackman-linux/"
@@ -197,51 +197,51 @@ distrolist() {
             ["Hiren's Boot CD"]="NONE"
             ["Hiren's BootCD PE"]="https://www.hirensbootcd.org/download/"
             ["LinuxCNC"]="https://linuxcnc.org/downloads/"
-        )
+    )
     PS3="Please select a distribution: "
     select distro in "${!distros[@]}"; do
         if [ -n "$distro" ]; then
-            echo "You have selected: $distro"
+            echo -e "${CYAN}You have selected: $distro${NC}"
             break
         else
-            echo "Invalid selection. Please select a valid option."
+            echo -e "${CYAN}Invalid selection. Please select a valid option.${NC}"
         fi
     done
     iso_url="${distros[$distro]}"
     iso_path="/iso_storage/$distro.iso"
-    echo "Preparing to download $distro:"
-    echo "Download URL: $iso_url"
-    echo "Storing at: $iso_path"
+    echo -e "${CYAN}Preparing to download $distro:${NC}"
+    echo -e "${CYAN}Download URL: $iso_url${NC}"
+    echo -e "${CYAN}Storing at: $iso_path${NC}"
 }
 
 # --- // DIR_CHECK:
 ensure_directory_exists() {
     local storage_dir=$(dirname "$iso_path")
     if [ ! -d "$storage_dir" ]; then
-        echo "Storage directory $storage_dir does not exist. Creating..."
+        echo -e "${CYAN}Storage directory $storage_dir does not exist. Creating...${NC}"
         mkdir -p "$storage_dir"
         if [ $? -ne 0 ]; then
-            echo "Failed to create storage directory. Exiting."
+            echo -e "${CYAN}Failed to create storage directory. Exiting.${NC}"
             exit 1
         fi
-        echo "Directory created successfully."
+        echo -e "${CYAN}Directory created successfully.${NC}"
     fi
 }
 
 # --- // DL_ISO:
 download_iso() {
     if ! wget -O "$iso_path" "$iso_url"; then
-        echo "Download failed. Exiting."
+        echo -e "${CYAN}Download failed. Exiting.${NC}"
         rm -f "$iso_path"
         exit 2
     fi
-    echo "Download complete."
+    echo -e "${CYAN}Download complete.${NC}"
 }
 
 # --- // IDEMPOTENCY:
 check_iso_existence() {
     if [ -f "$iso_path" ]; then
-        echo "ISO for $distro already exists. Skipping download."
+        echo -e "${CYAN}ISO for $distro already exists. Skipping download.${NC}"
     else
         ensure_directory_exists
         download_iso
@@ -252,38 +252,14 @@ check_iso_existence() {
 configure_bootloader() {
     case $bootloader in
         "grub")
-            echo "Adding GRUB entry for $distro..."
+            echo -e "${CYAN}Adding GRUB entry for $distro...${NC}"
             configure_grub
             ;;
         "systemd")
-            echo "Adding systemd-boot entry for $distro..."
+            echo -e "${CYAN}Adding systemd-boot entry for $distro...${NC}"
             configure_systemd_boot
             ;;
     esac
-}
-
-# --- // GRUB:
-configure_grub() {
-    local grub_entry="
-menuentry 'Boot from $distro ISO' {
-    set isofile='$folder/$iso'
-    loopback loop (hd0,1)$subvol/\$isofile
-    linux (loop)/boot/vmlinuz img_dev=/dev/disk/by-uuid/$rootuuid img_loop=\$isofile earlymodules=loop
-    initrd (loop)/boot/initrd.img
-}"
-    echo "$grub_entry" | sudo tee /etc/grub.d/40_custom > /dev/null
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
-    echo "GRUB configuration updated."
-}
-
-# --- // SYSTEMD:
-configure_systemd_boot() {
-    local loader_entry="/boot/efi/loader/entries/$distro.conf"
-    echo "title Boot from $distro ISO" > "$loader_entry"
-    echo "linux (hd0,1)$subvol/\$isofile/vmlinuz" >> "$loader_entry"
-    echo "initrd (hd0,1)$subvol/\$isofile/initrd.img" >> "$loader_entry"
-    echo "options root=PARTUUID=$rootuuid" >> "$loader_entry"
-    echo "Systemd-boot configuration updated."
 }
 
 # --- // MAIN_LOGIC_LOOP:
