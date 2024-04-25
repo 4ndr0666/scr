@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import subprocess
 import sys
@@ -96,8 +98,6 @@ def confirm_deletion(file_or_dir):
     confirm = input(f"Do you really want to delete {file_or_dir}? [y/N]: ").strip().lower()
     return confirm == 'y'
 
-
-
 #1 --- // Process_dependency_scan_log:
 def process_dep_scan_log(log_file):
         log_and_print(f"{INFO} Processing dependency scan log...")
@@ -125,7 +125,6 @@ def process_dep_scan_log(log_file):
             log_and_print(f"{FAILURE} Dependency scan log file not found.", 'error')
         log_and_print(f"{SUCCESS} Dependency scan log processing completed.", 'info')
 
-
 #2 --- // Manage_Cron_Job_with_Corrected_Grep:
 def manage_cron_job(log_file):
             cron_command = f"find {log_dir} -name '*_permissions.log' -mtime +30 -exec rm {{}} \\;"
@@ -147,7 +146,6 @@ def manage_cron_job(log_file):
                 log_and_print(f"{SUCCESS} Cron job set up to delete old logs.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error managing cron job: {e.stderr.strip()}", 'error')
-
 
 #3 --- // Remove_Broken_Symlinks:
 def remove_broken_symlinks(log_file):
@@ -175,9 +173,6 @@ def remove_broken_symlinks(log_file):
         # Stop the spinner if an error occurs
         stop_spinner()
         log_and_print(f"{FAILURE} Error searching for broken symbolic links: {e.output.strip()}", 'error')
-
-
-
 
 #4 --- // Cleanup_Old_Kernel_Images:
 def clean_old_kernels(log_file):
@@ -207,8 +202,6 @@ def clean_old_kernels(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
 
-
-
 #5 --- // Vacuum_Journalctl:
 def vacuum_journalctl(log_file):
             log_and_print(f"{INFO} Vacuuming journalctl...", 'info')
@@ -217,7 +210,6 @@ def vacuum_journalctl(log_file):
                 log_and_print(f"{SUCCESS} Journalctl vacuumed successfully.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to vacuum journalctl: {e.stderr.strip()}", 'error')
-
 
 #6 --- // Clear_Cache:
 def clear_cache(log_file):
@@ -228,8 +220,6 @@ def clear_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear cache: {e.stderr.strip()}", 'error')
 
-
-
 #7 --- // Update_Font_Cache:
 def update_font_cache(log_file):
             log_and_print(f"{INFO} Updating font cache...", 'info')
@@ -238,7 +228,6 @@ def update_font_cache(log_file):
                 log_and_print(f"{SUCCESS} Font cache updated.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to update font cache: {e.stderr.strip()}", 'error')
-
 
 #8 --- // Clear_Trash:
 def clear_trash(log_file):
@@ -253,7 +242,6 @@ def clear_trash(log_file):
                     log_and_print(f"{FAILURE} Error: Failed to clear trash: {e.stderr.strip()}", 'error')
             else:
                 log_and_print(f"{INFO} Skipping trash clearance.", 'info')
-
 
 #9 --- // Optimize_Databases:
 def optimize_databases(log_file):
@@ -278,7 +266,6 @@ def optimize_databases(log_file):
         error_message = e.stderr.strip() if e.stderr else "Command failed without an error message"
         log_and_print(f"{FAILURE} Error: Failed to optimize databases: {error_message}", 'error')
 
-
 #10 --- // Clean_Package_Cache:
 def clean_package_cache(log_file):
             log_and_print(f"{INFO} Cleaning package cache...", 'info')
@@ -287,7 +274,6 @@ def clean_package_cache(log_file):
                 log_and_print(f"{SUCCESS} Package cache cleaned.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to clean package cache: {e.stderr.strip()}", 'error')
-
 
 #11 --- // Clean_AUR_dir:
 def clean_aur_dir(log_file):
@@ -327,8 +313,6 @@ def clean_aur_dir(log_file):
 
         log_and_print(f"{SUCCESS} AUR directory cleaned.", 'info')
 
-
-
 #12 --- // Handle_Pacnew_and_Pacsave_Files:
 def handle_pacnew_pacsave(log_file):
             pacnew_files = subprocess.check_output(["sudo", "find", "/etc", "-type", "f", "-name", "*.pacnew"], text=True).splitlines()
@@ -348,16 +332,14 @@ def handle_pacnew_pacsave(log_file):
             else:
                 log_and_print(f"{INFO} No .pacsave files found.", 'info')
 
-
 #13 --- // Verify_Installed_Packages:
 def verify_installed_packages(log_file):
-    prominent(f"{INFO} Verifying installed packages...")
+    print(f"{INFO} Verifying installed packages...")
     try:
         subprocess.run(["sudo", "pacman", "-Qkk"], check=True)
-        prominent(f" {SUCCESS}  All installed packages verified.")
+        print(f" {SUCCESS}  All installed packages verified.")
     except subprocess.CalledProcessError as e:
-        bug(f" {FAILURE}  Error: Issues found with installed packages", log_file)
-
+        print(f" {FAILURE}  Error: Issues found with installed packages", log_file)
 
 #14 --- // Check_failed_cron_jobs:
 def check_failed_cron_jobs(log_file):
@@ -384,7 +366,6 @@ def clear_docker_images(log_file):
             else:
                 log_and_print(f"{INFO} Docker is not installed. Skipping Docker image cleanup.", 'info')
 
-
 #16 --- // Clear_temp_folder:
 def clear_temp_folder(log_file):
             log_and_print(f"{INFO} Clearing the temporary folder...", 'info')
@@ -393,7 +374,6 @@ def clear_temp_folder(log_file):
                 log_and_print(f"{SUCCESS} Temporary folder cleared.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to clear the temporary folder: {e.stderr.strip()}", 'error')
-
 
 #17 --- Run_rmshit.py:
 def check_rmshit_script(log_file=None):  # Add log_file parameter to accept the argument
@@ -497,7 +477,6 @@ def remove_old_ssh_known_hosts(log_file):
             else:
                 log_and_print(f"{INFO} No SSH known hosts file found. Skipping.", 'info')
 
-
 #19 --- Remove_orphan_Vim_undo_files:
 def remove_orphan_vim_undo_files(log_file):
         log_and_print(f"{INFO} Searching for orphan Vim undo files...", 'info')
@@ -513,7 +492,6 @@ def remove_orphan_vim_undo_files(log_file):
                         except OSError as e:
                             log_and_print(f"{FAILURE} Error: Failed to remove orphan Vim undo file: {e}", 'error')
 
-
 #20 --- // Force_log_rotation:
 def force_log_rotation(log_file):
     log_and_print(f"{INFO} Forcing log rotation...", 'info')
@@ -522,8 +500,6 @@ def force_log_rotation(log_file):
         log_and_print(f"{SUCCESS} Log rotation forced.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to force log rotation: {e.stderr.strip()}", 'error')
-
-
 
 #21 --- // Configure_ZRam:
 def configure_zram(log_file):
@@ -541,8 +517,6 @@ def configure_zram(log_file):
             else:
                 log_and_print(f"{FAILURE} ZRam not available. Consider installing it first.", 'error')
 
-
-
 #22 --- // Check_ZRam_configuration:
 def check_zram_configuration(log_file):
             log_and_print(f"{INFO} Checking ZRam configuration...", 'info')
@@ -556,8 +530,6 @@ def check_zram_configuration(log_file):
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to check ZRam configuration: {e.stderr.strip()}", 'error')
 
-
-
 #23 --- // Adjust_swappiness:
 def adjust_swappiness(log_file):
     swappiness_value = 10  # Recommended for systems with low RAM
@@ -568,8 +540,6 @@ def adjust_swappiness(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to adjust swappiness: {e.stderr.strip()}", 'error')
 
-
-
 #24 --- // Clear_system_cache:
 def clear_system_cache(log_file):
             log_and_print(f"{INFO} Clearing PageCache, dentries, and inodes...", 'info')
@@ -578,7 +548,6 @@ def clear_system_cache(log_file):
                 log_and_print(f"{SUCCESS} System caches cleared.", 'info')
             except subprocess.CalledProcessError as e:
                 log_and_print(f"{FAILURE} Error: Failed to clear system cache: {e.stderr.strip()}", 'error')
-
 
 #25 --- // Disable_unused_services:
 def disable_unused_services(log_file):

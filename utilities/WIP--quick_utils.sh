@@ -26,12 +26,12 @@
 #tput setaf 8 = light blue
 ##################################################################################################################
 
-#echo "Fix for icons not showing up in pamac-aur"
+sudo pacman -Sy
+sudo pacman -S sublime-text-4 --noconfirm --needed
+sudo pacman -S the_platinum_searcher-bin --noconfirm --needed
+sudo pacman -S ripgrep --noconfirm --needed
+sudo pacman -S meld --noconfirm --needed
 
-zcat /usr/share/app-info/xmls/community.xml.gz | sed 's|<em>||g;s|<\/em>||g;' | gzip > "new.xml.gz"
-mv new.xml.gz /usr/share/app-info/xmls/community.xml.gz
-appstreamcli refresh-cache --force
-
-zcat /usr/share/app-info/xmls/extra.xml.gz | sed 's|<em>||g;s|<\/em>||g;' | gzip > "new.xml.gz"
-mv new.xml.gz /usr/share/app-info/xmls/extra.xml.gz
-appstreamcli refresh-cache --force
+echo "###############################################################################"
+echo "###                DONE - YOU CAN CLOSE THIS WINDOW                        ####"
+echo "###############################################################################"

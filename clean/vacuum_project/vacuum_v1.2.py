@@ -15,32 +15,41 @@ from functools import partial
 # --- // CONSTANTS:
 DEP_SCAN_LOG = "/usr/local/bin/dependency_scan.log"
 PACMAN_CMD = ["sudo", "pacman", "-Sy", "--noconfirm"]
+log_dir = os.path.expanduser("~/.local/share/system_maintenance")
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, f"{time.strftime('%Y%m%d_%H%M%S')}_system_maintenance.log")
+
+# --- // LOGGING:
+def setup_logging():
+    """Setup basic configuration for logging."""
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(log_format)
+    file_handler = logging.FileHandler(log_file_path)
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
+
+setup_logging()
 
 # --- // SPINNER:
 def spinner():
     """A simple console spinner for indicating progress."""
-    spinner_running = True
-    spinner_symbols = itertools.cycle('|/-\\')
+    spinner_running = [True]
 
-    def spin():
-        while spinner_running:
-            sys.stdout.write(next(spinner_symbols) + '\r')
-            sys.stdout.flush()
-            time.sleep(0.1)
+    def run_spinner():
+        while spinner_running[0]:
+            for symbol in itertools.cycle('|/-\\'):
+                sys.stdout.write('\r' + symbol)
+                sys.stdout.flush()
+                time.sleep(0.1)
+        sys.stdout.write('\r ')
 
-    spinner_thread = threading.Thread(target=spin)
+    spinner_thread = threading.Thread(target=run_spinner)
     spinner_thread.start()
-    return spinner_thread, lambda: setattr(spinner, 'spinner_running', False)
+    return lambda: (spinner_running.clear(), spinner_thread.join())
 
-    def stop():
-        nonlocal spinner_running
-        spinner_running = False
-        spinner_thread.join()  # Wait for the spinner to finish
-        print(' ', end='\r')  # Clear the spinner line
-
-    return stop
-
-# --- // Colors_and_symbols:
+# --- // HELPER FUNCTIONS:
 class Style:
     GREEN = '\033[0;32m'
     BOLD = '\033[1m'
@@ -51,20 +60,12 @@ class Style:
     INFO = "➡️"
     EXPLOSION = "💥"
 
-# --- // LOGGING:
-def setup_logging():
-    log_dir = os.path.expanduser("~/.local/share/system_maintenance")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"))
-    logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s',
-                        handlers=[logging.FileHandler(log_file_path), logging.StreamHandler()])
-setup_logging()
-
-# --- // HELPER FUNCTIONS:
 def format_message(message, style):
+    """Return formatted message string."""
     return f"{Style.BOLD}{style}{message}{Style.NC}"
 
 def execute_command(command, error_message=None):
+    """Execute a system command and log the output."""
     try:
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
         logging.info(result.stdout)
@@ -77,6 +78,7 @@ def execute_command(command, error_message=None):
         return None
 
 def log_and_print(message, style=Style.INFO, level='info'):
+    """Log and print messages in styled format."""
     formatted_message = format_message(message, style)
     print(formatted_message)
     if level == 'info':
@@ -87,12 +89,14 @@ def log_and_print(message, style=Style.INFO, level='info'):
         logging.warning(message)
 
 def chmod_file_or_directory(file_path):
+    """Change file permissions."""
     if os.path.isfile(file_path):
         os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         log_and_print(f"{Style.INFO}Fixed permissions for file: {file_path}", 'info')
     elif os.path.isdir(file_path):
         os.chmod(file_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
         log_and_print(f"{Style.INFO}Fixed permissions for directory: {file_path}", 'info')
+
 
 # Placeholder menu_options dictionary for demonstration
 menu_options = {
@@ -105,17 +109,17 @@ def confirm_deletion(file_or_dir):
     confirm = input(f"Do you really want to delete {file_or_dir}? [y/N]: ").lower().strip()
     return confirm == 'y'
 
-
 #1 --- // PROCESS_DEPENDENCY_LOG:
-def process_dep_scan_log():
-    log_and_print(f"{Style.INFO} Processing dependency scan log...")
+def process_dep_scan_log(log_file_path):
+    """Process dependency scan log."""
+    log_and_print(f"{Style.INFO} Processing dependency scan log...", 'info')
     if os.path.isfile(DEP_SCAN_LOG):
         with open(DEP_SCAN_LOG) as log:
             for line in log:
                 if "permission warning" in line:
-                    process_permission_warning(line)
+                    process_permission_warning(line, log_file_path)
                 elif "missing dependency" in line:
-                    install_missing_dependency(line.split(": ")[1].strip())
+                    install_missing_dependency(line.split(": ")[1].strip(), log_file_path)
     else:
         log_and_print(f"{Style.FAILURE} Dependency scan log file not found.", 'error')
     log_and_print(f"{Style.SUCCESS} Dependency scan log processing completed.", 'info')
@@ -133,7 +137,8 @@ def install_missing_dependency(dependency):
         log_and_print(f"{Style.FAILURE} Failed to install missing dependency: {dependency}", 'error')
 
 #2 --- // Manage_Cron_Job_with_Corrected_Grep:
-def manage_cron_job():
+def manage_cron_job(log_file_path):
+    """Manage cron jobs."""
     cron_command = f"find {log_dir} -name '*_permissions.log' -mtime +30 -exec rm {{}} \\;"
     cron_entry = f"0 0 * * * {cron_command}"
     try:
@@ -186,9 +191,7 @@ def remove_broken_symlinks():
         stop_spinner()
         log_and_print(f"{Style.FAILURE} Error searching for broken symbolic links: {e.output.strip()}", 'error')
 
-
 #4 --- // Cleanup_Old_Kernel_Images:
-
 def clean_old_kernels():
     log_and_print(f"{Style.INFO} Cleaning up old kernel images...", 'info')
     try:
@@ -222,8 +225,6 @@ def clean_old_kernels():
         # Handle errors from subprocess execution, including failed removals
         log_and_print(f"{Style.FAILURE} Error cleaning up old kernels: {e.stderr.strip()}", 'error')
 
-
-
 #5 --- // Vacuum_Journalctl:
 def vacuum_journalctl():
     log_and_print(f"{Style.INFO} Vacuuming journalctl...", 'info')
@@ -232,8 +233,6 @@ def vacuum_journalctl():
         log_and_print(f"{Style.SUCCESS} Journalctl vacuumed successfully.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error: Failed to vacuum journalctl: {e.stderr.strip()}", 'error')
-
-
 
 #6 --- // Clear_Cache:
 def clear_cache():
@@ -245,9 +244,6 @@ def clear_cache():
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error: Failed to clear cache: {e.stderr.strip()}", 'error')
 
-
-
-
 #7 --- // Update_Font_Cache:
 def update_font_cache():
     log_and_print(f"{Style.INFO} Updating font cache...", 'info')
@@ -256,8 +252,6 @@ def update_font_cache():
         log_and_print(f"{Style.SUCCESS} Font cache updated.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error: Failed to update font cache: {e.stderr.strip()}", 'error')
-
-
 
 #8 --- // Clear_Trash:
 def clear_trash():
@@ -273,8 +267,6 @@ def clear_trash():
             log_and_print(f"{Style.FAILURE} Error: Failed to clear trash: {e.stderr.strip()}", 'error')
     else:
         log_and_print(f"{Style.INFO} Skipping trash clearance.", 'info')
-
-
 
 #9 --- // Optimize_Databases:
 def optimize_databases():
@@ -299,9 +291,6 @@ def optimize_databases():
 
     log_and_print(f"{Style.SUCCESS} System databases optimized.", 'info')
 
-
-
-
 #10 --- // Clean_Package_Cache:
 def clean_package_cache():
     log_and_print(f"{Style.INFO} Cleaning package cache...", 'info')
@@ -310,8 +299,6 @@ def clean_package_cache():
         log_and_print(f"{Style.SUCCESS} Package cache cleaned.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error: Failed to clean package cache: {e.stderr.strip()}", 'error')
-
-
 
 #11 --- // Clean_AUR_dir:
 def clean_aur_dir():
@@ -349,9 +336,6 @@ def clean_aur_dir():
 
     log_and_print(f"{Style.SUCCESS} AUR directory cleaned.", 'info')
 
-
-
-
 #12 --- // Handle_Pacnew_and_Pacsave_Files:
 def handle_pacnew_pacsave():
     log_and_print(f"{Style.INFO} Searching for .pacnew and .pacsave files...", 'info')
@@ -375,8 +359,6 @@ def handle_pacnew_pacsave():
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error searching for .pacnew and .pacsave files: {e.stderr.strip()}", 'error')
 
-
-
 #13 --- // Verify_Installed_Packages:
 def verify_installed_packages():
     log_and_print(f"{Style.INFO} Verifying installed packages...", 'info')
@@ -391,8 +373,6 @@ def verify_installed_packages():
     except Exception as e:  # General exception catch if subprocess fails to execute
         log_and_print(f"{Style.FAILURE} Unexpected error verifying packages: {e}", 'error')
 
-
-
 #14 --- // Check_failed_cron_jobs:
 def check_failed_cron_jobs():
     log_and_print(f"{Style.INFO} Checking for failed cron jobs using journalctl...", 'info')
@@ -405,7 +385,6 @@ def check_failed_cron_jobs():
     except subprocess.CalledProcessError:
         log_and_print(f"{Style.INFO} Unable to access journal logs or no failed cron jobs detected.", 'info')
 
-
 #15 --- // Clear_Docker_Images:
 def clear_docker_images():
     if shutil.which("docker"):
@@ -417,8 +396,6 @@ def clear_docker_images():
             log_and_print(f"{Style.FAILURE} Error: Failed to clear Docker images: {e.stderr.strip()}", 'error')
     else:
         log_and_print(f"{Style.INFO} Docker is not installed. Skipping Docker image cleanup.", 'info')
-
-
 
 #16 --- // Clear_temp_folder:
 def clear_temp_folder():
@@ -523,7 +500,6 @@ def check_rmshit_script():
 
     log_and_print(f"{Style.SUCCESS} Unnecessary files cleaned up.", 'info')
 
-
 #18 --- // Remove_old_SSH_known_hosts:
 def remove_old_ssh_known_hosts():
     ssh_known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
@@ -537,8 +513,6 @@ def remove_old_ssh_known_hosts():
         log_and_print(f"{Style.INFO} Consider reviewing and removing outdated or unused entries manually.", 'info')
     else:
         log_and_print(f"{Style.INFO} No SSH known_hosts file found. Skipping.", 'info')
-
-
 
 #19 --- Remove_orphan_Vim_undo_files:
 def remove_orphan_vim_undo_files():
@@ -555,7 +529,6 @@ def remove_orphan_vim_undo_files():
                     except OSError as e:
                         log_and_print(f"{Style.FAILURE} Error: Failed to remove orphan Vim undo file: {e}", 'error')
 
-
 #20 --- // Force_log_rotation:
 def force_log_rotation():
     log_and_print(f"{Style.INFO} Forcing log rotation...", 'info')
@@ -564,9 +537,6 @@ def force_log_rotation():
         log_and_print(f"{Style.SUCCESS} Log rotation forced. Ensure to review logrotate configurations for optimal performance.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{Style.FAILURE} Error: Failed to force log rotation: {e.stderr.strip()}", 'error')
-
-
-
 
 #21 --- // Configure_ZRam:
 def configure_zram():
@@ -585,24 +555,23 @@ def configure_zram():
     else:
         log_and_print(f"{Style.FAILURE} ZRam not available. Consider installing it first.", 'error')
 
-
-
-
 #22 --- // Check_ZRam_configuration:
 def check_zram_configuration():
     log_and_print(f"{Style.INFO} Checking ZRam configuration...", 'info')
     try:
         zram_status = subprocess.check_output(["zramctl"], text=True)
-        if zram_status.strip():
-            log_and_print(f"{Style.SUCCESS} ZRam is configured correctly. Here's the current setup:\n{zram_status}", 'info')
+
+        # Check if there's any output indicating ZRam configuration
+        if zram_status:
+            log_and_print(f"{Style.SUCCESS} ZRam is configured correctly. Here's the current setup:\n{zram_status.stdout.strip()}", 'info')
         else:
             log_and_print(f"{Style.INFO} ZRam is not configured. Configuring now...", 'info')
             configure_zram()
+
     except subprocess.CalledProcessError as e:
-        log_and_print(f"{Style.FAILURE} Error: Failed to check ZRam configuration: {e.stderr.strip()}", 'error')
-
-
-
+        # Handle the subprocess error and log appropriately
+        error_message = e.stderr.strip() if e.stderr else "Command failed without an error message"
+        log_and_print(f"{Style.FAILURE} Error: Failed to check ZRam configuration: {error_message}", 'error')
 
 #23 --- // Adjust_swappiness:
 def adjust_swappiness():
@@ -713,60 +682,61 @@ def run_all_tasks():
 
 # --- // Define_menuoptions_with_partial:
 menu_options = {
-    '1': partial(process_dep_scan_log, log_file),
-    '2': partial(manage_cron_job, log_file),
-    '3': partial(remove_broken_symlinks, log_file),
-    '4': partial(clean_old_kernels, log_file),
-    '5': partial(vacuum_journalctl, log_file),
-    '6': partial(clear_cache, log_file),
-    '7': partial(update_font_cache, log_file),
-    '8': partial(clear_trash, log_file),
-    '9': partial(optimize_databases, log_file),
-    '10': partial(clean_package_cache, log_file),
-    '11': partial(clean_aur_dir, log_file),
-    '12': partial(handle_pacnew_pacsave, log_file),
-    '13': partial(verify_installed_packages, log_file),
-    '14': partial(check_failed_cron_jobs, log_file),
-    '15': partial(clear_docker_images, log_file),
-    '16': partial(clear_temp_folder, log_file),
-    '17': partial(check_rmshit_script, log_file),
-    '18': partial(remove_old_ssh_known_hosts, log_file),
-    '19': partial(remove_orphan_vim_undo_files, log_file),
-    '20': partial(force_log_rotation, log_file),
-    '21': partial(configure_zram, log_file),
-    '22': partial(check_zram_configuration, log_file),
-    '23': partial(adjust_swappiness, log_file),
-    '24': partial(clear_system_cache, log_file),
-    '25': partial(disable_unused_services, log_file),
-    '26': partial(check_and_manage_system_health, log_file),
-    '27': partial(optimize_storage, log_file),
-    '0': partial(run_all_tasks, log_file)
+    '1': partial(process_dep_scan_log, log_file_path),
+    '2': partial(manage_cron_job, log_file_path),
+    '3': partial(remove_broken_symlinks, log_file_path),
+    '4': partial(clean_old_kernels, log_file_path),
+    '5': partial(vacuum_journalctl, log_file_path),
+    '6': partial(clear_cache, log_file_path),
+    '7': partial(update_font_cache, log_file_path),
+    '8': partial(clear_trash, log_file_path),
+    '9': partial(optimize_databases, log_file_path),
+    '10': partial(clean_package_cache, log_file_path),
+    '11': partial(clean_aur_dir, log_file_path),
+    '12': partial(handle_pacnew_pacsave, log_file_path),
+    '13': partial(verify_installed_packages, log_file_path),
+    '14': partial(check_failed_cron_jobs, log_file_path),
+    '15': partial(clear_docker_images, log_file_path),
+    '16': partial(clear_temp_folder, log_file_path),
+    '17': partial(check_rmshit_script, log_file_path),
+    '18': partial(remove_old_ssh_known_hosts, log_file_path),
+    '19': partial(remove_orphan_vim_undo_files, log_file_path),
+    '20': partial(force_log_rotation, log_file_path),
+    '21': partial(configure_zram, log_file_path),
+    '22': partial(check_zram_configuration, log_file_path),
+    '23': partial(adjust_swappiness, log_file_path),
+    '24': partial(clear_system_cache, log_file_path),
+    '25': partial(disable_unused_services, log_file_path),
+    '26': partial(check_and_manage_system_health, log_file_path),
+    '27': partial(optimize_storage, log_file_path),
+    '0': partial(run_all_tasks, log_file_path)
 }
 
 # --- // MAIN_FUNCTION_DEFINITIONS // ======================================
 def main():
+    """Main function to handle menu and task execution."""
     while True:
         os.system('clear')
-        print(f"{GREEN}===================================================================")
-        print(f"{NC}================= // Vacuum.py Main Menu // =======================")
+        print(f"===================================================================")
+        print(f"    ================= {Style.GREEN}// Vacuum Menu //{Style.NC} =======================")
         print("===================================================================")
-        print(f"{GREEN}1{NC}) Process Dependeny Log              {GREEN}14{NC}) Check Failed Cron Jobs")
-        print(f"{GREEN}2{NC}) Manage Cron Jobs                   {GREEN}15{NC}) Clear Docker Images")
-        print(f"{GREEN}3{NC}) Remove Broken Symlinks             {GREEN}16{NC}) Clear Temp Folder")
-        print(f"{GREEN}4{NC}) Clean Old Kernels                  {GREEN}17{NC}) Run rmshit.py")
-        print(f"{GREEN}5{NC}) Vacuum Journalctl                  {GREEN}18{NC}) Remove Old SSH Known Hosts")
-        print(f"{GREEN}6{NC}) Clear Cache                        {GREEN}19{NC}) Remove Orphan Vim Undo Files")
-        print(f"{GREEN}7{NC}) Update Font Cache                  {GREEN}20{NC}) Force Log Rotation")
-        print(f"{GREEN}8{NC}) Clear Trash                        {GREEN}21{NC}) Configure ZRam")
-        print(f"{GREEN}9{NC}) Optimize Databases                 {GREEN}22{NC}) Check ZRam Configuration")
-        print(f"{GREEN}10{NC}) Clean Package Cache               {GREEN}23{NC}) Adjust Swappiness")
-        print(f"{GREEN}11{NC}) Clean AUR Directory               {GREEN}24{NC}) Clear System Cache")
-        print(f"{GREEN}12{NC}) Handle Pacnew and Pacsave Files   {GREEN}25{NC}) Disable Unused Services")
-        print(f"{GREEN}13{NC}) Verify Installed Packages         {GREEN}26{NC}) Check System Health")
-        print(f"{GREEN}14{NC}) Optimize Store")
+        print(f"{Style.GREEN}1{Style.NC}) Process Dependency Log             {Style.GREEN}14{Style.NC}) Check Failed Cron Jobs")
+        print(f"{Style.GREEN}2{Style.NC}) Manage Cron Jobs                   {Style.GREEN}15{Style.NC}) Clear Docker Images")
+        print(f"{Style.GREEN}3{Style.NC}) Remove Broken Symlinks             {Style.GREEN}16{Style.NC}) Clear Temp Folder")
+        print(f"{Style.GREEN}4{Style.NC}) Clean Old Kernels                  {Style.GREEN}17{Style.NC}) Run rmshit.py")
+        print(f"{Style.GREEN}5{Style.NC}) Vacuum Journalctl                  {Style.GREEN}18{Style.NC}) Remove Old SSH Known Hosts")
+        print(f"{Style.GREEN}6{Style.NC}) Clear Cache                        {Style.GREEN}19{Style.NC}) Remove Orphan Vim Undo Files")
+        print(f"{Style.GREEN}7{Style.NC}) Update Font Cache                  {Style.GREEN}20{Style.NC}) Force Log Rotation")
+        print(f"{Style.GREEN}8{Style.NC}) Clear Trash                        {Style.GREEN}21{Style.NC}) Configure ZRam")
+        print(f"{Style.GREEN}9{Style.NC}) Optimize Databases                 {Style.GREEN}22{Style.NC}) Check ZRam Configuration")
+        print(f"{Style.GREEN}10{Style.NC}) Clean Package Cache               {Style.GREEN}23{Style.NC}) Adjust Swappiness")
+        print(f"{Style.GREEN}11{Style.NC}) Clean AUR Directory               {Style.GREEN}24{Style.NC}) Clear System Cache")
+        print(f"{Style.GREEN}12{Style.NC}) Handle Pacnew and Pacsave Files   {Style.GREEN}25{Style.NC}) Disable Unused Services")
+        print(f"{Style.GREEN}13{Style.NC}) Verify Installed Packages         {Style.GREEN}26{Style.NC}) Check System Health")
+        print(f"{Style.GREEN}14{Style.NC}) Optimize Storage")
         print(f"0) Run All Tasks                      Q) Quit")
 
-        print(f"{GREEN}By your command:{NC}")
+        print(f"{Style.GREEN}By your command:{Style.NC}")
 
         command = input().strip().upper()
 
@@ -774,18 +744,19 @@ def main():
             try:
                 menu_options[command]()
             except Exception as e:
-                log_and_print(format_message(f"Error executing option: {e}", RED), 'error')
+                log_and_print(format_message(f"Error executing option: {e}", Style.RED), 'error')
         elif command == 'Q':
             break
         else:
-            log_and_print(format_message("Invalid choice. Please try again.", RED), 'error')
+            log_and_print(format_message("Invalid choice. Please try again.", Style.RED), 'error')
 
         input("Press Enter to continue...")
 
-
-
 if __name__ == "__main__":
     main()
+
+
+
 
 
 ## Todo Additional maintenance functions:

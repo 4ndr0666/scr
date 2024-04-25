@@ -1,16 +1,19 @@
 #!/bin/sh
-
-
-# --- // 4ndr0666.sh <4ndr0666@github.com> // ========
+#File: 4ndr0666.sh
+#Author: 4ndr0666
+#Edited: 4-23-24
 #
+# --- // 4ndr0666.sh <4ndr0666@github.com> // ========
 
+
+# --- // CONSTANTS:
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
-progsfile="https://raw.githubusercontent.com/4ndr0666/4ndr0666-Scripts/main/progs.csv"
+progsfile="https://raw.githubusercontent.com/4ndr0666/scr/main/progs.csv"
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
 
-# --- // FUNCTIONS // ========
+# --- // UTILITY_FUNCTIONS:
 
 installpkg() {
 	pacman --noconfirm --needed -S "$1" >/dev/null 2>&1
@@ -255,14 +258,16 @@ finalize() {
 		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n -4ndr0666" 13 80
 }
 
-# --- // PRIVILEGE_CHECK_AND_WHIPTAIL:
+
+
+# --------------------------------------------------------- // SCRIPT_STARTS_HERE // 
 pacman --noconfirm --needed -Sy libnewt ||
 	error "Are you sure you're running this as the root user, are on an Arch-based distribution and have an internet connection?"
 
-# --- // WELCOME:
+# --- // WELCOME_MESSAGE:
 welcomemsg || error "User exited."
 
-# --- // USERNAME_AND_PASS:
+# --- // SET_USERNAME_AND_PASSWORD:
 getuserandpass || error "User exited."
 
 # --- // USER_VALIDATION:
@@ -271,7 +276,7 @@ usercheck || error "User exited."
 # --- // PREINSTALL:
 preinstallmsg || error "User exited."
 
-# --- // REFRESH_ARCHKEYS:
+# --- // REPO_KEYS:
 refreshkeys ||
 	error "Error automatically refreshing Arch keyring. Consider doing so manually."
 
@@ -289,21 +294,20 @@ adduserandpass || error "Error adding username and/or password."
 
 [ -f /etc/sudoers.pacnew ] && cp /etc/sudoers.pacnew /etc/sudoers # Just in case
 
-# --- // AUTO_ESCALATE:
+# --- // TRAP_AND_TEMP_ESCALATE:
 trap 'rm -f /etc/sudoers.d/andro-temp' HUP INT QUIT TERM PWR EXIT
 echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/andro-temp
 
-# --- // COLORIZE_PACMAN_AND_PARALLEL_DL:
+# --- // PACMAN.CONF:
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
 sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 
-# --- // USE_ALL_CORES:
+# --- // MAKEPKG.CONF:
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
-# --- // INSTALL_AURHELPER:
+# --- // INSTALL_YAY_OR_FALLBACK:
 manualinstall $aurhelper || echo 'Initial yay installation attempt failed. Trying fallback mechanism.' "Failed to install AUR helper."
 
-# --- // AURHELPER_FALLBACK:
 if ! command -v yay &> /dev/null; then
     echo "Yay not found. Installing it..."
     installpkg git
@@ -316,7 +320,6 @@ else
     echo "Yay is already installed."
 fi
 
-# Perform a simple test to confirm yay is working
 if ! yay -Syu --noconfirm; then
     error "Yay installation seems to have failed or yay isn't working properly."
 fi
@@ -324,14 +327,14 @@ fi
 # --- // AUTOUPDATE_.*-git_AUR_PKGS:
 $aurhelper -Y --save --devel
 
-# --- // INSTALL_LOGIC:
+# --- // INSTALL_LOGIC_LOOP:
 installationloop
 
-# --- // DOTFILES_AND_CLEANUP:
+# --- // FETCH_DOTFILES_AND_CLEANUP:
 putgitrepo "$dotfilesrepo" "/home/$name" "$repobranch"
 rm -rf "/home/$name/.git/" "/home/$name/README.md" "/home/$name/LICENSE" "/home/$name/FUNDING.yml"
 
-# --- // VIM_PLUGINS:
+# --- // NVIM_PLUG_INSTALLATION:
 [ ! -f "/home/$name/.config/nvim/autoload/plug.vim" ] && vimplugininstall
 
 # --- // ZSH:
@@ -343,7 +346,7 @@ sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 # --- // DBUS_UUID_FOR_RUNIT_INIT_SYSTEMS:
 dbus-uuidgen >/var/lib/dbus/machine-id
 
-# --- // PUSH_BRAVE_NOTIFICATIONS_TO_DBUS:
+# --- // PUSH_BROWSER_NOTIFICATIONS_TO_DBUS:
 echo "export \$(dbus-launch)" >/etc/profile.d/dbus.sh
 
 # --- // TAP_TO_CLICK:

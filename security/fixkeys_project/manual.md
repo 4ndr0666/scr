@@ -1,33 +1,3 @@
-# Linux Script for Repo and Keyring Management
-
-## Introduction
-
-This Linux script is designed to provide comprehensive control and fix functionalities for managing repositories and keyrings. It is written in Python and consists of three main modules: `main.py`, `repo_manager.py`, and `keyring_manager.py`. The script allows you to add, remove, and update repositories, as well as add, remove, and update keyrings.
-
-## Installation
-
-To use this script, you need to have Python installed on your Linux system. You can install the required dependencies by running the following command:
-
-```
-pip install -r requirements.txt
-```
-
-## Usage
-
-To use the script, follow these steps:
-
-1. Open a terminal and navigate to the directory where the script files are located.
-
-2. Run the `main.py` script using the following command:
-
-   ```
-   python main.py
-   ```
-
-3. The script will execute the predefined functions for managing repositories and keyrings. You can modify the script to add or remove specific functionalities as per your requirements.
-
-## Functionality
-
 ### Repository Management
 
 The `RepoManager` class in `repo_manager.py` provides the following functions for repository management:
