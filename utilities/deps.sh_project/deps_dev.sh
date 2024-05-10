@@ -107,7 +107,7 @@ resolve_missing_dependency() {
                 log "Installation of $pkg (provider of $missing_file) aborted by the user."
                 continue
             fi
-            sudo yay -S --noconfirm "$pkg"
+            sudo paru -S --noconfirm "$pkg"
             if [[ $? -eq 0 ]]; then
                 echo -e "${GREEN}$SUCCESS $pkg installed successfully!${NC}"
                 log "$pkg installed successfully."
@@ -124,7 +124,7 @@ resolve_missing_dependency() {
 check_pkgfile
 
 check_installed() {
-    if yay -Qi "$1" &> /dev/null; then
+    if paru -Qi "$1" &> /dev/null; then
         log "$1 is already installed."
         return 0
     else
@@ -146,7 +146,7 @@ install_package() {
     fi
 
     echo -n "$EXPLOSION Installing $package... "
-    (yay -S --noconfirm "$package" &> /dev/null & spinner $! "Installing $package...")
+    (paru -S --noconfirm "$package" &> /dev/null & spinner $! "Installing $package...")
 
     if [[ $? -eq 0 ]]; then
         echo -e "\r$GREEN$SUCCESS Package $package installed successfully!$NC"
@@ -189,7 +189,7 @@ check_and_install_deps_system_wide() {
         return 1
     fi
 
-    local all_packages=$(yay -Qq)
+    local all_packages=$(paru -Qq)
     local total=$(echo "$all_packages" | wc -l)
     local count=0
 

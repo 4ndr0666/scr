@@ -1,64 +1,61 @@
 #!/bin/bash
-# ~/.local/bin/driveinfo                        -*- coding: utf-8-auto-unix -*-
-# Shows useful info about connected block devices/drives
-#------------------------------------------------------------------------------
 
-print_deviceinfo() {
-  if [ "${#}" -lt 1 ]; then
-    echo "${FUNCNAME[0]}() requires 1 argument (/dev block device path)" >&2
-    return 1
-  fi
+#File: lsblk.sh
+#Author: 4ndr0666
+#Edited: 05-09-24
+#
+# --- // LSBLK.SH // ========
 
-  local DEV="$1"
+# --- // CONSTANTS:
+color_reset=$(tput sgr0)        # Reset
+color_disk=$(tput setaf 2)      # Yellow = disk headers
+color_partition=$(tput setaf 4) # Dark blue = partitions
+color_btrfs=$(tput setaf 8)     # Light blue  = btrfs subvolumes
+color_zram=$(tput setaf 1)      # Red  = ZRAM info
+color_lsblk=$(tput setaf 2)     # Yellow = lsblk
 
-  if [ -b "$DEV" ]; then
-    if command -v 'udevadm' >/dev/null 2>&1; then
-      #sernum=$(smartctl -a "$DEV" | grep "Serial Number:" | cut -d ":" -f 2 | sed 's/\ //g')
-      sernum=$(udevadm info "$DEV" | cut -d " " -f "2-" | awk -F "=" '{ if ($1 == "ID_SERIAL") { print $2; } }')
-      echo "$DEV : $sernum"
-    else
-      echo "${FUNCNAME[0]}(): Error: 'udevadm' command not found!" >&2
-      return 1
+# --- // BLK_FORMATTING:
+print_disk_info() {
+  for disk in /dev/sd[a-z]; do
+    if [ -b "$disk" ]; then
+      local serial=$(udevadm info --query=property --name=$disk | grep ID_SERIAL= | cut -d= -f2)
+      echo "${color_disk}DISK: $serial${color_reset}"
+      
+      lsblk -n -o NAME,FSTYPE,SIZE,FSAVAIL,FSUSE%,TYPE,HOTPLUG,MOUNTPOINT $disk | while read line; do
+        local name=$(echo $line | awk '{print $1}')
+        local fstype=$(echo $line | awk '{print $2}')
+        local mount=$(echo $line | awk '{print $NF}')
+
+        if [[ "$name" == sd* ]]; then
+          echo "${color_partition}    $line"
+        else
+          echo "${color_partition}        ├─$line"
+        fi
+        
+        if [[ "$fstype" == "btrfs" && -d "/$mount" ]]; then
+          sudo btrfs subvolume list /$mount | awk -v prefix="$color_btrfs" -v reset="$color_reset" '{print prefix "            | "$0 reset}'
+        fi
+      done
+      echo ""
     fi
-  fi
-
-  return 0
+  done
 }
 
-
-MAXNUMBER=99
-
-# /dev/nvmeXnY - NVMe SSD drives
-for ((x = 0; x <= MAXNUMBER; x++)); do
-  for ((y = 0; y <= MAXNUMBER; y++)); do
-    print_deviceinfo "/dev/nvme${x}n${y}"
+# --- // ZRAM:
+print_zram_info() {
+  for zram in /dev/zram*; do
+    if [ -b "$zram" ]; then
+      echo "${color_zram}ZRAM:${color_reset}"
+      lsblk -n -o NAME,SIZE,TYPE,HOTPLUG,MOUNTPOINT $zram | awk -v prefix="$color_zram" -v reset="$color_reset" '{print prefix "    "$0 reset}'
+      echo ""
+    fi
   done
-done
+}
+print_disk_info
+print_zram_info
 
-# /dev/sdX - SATA/SCSI drives
-for x in {{a..z},{a..z}{a..z}}; do
-  print_deviceinfo "/dev/sd${x}"
-done
-
-# /dev/mmcblkX - SD/MMC cards / eMMC storage devices
-for ((x = 0; x <= MAXNUMBER; x++)); do
-  print_deviceinfo "/dev/mmcblk${x}"
-done
-
-# /dev/srX - optical drives
-for ((x = 0; x <= MAXNUMBER; x++)); do
-  print_deviceinfo "/dev/sr${x}"
-done
-
-
-# lsblk output
 if command -v 'lsblk' >/dev/null 2>&1; then
-  echo ''
+  echo "${color_lsblk} "
   lsblk -o NAME,FSTYPE,SIZE,FSAVAIL,TYPE,HOTPLUG,MOUNTPOINT
 fi
 
-# blkid output
-#if command -v 'blkid' >/dev/null 2>&1; then
-#  echo ''
-#  blkid
-#fi

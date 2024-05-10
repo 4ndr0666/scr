@@ -55,7 +55,7 @@ sysctl_config() {
     sysctl -p # Reload sysctl settings
 
     # Prevent IP spoofing
-    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
+    HOST_CONF_CONTENT="\nmulti on"
     echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
     echo "Updated /etc/host.conf to prevent IP spoofing."
 }
