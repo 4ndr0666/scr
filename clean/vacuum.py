@@ -334,12 +334,34 @@ def handle_pacnew_pacsave(log_file):
 
 #13 --- // Verify_Installed_Packages:
 def verify_installed_packages(log_file):
-    print(f"{INFO} Verifying installed packages...")
+    log_and_print(f"{INFO} Updating mirror list...", 'info')
     try:
-        subprocess.run(["sudo", "pacman", "-Qkk"], check=True)
-        print(f" {SUCCESS}  All installed packages verified.")
-    except subprocess.CalledProcessError as e:
-        print(f" {FAILURE}  Error: Issues found with installed packages", log_file)
+        subprocess.run(
+            "sudo reflector --country 'United States' --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist",
+            shell=True,
+            check=True,
+        )
+        log_and_print(f"{SUCCESS} Mirror list updated successfully.", 'info')
+    except subprocess.CalledProcessError:
+        log_and_print(f"{FAILURE} Error updating mirror list.", 'error')
+        return
+
+    log_and_print(f"{INFO} Checking for packages with missing files...", 'info')
+    result = subprocess.run("pacman -Qk | grep -v ' 0 missing files' | awk '{print $1}'", shell=True, capture_output=True, text=True)
+    missing_packages = result.stdout.strip().split('\n')
+
+    if not missing_packages or missing_packages == ['']:
+        log_and_print(f"{SUCCESS} No packages with missing files found.", 'info')
+        return
+
+    log_and_print(f"{INFO} Reinstalling packages with missing files...", 'info')
+    command = "sudo pacman -S --noconfirm " + ' '.join(missing_packages)
+
+    try:
+        subprocess.run(command, shell=True, check=True)
+        log_and_print(f"{SUCCESS} Packages reinstalled successfully.", 'info')
+    except subprocess.CalledProcessError:
+        log_and_print(f"{FAILURE} Error verifying installed packages: Command '{command}' returned non-zero exit status.", 'error')
 
 #14 --- // Check_failed_cron_jobs:
 def check_failed_cron_jobs(log_file):

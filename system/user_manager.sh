@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
+
 # Function to display user's current groups
 view_groups() {
     id -nG "$1"
@@ -23,7 +29,7 @@ remove_from_group() {
 
 # Function to apply a standard preset of groups to the user
 apply_standard_preset() {
-    local standard_groups=("wheel" "audio" "video" "optical" "storage" "scanner" "lp" "network" "power")
+    local standard_groups=("adm" "users" "disk" "wheel" "cdrom" "audio" "video" "usb" "optical" "storage" "scanner" "lp" "network" "power")
     echo "Applying standard preset groups to $1..."
     for group in "${standard_groups[@]}"; do
         if grep -q "^${group}:" /etc/group; then
@@ -90,11 +96,3 @@ if ! command -v fzf &> /dev/null; then
 fi
 
 main_menu
-
-
-
-
-
-
-
-
