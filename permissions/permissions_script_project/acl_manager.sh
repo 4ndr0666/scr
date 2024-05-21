@@ -1,69 +1,120 @@
 #!/bin/bash
 
-# Define global variables
-BACKUP_DIR="/mnt/data"  # Adjust this path as needed
-DEFAULT_BACKUP_FILE="${BACKUP_DIR}/standardpermissions.acl"
-
-# Ensure running as root or with sudo
-if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root. Trying to escalate..."
-    sudo "$0" "$@"
-    exit $?
-fi
-
-# Function to backup permissions
-backup_permissions() {
-    local backup_file=$1
-    echo "Starting permissions backup..."
-    getfacl -R / > "$backup_file"
-    echo "Permissions backup completed and saved to $backup_file"
+# Function to display a menu
+display_menu() {
+    echo "Choose an option:"
+    echo "1) Create Backup"
+    echo "2) Restore Backup"
+    echo "3) Exit"
 }
 
-# Function to restore permissions
-restore_permissions() {
-    local backup_file=$1
-    if [ -f "$backup_file" ]; then
-        echo "Restoring permissions from $backup_file..."
-        setfacl --restore="$backup_file"
-        echo "Permissions have been restored."
-    else
-        echo "Backup file does not exist: $backup_file"
-        return 1
+# Function to check for root privileges
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "This script requires root privileges. Please run as root or use sudo."
+        exit 1
     fi
 }
 
-# Function to display the menu
-show_menu() {
-    echo "Permissions Management Script"
-    echo "1) Backup Permissions"
-    echo "2) Restore Permissions"
-    echo "3) Exit"
-    echo -n "Enter your choice (1-3): "
+# Function to create a backup
+create_backup() {
+    read -p "Enter the backup directory path: " backup_dir
+    if [ -z "$backup_dir" ]; then
+        echo "Backup directory path cannot be empty."
+        exit 1
+    fi
+
+    mkdir -p "$backup_dir"
+    if [ $? -ne 0 ]; then
+        echo "Failed to create backup directory. Check your permissions."
+        exit 1
+    fi
+
+    tar --acls --xattrs -cvpf "$backup_dir/backup.tar" / --transform='s,^,/backup/,'
+    if [ $? -ne 0 ]; then
+        echo "Failed to create backup archive. Check your permissions and available disk space."
+        exit 1
+    fi
+
+    getfacl -R / > "$backup_dir/acls.backup"
+    if [ $? -ne 0 ]; then
+        echo "Failed to create ACL backup. Check your permissions."
+        exit 1
+    fi
+
+    echo "Backup created successfully in $backup_dir."
 }
 
-# Main loop
+# Function to restore a backup
+restore_backup() {
+    read -p "Enter the backup directory path: " backup_dir
+    read -p "Enter the old user name: " old_user
+    read -p "Enter the target user name: " target_user
+
+    if [ -z "$backup_dir" ] || [ -z "$old_user" ] || [ -z "$target_user" ]; then
+        echo "Backup directory path, old user name, and target user name cannot be empty."
+        exit 1
+    fi
+
+    # Ensure the backup files exist
+    if [ ! -f "$backup_dir/backup.tar" ] || [ ! -f "$backup_dir/acls.backup" ]; then
+        echo "Backup files not found in $backup_dir."
+        exit 1
+    fi
+
+    # Extract the file attributes and contents
+    tar --acls --xattrs -xvpf "$backup_dir/backup.tar" -C /
+    if [ $? -ne 0 ]; then
+        echo "Failed to extract backup archive. Check your permissions and available disk space."
+        exit 1
+    fi
+
+    # Align the ACL file to the target user
+    sed -i "s/$old_user/$target_user/g" "$backup_dir/acls.backup"
+    if [ $? -ne 0 ]; then
+        echo "Failed to adjust ACL file. Check your permissions."
+        exit 1
+    fi
+
+    # Restore the ACLs
+    setfacl --restore="$backup_dir/acls.backup"
+    if [ $? -ne 0 ]; then
+        echo "Failed to restore ACLs. Check your permissions."
+        exit 1
+    fi
+
+    echo "Backup restored successfully to the target user $target_user."
+}
+
+# Function for auto privilege escalation
+auto_escalate() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "This script requires root privileges. Attempting to escalate privileges..."
+        exec sudo "$0" "$@"
+        exit 1
+    fi
+}
+
+# Main script logic
+auto_escalate "$@"
+
 while true; do
-    show_menu
-    read choice
-    case "$choice" in
+    display_menu
+    read -p "Select an option (1-3): " option
+
+    case $option in
         1)
-            echo -n "Enter filename for backup (default: ${DEFAULT_BACKUP_FILE}): "
-            read backup_file
-            backup_file="${backup_file:-$DEFAULT_BACKUP_FILE}"
-            backup_permissions "$backup_file"
+            create_backup
             ;;
         2)
-            echo -n "Enter filename to restore from (default: ${DEFAULT_BACKUP_FILE}): "
-            read backup_file
-            backup_file="${backup_file:-$DEFAULT_BACKUP_FILE}"
-            restore_permissions "$backup_file"
+            restore_backup
             ;;
         3)
             echo "Exiting..."
-            break
+            exit 0
             ;;
         *)
-            echo "Invalid choice, please select 1, 2, or 3."
+            echo "Invalid option. Please try again."
             ;;
     esac
 done
