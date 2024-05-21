@@ -30,11 +30,9 @@ create_backup() {
         exit 1
     fi
 
-    tar --acls --xattrs -cvpf "$backup_dir/backup.tar" / \
-        --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* --exclude=/tmp/* --exclude="$backup_dir" \
-        --transform='s,^,/backup/,'
+    rsync -aAXv --exclude={"/proc/*","/sys/*","/dev/*","/run/*","/tmp/*","/mnt/*","/media/*","/lost+found","$backup_dir"} / "$backup_dir/backup/"
     if [ $? -ne 0 ]; then
-        echo "Failed to create backup archive. Check your permissions and available disk space."
+        echo "Failed to create backup. Check your permissions and available disk space."
         exit 1
     fi
 
@@ -59,15 +57,14 @@ restore_backup() {
     fi
 
     # Ensure the backup files exist
-    if [ ! -f "$backup_dir/backup.tar" ] || [ ! -f "$backup_dir/acls.backup" ]; then
+    if [ ! -d "$backup_dir/backup" ] || [ ! -f "$backup_dir/acls.backup" ]; then
         echo "Backup files not found in $backup_dir."
         exit 1
     fi
 
-    # Extract the file attributes and contents
-    tar --acls --xattrs -xvpf "$backup_dir/backup.tar" -C /
+    rsync -aAXv "$backup_dir/backup/" /
     if [ $? -ne 0 ]; then
-        echo "Failed to extract backup archive. Check your permissions and available disk space."
+        echo "Failed to restore backup. Check your permissions and available disk space."
         exit 1
     fi
 
