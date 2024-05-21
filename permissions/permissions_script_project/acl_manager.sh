@@ -30,13 +30,20 @@ create_backup() {
         exit 1
     fi
 
-    tar --acls --xattrs -cvpf "$backup_dir/backup.tar" / --exclude=/proc --exclude=/sys --exclude=/dev --exclude=/run --exclude=/tmp --transform='s,^,/backup/,'
+    tar --acls --xattrs -cvpf "$backup_dir/backup.tar" / \
+        --exclude=/proc \
+        --exclude=/sys \
+        --exclude=/dev \
+        --exclude=/run \
+        --exclude=/tmp \
+        --exclude="$backup_dir" \
+        --transform='s,^,/backup/,'
     if [ $? -ne 0 ]; then
         echo "Failed to create backup archive. Check your permissions and available disk space."
         exit 1
     fi
 
-    getfacl -R / --exclude=/proc --exclude=/sys --exclude=/dev --exclude=/run --exclude=/tmp > "$backup_dir/acls.backup"
+    find / -path /proc -prune -o -path /sys -prune -o -path /dev -prune -o -path /run -prune -o -path /tmp -prune -o -path "$backup_dir" -prune -o -print | xargs getfacl --skip-base > "$backup_dir/acls.backup"
     if [ $? -ne 0 ]; then
         echo "Failed to create ACL backup. Check your permissions."
         exit 1
