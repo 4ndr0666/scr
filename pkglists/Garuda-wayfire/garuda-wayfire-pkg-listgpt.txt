@@ -955,10 +955,6 @@ shared-mime-info
 slang
 slurp
 smbclient
-snap-pac
-snapper
-snapper-support
-snapper-tools
 sndio
 sof-firmware
 sord

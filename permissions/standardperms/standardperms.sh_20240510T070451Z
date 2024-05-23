@@ -1,0 +1,123 @@
+#!/bin/bash
+
+#File: Standardperm.sh
+#Author:4ndr0666
+#Edited: 05-10-24
+#
+# --- // STANDARDPERMS.SH // ========
+
+
+# --- // LOG:
+log_file="/var/log/permission_changes.log"
+log_action() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$log_file"
+}
+
+# --- // HELP:
+show_help() {
+    echo "Usage: ""$(basename "$0")"" [option] [directory]"
+    echo "Enhanced permissions management for files and directories."
+    echo
+    echo "Options:"
+    echo "  -a         Apply default permissions (files: 0600, directories: 0700)"
+    echo "  -d         Apply directory permissions (0700)"
+    echo "  -f         Apply file permissions (0600)"
+    echo "  --chmod=   Apply custom chmod mode (e.g., --chmod=755)"
+    echo "  --reset    Reset to factory settings for standard files and directories"
+    echo "  -h         Display this help and exit"
+    echo
+    echo "Understanding Permissions:"
+    echo "  Permissions are represented by three characters: r (read), w (write), x (execute)"
+    echo "  Each character can be set for three different sets of users: owner, group, others"
+    echo "  Example modes:"
+    echo "    755 (rwxr-xr-x): Owner can read/write/execute, group/others can read/execute"
+    echo "    644 (rw-r--r--): Owner can read/write, group/others can read"
+    echo "  Use --chmod= for custom permissions like 751, 711, etc."
+    echo
+    echo "Examples:"
+    echo "  ""$(basename "$0")"" -a ./project   # Apply default permissions recursively to 'project'"
+    echo "  ""$(basename "$0")"" --chmod=644 ./file.txt   # Apply custom permissions to 'file.txt'"
+    echo "  ""$(basename "$0")"" --reset       # Reset permissions to factory settings"
+    echo
+    echo "Factory Settings Option ('--reset'):"
+    echo "  This option simplifies permissions management for beginners. It resets permissions"
+    echo "  of standard files and directories to safe, default values, correcting any accidental"
+    echo "  modifications made by the user."
+}
+
+# --- // STANDARD_PERMS:
+reset_to_factory_settings() {
+    echo "Warning: This will reset permissions for system directories and files."
+    read -rp "Are you sure you want to continue? (y/n) " response
+    if [[ $response =~ ^[Yy]$ ]]; then
+        log_action "Starting reset to factory settings."
+        # --- // DIRS:
+        if  chmod 755 /bin /boot /dev /etc /lib /lib64 /proc /root /run /sbin/ /srv /sys /tmp /usr /var; then
+	    chmod root:root /bin /boot /dev /etc /lib /lib64 /proc /root /run /sbin/ /srv /sys /tmp /usr /var
+            log_action "System directories corrected."
+        else
+            log_action "Error setting permissions for system directories."
+            return 1
+        fi
+        # --- // HOME:
+        if  find /home -mindepth 1 -maxdepth 1 -type d ! -name andro -exec chmod 700 {} \;
+            chmod 700 /home/andro
+            chmod 755 /home/andro/.local/bin; then
+            log_action "Home directories corrected."
+        else
+            log_action "Error setting permissions for home directories."
+            return 1
+        fi
+        # --- // CONFIG:
+        if  find /etc -type f -exec chmod 644 {} \;
+	    chmod 600 /etc/shadow /etc/gshadow /etc/sudoers /etc/passwd; then
+            log_action "Configuration files corrected."
+        else
+            log_action "Error setting permissions for configuration files."
+            return 1
+        fi
+        # --- // Ensuring permissions:
+	    chmod +x /bin/* /usr/bin/* /usr/local/bin/*
+            chmod -x /etc/shadow /etc/gshadow /etc/sudoers /etc/passwd
+
+        echo "All permissions have been reset, log at $log_file."
+    else
+        echo "Reset aborted by user."
+    fi
+}
+
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
+
+# --- // MENU:
+opt=${1:-'-h'}
+dir=${2:-'.'}
+
+case "$opt" in
+    -a)
+        find "$dir" -type d -exec chmod 0700 "{}" \; -o -type f -exec chmod 0600 "{}" \;
+        log_action "Applied default permissions to $dir"
+        ;;
+    -d)
+        find "$dir" -type d -exec chmod 0700 "{}" \;
+        log_action "Applied directory permissions to $dir"
+        ;;
+    -f)
+        find "$dir" -type f -exec chmod 0600 "{}" \;
+        log_action "Applied file permissions to $dir"
+        ;;
+    --chmod=*)
+        custom_mode="${opt#*=}"
+        find "$dir" -exec chmod "$custom_mode" "{}" \;
+        log_action "Applied custom mode $custom_mode to $dir"
+        ;;
+    --reset)
+        reset_to_factory_settings
+        ;;
+    -h|*)
+        show_help
+        ;;
+esac
