@@ -526,8 +526,6 @@ sed
 shadow
 shellcheck
 slurp
-snapper-support
-snapper-tools
 sof-firmware
 sshfs
 starship
