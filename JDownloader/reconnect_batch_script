@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# Path to JDownloader2
+JD_PATH="/opt/JDownloaderScripts"
+
+# Path to ExpressVPN CLI
+EXPRESSVPN_PATH="/usr/bin/expressvpn"
+
+# Interval in seconds
+INTERVAL=300
+
+# List of VPN servers
+VPN_SERVERS=(
+  "smart"
+  "hk2"
+  "hk1"
+  "usda"
+  "usny"
+  "usla2"
+  "uswd"
+  "usse"
+  "usph"
+  "usnj1"
+  "usla1"
+  "ussf"
+  "usmi"
+  "usmi2"
+  "usla3"
+  "usnj3"
+  "usat"
+  "usde"
+  "uslp"
+  "usho"
+  "usal"
+  "sgju"
+  "sgcb"
+  "inuk"
+  "insi"
+  "ausy"
+  "aume"
+  "auwo"
+  "aubr"
+  "aupe"
+  "auad"
+  "cato2"
+  "cato"
+  "camo"
+  "defr3"
+  "defr1"
+  "denu"
+  "mx"
+  "ukdo"
+  "uklo"
+  "ukel"
+  "ukmi"
+  "nlam"
+  "nlro"
+  "nlth"
+  "esma"
+  "esba2"
+  "ie"
+  "frpa2"
+  "frma"
+  "itco"
+)
+
+# Function to reconnect
+reconnect() {
+  # Disconnect from the current VPN
+  $EXPRESSVPN_PATH disconnect
+
+  # Wait a bit before reconnecting
+  sleep 5
+
+  # Connect to a random VPN server from the list
+  SERVER=${VPN_SERVERS[$RANDOM % ${#VPN_SERVERS[@]}]}
+  $EXPRESSVPN_PATH connect $SERVER
+
+  # Wait for the VPN to establish the connection
+  sleep 10
+
+  # Notify JDownloader2 to reconnect
+  $JD_PATH/jdownloader -r
+}
+
+# Main loop
+while true; do
+  reconnect
+  sleep $INTERVAL
+done
