@@ -1,0 +1,161 @@
+#!/bin/bash
+# File: system_hardening.sh
+# Author: 4ndr0666
+# Edited: 04-11-2024
+#
+# --- // SYSTEM HARDENING // ========
+
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+  sudo "$0" "$@"
+  exit $?
+fi
+
+# Function to backup UFW rules
+backup_ufw_rules() {
+    echo "Backing up UFW rules..."
+    ufw status numbered > /etc/ufw/ufw.rules.backup
+    echo "UFW rules backed up to /etc/ufw/ufw.rules.backup"
+}
+
+# Function to restore UFW rules from backup
+restore_ufw_rules() {
+    if [[ -f /etc/ufw/ufw.rules.backup ]]; then
+        echo "Restoring UFW rules from backup..."
+        ufw reset
+        awk '/^ *[0-9]+/{print "ufw allow " $2}' /etc/ufw/ufw.rules.backup | bash
+        echo "UFW rules restored from backup."
+    else
+        echo "UFW backup not found."
+    fi
+}
+
+# Function to backup sysctl configuration
+backup_sysctl_config() {
+    echo "Backing up sysctl configuration..."
+    cp /etc/sysctl.conf /etc/sysctl.conf.backup
+    echo "Sysctl configuration backed up to /etc/sysctl.conf.backup"
+}
+
+# Function to restore sysctl configuration from backup
+restore_sysctl_config() {
+    if [[ -f /etc/sysctl.conf.backup ]]; then
+        echo "Restoring sysctl configuration from backup..."
+        cp /etc/sysctl.conf.backup /etc/sysctl.conf
+        /sbin/sysctl --system
+        echo "Sysctl configuration restored."
+    else
+        echo "Sysctl backup not found."
+    fi
+}
+
+# Function to modify IPv6 settings
+modify_ipv6_setting() {
+    local setting=$1
+    echo "Modifying IPv6 settings to $setting..."
+
+    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6=$setting
+    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6=$setting
+
+    for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
+        if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
+            /sbin/sysctl -w net.ipv6.conf.$interface.disable_ipv6=$setting || {
+                echo "Error modifying IPv6 settings for interface $interface."
+                restore_sysctl_config
+                return 1
+            }
+        fi
+    done
+    echo "IPv6 settings modified successfully to $setting."
+}
+
+# Function to configure UFW
+ufw_config() {
+    echo  "Configuring UFW..."
+    sleep 2
+    backup_ufw_rules
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw default deny incoming v6
+    ufw default deny outgoing v6
+    ufw limit 22/tcp # SSH with rate limiting
+    ufw allow 6800/tcp # Aria2c
+    ufw allow 37295/tcp # VPN
+    ufw allow from 192.168.1.0/24 to any port 9666
+    ufw allow from 192.168.1.0/24 to any port 9665
+    ufw allow from 192.168.1.0/24 to any port 36501
+    ufw --force enable
+    ufw status verbose
+}
+
+# Function to configure sysctl settings
+sysctl_config() {
+    echo "Checking sysctl configuration..."
+    sleep 2
+    declare -A sysctl_settings=(
+        ["kernel.modules_disabled"]="1"
+        ["vm.swappiness"]="10"
+        ["kernel.nmi_watchdog"]="0"
+        ["kernel.unprivileged_userns_clone"]="1"
+        ["kernel.printk"]="3 3 3 3"
+    )
+
+    # Apply sysctl settings
+    for key in "${!sysctl_settings[@]}"; do
+        current_value=$(sysctl -n "$key")
+        if [[ "$current_value" != "${sysctl_settings[$key]}" ]]; then
+            sysctl -w "$key=${sysctl_settings[$key]}"
+            grep -qF -- "$key = ${sysctl_settings[$key]}" /etc/sysctl.conf || echo "$key = ${sysctl_settings[$key]}" >> /etc/sysctl.conf
+        fi
+    done
+
+    sysctl -p # Reload sysctl settings
+
+    # Prevent IP spoofing
+    HOST_CONF_CONTENT="multi on"
+    if ! grep -qF -- "$HOST_CONF_CONTENT" /etc/host.conf; then
+        echo "$HOST_CONF_CONTENT" >> /etc/host.conf
+        echo "Updated /etc/host.conf to prevent IP spoofing."
+    else
+        echo "/etc/host.conf already contains the necessary setting."
+    fi
+}
+
+# Function to display usage syntax
+usage() {
+    echo "Usage: $0 {on|off} for IPv6 configuration"
+    exit 1
+}
+
+# Main script logic
+main() {
+    echo  "Initiating system hardening..."
+    sleep 1
+
+    # Check if argument is provided for IPv6 configuration
+    if [[ -z "$1" ]]; then
+        usage
+    elif [[ "$1" == "off" || "$1" == "on" ]]; then
+        backup_sysctl_config
+        modify_ipv6_setting $([[ "$1" == "off" ]] && echo 1 || echo 0)
+    else
+        usage
+    fi
+
+    ufw_config
+    sysctl_config
+
+    echo  "System hardening complete."
+    sleep 1
+
+    echo "### ============================== // LISTENING PORTS // ============================== ###"
+    netstat -tunlp
+    sleep 3
+
+    echo "### ============ // UFW SUMMARY // ============ ###"
+    ufw status numbered
+    sleep 2
+}
+
+main "$@"
