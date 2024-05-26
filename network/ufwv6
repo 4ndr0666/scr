@@ -79,12 +79,25 @@ ufw_config() {
     ufw default allow outgoing
     ufw default deny incoming v6
     ufw default deny outgoing v6
+    sudo ufw allow 1195 #VPN 
+    sudo ufw allow 1198 #VPN
+    sudo ufw allow 443 #VPN
+    sudo ufw allow 465 #VPN
+    sudo ufw allow 993 #VPN
+    sudo ufw allow 995 #VPN
     ufw limit 22/tcp # SSH with rate limiting
     ufw allow 6800/tcp # Aria2c
-    ufw allow 37295/tcp # VPN
     ufw allow from 192.168.1.0/24 to any port 9666
     ufw allow from 192.168.1.0/24 to any port 9665
     ufw allow from 192.168.1.0/24 to any port 36501
+    ufw allow proto icmp from any to any # Allow ping
+
+    if [[ "$1" == "jdownloader" ]]; then
+        echo "Configuring UFW rules for JDownloader2..."
+        ufw allow 9666/tcp # JDownloader2 port
+        ufw allow 9665/tcp # JDownloader2 port
+    fi
+
     ufw --force enable
     ufw status verbose
     systemctl enable ufw.service --now
@@ -158,7 +171,7 @@ sysctl_config() {
         ["net.ipv4.icmp_ignore_bogus_error_responses"]="1"
         ["net.ipv4.icmp_echo_ignore_all"]="0"
         ["net.ipv4.conf.default.log_martians"]="0"
-        ["net.ipv4.conf.all.log_martians"]="0"
+        ["net.ipv4.conf.all.log_martians"]="1"
         ["net.ipv4.tcp_syncookies"]="1"
         ["net.ipv4.tcp_fin_timeout"]="30"
         ["net.ipv4.tcp_keepalive_intvl"]="1800"
@@ -186,7 +199,7 @@ sysctl_config() {
     sysctl -p # Reload sysctl settings
 
     # Prevent IP spoofing
-    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
+    HOST_CONF_CONTENT="\nmulti on"
     if ! grep -qF "$HOST_CONF_CONTENT" /etc/host.conf; then
         echo "Updating /etc/host.conf to prevent IP spoofing..."
         echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
@@ -210,7 +223,7 @@ fail2ban_config() {
 
 # Function to display usage syntax
 usage() {
-    echo "Usage: $0 {on|off} for IPv6 configuration"
+    echo "Usage: $0 {on|off} [jdownloader] for IPv6 configuration"
     exit 1
 }
 
@@ -231,9 +244,9 @@ main() {
 
     permissions_config
     rules_config
-    ufw_config
+    ufw_config "$2"
     sysctl_config
-#    fail2ban_config
+    # fail2ban_config
 
     echo "System hardening complete."
     sleep 1
