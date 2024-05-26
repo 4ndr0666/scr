@@ -1,2 +1,0 @@
-#!/bin/sh
-gs -dBATCH -dNOPAUSE -sDEVICE=pdfwrite -sOutputFile=- -f "$@"
