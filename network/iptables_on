@@ -2,71 +2,88 @@
 #
 # iptables example configuration script
 
+# Ensure the script is run with root privileges
 if [ "$(id -u)" -ne 0 ]; then
-      sudo "$0" "$@"
+    sudo "$0" "$@"
     exit $?
 fi
 
-# Drop ICMP echo-request messages sent to broadcast or multicast addresses
-echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+# Function to set kernel parameters
+set_kernel_parameters() {
+    echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+    echo 0 > /proc/sys/net/ipv4/conf/all/accept_source_route
+    echo 1 > /proc/sys/net/ipv4/tcp_syncookies
+    echo 0 > /proc/sys/net/ipv4/conf/all/accept_redirects
+    echo 0 > /proc/sys/net/ipv4/conf/all/send_redirects
+    echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter
+    echo 1 > /proc/sys/net/ipv4/conf/all/log_martians
+}
 
-# Drop source routed packets
-echo 0 > /proc/sys/net/ipv4/conf/all/accept_source_route
+# Function to flush iptables rules
+flush_iptables() {
+    /sbin/iptables --flush
+}
 
-# Enable TCP SYN cookie protection from SYN floods
-echo 1 > /proc/sys/net/ipv4/tcp_syncookies
+# Function to allow unlimited traffic on the loopback interface
+allow_loopback_traffic() {
+    /sbin/iptables -A INPUT -i lo -j ACCEPT
+    /sbin/iptables -A OUTPUT -o lo -j ACCEPT
+}
 
-# Don't accept ICMP redirect messages
-echo 0 > /proc/sys/net/ipv4/conf/all/accept_redirects
+# Function to set default policies
+set_default_policies() {
+    /sbin/iptables --policy INPUT DROP
+    /sbin/iptables --policy OUTPUT DROP
+    /sbin/iptables --policy FORWARD DROP
+}
 
-# Don't send ICMP redirect messages
-echo 0 > /proc/sys/net/ipv4/conf/all/send_redirects
+# Function to allow established and related connections
+allow_established_connections() {
+    /sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    /sbin/iptables -A OUTPUT -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+}
 
-# Enable source address spoofing protection
-echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter
+# Function to rate-limit SSH
+rate_limit_ssh() {
+    /sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 4 -j DROP
+    /sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
+    /sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+}
 
-# Log packets with impossible source addresses
-echo 1 > /proc/sys/net/ipv4/conf/all/log_martians
+# Function to allow specific ports
+allow_specific_ports() {
+    /sbin/iptables -A INPUT -p tcp --dport 25565 -m state --state NEW -j ACCEPT  # Minecraft
+    /sbin/iptables -A INPUT -p tcp --dport 8123 -m state --state NEW -j ACCEPT   # Dynmap plugin
+    # Uncomment to activate
+    # /sbin/iptables -A INPUT -p tcp --dport 80 -m state --state NEW -j ACCEPT    # http
+    # /sbin/iptables -A INPUT -p tcp --dport 443 -m state --state NEW -j ACCEPT   # https
+    # /sbin/iptables -A INPUT -p udp --dport 5021 -m state --state NEW -j ACCEPT  # UDP example
+}
 
-# Flush all chains
-/sbin/iptables --flush
+# Function to allow pinging of the server
+allow_ping() {
+    /sbin/iptables -A INPUT -p icmp --icmp-type 8 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+}
 
-# Allow unlimited traffic on the loopback interface
-/sbin/iptables -A INPUT -i lo -j ACCEPT
-/sbin/iptables -A OUTPUT -o lo -j ACCEPT
+# Function to drop all other traffic
+drop_all_other_traffic() {
+    /sbin/iptables -A INPUT -j DROP
+}
 
-# Set default policies
-/sbin/iptables --policy INPUT DROP
-/sbin/iptables --policy OUTPUT DROP
-/sbin/iptables --policy FORWARD DROP
+# Main script logic
+main() {
+    set_kernel_parameters
+    flush_iptables
+    allow_loopback_traffic
+    set_default_policies
+    allow_established_connections
+    rate_limit_ssh
+    allow_specific_ports
+    allow_ping
+    drop_all_other_traffic
 
-# Previously initiated and accepted exchanges bypass rule checking
-# Allow unlimited outbound traffic
-/sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-/sbin/iptables -A OUTPUT -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+    # Print the activated rules to the console
+    /sbin/iptables -nL
+}
 
-#Ratelimit SSH for attack protection
-/sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 4 -j DROP
-/sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
-/sbin/iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
-
-# Allow certain ports to be accessible from the outside
-/sbin/iptables -A INPUT -p tcp --dport 25565 -m state --state NEW -j ACCEPT  #Minecraft
-/sbin/iptables -A INPUT -p tcp --dport 8123 -m state --state NEW -j ACCEPT   #Dynmap plugin
-
-# Other rules for future use if needed.  Uncomment to activate
-# /sbin/iptables -A INPUT -p tcp --dport 80 -m state --state NEW -j ACCEPT    # http
-# /sbin/iptables -A INPUT -p tcp --dport 443 -m state --state NEW -j ACCEPT   # https
-
-# UDP packet rule.  This is just a random udp packet rule as an example only
-# /sbin/iptables -A INPUT -p udp --dport 5021 -m state --state NEW -j ACCEPT
-
-# Allow pinging of your server
-/sbin/iptables -A INPUT -p icmp --icmp-type 8 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
-
-
-# Drop all other traffic
-/sbin/iptables -A INPUT -j DROP
-
-# print the activated rules to the console when script is completed
-/sbin/iptables -nL
+main "$@"

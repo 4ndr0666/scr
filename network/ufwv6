@@ -71,7 +71,7 @@ modify_ipv6_setting() {
 
 # Function to configure UFW
 ufw_config() {
-    echo  "Configuring UFW..."
+    echo "Configuring UFW..."
     sleep 2
     backup_ufw_rules
     ufw --force reset
@@ -87,6 +87,50 @@ ufw_config() {
     ufw allow from 192.168.1.0/24 to any port 36501
     ufw --force enable
     ufw status verbose
+    systemctl enable ufw.service --now
+    systemctl start ufw.service
+}
+
+# Function to ensure UFW rules exist and set permissions
+rules_config() {
+    UFW_FILES=("/etc/ufw/user.rules" "/etc/ufw/before.rules" "/etc/ufw/after.rules" "/etc/ufw/user6.rules" "/etc/ufw/before6.rules" "/etc/ufw/after6.rules")
+
+    for file in "${UFW_FILES[@]}"; do
+        if [ ! -f "$file" ]; then
+            echo "File $file does not exist. Creating with default rules."
+            echo "# Default rules" > "$file"
+        fi
+        current_permissions=$(stat -c "%a" "$file")
+        if [ "$current_permissions" != "600" ]; then
+            chmod 600 "$file"
+            echo "Set permissions to 600 for $file."
+        fi
+    done
+}
+
+# Function to set proper permissions on /etc and /var
+permissions_config() {
+    UFW_DIR="/etc/ufw/"
+    LOG_DIR="/var/log/"
+
+    if [ -d "$UFW_DIR" ] && [ -d "$LOG_DIR" ]; then
+        current_permissions_ufw=$(stat -c "%a" "$UFW_DIR")
+        current_permissions_log=$(stat -c "%a" "$LOG_DIR")
+        current_owner_ufw=$(stat -c "%U:%G" "$UFW_DIR")
+        current_owner_log=$(stat -c "%U:%G" "$LOG_DIR")
+
+        if [ "$current_permissions_ufw" != "755" ] || [ "$current_permissions_log" != "755" ]; then
+            chmod 755 "$UFW_DIR" "$LOG_DIR"
+            echo "Changed permissions to 755 for /etc/ufw and /var/log."
+        fi
+
+        if [ "$current_owner_ufw" != "root:root" ] || [ "$current_owner_log" != "root:root" ]; then
+            chown root:root "$UFW_DIR" "$LOG_DIR"
+            echo "Changed owner to root:root for /etc/ufw and /var/log."
+        fi
+    else
+        echo "Could not set permissions on directories."
+    fi
 }
 
 # Function to configure sysctl settings
@@ -99,9 +143,33 @@ sysctl_config() {
         ["kernel.nmi_watchdog"]="0"
         ["kernel.unprivileged_userns_clone"]="1"
         ["kernel.printk"]="3 3 3 3"
+        ["kernel.sysrq"]="1"
+        ["net.ipv4.conf.default.rp_filter"]="1"
+        ["net.ipv4.conf.all.rp_filter"]="1"
+        ["net.ipv4.conf.default.accept_source_route"]="0"
+        ["net.ipv4.conf.all.accept_source_route"]="0"
+        ["net.ipv6.conf.default.accept_source_route"]="0"
+        ["net.ipv6.conf.all.accept_source_route"]="0"
+        ["net.ipv4.conf.default.accept_redirects"]="0"
+        ["net.ipv4.conf.all.accept_redirects"]="0"
+        ["net.ipv6.conf.default.accept_redirects"]="0"
+        ["net.ipv6.conf.all.accept_redirects"]="0"
+        ["net.ipv4.icmp_echo_ignore_broadcasts"]="1"
+        ["net.ipv4.icmp_ignore_bogus_error_responses"]="1"
+        ["net.ipv4.icmp_echo_ignore_all"]="0"
+        ["net.ipv4.conf.default.log_martians"]="0"
+        ["net.ipv4.conf.all.log_martians"]="0"
+        ["net.ipv4.tcp_syncookies"]="1"
+        ["net.ipv4.tcp_fin_timeout"]="30"
+        ["net.ipv4.tcp_keepalive_intvl"]="1800"
+        ["net.ipv4.tcp_sack"]="1"
+        ["net.ipv6.conf.default.autoconf"]="0"
+        ["net.ipv6.conf.all.autoconf"]="0"
+        ["net.ipv6.conf.default.use_tempaddr"]="2"
+        ["net.ipv6.conf.all.use_tempaddr"]="2"
     )
 
-    # Apply sysctl settings
+    # Apply sysctl settings to /etc/sysctl.conf
     for key in "${!sysctl_settings[@]}"; do
         current_value=$(sysctl -n "$key")
         if [[ "$current_value" != "${sysctl_settings[$key]}" ]]; then
@@ -110,15 +178,33 @@ sysctl_config() {
         fi
     done
 
+    # Ensure /etc/ufw/sysctl.conf aligns with /etc/sysctl.conf
+    for key in "${!sysctl_settings[@]}"; do
+        grep -qF -- "$key = ${sysctl_settings[$key]}" /etc/ufw/sysctl.conf || echo "$key = ${sysctl_settings[$key]}" >> /etc/ufw/sysctl.conf
+    done
+
     sysctl -p # Reload sysctl settings
 
     # Prevent IP spoofing
-    HOST_CONF_CONTENT="multi on"
-    if ! grep -qF -- "$HOST_CONF_CONTENT" /etc/host.conf; then
-        echo "$HOST_CONF_CONTENT" >> /etc/host.conf
-        echo "Updated /etc/host.conf to prevent IP spoofing."
+    HOST_CONF_CONTENT="order bind,hosts\nmulti on"
+    if ! grep -qF "$HOST_CONF_CONTENT" /etc/host.conf; then
+        echo "Updating /etc/host.conf to prevent IP spoofing..."
+        echo -e "$HOST_CONF_CONTENT" > /etc/host.conf
+    fi
+}
+
+# Function to configure fail2ban
+fail2ban_config() {
+    echo "Checking fail2ban configuration..."
+    sleep 2
+
+    if ! systemctl is-active --quiet fail2ban; then
+        echo "Enabling and starting fail2ban..."
+        systemctl enable fail2ban --now
+        systemctl start fail2ban
+        fail2ban-client set sshd banaction iptables-multiport
     else
-        echo "/etc/host.conf already contains the necessary setting."
+        echo "Fail2ban is already active and configured."
     fi
 }
 
@@ -130,7 +216,7 @@ usage() {
 
 # Main script logic
 main() {
-    echo  "Initiating system hardening..."
+    echo "Initiating system hardening..."
     sleep 1
 
     # Check if argument is provided for IPv6 configuration
@@ -143,10 +229,13 @@ main() {
         usage
     fi
 
+    permissions_config
+    rules_config
     ufw_config
     sysctl_config
+#    fail2ban_config
 
-    echo  "System hardening complete."
+    echo "System hardening complete."
     sleep 1
 
     echo "### ============================== // LISTENING PORTS // ============================== ###"
