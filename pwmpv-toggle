@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# Define log file for debugging
+LOGFILE="/tmp/play_with_mpv.log"
+
+# Check if play-with-mpv.py is running
+if pidof play_with_mpv.py >/dev/null; then
+    # If running, ask to turn off
+    if [ "$(printf "No\nYes" | dmenu -i -p "Turn off play_with_mpv?")" = "Yes" ]; then
+        killall play_with_mpv.py
+        notify-send "play_with_mpv disabled."
+    fi
+else
+    # If not running, ask to turn on
+    if [ "$(printf "No\nYes" | dmenu -i -p "Turn on play_with_mpv?")" = "Yes" ]; then
+        alacritty -e /usr/bin/python /usr/local/bin/play_with_mpv.py >"$LOGFILE" 2>&1 &
+        notify-send "play_with_mpv enabled."
+    fi
+fi
+
+# Update the status bar
+sleep 3 && pkill -RTMIN+7 "${STATUSBAR:-waybar}"

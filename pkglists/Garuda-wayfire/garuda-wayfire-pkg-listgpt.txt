@@ -13,7 +13,6 @@ alsa-topology-conf
 alsa-ucm-conf
 amd-ucode
 aml
-amtk
 android-udev
 aom
 appstream
@@ -139,9 +138,6 @@ file-roller
 filesystem
 find-the-command-git
 findutils
-firedragon
-fish
-fish-autopair
 flac
 flashrom
 flex
@@ -160,14 +156,12 @@ fwupd
 fwupd-efi
 fzf
 game-devices-udev
-gammastep
 garuda-assistant
 garuda-bash-config
 garuda-boot-options
 garuda-browser-settings
 garuda-common-settings
 garuda-dracut-support
-garuda-fish-config
 garuda-gamer
 garuda-hooks
 garuda-hotfixes
@@ -176,14 +170,11 @@ garuda-libs
 garuda-migrations
 garuda-network-assistant
 garuda-settings-manager
-garuda-setup-assistant
-garuda-starship-prompt
 garuda-system-maintenance
 garuda-update
 garuda-wallpapers
 garuda-wayfire-settings
 garuda-welcome
-garuda-zsh-config
 gawk
 gc
 gcab
@@ -700,7 +691,6 @@ mako
 man-db
 man-pages
 mbedtls
-mcfly
 md4c
 mdadm
 meld
@@ -970,7 +960,6 @@ sratom
 srt
 sshfs
 sstp-client
-starship
 stoken
 strongswan
 subversion
@@ -980,8 +969,6 @@ svt-av1
 svt-hevc
 swayidle
 swaylock
-sweet-kde-theme-git
-sweet-theme-full-git
 systemd
 systemd-libs
 systemd-oomd-defaults
@@ -1040,7 +1027,7 @@ vulkan-icd-loader
 vulkan-tools
 wavpack
 waybar
-chaotic-aur/wayfire
+wayfire
 wayfire-desktop
 wayland
 wayland-protocols
@@ -1050,7 +1037,7 @@ webkit2gtk-4.1
 webp-pixbuf-loader
 webrtc-audio-processing
 webrtc-audio-processing-1
-chaotic-aur/wf-config
+wf-config
 wf-osk-git
 wf-recorder
 wf-shell

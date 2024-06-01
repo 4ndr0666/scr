@@ -11,5 +11,5 @@ cursor_theme="$(grep 'gtk-cursor-theme-name' "$config" | cut -d'=' -f2)"
 font_name="$(grep 'gtk-font-name' "$config" | cut -d'=' -f2)"
 gsettings set $gnome_schema gtk-theme 'Graphite-teal-Dark'
 gsettings set $gnome_schema icon-theme 'Sweet-Teal'
-gsettings set $gnome_schema cursor-theme 'Breeze-Hacked'
-gsettings set $gnome_schema font-name 'Iosevka'
+gsettings set $gnome_schema cursor-theme 'Breeze_Hacked'
+gsettings set $gnome_schema font-name 'JetBrains Mono'

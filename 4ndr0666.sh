@@ -8,7 +8,7 @@
 
 # --- // CONSTANTS:
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
-progsfile="https://raw.githubusercontent.com/4ndr0666/scr/main/progs.csv"
+progsfile="https://raw.githubusercontent.com/4ndr0666/scr/master/static/progs.csv"
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
@@ -26,12 +26,12 @@ error() {
 }
 
 welcomemsg() {
-	whiptail --title "4ndr0666.sh" \
-		--msgbox " An Auto-Rice Bootstrapping Script...\\n\\nThis script will automatically install the configs per user 4ndr0666.sh" 10 60
+	whiptail --title "4ndr0666s Ricer" \
+		--msgbox "This is my personal ricing script for a quick setup on a new machine.\\n\\n-4ndr0666" 10 60
 
 	whiptail --title "!WARNING!" --yes-button "CONTINUE" \
 		--no-button "ABORT & UPDATE" \
-		--yesno "Ensure pacman -Syu has been completed before deploying 4ndr0666.sh!\\n\\nThis avoids program errors during installation." 8 70
+		--yesno "Dont forget to get the latest updates and refreshed Arch keyrings.\\n\\n" 8 70
 }
 
 getuserandpass() {
@@ -53,13 +53,13 @@ usercheck() {
 	! { id -u "$name" >/dev/null 2>&1; } ||
 		whiptail --title "!WARNING!" --yes-button "CONTINUE" \
 			--no-button "ABORT" \
-			--yesno "The user \`$name\` has an existing account on this machine. Continue and all conflicting files will be OVERWRITEN. \\n\\nConfirm acknowledgement and continue to deploy 4ndr0666.sh.\\n\\n$name's password will be changed to the one you just gave." 14 70
+			--yesno "The user \`$name\` already exists on this system. Ricer can install for a user already existing, but it will OVERWRITE any conflicting settings/dotfiles on the user account.\\n\\nRicer will NOT overwrite your user files, documents, videos, etc., but only click <CONTINUE> if you don't mind your settings being overwritten.\\n\\nNote also that ricer will change $name's password to the one you just gave." 14 70
 }
 
 preinstallmsg() {
 	whiptail --title "Begin ricing!" --yes-button "INITIATE" \
 		--no-button "ABORT" \
-		--yesno "4ndr0666.sh will now automatically complete the installation process without any further intervention needed. Please allow pacman to recieve the Chaotic AUR keyring on the next page to deploy 4ndr0666.sh. \\n\\nNote: This is the last time you will be asked for input" 10 60 || {
+		--yesno "The rest of the installation will now be totally automated.\\\n\\nPress <INITIATE> and the ricing will begin!" 13 60 || {
 		clear
 		exit 1
 	}
@@ -123,7 +123,7 @@ manualinstall() {
 
 maininstall() {
 	# Installs all needed programs from main repo.
-	whiptail --title "4ndr0666 Installation" --infobox "Installing \`$1\` ($n of $total). $1 $2" 9 70
+	whiptail --title "4ndr0666.sh Installation" --infobox "Installing \`$1\` ($n of $total). $1 $2" 9 70
 	installpkg "$1"
 }
 
@@ -254,8 +254,8 @@ installffaddons(){
 }
 
 finalize() {
-	whiptail --title "4ndr0666.sh Installation" \
-		--msgbox "Completed ricing! The machine is setup with the specifications of 4ndr0666.\\n\\nStart the xorg server for an on-screen display, log out and log back in as your new user, then run the command \"startx\" .\\n\\n -4ndr0666" 13 80
+	whiptail --title "Complete!" \
+		--msgbox "To run the new graphical environment, log out and log back in as your new user, then run the command \"startx\"\\n\\n.t 4ndr0666" 13 80
 }
 
 
@@ -296,8 +296,9 @@ adduserandpass || error "Error adding username and/or password."
 
 # Allow user to run sudo without password. Since AUR programs must be installed
 # in a fakeroot environment, this is required for all builds with AUR.
-trap 'rm -f /etc/sudoers.d/4ndr0666-temp' HUP INT QUIT TERM PWR EXIT
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/4ndr0666-temp
+trap 'rm -f /etc/sudoers.d/andro-temp' HUP INT QUIT TERM PWR EXIT
+echo "%wheel ALL=(ALL) NOPASSWD: ALL
+Defaults:%wheel,root runcwd=*" >/etc/sudoers.d/andro-temp
 
 # --- // PACMAN.CONF:
 grep -q "ILoveCandy" /etc/pacman.conf || sed -i "/#VerbosePkgLists/a ILoveCandy" /etc/pacman.conf
@@ -381,11 +382,14 @@ pkill -u "$name" librewolf
 
 # --- // AUTO_ESCALATE:
 # (like `shutdown` to run without password).
-echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-4ndr0666-wheel-can-sudo
-echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -u -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-4ndr0666-cmds-without-password
-echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-4ndr0666-visudo-editor
+echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-andro-wheel-can-sudo
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-andro-cmds-without-password
+echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-andro-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
-# --- // EOF:
+# Cleanup
+rm -f /etc/sudoers.d/larbs-temp
+
+# Last message! Install complete!
 finalize
