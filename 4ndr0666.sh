@@ -8,7 +8,7 @@
 
 # --- // CONSTANTS:
 dotfilesrepo="https://github.com/4ndr0666/dotfiles.git"
-progsfile="https://raw.githubusercontent.com/4ndr0666/scr/master/static/progs.csv"
+progsfile="https://raw.githubusercontent.com/4ndr0666/scr/main/static/progs.csv"
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
@@ -260,7 +260,7 @@ finalize() {
 
 
 
-# --------------------------------------------------------- // SCRIPT_STARTS_HERE // 
+# --------------------------------------------------------- // SCRIPT_STARTS_HERE //
 pacman --noconfirm --needed -Sy libnewt ||
 	error "Are you sure you're running this as the root user, are on an Arch-based distribution and have an internet connection?"
 
