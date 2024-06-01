@@ -12,4 +12,4 @@ font_name="$(grep 'gtk-font-name' "$config" | cut -d'=' -f2)"
 gsettings set $gnome_schema gtk-theme 'Graphite-teal-Dark'
 gsettings set $gnome_schema icon-theme 'Sweet-Teal'
 gsettings set $gnome_schema cursor-theme 'Breeze_Hacked'
-gsettings set $gnome_schema font-name 'Hack'
+gsettings set $gnome_schema font-name 'MesloLGS NF'
