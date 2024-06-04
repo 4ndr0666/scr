@@ -98,12 +98,12 @@ fi
 
 prominent "$INFO Removing all iterations of module r8168..."
 # Remove r8168 with rmmod
-check=`lsmod | grep r8168`
+check=$(lsmod | grep r8168)
 if [ "$check" != "" ]; then
     echo "$SUCCESS rmmod r8168"
     /sbin/rmmod -sv r8168
 fi
-check=`lsmod | grep r8168-lts`
+check=$(lsmod | grep r8168-lts)
 if [ "$check" != "" ]; then
     echo "$SUCCESS rmmod r8168-lts"
     /sbin/rmmod -sv r8168-lts
