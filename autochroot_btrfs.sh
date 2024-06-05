@@ -1,100 +1,123 @@
 #!/bin/bash
 
-# Ensure the script is run as root or escalate privileges
-if [[ $(id -u) -ne 0 ]]; then
-  sudo "$0" "$@"
-  exit $?
-fi
+# Ensure the script runs with root privileges
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "This script requires root privileges. Please run as root or use sudo."
+        exit 1
+    fi
+}
 
-# Define the mount points and device
-DEVICE="/dev/sdc3"
-BOOT_DEVICE="/dev/sdc1"
-MOUNT_POINT="/mnt/garuda"
+# Function to display a menu
+display_menu() {
+    echo "Choose an option:"
+    echo "1) Mount Subvolumes"
+    echo "2) Unmount Subvolumes"
+    echo "3) Auto Chroot"
+    echo "4) Exit"
+}
 
-# Define subvolumes
-declare -A SUBVOLUMES=(
-  ["@"]="$MOUNT_POINT"
-  ["@root"]="$MOUNT_POINT/root"
-  ["@cache"]="$MOUNT_POINT/var/cache"
-  ["@tmp"]="$MOUNT_POINT/var/tmp"
-  ["@log"]="$MOUNT_POINT/var/log"
-  ["@srv"]="$MOUNT_POINT/srv"
-)
+# Variables to hold the mount points and device names
+declare -a subvolumes
+subvolumes=()
 
-# Function to mount subvolumes
+# Function to detect and mount subvolumes
 mount_subvolumes() {
-  echo "Mounting subvolumes..."
-  for subvol in "${!SUBVOLUMES[@]}"; do
-    mkdir -p "${SUBVOLUMES[$subvol]}"
-    mount -o defaults,subvol=$subvol "$DEVICE" "${SUBVOLUMES[$subvol]}" || { echo "Failed to mount $subvol"; exit 1; }
-  done
-  mount "$BOOT_DEVICE" "$MOUNT_POINT/boot/efi" || { echo "Failed to mount boot/efi"; exit 1; }
-  echo "Subvolumes mounted."
+    read -rp "Enter the device to mount (e.g., /dev/sda1): " device
+    read -rp "Enter the mount point (e.g., /mnt): " mount_point
+
+    [ -z "$device" ] || [ -z "$mount_point" ] && { echo "Device and mount point cannot be empty."; exit 1; }
+
+    mkdir -p "$mount_point"
+    mount "$device" "$mount_point"
+
+    echo "Detecting subvolumes..."
+    btrfs subvolume list "$mount_point" | while read -r line; do
+        subvol=$(echo "$line" | awk '{print $9}')
+        subvolumes+=("$subvol")
+    done
+
+    echo "Mounting subvolumes..."
+    for subvol in "${subvolumes[@]}"; do
+        mkdir -p "$mount_point/$subvol"
+        mount -o subvol="$subvol" "$device" "$mount_point/$subvol"
+        echo "Mounted subvolume $subvol at $mount_point/$subvol"
+    done
 }
 
 # Function to unmount subvolumes
-umount_subvolumes() {
-  echo "Unmounting subvolumes..."
-  umount "$MOUNT_POINT/boot/efi"
-  for subvol in "${!SUBVOLUMES[@]}"; do
-    umount "${SUBVOLUMES[$subvol]}"
-  done
-  umount "$MOUNT_POINT"
-  echo "Subvolumes unmounted."
+unmount_subvolumes() {
+    read -rp "Enter the mount point (e.g., /mnt): " mount_point
+
+    [ -z "$mount_point" ] && { echo "Mount point cannot be empty."; exit 1; }
+
+    echo "Unmounting subvolumes..."
+    for subvol in "${subvolumes[@]}"; do
+        umount "$mount_point/$subvol"
+        echo "Unmounted subvolume $subvol from $mount_point/$subvol"
+    done
+
+    umount "$mount_point"
+    echo "Unmounted device from $mount_point"
 }
 
-# Function to chroot
-perform_chroot() {
-  echo "Setting up chroot environment..."
-  mount_subvolumes
+# Function to automatically setup chroot environment
+auto_chroot() {
+    read -rp "Enter the chroot directory (e.g., /mnt): " chroot_dir
+    [ -z "$chroot_dir" ] && { echo "Chroot directory cannot be empty."; exit 1; }
 
-  # Set up chroot environment
-  mount -t proc /proc "$MOUNT_POINT/proc"
-  mount -t sysfs /sys "$MOUNT_POINT/sys"
-  mount -t devtmpfs devtmpfs "$MOUNT_POINT/dev"
-  mount -t devpts devpts "$MOUNT_POINT/dev/pts"
-  mount -t tmpfs tmpfs "$MOUNT_POINT/tmp"
-  mount -t tmpfs tmpfs "$MOUNT_POINT/run"
+    echo "Setting up chroot environment..."
 
-  chroot "$MOUNT_POINT" /bin/bash
+    CHROOT_ACTIVE_MOUNTS=()
+    trap 'chroot_teardown' EXIT
 
-  # Cleanup
-  echo "Cleaning up chroot environment..."
-  umount "$MOUNT_POINT/proc"
-  umount "$MOUNT_POINT/sys"
-  umount "$MOUNT_POINT/dev/pts"
-  umount "$MOUNT_POINT/dev"
-  umount "$MOUNT_POINT/tmp"
-  umount "$MOUNT_POINT/run"
-  umount_subvolumes
+    chroot_add_mount proc "$chroot_dir/proc" -t proc -o nosuid,noexec,nodev &&
+    chroot_add_mount sys "$chroot_dir/sys" -t sysfs -o nosuid,noexec,nodev,ro &&
+    chroot_add_mount udev "$chroot_dir/dev" -t devtmpfs -o mode=0755,nosuid &&
+    chroot_add_mount devpts "$chroot_dir/dev/pts" -t devpts -o mode=0620,gid=5,nosuid,noexec &&
+    chroot_add_mount shm "$chroot_dir/dev/shm" -t tmpfs -o mode=1777,nosuid,nodev &&
+    chroot_add_mount run "$chroot_dir/run" -t tmpfs -o nosuid,nodev,mode=0755 &&
+    chroot_add_mount tmp "$chroot_dir/tmp" -t tmpfs -o mode=1777,strictatime,nodev,nosuid
+
+    SHELL=/bin/bash chroot "$chroot_dir"
 }
 
-# Function to handle signals and clean up
-cleanup() {
-  echo "Cleaning up..."
-  umount_subvolumes
-  exit 0
+# Function to teardown the chroot environment
+chroot_teardown() {
+    if (( ${#CHROOT_ACTIVE_MOUNTS[@]} )); then
+        umount "${CHROOT_ACTIVE_MOUNTS[@]}"
+    fi
+    unset CHROOT_ACTIVE_MOUNTS
 }
 
-trap cleanup SIGINT SIGTERM
-
-# Main function
-main() {
-  case $1 in
-    mount)
-      mount_subvolumes
-      ;;
-    umount)
-      umount_subvolumes
-      ;;
-    chroot)
-      perform_chroot
-      ;;
-    *)
-      echo "Usage: $0 {mount|umount|chroot}" >&2
-      exit 1
-      ;;
-  esac
+# Helper function to add mounts
+chroot_add_mount() {
+    mount "$@" && CHROOT_ACTIVE_MOUNTS=("$2" "${CHROOT_ACTIVE_MOUNTS[@]}")
 }
 
-main "$@"
+# Main script logic
+check_root
+
+while true; do
+    display_menu
+    read -rp "Select an option (1-4): " option
+
+    case $option in
+        1)
+            mount_subvolumes
+            ;;
+        2)
+            unmount_subvolumes
+            ;;
+        3)
+            auto_chroot
+            ;;
+        4)
+            echo "Exiting..."
+            exit 0
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            ;;
+    esac
+done
