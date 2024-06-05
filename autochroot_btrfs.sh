@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Ensure the script is run as root
+# Ensure the script is run as root or escalate privileges
 if [[ $(id -u) -ne 0 ]]; then
-  echo "This script must be run as root" >&2
-  exit 1
+  sudo "$0" "$@"
+  exit $?
 fi
 
 # Define the mount points and device
@@ -14,17 +14,16 @@ MOUNT_POINT="/mnt/garuda"
 # Define subvolumes
 declare -A SUBVOLUMES=(
   ["@"]="$MOUNT_POINT"
-  ["@root"]="$MOUNT_POINT/@/root"
-  ["@cache"]="$MOUNT_POINT/@/var/cache"
-  ["@tmp"]="$MOUNT_POINT/@/var/tmp"
-  ["@log"]="$MOUNT_POINT/@/var/log"
-  ["@srv"]="$MOUNT_POINT/@/srv"
+  ["@root"]="$MOUNT_POINT/root"
+  ["@cache"]="$MOUNT_POINT/var/cache"
+  ["@tmp"]="$MOUNT_POINT/var/tmp"
+  ["@log"]="$MOUNT_POINT/var/log"
+  ["@srv"]="$MOUNT_POINT/srv"
 )
 
 # Function to mount subvolumes
 mount_subvolumes() {
   echo "Mounting subvolumes..."
-  mount -o defaults,subvol=@ "$DEVICE" "$MOUNT_POINT" || { echo "Failed to mount @"; exit 1; }
   for subvol in "${!SUBVOLUMES[@]}"; do
     mkdir -p "${SUBVOLUMES[$subvol]}"
     mount -o defaults,subvol=$subvol "$DEVICE" "${SUBVOLUMES[$subvol]}" || { echo "Failed to mount $subvol"; exit 1; }
