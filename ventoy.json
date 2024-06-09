@@ -1,0 +1,248 @@
+{
+    "control": [
+        { "VTOY_DEFAULT_MENU_MODE": "1" },
+        { "VTOY_TREE_VIEW_MENU_STYLE": "1" },
+        { "VTOY_WIN11_BYPASS_CHECK": "1" },
+        { "VTOY_LINUX_REMOUNT": "1" }
+    ],
+    "theme": {
+        "gfxmode": "1920x1080"
+    },
+    "theme_legacy": {
+        "file": "/ventoy/theme/legacy/theme.txt",
+        "gfxmode": "1920x1080",
+        "ventoy_left": "0%",
+        "ventoy_top": "0",
+        "ventoy_color": "#ff0000"
+    },
+    "theme_uefi": {
+        "file": "/ventoy/theme/uefi/theme.txt",
+        "gfxmode": "1920x1080",
+        "ventoy_left": "0%",
+        "ventoy_top": "0%",
+        "ventoy_color": "#00ff00"
+    },
+    "theme_ia32": {
+        "gfxmode": "1920x1080"
+    },
+    "theme_aa64": {
+        "gfxmode": "1920x1080"
+    },
+    "theme_mips": {
+        "gfxmode": "1920x1080"
+    },
+    "menu_alias": [
+        {
+            "image": "/VHD/4ndr0666.vhd",
+            "alias": "VHD"
+        },
+        {
+            "dir": "/VHD/4ndr0666_VHD",
+            "alias": "MediCat VHD -->"
+        },
+        {
+            "image": "/Antivirus/Malwarebytes/Malwarebytes.wim",
+            "alias": "Malwarebytes Bootable"
+        },
+        {
+            "dir": "/Antivirus/Malwarebytes",
+            "alias": "Malwarebytes -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Acronis_Cyber_Backup/Acronis_Cyber_Backup.iso",
+            "alias": "Acronis Cyber Backup"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Acronis_Cyber_Backup",
+            "alias": "Acronis Cyber Backup -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Acronis_True_Image/Acronis_True_Image.iso",
+            "alias": "Acronis True Image"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Acronis_True_Image",
+            "alias": "Acronis True Image -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/AOMEI_Backupper/AOMEI_Backupper.wim",
+            "alias": "AOMEI Backupper"
+        },
+        {
+            "dir": "/Backup_and_Recovery/AOMEI_Backupper",
+            "alias": "AOMEI Backupper -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/EaseUS_Data_Recovery_Wizard/EaseUS_Data_Recovery_Wizard.wim",
+            "alias": "EaseUS Data Recovery Wizard"
+        },
+        {
+            "dir": "/Backup_and_Recovery/EaseUS_Data_Recovery_Wizard",
+            "alias": "EaseUS Data Recovery Wizard -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/EaseUS_Todo_Backup/EaseUS_Todo_Backup.wim",
+            "alias": "EaseUS Todo Backup"
+        },
+        {
+            "dir": "/Backup_and_Recovery/EaseUS_Todo_Backup",
+            "alias": "EaseUS Todo Backup -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Elcomsoft_System_Recovery/Elcomsoft_System_Recovery.iso",
+            "alias": "Elcomsoft System Recovery"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Elcomsoft_System_Recovery",
+            "alias": "Elcomsoft System Recovery -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Macrium_Reflect/Macrium_Reflect.wim",
+            "alias": "Macrium Reflect"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Macrium_Reflect",
+            "alias": "Macrium Reflect -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/MiniTool_Power_Data_Recovery/MiniTool_Power_Data_Recovery.wim",
+            "alias": "MiniTool Power Data Recovery"
+        },
+        {
+            "dir": "/Backup_and_Recovery/MiniTool_Power_Data_Recovery",
+            "alias": "MiniTool Power Data Recovery -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/MiniTool_ShadowMaker/MiniTool_ShadowMaker.wim",
+            "alias": "MiniTool ShadowMaker"
+        },
+        {
+            "dir": "/Backup_and_Recovery/MiniTool_ShadowMaker",
+            "alias": "MiniTool ShadowMaker -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/OO_BlueCon/OO_BlueCon.wim",
+            "alias": "O&O BlueCon"
+        },
+        {
+            "dir": "/Backup_and_Recovery/OO_BlueCon",
+            "alias": "O&O BlueCon -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Rescuezilla/Rescuezilla.iso",
+            "alias": "Rescuezilla"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Rescuezilla",
+            "alias": "Rescuezilla -->"
+        },
+        {
+            "image": "/Backup_and_Recovery/Symantec_Ghost/Symantec_Ghost.wim",
+            "alias": "Symantec Ghost"
+        },
+        {
+            "dir": "/Backup_and_Recovery/Symantec_Ghost",
+            "alias": "Symantec Ghost -->"
+        },
+        {
+            "image": "/Live_Operating_Systems/Antix.iso",
+            "alias": "Antix"
+        },
+        {
+            "dir": "/Live_Operating_Systems/Antix",
+            "alias": "Antix -->"
+        },
+        {
+            "image": "/Live_Operating_Systems/Mini_Windows/Mini_Windows_10.wim",
+            "alias": "Mini Windows 10"
+        },
+        {
+            "dir": "/Live_Operating_Systems/Mini_Windows",
+            "alias": "Mini Windows 10 -->"
+        },
+        {
+            "image": "/Live_Operating_Systems/SystemRescue/SystemRescue.iso",
+            "alias": "SystemRescue"
+        },
+        {
+            "dir": "/Live_Operating_Systems/SystemRescue",
+            "alias": "SystemRescue -->"
+        },
+        {
+            "image": "/Boot_Repair/Boot_Repair_Disk/Boot_Repair_Disk.iso",
+            "alias": "Boot-Repair-Disk"
+        },
+        {
+            "dir": "/Boot_Repair/Boot_Repair_Disk",
+            "alias": "Boot-Repair-Disk -->"
+        },
+        {
+            "image": "/Boot_Repair/EasyUEFI/EasyUEFI.wim",
+            "alias": "EasyUEFI"
+        },
+        {
+            "dir": "/Boot_Repair/EasyUEFI",
+            "alias": "EasyUEFI -->"
+        },
+        {
+            "image": "/Boot_Repair/Rescatux/Rescatux.iso",
+            "alias": "Rescatux"
+        },
+        {
+            "dir": "/Boot_Repair/Rescatux",
+            "alias": "Rescatux -->"
+        },
+        {
+            "image": "/Boot_Repair/BootIt_Bare_Metal/BootIt_Bare_Metal.iso",
+            "alias": "BootIt Bare Metal"
+        },
+        {
+            "dir": "/Boot_Repair/BootIt_Bare_Metal",
+            "alias": "BootIt Bare Metal -->"
+        },
+        {
+            "image": "/Boot_Repair/Super_GRUB2_Disk/Super_GRUB2_Disk.efi",
+            "alias": "Super Grub2 Disk (EFI Version)"
+        },
+        {
+            "image": "/Boot_Repair/Super_GRUB2_Disk/Super_GRUB2_Disk.iso",
+            "alias": "Super Grub2 Disk (ISO Version)"
+        },
+        {
+            "dir": "/Boot_Repair/Super_GRUB2_Disk",
+            "alias": "Super Grub2 Disk -->"
+        },
+        {
+            "image": "/Diagnostic_Tools/HDAT2/HDAT2.iso",
+            "alias": "HDAT2"
+        },
+        {
+            "dir": "/Diagnostic_Tools/HDAT2",
+            "alias": "HDAT2 -->"
+        },
+        {
+            "image": "/Diagnostic_Tools/MemTest86+/MemTest86+.iso",
+            "alias": "MemTest86+"
+        },
+        {
+            "dir": "/Diagnostic_Tools/MemTest86+",
+            "alias": "MemTest86+ -->"
+        },
+        {
+            "image": "/Diagnostic_Tools/Spinrite/Spinrite.iso",
+            "alias": "Spinrite"
+        }
+    ],
+    "persistence": [
+        {
+            "image": "/Persistent/Ubuntu/Ubuntu 20.04 LTS.iso",
+            "autosel": "true"
+        },
+        {
+            "image": "/Persistent/Fedora/Fedora-Workstation-Live-x86_64-34-1.2
+
+.iso",
+            "autosel": "true"
+        }
+    ]
+}
