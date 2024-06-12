@@ -63,7 +63,7 @@
 	<name>Check sha1sum</name>
 	<submenu></submenu>
 	<unique-id>1526633271260079-26</unique-id>
-	<command>zenity --info --title=&quot;Check sha1 for %n&quot; --text=&quot;$(sha1sum %f)&quot;</command>
+	<command>zenity --info --title="Check sha1 for %n" --text="$(sha1sum %f)"</command>
 	<description>Check sha1sum</description>
 	<range></range>
 	<patterns>*.iso;*.ISO</patterns>
@@ -74,7 +74,7 @@
 	<name>Check sha256sum</name>
 	<submenu></submenu>
 	<unique-id>1577688162350307-1</unique-id>
-	<command>zenity --info --title=&quot;Check sha256 for %n&quot; --text=&quot;$(sha256sum %f)&quot;</command>
+	<command>zenity --info --title="Check sha256 for %n" --text="$(sha256sum %f)"</command>
 	<description>Check sha256sum</description>
 	<range></range>
 	<patterns>*.iso;*.ISO</patterns>
@@ -85,7 +85,7 @@
 	<name>Check md5sum</name>
 	<submenu></submenu>
 	<unique-id>1526736788575383-2</unique-id>
-	<command>zenity --info --title=&quot;Check md5 for %n&quot; --text=&quot;$(md5sum %f)&quot;</command>
+	<command>zenity --info --title="Check md5 for %n" --text="$(md5sum %f)"</command>
 	<description>Check md5sum</description>
 	<range></range>
 	<patterns>*.iso;*.ISO;*.tar.gz;*.TAR.GZ;*.zip;*.ZIP</patterns>
@@ -141,7 +141,7 @@
 	<name>Ownership to root</name>
 	<submenu></submenu>
 	<unique-id>1526631155250282-8</unique-id>
-	<command>gnome-keyring-daemon -r -d;gksu &quot;chown -R root:root %F&quot;</command>
+	<command>gnome-keyring-daemon -r -d;gksu "chown -R root:root %F"</command>
 	<description>Change permissions to root</description>
 	<range></range>
 	<patterns>*</patterns>
@@ -157,7 +157,7 @@
 	<name>Ownership to user</name>
 	<submenu></submenu>
 	<unique-id>1526631178674034-9</unique-id>
-	<command>gnome-keyring-daemon -r -d;gksu &quot;chown -R $USER:$USER %F&quot;</command>
+	<command>gnome-keyring-daemon -r -d;gksu "chown -R $USER:$USER %F"</command>
 	<description>Change permissions to user</description>
 	<range></range>
 	<patterns>*</patterns>
@@ -223,7 +223,7 @@
 	<name>Create symlink</name>
 	<submenu></submenu>
 	<unique-id>1526631663081446-14</unique-id>
-	<command>ln -s  %f &quot;%n&quot;</command>
+	<command>ln -s  %f "%n"</command>
 	<description>Softlink between two files or directories</description>
 	<range></range>
 	<patterns>*</patterns>

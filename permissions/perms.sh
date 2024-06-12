@@ -28,12 +28,19 @@ log() {
 }
 
 # ---- // CONFIG SETUP:
-CONFIG_FILE="$(dirname "$0")/config.cfg"
+CONFIG_DIR="/etc/perms_script"
+CONFIG_FILE="$CONFIG_DIR/perms_config.cfg"
 CONFIGURED=false
 DEFAULT_USER=""
 DEFAULT_GROUP=""
 
 RECURSIVE_CHANGE=false
+
+# Ensure the configuration directory exists
+if [ ! -d "$CONFIG_DIR" ]; then
+    sudo mkdir -p "$CONFIG_DIR"
+    sudo chmod 700 "$CONFIG_DIR"
+fi
 
 # --- // PROCESS_ARGS:
 while getopts ":r" opt; do
@@ -49,7 +56,6 @@ while getopts ":r" opt; do
   esac
 done
 
-
 # ---- // LOAD_USER_CONFIG:
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
@@ -63,9 +69,9 @@ load_config() {
 
 # ---- // SAVE_USER_CONFIG:
 save_config() {
-    echo "CONFIGURED=true" > "$CONFIG_FILE"
-    echo "DEFAULT_USER=$1" >> "$CONFIG_FILE"
-    echo "DEFAULT_GROUP=$2" >> "$CONFIG_FILE"
+    echo "CONFIGURED=true" | sudo tee "$CONFIG_FILE" > /dev/null
+    echo "DEFAULT_USER=$1" | sudo tee -a "$CONFIG_FILE" > /dev/null
+    echo "DEFAULT_GROUP=$2" | sudo tee -a "$CONFIG_FILE" > /dev/null
     sudo chmod 600 "$CONFIG_FILE"
 }
 
@@ -80,6 +86,12 @@ prompt_config() {
     echo "Configuration saved. Please rerun the script."
     exit 0
 }
+
+# --- // CALL_CONFIG:
+load_config
+if [[ "$CONFIGURED" != "true" ]]; then
+    prompt_config
+fi
 
 # ---- // BACKUP_STACK:
 backup_stack=()
@@ -142,23 +154,36 @@ set_directory_permissions() {
 # --- // CHMOD_DOCUMENTATION:
 display_help() {
     clear
-    echo "Common Permission Modes:"
-    echo "----------------------"
-    echo "- use chmod 600 to restrict access"
-    echo "- use chmod 644 to remove executable"
-    echo "- chmod 751: +rwx for owner, +rx for group, +x for others"
-    echo "- chmod 755: +rwx for owner, +rwx for group, +rx for others"
-    echo "- chmod 744: +wx for owner, no permissions for group, +r for others"
-    echo "- chmod 711: +rwx for owner, no permissions for group, +x for others"
-    echo "- chmod 700: +rwx for owner, no permissions for group or others"
-    echo "- chmod 640: +rwx for owner, +r for group, no permissions for others"
-    echo "- chmod 644: +rw for owner, no permissions for group, +r for others"
-    echo "- chmod 777: +rwx for owner, +rwx for group, +rwx for others"
-    echo "- chmod 666: +rw for owner, +rw for group, +rw for others"
-    echo "- chmod 600: +rw for owner, no permissions for group or others"
-    echo "- chmod 400: +r for owner, no permissions for group or others"
-    echo "- chown -c root:root /etc/sudoers, default sudo permissions"
-    echo "- chmod -c 0440 /etc/sudoers, default sudo permissions"
+    echo -e "\e[36m# --- // CHMOD_INDEX // ========"
+    echo ""
+    echo "DEFAULT SUDOERS:"
+    echo "chown -c root:root /etc/sudoers"
+    echo "chmod -c 0440 /etc/sudoers"
+    echo ""
+    echo "REMOVE EXECUTABLE"
+    echo "644: +rw for owner, no permissions for group, +r for others"
+    echo ""
+    echo "USER ONLY ACCESS"
+    echo "600: +rw for owner, no permissions for group or others"
+    echo ""
+    echo "751: +rwx for owner, +rx for group, +x for others"
+    echo ""
+    echo "755: +rwx for owner, +rwx for group, +rx for others"
+    echo ""
+    echo "744: +wx for owner, no permissions for group, +r for others"
+    echo ""
+    echo "711: +rwx for owner, no permissions for group, +x for others"
+    echo ""
+    echo "700: +rwx for owner, no permissions for group or others"
+    echo ""
+    echo "640: +rwx for owner, +r for group, no permissions for others"
+    echo ""
+    echo "777: +rwx for owner, +rwx for group, +rwx for others"
+    echo ""
+    echo "666: +rw for owner, +rw for group, +rw for others"
+    echo ""
+    echo "400: +r for owner, no permissions for group or others"
+    echo -e "\e[0m"
     echo ""
     echo "Press any key to return to the main menu."
     read -rn 1
@@ -167,8 +192,8 @@ display_help() {
 # --- // SPINNER:
 spin() {
     local pid=$1
-    local delay=0.05
-    local spinstr='|/-\\'
+    local delay=0.1
+    local spinstr='|/-\'
     while kill -0 "$pid" 2>/dev/null; do
         local temp=${spinstr#?}
         printf "\e[1;34m\r[*] \e[1;32mIt will take time..Please wait...  [\e[1;33m%c\e[1;32m]\e[0m  " "$spinstr"
@@ -200,7 +225,7 @@ display_menu() {
 # --- // COMMAND_SUMMARY:
 print_facl() {
     local target="$1"
-    getfacl "$target"
+    echo -e "\e[36m$(getfacl "$target")\e[0m"
 }
 
 # --- // CHANGE_PERMISSIONS:
@@ -230,18 +255,53 @@ change_ownership_permissions() {
     print_facl "$target_directory"
 }
 
-
-
 # --- // COMPARE_PERMISSIONS:
 compare_package_permissions() {
     echo "Checking package permissions against current permissions..."
-    sudo pacman -Qlq | while read -r file; do
+    local mismatched_files=()
+
+    # Compare the current permissions with the package database
+    while IFS= read -r file; do
         if [ -e "$file" ]; then
-            if [ "$(stat -c "%a" "$file")" != "$(sudo pacman -Qkk "$file" | awk '{print $2}')" ]; then
-                echo "Mismatch: $file"
+            local current_perms
+            local expected_perms
+            current_perms=$(stat -c "%a" "$file")
+            expected_perms=$(pacman -Qkk "$file" | awk '{print $2}' | head -n 1)
+            if [ "$current_perms" != "$expected_perms" ]; then
+                mismatched_files+=("$file")
+                echo "Mismatch: $file (Current: $current_perms, Expected: $expected_perms)"
             fi
         fi
-    done
+    done < <(sudo pacman -Qlq)
+
+    local total_mismatched=${#mismatched_files[@]}
+    echo "Total mismatched files: $total_mismatched"
+
+    # Ask for user confirmation to correct the infractions
+    if [[ $total_mismatched -ne 0 ]]; then
+        if confirm_action "Do you want to correct these mismatched permissions?"; then
+            for file in "${mismatched_files[@]}"; do
+                # Backup the current state
+                local backup_file="${file}.backup_$(date +%s)"
+                echo "Backing up $file to $backup_file..."
+                sudo cp "$file" "$backup_file"
+
+                # Correct the permissions
+                local expected_perms
+                expected_perms=$(pacman -Qkk "$file" | awk '{print $2}' | head -n 1)
+                echo "Fixing $file permissions from $current_perms to $expected_perms..."
+                sudo chmod "$expected_perms" "$file"
+            done
+            echo "All mismatched permissions have been corrected."
+            log "Corrected $total_mismatched files with mismatched permissions."
+        else
+            echo "No changes were made."
+            log "Found $total_mismatched files with mismatched permissions. No changes were made."
+        fi
+    else
+        echo "No mismatched permissions found."
+        log "No mismatched permissions found."
+    fi
 }
 
 # --- // GETFACL:
@@ -254,6 +314,8 @@ get_directory_acl() {
 # --- // ZSH_COMPAUDIT:
 compaudit() {
     echo "Performing CompAudit for Zsh configuration..."
+
+    # Using compaudit to find insecure items
     mapfile -t insecure_items < <(compaudit)
     local total_insecure=${#insecure_items[@]}
 
@@ -265,11 +327,22 @@ compaudit() {
             echo "$item"
         done
         echo "Total insecure items: $total_insecure"
-    fi
-    log "CompAudit for Zsh completed with $total_insecure insecure items"
-}
 
-set -e
+        # Ask for user confirmation to correct the infractions
+        if confirm_action "Do you want to correct these insecure items?"; then
+            for item in "${insecure_items[@]}"; do
+                echo "Fixing $item..."
+                sudo chown -R "$DEFAULT_USER:$DEFAULT_GROUP" "$item"
+                sudo chmod -R 755 "$item"
+            done
+            echo "All insecure items have been corrected."
+            log "CompAudit for Zsh completed with corrections applied to $total_insecure insecure items."
+        else
+            echo "No changes were made."
+            log "CompAudit for Zsh completed with $total_insecure insecure items found. No changes were made."
+        fi
+    fi
+}
 
 # --- // ARGUMENT_VALIDATION:
 directory=${1:-$PWD}
@@ -333,3 +406,5 @@ while true; do
 
     echo
 done
+
+

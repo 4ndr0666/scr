@@ -101,35 +101,35 @@ restoreGnupgData() {
 # --- // Permissions:
 setCorrectPermissions() {
     echo "Setting correct permissions for .gnupg directory and its contents..."
-    sudo chmod 700 ~/.gnupg
-    sudo find ~/.gnupg -type f -exec chmod 600 {} \;
+    sudo chmod 700 "$HOME"/.gnupg
+    find "$HOME"/.gnupg -type f -exec sudo chmod 600 {} \;
     echo "Permissions set successfully."
 }
 
 # --- // List_keys:
 listGpgKeys() {
     echo "Listing GnuPG keys..."
-    sudo gpg --list-keys
+    gpg --list-keys
 }
 
 # --- // New_key:
 generateGpgKey() {
     echo "Generating a new GnuPG key pair..."
-    sudo gpg --full-generate-key
+    gpg --full-generate-key
 }
 
 # --- // Armor_key:
 createArmoredKey() {
     local keyId="$1"
     echo "Creating an armored GPG key for $keyId..."
-    sudo gpg --armor --export "$keyId"
+    gpg --armor --export "$keyId"
 }
 
 # --- // Export:
 exportGpgKey() {
     local keyId="$1"
     echo "Exporting GPG key $keyId in armored format..."
-    sudo gpg --armor --export "$keyId"
+    gpg --armor --export "$keyId"
 }
 
 # --- // Export_key_and_add:
@@ -137,14 +137,14 @@ exportAndAddGpgKey() {
     local keyId="$1"
     local service="$2"
     echo "Exporting GPG key $keyId and adding it to $service..."
-    sudo gpg --armor --export "$keyId" | gh gpg-key add -
+    gpg --armor --export "$keyId" | gh gpg-key add -
 }
 
 # --- // Restart_agent:
 reinitializeGpgAgent() {
     echo "Reinitializing the GPG agent..."
-    sudo gpgconf --kill gpg-agent
-    sudo gpg-agent --daemon
+    gpgconf --kill gpg-agent
+    gpg-agent --daemon
 }
 
 # --- // Clean_testdir:
@@ -190,7 +190,7 @@ generateAdvancedGpgKey() {
     local keyType="$1"
     local keyLength="$2"
     echo "Generating an advanced GPG key of type $keyType and length $keyLength..."
-    sudo gpg --full-gen-key --key-type "$keyType" --key-length "$keyLength"
+    gpg --full-gen-key --key-type "$keyType" --key-length "$keyLength"
 }
 
 # --- // Export_keys:
@@ -201,10 +201,10 @@ exportKeysToFormats() {
 
     case "$format" in
         "ascii-armored")
-            sudo gpg --armor --export "$keyId"
+            gpg --armor --export "$keyId"
             ;;
         "binary")
-            sudo gpg --export "$keyId"
+            gpg --export "$keyId"
             ;;
         *)
             echo "Unknown format. Exiting."
@@ -219,14 +219,14 @@ automatedSecurityAudit() {
     echo "Performing automated security audit..."
 
     # Check for weak algorithms
-    if sudo gpg --list-config | grep -q 'weak-digest'; then
+    if gpg --list-config | grep -q 'weak-digest'; then
         echo "Warning: Weak algorithms found."
     else
         echo "No weak algorithms in use."
     fi
 
     # Check for weak keys
-    if sudo gpg --list-keys | grep -q 'RSA2048'; then
+    if gpg --list-keys | grep -q 'RSA2048'; then
         echo "Warning: Weak RSA keys found."
     else
         echo "No weak RSA keys in use."
@@ -234,7 +234,7 @@ automatedSecurityAudit() {
 
     # Check for improper permissions
     local hasIncorrectPermissions=0
-    sudo find ~/.gnupg -type d ! -perm 700 -exec echo "Incorrect directory permissions: {}" \; -exec bash -c 'hasIncorrectPermissions=1' \;
+    find ~/.gnupg -type d ! -perm 700 -exec echo "Incorrect directory permissions: {}" \; -exec bash -c 'hasIncorrectPermissions=1' \;
     sudo find ~/.gnupg -type f ! -perm 600 -exec echo "Incorrect file permissions: {}" \; -exec bash -c 'hasIncorrectPermissions=1' \;
 
     if [ "$hasIncorrectPermissions" -eq 1 ]; then
