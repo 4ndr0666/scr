@@ -1,0 +1,184 @@
+#!/bin/bash
+
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
+
+# --- // COLORS_SYMBOLS_ECHO-FUNCTION:
+GREEN='\033[0;32m'
+LIME='\033[1;32m'
+BOLD='\033[1m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+SUCCESS="✔️"
+FAILURE="❌"
+INFO="➡️"
+prominent() {
+    echo -e "${BOLD}${GREEN}$1${NC}"
+}
+bug() {
+    echo -e "${BOLD}${RED}$1${NC}"
+}
+
+# Function to log messages
+log_message() {
+    local message="$1"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
+}
+
+# Function to print a cyan progress bar
+print_progress() {
+    local progress=$1
+    local width=50
+    local completed=$((progress * width / 100))
+    local remaining=$((width - completed))
+    printf "\r\033[0;36m["
+    printf "%0.s#" $(seq 1 $completed)
+    printf "%0.s-" $(seq 1 $remaining)
+    printf "] %s%%\033[0m" "$progress"
+}
+
+# Function to create a backup tarball of specified files and directories
+create_backup() {
+    local backup_dir="/tmp/etc_backup"
+    local recover_dir="/var/recover"
+    local timestamp
+    timestamp="$(date -u "+%h-%d-%Y_%H.%M%p")"
+    local tarball_name="etc_backup_$timestamp.tar.gz"
+    local target_list=(
+        "arch-release" "audit" "avahi" "borgmatic" "binfmt.s" "conf.d" "cloud" "cron.d" "cron.daily"
+        "cron.deny" "cron.hourly" "cron.monthly" "cron.weekly" "crontab" "default" "depmod.d" "dhcpd.conf"
+        "dnsmasq.conf" "drbl" "environment" "fstab" "group" "grub.d" "gshadow" "gss" "gssproxy" "gtk-2.0"
+        "gtk-3.0" "host.conf" "hostname" "hosts" "ipsec.conf" "ipsec.d" "iptables" "iscsi" "ld.so.conf"
+        "ld.so.conf.d" "libaudit" "locale.conf" "locale.gen" "makepkg.conf" "mkepkg.config.d" "mkinicpio.conf"
+        "mkinitcpio.conf.d" "modprobe.d" "modules-load.d" "nanorc" "netconfig" "NetworkManager" "nfs.conf"
+        "nfsmount.conf" "nftables" "nsswitch.conf" "nvme" "openvpn" "pacman.conf" "pacman.d" "pam.d" "paru.conf"
+        "passwd" "pinentry" "pipewire" "plymouth" "polkit-1" "powerpill" "profile" "profile.d" "pulse"
+        "reflector-simple-tool.conf" "reflector-simple.conf" "resolv.conf" "resolv.conf.expressvpn-orig"
+        "screenrc" "sddm.conf" "sddm.conf.d" "security" "services" "skel" "ssh" "sudo.conf" "sudoers" "sysctl.d"
+        "systemd" "timeshift" "timeshift-autosnap.conf" "tmpfiles.d" "udev" "udisks2" "ufw" "vconsole.conf"
+        "wpa_supplicant" "X11" "xdg" "zsh"
+    )
+
+    # Create a temporary directory to hold the files
+    mkdir -p "$backup_dir"
+
+    # Total number of items to backup
+    local total_items=${#target_list[@]}
+    local current_item=0
+
+    # Copy each file and directory to the temporary backup directory
+    for item in "${target_list[@]}"; do
+        current_item=$((current_item + 1))
+        if [[ -e "/etc/$item" ]]; then
+            cp -r "/etc/$item" "$backup_dir"
+        fi
+        local progress=$((current_item * 100 / total_items))
+        print_progress $progress
+    done
+
+    # Print space and success symbol after progress bar
+    printf "\n%s\n" "$SUCCESS"
+
+    # Ensure the recovery directory exists
+    mkdir -p "$recover_dir"
+
+    # Check if a tarball with the same name already exists and version it
+    if [[ -f "$recover_dir/$tarball_name" ]]; then
+        local counter=1
+        while [[ -f "$recover_dir/${tarball_name%.tar.gz}_v$counter.tar.gz" ]]; do
+            counter=$((counter + 1))
+        done
+        tarball_name="${tarball_name%.tar.gz}_v$counter.tar.gz"
+    fi
+
+    # Create a tarball of the backup directory
+    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . >/dev/null 2>&1
+
+    # Clean up the temporary directory
+    rm -rf "$backup_dir"
+
+    # Lock the recovery tarball
+    chattr +i "$recover_dir/$tarball_name"
+
+    # Notify the user
+    local notification="$SUCCESS  Assets acquired and secured.\n\n$INFO  Usage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\n$INFO Location: ${LIME}$recover_dir${NC}"
+    prominent "$notification"
+}
+
+# Function to add lock and unlock aliases to shell configuration files
+add_aliases() {
+    local shell_config_files=(
+        "$HOME/.bashrc"
+        "$HOME/.zshrc"
+        "$HOME/.config/fish/config.fish"
+        "/root/.bashrc"
+        "/root/.zshrc"
+        "/root/.config/fish/config.fish"
+    )
+
+    for config_file in "${shell_config_files[@]}"; do
+        if [[ -f "$config_file" ]]; then
+            # Add alias if not already present
+            if ! grep -q "alias lock='sudo chattr +i '" "$config_file"; then
+                echo "alias lock='sudo chattr +i '" >> "$config_file" 2>/dev/null || bug "$FAILURE $config_file is locked."
+            else
+                bug "$FAILURE $config_file is locked."
+            fi
+
+            if ! grep -q "alias unlock='sudo chattr -i '" "$config_file"; then
+                echo "alias unlock='sudo chattr -i '" >> "$config_file" 2>/dev/null || bug "$FAILURE $config_file is locked."
+            else
+                bug "$FAILURE $config_file is locked."
+            fi
+
+            # For fish shell, use different syntax
+            if [[ "$config_file" == *"config.fish" ]]; then
+                if ! grep -q "alias lock 'sudo chattr +i '" "$config_file"; then
+                    echo "alias lock 'sudo chattr +i '" >> "$config_file" 2>/dev/null || bug "$FAILURE $config_file is locked."
+                else
+                    bug "$FAILURE $config_file is locked."
+                fi
+                if ! grep -q "alias unlock 'sudo chattr -i '" "$config_file"; then
+                    echo "alias unlock 'sudo chattr -i '" >> "$config_file" 2>/dev/null || bug "$FAILURE $config_file is locked."
+                else
+                    bug "$FAILURE $config_file is locked."
+                fi
+            fi
+        fi
+    done
+
+    # Source the shell configuration for the current user
+    if [[ -f "$HOME/.bashrc" ]]; then
+        source "$HOME/.bashrc"
+    elif [[ -f "$HOME/.zshrc" ]]; then
+        source "$HOME/.zshrc"
+    elif [[ -f "$HOME/.config/fish/config.fish" ]]; then
+        source "$HOME/.config/fish/config.fish"
+    fi
+}
+
+# Main function to execute the backup process
+main() {
+    prominent "$INFO Starting the backup process..."
+    create_backup
+    add_aliases
+    prominent "Backup process completed. $SUCCESS"
+
+    # Check for errors due to locked files
+    local error_files=(
+        "/root/.bashrc"
+        "/root/.zshrc"
+        "/root/.config/fish/config.fish"
+    )
+    for error_file in "${error_files[@]}"; do
+        if [[ -e "$error_file" && ! -w "$error_file" ]]; then
+            bug "$FAILURE Could not modify $error_file due to lock."
+        fi
+    done
+}
+
+# Execute the main function
+main
