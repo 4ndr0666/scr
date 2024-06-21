@@ -1,108 +1,68 @@
 #!/bin/bash
 
-# --- Function Definitions ---
-
 # Log a message with a timestamp
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
-# Function to run git lfs prune
-cleanup_lfs_cache() {
-    log_message "Cleaning up Git LFS cache..."
+# Untrack problematic files from LFS
+untrack_problematic_files() {
+    log_message "Untracking problematic files from LFS..."
+    git lfs untrack "pkgs/hooks.tar.gz"
+    git lfs untrack "config/wayfire/4ndr0666_wayfire.tar.gz"
+    git lfs untrack ".config/mpv/Utils/mpv.conf_backup.tar.gz"
+    git lfs untrack "config/openbox/scripts/ob-popup_backup.tar.gz"
+    git lfs untrack "etc/skel/skel.tar.gz"
+}
+
+# Prune and clean up LFS objects
+cleanup_lfs_objects() {
+    log_message "Pruning and cleaning up LFS objects..."
     git lfs prune
+    git lfs dedup
+    git lfs fsck
 }
 
-# Function to check and ensure all LFS objects are properly staged
-check_lfs_status() {
-    log_message "Checking Git LFS status..."
-    git lfs status
+# Track the files again
+track_files_again() {
+    log_message "Tracking files again..."
+    git lfs track "pkgs/hooks.tar.gz"
+    git lfs track "config/wayfire/4ndr0666_wayfire.tar.gz"
+    git lfs track ".config/mpv/Utils/mpv.conf_backup.tar.gz"
+    git lfs track "config/openbox/scripts/ob-popup_backup.tar.gz"
+    git lfs track "etc/skel/skel.tar.gz"
 }
 
-# Function to force push all LFS objects
-force_push_lfs_objects() {
-    log_message "Force pushing all Git LFS objects..."
+# Add and commit changes
+add_and_commit_changes() {
+    log_message "Adding and committing changes..."
+    git add .gitattributes
+    git add "pkgs/hooks.tar.gz"
+    git add "config/wayfire/4ndr0666_wayfire.tar.gz"
+    git add ".config/mpv/Utils/mpv.conf_backup.tar.gz"
+    git add "config/openbox/scripts/ob-popup_backup.tar.gz"
+    git add "etc/skel/skel.tar.gz"
+    git commit -m "Re-track problematic files with Git LFS"
+}
+
+# Force push all changes
+force_push_all_changes() {
+    log_message "Force pushing all changes to remote repository..."
+    git push --force origin main
     git lfs push --all origin main
 }
 
-# Function to push regular commits
-push_commits() {
-    log_message "Pushing commits to the remote repository..."
-    git push origin main
+# Main execution
+main() {
+    log_message "Starting LFS cleanup and resolution script..."
+    untrack_problematic_files
+    cleanup_lfs_objects
+    track_files_again
+    add_and_commit_changes
+    force_push_all_changes
+    log_message "Completed LFS cleanup and resolution script."
 }
 
-# Function to reinitialize LFS tracking
-reinitialize_lfs_tracking() {
-    local file_patterns=("*.tar.gz" "*.zip")
-    log_message "Reinitializing LFS tracking for patterns: ${file_patterns[*]}"
-
-    for pattern in "${file_patterns[@]}"; do
-        git lfs untrack "$pattern"
-    done
-
-    git add .gitattributes
-    git commit -m "Untrack files from LFS"
-
-    for pattern in "${file_patterns[@]}"; do
-        git lfs track "$pattern"
-    done
-
-    git add .gitattributes
-    for pattern in "${file_patterns[@]}"; do
-        git add "$pattern"
-    done
-
-    git commit -m "Re-track files with LFS"
-}
-
-# Function to handle errors and print them
-handle_errors() {
-    local error_file="$1"
-    local error_message="$2"
-    if [[ -e "$error_file" && ! -w "$error_file" ]]; then
-        log_message "$error_message $error_file due to lock."
-    fi
-}
-
-# Function to retry pushing LFS objects
-retry_push_lfs_objects() {
-    log_message "Retrying push of all Git LFS objects..."
-    git lfs push --all origin main
-}
-
-# Function to automate the entire process
-automate_git_lfs_resolution() {
-    cleanup_lfs_cache
-    check_lfs_status
-    force_push_lfs_objects
-
-    log_message "Checking for unstaged/staged changes..."
-    if ! git diff-index --quiet HEAD --; then
-        git add .
-        git commit -m "Committing local changes"
-    fi
-
-    push_commits
-
-    local error_files=(
-        "/root/.bashrc"
-        "/root/.zshrc"
-        "/root/.config/fish/config.fish"
-    )
-    for error_file in "${error_files[@]}"; do
-        handle_errors "$error_file" "Could not modify"
-    done
-
-    reinitialize_lfs_tracking
-    push_commits
-
-    log_message "Retrying push of all Git LFS objects to ensure no unknown objects remain..."
-    retry_push_lfs_objects
-}
-
-# --- Main Execution ---
-
-log_message "Starting automated Git LFS resolution script..."
-automate_git_lfs_resolution
-log_message "Completed Git LFS resolution script."
+# Run the main function
+main

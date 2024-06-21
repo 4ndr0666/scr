@@ -1,0 +1,318 @@
+#!/bin/bash
+
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
+sleep 1
+echo "💀WARNING💀 - you are now operating as root..."
+sleep 1
+echo
+
+set -euo pipefail
+
+# Paths and files
+BASE_DIR="/home/andro/.local/bin"
+FREECACHE_PATH="/etc/systemd/system/freecache.path"
+FREECACHE_SERVICE="/etc/systemd/system/freecache.service"
+MEMORY_MONITOR_SERVICE="/etc/systemd/system/memory_monitor.service"
+OOMD_SERVICE="/etc/systemd/system/systemd-oomd.service"
+EARLYOOM_SERVICE="/etc/systemd/system/earlyoom.service"
+OOMD_CONF="/etc/systemd/oomd.conf"
+
+# Function to check and install dependencies
+install_dependencies() {
+    local packages=("systemd" "earlyoom" "procps-ng")
+    for pkg in "${packages[@]}"; do
+        if ! pacman -Qi "$pkg" &> /dev/null; then
+            sudo pacman -S --noconfirm "$pkg"
+        fi
+    done
+}
+
+# Function to check command dependencies
+check_command_dependencies() {
+    local commands=("systemctl" "mkdir" "chmod" "tee" "sysctl" "free" "awk" "date" "sudo")
+    for cmd in "${commands[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            echo "Error: $cmd is not installed." >&2
+            exit 1
+        fi
+    done
+}
+
+# Function to create necessary directories
+create_directories() {
+    mkdir -p "$BASE_DIR"
+}
+
+# Function to define and write file contents
+define_write_files() {
+    local content="$1"
+    local path="$2"
+    echo "$content" | tee "$path" > /dev/null
+}
+
+# Function to make scripts executable
+make_executable() {
+    local script="$1"
+    chmod +x "$script"
+}
+
+# Function to reload systemd and enable/start services
+reload_enable_start_services() {
+    systemctl daemon-reload
+    local services=("memory_monitor.service" "freecache.path" "systemd-oomd.service" "earlyoom.service")
+    for service in "${services[@]}"; do
+        systemctl enable "$service"
+        systemctl start "$service"
+    done
+}
+
+# Main script logic
+main() {
+    install_dependencies
+    check_command_dependencies
+    create_directories
+
+    define_write_files "$FREECACHE_PATH_CONTENT" "$FREECACHE_PATH"
+    define_write_files "$FREECACHE_SERVICE_CONTENT" "$FREECACHE_SERVICE"
+    define_write_files "$MEMORY_MONITOR_SERVICE_CONTENT" "$MEMORY_MONITOR_SERVICE"
+    define_write_files "$FREECACHE_SCRIPT_CONTENT" "$BASE_DIR/freecache.sh"
+    define_write_files "$MEMORY_MONITOR_SCRIPT_CONTENT" "$BASE_DIR/memory_monitor.sh"
+    define_write_files "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
+    define_write_files "$EARLYOOM_SERVICE_CONTENT" "$EARLYOOM_SERVICE"
+    define_write_files "$OOMD_CONF_CONTENT" "$OOMD_CONF"
+
+    make_executable "$BASE_DIR/freecache.sh"
+    make_executable "$BASE_DIR/memory_monitor.sh"
+
+    reload_enable_start_services
+
+    echo "Memory Monitor service has been installed and started successfully."
+}
+
+# Define the content of each file
+FREECACHE_PATH_CONTENT=$(cat <<EOF
+[Unit]
+Description=Monitor for Low Memory Condition
+
+[Path]
+PathExists=/tmp/low_memory
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+
+FREECACHE_SERVICE_CONTENT=$(cat <<EOF
+[Unit]
+Description=Free Cache when Memory is Low
+After=oomd.service
+
+[Service]
+Type=oneshot
+ExecStart=$BASE_DIR/freecache.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+
+MEMORY_MONITOR_SERVICE_CONTENT=$(cat <<EOF
+[Unit]
+Description=Monitor Memory Usage
+
+[Service]
+Type=simple
+ExecStart=$BASE_DIR/memory_monitor.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+
+FREECACHE_SCRIPT_CONTENT=$(cat <<'EOF'
+#!/bin/bash
+
+# Set robust error handling
+set -euo pipefail
+
+log_file="/var/log/freecache.log"
+
+log_action() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$log_file"
+}
+
+# Automatically escalate privileges if not run as root
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+# Ensure the logging directory and file exist, now that we have root privileges
+mkdir -p "$(dirname "$log_file")"
+touch "$log_file"
+
+adjust_swappiness() {
+    local current_swappiness
+    current_swappiness=$(sysctl vm.swappiness | awk '{print $3}')
+    local target_swappiness=10
+    local free_ram_mb
+    free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
+
+    if [[ "$free_ram_mb" -lt 1000 ]]; then
+        target_swappiness=80
+    elif [[ "$free_ram_mb" -gt 2000 ]]; then
+        target_swappiness=40
+    fi
+
+    if [[ "$current_swappiness" -ne "$target_swappiness" ]]; then
+        sysctl vm.swappiness="$target_swappiness"
+        log_action "Swappiness adjusted to $target_swappiness."
+    fi
+}
+
+clear_ram_cache() {
+    local free_ram_mb
+    free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
+
+    if [ "$free_ram_mb" -lt 500 ]; then
+        echo 3 > /proc/sys/vm/drop_caches
+        log_action "RAM cache cleared due to low free memory."
+    fi
+}
+
+clear_swap() {
+    local swap_usage_percent
+    swap_usage_percent=$(free | awk '/^Swap:/{printf "%.0f", $3/$2 * 100}')
+
+    if [ "$swap_usage_percent" -gt 80 ]; then
+        swapoff -a && swapon -a
+        log_action "Swap cleared due to high swap usage."
+    fi
+}
+
+# Main
+adjust_swappiness
+clear_ram_cache
+clear_swap
+
+# Log final state
+log_action "Memory and Swap Usage After Operations:"
+free -h | tee -a "$log_file"
+EOF
+)
+
+MEMORY_MONITOR_SCRIPT_CONTENT=$(cat <<'EOF'
+#!/bin/bash
+
+while true; do
+    FREE_RAM=$(free -m | awk '/^Mem:/{print $4}')
+    # Adjust this threshold as needed, ensuring it's higher than oomd's threshold
+    if [ "$FREE_RAM" -lt 1000 ]; then
+        touch /tmp/low_memory
+    else
+        rm -f /tmp/low_memory
+    fi
+    sleep 60  # Check every 60 seconds
+done
+EOF
+)
+
+OOMD_SERVICE_CONTENT=$(cat <<EOF
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Userspace Out-Of-Memory (OOM) Killer
+Documentation=man:systemd-oomd.service(8)
+Documentation=man:org.freedesktop.oom1(5)
+DefaultDependencies=no
+Before=multi-user.target shutdown.target
+Conflicts=shutdown.target
+ConditionControlGroupController=v2
+ConditionControlGroupController=memory
+ConditionPathExists=/proc/pressure/cpu
+ConditionPathExists=/proc/pressure/io
+ConditionPathExists=/proc/pressure/memory
+Requires=systemd-oomd.socket
+After=systemd-oomd.socket
+
+[Service]
+AmbientCapabilities=CAP_KILL CAP_DAC_OVERRIDE
+BusName=org.freedesktop.oom1
+CapabilityBoundingSet=CAP_KILL CAP_DAC_OVERRIDE
+ExecStart=/usr/lib/systemd/systemd-oomd
+IPAddressDeny=any
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+MemoryMin=128M
+MemoryLow=128M
+NoNewPrivileges=yes
+OOMScoreAdjust=-900
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+Restart=on-failure
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+Type=notify
+User=systemd-oom
+WatchdogSec=3min
+
+[Install]
+WantedBy=multi-user.target
+Alias=dbus-org.freedesktop.oom1.service
+EOF
+)
+
+EARLYOOM_SERVICE_CONTENT=$(cat <<EOF
+[Unit]
+Description=Early OOM Daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/earlyoom -M 2048 -m 10 -s 10 -r 60 -p -d -n --sort-by-rss --avoid '(^|/)(init|X|wayland|wayfire|sshd|brave|systemd)$'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+
+OOMD_CONF_CONTENT=$(cat <<EOF
+# /etc/systemd/oomd.conf
+# oomd Configuration File
+
+[OOM]
+# SwapUsedLimit sets the percentage of swap usage at which oomd will take action
+
+.
+# Set this higher than the threshold in your freecache script to avoid conflicts.
+SwapUsedLimit=95%
+
+# DefaultMemoryPressureLimit sets the memory pressure threshold for a cgroup.
+# oomd will act if the memory pressure exceeds this limit.
+# This is set higher than your script's threshold.
+DefaultMemoryPressureLimit=80%
+
+# DefaultMemoryPressureDurationSec specifies the duration memory pressure must 
+# exceed the limit for oomd to act.
+DefaultMemoryPressureDurationSec=60s
+EOF
+)
+
+# Execute the main function
+main
