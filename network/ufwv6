@@ -79,7 +79,8 @@ ufw_config() {
     ufw default allow outgoing
     ufw default deny incoming v6
     ufw default deny outgoing v6
-    sudo ufw allow 1195 #VPN 
+    sudo ufw allow 53682 #Rclone
+    sudo ufw allow 1195 #VPN
     sudo ufw allow 1198 #VPN
     sudo ufw allow 443 #VPN
     sudo ufw allow 465 #VPN
