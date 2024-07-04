@@ -54,12 +54,12 @@ modify_ipv6_setting() {
     local setting=$1
     echo "Modifying IPv6 settings to $setting..."
 
-    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6=$setting
-    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6=$setting
+    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6="$setting"
+    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6="$setting"
 
     for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
         if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
-            /sbin/sysctl -w net.ipv6.conf.$interface.disable_ipv6=$setting || {
+            /sbin/sysctl -w net.ipv6.conf."$interface".disable_ipv6="$setting" || {
                 echo "Error modifying IPv6 settings for interface $interface."
                 restore_sysctl_config
                 return 1
@@ -79,18 +79,19 @@ ufw_config() {
     ufw default allow outgoing
     ufw default deny incoming v6
     ufw default deny outgoing v6
-    sudo ufw allow 53682 #Rclone
-    sudo ufw allow 1195 #VPN
-    sudo ufw allow 1198 #VPN
-    sudo ufw allow 443 #VPN
-    sudo ufw allow 465 #VPN
-    sudo ufw allow 993 #VPN
-    sudo ufw allow 995 #VPN
-    ufw limit 22/tcp # SSH with rate limiting
+    ufw deny 22 # SSH with rate limiting
+    #sudo ufw allow 53682 #Rclone
+    ufw allow 7531/tcp #playwithmpv
     ufw allow 6800/tcp # Aria2c
-    ufw allow from 192.168.1.0/24 to any port 9666
-    ufw allow from 192.168.1.0/24 to any port 9665
-    ufw allow from 192.168.1.0/24 to any port 36501
+    ufw allow 9666/tcp # JDownloader2 port
+    ufw allow 9665/tcp # JDownloader2 port
+    ufw allow 36501/tcp
+    #sudo ufw allow 1195 #VPN
+    #sudo ufw allow 1198 #VPN
+    #sudo ufw allow 443 #VPN
+    #sudo ufw allow 465 #VPN
+    #sudo ufw allow 993 #VPN
+    #sudo ufw allow 995 #VPN
     ufw allow proto icmp from any to any # Allow ping
 
     if [[ "$1" == "jdownloader" ]]; then
@@ -152,16 +153,18 @@ sysctl_config() {
     echo "Checking sysctl configuration..."
     sleep 2
     declare -A sysctl_settings=(
-        ["kernel.modules_disabled"]="1"
+#        ["kernel.modules_disabled"]="1"
         ["vm.swappiness"]="10"
-        ["kernel.nmi_watchdog"]="0"
-        ["kernel.unprivileged_userns_clone"]="1"
-        ["kernel.printk"]="3 3 3 3"
+#        ["kernel.nmi_watchdog"]="0"
+#        ["kernel.unprivileged_userns_clone"]="1"
+#        ["kernel.printk"]="3 3 3 3"
         ["kernel.sysrq"]="1"
         ["net.ipv4.conf.default.rp_filter"]="1"
         ["net.ipv4.conf.all.rp_filter"]="1"
         ["net.ipv4.conf.default.accept_source_route"]="0"
         ["net.ipv4.conf.all.accept_source_route"]="0"
+        ["net.ipv6.conf.all.rp_filter"]="1"
+        ["net.ipv6.conf.default.rp_filter"]="1"
         ["net.ipv6.conf.default.accept_source_route"]="0"
         ["net.ipv6.conf.all.accept_source_route"]="0"
         ["net.ipv4.conf.default.accept_redirects"]="0"
@@ -172,15 +175,16 @@ sysctl_config() {
         ["net.ipv4.icmp_ignore_bogus_error_responses"]="1"
         ["net.ipv4.icmp_echo_ignore_all"]="0"
         ["net.ipv4.conf.default.log_martians"]="0"
-        ["net.ipv4.conf.all.log_martians"]="1"
-        ["net.ipv4.tcp_syncookies"]="1"
-        ["net.ipv4.tcp_fin_timeout"]="30"
-        ["net.ipv4.tcp_keepalive_intvl"]="1800"
+        ["net.ipv4.conf.all.log_martians"]="0"
         ["net.ipv4.tcp_sack"]="1"
-        ["net.ipv6.conf.default.autoconf"]="0"
-        ["net.ipv6.conf.all.autoconf"]="0"
-        ["net.ipv6.conf.default.use_tempaddr"]="2"
-        ["net.ipv6.conf.all.use_tempaddr"]="2"
+#        ["net.ipv4.tcp_syncookies"]="1"
+#        ["net.ipv4.tcp_fin_timeout"]="30"
+#        ["net.ipv4.tcp_keepalive_intvl"]="1800"
+#        ["net.ipv4.tcp_sack"]="1"
+#        ["net.ipv6.conf.default.autoconf"]="0"
+#        ["net.ipv6.conf.all.autoconf"]="0"
+#        ["net.ipv6.conf.default.use_tempaddr"]="2"
+#        ["net.ipv6.conf.all.use_tempaddr"]="2"
     )
 
     # Apply sysctl settings to /etc/sysctl.conf

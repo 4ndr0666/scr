@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 # Function to backup sysctl configuration
 backup_sysctl_config() {
@@ -22,12 +22,12 @@ modify_ipv6_setting() {
     local setting=$1
     echo "Modifying IPv6 settings to $setting..."
 
-    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6=$setting
-    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6=$setting
+    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6="$setting"
+    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6="$setting"
 
     for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
         if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
-            /sbin/sysctl -w net.ipv6.conf.$interface.disable_ipv6=$setting || {
+            /sbin/sysctl -w net.ipv6.conf."$interface".disable_ipv6="$setting" || {
                 echo "Error modifying IPv6 settings for interface $interface. Would you like to rollback? (y/n)"
                 read -r choice
                 if [[ "$choice" = "y" ]]; then

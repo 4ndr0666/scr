@@ -514,24 +514,35 @@ def configure_zram(log_file):
 
     if shutil.which("zramctl"):
         try:
+            # Calculate 25% of the total memory
             mem_total_cmd = "awk '/MemTotal/ {printf \"%d\\n\", $2 * 1024 * 0.25}' /proc/meminfo"
-            mem_total = int(subprocess.check_output(mem_total_cmd, shell=True).strip())
+            mem_total_output = subprocess.check_output(mem_total_cmd, shell=True).strip()
+            log_and_print(f"Memory calculation output: {mem_total_output}", 'info')
+            mem_total = int(mem_total_output)
+            log_and_print(f"Calculated ZRam size: {mem_total} bytes", 'info')
 
             try:
+                # Find or create a new zram device with the specified size
+                log_and_print("Attempting to find an existing zram device...", 'info')
                 zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
-            except subprocess.CalledProcessError:
-                log_and_print(f"{INFO} No free zram device found. Creating a new one...", 'info')
+                log_and_print(f"Using existing zram device: {zram_device}", 'info')
+            except subprocess.CalledProcessError as e:
+                log_and_print(f"No free zram device found. Creating a new one...", 'info')
                 subprocess.run(["sudo", "modprobe", "zram"], check=True)
                 zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+                log_and_print(f"Created new zram device: {zram_device}", 'info')
 
+            # Set up the zram device as swap
+            log_and_print(f"Setting up {zram_device} as swap...", 'info')
             subprocess.run(["sudo", "mkswap", zram_device], check=True)
             subprocess.run(["sudo", "swapon", zram_device, "-p", "32767"], check=True)
 
             log_and_print(f"{SUCCESS} ZRam configured successfully on {zram_device} with size {mem_total} bytes.", 'info')
         except subprocess.CalledProcessError as e:
-            log_and_print(f"{FAILURE} Error configuring ZRam: {e.stderr.strip() if e.stderr else e}", 'error')
+            log_and_print(f"{FAILURE} Error configuring ZRam: {e.stderr.strip() if e.stderr else str(e)}", 'error')
     else:
         log_and_print(f"{FAILURE} ZRam not available. Please install zramctl.", 'error')
+
 
 #22 Check ZRam Configuration
 def check_zram_configuration(log_file):
