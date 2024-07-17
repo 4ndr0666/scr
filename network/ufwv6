@@ -75,12 +75,16 @@ ufw_config() {
     sleep 2
     backup_ufw_rules
     ufw --force reset
-    ufw default deny incoming
+    ufw logging off
+    ufw default deny 
+    ufw limit SSH
     ufw default allow outgoing
     ufw default deny incoming v6
     ufw default deny outgoing v6
-    ufw deny 22 # SSH with rate limiting
-    #sudo ufw allow 53682 #Rclone
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+#ufw limit 22 # SSH with rate limiting
+#sudo ufw allow 53682 #Rclone
     ufw allow 7531/tcp #playwithmpv
     ufw allow 6800/tcp # Aria2c
     ufw allow 9666/tcp # JDownloader2 port
@@ -185,6 +189,9 @@ sysctl_config() {
 #        ["net.ipv6.conf.all.autoconf"]="0"
 #        ["net.ipv6.conf.default.use_tempaddr"]="2"
 #        ["net.ipv6.conf.all.use_tempaddr"]="2"
+        ["net.ipv4.tcp_window_scaling"]="1"
+        ["net.core.rmem_max"]="16777216"
+        ["net.core.wmem_max"]="16777216"
     )
 
     # Apply sysctl settings to /etc/sysctl.conf

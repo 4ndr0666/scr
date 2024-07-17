@@ -1,0 +1,1 @@
+0 0 * * * /home/andro/.local/bin/timeshift_manager.sh 

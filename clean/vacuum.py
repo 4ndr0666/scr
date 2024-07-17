@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import os
 import subprocess
 import sys
@@ -70,23 +72,13 @@ def execute_command(command, error_message=None):
         log_and_print(format_message(log_message, RED), 'error')
         return None
 
-# Open the Log File
-log_file = open(log_file_path, 'a')
-
-# Run all tasks
-def run_all_tasks(log_file):
-    for key in [str(k) for k in range(1, 27)]:
-        try:
-            menu_options[key]()
-        except KeyError as e:
-            log_and_print(format_message(f"Error executing task {key}: {e}", RED), 'error')
-
 def confirm_deletion(file_or_dir):
     """Ask for confirmation before deletion."""
     confirm = input(f"Do you really want to delete {file_or_dir}? [y/N]: ").strip().lower()
     return confirm == 'y'
 
-#1 Process dependency scan log
+# Define task functions
+
 def process_dep_scan_log(log_file):
     log_and_print(f"{INFO} Processing dependency scan log...")
     dep_scan_log = "/usr/local/bin/dependency_scan.log"
@@ -119,7 +111,6 @@ def process_dep_scan_log(log_file):
         log_and_print(f"{FAILURE} Dependency scan log file not found.", 'error')
     log_and_print(f"{SUCCESS} Dependency scan log processing completed.", 'info')
 
-#2 Manage Cron Job with Corrected Grep
 def manage_cron_job(log_file):
     log_and_print(f"{INFO} Managing system cron jobs...", 'info')
     try:
@@ -152,7 +143,6 @@ def manage_cron_job(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error managing cron jobs: {e.stderr.strip()}", 'error')
 
-#3 Remove Broken Symlinks
 def remove_broken_symlinks(log_file):
     log_and_print(f"{INFO} Searching for broken symbolic links...", 'info')
     spinner_thread, stop_spinner = spinner()
@@ -169,7 +159,6 @@ def remove_broken_symlinks(log_file):
     finally:
         stop_spinner()
 
-#4 Cleanup Old Kernel Images
 def clean_old_kernels(log_file):
     log_and_print(f"{INFO} Cleaning up old kernel images...", 'info')
     try:
@@ -190,7 +179,6 @@ def clean_old_kernels(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
 
-#5 Vacuum Journalctl
 def vacuum_journalctl(log_file):
     log_and_print(f"{INFO} Vacuuming journalctl...", 'info')
     try:
@@ -199,7 +187,6 @@ def vacuum_journalctl(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to vacuum journalctl: {e.stderr.strip()}", 'error')
 
-#6 Clear Cache
 def clear_cache(log_file):
     log_and_print(f"{INFO} Clearing user cache...", 'info')
     try:
@@ -208,7 +195,6 @@ def clear_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear cache: {e.stderr.strip()}", 'error')
 
-#7 Update Font Cache
 def update_font_cache(log_file):
     log_and_print(f"{INFO} Updating font cache...", 'info')
     try:
@@ -217,7 +203,6 @@ def update_font_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to update font cache: {e.stderr.strip()}", 'error')
 
-#8 Clear Trash
 def clear_trash(log_file):
     log_and_print(f"{INFO} Clearing trash...", 'info')
     choice = input("Do you want to clear the trash? (y/n): ")
@@ -231,7 +216,6 @@ def clear_trash(log_file):
     else:
         log_and_print(f"{INFO} Skipping trash clearance.", 'info')
 
-#9 Optimize Databases
 def optimize_databases(log_file):
     log_and_print(f"{INFO} Optimizing system databases...", 'info')
     try:
@@ -245,7 +229,6 @@ def optimize_databases(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to optimize databases: {e.stderr.strip()}", 'error')
 
-#10 Clean Package Cache
 def clean_package_cache(log_file):
     log_and_print(f"{INFO} Cleaning package cache...", 'info')
     try:
@@ -254,7 +237,6 @@ def clean_package_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clean package cache: {e.stderr.strip()}", 'error')
 
-#11 Clean AUR Directory
 def clean_aur_dir(log_file):
     log_and_print(f"{INFO} Cleaning AUR directory...", 'info')
     aur_dir = input("Please enter the path to the AUR directory you want to clean: ").strip()
@@ -285,7 +267,6 @@ def clean_aur_dir(log_file):
                 log_and_print(f"{FAILURE} Error deleting file {f}: {e}", 'error')
     log_and_print(f"{SUCCESS} AUR directory cleaned.", 'info')
 
-#12 Handle Pacnew and Pacsave Files
 def handle_pacnew_pacsave(log_file):
     try:
         pacnew_files = subprocess.check_output(["sudo", "find", "/etc", "-type", "f", "-name", "*.pacnew"], text=True).splitlines()
@@ -329,7 +310,6 @@ def handle_pacnew_pacsave(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error handling pacnew and pacsave files: {e.stderr.strip()}", 'error')
 
-#13 Verify Installed Packages
 def verify_installed_packages(log_file):
     log_and_print(f"{INFO} Checking for packages with missing files...", 'info')
     try:
@@ -349,7 +329,6 @@ def verify_installed_packages(log_file):
     except Exception as e:
         log_and_print(f"{FAILURE} Unexpected error: {str(e)}", 'error')
 
-#14 Check Failed Cron Jobs
 def check_failed_cron_jobs(log_file):
     log_and_print(f"{INFO} Checking for failed cron jobs...", 'info')
     try:
@@ -359,7 +338,6 @@ def check_failed_cron_jobs(log_file):
             print(failed_jobs)
             repair = input("Do you want to attempt to repair the failed cron jobs? (y/n): ").strip().lower()
             if repair == "y":
-                # Add logic to repair cron jobs
                 log_and_print(f"{SUCCESS} Attempting to repair failed cron jobs...", 'info')
                 # Repair logic here
         else:
@@ -367,7 +345,6 @@ def check_failed_cron_jobs(log_file):
     except subprocess.CalledProcessError:
         log_and_print(f"{INFO} No failed cron jobs detected or syslog not accessible.", 'info')
 
-#15 Clear Docker Images
 def clear_docker_images(log_file):
     if shutil.which("docker"):
         log_and_print(f"{INFO} Clearing Docker images...", 'info')
@@ -379,7 +356,6 @@ def clear_docker_images(log_file):
     else:
         log_and_print(f"{INFO} Docker is not installed. Skipping Docker image cleanup.", 'info')
 
-#16 Clear Temp Folder
 def clear_temp_folder(log_file):
     log_and_print(f"{INFO} Clearing the temporary folder...", 'info')
     try:
@@ -388,7 +364,6 @@ def clear_temp_folder(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear the temporary folder: {e.stderr.strip()}", 'error')
 
-#17 Run rmshit.py
 def check_rmshit_script(log_file=None):
     log_and_print(f"{INFO} Cleaning up unnecessary files...")
     shittyfiles = [
@@ -471,7 +446,6 @@ def check_rmshit_script(log_file=None):
                 log_and_print(f"{FAILURE} Error deleting {expanded_path}: {e}", 'error')
     log_and_print(f"{SUCCESS} Unnecessary files cleaned up.", 'info')
 
-#18 Remove Old SSH Known Hosts
 def remove_old_ssh_known_hosts(log_file):
     ssh_known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
     if os.path.isfile(ssh_known_hosts_file):
@@ -484,7 +458,6 @@ def remove_old_ssh_known_hosts(log_file):
     else:
         log_and_print(f"{INFO} No SSH known hosts file found. Skipping.", 'info')
 
-#19 Remove Orphan Vim Undo Files
 def remove_orphan_vim_undo_files(log_file):
     log_and_print(f"{INFO} Searching for orphan Vim undo files...", 'info')
     home_dir = os.path.expanduser("~")
@@ -499,7 +472,6 @@ def remove_orphan_vim_undo_files(log_file):
                     except OSError as e:
                         log_and_print(f"{FAILURE} Error: Failed to remove orphan Vim undo file: {e}", 'error')
 
-#20 Force Log Rotation
 def force_log_rotation(log_file):
     log_and_print(f"{INFO} Forcing log rotation...", 'info')
     try:
@@ -508,7 +480,6 @@ def force_log_rotation(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to force log rotation: {e.stderr.strip()}", 'error')
 
-#21 Configure ZRam
 def configure_zram(log_file):
     log_and_print(f"{INFO} Configuring ZRam for better memory management...", 'info')
 
@@ -543,8 +514,6 @@ def configure_zram(log_file):
     else:
         log_and_print(f"{FAILURE} ZRam not available. Please install zramctl.", 'error')
 
-
-#22 Check ZRam Configuration
 def check_zram_configuration(log_file):
     log_and_print(f"{INFO} Checking ZRam configuration...", 'info')
     try:
@@ -557,7 +526,6 @@ def check_zram_configuration(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to check ZRam configuration: {e.stderr.strip()}", 'error')
 
-#23 Adjust Swappiness
 def adjust_swappiness(log_file):
     swappiness_value = 10  # Recommended for systems with low RAM
     log_and_print(f"{INFO} Adjusting swappiness to {swappiness_value}...", 'info')
@@ -567,7 +535,6 @@ def adjust_swappiness(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to adjust swappiness: {e.stderr.strip()}", 'error')
 
-#24 Clear System Cache
 def clear_system_cache(log_file):
     log_and_print(f"{INFO} Clearing PageCache, dentries, and inodes...", 'info')
     try:
@@ -576,7 +543,6 @@ def clear_system_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear system cache: {e.stderr.strip()}", 'error')
 
-#25 Disable Unused Services
 def disable_unused_services(log_file):
     services_to_disable = ["bluetooth.service", "cups.service"]  # List of services to disable
     for service in services_to_disable:
@@ -590,7 +556,6 @@ def disable_unused_services(log_file):
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error: Failed to disable {service}: {e.stderr.strip()}", 'error')
 
-#26 Check and Restart Failed Systemd Units
 def check_and_restart_systemd_units(log_file):
     log_and_print(f"{INFO} Checking and restarting failed systemd units...", 'info')
     try:
@@ -604,35 +569,42 @@ def check_and_restart_systemd_units(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to check or restart systemd units: {e.stderr.strip()}", 'error')
 
+def run_all_tasks(log_file):
+    for key in [str(k) for k in range(1, 27)]:
+        try:
+            menu_options[key]()
+        except KeyError as e:
+            log_and_print(format_message(f"Error executing task {key}: {e}", RED), 'error')
+
 # Define menu options with partial
 menu_options = {
-    '1': partial(process_dep_scan_log, log_file),
-    '2': partial(manage_cron_job, log_file),
-    '3': partial(remove_broken_symlinks, log_file),
-    '4': partial(clean_old_kernels, log_file),
-    '5': partial(vacuum_journalctl, log_file),
-    '6': partial(clear_cache, log_file),
-    '7': partial(update_font_cache, log_file),
-    '8': partial(clear_trash, log_file),
-    '9': partial(optimize_databases, log_file),
-    '10': partial(clean_package_cache, log_file),
-    '11': partial(clean_aur_dir, log_file),
-    '12': partial(handle_pacnew_pacsave, log_file),
-    '13': partial(verify_installed_packages, log_file),
-    '14': partial(check_failed_cron_jobs, log_file),
-    '15': partial(clear_docker_images, log_file),
-    '16': partial(clear_temp_folder, log_file),
-    '17': partial(check_rmshit_script, log_file),
-    '18': partial(remove_old_ssh_known_hosts, log_file),
-    '19': partial(remove_orphan_vim_undo_files, log_file),
-    '20': partial(force_log_rotation, log_file),
-    '21': partial(configure_zram, log_file),
-    '22': partial(check_zram_configuration, log_file),
-    '23': partial(adjust_swappiness, log_file),
-    '24': partial(clear_system_cache, log_file),
-    '25': partial(disable_unused_services, log_file),
-    '26': partial(check_and_restart_systemd_units, log_file),
-    '0': partial(run_all_tasks, log_file)
+    '1': partial(process_dep_scan_log, log_file_path),
+    '2': partial(manage_cron_job, log_file_path),
+    '3': partial(remove_broken_symlinks, log_file_path),
+    '4': partial(clean_old_kernels, log_file_path),
+    '5': partial(vacuum_journalctl, log_file_path),
+    '6': partial(clear_cache, log_file_path),
+    '7': partial(update_font_cache, log_file_path),
+    '8': partial(clear_trash, log_file_path),
+    '9': partial(optimize_databases, log_file_path),
+    '10': partial(clean_package_cache, log_file_path),
+    '11': partial(clean_aur_dir, log_file_path),
+    '12': partial(handle_pacnew_pacsave, log_file_path),
+    '13': partial(verify_installed_packages, log_file_path),
+    '14': partial(check_failed_cron_jobs, log_file_path),
+    '15': partial(clear_docker_images, log_file_path),
+    '16': partial(clear_temp_folder, log_file_path),
+    '17': partial(check_rmshit_script, log_file_path),
+    '18': partial(remove_old_ssh_known_hosts, log_file_path),
+    '19': partial(remove_orphan_vim_undo_files, log_file_path),
+    '20': partial(force_log_rotation, log_file_path),
+    '21': partial(configure_zram, log_file_path),
+    '22': partial(check_zram_configuration, log_file_path),
+    '23': partial(adjust_swappiness, log_file_path),
+    '24': partial(clear_system_cache, log_file_path),
+    '25': partial(disable_unused_services, log_file_path),
+    '26': partial(check_and_restart_systemd_units, log_file_path),
+    '0': partial(run_all_tasks, log_file_path)
 }
 
 # Main Menu
