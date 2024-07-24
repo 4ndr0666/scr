@@ -69,33 +69,36 @@ modify_ipv6_setting() {
     echo "IPv6 settings modified successfully to $setting."
 }
 
-# Function to configure UFW
+
+# --- // UFW //
+
 ufw_config() {
-    echo "Configuring UFW..."
+
+#BASIC_RULES:
+#sudo systemctl enable --now ufw
+#sudo ufw default deny incoming
+#sudo ufw default allow outgoing
+#sudo ufw limit ssh
+#sudo ufw enable
+
+    echo "Setting up advanced UFW rules..."
     sleep 2
     backup_ufw_rules
     ufw --force reset
     ufw logging off
-    ufw default deny 
-    ufw limit SSH
+    ufw default deny incoming 
     ufw default allow outgoing
     ufw default deny incoming v6
     ufw default deny outgoing v6
+    ufw limit SSH
     ufw allow 80/tcp
     ufw allow 443/tcp
-#ufw limit 22 # SSH with rate limiting
-#sudo ufw allow 53682 #Rclone
+    #sudo ufw allow 53682 #Rclone
     ufw allow 7531/tcp #playwithmpv
     ufw allow 6800/tcp # Aria2c
     ufw allow 9666/tcp # JDownloader2 port
     ufw allow 9665/tcp # JDownloader2 port
     ufw allow 36501/tcp
-    #sudo ufw allow 1195 #VPN
-    #sudo ufw allow 1198 #VPN
-    #sudo ufw allow 443 #VPN
-    #sudo ufw allow 465 #VPN
-    #sudo ufw allow 993 #VPN
-    #sudo ufw allow 995 #VPN
     ufw allow proto icmp from any to any # Allow ping
 
     if [[ "$1" == "jdownloader" ]]; then
