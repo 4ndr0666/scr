@@ -13,7 +13,7 @@ cat << 'EOF' > "${GRUB_DEFAULT_PATH}"
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=5
 GRUB_DISTRIBUTOR="Archcraft"
-GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 udev.log_level=3 sysrq_always_enabled=1 systemd.unified_cgroup_hierarchy=1 disable_ipv6=1 ipv6.autoconf=0 accept_ra=0 fsck.repair=yes zswap.enabled=1 vt.global_cursor_default=0 intel_idle.max_cstate=1 ibt=off mitigations=auto transparent_hugepage=always intel_pstate=enable scsi_mod.use_blk_mq=1"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 udev.log_level=3 sysrq_always_enabled=1 systemd.unified_cgroup_hierarchy=1 disable_ipv6=1 ipv6.autoconf=0 accept_ra=0 fsck.repair=yes zswap.enabled=1 vt.global_cursor_default=0 intel_idle.max_cstate=1 ibt=off mitigations=auto transparent_hugepage=always intel_pstate=enable scsi_mod.use_blk_mq=1 intel_idle.max-cstate=1 iommu=pt nohz_full=1-3 rcu_nocbs=1-3 audit=0 nowatchdog"
 GRUB_CMDLINE_LINUX=""
 
 # Preload both GPT and MBR modules so that they are not missed
@@ -168,6 +168,31 @@ fi
 if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ scsi_mod.use_blk_mq=[^[:space:]]+ ]]; then
     GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }scsi_mod.use_blk_mq=1"
 fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ intel_idle.max_cstate=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }intel_idle.max_cstate=1"
+fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ iommu=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }iommu=pt"
+fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ nohz_full=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }nohz_full=1-3"
+fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ rcu_nobcs=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }rcu_nobcs=1-3"
+fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ audit=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }audit=0"
+fi
+
+if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ rcu_nobcs=[^[:space:]]+ ]]; then
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }rcu_nobcs=1-3"
+fi
+
 
 # Ensure OS Prober is enabled unless explicitly disabled
 if [ -z "${GRUB_DISABLE_OS_PROBER+x}" ]; then
