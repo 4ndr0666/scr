@@ -12,23 +12,23 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Function to backup UFW rules
-backup_ufw_rules() {
-    echo "Backing up UFW rules..."
-    ufw status numbered > /etc/ufw/ufw.rules.backup
-    echo "UFW rules backed up to /etc/ufw/ufw.rules.backup"
-}
+#backup_ufw_rules() {
+#    echo "Backing up UFW rules..."
+#    ufw status numbered > /etc/ufw/ufw.rules.backup
+#    echo "UFW rules backed up to /etc/ufw/ufw.rules.backup"
+#}
 
 # Function to restore UFW rules from backup
-restore_ufw_rules() {
-    if [[ -f /etc/ufw/ufw.rules.backup ]]; then
-        echo "Restoring UFW rules from backup..."
-        ufw reset
-        awk '/^ *[0-9]+/{print "ufw allow " $2}' /etc/ufw/ufw.rules.backup | bash
-        echo "UFW rules restored from backup."
-    else
-        echo "UFW backup not found."
-    fi
-}
+#restore_ufw_rules() {
+#    if [[ -f /etc/ufw/ufw.rules.backup ]]; then
+#        echo "Restoring UFW rules from backup..."
+#        ufw reset
+#        awk '/^ *[0-9]+/{print "ufw allow " $2}' /etc/ufw/ufw.rules.backup | bash
+#        echo "UFW rules restored from backup."
+#    else
+#        echo "UFW backup not found."
+#    fi
+#}
 
 # Function to backup sysctl configuration
 backup_sysctl_config() {
@@ -73,32 +73,28 @@ modify_ipv6_setting() {
 # --- // UFW //
 
 ufw_config() {
-
 #BASIC_RULES:
 #sudo systemctl enable --now ufw
 #sudo ufw default deny incoming
 #sudo ufw default allow outgoing
 #sudo ufw limit ssh
 #sudo ufw enable
-
     echo "Setting up advanced UFW rules..."
     sleep 2
-    backup_ufw_rules
+#    backup_ufw_rules
     ufw --force reset
     ufw logging off
-    ufw default deny incoming 
+    ufw default deny incoming
     ufw default allow outgoing
-    ufw default deny incoming v6
-    ufw default deny outgoing v6
     ufw limit SSH
     ufw allow 80/tcp
     ufw allow 443/tcp
     #sudo ufw allow 53682 #Rclone
     ufw allow 7531/tcp #playwithmpv
     ufw allow 6800/tcp # Aria2c
-    ufw allow 9666/tcp # JDownloader2 port
-    ufw allow 9665/tcp # JDownloader2 port
-    ufw allow 36501/tcp
+#    ufw allow 9666/tcp # JDownloader2 port
+#    ufw allow 9665/tcp # JDownloader2 port
+#    ufw allow 36501/tcp
     ufw allow proto icmp from any to any # Allow ping
 
     if [[ "$1" == "jdownloader" ]]; then
@@ -257,10 +253,10 @@ main() {
         usage
     fi
 
-    permissions_config
-    rules_config
+#    permissions_config
+#    rules_config
     ufw_config "$2"
-    sysctl_config
+#    sysctl_config
     # fail2ban_config
 
     echo "System hardening complete."
