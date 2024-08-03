@@ -1,44 +1,45 @@
 #!/bin/bash
 
-# Define variables for the tracker list URL and local save path
-TRACKER_LIST_URL="https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt"
-TRACKER_LIST_PATH="/home/$USER/.config/aria2/trackerlist.txt"
+# Define tracker list URLs
+URLS=(
+    "https://trackerslist.com/best.txt"
+    "https://newtrackon.com/api/stable"
+    "https://github.com/ngosang/trackerslist/raw/main/trackers_best.txt"
+    "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt"
+    "https://raw.githubusercontent.com/DeSireFire/animeTrackerList/master/AT_all.txt"
+)
 
-# Function to download the latest tracker list
-update_tracker_list() {
-  echo "Fetching the latest tracker list..."
-  curl -sS "$TRACKER_LIST_URL" -o "$TRACKER_LIST_PATH"
+# Define file paths
+TRACKER_FILE="$HOME/.config/aria2/trackerlist.txt"
+BACKUP_FILE="$HOME/.config/aria2/trackerlist.bak"
 
-  # Verify download success and the file isn't empty
-  if [ -s "$TRACKER_LIST_PATH" ]; then
-    echo "Tracker list updated successfully."
-  else
-    echo "Failed to update tracker list or the list is empty."
-    return 1  # Return with error
-  fi
-}
+# Backup the existing tracker list
+if [[ -f "$TRACKER_FILE" ]]; then
+    cp "$TRACKER_FILE" "$BACKUP_FILE"
+    echo "Backup of the current tracker list saved to $BACKUP_FILE"
+fi
 
-validate_trackers() {
-    local temp_file=$(mktemp)
-    grep -E '^https?://|^udp://' "$TRACKER_LIST_PATH" > "$temp_file"
-    mv "$temp_file" "$TRACKER_LIST_PATH"
-    echo "Invalid trackers removed based on protocol format."
-}
+# Check internet connectivity
+if ! ping -c 1 google.com &>/dev/null; then
+    echo "No internet connection. Please check your network and try again."
+    exit 1
+fi
 
-deduplicate_trackers() {
-    local temp_file=$(mktemp)
-    sort -u "$TRACKER_LIST_PATH" > "$temp_file"
-    mv "$temp_file" "$TRACKER_LIST_PATH"
-    echo "Duplicate trackers removed."
-}
+# Create or clear the tracker file
+> "$TRACKER_FILE"
 
-# Function to perform any necessary cleanup or additional checks
-post_update_checks() {
-  echo "Performing post-update checks..."
-  validate_trackers
-  deduplicate_trackers
+# Download trackers from each URL and append to the file
+for URL in "${URLS[@]}"; do
+    echo "Fetching trackers from: $URL"
+    curl -fsSL "$URL" >> "$TRACKER_FILE"
+    if [[ $? -ne 0 ]]; then
+        echo "Failed to fetch trackers from $URL"
+    else
+        echo "Successfully fetched trackers from $URL"
+    fi
+done
 
-}
+# Remove duplicate entries
+sort -u "$TRACKER_FILE" -o "$TRACKER_FILE"
 
-# Main script execution
-update_tracker_list && post_update_checks
+echo "Tracker list updated at $TRACKER_FILE"
