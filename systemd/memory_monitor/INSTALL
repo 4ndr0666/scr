@@ -26,14 +26,15 @@ OOMD_CONF="/etc/systemd/oomd.conf"
 installDependencies() {
     local packages=("systemd" "earlyoom" "procps-ng")
     for pkg in "${packages[@]}"; do
-        if ! command -v pacman &> /dev/null; then
-            echo "Error: Package manager pacman is not available. Please install $pkg manually." >&2
-            exit 1
-        fi
         if ! pacman -Qi "$pkg" &> /dev/null; then
             sudo pacman -S --noconfirm "$pkg"
         fi
     done
+}
+
+# Function to dynamically resolve paths
+resolvePaths() {
+    EARLYOOM_BIN=$(which earlyoom || echo "/usr/local/bin/earlyoom")
 }
 
 # Function to check command dependencies
@@ -96,12 +97,27 @@ enableServiceSafely() {
     fi
 }
 
+# Function to create a backup of existing service files
+backupServiceFile() {
+    local service_file="$1"
+    if [ -f "$service_file" ]; then
+        cp "$service_file" "$service_file.bak.$(date +'%Y%m%d%H%M%S')"
+        echo "Backup of $service_file created."
+    fi
+}
+
 # Main script logic
 main() {
     installDependencies
+    resolvePaths
     checkCommandDependencies
     createDirectories
 
+    # Backup existing service files
+    backupServiceFile "$EARLYOOM_SERVICE"
+    backupServiceFile "$OOMD_SERVICE"
+
+    # Define and write new service files
     defineWriteFiles "$FREECACHE_SERVICE_CONTENT" "$FREECACHE_SERVICE"
     defineWriteFiles "$MEMORY_MONITOR_SERVICE_CONTENT" "$MEMORY_MONITOR_SERVICE"
     defineWriteFiles "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
@@ -202,7 +218,7 @@ Description=Early OOM Daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/earlyoom -M 2048 -m 10 -s 10 -r 60 -p -d -n --sort-by-rss --avoid '(^|/)(init|X|wayland|wayfire|sshd|brave|systemd)$'
+ExecStart=$EARLYOOM_BIN -M 2048 -m 10 -s 10 -r 60 -p -d -n --sort-by-rss --avoid '(^|/)(init|X|wayland|wayfire|sshd|brave|systemd)$'
 Restart=always
 RestartSec=10
 
