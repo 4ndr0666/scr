@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Ensure the script is run with root privileges
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit 1
+fi
+
+# Check if necessary commands are available
+command -v update-grub >/dev/null 2>&1 || { echo >&2 "update-grub command not found. Aborting."; exit 1; }
+
 # Define the paths for the configuration files
 GRUB_DEFAULT_PATH="/etc/default/grub"
 GRUB_D_DIR="/etc/default/grub.d"
@@ -37,7 +46,7 @@ GRUB_TERMINAL_INPUT=console
 # you can see them in real GRUB with the command 'videoinfo'
 GRUB_GFXMODE=auto
 
-# Uncomment to allow the kernel use the same resolution used by grub
+# Uncomment to allow the kernel to use the same resolution used by grub
 GRUB_GFXPAYLOAD_LINUX=keep
 
 # Uncomment if you want GRUB to pass to the Linux kernel the old parameter
@@ -52,7 +61,7 @@ GRUB_GFXPAYLOAD_LINUX=keep
 #GRUB_COLOR_NORMAL="light-blue/black"
 #GRUB_COLOR_HIGHLIGHT="light-cyan/blue"
 
-# Uncomment one of them for the gfx desired, a image background or a gfxtheme
+# Uncomment one of them for the gfx desired, an image background, or a gfxtheme
 #GRUB_BACKGROUND="/usr/share/grub/background.png"
 GRUB_THEME="/boot/grub/themes/archcraft/theme.txt"
 
@@ -101,98 +110,27 @@ add_kernel_param() {
 }
 
 # Add custom kernel parameters if they are not already present
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ fsck.repair=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }fsck.repair=yes"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ nosmt ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }nosmt"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ swapaccount=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }swapaccount=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ zswap.enabled=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }zswap.enabled=yes"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ mitigations=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }mitigations=auto"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ rootfstype=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }rootfstype=btrfs"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ cgroup_enable=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }cgroup_enable=memory"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ sysrq_always_enabled=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }sysrq_always_enabled=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ systemd.unified_cgroup_hierarchy=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }systemd.unified_cgroup_hierarchy=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ disable_ipv6=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }disable_ipv6=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ ipv6.autoconf=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }ipv6.autoconf=0"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ accept_ra=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }accept_ra=0"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ ibt=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }ibt=off"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ mitigations=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }mitigations=auto"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ transparent_hugepage=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }transparent_hugepage=always"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ intel_pstate=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }intel_pstate=enable"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ scsi_mod.use_blk_mq=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }scsi_mod.use_blk_mq=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ intel_idle.max_cstate=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }intel_idle.max_cstate=1"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ iommu=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }iommu=pt"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ nohz_full=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }nohz_full=1-3"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ rcu_nobcs=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }rcu_nobcs=1-3"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ audit=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }audit=0"
-fi
-
-if [[ ! $GRUB_CMDLINE_LINUX_DEFAULT =~ rcu_nobcs=[^[:space:]]+ ]]; then
-    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }rcu_nobcs=1-3"
-fi
-
+add_kernel_param "fsck.repair=yes"
+add_kernel_param "nosmt"
+add_kernel_param "swapaccount=1"
+add_kernel_param "zswap.enabled=1"
+add_kernel_param "mitigations=auto"
+add_kernel_param "rootfstype=btrfs"
+add_kernel_param "cgroup_enable=memory"
+add_kernel_param "sysrq_always_enabled=1"
+add_kernel_param "systemd.unified_cgroup_hierarchy=1"
+add_kernel_param "disable_ipv6=1"
+add_kernel_param "ipv6.autoconf=0"
+add_kernel_param "accept_ra=0"
+add_kernel_param "ibt=off"
+add_kernel_param "transparent_hugepage=always"
+add_kernel_param "intel_pstate=enable"
+add_kernel_param "scsi_mod.use_blk_mq=1"
+add_kernel_param "intel_idle.max_cstate=1"
+add_kernel_param "iommu=pt"
+add_kernel_param "nohz_full=1-3"
+add_kernel_param "rcu_nocbs=1-3"
+add_kernel_param "audit=0"
 
 # Ensure OS Prober is enabled unless explicitly disabled
 if [ -z "${GRUB_DISABLE_OS_PROBER+x}" ]; then
@@ -202,6 +140,6 @@ EOF
 
 # Update GRUB configuration
 echo "Updating GRUB configuration"
-sudo update-grub
+sudo update-grub || { echo "Failed to update GRUB configuration."; exit 1; }
 
 echo "Setup complete. Please reboot your system to apply the changes."
