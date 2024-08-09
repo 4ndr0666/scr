@@ -22,6 +22,9 @@ OOMD_SERVICE="/etc/systemd/system/systemd-oomd.service"
 EARLYOOM_SERVICE="/etc/systemd/system/earlyoom.service"
 OOMD_CONF="/etc/systemd/oomd.conf"
 
+# Initialize EARLYOOM_BIN as empty
+EARLYOOM_BIN=""
+
 # Function to check and install dependencies
 installDependencies() {
     local packages=("systemd" "earlyoom" "procps-ng")
@@ -36,11 +39,18 @@ installDependencies() {
 
 # Function to dynamically resolve paths
 resolvePaths() {
-    EARLYOOM_BIN=$(which earlyoom || echo "/usr/local/bin/earlyoom")
-    if [[ ! -f "$EARLYOOM_BIN" ]]; then
-        echo "Error: $EARLYOOM_BIN does not exist. Please install earlyoom or adjust the path."
-        exit 1
+    EARLYOOM_BIN=$(which earlyoom || true)
+    if [[ -z "$EARLYOOM_BIN" ]]; then
+        echo "earlyoom binary not found in PATH. Attempting to install..."
+        installDependencies
+        EARLYOOM_BIN=$(which earlyoom || true)
+        if [[ -z "$EARLYOOM_BIN" ]]; then
+            echo "Error: earlyoom binary still not found after installation."
+            echo "Please ensure earlyoom is installed and available in your PATH."
+            exit 1
+        fi
     fi
+    echo "Found earlyoom binary at: $EARLYOOM_BIN"
 }
 
 # Function to check command dependencies
@@ -134,9 +144,8 @@ backupServiceFile() {
 
 # Main script logic
 main() {
-    installDependencies
-    resolvePaths
     checkCommandDependencies
+    resolvePaths
     createDirectories
 
     # Backup existing service files
@@ -280,7 +289,7 @@ set -euo pipefail
 log_file="/var/log/freecache.log"
 
 log_action() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "\$log_file"
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "\$log_file"
 }
 
 # Automatically escalate privileges if not run as root
