@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Make sure the script is run with root privileges
+# Ensure the script is run with root privileges
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root"
   exit
@@ -37,7 +37,7 @@ ln -sf "$XDG_DATA_HOME/poetry/venvs/poetry/bin/poetry" /usr/local/bin/poetry
 echo "Ensuring Poetry is installed correctly..."
 poetry --version
 
-# Source the function script if it exists
+# Source the function script to ensure functions like poetry_cmd are available
 if [ -f "$XDG_CONFIG_HOME/shellz/functions/functions.zsh" ]; then
   echo "Sourcing functions.zsh..."
   source "$XDG_CONFIG_HOME/shellz/functions/functions.zsh"
@@ -53,11 +53,11 @@ poetry config virtualenvs.in-project true
 # Set up an example project to test the environment
 echo "Setting up an example project to test the environment..."
 cd "$XDG_DATA_HOME/python-projects"
-poetry_cmd new example_project
+poetry new example_project
 cd example_project
 
 echo "Adding 'requests' package to the example project..."
-poetry_cmd add requests
+poetry add requests
 
 echo "Poetry environment setup is complete!"
 echo "You can now use 'poetry_cmd' to manage your Python projects."
