@@ -28,6 +28,8 @@ installDependencies() {
     for pkg in "${packages[@]}"; do
         if ! pacman -Qi "$pkg" &> /dev/null; then
             sudo pacman -S --noconfirm "$pkg"
+        else
+            echo "Package $pkg is already installed."
         fi
     done
 }
@@ -35,6 +37,10 @@ installDependencies() {
 # Function to dynamically resolve paths
 resolvePaths() {
     EARLYOOM_BIN=$(which earlyoom || echo "/usr/local/bin/earlyoom")
+    if [[ ! -f "$EARLYOOM_BIN" ]]; then
+        echo "Error: $EARLYOOM_BIN does not exist. Please install earlyoom or adjust the path."
+        exit 1
+    fi
 }
 
 # Function to check command dependencies
@@ -50,23 +56,42 @@ checkCommandDependencies() {
 
 # Function to create necessary directories
 createDirectories() {
-    mkdir -p "$BASE_DIR"
+    if [[ ! -d "$BASE_DIR" ]]; then
+        mkdir -p "$BASE_DIR"
+        echo "Created directory: $BASE_DIR"
+    else
+        echo "Directory $BASE_DIR already exists."
+    fi
 }
 
-# Function to define and write file contents
+# Function to define and write file contents if they differ from existing ones
 defineWriteFiles() {
     local content="$1"
     local path="$2"
-    if [ -f "$path" ]; then
-        echo "Warning: $path already exists. It will be overwritten."
+    if [[ -f "$path" ]]; then
+        local existing_content
+        existing_content=$(<"$path")
+        if [[ "$existing_content" == "$content" ]]; then
+            echo "File $path is already up to date."
+            return
+        else
+            echo "Updating file $path."
+        fi
+    else
+        echo "Creating file $path."
     fi
     echo "$content" | tee "$path" > /dev/null
 }
 
-# Function to make scripts executable
+# Function to make scripts executable if not already
 makeExecutable() {
     local script="$1"
-    chmod +x "$script"
+    if [[ -x "$script" ]]; then
+        echo "Script $script is already executable."
+    else
+        chmod +x "$script"
+        echo "Made $script executable."
+    fi
 }
 
 # Function to reload systemd and enable/start services
@@ -100,9 +125,10 @@ enableServiceSafely() {
 # Function to create a backup of existing service files
 backupServiceFile() {
     local service_file="$1"
-    if [ -f "$service_file" ]; then
-        cp "$service_file" "$service_file.bak.$(date +'%Y%m%d%H%M%S')"
-        echo "Backup of $service_file created."
+    if [[ -f "$service_file" ]]; then
+        local backup_file="$service_file.bak.$(date +'%Y%m%d%H%M%S')"
+        cp "$service_file" "$backup_file"
+        echo "Backup of $service_file created as $backup_file."
     fi
 }
 
@@ -117,7 +143,7 @@ main() {
     backupServiceFile "$EARLYOOM_SERVICE"
     backupServiceFile "$OOMD_SERVICE"
 
-    # Define and write new service files
+    # Define and write new service files if necessary
     defineWriteFiles "$FREECACHE_SERVICE_CONTENT" "$FREECACHE_SERVICE"
     defineWriteFiles "$MEMORY_MONITOR_SERVICE_CONTENT" "$MEMORY_MONITOR_SERVICE"
     defineWriteFiles "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
