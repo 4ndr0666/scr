@@ -1,11 +1,10 @@
 #!/bin/bash
 
-#File: gui.sh
-#Author: 4ndr0666
-#Edited: 4-11-2024
+# File: gui.sh
+# Author: 4ndr0666
+# Edited: 4-11-2024
 #
 # --- // GUI.SH // ========
-
 
 # --- // COLORS_AND_SYMBOLS:
 GREEN='\033[0;32m'
@@ -71,13 +70,14 @@ list_and_manage_remotes() {
 
 # --- // SWITCH_GCLONE_TO_SSH:
 switch_to_ssh() {
-    local old_url new_url remote_name=$(git remote | fzf --height=10 --prompt="Select a remote: ")
+    local remote_name
+    remote_name=$(git remote | fzf --height=10 --prompt="Select a remote: ")
     if [ -z "$remote_name" ]; then
-
         bug "No remote selected."
         return
     fi
 
+    local old_url new_url
     old_url=$(git remote get-url "$remote_name")
 
     if [[ "$old_url" == git@github.com:* ]]; then
@@ -85,7 +85,8 @@ switch_to_ssh() {
         return
     fi
 
-    local user_repo=${old_url#*github.com/}
+    local user_repo
+    user_repo=${old_url#*github.com/}
     user_repo=${user_repo%.git}
     new_url="git@github.com:$user_repo.git"
 
@@ -96,12 +97,13 @@ switch_to_ssh() {
 # --- // UPDATE_REMOTE_URL:
 update_remote_url() {
     local repo_base="https://www.github.com/4ndr0666/"
-    local repos=$(gh repo list 4ndr0666 -L 100 --json name -q '.[].name')
+    local repos repo_name new_url
+    repos=$(gh repo list 4ndr0666 -L 100 --json name -q '.[].name')
 
     echo "Enter the repository name:"
-    local repo_name=$(echo "$repos" | fzf --height=10 --prompt="Select a repository: ")
+    repo_name=$(echo "$repos" | fzf --height=10 --prompt="Select a repository: ")
 
-    local new_url="${repo_base}${repo_name}.git"
+    new_url="${repo_base}${repo_name}.git"
     git remote set-url origin "$new_url"
     prominent "Remote URL updated to $new_url"
 }
@@ -115,7 +117,8 @@ fetch_from_remote() {
 
 # --- // REMOTE_PULL:
 pull_from_remote() {
-    local current_branch=$(git branch --show-current)
+    local current_branch
+    current_branch=$(git branch --show-current)
     prominent "Pulling updates from remote for branch '$current_branch'..."
     git pull origin "$current_branch"
     prominent "Pull complete."
@@ -123,7 +126,8 @@ pull_from_remote() {
 
 # --- // REMOTE_PUSH:
 push_to_remote() {
-    local current_branch=$(git branch --show-current)
+    local current_branch
+    current_branch=$(git branch --show-current)
     prominent "Pushing local branch '$current_branch' to remote..."
     git push -u origin "$current_branch"
     prominent "Push complete."
@@ -137,8 +141,7 @@ list_branches() {
 
 # --- // SWITCH_BRANCH:
 switch_branch() {
-    echo "Enter branch name to switch to:"
-    read -rp branch_name
+    read -rp "Enter branch name to switch to: " branch_name
 
     if git branch --list "$branch_name" > /dev/null; then
         git checkout "$branch_name"
@@ -168,18 +171,18 @@ delete_branch() {
 
 # --- // RECONNECT_OLD_REPO:
 reconnect_old_repo() {
-    read -p "Do you know the remote URL or name? (URL/Name): " reconnect_type
+    read -rp "Do you know the remote URL or name? (URL/Name): " reconnect_type
     case "$reconnect_type" in
         URL)
-            read -p "Enter the remote URL: " reconnect_url
+            read -rp "Enter the remote URL: " reconnect_url
             git remote add origin "$reconnect_url"
             ;;
         Name)
-            read -p "Enter the remote name: " reconnect_name
+            read -rp "Enter the remote name: " reconnect_name
             git remote add origin "git@github.com:$reconnect_name.git"
             ;;
         *)
-	    bug "Invalid option. Exiting..."
+            bug "Invalid option. Exiting..."
             return 1
             ;;
     esac
@@ -241,8 +244,7 @@ manage_stashes() {
 
 # --- // HISTORY:
 merge_branches() {
-    echo "Enter the name of the branch you want to merge into the current branch:"
-    read -rp branch_to_merge
+    read -rp "Enter the name of the branch you want to merge into the current branch: " branch_to_merge
 
     if git branch --list "$branch_to_merge" > /dev/null; then
         git merge "$branch_to_merge"
@@ -260,8 +262,7 @@ view_commit_history() {
 
 # --- // REBASE:
 rebase_branch() {
-    echo "Enter the branch you want to rebase onto:"
-    read -rp base_branch
+    read -rp "Enter the branch you want to rebase onto: " base_branch
 
     if git branch --list "$base_branch" > /dev/null; then
         git rebase "$base_branch"
@@ -285,8 +286,7 @@ resolve_merge_conflicts() {
 
 # -- // CHERRY_PICK:
 cherry_pick_commits() {
-    echo "Enter the commit hash you want to cherry-pick:"
-    read -rp commit_hash
+    read -rp "Enter the commit hash you want to cherry-pick: " commit_hash
 
     git cherry-pick "$commit_hash"
     prominent "Commit '$commit_hash' cherry-picked onto $(git branch --show-current)."
@@ -296,8 +296,7 @@ cherry_pick_commits() {
 restore_branch() {
     echo "Retrieving commit history..."
     git log --oneline | nl -w3 -s': '
-    echo "Enter the commit number to restore: "
-    read commit_number
+    read -rp "Enter the commit number to restore: " commit_number
     commit_hash=$(git log --oneline | sed "${commit_number}q;d" | awk '{print $1}')
 
     if [ -z "$commit_hash" ]; then
@@ -309,18 +308,16 @@ restore_branch() {
     git checkout -b "$branch_name" "$commit_hash"
     prominent "New branch '$branch_name' created at commit $commit_hash."
 
-    echo "Do you want to merge changes into your main branch and push to remote? (y/n): "
-    read merge_choice
+    read -rp "Do you want to merge changes into your main branch and push to remote? (y/n): " merge_choice
 
     if [[ $merge_choice =~ ^[Yy]$ ]]; then
-        echo "Enter the name of your main branch (e.g., 'main' or 'master'): "
-        read main_branch
+        read -rp "Enter the name of your main branch (e.g., 'main' or 'master'): " main_branch
 
         git checkout "$main_branch"
         git merge "$branch_name"
         git push origin "$main_branch"
 
-        echo_green "Changes merged into $main_branch and pushed to remote repository."
+        prominent "Changes merged into $main_branch and pushed to remote repository."
     else
         echo "Skipping merge and push to remote repository."
     fi
@@ -331,11 +328,9 @@ revert_version() {
     echo "Recent actions in the repository:"
     git reflog -10
 
-    echo "Enter the reflog entry number you want to revert to (e.g., HEAD@{2}):"
-    read -r reflog_entry
+    read -rp "Enter the reflog entry number you want to revert to (e.g., HEAD@{2}): " reflog_entry
 
-    echo "Do you want to revert to this point? This action is irreversible. (yes/no):"
-    read -r confirmation
+    read -rp "Do you want to revert to this point? This action is irreversible. (yes/no): " confirmation
 
     if [[ "$confirmation" == "yes" ]]; then
         if git reset --hard "$reflog_entry"; then
@@ -368,7 +363,7 @@ gui() {
     echo -e "${GREEN}9${NC}) Switch branch\t\t\t${GREEN}19${NC}) Resolve Merge Conflicts"
     echo -e "${GREEN}10${NC}) Create new branch\t\t\t${GREEN}20${NC}) Exit"
     echo -e "${GREEN}By your command:${NC}"
-    read -rp choice
+    read -rp " " choice  # Corrected line to capture the user's choice
 
     case "$choice" in
       1) check_and_setup_ssh ;;
@@ -390,7 +385,7 @@ gui() {
       17) view_commit_history ;;
       18) rebase_branch ;;
       19) resolve_merge_conflicts ;;
-      20) echo "Exiting..."; break ;;
+      20) echo "Exiting..."; return ;;  # Corrected exit to return
       *) bug "Invalid choice!";;
     esac
   done
