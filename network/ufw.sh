@@ -59,6 +59,7 @@ ufw_config() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
+    ufw allow 988842/tcp #Aria2c
     ufw allow 6800/tcp # Aria2c
     ufw allow 53682 # Rclone
 

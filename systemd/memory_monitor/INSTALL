@@ -3,9 +3,9 @@
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
     echo "This script requires root privileges. Please enter your password to continue."
-    sudo "$0" "${@:-}"
-    exit $?
+    exec sudo "$0" "${@:-}"
 fi
+
 sleep 1
 echo "💀WARNING💀 - you are now operating as root..."
 sleep 1
@@ -30,7 +30,7 @@ installDependencies() {
     local packages=("systemd" "earlyoom" "procps-ng")
     for pkg in "${packages[@]}"; do
         if ! pacman -Qi "$pkg" &> /dev/null; then
-            sudo pacman -S --noconfirm "$pkg"
+            sudo pacman -S --noconfirm "$pkg" || { echo "Error: Failed to install $pkg"; exit 1; }
         else
             echo "Package $pkg is already installed."
         fi
@@ -112,12 +112,13 @@ reloadEnableStartServices() {
         if systemctl is-enabled --quiet "$service"; then
             echo "Service $service is already enabled."
         else
-            systemctl enable "$service"
+            systemctl enable "$service" || { echo "Failed to enable $service"; return 1; }
         fi
+        
         if systemctl is-active --quiet "$service"; then
             echo "Service $service is already running."
         else
-            systemctl start "$service"
+            systemctl start "$service" || { echo "Failed to start $service"; return 1; }
         fi
     done
 }
@@ -142,6 +143,15 @@ backupServiceFile() {
     fi
 }
 
+# Function to validate systemd service files
+validateServiceFile() {
+    local file="$1"
+    if ! systemd-analyze verify "$file"; then
+        echo "Error: Invalid service file $file"
+        exit 1
+    fi
+}
+
 # Main script logic
 main() {
     checkCommandDependencies
@@ -158,6 +168,12 @@ main() {
     defineWriteFiles "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
     defineWriteFiles "$EARLYOOM_SERVICE_CONTENT" "$EARLYOOM_SERVICE"
     defineWriteFiles "$OOMD_CONF_CONTENT" "$OOMD_CONF"
+
+    # Validate the newly created or updated service files
+    validateServiceFile "$FREECACHE_SERVICE"
+    validateServiceFile "$MEMORY_MONITOR_SERVICE"
+    validateServiceFile "$OOMD_SERVICE"
+    validateServiceFile "$EARLYOOM_SERVICE"
 
     defineWriteFiles "$FREECACHE_SCRIPT_CONTENT" "$BASE_DIR/freecache.sh"
     defineWriteFiles "$MEMORY_MONITOR_SCRIPT_CONTENT" "$BASE_DIR/memory_monitor.sh"
@@ -298,8 +314,8 @@ if [ "\$(id -u)" -ne 0 ]; then
 fi
 
 # Ensure the logging directory and file exist, now that we have root privileges
-mkdir -p "\$(dirname "\$log_file")"
-touch "\$log_file"
+mkdir -p "$(dirname "$log_file")" || { echo "Failed to create log directory"; exit 1; }
+touch "$log_file" || { echo "Failed to create log file"; exit 1; }
 
 adjust_swappiness() {
     local current_swappiness=\$(sysctl vm.swappiness | awk '{print \$3}')

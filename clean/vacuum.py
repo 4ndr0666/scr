@@ -19,7 +19,7 @@ os.makedirs(log_dir, exist_ok=True)
 log_file_path = os.path.join(log_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"))
 logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Spinner function with docstring:
+# Spinner function with improved handling
 def spinner(symbols='|/-\\', speed=0.1):
     """
     A console spinner for indicating progress with customizable symbols and speed.
@@ -40,23 +40,17 @@ def spinner(symbols='|/-\\', speed=0.1):
             sys.stdout.flush()
             time.sleep(speed)
 
-    try:
-        spinner_thread = threading.Thread(target=spin)
-        spinner_thread.start()
-    except Exception as e:
-        logging.error(f"Failed to start spinner thread: {e}")
-        return None, None
-    
-    return spinner_thread, lambda: stop_spinner(spinner_thread)
+    spinner_thread = threading.Thread(target=spin)
+    spinner_thread.start()
 
-def stop_spinner(spinner_thread):
-    """
-    Stops the spinner thread.
-    """
-    global spinner_running
-    spinner_running = False
-    if spinner_thread.is_alive():
-        spinner_thread.join()
+    def stop_spinner():
+        nonlocal spinner_running
+        spinner_running = False
+        spinner_thread.join()  # Wait for the spinner thread to finish
+        sys.stdout.write(' ' * 10 + '\r')  # Clear the spinner line
+        sys.stdout.flush()
+
+    return spinner_thread, stop_spinner
 
 # Colors and symbols
 GREEN = '\033[38;2;57;255;20m'
@@ -145,7 +139,7 @@ def process_dep_scan_log(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Processing dependency scan log...")
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
     dep_scan_log = "/usr/local/bin/dependency_scan.log"
     if os.path.isfile(dep_scan_log):
         try:
@@ -162,7 +156,7 @@ def process_dep_scan_log(log_file):
     else:
         log_and_print(f"{FAILURE} Dependency scan log file not found.", 'error')
     log_and_print(f"{SUCCESS} Dependency scan log processing completed.", 'info')
-    stop_spinner_func()  # Stop the spinner
+    stop_spinner()  # Stop the spinner
 
 def fix_permissions(file_path):
     """
@@ -203,7 +197,7 @@ def manage_cron_job(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Managing system cron jobs...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         # Retrieve existing cron jobs
@@ -241,7 +235,7 @@ def manage_cron_job(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error managing cron jobs: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Stop the spinner
+        stop_spinner()  # Stop the spinner
 
 def update_cron_jobs(new_crons):
     """
@@ -267,11 +261,11 @@ def remove_broken_symlinks(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Searching for broken symbolic links...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         broken_links = subprocess.check_output(["sudo", "find", "/", "-xtype", "l"], stderr=subprocess.STDOUT, text=True).strip()
-        stop_spinner_func()
+        stop_spinner()  # Ensure spinner is stopped
 
         if broken_links:
             broken_links_list = broken_links.split('\n')
@@ -299,10 +293,10 @@ def remove_broken_symlinks(log_file):
             log_and_print(f"{SUCCESS} No broken symbolic links found.", 'info')
 
     except subprocess.CalledProcessError as e:
-        stop_spinner_func()
+        stop_spinner()  # Ensure spinner is stopped
         log_and_print(f"{FAILURE} Error searching for broken symbolic links: {e.output.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def clean_old_kernels(log_file):
     """
@@ -312,7 +306,7 @@ def clean_old_kernels(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Cleaning up old kernel images...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         # Get a list of all installed kernels
@@ -346,7 +340,7 @@ def clean_old_kernels(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def vacuum_journalctl(log_file):
     """
@@ -356,7 +350,7 @@ def vacuum_journalctl(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Vacuuming journalctl logs older than 1 day...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         result = subprocess.run(["sudo", "journalctl", "--vacuum-time=1d"], check=True, capture_output=True, text=True)
@@ -364,7 +358,7 @@ def vacuum_journalctl(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to vacuum journalctl: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def clear_cache(log_file):
     """
@@ -374,7 +368,7 @@ def clear_cache(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Clearing user cache...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         subprocess.run(["sudo", "find", os.path.expanduser("~/.cache/"), "-type", "f", "-atime", "+1", "-delete"], check=True)
@@ -382,7 +376,7 @@ def clear_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear cache: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def update_font_cache(log_file):
     """
@@ -392,7 +386,7 @@ def update_font_cache(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Updating font cache...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         result = subprocess.run(["sudo", "fc-cache", "-fv"], check=True, capture_output=True, text=True)
@@ -400,7 +394,7 @@ def update_font_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to update font cache: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def clear_trash(log_file):
     """
@@ -410,7 +404,7 @@ def clear_trash(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Clearing trash...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     trash_paths = [
         os.path.expanduser("~/.local/share/Trash/*"),
@@ -425,7 +419,7 @@ def clear_trash(log_file):
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error: Failed to clear trash for path {path}: {e.stderr.strip()}", 'error')
 
-    stop_spinner_func()  # Ensure spinner is stopped
+    stop_spinner()  # Ensure spinner is stopped
 
 def optimize_databases(log_file):
     """
@@ -435,7 +429,7 @@ def optimize_databases(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Optimizing system databases...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     def run_command(command, success_message, failure_message):
         try:
@@ -474,7 +468,7 @@ def optimize_databases(log_file):
     except Exception as e:
         log_and_print(f"{FAILURE} Unexpected error during database optimization: {str(e)}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def clean_aur_dir(log_file):
     """
@@ -484,7 +478,7 @@ def clean_aur_dir(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Cleaning AUR directory...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         # Using trizen to find the AUR directory
@@ -520,7 +514,7 @@ def clean_aur_dir(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clean AUR directory: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def handle_pacnew_pacsave(log_file):
     """
@@ -530,7 +524,7 @@ def handle_pacnew_pacsave(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Handling .pacnew and .pacsave files...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         pacnew_files = subprocess.check_output(["sudo", "find", "/etc", "-type", "f", "-name", "*.pacnew"], text=True).splitlines()
@@ -547,7 +541,14 @@ def handle_pacnew_pacsave(log_file):
             log_and_print(f"{INFO} .pacsave files found. Consider reviewing:", 'info')
             for file in pacsave_files:
                 print(file)
-                action = input("Do you want to remove, skip, or overwrite this file? (remove/skip/overwrite): ").strip().lower()
+                valid_action = False
+                while not valid_action:
+                    action = input("Do you want to remove, skip, or overwrite this file? (remove/skip/overwrite): ").strip().lower()
+                    if action in ["remove", "skip", "overwrite"]:
+                        valid_action = True
+                    else:
+                        print(f"{FAILURE} Invalid input. Please enter 'remove', 'skip', or 'overwrite'.")
+
                 if action == "remove":
                     os.remove(file)
                     actions_summary.append(f"Removed .pacsave file: {file}")
@@ -570,7 +571,7 @@ def handle_pacnew_pacsave(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error handling pacnew and pacsave files: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def verify_installed_packages(log_file):
     """
@@ -580,7 +581,7 @@ def verify_installed_packages(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Checking for packages with missing files...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         choice = input("Do you want to check a single package or system-wide? (single/system): ").strip().lower()
@@ -610,7 +611,7 @@ def verify_installed_packages(log_file):
     except Exception as e:
         log_and_print(f"{FAILURE} Unexpected error: {str(e)}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def check_failed_cron_jobs(log_file):
     """
@@ -659,11 +660,15 @@ def clear_temp_folder(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Clearing the temporary folder...", 'info')
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
+
     try:
         subprocess.run(["sudo", "find", "/tmp", "-type", "f", "-atime", "+2", "-delete"], check=True)
         log_and_print(f"{SUCCESS} Temporary folder cleared.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to clear the temporary folder: {e.stderr.strip()}", 'error')
+    finally:
+        stop_spinner()  # Ensure spinner is stopped
 
 def check_rmshit_script(log_file=None):
     """
@@ -804,6 +809,7 @@ def force_log_rotation(log_file):
         log_and_print(f"{SUCCESS} Log rotation forced.", 'info')
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error: Failed to force log rotation: {e.stderr.strip()}", 'error')
+
 def configure_zram(log_file):
     """
     Configure ZRam for better memory management.
@@ -811,12 +817,12 @@ def configure_zram(log_file):
     Args:
         log_file (str): Path to the log file where processing information is logged.
     """
-    log_and_print(f"{INFO} Configuring ZRam for better memory management...", 'info')
+    log_and_print(f"INFO: Configuring ZRam for better memory management...", 'info')
 
     if shutil.which("zramctl"):
         try:
             # Calculate 25% of the total memory
-            mem_total_cmd = "awk '/MemTotal/ {printf \"%d\\n\", $2 * 1024 * 0.25}' /proc/meminfo"
+            mem_total_cmd = "awk '/MemTotal/ {print int($2 * 1024 * 0.25)}' /proc/meminfo"
             mem_total_output = subprocess.check_output(mem_total_cmd, shell=True).strip()
             log_and_print(f"Memory calculation output: {mem_total_output}", 'info')
             mem_total = int(mem_total_output)
@@ -825,12 +831,14 @@ def configure_zram(log_file):
             try:
                 # Find or create a new zram device with the specified size
                 log_and_print("Attempting to find an existing zram device...", 'info')
-                zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+                zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], 
+                                             stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
                 log_and_print(f"Using existing zram device: {zram_device}", 'info')
             except subprocess.CalledProcessError:
                 log_and_print("No free zram device found. Creating a new one...", 'info')
                 subprocess.run(["sudo", "modprobe", "zram"], check=True)
-                zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+                zram_device = subprocess.run(["sudo", "zramctl", "--find", "--size", str(mem_total)], 
+                                             stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
                 log_and_print(f"Created new zram device: {zram_device}", 'info')
 
             # Set up the zram device as swap
@@ -838,12 +846,12 @@ def configure_zram(log_file):
             subprocess.run(["sudo", "mkswap", zram_device], check=True)
             subprocess.run(["sudo", "swapon", zram_device, "-p", "32767"], check=True)
 
-            log_and_print(f"{SUCCESS} ZRam configured successfully on {zram_device} with size {mem_total} bytes.", 'info')
+            log_and_print(f"SUCCESS: ZRam configured successfully on {zram_device} with size {mem_total} bytes.", 'info')
         except subprocess.CalledProcessError as e:
-            log_and_print(f"{FAILURE} Error configuring ZRam: {e.stderr.strip() if e.stderr else str(e)}", 'error')
+            log_and_print(f"FAILURE: Error configuring ZRam: {str(e)}", 'error')
     else:
-        log_and_print(f"{FAILURE} ZRam not available. Please install zramctl.", 'error')
-
+        log_and_print("FAILURE: ZRam not available. Please install zramctl.", 'error')
+        
 def check_zram_configuration(log_file):
     """
     Check ZRam configuration and configure if not already set.
@@ -851,17 +859,29 @@ def check_zram_configuration(log_file):
     Args:
         log_file (str): Path to the log file where processing information is logged.
     """
-    log_and_print(f"{INFO} Checking ZRam configuration...", 'info')
+    log_and_print("INFO: Checking ZRam configuration...", 'info')
+    
     try:
-        zram_status = subprocess.check_output(["zramctl"], text=True)
+        zram_status = subprocess.check_output(["zramctl"], text=True).strip()
+        
         if zram_status:
-            log_and_print(f"{SUCCESS} ZRam is configured correctly.", 'info')
+            log_and_print(f"SUCCESS: ZRam is configured. Current status:\n{zram_status}", 'info')
+            
+            # Optional: Further check if the ZRam is being used as swap
+            swap_status = subprocess.check_output(["swapon", "--show"], text=True)
+            if "/dev/zram" in swap_status:
+                log_and_print(f"SUCCESS: ZRam is actively used as swap:\n{swap_status}", 'info')
+            else:
+                log_and_print("WARNING: ZRam device exists but is not used as swap.", 'warning')
         else:
-            log_and_print(f"{INFO} ZRam is not configured. Configuring now...", 'info')
+            log_and_print("INFO: ZRam is not configured. Configuring now...", 'info')
             configure_zram(log_file)
+            
     except subprocess.CalledProcessError as e:
-        log_and_print(f"{FAILURE} Error: Failed to check ZRam configuration: {e.stderr.strip()}", 'error')
-
+        log_and_print(f"FAILURE: Error while checking ZRam configuration: {e}", 'error')
+    except Exception as ex:
+        log_and_print(f"FAILURE: Unexpected error: {str(ex)}", 'error')
+        
 def adjust_swappiness(log_file):
     """
     Adjust the swappiness value for better performance.
@@ -937,7 +957,7 @@ def clean_package_cache(log_file):
         log_file (str): Path to the log file where processing information is logged.
     """
     log_and_print(f"{INFO} Cleaning package cache...", 'info')
-    spinner_thread, stop_spinner_func = spinner()  # Start the spinner
+    spinner_thread, stop_spinner = spinner()  # Start the spinner
 
     try:
         subprocess.run(["sudo", "pacman", "-Sc", "--noconfirm"], check=True)
@@ -945,7 +965,7 @@ def clean_package_cache(log_file):
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error cleaning package cache: {e.stderr.strip()}", 'error')
     finally:
-        stop_spinner_func()  # Ensure spinner is stopped
+        stop_spinner()  # Ensure spinner is stopped
 
 def run_all_tasks(log_file):
     """
@@ -1034,6 +1054,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-    
