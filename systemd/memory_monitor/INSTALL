@@ -21,6 +21,7 @@ MEMORY_MONITOR_SERVICE="/etc/systemd/system/memory_monitor.service"
 OOMD_SERVICE="/etc/systemd/system/systemd-oomd.service"
 EARLYOOM_SERVICE="/etc/systemd/system/earlyoom.service"
 OOMD_CONF="/etc/systemd/oomd.conf"
+log_file="/var/log/freecache.log"
 
 # Initialize EARLYOOM_BIN as empty
 EARLYOOM_BIN=""
@@ -114,7 +115,7 @@ reloadEnableStartServices() {
         else
             systemctl enable "$service" || { echo "Failed to enable $service"; return 1; }
         fi
-        
+
         if systemctl is-active --quiet "$service"; then
             echo "Service $service is already running."
         else
@@ -290,7 +291,7 @@ SwapUsedLimit=75%
 # oomd will act if the memory pressure exceeds this limit.
 DefaultMemoryPressureLimit=70%
 
-# DefaultMemoryPressureDurationSec specifies the duration memory pressure must 
+# DefaultMemoryPressureDurationSec specifies the duration memory pressure must
 # exceed the limit for oomd to act.
 DefaultMemoryPressureDurationSec=20s
 EOF

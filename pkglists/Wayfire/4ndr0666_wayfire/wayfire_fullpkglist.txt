@@ -2,7 +2,6 @@ acpi
 alacritty
 alsa-firmware
 alsa-support
-amd-ucode
 amdapp-sdk
 amf-headers
 ancient-packages
@@ -73,7 +72,6 @@ archcraft-installer
 archcraft-mirrorlist
 archcraft-music
 archcraft-neofetch
-archcraft-omz
 archcraft-plymouth-theme
 archcraft-randr
 archcraft-ranger
@@ -156,7 +154,6 @@ cups-filters
 cups-pdf
 curlftpfs
 cyberdrop-dl
-cyberdrop-dl-debug
 cylon
 cython
 darkhttpd
@@ -217,7 +214,6 @@ fsarchiver
 fscrypt
 fuse2fs
 fuseiso
-futura-icon-pack-git
 galculator
 gallery-dl-bin
 garuda-assistant
@@ -321,10 +317,10 @@ kdoctools5
 kernel-modules-hook
 kitemmodels
 kitemmodels5
-kora-icon-theme-git
 ksuperkey
 kvantum
 kvantum-theme-catppuccin-git
+kvantum-theme-fluent-git
 kvantum-theme-materia
 kvantum-theme-nordic-git
 kvantum-theme-orchis-git
@@ -478,7 +474,6 @@ linux-atm
 linux-firmware
 linux-firmware-marvell
 linux-headers
-linux-wifi-hotspot
 linux-zen
 linux-zen-headers
 lite-xl
@@ -500,7 +495,6 @@ make
 man-db
 man-pages
 mbedtls
-mc
 mcfly
 mdadm
 media-downloader
@@ -521,7 +515,6 @@ mhwd-nvidia-390xx
 mhwd-nvidia-470xx
 micro
 min-browser-bin
-mkchromecast-git
 mkinitcpio-firmware
 mkinitcpio-nfs-utils
 mkvtoolnix-cli
@@ -555,11 +548,9 @@ networkmanager-pptp
 networkmanager-strongswan
 networkmanager-support
 networkmanager-vpnc
-newsboat
 nfs-utils
 nilfs-utils
 ninja
-nitrux-icon-theme
 nm-connection-editor
 nmap
 noto-color-emoji-fontconfig
@@ -803,7 +794,6 @@ vapoursynth-plugin-svpflow1
 vapoursynth-plugin-svpflow2-bin
 vdpauinfo
 vi
-vibrancy-colors
 video-cut-git
 viewnior
 vim
@@ -872,7 +862,6 @@ xwallpaper
 xz
 yad
 yank
-yaru-icon-theme
 yasm
 yay
 yaycache

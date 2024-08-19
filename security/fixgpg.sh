@@ -3,11 +3,11 @@
 # --- // Colors:
 GRE="\033[32m" # Green
 RED="\033[31m" # Red
-c0="\033[0m"    # Reset color
+c0="\033[0m"   # Reset color
 
-# --- // Input_validation:
+# --- // validation:
 validate_input() {
-    if [[ $1 =~ ^[0-9]+$ ]] && [ $1 -ge 1 ] && [ $1 -le 17 ]; then
+    if [[ $1 =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 17 ]; then
         return 0
     else
         echo "Invalid input. Please enter a number between 1 and 17."
@@ -21,12 +21,12 @@ executeFunctionWithFeedback() {
     echo "Starting: $1"
     echo -e "\033[0m" # Reset color
 
-    $1
+    eval "$1"
 
     echo -e "\033[1;32m" # Green color
     echo "$1 completed successfully."
     echo -e "\033[0m" # Reset color
-    read -p "Press any key to continue..." -n 1
+    read -rp "Press any key to continue..." -n 1
 }
 
 # --- // Set_trap_for_SIGINT:
@@ -73,26 +73,44 @@ backupGnupgDir() {
         return 1
     fi
     echo "Backing up the .gnupg directory to $backupDir"
-    cp -r ~/.gnupg "$backupDir" || { echo "Backup failed"; exit 1; }
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo rsync -a --backup ~/.gnupg/ "$backupDir" || { echo "Backup failed"; exit 1; }
+    else
+        rsync -a --backup ~/.gnupg/ "$backupDir" || { echo "Backup failed"; exit 1; }
+    fi
     echo "Backup completed successfully."
 }
 
 # --- // New_dir:
 createNewGnupgDir() {
-    if [ -d ~/.gnupg ]; then
+    if [ -d "$HOME/.gnupg" ]; then
         echo "A .gnupg directory already exists. Please rename or remove it before creating a new one."
         exit 1
     fi
+
     echo "Creating a new .gnupg directory..."
-    mkdir ~/.gnupg && chmod 700 ~/.gnupg || { echo "Failed to create .gnupg directory"; exit 1; }
-    echo ".gnupg directory created successfully."
+    mkdir -pv ~/.gnupg && chmod 700 ~/.gnupg
+    if [ -d "$HOME/.gnupg" ]; then
+        echo ".gnupg directory created successfully."
+    else
+        echo "Failed to create .gnupg directory"
+        exit 1
+    fi
 }
 
 # --- // Restore_backup:
 restoreGnupgData() {
     local backupDir="$1"
+    if [ ! -d "$backupDir" ]; then
+        echo "Invalid backup directory path: $backupDir"
+        return 1
+    fi
     echo "Restoring GnuPG data from $backupDir..."
-    cp -r "$backupDir"/.gnupg/* ~/.gnupg/ || { echo "Restore failed"; exit 1; }
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo cp -r "$backupDir"/.gnupg/* ~/.gnupg/ || { echo "Restore failed"; exit 1; }
+    else
+        cp -r "$backupDir"/.gnupg/* ~/.gnupg/ || { echo "Restore failed"; exit 1; }
+    fi
     echo "Data restored successfully."
 }
 
@@ -100,7 +118,11 @@ restoreGnupgData() {
 setCorrectPermissions() {
     echo "Setting correct permissions for .gnupg directory and its contents..."
     chmod 700 ~/.gnupg
-    find ~/.gnupg -type f -exec chmod 600 {} \;
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo find "$HOME"/.gnupg -type f -exec chmod 600 {} \;
+    else
+        find "$HOME"/.gnupg -type f -exec chmod 600 {} \;
+    fi
     echo "Permissions set successfully."
 }
 
@@ -148,15 +170,23 @@ reinitializeGpgAgent() {
 # --- // Clean_testdir:
 cleanUpTestDir() {
     local dir="$1"
-    echo "Removing the test GnuPG directory $dir..."
-    rm -rf "$dir"
+    if [ -d "$dir" ]; then
+        echo "Removing the test GnuPG directory $dir..."
+        rm -rf "$dir"
+    else
+        echo "Test directory $dir does not exist."
+    fi
 }
 
 # --- // Incremental_backups:
 incrementalBackupGnupg() {
     local backupDir="$1"
     echo "Performing incremental backup of .gnupg directory..."
-    rsync -a --backup ~/.gnupg/ "$backupDir"
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo rsync -a --backup ~/.gnupg/ "$backupDir"
+    else
+        rsync -a --backup ~/.gnupg/ "$backupDir"
+    fi
     echo "Incremental backup completed."
 }
 
@@ -216,16 +246,9 @@ exportKeysToFormats() {
 automatedSecurityAudit() {
     echo "Performing automated security audit..."
 
-    # Check for weak algorithms
-    if gpg --list-config | grep -q 'weak-digest'; then
-        echo "Warning: Weak algorithms found."
-    else
-        echo "No weak algorithms in use."
-    fi
-
     # Check for weak keys
     if gpg --list-keys | grep -q 'RSA2048'; then
-        echo "Warning: Weak RSA keys found."
+        echo "Warning: Weak RSA keys found. Consider using RSA 4096 or ECC keys for stronger security."
     else
         echo "No weak RSA keys in use."
     fi
@@ -241,15 +264,28 @@ automatedSecurityAudit() {
         echo "All permissions are correctly set."
     fi
 
-
     echo "Automated security audit completed."
+}
+
+# --- // Enhanced Input Prompt Handling:
+prompt_for_input() {
+    local prompt="$1"
+    local timeout="$2"
+    local default="$3"
+
+    # If no input within timeout, use default
+    read -rp "$prompt" -t "$timeout" choice || choice="$default"
+
+    echo "$choice"
 }
 
 # --- // Menu_logic:
 main() {
     while true; do
         display_menu
-        read -r choice
+
+        # Use the prompt_for_input function with a 10-second timeout and a default choice of '17'
+        choice=$(prompt_for_input "By your command: " 10 "17")
 
         if ! validate_input "$choice"; then
             continue
@@ -257,49 +293,53 @@ main() {
 
         case "$choice" in
             1)
-	       read -p "Enter backup directory path: " backupDir
-	       executeFunctionWithFeedback "backupGnupgDir '$backupDir'"
-	       ;;
+                read -rp "Enter backup directory path: " backupDir
+                executeFunctionWithFeedback "backupGnupgDir '$backupDir'"
+                ;;
             2)
-	       executeFunctionWithFeedback "createNewGnupgDir"
-	       ;;
+                executeFunctionWithFeedback "createNewGnupgDir"
+                ;;
             3)
-	       read -p "Enter restore directory path: " restoreDir
-	       executeFunctionWithFeedback "restoreGnupgData '$restoreDir'"
-	       ;;
-            4) executeFunctionWithFeedback "setCorrectPermissions"
-	       ;;
-            5) executeFunctionWithFeedback "listGpgKeys"
-	       ;;
-            6) executeFunctionWithFeedback "generateGpgKey"
-	       ;;
+                read -rp "Enter restore directory path: " restoreDir
+                executeFunctionWithFeedback "restoreGnupgData '$restoreDir'"
+                ;;
+            4)
+                executeFunctionWithFeedback "setCorrectPermissions"
+                ;;
+            5)
+                executeFunctionWithFeedback "listGpgKeys"
+                ;;
+            6)
+                executeFunctionWithFeedback "generateGpgKey"
+                ;;
             7)
-	       read -p "Enter key ID for armored key creation: " keyId
-	       executeFunctionWithFeedback "createArmoredKey '$keyId'"
-	       ;;
+                read -rp "Enter key ID for armored key creation: " keyId
+                executeFunctionWithFeedback "createArmoredKey '$keyId'"
+                ;;
             8)
-	       read -p "Enter key ID for exporting GPG key: " keyId
-	       executeFunctionWithFeedback "exportGpgKey '$keyId'"
-	       ;;
+                read -rp "Enter key ID for exporting GPG key: " keyId
+                executeFunctionWithFeedback "exportGpgKey '$keyId'"
+                ;;
             9)
-	       read -p "Enter key ID for exporting and adding to service: " keyId
-	       read -p "Enter service name: " serviceName
-	       executeFunctionWithFeedback "exportAndAddGpgKey '$keyId' '$serviceName'"
-	       ;;
-            10) executeFunctionWithFeedback "reinitializeGpgAgent"
-		;;
+                read -rp "Enter key ID for exporting and adding to service: " keyId
+                read -rp "Enter service name: " serviceName
+                executeFunctionWithFeedback "exportAndAddGpgKey '$keyId' '$serviceName'"
+                ;;
+            10)
+                executeFunctionWithFeedback "reinitializeGpgAgent"
+                ;;
             11)
-		read -p "Enter path to test dir for cleanup: " testDir
-		executeFunctionWithFeedback "cleanUpTestDir '$testDir'"
-		;;
+                read -rp "Enter path to test dir for cleanup: " testDir
+                executeFunctionWithFeedback "cleanUpTestDir '$testDir'"
+                ;;
             12)
-		read -p "Enter path to incremental backup dir: " backupDir
-		executeFunctionWithFeedback "incrementalBackupGnupg '$backupDir'"
-		;;
+                read -rp "Enter path to incremental backup dir: " backupDir
+                executeFunctionWithFeedback "incrementalBackupGnupg '$backupDir'"
+                ;;
             13)
-		printf "Select security template:\n1) high-security\n2) standard\n"
+                printf "Select security template:\n1) high-security\n2) standard\n"
                 printf "Enter your choice (1 or 2): "
-                read templateChoice
+                read -rp templateChoice
                 if [ "$templateChoice" -eq 1 ]; then
                     template="high-security"
                 else
@@ -308,14 +348,14 @@ main() {
                 executeFunctionWithFeedback "applySecurityTemplate '$template'"
                 ;;
             14)
-		read -p "Enter key type for advanced GPG key (e.g., RSA): " keyType
-                read -p "Enter key length for advanced GPG key (e.g., 4096): " keyLength
+                read -rp "Enter key type for advanced GPG key (e.g., RSA): " keyType
+                read -rp "Enter key length for advanced GPG key (e.g., 4096): " keyLength
                 executeFunctionWithFeedback "generateAdvancedGpgKey '$keyType' '$keyLength'"
                 ;;
             15)
-		read -p "Enter key ID for export: " keyId
+                read -rp "Enter key ID for export: " keyId
                 echo "Select format: 1) ascii-armored 2) binary"
-                read -p "Enter your choice (1 or 2): " formatChoice
+                read -rp "Enter your choice (1 or 2): " formatChoice
                 if [ "$formatChoice" -eq 1 ]; then
                     format="ascii-armored"
                 else
@@ -323,16 +363,19 @@ main() {
                 fi
                 executeFunctionWithFeedback "exportKeysToFormats '$keyId' '$format'"
                 ;;
-            16) executeFunctionWithFeedback "automatedSecurityAudit"
-	        ;;
-            17) echo "Exiting program."
-		cleanup
-		exit 0
-		;;
-            *) echo "Invalid option. Please try again."
-		;;
-    esac
-done
+            16)
+                executeFunctionWithFeedback "automatedSecurityAudit"
+                ;;
+            17)
+                echo "Exiting program."
+                cleanup
+                exit 0
+                ;;
+            *)
+                echo "Invalid option. Please try again."
+                ;;
+        esac
+    done
 }
 
 # --- // Execute:
