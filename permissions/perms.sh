@@ -8,12 +8,24 @@
 #  |   __/ \___  >__|  |__|_|  /____  > /\ /____  >___|  /
 #  |__|        \/            \/     \/  \/      \/     \/
 
+# Uncomment the below line only if you need strict error handling
+# set -euo pipefail
 
 # ---- // AUTO-ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
-  sudo "$0" "$@"
-  exit $?
+    sudo "$0" "$@"
+    exit $?
 fi
+
+# Define a dictionary (associative array) for menu options
+declare -A menu_map=(
+    ["1"]="Change Ownership/Permissions"
+    ["2"]="Compare Package Permissions"
+    ["3"]="Get Directory ACL"
+    ["4"]="Help"
+    ["5"]="CompAudit"
+    ["6"]="Exit"
+)
 
 # ---- // LOGGING:
 log() {
@@ -28,103 +40,58 @@ log() {
 }
 
 # ---- // CONFIG SETUP:
-CONFIG_DIR="/etc/perms_script"
-CONFIG_FILE="$CONFIG_DIR/perms_config.cfg"
-CONFIGURED=false
+CONFIG_FILE="/etc/perms_config.cfg"
 DEFAULT_USER=""
 DEFAULT_GROUP=""
-
 RECURSIVE_CHANGE=false
 
-# Ensure the configuration directory exists
-if [ ! -d "$CONFIG_DIR" ]; then
-    sudo mkdir -p "$CONFIG_DIR"
-    sudo chmod 700 "$CONFIG_DIR"
-fi
-
-# --- // PROCESS_ARGS:
-while getopts ":r" opt; do
-  case $opt in
-    r)
-      RECURSIVE_CHANGE=true
-      shift # Remove the processed argument
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      exit 1
-      ;;
-  esac
-done
-
-# ---- // LOAD_USER_CONFIG:
+# ---- // LOAD CONFIG:
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
         source "$CONFIG_FILE"
-        [ -z "$DEFAULT_USER" ] && CONFIGURED=false
-        [ -z "$DEFAULT_GROUP" ] && CONFIGURED=false
+        [ -z "$DEFAULT_USER" ] || [ -z "$DEFAULT_GROUP" ] && echo "Invalid config file. Please reconfigure." && prompt_config
     else
-        CONFIGURED=false
+        prompt_config
     fi
 }
 
-# ---- // SAVE_USER_CONFIG:
+# ---- // SAVE CONFIG:
 save_config() {
-    echo "CONFIGURED=true" | sudo tee "$CONFIG_FILE" > /dev/null
-    echo "DEFAULT_USER=$1" | sudo tee -a "$CONFIG_FILE" > /dev/null
+    echo "DEFAULT_USER=$1" | sudo tee "$CONFIG_FILE" > /dev/null
     echo "DEFAULT_GROUP=$2" | sudo tee -a "$CONFIG_FILE" > /dev/null
     sudo chmod 600 "$CONFIG_FILE"
+    echo "Configuration saved."
 }
 
-# --- // FIRST_RUN_USER_CONFIG:
+# --- // PROMPT CONFIGURATION:
 prompt_config() {
     echo "First run configuration:"
-    echo -n "Enter default user: "
-    read -r user
-    echo -n "Enter default group: "
-    read -r group
+    read -rp "Enter default user: " user
+    read -rp "Enter default group: " group
     save_config "$user" "$group"
-    echo "Configuration saved. Please rerun the script."
+    echo "Please rerun the script."
     exit 0
 }
 
-# --- // CALL_CONFIG:
-load_config
-if [[ "$CONFIGURED" != "true" ]]; then
-    prompt_config
-fi
-
-# ---- // BACKUP_STACK:
+# ---- // BACKUP HANDLING (IDEMPOTENCY):
 backup_stack=()
 
 backup_file() {
     local original_file="$1"
-    local backup_file
-    backup_file="${original_file}.backup_$(date +%s)"
+    local backup_file="${original_file}.backup_$(date +%s)"
     cp "$original_file" "$backup_file" || { log "Backup failed for $original_file"; return 1; }
     backup_stack+=("$backup_file")
 }
 
-# --- // ROLLBACK_STACK:
 rollback() {
     for backup in "${backup_stack[@]}"; do
-        original="${backup%.backup_*}"
+        local original="${backup%.backup_*}"
         mv "$backup" "$original" || { log "Rollback failed for $backup"; }
     done
     backup_stack=()
 }
 
-# --- // ERROR_HANDLING:
-handle_error() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        echo "Error occurred. Rolling back..."
-        rollback
-        log "Error occurred with exit code $exit_code. Rolled back changes."
-        exit $exit_code
-    fi
-}
-
-# --- // DIR_VALIDATION:
+# ---- // VALIDATE DIRECTORY:
 validate_directory() {
     local directory="$1"
     if [[ ! -d "$directory" ]]; then
@@ -134,113 +101,43 @@ validate_directory() {
     fi
 }
 
-# --- // CONFIRMATION:
+# ---- // CONFIRMATION:
 confirm_action() {
     local message="$1"
-    echo -n "$message (y/n): "
-    read -r confirm
+    read -rp "$message (y/n): " confirm
     [[ "$confirm" == "y" || "$confirm" == "Y" ]]
 }
 
-# --- // PERMISSIONS_HELPER:
-set_directory_permissions() {
-    local mode=$1
-    shift
-    local directories=("$@")
-    echo "Setting mode $mode for ${directories[*]}"
-    sudo chmod "$mode" "${directories[@]}" || { log "Failed to set directory permissions."; exit 1; }
+# ---- // PRINT CURRENT DIRECTORY PERMISSIONS:
+print_current_directory_permissions() {
+    local target="${1:-$PWD}"
+    local owner=$(stat -c '%U' "$target")
+    local group=$(stat -c '%G' "$target")
+    
+    # Set text color to cyan
+    tput setaf 6
+    
+    echo "# dir: $target"
+    echo "# owner: $owner"
+    echo "# group: $group"
+    
+    getfacl --absolute-names "$target" 2>/dev/null | grep -E 'user::|group::|other::'
+    
+    # Reset text color
+    tput sgr0
+    
+    echo
 }
 
-# --- // CHMOD_DOCUMENTATION:
-display_help() {
-    clear
-    echo -e "\e[36m# --- // CHMOD_INDEX // ========"
-    echo ""
-    echo "DEFAULT SUDOERS:"
-    echo "chown -c root:root /etc/sudoers"
-    echo "chmod -c 0440 /etc/sudoers"
-    echo ""
-    echo "REMOVE EXECUTABLE"
-    echo "644: +rw for owner, no permissions for group, +r for others"
-    echo ""
-    echo "USER ONLY ACCESS"
-    echo "600: +rw for owner, no permissions for group or others"
-    echo ""
-    echo "751: +rwx for owner, +rx for group, +x for others"
-    echo ""
-    echo "755: +rwx for owner, +rwx for group, +rx for others"
-    echo ""
-    echo "744: +wx for owner, no permissions for group, +r for others"
-    echo ""
-    echo "711: +rwx for owner, no permissions for group, +x for others"
-    echo ""
-    echo "700: +rwx for owner, no permissions for group or others"
-    echo ""
-    echo "640: +rwx for owner, +r for group, no permissions for others"
-    echo ""
-    echo "777: +rwx for owner, +rwx for group, +rwx for others"
-    echo ""
-    echo "666: +rw for owner, +rw for group, +rw for others"
-    echo ""
-    echo "400: +r for owner, no permissions for group or others"
-    echo -e "\e[0m"
-    echo ""
-    echo "Press any key to return to the main menu."
-    read -rn 1
-}
-
-# --- // SPINNER:
-spin() {
-    local pid=$1
-    local delay=0.1
-    local spinstr='|/-\'
-    while kill -0 "$pid" 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf "\e[1;34m\r[*] \e[1;32mIt will take time..Please wait...  [\e[1;33m%c\e[1;32m]\e[0m  " "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-    done
-    printf "\e[1;33m[Done]\e[0m\n"
-}
-
-# --- // CALL_CONFIG:
-load_config
-if [[ "$CONFIGURED" != "true" ]]; then
-    prompt_config
-fi
-
-# --- // SHOW_MENU:
-display_menu() {
-    local recursive_display=""
-    if [ "$RECURSIVE_CHANGE" = true ]; then
-        recursive_display=" (R)"
-    fi
-
-    printf "1. Chown%s     |    4. Modes\n" "$recursive_display"
-    printf "2. Compare   |    5. CompAudit\n"
-    printf "3. Getfacl   |    6. Exit\n\n"
-    echo -n "$: "
-}
-
-# --- // COMMAND_SUMMARY:
-print_facl() {
-    local target="$1"
-    echo -e "\e[36m$(getfacl "$target")\e[0m"
-}
-
-# --- // CHANGE_PERMISSIONS:
+# ---- // CHANGE OWNERSHIP AND PERMISSIONS:
 change_ownership_permissions() {
     local target_directory=${1:-$PWD}
     echo "'1' Ownership, '2' Permissions, '3' Both:"
     read -r change_type
 
-    # Determine the chmod and chown options based on the recursive flag
     local chmod_options=""
     local chown_options=""
-    if [ "$RECURSIVE_CHANGE" = true ]; then
-        chmod_options="-R"
-        chown_options="-R"
-    fi
+    [ "$RECURSIVE_CHANGE" = true ] && chmod_options="-R" && chown_options="-R"
 
     case $change_type in
         1) sudo chown $chown_options "$DEFAULT_USER:$DEFAULT_GROUP" "$target_directory" ;;
@@ -255,67 +152,24 @@ change_ownership_permissions() {
     print_facl "$target_directory"
 }
 
-# --- // COMPARE_PERMISSIONS:
+# ---- // COMPARE PACKAGE PERMISSIONS:
 compare_package_permissions() {
     echo "Checking package permissions against current permissions..."
-    local mismatched_files=()
-
-    # Compare the current permissions with the package database
-    while IFS= read -r file; do
-        if [ -e "$file" ]; then
-            local current_perms
-            local expected_perms
-            current_perms=$(stat -c "%a" "$file")
-            expected_perms=$(pacman -Qkk "$file" | awk '{print $2}' | head -n 1)
-            if [ "$current_perms" != "$expected_perms" ]; then
-                mismatched_files+=("$file")
-                echo "Mismatch: $file (Current: $current_perms, Expected: $expected_perms)"
-            fi
-        fi
-    done < <(sudo pacman -Qlq)
-
-    local total_mismatched=${#mismatched_files[@]}
-    echo "Total mismatched files: $total_mismatched"
-
-    # Ask for user confirmation to correct the infractions
-    if [[ $total_mismatched -ne 0 ]]; then
-        if confirm_action "Do you want to correct these mismatched permissions?"; then
-            for file in "${mismatched_files[@]}"; do
-                # Backup the current state
-                local backup_file="${file}.backup_$(date +%s)"
-                echo "Backing up $file to $backup_file..."
-                sudo cp "$file" "$backup_file"
-
-                # Correct the permissions
-                local expected_perms
-                expected_perms=$(pacman -Qkk "$file" | awk '{print $2}' | head -n 1)
-                echo "Fixing $file permissions from $current_perms to $expected_perms..."
-                sudo chmod "$expected_perms" "$file"
-            done
-            echo "All mismatched permissions have been corrected."
-            log "Corrected $total_mismatched files with mismatched permissions."
-        else
-            echo "No changes were made."
-            log "Found $total_mismatched files with mismatched permissions. No changes were made."
-        fi
-    else
-        echo "No mismatched permissions found."
-        log "No mismatched permissions found."
-    fi
+    sudo pacman -Qlq | while read -r file; do
+        [ -e "$file" ] && [[ "$(stat -c "%a" "$file")" != "$(sudo pacman -Qkk "$file" | awk '{print $2}')" ]] && echo "Mismatch: $file"
+    done
 }
 
-# --- // GETFACL:
+# ---- // GET DIRECTORY ACL:
 get_directory_acl() {
     local directory="$1"
     echo "Getting ACL of the directory..."
     sudo getfacl -R "$directory"
 }
 
-# --- // ZSH_COMPAUDIT:
+# ---- // COMPAUDIT:
 compaudit() {
     echo "Performing CompAudit for Zsh configuration..."
-
-    # Using compaudit to find insecure items
     mapfile -t insecure_items < <(compaudit)
     local total_insecure=${#insecure_items[@]}
 
@@ -327,32 +181,90 @@ compaudit() {
             echo "$item"
         done
         echo "Total insecure items: $total_insecure"
-
-        # Ask for user confirmation to correct the infractions
-        if confirm_action "Do you want to correct these insecure items?"; then
-            for item in "${insecure_items[@]}"; do
-                echo "Fixing $item..."
-                sudo chown -R "$DEFAULT_USER:$DEFAULT_GROUP" "$item"
-                sudo chmod -R 755 "$item"
-            done
-            echo "All insecure items have been corrected."
-            log "CompAudit for Zsh completed with corrections applied to $total_insecure insecure items."
-        else
-            echo "No changes were made."
-            log "CompAudit for Zsh completed with $total_insecure insecure items found. No changes were made."
-        fi
     fi
+    log "CompAudit for Zsh completed with $total_insecure insecure items"
 }
 
-# --- // ARGUMENT_VALIDATION:
+# ---- // DISPLAY HELP:
+display_help() {
+    clear
+    echo "# --- // CHMOD_INDEX // ========"
+    echo ""
+    echo "DEFAULT SUDOERS:"
+    echo "chown -c root:root /etc/sudoers"
+    echo "chmod -c 0440 /etc/sudoers"
+    echo ""
+    echo "REMOVE EXECUTABLE:"
+    echo "644: +rw for owner, no permissions for group, +r for others"
+    echo ""
+    echo "USER ONLY ACCESS:"
+    echo "600: +rw for owner, no permissions for group or others"
+    echo ""
+    echo "751: +rwx for owner, +rx for group, +x for others"
+    echo ""
+    echo "755: +rwx for owner, +rx for group, +rx for others"
+    echo ""
+    echo "744: +wx for owner, no permissions for group, +r for others"
+    echo ""
+    echo "711: +rwx for owner, no permissions for group, +x for others"
+    echo ""
+    echo "700: +rwx for owner, no permissions for group or others"
+    echo ""
+    echo "640: +r for owner, +r for group, no permissions for others"
+    echo ""
+    echo "777: +rwx for owner, +rwx for group, +rwx for others"
+    echo ""
+    echo "666: +rw for owner, +rw for group, +rw for others"
+    echo "" 
+    echo "400: +r for owner, no permissions for group or others"
+    echo ""
+    echo "Press any key to return to the main menu."
+    read -rn 1
+}
+
+# ---- // SPINNER:
+spin() {
+    local pid=$1
+    local delay=0.05
+    local spinstr='|/-\\'
+    while kill -0 "$pid" 2>/dev/null; do
+        local temp=${spinstr#?}
+        printf "\e[1;34m\r[*] \e[1;32mIt will take time..Please wait...  [\e[1;33m%c\e[1;32m]\e[0m  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+    done
+    printf "\e[1;33m[Done]\e[0m\n"
+}
+
+# ---- // MAIN SCRIPT LOGIC:
+load_config
+
+# Process recursive flag
+while getopts ":rRh" opt; do
+  case $opt in
+    r|R)
+      RECURSIVE_CHANGE=true
+      shift # Remove the processed argument
+      ;;
+    h)
+      display_help
+      exit 0
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      display_help
+      exit 1
+      ;;
+  esac
+done
+
+# Validate and set directory argument
 directory=${1:-$PWD}
 if [ -n "$1" ]; then
-    # Validate if the path is a directory or a file
     if [ -d "$directory" ]; then
         validate_directory "$directory"
-        echo "Dir: $directory/"
+        echo "Directory: $directory/"
     elif [ -f "$directory" ]; then
-        # If it's a file, you might want a separate validation function or handle it here
         echo "File: $directory"
     else
         log "Error: '$directory' is not a valid directory or file."
@@ -361,19 +273,33 @@ if [ -n "$1" ]; then
     fi
 fi
 
-# --- MENU_LOOP:
+# Menu loop with Recursive mode indicator and PWD permissions display
 while true; do
-    display_menu
-    read -r choice
+    print_current_directory_permissions "$directory"
+
+    echo "Please choose an option:"
+    for key in "${!menu_map[@]}"; do
+        # Display the number and (R) indicator in cyan
+        tput setaf 6
+        echo -n "$key)"
+        if [ "$RECURSIVE_CHANGE" = true ]; then
+            echo -n " (R)"
+        fi
+        # Reset text color and display the menu option description
+        tput sgr0
+        echo " ${menu_map[$key]}"
+    done
+
+    read -rp "Select an option: " choice
+
+    if [ -z "$directory" ]; then
+        echo "Enter the directory path:"
+        read -re directory
+        validate_directory "$directory"
+    fi
 
     case $choice in
         1)
-            if [ -z "$1" ]; then
-                echo "Enter the directory path:"
-                read -re directory
-                validate_directory "$directory"
-            fi
-
             change_ownership_permissions "$directory"
             ;;
         2)
@@ -381,12 +307,6 @@ while true; do
             (compare_package_permissions & spin $!)
             ;;
         3)
-            if [ -z "$directory" ]; then
-                echo "Enter the directory path:"
-                read -re directory
-                validate_directory "$directory"
-            fi
-
             get_directory_acl "$directory"
             ;;
         4)
@@ -403,8 +323,5 @@ while true; do
             echo "Invalid choice. Please try again."
             ;;
     esac
-
     echo
 done
-
-
