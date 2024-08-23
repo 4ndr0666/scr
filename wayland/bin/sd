@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Get the current terminal emulator (Alacritty in this case)
+TERMINAL="alacritty"
+
+# Function to print the current working directory's owner and group in cyan
+print_directory_info() {
+    local dir="$1"
+    local owner=$(stat -c '%U' "$dir")
+    local group=$(stat -c '%G' "$dir")
+    tput setaf 6
+    echo "# dir: $dir"
+    echo "# owner: $owner"
+    echo "# group: $group"
+    getfacl --absolute-names "$dir" 2>/dev/null | grep -E 'user::|group::|other::'
+    tput sgr0
+    echo
+}
+
+# Open a new terminal in the current directory
+open_terminal_in_cwd() {
+    local cwd=$(readlink -f .)
+    "$TERMINAL" --working-directory="$cwd"
+}
+
+# Main function
+main() {
+    print_directory_info "$PWD"
+    open_terminal_in_cwd
+}
+
+# Execute the main function
+main
+

@@ -31,7 +31,7 @@ installDependencies() {
     local packages=("systemd" "earlyoom" "procps-ng")
     for pkg in "${packages[@]}"; do
         if ! pacman -Qi "$pkg" &> /dev/null; then
-            sudo pacman -S --noconfirm "$pkg" || { echo "Error: Failed to install $pkg"; exit 1; }
+            sudo pacman -S --needed --noconfirm "$pkg" || { echo "Error: Failed to install $pkg"; exit 1; }
         else
             echo "Package $pkg is already installed."
         fi
@@ -65,13 +65,16 @@ checkCommandDependencies() {
     done
 }
 
-# Function to create necessary directories
+# Function to create necessary directories and check permissions
 createDirectories() {
     if [[ ! -d "$BASE_DIR" ]]; then
-        mkdir -p "$BASE_DIR"
+        mkdir -p "$BASE_DIR" || { echo "Error: Failed to create directory $BASE_DIR"; exit 1; }
         echo "Created directory: $BASE_DIR"
+    elif [[ ! -w "$BASE_DIR" ]]; then
+        echo "Error: Directory $BASE_DIR is not writable."
+        exit 1
     else
-        echo "Directory $BASE_DIR already exists."
+        echo "Directory $BASE_DIR already exists and is writable."
     fi
 }
 
@@ -87,6 +90,7 @@ defineWriteFiles() {
             return
         else
             echo "Updating file $path."
+            backupServiceFile "$path"
         fi
     else
         echo "Creating file $path."
@@ -139,7 +143,7 @@ backupServiceFile() {
     local service_file="$1"
     if [[ -f "$service_file" ]]; then
         local backup_file="$service_file.bak.$(date +'%Y%m%d%H%M%S')"
-        cp "$service_file" "$backup_file"
+        cp "$service_file" "$backup_file" || { echo "Error: Failed to create backup of $service_file"; exit 1; }
         echo "Backup of $service_file created as $backup_file."
     fi
 }
@@ -190,7 +194,7 @@ main() {
 FREECACHE_SERVICE_CONTENT=$(cat <<EOF
 [Unit]
 Description=Free Cache when Memory is Low
-After=oomd.service  # Ensures this service runs after oomd
+After=oomd.service
 
 [Service]
 Type=oneshot
