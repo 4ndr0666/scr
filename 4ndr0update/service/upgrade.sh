@@ -1,10 +1,8 @@
 #!/bin/bash
 # Unified Arch Linux update script with integrated configuration, package checks, and dependency verification
-# This script adheres to production-ready standards, including error handling, idempotency, and educational content.
 
 # Pacman Configuration
 PACMAN_CONF="/etc/pacman.conf"
-UR_DIR="/home/build"  # Update this path as needed
 
 # Function to update pacman.conf with necessary settings
 update_pacman_conf() {
@@ -25,6 +23,14 @@ configure_reflector() {
         echo "Reflector is now set to automatically update mirror lists."
     else
         echo "Reflector timer already enabled."
+    fi
+
+    printf "\n"
+    read -r -p "Do you want to get an updated mirrorlist? [y/N] "
+    if [[ "$REPLY" =~ [yY] ]]; then
+        printf "Updating mirrorlist...\n"
+        reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
+        printf "...Mirrorlist updated\n"
     fi
 }
 
@@ -55,18 +61,7 @@ check_and_install_dependencies() {
     done
 }
 
-# Set up yay and related hooks for optimized performance
-setup_yay_and_hooks() {
-    ensure_package_installed "yay"
-
-    echo "Ensuring hooks are correctly installed:"
-    for hook in yaycache-hook check-broken-packages-pacman-hook-git kernel-modules-hook paccache-hook reflector-pacman-hook-git systemd-boot-pacman-hook; do
-        ensure_package_installed "$hook"
-        check_and_install_dependencies "$hook"
-    done
-}
-
-# Function to set up the AUR directory
+# Set up AUR directory using trizen
 aur_setup() {
     printf "\n"
     read -r -p "Do you want to set up the AUR package directory at $AUR_DIR? [y/N] "
@@ -74,10 +69,10 @@ aur_setup() {
         printf "Setting up AUR package directory...\n"
         if [[ ! -d "$AUR_DIR" ]]; then
             mkdir -p "$AUR_DIR"
-            test -n "$SUDO_USER" && chown "$SUDO_USER" "$AUR_DIR"
+            chown "$SUDO_USER:$SUDO_USER" "$AUR_DIR"
         fi
 
-        chgrp "$1" "$AUR_DIR"
+        chgrp "$SUDO_USER" "$AUR_DIR"
         chmod g+ws "$AUR_DIR"
         setfacl -d --set u::rwx,g::rx,o::rx "$AUR_DIR"
         setfacl -m u::rwx,g::rwx,o::- "$AUR_DIR"
@@ -85,46 +80,18 @@ aur_setup() {
     fi
 }
 
-# Function to rebuild AUR packages
+# Function to rebuild AUR packages using trizen as non-root user
 rebuild_aur() {
-    AUR_DIR_GROUP="nobody"
-    test -n "$SUDO_USER" && AUR_DIR_GROUP="$SUDO_USER"
-
-    if [[ -w "$AUR_DIR" ]] && sudo -u "$AUR_DIR_GROUP" test -w "$AUR_DIR"; then
-        printf "\n"
-        read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N] "
-        if [[ "$REPLY" =~ [yY] ]]; then
-            printf "Rebuilding AUR packages...\n"
-            if [[ -n "$(ls -A $AUR_DIR)" ]]; then
-                starting_dir="$(pwd)"
-                for aur_pkg in "$AUR_DIR"/*/; do
-                    if [[ -d "$aur_pkg" ]]; then
-                        if ! sudo -u "$AUR_DIR_GROUP" test -w "$aur_pkg"; then
-                            chmod -R g+w "$aur_pkg"
-                        fi
-                        cd "$aur_pkg"
-                        if [[ "$AUR_UPGRADE" == "true" ]]; then
-                            git pull origin master
-                        fi
-                        source PKGBUILD
-                        pacman -S --needed --asdeps "${depends[@]}" "${makedepends[@]}" --noconfirm
-                        sudo -u "$AUR_DIR_GROUP" makepkg -fc --noconfirm
-                        pacman -U "$(sudo -u $AUR_DIR_GROUP makepkg --packagelist)" --noconfirm
-                    fi
-                done
-                cd "$starting_dir"
-                printf "...Done rebuilding AUR packages\n"
-            else
-                printf "...No AUR packages in $AUR_DIR\n"
-            fi
-        fi
-    else
-        printf "\nAUR package directory not set up"
-        aur_setup "$AUR_DIR_GROUP"
+    printf "\n"
+    read -r -p "Do you want to rebuild all AUR packages using trizen? [y/N] "
+    if [[ "$REPLY" =~ [yY] ]]; then
+        echo "Rebuilding AUR packages with trizen..."
+        sudo -u "$SUDO_USER" trizen -Syu --noconfirm
+        echo "...AUR packages rebuilt."
     fi
 }
 
-# Function to handle pacfiles
+# Handle pacfiles
 handle_pacfiles() {
     printf "\nChecking for pacfiles...\n"
     pacdiff
@@ -139,7 +106,7 @@ minimal_pacman_conf() {
     echo "$TEMP_CONF"
 }
 
-# Perform a system update using powerpill and yay
+# Perform a system update using powerpill and trizen
 system_update() {
     local EXTRA_PARAMS=()
 
@@ -155,34 +122,13 @@ system_update() {
         exit 1
     fi
 
-    echo "Upgrading AUR packages with yay..."
-    if ! yay -Syu --noconfirm --cleanafter --needed --refresh --sysupgrade --useask=false; then
-        echo "Error: AUR upgrade failed. Please check yay logs for more details."
-        exit 1
-    fi
+    echo "Upgrading AUR packages with trizen..."
+    sudo -u "$SUDO_USER" trizen -Syu --noconfirm --needed --refresh --sysupgrade
+    echo "...AUR packages upgraded."
 }
 
 # Elevate privileges if not root
-#if [[ $EUID -ne 0 ]]; then
-#    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
-#    exit 1
-#fi
-
-# Run the configuration steps
-#update_pacman_conf
-#configure_reflector
-#setup_yay_and_hooks
-
-# Run the AUR setup and rebuild if needed
-#aur_setup
-#rebuild_aur
-
-# Handle pacfiles
-#handle_pacfiles
-
-# Run the system update
-#system_update "$@"
-
-#echo "System update completed successfully."
-
-# End of script
+if [[ $EUID -ne 0 ]]; then
+    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
+    exit 1
+fi

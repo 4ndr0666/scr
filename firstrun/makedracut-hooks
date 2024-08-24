@@ -85,7 +85,15 @@ current_kernel=$(uname -r)
 ln -sf /boot/initramfs-${current_kernel}.img /boot/initramfs-linux.img || error_exit "Failed to create initramfs symlink"
 ln -sf /boot/vmlinuz-${current_kernel} /boot/vmlinuz-linux || error_exit "Failed to create vmlinuz symlink"
 
-echo "Initramfs images regenerated and symlinks created successfully."
+# Ensure GRUB is updated to point to the correct kernel
+echo "Updating GRUB configuration..."
+grub-mkconfig -o /boot/grub/grub.cfg || error_exit "Failed to update GRUB configuration"
+
+# Check and correct the GRUB default entry if necessary
+echo "Ensuring GRUB default entry points to the correct kernel..."
+grub-set-default 0 || error_exit "Failed to set GRUB default entry"
+
+echo "Initramfs images regenerated, symlinks created, and GRUB configuration updated successfully."
 EOF
 [ $? -eq 0 ] || error_exit "Failed to create $SCRIPT_REGENERATE"
 

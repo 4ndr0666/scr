@@ -46,7 +46,7 @@ log_error() {
 TempBypassAlias() {
     local cmd="$1"
     unalias "$cmd" 2>/dev/null
-    eval "$cmd() { /usr/bin/$cmd \"\$@\"; }"
+    eval "$cmd() { /usr/bin/$cmd \"\$@\";\ }"
 }
 
 # Function to remove a specific alias, if necessary, by checking user configuration files
