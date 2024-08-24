@@ -31,11 +31,14 @@ modify_ipv6_setting() {
     done
 
     # Persist the IPv6 settings across reboots
-    echo "net.ipv6.conf.all.disable_ipv6 = $setting" > /etc/sysctl.d/99-sysctl.conf
-    echo "net.ipv6.conf.default.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
-    echo "net.ipv6.conf.lo.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
-    echo "net.ipv6.conf.enp2s0.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
-    echo "net.ipv6.conf.tun0.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
+    {
+        echo "net.ipv6.conf.all.disable_ipv6 = $setting"
+        echo "net.ipv6.conf.default.disable_ipv6 = $setting"
+        echo "net.ipv6.conf.lo.disable_ipv6 = $setting"
+        echo "net.ipv6.conf.enp2s0.disable_ipv6 = $setting"
+        echo "net.ipv6.conf.tun0.disable_ipv6 = $setting"
+    } > /etc/sysctl.d/99-sysctl.conf
+
     for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
         if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
             echo "net.ipv6.conf.$interface.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
@@ -59,7 +62,7 @@ ufw_config() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
-    ufw allow 988842/tcp #Aria2c
+    ufw allow 988842/tcp # Aria2c
     ufw allow 6800/tcp # Aria2c
     ufw allow 53682 # Rclone
 
@@ -99,6 +102,28 @@ prompt_vpn_port() {
     ufw allow out on tun0 from any port "$vpn_port" proto udp
 }
 
+# Function to check and disable GPS services
+disable_gps() {
+    if command -v mmcli &> /dev/null; then
+        mmcli -m 0 --location-disable-gps-raw --location-disable-gps-nmea --location-disable-3gpp --location-disable-cdma-bs &&
+        notify-send -i "gps" 'GPS' 'GPS turned off via mmcli'
+    fi
+
+    systemctl stop geoclue && systemctl mask geoclue &&
+    notify-send -i "gps" 'GPS' 'geoclue service masked'
+}
+
+# Function to check if NetworkManager is active
+check_network_manager() {
+    if command -v nmcli &> /dev/null; then
+        if [ "$(systemctl is-active NetworkManager)" == "inactive" ]; then
+            notify-send -i "network" 'NetworkManager' 'NetworkManager is inactive'
+        else
+            notify-send -i "network" 'NetworkManager' 'NetworkManager is active'
+        fi
+    fi
+}
+
 # Function to display usage syntax
 usage() {
     echo "Usage: $0 {on|off} [jdownloader] for IPv6 configuration"
@@ -130,6 +155,8 @@ main() {
     ufw_config "$2"
     prompt_vpn_port
     disable_ipv6_services
+    disable_gps
+    check_network_manager
 
     echo "System hardening complete."
     sleep 1

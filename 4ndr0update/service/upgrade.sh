@@ -2,10 +2,9 @@
 # Unified Arch Linux update script with integrated configuration, package checks, and dependency verification
 # This script adheres to production-ready standards, including error handling, idempotency, and educational content.
 
-set -e
-
 # Pacman Configuration
 PACMAN_CONF="/etc/pacman.conf"
+UR_DIR="/home/build"  # Update this path as needed
 
 # Function to update pacman.conf with necessary settings
 update_pacman_conf() {
@@ -67,6 +66,71 @@ setup_yay_and_hooks() {
     done
 }
 
+# Function to set up the AUR directory
+aur_setup() {
+    printf "\n"
+    read -r -p "Do you want to set up the AUR package directory at $AUR_DIR? [y/N] "
+    if [[ "$REPLY" =~ [yY] ]]; then
+        printf "Setting up AUR package directory...\n"
+        if [[ ! -d "$AUR_DIR" ]]; then
+            mkdir -p "$AUR_DIR"
+            test -n "$SUDO_USER" && chown "$SUDO_USER" "$AUR_DIR"
+        fi
+
+        chgrp "$1" "$AUR_DIR"
+        chmod g+ws "$AUR_DIR"
+        setfacl -d --set u::rwx,g::rx,o::rx "$AUR_DIR"
+        setfacl -m u::rwx,g::rwx,o::- "$AUR_DIR"
+        printf "...AUR package directory set up at $AUR_DIR\n"
+    fi
+}
+
+# Function to rebuild AUR packages
+rebuild_aur() {
+    AUR_DIR_GROUP="nobody"
+    test -n "$SUDO_USER" && AUR_DIR_GROUP="$SUDO_USER"
+
+    if [[ -w "$AUR_DIR" ]] && sudo -u "$AUR_DIR_GROUP" test -w "$AUR_DIR"; then
+        printf "\n"
+        read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N] "
+        if [[ "$REPLY" =~ [yY] ]]; then
+            printf "Rebuilding AUR packages...\n"
+            if [[ -n "$(ls -A $AUR_DIR)" ]]; then
+                starting_dir="$(pwd)"
+                for aur_pkg in "$AUR_DIR"/*/; do
+                    if [[ -d "$aur_pkg" ]]; then
+                        if ! sudo -u "$AUR_DIR_GROUP" test -w "$aur_pkg"; then
+                            chmod -R g+w "$aur_pkg"
+                        fi
+                        cd "$aur_pkg"
+                        if [[ "$AUR_UPGRADE" == "true" ]]; then
+                            git pull origin master
+                        fi
+                        source PKGBUILD
+                        pacman -S --needed --asdeps "${depends[@]}" "${makedepends[@]}" --noconfirm
+                        sudo -u "$AUR_DIR_GROUP" makepkg -fc --noconfirm
+                        pacman -U "$(sudo -u $AUR_DIR_GROUP makepkg --packagelist)" --noconfirm
+                    fi
+                done
+                cd "$starting_dir"
+                printf "...Done rebuilding AUR packages\n"
+            else
+                printf "...No AUR packages in $AUR_DIR\n"
+            fi
+        fi
+    else
+        printf "\nAUR package directory not set up"
+        aur_setup "$AUR_DIR_GROUP"
+    fi
+}
+
+# Function to handle pacfiles
+handle_pacfiles() {
+    printf "\nChecking for pacfiles...\n"
+    pacdiff
+    printf "...Done checking for pacfiles\n"
+}
+
 # Minimal pacman.conf for non-standard setups
 minimal_pacman_conf() {
     local TEMP_CONF
@@ -99,19 +163,26 @@ system_update() {
 }
 
 # Elevate privileges if not root
-if [[ $EUID -ne 0 ]]; then
-    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
-    exit 1
-fi
+#if [[ $EUID -ne 0 ]]; then
+#    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
+#    exit 1
+#fi
 
 # Run the configuration steps
-update_pacman_conf
-configure_reflector
-setup_yay_and_hooks
+#update_pacman_conf
+#configure_reflector
+#setup_yay_and_hooks
+
+# Run the AUR setup and rebuild if needed
+#aur_setup
+#rebuild_aur
+
+# Handle pacfiles
+#handle_pacfiles
 
 # Run the system update
-system_update "$@"
+#system_update "$@"
 
-echo "System update completed successfully."
+#echo "System update completed successfully."
 
 # End of script
