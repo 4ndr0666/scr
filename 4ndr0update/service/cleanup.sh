@@ -1,9 +1,41 @@
 #!/bin/bash
 
-# Function to remove orphaned packages
+# Function to show a spinner
+spinner() {
+    local pid=$1
+    local delay=0.75
+    local spinstr='|/-\'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
+# Function to remove orphaned packages with a timeout
 remove_orphaned_packages() {
     printf "\nChecking for orphaned packages...\n"
-    mapfile -t orphaned < <(pacman -Qtdq)
+    
+    # Run the orphan check in the background
+    (mapfile -t orphaned < <(pacman -Qtdq)) &
+    pid=$!
+
+    # Start the spinner
+    spinner $pid &
+    spinner_pid=$!
+
+    # Set a timeout of 60 seconds
+    ( sleep 60 && kill -9 $pid 2>/dev/null && kill -9 $spinner_pid 2>/dev/null && printf "\nTimeout reached. Process killed.\n" ) &
+    timeout_pid=$!
+
+    # Wait for the orphan check to complete
+    wait $pid
+    kill $spinner_pid 2>/dev/null
+    kill $timeout_pid 2>/dev/null
+
     if [[ "${orphaned[*]}" ]]; then
         printf "ORPHANED PACKAGES FOUND:\n"
         printf '%s\n' "${orphaned[@]}"
@@ -49,39 +81,24 @@ clean_broken_symlinks() {
     if [[ "$REPLY" =~ [yY] ]]; then
         printf "Checking for broken symlinks...\n"
         
-        # Start the spinner in the background
-        spinner &
-        spinner_pid=$!
+        # Start the search in the background
+        (mapfile -t broken_symlinks < <(find "${SYMLINKS_CHECK[@]}" -xtype l -print)) &
+        pid=$!
         
-        # Collect broken symlinks
-        mapfile -t broken_symlinks < <(find "${SYMLINKS_CHECK[@]}" -xtype l -print)
+        # Start the spinner
+        spinner $pid
         
-        # Stop the spinner
-        kill "$spinner_pid"
-        wait "$spinner_pid" 2>/dev/null
+        wait $pid
 
         if [[ "${broken_symlinks[*]}" ]]; then
             printf "BROKEN SYMLINKS FOUND:\n"
             printf '%s\n' "${broken_symlinks[@]}"
             read -r -p "Do you want to remove the broken symlinks above? [y/N] "
             if [[ "$REPLY" =~ [yY] ]]; then
-                printf "Removing broken symlinks...\n"
-                
-                # Start the spinner again
-                spinner &
-                spinner_pid=$!
-
                 if rm "${broken_symlinks[@]}"; then
-                    # Stop the spinner
-                    kill "$spinner_pid"
-                    wait "$spinner_pid" 2>/dev/null
-                    
                     printf "...Broken symlinks removed successfully.\n"
                     log_cleanup "Removed broken symlinks: ${broken_symlinks[*]}"
                 else
-                    kill "$spinner_pid"
-                    wait "$spinner_pid" 2>/dev/null
-                    
                     printf "...Failed to remove some broken symlinks. Check logs for details.\n"
                     log_cleanup "Failed to remove some broken symlinks."
                 fi
@@ -96,19 +113,16 @@ clean_broken_symlinks() {
     fi
 }
 
-# Function to show a spinner
-spinner() {
-    local pid=$!
-    local delay=0.1
-    local spinstr='|/-\'
-    while [ "$(ps a | awk '{print $1}' | grep "$pid")" ]; do
-        local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
-        spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-        printf "\b\b\b\b\b\b"
-    done
-    printf "    \b\b\b\b"
+
+# Function to remind user to check for old configuration files
+clean_old_config() {
+    user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    test -z "$user_home" && user_home="~"
+    printf "\nREMINDER: Check the following directories for old configuration files:\n"
+    printf "$user_home/\n"
+    printf "$user_home/.config/\n"
+    printf "$user_home/.cache/\n"
+    printf "$user_home/.local/share/\n"
 }
 
 # Function to log cleanup actions

@@ -2,7 +2,6 @@
 
 system_upgrade() {
 	configure_reflector
-	setup_yay_and_hooks
 	aur_setup
 	rebuild_aur
 	handle_pacfiles
