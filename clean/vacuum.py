@@ -929,13 +929,23 @@ def disable_unused_services(log_file):
     Args:
         log_file (str): Path to the log file where processing information is logged.
     """
-    services_to_disable = ["bluetooth.service", "cups.service"]
+    services_to_disable = [
+        "bluetooth.service", 
+        "cups.service", 
+        "geoclue.service",  # Add GPS-related services
+        "avahi-daemon.service"
+    ]
+    
     for service in services_to_disable:
         try:
-            check_service = subprocess.run(["systemctl", "is-enabled", service], stdout=subprocess.PIPE, text=True)
+            check_service = subprocess.run(
+                ["systemctl", "is-enabled", service], stdout=subprocess.PIPE, text=True
+            )
             if check_service.returncode == 0:
                 subprocess.run(["sudo", "systemctl", "disable", service], check=True)
-                log_and_print(f"{SUCCESS} Disabled {service}.", 'info')
+                subprocess.run(["sudo", "systemctl", "stop", service], check=True)
+                subprocess.run(["sudo", "systemctl", "mask", service], check=True)
+                log_and_print(f"{SUCCESS} Disabled and masked {service}.", 'info')
             else:
                 log_and_print(f"{INFO} {service} is already disabled.", 'info')
         except subprocess.CalledProcessError as e:

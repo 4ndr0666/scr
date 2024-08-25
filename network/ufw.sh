@@ -7,8 +7,8 @@
 
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
-  sudo "$0" "$@"
-  exit $?
+    sudo "$0" "$@"
+    exit $?
 fi
 
 # Function to modify IPv6 settings
@@ -16,43 +16,41 @@ modify_ipv6_setting() {
     local setting=$1
     echo "Modifying IPv6 settings to $setting..."
 
-    /sbin/sysctl -w net.ipv6.conf.all.disable_ipv6="$setting"
-    /sbin/sysctl -w net.ipv6.conf.default.disable_ipv6="$setting"
-    /sbin/sysctl -w net.ipv6.conf.lo.disable_ipv6="$setting"
-    /sbin/sysctl -w net.ipv6.conf.enp2s0.disable_ipv6="$setting"
-    /sbin/sysctl -w net.ipv6.conf.tun0.disable_ipv6="$setting"
+    local interfaces=(all default lo enp2s0 tun0)
+    for interface in "${interfaces[@]}"; do
+        /sbin/sysctl -w "net.ipv6.conf.$interface.disable_ipv6=$setting"
+    done
 
     for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
         if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
-            /sbin/sysctl -w net.ipv6.conf."$interface".disable_ipv6="$setting" || {
+            /sbin/sysctl -w "net.ipv6.conf.$interface.disable_ipv6=$setting" || {
                 echo "Error modifying IPv6 settings for interface $interface."
             }
         fi
     done
 
     # Persist the IPv6 settings across reboots
+    echo "Persisting IPv6 settings..."
     {
-        echo "net.ipv6.conf.all.disable_ipv6 = $setting"
-        echo "net.ipv6.conf.default.disable_ipv6 = $setting"
-        echo "net.ipv6.conf.lo.disable_ipv6 = $setting"
-        echo "net.ipv6.conf.enp2s0.disable_ipv6 = $setting"
-        echo "net.ipv6.conf.tun0.disable_ipv6 = $setting"
+        for interface in "${interfaces[@]}"; do
+            echo "net.ipv6.conf.$interface.disable_ipv6 = $setting"
+        done
+        for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
+            if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
+                echo "net.ipv6.conf.$interface.disable_ipv6 = $setting"
+            fi
+        done
     } > /etc/sysctl.d/99-sysctl.conf
-
-    for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
-        if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
-            echo "net.ipv6.conf.$interface.disable_ipv6 = $setting" >> /etc/sysctl.d/99-sysctl.conf
-        fi
-    done
 
     /sbin/sysctl -p /etc/sysctl.d/99-sysctl.conf
 }
 
 # Function to configure UFW with advanced rules
 ufw_config() {
+    local jdownloader_flag=$1
     echo "Setting up advanced UFW rules..."
-    sleep 2
-    ufw --force reset
+
+    ufw disable  # First, disable UFW to avoid unnecessary resets and backups
     ufw logging off
     ufw default deny incoming
     ufw default allow outgoing
@@ -62,22 +60,20 @@ ufw_config() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
-    ufw allow 988842/tcp # Aria2c
+    # Corrected the invalid port (removed 988842/tcp)
     ufw allow 6800/tcp # Aria2c
-    ufw allow 53682 # Rclone
+    ufw allow 53682/tcp # Rclone
 
-    # Additional ports for enhanced security
-    if [[ "$1" == "jdownloader" ]]; then
+    if [[ "$jdownloader_flag" == "true" ]]; then
         echo "Configuring UFW rules for JDownloader2..."
-        ufw allow 9666/tcp # JDownloader2 port
-        ufw allow 9665/tcp # JDownloader2 port
+        ufw allow 9666/tcp
+        ufw allow 9665/tcp
     fi
-    
+
     sed -i 's/IPV6=yes/IPV6=no/' /etc/default/ufw
     ufw --force enable
     ufw status verbose
-    systemctl enable ufw.service --now
-    systemctl start ufw.service
+    systemctl enable --now ufw.service
 }
 
 # Function to disable IPv6 for various services
@@ -97,9 +93,17 @@ disable_ipv6_services() {
 
 # Function to prompt for VPN port and apply UFW rule
 prompt_vpn_port() {
-    read -p "Enter the VPN port (UDP): " vpn_port
-    ufw allow in on enp2s0 to any port "$vpn_port" proto udp
-    ufw allow out on tun0 from any port "$vpn_port" proto udp
+    read -rp "Enter the VPN port (UDP) (leave blank if no VPN): " vpn_port
+    if [[ -n "$vpn_port" ]]; then
+        if [[ "$vpn_port" =~ ^[0-9]+$ ]]; then
+            ufw allow in on enp2s0 to any port "$vpn_port" proto udp
+            ufw allow out on tun0 from any port "$vpn_port" proto udp
+        else
+            echo "Invalid port provided. Skipping VPN configuration."
+        fi
+    else
+        echo "No VPN port provided. Skipping VPN configuration."
+    fi
 }
 
 # Function to check and disable GPS services
@@ -116,17 +120,17 @@ disable_gps() {
 # Function to check if NetworkManager is active
 check_network_manager() {
     if command -v nmcli &> /dev/null; then
-        if [ "$(systemctl is-active NetworkManager)" == "inactive" ]; then
-            notify-send -i "network" 'NetworkManager' 'NetworkManager is inactive'
-        else
+        if systemctl is-active --quiet NetworkManager; then
             notify-send -i "network" 'NetworkManager' 'NetworkManager is active'
+        else
+            notify-send -i "network" 'NetworkManager' 'NetworkManager is inactive'
         fi
     fi
 }
 
 # Function to display usage syntax
 usage() {
-    echo "Usage: $0 {on|off} [jdownloader] for IPv6 configuration"
+    echo "Usage: $0 [--on] [--jdownloader] for IPv6 configuration"
     exit 1
 }
 
@@ -135,24 +139,21 @@ main() {
     echo "Initiating system hardening..."
     sleep 1
 
-    # Check if argument is provided for IPv6 configuration
-    if [[ -z "$1" ]]; then
-        usage
-    elif [[ "$1" == "off" || "$1" == "on" ]]; then
-        if [[ "$1" == "off" ]]; then
-            if [[ $(sysctl -n net.ipv6.conf.all.disable_ipv6) -eq 1 ]]; then
-                echo "IPv6 setting is already disabled. No changes needed."
-            else
-                modify_ipv6_setting 1
-            fi
-        else
-            modify_ipv6_setting 0
-        fi
-    else
-        usage
-    fi
+    local ipv6_setting=1 # Default to 'off'
+    local jdownloader_flag=false
 
-    ufw_config "$2"
+    # Parse options
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            --on) ipv6_setting=0 ;; # Enable IPv6 if --on is provided
+            --jdownloader) jdownloader_flag=true ;; # Set flag if --jdownloader is provided
+            *) usage ;; # Show usage if unrecognized option is found
+        esac
+        shift
+    done
+
+    modify_ipv6_setting "$ipv6_setting"
+    ufw_config "$jdownloader_flag"
     prompt_vpn_port
     disable_ipv6_services
     disable_gps
