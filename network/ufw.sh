@@ -50,8 +50,7 @@ ufw_config() {
     local jdownloader_flag=$1
     echo "Setting up advanced UFW rules..."
 
-    ufw disable  # First, disable UFW to avoid unnecessary resets and backups
-    ufw logging off
+    ufw --force reset  # First, disable UFW to avoid unnecessary resets and backups
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow in on lo
@@ -60,9 +59,9 @@ ufw_config() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
-    # Corrected the invalid port (removed 988842/tcp)
     ufw allow 6800/tcp # Aria2c
-    ufw allow 53682/tcp # Rclone
+    ufw logging off
+#    ufw allow 53682/tcp # Rclone
 
     if [[ "$jdownloader_flag" == "true" ]]; then
         echo "Configuring UFW rules for JDownloader2..."
@@ -71,8 +70,10 @@ ufw_config() {
     fi
 
     sed -i 's/IPV6=yes/IPV6=no/' /etc/default/ufw
+    sleep 1
+    echo
+    
     ufw --force enable
-    ufw status verbose
     systemctl enable --now ufw.service
 }
 
@@ -86,9 +87,9 @@ disable_ipv6_services() {
     sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
     systemctl restart systemd-resolved
 
-    echo "Disabling IPv6 for Avahi-daemon..."
-    sed -i 's/#use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
-    systemctl restart avahi-daemon
+#    echo "Disabling IPv6 for Avahi-daemon..."
+#    sed -i 's/#use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
+#    systemctl restart avahi-daemon
 }
 
 # Function to prompt for VPN port and apply UFW rule
@@ -106,24 +107,17 @@ prompt_vpn_port() {
     fi
 }
 
-# Function to check and disable GPS services
-disable_gps() {
-    if command -v mmcli &> /dev/null; then
-        mmcli -m 0 --location-disable-gps-raw --location-disable-gps-nmea --location-disable-3gpp --location-disable-cdma-bs &&
-        notify-send -i "gps" 'GPS' 'GPS turned off via mmcli'
-    fi
-
-    systemctl stop geoclue && systemctl mask geoclue &&
-    notify-send -i "gps" 'GPS' 'geoclue service masked'
-}
-
 # Function to check if NetworkManager is active
 check_network_manager() {
     if command -v nmcli &> /dev/null; then
         if systemctl is-active --quiet NetworkManager; then
-            notify-send -i "network" 'NetworkManager' 'NetworkManager is active'
+            echo "### ============ // Netowrk Check // ============ ###"
+            echo "Network Manager Status = Enabled/Active"
+#            notify-send -i "network" 'NetworkManager' 'NetworkManager is active'
         else
-            notify-send -i "network" 'NetworkManager' 'NetworkManager is inactive'
+            echo "### ============ // Network Check // ============ ###"
+            echo "WARNING: Network Manager Status = Disabled!"
+#            notify-send -i "network" 'NetworkManager' 'NetworkManager is inactive'
         fi
     fi
 }
@@ -136,8 +130,6 @@ usage() {
 
 # Main script logic
 main() {
-    echo "Initiating system hardening..."
-    sleep 1
 
     local ipv6_setting=1 # Default to 'off'
     local jdownloader_flag=false
@@ -153,22 +145,28 @@ main() {
     done
 
     modify_ipv6_setting "$ipv6_setting"
-    ufw_config "$jdownloader_flag"
-    prompt_vpn_port
-    disable_ipv6_services
-    disable_gps
-    check_network_manager
-
-    echo "System hardening complete."
     sleep 1
-
+    echo
+    
+    ufw_config "$jdownloader_flag"
+    sleep 1
+    echo
+    
+    prompt_vpn_port
+#    disable_ipv6_services
+    sleep 1
+    echo
+    
+    check_network_manager
+    sleep 2
+    echo
+    
     echo "### ============================== // LISTENING PORTS // ============================== ###"
     netstat -tunlp
-    sleep 3
 
-    echo "### ============ // UFW SUMMARY // ============ ###"
-    ufw status numbered
-    sleep 2
+#    sleep 2
+#    echo "### ============ // UFW SUMMARY // ============ ###"
+#    ufw numbered
 }
 
 main "$@"
