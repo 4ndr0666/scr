@@ -871,6 +871,12 @@ def check_zram_configuration(log_file):
     Args:
         log_file (str): Path to the log file where processing information is logged.
     """
+    # Symbols defined within the function
+    SUCCESS = "✔️"
+    FAILURE = "❌"
+    INFO = "➡️"
+    WARNING = "⚠️"
+
     log_and_print(f"{INFO} Checking ZRam configuration...", 'info')
 
     try:

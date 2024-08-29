@@ -19,14 +19,9 @@ mkdir -p "$(dirname "$log_file")"
 touch "$log_file"
 
 adjust_swappiness() {
-    local current_swappiness
-    current_swappiness=$(sysctl vm.swappiness | awk '{print $3}')
     local target_swappiness=10
-
-    if [[ "$current_swappiness" -ne "$target_swappiness" ]]; then
-        sysctl vm.swappiness="$target_swappiness"
-        log_action "Swappiness adjusted to $target_swappiness."
-    fi
+    sysctl vm.swappiness="$target_swappiness"
+    log_action "Swappiness adjusted to $target_swappiness."
 }
 
 clear_ram_cache() {
@@ -48,8 +43,8 @@ clear_swap() {
     swap_used=$(free | awk '/^Swap:/{print $3}')
 
     if [ "$swap_total" -ne 0 ]; then
-        swap_usage_percent=$(awk "BEGIN {printf \\"%.0f\\", ($swap_used/$swap_total) * 100}")
-        if [ "$swap_usage_percent" -gt 80]; then
+        swap_usage_percent=$(awk "BEGIN {printf \"%.0f\", ($swap_used/$swap_total) * 100}")
+        if [ "$swap_usage_percent" -gt 80 ]; then
             swapoff -a && swapon -a
             log_action "Swap cleared due to high swap usage."
         fi

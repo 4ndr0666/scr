@@ -31,6 +31,7 @@ installDependencies() {
     local packages=("systemd" "earlyoom" "procps-ng")
     for pkg in "${packages[@]}"; do
         if ! pacman -Qi "$pkg" &> /dev/null; then
+            echo "Installing package $pkg..."
             sudo pacman -S --needed --noconfirm "$pkg" || { echo "Error: Failed to install $pkg"; exit 1; }
         else
             echo "Package $pkg is already installed."
@@ -112,7 +113,7 @@ makeExecutable() {
 # Function to reload systemd and enable/start services
 reloadEnableStartServices() {
     systemctl daemon-reload
-    local services=("memory_monitor.service" "freecache.path" "systemd-oomd.service" "earlyoom.service")
+    local services=("memory_monitor.service" "freecache.service" "systemd-oomd.service" "earlyoom.service")
     for service in "${services[@]}"; do
         if systemctl is-enabled --quiet "$service"; then
             echo "Service $service is already enabled."
@@ -191,6 +192,7 @@ main() {
     enableServiceSafely "earlyoom.service"
 }
 
+# Service and configuration contents
 FREECACHE_SERVICE_CONTENT=$(cat <<EOF
 [Unit]
 Description=Free Cache when Memory is Low
@@ -274,7 +276,7 @@ Description=Early OOM Daemon
 After=network.target
 
 [Service]
-ExecStart=$EARLYOOM_BIN -M 2048 -m 10 -s 10 -r 60 -p -d -n --sort-by-rss --avoid '(^|/)(init|X|wayland|wayfire|sshd|brave|systemd)$'
+ExecStart=$EARLYOOM_BIN -m 35 -s 35 -r 60 -p -d -n --sort-by-rss --avoid '(^|/)(init|X|wayland|wayfire|sshd|brave|systemd)$'
 Restart=always
 RestartSec=10
 
@@ -289,15 +291,15 @@ OOMD_CONF_CONTENT=$(cat <<EOF
 
 [OOM]
 # SwapUsedLimit sets the percentage of swap usage at which oomd will take action
-SwapUsedLimit=75%
+SwapUsedLimit=50%
 
 # DefaultMemoryPressureLimit sets the memory pressure threshold for a cgroup.
 # oomd will act if the memory pressure exceeds this limit.
-DefaultMemoryPressureLimit=70%
+DefaultMemoryPressureLimit=45%
 
 # DefaultMemoryPressureDurationSec specifies the duration memory pressure must
 # exceed the limit for oomd to act.
-DefaultMemoryPressureDurationSec=20s
+DefaultMemoryPressureDurationSec=10s
 EOF
 )
 
@@ -351,7 +353,7 @@ clear_ram_cache() {
 clear_swap() {
     local swap_usage_percent=\$(free | awk '/^Swap:/{printf "%.0f", \$3/\$2 * 100}')
 
-    if [ "\$swap_usage_percent" -gt 70 ]; then
+    if [ "\$swap_usage_percent" -gt 50 ]; then
         swapoff -a && swapon -a
         log_action "Swap cleared due to high swap usage."
     fi

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Comprehensive System Maintenance and Troubleshooting Script with UI and Dynamic Configuration
-LOG_FILE="/var/log/system_maintenance.log"
-RETRY_COUNT=3
+#LOG_FILE="/var/log/system_maintenance.log"
+@RETRY_COUNT=3
 
 # Define colors for output
 RED='\033[0;31m'
@@ -43,25 +43,25 @@ log_error() {
 }
 
 # Function to temporarily bypass a potentially aliased command within the script
-TempBypassAlias() {
-    local cmd="$1"
-    unalias "$cmd" 2>/dev/null
-    eval "$cmd() { /usr/bin/$cmd \"\$@\";\ }"
-}
+#TempBypassAlias() {
+#    local cmd="$1"
+#    unalias "$cmd" 2>/dev/null
+#    eval "$cmd() { /usr/bin/$cmd \"\$@\";\ }"
+#}
 
 # Function to remove a specific alias, if necessary, by checking user configuration files
-RemoveAlias() {
-    local alias_name="$1"
-    LogActions "Checking for alias: $alias_name"
-    local config_files=(~/.bashrc ~/.bash_aliases ~/.zshrc ~/.profile)
-    for config_file in "${config_files[@]}"; do
-        if grep -q "alias $alias_name=" "$config_file"; then
-            LogActions "Alias found in: $config_file. Consider removing it to prevent conflicts."
-        else
-            LogActions "No alias found in: $config_file"
-        fi
-    done
-}
+#RemoveAlias() {
+#    local alias_name="$1"
+#    LogActions "Checking for alias: $alias_name"
+#    local config_files=(~/.bashrc ~/.bash_aliases ~/.zshrc ~/.profile)
+#    for config_file in "${config_files[@]}"; do
+#        if grep -q "alias $alias_name=" "$config_file"; then
+#            LogActions "Alias found in: $config_file. Consider removing it to prevent conflicts."
+#        else
+#            LogActions "No alias found in: $config_file"
+#        fi
+#    done
+#}
 
 # Function to check the status of audio services and start them if not running
 CheckAudioServices() {
@@ -296,7 +296,7 @@ DynamicConfiguration() {
     # Detect Audio System (PipeWire or PulseAudio)
     if systemctl --user is-active --quiet pipewire; then
         LogActions "PipeWire detected as the active audio system."
-        packages+=("pipewire" "pipewire-pulse" "pipewire-alsa" "pipewire-jack" "wireplumber")
+        packages+=("pipewire" "pipewire-audio" "pipewire-v412" "pipewire-x11-bell" "pipewire-zeroconf" "gst-plugin-pipewire" "qemu-audio-pipewire" "lib32-libpipewire" "libpipewire" "pipewire-pulse" "pipewire-alsa" "pipewire-jack" "wireplumber" "pipewire-autostart pulseaudio-support")
         # Ensure PulseAudio is not running
         if systemctl --user is-active --quiet pulseaudio; then
             LogActions "Stopping PulseAudio to avoid conflicts with PipeWire."
