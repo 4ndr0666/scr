@@ -117,7 +117,7 @@ manualinstall() {
 			sudo -u "$name" git pull --force origin master
 		}
 	cd "$repodir/$1" || exit 1
-	sudo -u "$name" -D "$repodir/$1" \
+	sudo -u "$name" \
 		makepkg --noconfirm -si >/dev/null 2>&1 || return 1
 }
 
@@ -204,7 +204,7 @@ makeuserjs(){
 	arkenfox="$pdir/arkenfox.js"
 	overrides="$pdir/user-overrides.js"
 	userjs="$pdir/user.js"
-	ln -fs "/home/$name/.config/firefox/larbs.js" "$overrides"
+	ln -fs "/home/$name/.config/firefox/andro.js" "$overrides"
 	[ ! -f "$arkenfox" ] && curl -sL "https://raw.githubusercontent.com/arkenfox/user.js/master/user.js" > "$arkenfox"
 	cat "$arkenfox" "$overrides" > "$userjs"
 	chown "$name:wheel" "$arkenfox" "$userjs"
@@ -280,7 +280,7 @@ preinstallmsg || error "User exited."
 refreshkeys ||
 	error "Error automatically refreshing Arch keyring. Consider doing so manually."
 
-for x in curl ca-certificates base-devel git ntp zsh; do
+for x in curl ca-certificates base-devel git ntp zsh dash; do
 	whiptail --title "4ndr0666.sh Installation" \
 		--infobox "Installing \`$x\` which is required to install and configure other programs." 8 70
 	installpkg "$x"
@@ -307,8 +307,7 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 # --- // MAKEPKG.CONF:
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
-# --- // INSTALL_YAY_OR_FALLBACK:
-manualinstall $aurhelper || echo 'Initial yay installation attempt failed. Trying fallback mechanism.' "Failed to install AUR helper."
+manualinstall $aurhelper || error "Initial yay installation attempt failed. Trying fallback mechanism."
 
 if ! command -v yay &> /dev/null; then
     echo "Yay not found. Installing it..."
@@ -334,18 +333,23 @@ installationloop
 
 # --- // FETCH_DOTFILES_AND_CLEANUP:
 putgitrepo "$dotfilesrepo" "/home/$name" "$repobranch"
+[ -z "/home/$name/.config/newsboat/urls" ] &&
+	echo "$rssurls" > "/home/$name/.config/newsboat/urls"
 rm -rf "/home/$name/.git/" "/home/$name/README.md" "/home/$name/LICENSE" "/home/$name/FUNDING.yml"
 
 # --- // NVIM_PLUG_INSTALLATION:
 [ ! -f "/home/$name/.config/nvim/autoload/plug.vim" ] && vimplugininstall
 
 # --- // ZSH:
+rmmod pcspkr
+echo "blacklist pcspkr" >/etc/modprobe.d/nobeep.conf
 chsh -s /bin/zsh "$name" >/dev/null 2>&1
 sudo -u "$name" mkdir -p "/home/$name/.cache/zsh/"
 sudo -u "$name" mkdir -p "/home/$name/.config/abook/"
 sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 
 # --- // DBUS_UUID_FOR_RUNIT_INIT_SYSTEMS:
+ln -sfT /bin/dash /bin/sh >/dev/null 2>&1
 dbus-uuidgen >/var/lib/dbus/machine-id
 
 # --- // PUSH_BROWSER_NOTIFICATIONS_TO_DBUS:
@@ -382,14 +386,14 @@ pkill -u "$name" librewolf
 
 # --- // AUTO_ESCALATE:
 # (like `shutdown` to run without password).
-echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-andro-wheel-can-sudo
+echo "%wheel ALL=(ALL:ALL) ALL" >/etc/sudoers.d/00-arndro-wheel-can-sudo
 echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/systemctl suspend,/usr/bin/wifi-menu,/usr/bin/mount,/usr/bin/umount,/usr/bin/pacman -Syu,/usr/bin/pacman -Syyu,/usr/bin/pacman -Syyu --noconfirm,/usr/bin/loadkeys,/usr/bin/pacman -Syyuw --noconfirm,/usr/bin/pacman -S -y --config /etc/pacman.conf --,/usr/bin/pacman -S -y -u --config /etc/pacman.conf --" >/etc/sudoers.d/01-andro-cmds-without-password
 echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-andro-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
 
 # Cleanup
-rm -f /etc/sudoers.d/larbs-temp
+rm -f /etc/sudoers.d/andro-temp
 
 # Last message! Install complete!
 finalize
