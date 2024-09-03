@@ -10,8 +10,9 @@ RESET='\033[0m'
 LOGFILE="$HOME/ffmpeg_operations.log"
 
 # Display script banner
-echo -e "${GREEN}"
-cat << "EOF"
+display_banner() {
+    echo -e "${GREEN}"
+    cat << "EOF"
   ____   ____.__    .___.__  .__                          .__
   \   \ /   /|__| __| _/|  | |__| ____   ____        _____|  |__
    \   Y   / |  |/ __ | |  | |  |/    \_/ __ \      /  ___/  |  \
@@ -19,9 +20,10 @@ cat << "EOF"
      \___/   |__\____ | |____/__|___|  /\___  > /\ /____  >___|  /
                      \/              \/     \/  \/      \/     \/
 EOF
-echo -e "${RESET}"
+    echo -e "${RESET}"
+}
 
-# --- Error handling with trap
+# Error handling with trap
 error_exit() {
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
     echo -e "${RED}[$timestamp] ERROR: $1${RESET}" | tee -a "$LOGFILE" >&2
@@ -29,7 +31,7 @@ error_exit() {
 }
 trap 'error_exit "An error occurred. Exiting."' ERR
 
-# --- Check for necessary dependencies
+# Check for necessary dependencies
 check_dependencies() {
     if ! command -v vspipe &> /dev/null; then
         echo "VapourSynth not found. Installing..." | tee -a "$LOGFILE"
@@ -39,14 +41,14 @@ check_dependencies() {
 
 check_dependencies
 
-# --- Prompt for input video
+# Prompt for input video
 read_input_video() {
     while true; do
         echo -n "Enter the video name (autocomplete available): "
         read -e input_video
         if [[ -f "$input_video" ]]; then
             INPUT_VIDEO="$input_video"
-            INPUT_DIR=$(dirname "$input_video")  # Extract directory of the input video
+            INPUT_DIR=$(dirname "$input_video")
             break
         else
             echo "The video file does not exist in the current directory or the full path provided. Please enter the correct video name."
@@ -54,18 +56,139 @@ read_input_video() {
     done
 }
 
-read_input_video
-
-# --- Prompt for output video name
-read_output_video_name() {
-    echo "Enter output video name (without extension, will default to 'output' if left blank):"
-    read -r OUTPUT_VIDEO
-    OUTPUT_VIDEO=${OUTPUT_VIDEO:-output}
+# CLI mode: process input commands
+process_cli_command() {
+    case "$1" in
+        --fps)
+            execute_ffmpeg_command "fps=$2" "Frame Rate Conversion to $2fps"
+            ;;
+        --deflicker)
+            execute_ffmpeg_command "deflicker" "Deflicker"
+            ;;
+        --dedot)
+            execute_ffmpeg_command "removegrain=1" "Dedot"
+            ;;
+        --dehalo)
+            execute_ffmpeg_command "unsharp=5:5:-1.5:5:5:-1.5" "Dehalo"
+            ;;
+        --removegrain)
+            execute_ffmpeg_command "removegrain=$2" "RemoveGrain"
+            ;;
+        --deband)
+            execute_ffmpeg_command "deband=$2" "Debanding"
+            ;;
+        --sharpen)
+            execute_ffmpeg_command "unsharp" "Sharpening & Edge Enhancement"
+            ;;
+        --scale)
+            execute_ffmpeg_command "scale=iw*2:ih*2:flags=spline" "Super Resolution"
+            ;;
+        --deshake)
+            execute_ffmpeg_command "deshake" "Deshake"
+            ;;
+        --edge-detect)
+            execute_ffmpeg_command "edgedetect" "Edge Detection"
+            ;;
+        --stabilize)
+            execute_ffmpeg_command "deshake" "Stabilization"
+            ;;
+        --slo-mo)
+            local speed_factor=$2
+            execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Slo-mo"
+            ;;
+        --speed-up)
+            local speed_factor=$(echo "1/$2" | bc -l)
+            execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Speed-up"
+            ;;
+        --convert)
+            execute_ffmpeg_command "format=$2" "Convert to $2 format"
+            ;;
+        --color-correct)
+            execute_ffmpeg_command "eq=gamma=1.5:contrast=1.2:brightness=0.3:saturation=0.7" "Color Correction"
+            ;;
+        --crop-resize)
+            execute_ffmpeg_command "crop=$2,scale=$3" "Crop and Resize"
+            ;;
+        --rotate)
+            case "$2" in
+                90)
+                    execute_ffmpeg_command "transpose=1" "Rotate 90 degrees clockwise"
+                    ;;
+                180)
+                    execute_ffmpeg_command "transpose=2,transpose=2" "Rotate 180 degrees"
+                    ;;
+                -90)
+                    execute_ffmpeg_command "transpose=2" "Rotate 90 degrees counterclockwise"
+                    ;;
+                *)
+                    error_exit "Invalid rotation option"
+                    ;;
+            esac
+            ;;
+        --flip)
+            case "$2" in
+                h)
+                    execute_ffmpeg_command "hflip" "Flip horizontally"
+                    ;;
+                v)
+                    execute_ffmpeg_command "vflip" "Flip vertically"
+                    ;;
+                *)
+                    error_exit "Invalid flip option"
+                    ;;
+            esac
+            ;;
+        --svp-slo-mo)
+            execute_svp_slo_mo "$2"
+            ;;
+        *)
+            error_exit "Invalid CLI option"
+            ;;
+    esac
 }
 
-read_output_video_name
+# CLI help function
+display_cli_help() {
+    echo "Usage: vidline.sh --cli [OPTION] [ARGS]"
+    echo "Options:"
+    echo "  --fps <value>            Convert frame rate to specified value."
+    echo "  --deflicker              Apply deflicker filter."
+    echo "  --dedot                  Apply dedot filter."
+    echo "  --dehalo                 Apply dehalo filter."
+    echo "  --removegrain <type>     Apply removegrain filter with specified type (1-22)."
+    echo "  --deband <params>        Apply debanding with specified parameters."
+    echo "  --sharpen                Apply sharpening and edge enhancement."
+    echo "  --scale                  Double the video resolution using super resolution."
+    echo "  --deshake                Stabilize shaky footage."
+    echo "  --edge-detect            Apply edge detection filter."
+    echo "  --stabilize              Stabilize footage (same as deshake)."
+    echo "  --slo-mo <factor>        Slow down video by the specified factor."
+    echo "  --speed-up <factor>      Speed up video by the specified factor."
+    echo "  --convert <format>       Convert video to the specified format (e.g., mp4, avi)."
+    echo "  --color-correct          Apply color correction."
+    echo "  --crop-resize <crop> <resize>  Crop and resize video."
+    echo "  --rotate <degrees>       Rotate video (90, 180, -90)."
+    echo "  --flip <h|v>             Flip video horizontally (h) or vertically (v)."
+    echo "  --svp-slo-mo <factor>    Apply SVP-based high FPS slo-mo."
+    echo
+    echo "Example:"
+    echo "  vidline.sh --cli --fps 60 --deflicker --svp-slo-mo 0.5"
+    exit 0
+}
 
-# --- Function to execute ffmpeg commands with estimated time feedback
+# Help Function
+display_help() {
+    echo "Usage: vidline.sh [OPTIONS]"
+    echo "Options:"
+    echo "  -h, --help    Show this help message and exit"
+    echo "  --cli         Enable command-line mode with additional options"
+    echo
+    echo "To see available CLI options:"
+    echo "  vidline.sh --cli"
+    exit 0
+}
+
+# Function to execute FFmpeg commands with estimated time feedback
 execute_ffmpeg_command() {
     local filter="$1"
     local message="$2"
@@ -78,259 +201,29 @@ execute_ffmpeg_command() {
     echo "[$timestamp] $message in progress..." | tee -a "$LOGFILE"
     
     # Use ffmpeg's progress option to estimate remaining time
-    if ffmpeg -i "$INPUT_VIDEO" -vf "$filter" "$INPUT_DIR/${OUTPUT_VIDEO}.mp4" -progress - | grep -m1 "out_time="; then
+    if ffmpeg -i "$INPUT_VIDEO" -vf "$filter" "$INPUT_DIR/${OUTPUT_VIDEO}.mp4" -progress pipe:1 2>&1 | tee -a "$LOGFILE" | grep -m1 "out_time="; then
         echo "[$timestamp] $message completed successfully." | tee -a "$LOGFILE"
-        echo "Output saved to: $INPUT_DIR/${OUTPUT_VIDEO}.mp4"  # This line informs the user of the output location
+        echo "Output saved to: $INPUT_DIR/${OUTPUT_VIDEO}.mp4"  # Inform user of the output location
     else
         error_exit "$message failed."
     fi
 }
 
-# --- Function to execute transformations
-execute_transformation() {
-    local choice="$1"
-    case "$choice" in
-        1) 
-            echo "Select Frame Rate Conversion:"
-            echo "1) 60fps"
-            echo "2) 120fps"
-            echo "3) 240fps"
-            read -p "Enter the corresponding number: " framerate_choice
-            case "$framerate_choice" in
-                1) execute_ffmpeg_command "fps=60" "Frame Rate Conversion to 60fps" ;;
-                2) execute_ffmpeg_command "fps=120" "Frame Rate Conversion to 120fps" ;;
-                3) execute_ffmpeg_command "fps=240" "Frame Rate Conversion to 240fps" ;;
-                *) error_exit "Invalid frame rate selection" ;;
-            esac
-            ;;
-        2) execute_ffmpeg_command "deflicker" "Deflicker" ;;
-        3) execute_ffmpeg_command "removegrain=1" "Dedot" ;;
-        4) execute_ffmpeg_command "unsharp=5:5:-1.5:5:5:-1.5" "Dehalo" ;;
-        5) 
-            echo "Executing RemoveGrain"
-            read -p 'Enter grain type for RemoveGrain (default is 1, range 1-22): ' grain_type
-            grain_type=${grain_type:-1}
-            if [[ ! $grain_type =~ ^[0-9]+$ ]] || [ "$grain_type" -lt 1 ] || [ "$grain_type" -gt 22 ]]; then
-                error_exit "Invalid input! Please enter a number between 1 and 22."
-            fi
-            execute_ffmpeg_command "removegrain=$grain_type" "RemoveGrain"
-            ;;
-        6) 
-            echo "Executing Debanding"
-            read -p 'Enter debanding parameters (default is none): ' deband_params
-            deband_params=${deband_params:-0}
-            if [[ ! $deband_params =~ ^[0-9]+$ ]] || [ "$deband_params" -lt 0 ] || [ "$deband_params" -gt 64 ]; then
-                error_exit "Invalid input! Please enter a number between 0 and 64."
-            fi
-            execute_ffmpeg_command "deband=$deband_params" "Debanding"
-            ;;
-        7) execute_ffmpeg_command "unsharp" "Sharpening & Edge Enhancement" ;;
-        8) execute_ffmpeg_command "scale=iw*2:ih*2:flags=spline" "Super Resolution" ;;
-        9) execute_ffmpeg_command "deshake" "Deshake" ;;
-        10) execute_ffmpeg_command "edgedetect" "Edge Detection" ;;
-        11) execute_ffmpeg_command "deshake" "Stabilization" ;;
-        12) 
-            echo "Executing Slo-mo"
-            read -p 'Enter the speed factor (greater than 1 to slow down, less than 1 to speed up, default is 1): ' speed_factor
-            speed_factor=${speed_factor:-1}
-            if [[ ! $speed_factor =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-                error_exit "Invalid input! Please enter a valid number."
-            fi
-            execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Slo-mo"
-            ;;
-        13)
-            echo "Executing Basic Video Converter"
-            echo "Available formats: mp4, avi, mkv, flv, webm"
-            read -p "Enter the desired output format: " format
-            case $format in
-                mp4|avi|mkv|mov|webm)
-                    if ffmpeg -i "$INPUT_VIDEO" "$INPUT_DIR/${OUTPUT_VIDEO}.$format"; then
-                        echo "Video conversion to $format completed successfully." | tee -a "$LOGFILE"
-                        echo "Output saved to: $INPUT_DIR/${OUTPUT_VIDEO}.$format"
-                    else
-                        error_exit "Video conversion to $format failed."
-                    fi
-                    ;;
-                *)
-                    error_exit "Invalid format selected."
-                    ;;
-            esac
-            ;;
-        14) execute_ffmpeg_command "eq=gamma=1.5:contrast=1.2:brightness=0.3:saturation=0.7" "Color Correction" ;;
-        15) 
-            echo "Executing Crop and Resize"
-            read -p 'Enter crop dimensions (format: out_w:out_h:x:y, e.g., 640:360:0:0): ' crop_dims
-            if [[ ! $crop_dims =~ ^[0-9]+:[0-9]+:[0-9]+:[0-9]+$ ]]; then
-                error_exit "Invalid input! Please enter a valid dimension."
-            fi
-            read -p 'Enter output dimensions (format: widthxheight, e.g., 1280x720): ' output_dims
-            if [[ ! $output_dims =~ ^[0-9]+x[0-9]+$ ]]; then
-                error_exit "Invalid input! Please enter a valid dimension."
-            fi
-            execute_ffmpeg_command "crop=$crop_dims,scale=$output_dims" "Crop and Resize"
-            ;;
-        16) 
-            echo "Executing Rotation and Flip"
-            echo "1) Rotate 90 degrees clockwise"
-            echo "2) Rotate 90 degrees counterclockwise"
-            echo "3) Rotate 180 degrees"
-            echo "4) Flip horizontally"
-            echo "5) Flip vertically"
-            read -p 'Select an operation: ' rotation_choice
-            if [[ ! $rotation_choice =~ ^[1-5]$ ]]; then
-                error_exit "Invalid input! Please enter a number between 1 and 5."
-            fi
-            case $rotation_choice in
-                1) execute_ffmpeg_command "transpose=1" "Rotation" ;;
-                2) execute_ffmpeg_command "transpose=2" "Rotation" ;;
-                3) execute_ffmpeg_command "transpose=2,transpose=2" "Rotation" ;;
-                4) execute_ffmpeg_command "hflip" "Flip" ;;
-                5) execute_ffmpeg_command "vflip" "Flip" ;;
-            esac
-            ;;
-        17) 
-            echo "Executing Noise Reduction"
-            read -p 'Enter noise reduction strength (0-100, default is 30): ' noise_strength
-            noise_strength=${noise_strength:-30}
-            if [[ ! $noise_strength =~ ^[0-9]+$ ]] || [ "$noise_strength" -gt 100 ] || [ "$noise_strength" -lt 0 ]; then
-                error_exit "Invalid input! Please enter a number between 0 and 100."
-            fi
-            execute_ffmpeg_command "hqdn3d=${noise_strength}" "Noise Reduction"
-            ;;
-        18) 
-            echo "Executing Enhanced SVP Transformation"
-            cat > temp_vapoursynth_script.vpy << EOL
-import vapoursynth as vs
-import sys
-
-core = vs.core
-core.num_threads = 4
-
-def error_exit(message):
-    print(message)
-    sys.exit(1)
-
-if not hasattr(core,'svp1'):
-     core.std.LoadPlugin("/opt/svp/plugins/libsvpflow1_vs64.so")
-if not hasattr(core,'svp2'):
-     core.std.LoadPlugin("/opt/svp/plugins/libsvpflow2_vs64.so")
-
-clip = core.ffms2.Source("$INPUT_VIDEO")
-
-if clip.format.id != vs.YUV420P8 and clip.format.id != vs.YUV420P10:
-    error_exit("Unsupported video format! Please use a video that can be converted to YUV420P8 or YUV420P10.")
-
-super_params     = "{rc:true}"
-analyse_params   = "{}"
-smoothfps_params = "{rate:{num:1}}"
-
-src_fps     = 60
-demo_mode   = 0
-stereo_type = 0
-nvof        = 0
-
-def interpolate(clip):
-     input_um = clip.resize.Point(format=vs.YUV420P10,dither_type="random")
-     input_m  = input_um
-     input_m8 = input_m.resize.Point(format=vs.YUV420P8)
-
-     if nvof:
-         smooth  = core.svp2.SmoothFps_NVOF(input_m,smoothfps_params,nvof_src=input_m8,src=input_um,fps=src_fps)
-     else:
-         super   = core.svp1.Super(input_m8,super_params)
-         vectors = core.svp1.Analyse(super["clip"],super["data"],input_m8,analyse_params)
-         smooth  = core.svp2.SmoothFps(input_m,super["clip"],super["data"],vectors["clip"],vectors["data"],smoothfps_params,src=input_um,fps=src_fps)
-
-     return smooth 
-
-if stereo_type == 1:
-     lf = interpolate(core.std.CropRel(clip,0,(int)(clip.width/2),0,0))
-     rf = interpolate(core.std.CropRel(clip,(int)(clip.width/2),0,0,0))
-     smooth = core.std.StackHorizontal([lf, rf])
-elif stereo_type == 2:
-     lf = interpolate(core.std.CropRel(clip,0,0,0,(int)(clip.height/2)))    
-     rf = interpolate(core.std.CropRel(clip,0,0,(int)(clip.height/2),0))
-     smooth = core.std.StackVertical([lf, rf])
-else:
-     smooth =  interpolate(clip)
-
-smooth = smooth.resize.Point(format=vs.YUV420P10)
-smooth.set_output()
-EOL
-            vspipe temp_vapoursynth_script.vpy - | ffmpeg -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -r 60 -i pipe:0 "$INPUT_DIR/${OUTPUT_VIDEO}.mp4" && echo "Enhanced SVP Transformation completed successfully." | tee -a "$LOGFILE" || error_exit "Enhanced SVP Transformation failed."
-            rm temp_vapoursynth_script.vpy
-            ;;
-            
-            *)
-            error_exit "Invalid selection"
-            ;;
-    esac
-}
-
-# --- Help Function
-display_help() {
-    echo "Usage: $0"
-    echo "This script allows you to perform various video transformations using ffmpeg and VapourSynth."
-    echo "Options:"
-    echo "  -h, --help    Show this help message and exit"
-    echo
-    echo "Available Transformations:"
-    cat << EOF
-1) Frame Rate Conversion       - Convert the frame rate of the video (e.g., to 60fps).
-2) Deflicker                   - Reduce flicker in video.
-3) Dedot                       - Apply dedot filter for grain reduction.
-4) Dehalo                      - Apply dehalo filter to reduce halo artifacts.
-5) RemoveGrain                 - Remove grain using a specified type (1-22).
-6) Debanding                   - Apply debanding with customizable parameters.
-7) Sharpening & Edge Enhancement - Enhance edges and sharpen the video.
-8) Super Resolution            - Apply super resolution, doubling video resolution.
-9) Deshake                     - Stabilize shaky footage.
-10) Edge Detection             - Apply edge detection to the video.
-11) Stabilization              - Stabilize shaky footage (duplicate of Deshake).
-12) Slo-mo                     - Apply slow-motion effect with a custom speed factor.
-13) Basic Video Converter       - Convert the video to a different format (mp4, avi, mkv, etc.).
-14) Color Correction           - Apply preset color correction.
-15) Crop and Resize            - Crop and resize the video to specified dimensions.
-16) Rotation and Flip          - Rotate or flip the video.
-17) Noise Reduction            - Apply noise reduction with customizable strength.
-18) Enhanced SVP Transformation - Advanced video processing using SVP and VapourSynth.
-EOF
-    exit 0
-}
-
-# Check for help flag
+# Main logic
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     display_help
+elif [[ "${1:-}" == "--cli" ]]; then
+    shift
+    if [[ -z "${1:-}" ]]; then
+        display_cli_help
+    else
+        process_cli_command "$@"
+    fi
+else
+    display_banner
+    read_input_video
+    # Here you can continue with the interactive portion of the script
+    # For example, presenting a menu or executing a default action
+    echo "No CLI options provided. Entering interactive mode."
+    # Call a function or loop that provides interactive options
 fi
-
-# Prompt the user to select a transformation
-echo "Please select a transformation by entering the corresponding number:"
-cat << EOF
-1) Frame Rate Conversion
-2) Deflicker
-3) Dedot
-4) Dehalo
-5) RemoveGrain
-6) Debanding
-7) Sharpening & Edge Enhancement
-8) Super Resolution
-9) Deshake
-10) Edge Detection
-11) Stabilization
-12) Slo-mo
-13) Basic Video Converter
-14) Color Correction
-15) Crop and Resize
-16) Rotation and Flip
-17) Noise Reduction
-18) Enhanced SVP Transformation
-EOF
-
-read -r TRANSFORMATION
-
-if [[ -z "$TRANSFORMATION" ]]; then
-    error_exit "No transformation selected."
-fi
-
-# Execute the transformation based on user's selection
-execute_transformation "$TRANSFORMATION"
