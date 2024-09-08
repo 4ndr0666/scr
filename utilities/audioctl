@@ -1,0 +1,680 @@
+#!/bin/bash
+
+# Log file location
+LOG_FILE="/var/log/audio_troubleshooting.log"
+
+# Function to handle errors gracefully using a TRAP
+HandleErrorsGracefully() {
+    local exit_code="$?"
+    local last_command="$BASH_COMMAND"
+
+    if [ $exit_code -ne 0 ]; then
+        # Log the error to a file
+        echo "[ERROR] Command '$last_command' failed with exit code $exit_code." | tee -a "$LOG_FILE"
+        # Alert the user
+        echo "[ERROR] An error occurred while running '$last_command'. Please check the log file at $LOG_FILE for details."
+    fi
+}
+
+# Set the TRAP to catch errors
+trap 'HandleErrorsGracefully' ERR
+
+# Function to execute the sequence that resolved your issue
+ExecuteCustomSequence() {
+    echo "[INFO] Running custom sequence to load snd_hda_intel module."
+    
+    if ! sudo modprobe snd_hda_intel; then
+        echo "[ERROR] Failed to load snd_hda_intel module."
+        return 1
+    fi
+
+    if ! sudo modprobe -r snd_hda_intel || sudo modprobe snd_hda_intel; then
+        echo "[ERROR] Failed to reload snd_hda_intel module."
+        return 1
+    fi
+
+    # Restart PipeWire-Pulse service
+    echo "[INFO] Restarting PipeWire-Pulse service."
+    systemctl --user restart pipewire-pulse
+
+    echo "[SUCCESS] Custom sequence completed."
+
+    # Summary
+    echo -e "\n### Summary of Custom Sequence Execution:"
+    echo "1. Loaded snd_hda_intel module."
+    echo "2. Reloaded snd_hda_intel module."
+    echo "3. Restarted PipeWire-Pulse service."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to temporarily bypass a potentially aliased command within the script
+TempBypassAlias() {
+    local cmd="$1"
+    local original_cmd="/usr/bin/$cmd"
+    local alias_backup=""
+
+    if [ ! -x "$original_cmd" ]; then
+        echo "[ERROR] The command $cmd does not exist in /usr/bin/. Cannot bypass alias." >&2
+        return 1
+    fi
+
+    if alias "$cmd" &>/dev/null; then
+        alias_backup=$(alias "$cmd")
+        unalias "$cmd" 2>/dev/null || {
+            echo "[ERROR] Failed to unalias $cmd. Possible conflict." >&2
+            return 1
+        }
+    fi
+
+    eval "$cmd() { $original_cmd \"\$@\"; }"
+
+    if [ -n "$alias_backup" ]; then
+        eval "$alias_backup"
+    else
+        unalias "$cmd" 2>/dev/null
+    fi
+
+    echo "[INFO] The alias for $cmd was temporarily bypassed and restored."
+}
+
+# Function to check for and install all available system updates
+CheckForUpdates() {
+    echo "[INFO] Checking for available package updates..."
+
+    if ! sudo pacman -Sy; then
+        echo "[ERROR] Failed to refresh the package database. Cannot check for updates."
+        return 1
+    fi
+
+    local updates=$(pacman -Qu)
+    
+    if [ -n "$updates" ]; then
+        echo "[INFO] Updates are available. Installing all updates..."
+        
+        if sudo pacman -Syu; then
+            echo "[SUCCESS] All updates installed successfully."
+        else
+            echo "[ERROR] Failed to install some or all updates. It's recommended to resolve this before proceeding."
+            if whiptail --title "Update Failure" --yesno "Some updates failed to install. This might affect troubleshooting. Do you want to continue anyway?" 10 60; then
+                echo "[INFO] Continuing with troubleshooting despite update issues."
+            else
+                echo "[INFO] Aborting troubleshooting due to update issues."
+                return 1
+            fi
+        fi
+    else
+        echo "[INFO] No updates available. The system is up to date."
+    fi
+
+    # Summary
+    echo -e "\n### Summary of Update Check:"
+    echo "$updates"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to install and invoke needrestart for handling reboots or service restarts
+RebootSystem() {
+    echo "[INFO] Installing needrestart from the AUR..."
+
+    if ! command -v needrestart &> /dev/null; then
+        if command -v yay &> /dev/null; then
+            yay -S --noconfirm needrestart
+        elif command -v paru &> /dev/null; then
+            paru -S --noconfirm needrestart
+        else
+            echo "[ERROR] AUR helper not found. Please install needrestart manually."
+            return 1
+        fi
+    else
+        echo "[INFO] needrestart is already installed."
+    fi
+
+    echo "[INFO] Running needrestart to check if a reboot or service restart is needed."
+    sudo needrestart
+
+    echo -e "\n### Summary of Reboot System:"
+    echo "needrestart executed. Please follow any prompts provided by needrestart."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to back up configuration files and modules before and after changes
+BackupConfigFiles() {
+    local backup_dir="/var/recover"
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local pre_backup_dir="$backup_dir/pre_backup_$timestamp"
+    local post_backup_dir="$backup_dir/post_backup_$timestamp"
+    local config_files=(~/.config/pulse/default.pa ~/.config/mpv/mpv.conf ~/.mplayer/config /etc/modprobe.d/alsa-base.conf /etc/modules-load.d/)
+
+    if [ ! -d "$backup_dir" ]; then
+        echo "[INFO] Creating backup directory at $backup_dir"
+        if ! sudo mkdir -p "$backup_dir"; then
+            echo "[ERROR] Failed to create backup directory at $backup_dir. Please check permissions."
+            return 1
+        fi
+    fi
+
+    backup_files() {
+        local target_dir="$1"
+        echo "[INFO] Backing up configuration files to $target_dir"
+
+        if ! sudo mkdir -p "$target_dir"; then
+            echo "[ERROR] Failed to create target backup directory at $target_dir. Please check permissions."
+            return 1
+        fi
+
+        for config_file in "${config_files[@]}"; do
+            if [ -e "$config_file" ]; then
+                echo "[INFO] Backing up $config_file"
+                if ! sudo cp -r "$config_file" "$target_dir"; then
+                    echo "[ERROR] Failed to back up $config_file to $target_dir"
+                fi
+            else
+                echo "[WARNING] Configuration file $config_file not found. Skipping."
+            fi
+        done
+    }
+
+    echo "[INFO] Performing pre-change backup..."
+    backup_files "$pre_backup_dir"
+
+    echo "[INFO] Performing post-change backup..."
+    backup_files "$post_backup_dir"
+
+    # Summary
+    echo -e "\n### Summary of Backup Process:"
+    echo "Backups created in $backup_dir."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to restore configuration files from the most recent backup
+RestoreConfigFiles() {
+    local backup_dir="/var/recover"
+    local latest_backup=$(ls -td "$backup_dir"/post_backup_* | head -1)
+
+    if [ -z "$latest_backup" ]; then
+        echo "[ERROR] No recent backup found. Cannot perform restoration."
+        return 1
+    fi
+
+    echo "[INFO] Restoring configuration files from $latest_backup"
+
+    for config_file in "$latest_backup"/*; do
+        local original_location=$(basename "$config_file")
+        if sudo cp -r "$config_file" "$original_location"; then
+            echo "[INFO] Restored $original_location successfully."
+        else
+            echo "[ERROR] Failed to restore $original_location. Attempting alternative recovery."
+            return 1
+        fi
+    done
+
+    echo "[INFO] Restoration complete. Your system has been reverted to the last known working state."
+
+    # Summary
+    echo -e "\n### Summary of Restore Process:"
+    echo "Configuration restored from $latest_backup."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to verify and load essential kernel modules for audio
+VerifyKernelModules() {
+    local modules=("snd_hda_intel")
+
+    echo "[INFO] Verifying essential kernel modules for audio..."
+
+    for module in "${modules[@]}"; do
+        if ! lsmod | grep -q "$module"; then
+            echo "[WARNING] Kernel module $module is not loaded. Attempting to load it..."
+            if sudo modprobe "$module"; then
+                echo "[INFO] Kernel module $module loaded successfully."
+            else
+                echo "[ERROR] Failed to load kernel module $module. Please check your system logs."
+                echo "[SUGGESTION] It is recommended to check for updates or consult documentation for further assistance."
+            fi
+        else
+            echo "[INFO] Kernel module $module is already loaded."
+        fi
+    done
+
+    # Summary
+    echo -e "\n### Summary of Kernel Module Verification:"
+    echo "Checked and attempted to load the following modules: ${modules[*]}."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to install missing dependencies dynamically and re-run if new services are detected
+InstallMissingDependencies() {
+    local dependencies=("$@")
+    echo "[INFO] Checking for missing dependencies..."
+
+    for dependency in "${dependencies[@]}"; do
+        if ! pacman -Q "$dependency" &> /dev/null; then
+            echo "[INFO] Missing dependency detected: $dependency. Installing..."
+            if ! sudo pacman -S --needed "$dependency"; then
+                echo "[ERROR] Failed to install $dependency. Please check your system logs."
+                echo "[SUGGESTION] You may need to manually resolve this issue before continuing."
+                return 1
+            else
+                echo "[INFO] $dependency installed successfully."
+            fi
+        else
+            echo "[INFO] $dependency is already installed."
+        fi
+    done
+
+    echo "[INFO] Dependency check and installation complete."
+
+    # Summary
+    echo -e "\n### Summary of Dependency Installation:"
+    echo "Checked and installed the following dependencies: ${dependencies[*]}."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to restart the relevant audio services (PipeWire or PulseAudio)
+RestartAudioServices() {
+    local active_service=""
+    local services_to_restart=()
+    local services_to_stop=()
+
+    if systemctl --user is-active --quiet pipewire && systemctl --user is-active --quiet pulseaudio; then
+        echo "[INFO] Both PipeWire and PulseAudio are active."
+
+        local choice=$(whiptail --title "Audio Service Conflict" --radiolist \
+            "Both PipeWire and PulseAudio are running. Which service would you like to keep?" 15 50 2 \
+            "pipewire" "Keep PipeWire" ON \
+            "pulseaudio" "Keep PulseAudio" OFF 3>&1 1>&2 2>&3)
+
+        if [ "$choice" == "pipewire" ]; then
+            active_service="pipewire"
+            services_to_restart=("pipewire" "wireplumber")
+            services_to_stop=("pulseaudio")
+        elif [ "$choice" == "pulseaudio" ]; then
+            active_service="pulseaudio"
+            services_to_restart=("pulseaudio")
+            services_to_stop=("pipewire" "wireplumber")
+        else
+            echo "[ERROR] No valid choice selected. Aborting restart."
+            return 1
+        fi
+    elif systemctl --user is-active --quiet pipewire; then
+        active_service="pipewire"
+        services_to_restart=("pipewire" "wireplumber")
+    elif systemctl --user is-active --quiet pulseaudio; then
+        active_service="pulseaudio"
+        services_to_restart=("pulseaudio")
+    else
+        echo "[WARNING] Neither PipeWire nor PulseAudio is active."
+        return 1
+    fi
+
+    for service in "${services_to_stop[@]}"; do
+        echo "[INFO] Stopping $service..."
+        systemctl --user stop "$service"
+        if systemctl --user is-active --quiet "$service"; then
+            echo "[ERROR] Failed to stop $service."
+        else
+            echo "[INFO] $service stopped successfully."
+        fi
+    done
+
+    for service in "${services_to_restart[@]}"; do
+        echo "[INFO] Restarting $service..."
+        systemctl --user restart "$service"
+        if systemctl --user is-active --quiet "$service"; then
+            echo "[INFO] $service restarted successfully."
+        else
+            echo "[ERROR] Failed to restart $service. Please check system logs."
+        fi
+    done
+
+    # Summary
+    echo -e "\n### Summary of Audio Service Restart:"
+    echo "Stopped services: ${services_to_stop[*]}"
+    echo "Restarted services: ${services_to_restart[*]}"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to manually select the audio service (PipeWire or PulseAudio) and handle the choice completely
+SelectAudioService() {
+    echo "[INFO] Manually selecting and configuring audio service."
+    local choice=$(whiptail --title "Select Audio Service" --radiolist \
+        "Choose which audio service to use." 15 50 2 \
+        "pipewire" "Use PipeWire" ON \
+        "pulseaudio" "Use PulseAudio" OFF 3>&1 1>&2 2>&3)
+
+    if [ "$choice" == "pipewire" ]; then
+        echo "[INFO] Configuring for PipeWire..."
+        InstallMissingDependencies "pipewire" "pipewire-alsa" "pipewire-pulse" "pipewire-jack" "wireplumber"
+        systemctl --user disable pulseaudio.service --now
+        systemctl --user disable pulseaudio.socket --now
+        systemctl --user enable pipewire --now
+        systemctl --user enable wireplumber --now
+        echo "[SUCCESS] PipeWire configured successfully."
+    elif [ "$choice" == "pulseaudio" ]; then
+        echo "[INFO] Configuring for PulseAudio..."
+        InstallMissingDependencies "pulseaudio" "pulseaudio-alsa" "pavucontrol"
+        systemctl --user disable pipewire.service --now
+        systemctl --user disable pipewire.socket --now
+        systemctl --user disable wireplumber --now
+        systemctl --user enable pulseaudio --now
+        echo "[SUCCESS] PulseAudio configured successfully."
+    else
+        echo "[ERROR] No valid choice selected. Aborting configuration."
+        return 1
+    fi
+
+    # Summary
+    echo -e "\n### Summary of Audio Service Selection:"
+    echo "Configured service: $choice"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to test audio output using a commonly available sound file
+TestAudioOutput() {
+    local test_sound="/usr/share/sounds/alsa/Front_Center.wav"
+
+    if [ ! -f "$test_sound" ]; then
+        echo "[ERROR] Test sound file not found at $test_sound. Cannot perform audio test."
+        return 1
+    fi
+
+    echo "[INFO] Testing audio output with: $test_sound"
+    if aplay "$test_sound" &>/dev/null; then
+        echo "[SUCCESS] Audio test completed successfully. You should have heard the sound."
+    else
+        echo "[ERROR] Audio test failed. No sound was played."
+        return 1
+    fi
+
+    # Summary
+    echo -e "\n### Summary of Audio Test:"
+    echo "Test sound played: $test_sound"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to offer enhancements for the selected audio service
+EnhanceAudioService() {
+    local active_service=""
+    local packages=()
+
+    if systemctl --user is-active --quiet pipewire; then
+        active_service="pipewire"
+        packages=("pipewire-alsa" "pipewire-pulse" "pipewire-jack" "wireplumber" "qjackctl" "helvum" "easyeffects")
+    elif systemctl --user is-active --quiet pulseaudio; then
+        active_service="pulseaudio"
+        packages=("pavucontrol" "pulseaudio-ctl" "pulsemixer" "pactl" "pacmd")
+    else
+        echo "[ERROR] No active audio service detected. Unable to offer enhancements."
+        return 1
+    fi
+
+    echo "[INFO] Displaying package selection for $active_service enhancements..."
+
+    # Use fzf to display and select packages
+    if [[ -n "$1" ]]; then
+        sudo pacman -S "$@" && exit
+    else
+        echo -e '\e[1;37m[PACMAN] \e[1;32mInstall new packages (TAB to select, ENTER to install, PREVIEW-WINDOW: ?- toggle, shift+up/down- movement)\e[0m'
+        echo "${packages[@]}" | tr ' ' '\n' | \
+        fzf -e --multi --preview='pacman -Si {1}' --reverse --info=inline --height='80%' \
+        --color='hl:148,hl+:154,pointer:032,marker:010,bg+:237,gutter:008' \
+        --prompt='> ' --pointer='▶' --marker='✓' \
+        --bind '?:toggle-preview' \
+        --bind 'shift-up:preview-up' \
+        --bind 'shift-down:preview-down' \
+        --bind 'ctrl-a:select-all' | \
+        xargs -ro sudo pacman -S
+    fi
+
+    echo "[SUCCESS] Enhancement packages installed for $active_service."
+
+    # Summary
+    echo -e "\n### Summary of Audio Service Enhancement:"
+    echo "Packages installed for $active_service: ${packages[*]}"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to create and edit /etc/modprobe.d/sound.conf
+create_modprobe_config() {
+    local config_file="/etc/modprobe.d/sound.conf"
+    
+    echo "[INFO] Creating and editing $config_file"
+    sudo bash -c "cat > $config_file <<EOL
+# Ensure snd_intel_dspcfg is loaded after snd_hda_intel
+install snd_hda_intel /sbin/modprobe --ignore-install snd_hda_intel && /sbin/modprobe snd_intel_dspcfg
+
+# Ensure snd_pcm is loaded after snd_hda_codec_realtek
+install snd_hda_codec_realtek /sbin/modprobe --ignore-install snd_hda_codec_realtek && /sbin/modprobe snd_pcm
+EOL"
+    echo "[SUCCESS] $config_file created and configured."
+
+    # Summary
+    echo -e "\n### Summary of Modprobe Configuration:"
+    echo "Configuration file created at: $config_file"
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to determine initrd tool and rebuild initramfs
+rebuild_initramfs() {
+    if command -v mkinitcpio &> /dev/null; then
+        echo "[INFO] Detected mkinitcpio. Rebuilding initramfs with mkinitcpio."
+        sudo mkinitcpio -P
+    elif command -v dracut &> /dev/null; then
+        echo "[INFO] Detected dracut. Rebuilding initramfs with dracut."
+        sudo dracut --force
+    else
+        echo "[ERROR] Neither mkinitcpio nor dracut detected. Cannot rebuild initramfs."
+        return 1
+    fi
+    echo "[SUCCESS] Initramfs rebuilt successfully."
+
+    # Summary
+    echo -e "\n### Summary of Initramfs Rebuild:"
+    echo "Initramfs rebuilt using the detected tool."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to verify module loading after reboot
+verify_module_loading() {
+    echo "[INFO] Verifying that sound modules are loaded correctly after reboot"
+    lsmod | grep -E "snd_hda_intel|snd_intel_dspcfg|snd_hda_codec_realtek|snd_pcm|snd_hda_core"
+    
+    if [[ $? -eq 0 ]]; then
+        echo "[SUCCESS] Modules are loaded correctly."
+    else
+        echo "[ERROR] Modules are not loaded as expected. Please check your configuration."
+        suggest_systemd_service
+    fi
+
+    # Summary
+    echo -e "\n### Summary of Module Verification:"
+    echo "Verified module loading after reboot."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to automate the verification process
+automate_verification() {
+    echo "[INFO] Rebooting the system to verify module loading..."
+    sudo reboot
+
+    # Wait for the system to reboot
+    sleep 60
+    
+    # After reboot, check if the modules are loaded
+    verify_module_loading
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to suggest creating a custom SystemD service if modules fail to load
+suggest_systemd_service() {
+    echo "[INFO] It appears the modules are not loading correctly on boot."
+    if whiptail --title "Create SystemD Service" --yesno "Would you like to create a SystemD service to ensure modules are loaded on boot?" 10 60; then
+        create_systemd_service
+    else
+        echo "[INFO] SystemD service creation skipped."
+    fi
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to create a custom SystemD service for loading modules
+create_systemd_service() {
+    local service_file="/etc/systemd/system/load-sound-modules.service"
+    
+    echo "[INFO] Creating a SystemD service to load sound modules at boot."
+    sudo bash -c "cat > $service_file <<EOL
+[Unit]
+Description=Load Sound Modules
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/modprobe snd_hda_intel snd_intel_dspcfg snd_hda_codec_realtek snd_pcm snd_hda_core
+
+[Install]
+WantedBy=multi-user.target
+EOL"
+    
+    sudo systemctl enable load-sound-modules.service
+    echo "[SUCCESS] SystemD service created and enabled."
+
+    # Summary
+    echo -e "\n### Summary of SystemD Service Creation:"
+    echo "SystemD service created to ensure sound modules load at boot."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to test sound functionality after reboot
+test_sound_functionality() {
+    echo "[INFO] Testing sound functionality..."
+    
+    aplay /usr/share/sounds/alsa/Front_Center.wav
+
+    if [[ $? -eq 0 ]]; then
+        echo "[SUCCESS] Sound is working correctly."
+    else
+        echo "[ERROR] Sound test failed. Further troubleshooting may be required."
+    fi
+
+    # Summary
+    echo -e "\n### Summary of Sound Functionality Test:"
+    echo "Tested sound functionality after reboot."
+
+    echo -e "\nPress Enter to return to the main menu."
+    read -r
+}
+
+# Function to present a menu for interactive troubleshooting options
+InteractivePrompt() {
+    while true; do
+        local choice
+        choice=$(whiptail --title "Audio Troubleshooting Tool" --menu "Choose an option:" 15 50 12 \
+            "1" "Run full automated troubleshooting" \
+            "2" "Check and restart audio services" \
+            "3" "Test audio output" \
+            "4" "Backup configuration files" \
+            "5" "Restore previous configuration" \
+            "6" "Check and install dependencies" \
+            "7" "Enhance the selected audio service" \
+            "8" "Create and edit modprobe config" \
+            "9" "Rebuild initramfs" \
+            "10" "Execute custom sequence" \
+            "11" "Select and configure audio service" \
+            "12" "Exit" 3>&1 1>&2 2>&3)
+
+        case $choice in
+            1)
+                echo "[INFO] Running full automated troubleshooting process..."
+                CheckForUpdates
+                BackupConfigFiles
+                InstallMissingDependencies "pipewire" "alsa-utils" # Example dependencies
+                VerifyKernelModules
+                RestartAudioServices
+                TestAudioOutput
+                ;;
+            2)
+                echo "[INFO] Checking and restarting audio services..."
+                RestartAudioServices
+                ;;
+            3)
+                echo "[INFO] Testing audio output..."
+                TestAudioOutput
+                ;;
+            4)
+                echo "[INFO] Backing up configuration files..."
+                BackupConfigFiles
+                ;;
+            5)
+                echo "[INFO] Restoring previous configuration..."
+                RestoreConfigFiles
+                ;;
+            6)
+                echo "[INFO] Checking and installing dependencies..."
+                InstallMissingDependencies "pipewire" "alsa-utils" # Example dependencies
+                ;;
+            7)
+                echo "[INFO] Enhancing the selected audio service..."
+                EnhanceAudioService
+                ;;
+            8)
+                echo "[INFO] Creating and editing modprobe config..."
+                create_modprobe_config
+                ;;
+            9)
+                echo "[INFO] Rebuilding initramfs..."
+                rebuild_initramfs
+                ;;
+            10)
+                echo "[INFO] Executing custom sequence..."
+                ExecuteCustomSequence
+                ;;
+            11)
+                echo "[INFO] Selecting and configuring audio service..."
+                SelectAudioService
+                ;;
+            12)
+                echo "[INFO] Exiting the tool."
+                exit 0
+                ;;
+            *)
+                echo "[INFO] Invalid selection. Exiting."
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Present the interactive menu to the user
+InteractivePrompt

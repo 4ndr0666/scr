@@ -3,7 +3,7 @@
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
     echo "This script requires root privileges. Please enter your password to continue."
-    exec sudo "$0" "${@:-}"
+    exec sudo "$0" "$@"
 fi
 
 sleep 1
@@ -155,6 +155,73 @@ validateServiceFile() {
     if ! systemd-analyze verify "$file"; then
         echo "Error: Invalid service file $file"
         exit 1
+    fi
+}
+
+# Adjust swappiness based on free memory
+adjust_swappiness() {
+    local target_swappiness=10
+
+    # Ensure free_ram_mb is initialized
+    local free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
+    if [[ -z "$free_ram_mb" ]]; then
+        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
+    fi
+
+    sysctl vm.swappiness="$target_swappiness"
+    log_action "Swappiness adjusted to $target_swappiness."
+}
+
+# Clear RAM cache if free memory is low
+clear_ram_cache() {
+    # Ensure free_ram_mb is initialized
+    local free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
+    if [[ -z "$free_ram_mb" ]]; then
+        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
+    fi
+
+    if [ "$free_ram_mb" -lt 500 ]; then
+        echo 3 > /proc/sys/vm/drop_caches
+        log_action "RAM cache cleared due to low free memory."
+    fi
+}
+
+# Clear swap if usage exceeds threshold
+clear_swap() {
+    local swap_total
+    local swap_used
+    local swap_usage_percent
+
+    swap_total=$(free | awk '/^Swap:/{print $2}')
+    swap_used=$(free | awk '/^Swap:/{print $3}')
+
+    if [[ -z "$swap_total" || -z "$swap_used" || "$swap_total" -eq 0 ]]; then
+        swap_usage_percent=0  # Set to 0 if swap values can't be determined
+    else
+        swap_usage_percent=$(awk "BEGIN {printf \"%.0f\", ($swap_used/$swap_total) * 100}")
+    fi
+
+    if [ "$swap_usage_percent" -gt 80 ]; then
+        swapoff -a && swapon -a
+        log_action "Swap cleared due to high swap usage."
+    fi
+}
+
+# Kill processes that consume excessive memory
+kill_memory_hogs() {
+    local mem_threshold=80
+    local current_mem_usage
+    current_mem_usage=$(free | awk '/^Mem:/{printf("%.0f", $3/$2 * 100)}')
+
+    if [ "$current_mem_usage" -gt "$mem_threshold" ]; then
+        log_action "Memory usage over $mem_threshold%. Killing memory hogs..."
+        # Identify and kill the top memory-consuming processes
+        ps aux --sort=-%mem | awk 'NR>1{print $2, $4, $11}' | while read -r pid mem cmd; do
+            if [ "$(echo $mem | cut -d. -f1)" -gt 10 ]; then
+                kill -9 "$pid"
+                log_action "Killed process $cmd (PID $pid) using $mem% memory."
+            fi
+        done
     fi
 }
 
@@ -325,37 +392,65 @@ mkdir -p "$(dirname "$log_file")" || { echo "Failed to create log directory"; ex
 touch "$log_file" || { echo "Failed to create log file"; exit 1; }
 
 adjust_swappiness() {
-    local current_swappiness=\$(sysctl vm.swappiness | awk '{print \$3}')
     local target_swappiness=10
+
+    # Ensure free_ram_mb is initialized
     local free_ram_mb=\$(free -m | awk '/^Mem:/{print \$4}')
-
-    if [[ "\$free_ram_mb" -lt 1000 ]]; then
-        target_swappiness=10
-    elif [[ "\$free_ram_mb" -gt 2000 ]]; then
-        target_swappiness=10
+    if [[ -z "\$free_ram_mb" ]]; then
+        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
     fi
 
-    if [[ "\$current_swappiness" -ne "\$target_swappiness" ]]; then
-        sysctl vm.swappiness="\$target_swappiness"
-        log_action "Swappiness adjusted to \$target_swappiness."
-    fi
+    sysctl vm.swappiness="\$target_swappiness"
+    log_action "Swappiness adjusted to \$target_swappiness."
 }
 
 clear_ram_cache() {
+    # Ensure free_ram_mb is initialized
     local free_ram_mb=\$(free -m | awk '/^Mem:/{print \$4}')
+    if [[ -z "\$free_ram_mb" ]]; then
+        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
+    fi
 
-    if [ "\$free_ram_mb" -lt 1000 ]; then
+    if [ "\$free_ram_mb" -lt 500 ]; then
         echo 3 > /proc/sys/vm/drop_caches
         log_action "RAM cache cleared due to low free memory."
     fi
 }
 
 clear_swap() {
-    local swap_usage_percent=\$(free | awk '/^Swap:/{printf "%.0f", \$3/\$2 * 100}')
+    local swap_total
+    local swap_used
+    local swap_usage_percent
 
-    if [ "\$swap_usage_percent" -gt 50 ]; then
+    swap_total=\$(free | awk '/^Swap:/{print \$2}')
+    swap_used=\$(free | awk '/^Swap:/{print \$3}')
+
+    if [[ -z "\$swap_total" || -z "\$swap_used" || "\$swap_total" -eq 0 ]]; then
+        swap_usage_percent=0  # Set to 0 if swap values can't be determined
+    else
+        swap_usage_percent=\$(awk "BEGIN {printf \"%.0f\", (\$swap_used/\$swap_total) * 100}")
+    fi
+
+    if [ "\$swap_usage_percent" -gt 80 ]; then
         swapoff -a && swapon -a
         log_action "Swap cleared due to high swap usage."
+    fi
+}
+
+kill_memory_hogs() {
+    local mem_threshold=80
+    local current_mem_usage
+    current_mem_usage=\$(free | awk '/^Mem:/{printf("%.0f", \$3/\$2 * 100)}')
+
+    if [ "\$current_mem_usage" -gt "\$mem_threshold" ]; then
+        log_action "Memory usage over \$mem_threshold%. Killing memory hogs..."
+        # Identify and kill the top memory-consuming processes
+        ps aux --sort=-%mem | awk 'NR>1{print \$2, \$4, \$11}' | while read -r pid mem cmd; do
+            if [ "\$(echo \$mem | cut -d. -f1)" -gt 10 ]; then
+                kill -9 "\$pid"
+                log_action "Killed process \$cmd (PID \$pid) using \$mem% memory."
+            fi
+        done
     fi
 }
 
@@ -363,6 +458,7 @@ clear_swap() {
 adjust_swappiness
 clear_ram_cache
 clear_swap
+kill_memory_hogs
 
 # Log final state
 log_action "Memory and Swap Usage After Operations:"
