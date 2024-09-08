@@ -1,208 +1,246 @@
 #!/bin/bash
-# Refactored and Comprehensive Kernel Management Script
+# Production-Ready Kernel and Bootloader Management Script
+# Complete with Dracut, efibootmgr Support, Enhanced Error Handling, and User Empowerment
 
-# Function to check hardware compatibility before kernel operations
-check_hardware() {
-    echo "Checking hardware compatibility..."
+# Kernel groups (dictionary for flexibility)
+declare -A kernel_groups=(
+    ["lts"]="linux-lts"
+    ["zen"]="linux-zen"
+    ["hardened"]="linux-hardened"
+    ["default"]="linux"
+)
 
-    if systemd-detect-virt --vm &>/dev/null; then
-        echo "Running in a virtual machine. Ensure kernel operations are compatible."
-    fi
-
-    local cpu_vendor
-    cpu_vendor=$(grep -m1 -w "^vendor_id" /proc/cpuinfo | awk '{print $3}')
-    case "$cpu_vendor" in
-        GenuineIntel)
-            echo "Intel CPU detected."
-            ;;
-        AuthenticAMD)
-            echo "AMD CPU detected."
-            ;;
-        *)
-            echo "Unrecognized CPU type."
-            ;;
-    esac
+# Function: error_exit
+# Handles errors by printing the message and exiting the script
+error_exit() {
+    echo "Error: $1" 1>&2
+    exit 1
 }
 
-# Function to list installed kernels
+# Function: check_pacman_lock
+# Ensures there is no pacman lock, removing it if necessary to prevent blocking operations
+check_pacman_lock() {
+    local db_lock_path="/var/lib/pacman/db.lck"
+    if [ -f "$db_lock_path" ]; then
+        echo "Warning: removing pacman db lock."
+        sudo rm -f "$db_lock_path" || error_exit "Failed to remove pacman db lock."
+    fi
+}
+
+# Function: list_kernels
+# Lists installed kernels on the system
 list_kernels() {
     echo "Listing installed kernels..."
-    local kernels
-    kernels=$(pacman -Qqe | grep -E '^linux[0-9]{0,1}(-lts|-zen|-hardened)?$')
-    
-    if [ -n "$kernels" ]; then
-        for kernel in $kernels; do
-            local name version release arch
-            name=$(echo "$kernel" | sed -E 's/([a-zA-Z0-9@_+][a-zA-Z0-9@._+-]+)-([0-9:]*[^:/\-\ \t]+)-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            version=$(echo "$kernel" | sed -E 's/.*-([0-9:]*[^:/\-\ \t]+)-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            release=$(echo "$kernel" | sed -E 's/.*-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            arch=$(echo "$kernel" | sed -E 's/.*-([a-z0-9_]+)$/\1/')
-            echo "Name: $name, Version: $version, Release: $release, Arch: $arch"
-        done
-    else
-        echo "No installed kernels found."
-    fi
+    pacman -Qqe | grep -E '^linux[0-9]{0,1}(-lts|-zen|-hardened)?$' || echo "No installed kernels found."
 }
 
-# Function to list available kernels
+# Function: list_available_kernels
+# Lists available kernels for installation
 list_available_kernels() {
-    echo "Listing available kernels..."
-    local kernels
-    kernels=$(pacman -Ssq linux | grep -E '^linux[0-9]{0,1}(-lts|-zen|-hardened)?$')
+    echo "Available kernel options:"
+    for key in "${!kernel_groups[@]}"; do
+        echo "$key: ${kernel_groups[$key]}"
+    done
+}
+
+# Function to rebuild initramfs using dracut with advanced options and proper naming convention
+rebuild_dracut() {
+    echo "Rebuilding initramfs with dracut..."
+
+    # Apply Dracut configuration if available
+    local config_file="/etc/dracut.conf.d/dracut.conf"
+    if [ -f "$config_file" ]; then
+        echo "Applying Dracut configuration from $config_file"
+        # Constant path to avoid non-constant source issues
+        . "$config_file"
+    else
+        echo "No dracut.conf found. Proceeding without additional configuration."
+    fi
+
+    # Set default kernel version
+    local kernel_version
+    kernel_version=$(uname -r)
+
+    # Set kernel type
+    local kernel_type
+    kernel_type=$(echo "$kernel_version" | grep -oP '(lts|zen|hardened|default)' || echo "default")
+
+    # Generate default initramfs image location based on the kernel version and type
+    local img_location="/boot/initramfs-$kernel_version.img"
+    local custom_default_img="/boot/initramfs-linux-${kernel_type}.img"
     
-    if [ -n "$kernels" ]; then
-        for kernel in $kernels; do
-            local name version release arch
-            name=$(echo "$kernel" | sed -E 's/([a-zA-Z0-9@_+][a-zA-Z0-9@._+-]+)-([0-9:]*[^:/\-\ \t]+)-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            version=$(echo "$kernel" | sed -E 's/.*-([0-9:]*[^:/\-\ \t]+)-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            release=$(echo "$kernel" | sed -E 's/.*-([0-9.]+)-([a-z0-9_]+)$/\1/')
-            arch=$(echo "$kernel" | sed -E 's/.*-([a-z0-9_]+)$/\1/')
-            echo "Name: $name, Version: $version, Release: $release, Arch: $arch"
-        done
+    # Prompt to specify kernel version
+    read -rp "Do you want to specify the kernel version (default: $kernel_version)? [y/n]: " specify_kver
+    if [[ "$specify_kver" == "y" ]]; then
+        read -rp "Enter the kernel version: " kernel_version
+        kernel_type=$(echo "$kernel_version" | grep -oP '(lts|zen|hardened|default)' || echo "default")
+        img_location="/boot/initramfs-$kernel_version.img"
+        custom_default_img="/boot/initramfs-linux-${kernel_type}.img"
+    fi
+
+    # Prompt to specify a custom initramfs image location with proper default naming
+    read -rp "Enter custom initramfs image location (default: $custom_default_img): " custom_img_location
+    img_location=${custom_img_location:-$custom_default_img}
+
+    echo "Executing Dracut with granular control..."
+    
+    # Run Dracut command
+    sudo dracut --force --kver="$kernel_version" "$img_location"
+
+    # Check if image is in correct location
+    if [ ! -f "$img_location" ]; then
+        error_exit "Initramfs image was not created at $img_location."
     else
-        echo "No available kernels found."
+        echo "Initramfs image successfully created at $img_location."
     fi
 }
 
-# Function to install a kernel and optionally its headers
-install_kernel() {
-    local kernel_name="$1"
-    echo "Installing kernel: $kernel_name"
-
-    # Optimize mirrorlist using reflector (simplified)
-    local best_mirror
-    best_mirror=$(curl -s "https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on" | grep "^## " | head -n 1 | awk '{print $2}')
-    sudo reflector --country "$best_mirror" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
-
-    # Execute commands with root privileges
-    sudo pacman -Syu --noconfirm "$kernel_name" "$kernel_name-headers"
-
-    rebuild_initramfs_or_dracut
-    update_grub
+# Function: reinstall_kernel
+# Reinstalls the correct kernel and headers if Dracut fails
+reinstall_kernel() {
+    echo "Reinstalling the correct kernel and headers..."
+    check_pacman_lock
+    sudo pacman -S --noconfirm --overwrite="*" linux linux-headers || error_exit "Failed to reinstall kernel."
 }
 
-# Function to remove a kernel and optionally its headers
-remove_kernel() {
-    local kernel_name="$1"
-    echo "Removing kernel: $kernel_name"
-
-    sudo pacman -Rns --noconfirm "$kernel_name" "$kernel_name-headers"
-
-    update_grub
-}
-
-# Function to rebuild initramfs or dracut
-rebuild_initramfs_or_dracut() {
-    if command -v dracut >/dev/null 2>&1; then
-        echo "Rebuilding initramfs with dracut..."
-        sudo dracut --force
-    else
-        echo "Rebuilding initramfs with mkinitcpio..."
-        sudo mkinitcpio -P
-    fi
-}
-
-# Function to update GRUB configuration
+# Function: update_grub
+# Updates GRUB configuration
 update_grub() {
     echo "Updating GRUB configuration..."
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
+    sudo grub-mkconfig -o /boot/grub/grub.cfg || error_exit "Failed to update GRUB."
 }
 
-# Function to display a waiting indicator (simplified)
+# Function: show_waiting_indicator
+# Displays a waiting indicator for background tasks
 show_waiting_indicator() {
-    echo -n "Processing..."
-    for i in {1..10}; do
+    echo -n "Processing"
+    for ((i = 1; i <= 10; i++)); do
         echo -n "."
         sleep 1
     done
     echo " Done."
 }
 
-# Function to run commands in a terminal (simplified)
-run_in_terminal() {
-    local cmd="$*"
-    x-terminal-emulator -e "$cmd"
+# Function: remove_kernel
+# Removes a kernel using idempotency checks
+remove_kernel() {
+    local kernel_name="$1"
+    local group="${kernel_groups[$kernel_name]:-$kernel_name}"
+
+    if [ -z "$group" ]; then
+        error_exit "Invalid kernel name. Available options: ${!kernel_groups[*]}"
+    fi
+
+    echo "Removing kernel: $group"
+
+    if pacman -Q "$group" &>/dev/null; then
+        sudo pacman -Rns --noconfirm "$group" "${group}-headers" || error_exit "Failed to remove $group."
+        update_grub
+    else
+        echo "$group is not installed."
+    fi
 }
 
-# Function to set keyboard layout based on location (simplified)
-set_keyboard_layout() {
-    local country
-    country=$(curl -s https://ipapi.co/country_code/ | tr '[:upper:]' '[:lower:]')
-    case "$country" in
-        'de'|'fi'|'se')
-            setxkbmap "$country"
-            echo "Setting keyboard layout to: $country"
-            ;;
-        *)
-            echo "No specific keyboard layout set for country code: $country"
-            ;;
-    esac
+# Function to install a kernel using fzf for selection or manual input
+install_kernel() {
+    local kernel_name
+    kernel_name=$(select_kernel_with_fzf)
+
+    local group="${kernel_groups[$kernel_name]:-$kernel_name}"
+
+    if [ -z "$group" ]; then
+        error_exit "Invalid kernel name. Available options: ${!kernel_groups[*]}"
+    fi
+
+    echo "Installing kernel: $group"
+    check_pacman_lock  # Check and remove pacman lock if it exists
+
+    if pacman -Q "$group" &>/dev/null; then
+        echo "$group is already installed."
+    else
+        sudo pacman -Syu --noconfirm "$group" "${group}-headers" || error_exit "Failed to install $group."
+    fi
+
+    rebuild_dracut "$group"
+    update_grub
 }
 
-# Function to introduce a sleep counter for long-running tasks (simplified)
-sleep_counter() {
-    local seconds="$1"
-    local prompt="$2"
-    for ((s=seconds; s>0; s--)); do
-        echo -ne "$prompt ($s seconds remaining)\r"
-        sleep 1
-    done
-    echo -ne "\n"
+# Function: configure_boot_with_efibootmgr
+# Configures the bootloader using efibootmgr for proper boot entry
+configure_boot_with_efibootmgr() {
+    local vmlinuz_path="$1"
+    local initramfs_path="$2"
+
+    echo "Configuring bootloader with efibootmgr..."
+    local bootnum
+    bootnum=$(efibootmgr | grep 'BootCurrent' | awk '{print $2}')
+
+    if [ -z "$bootnum" ]; then
+        echo "No active boot entry. Creating a new one..."
+        efibootmgr --create --disk /dev/sdd --part 1 --loader "$vmlinuz_path" --label "Linux Zen" -u " root=PARTUUID=xxx initrd=$initramfs_path" --verbose
+    else
+        echo "Modifying existing boot entry ($bootnum)..."
+        efibootmgr --bootnum "$bootnum" --disk /dev/sdd --part 1 --loader "$vmlinuz_path" --label "Linux Zen" -u " root=PARTUUID=xxx initrd=$initramfs_path" --verbose
+    fi
+}
+
+# Help section to display usage instructions
+show_help() {
+    echo "Kernel Management Script - Usage"
+    echo "--------------------------------"
+    echo "Available commands:"
+    echo "  -ch    Check hardware compatibility"
+    echo "  -lk    List installed kernels"
+    echo "  -la    List available kernels"
+    echo "  -i     Install a kernel (e.g., -i lts)"
+    echo "  -r     Remove a kernel (e.g., -r zen)"
+    echo "  -rd    Rebuild initramfs using dracut with granular control"
+    echo "  -ug    Update GRUB configuration"
+    echo "  -cb    Configure boot entry using efibootmgr"
+    echo "  -h     Show this help section"
 }
 
 # Main function to handle user options
 main() {
     case "$1" in
-        check-hardware)
-            check_hardware
-            ;;
-        list-kernels)
-            list_kernels
-            ;;
-        list-available)
-            list_available_kernels
-            ;;
-        install)
+        -lk) list_kernels ;;
+        -la) list_available_kernels ;;
+        -i)
             if [ -z "$2" ]; then
-                echo "Usage: $0 install <kernel_name>"
+                echo "Usage: $0 -i <kernel_group>"
                 exit 1
             fi
-            show_waiting_indicator &
             install_kernel "$2"
             ;;
-        remove)
+        -r)
             if [ -z "$2" ]; then
-                echo "Usage: $0 remove <kernel_name>"
+                echo "Usage: $0 -r <kernel_group>"
                 exit 1
             fi
-            show_waiting_indicator &
             remove_kernel "$2"
             ;;
-        rebuild-initramfs-or-dracut)
-            rebuild_initramfs_or_dracut
+        -rd) 
+            rebuild_dracut 
             ;;
-        update-grub)
-            update_grub
+        -ug) 
+            update_grub 
             ;;
-        set-keyboard-layout)
-            set_keyboard_layout
+        -cb)
+            if [ -z "$2" ] || [ -z "$3" ]; then
+                echo "Usage: $0 -cb <vmlinuz_path> <initramfs_path>"
+                exit 1
+            fi
+            configure_boot_with_efibootmgr "$2" "$3"
             ;;
-        sleep-counter)
-            sleep_counter "${@:2}"
-            ;;
-        run-in-terminal)
-            run_in_terminal "${@:2}"
-            ;;
-        *)
-            echo "Usage: $0 {check-hardware|list-kernels|list-available|install|remove|rebuild-initramfs-or-dracut|update-grub|set-keyboard-layout|sleep-counter|run-in-terminal}"
-            exit 1
+        -h|*)
+            show_help
             ;;
     esac
 }
 
 # Elevate privileges if not root
 if [[ $EUID -ne 0 ]]; then
-    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
+    exec sudo "$0" "$@"
     exit 1
 fi
 
