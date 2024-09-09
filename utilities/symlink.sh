@@ -41,6 +41,11 @@ if [ $# -lt 2 ]; then
 fi
 
 # Main logic
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
 ACTION=$1
 shift
 
