@@ -11,10 +11,10 @@ echo "💀WARNING💀 - you are now operating as root..."
 sleep 1
 echo
 
-set -euo pipefail
+set -euo pipefail  # Fail fast on errors and undefined variables
 
 # Paths and files
-BASE_DIR="${HOME}/.local/bin"
+BASE_DIR="/home/andro/.local/bin"
 FREECACHE_PATH="/etc/systemd/system/freecache.path"
 FREECACHE_SERVICE="/etc/systemd/system/freecache.service"
 MEMORY_MONITOR_SERVICE="/etc/systemd/system/memory_monitor.service"
@@ -41,14 +41,13 @@ installDependencies() {
 
 # Function to dynamically resolve paths
 resolvePaths() {
-    EARLYOOM_BIN=$(which earlyoom || true)
+    EARLYOOM_BIN=$(command -v earlyoom || true)
     if [[ -z "$EARLYOOM_BIN" ]]; then
         echo "earlyoom binary not found in PATH. Attempting to install..."
         installDependencies
-        EARLYOOM_BIN=$(which earlyoom || true)
+        EARLYOOM_BIN=$(command -v earlyoom || true)
         if [[ -z "$EARLYOOM_BIN" ]]; then
             echo "Error: earlyoom binary still not found after installation."
-            echo "Please ensure earlyoom is installed and available in your PATH."
             exit 1
         fi
     fi
@@ -161,20 +160,16 @@ validateServiceFile() {
 # Adjust swappiness based on free memory
 adjust_swappiness() {
     local target_swappiness=10
-
-    # Ensure free_ram_mb is initialized
     local free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
     if [[ -z "$free_ram_mb" ]]; then
         free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
     fi
-
     sysctl vm.swappiness="$target_swappiness"
-    log_action "Swappiness adjusted to $target_swappiness."
+    log_action "Swappiness adjusted to $target_swappiness. Free memory: ${free_ram_mb}MB"
 }
 
 # Clear RAM cache if free memory is low
 clear_ram_cache() {
-    # Ensure free_ram_mb is initialized
     local free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
     if [[ -z "$free_ram_mb" ]]; then
         free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
@@ -225,41 +220,7 @@ kill_memory_hogs() {
     fi
 }
 
-# Main script logic
-main() {
-    checkCommandDependencies
-    resolvePaths
-    createDirectories
-
-    # Backup existing service files
-    backupServiceFile "$EARLYOOM_SERVICE"
-    backupServiceFile "$OOMD_SERVICE"
-
-    # Define and write new service files if necessary
-    defineWriteFiles "$FREECACHE_SERVICE_CONTENT" "$FREECACHE_SERVICE"
-    defineWriteFiles "$MEMORY_MONITOR_SERVICE_CONTENT" "$MEMORY_MONITOR_SERVICE"
-    defineWriteFiles "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
-    defineWriteFiles "$EARLYOOM_SERVICE_CONTENT" "$EARLYOOM_SERVICE"
-    defineWriteFiles "$OOMD_CONF_CONTENT" "$OOMD_CONF"
-
-    # Validate the newly created or updated service files
-    validateServiceFile "$FREECACHE_SERVICE"
-    validateServiceFile "$MEMORY_MONITOR_SERVICE"
-    validateServiceFile "$OOMD_SERVICE"
-    validateServiceFile "$EARLYOOM_SERVICE"
-
-    defineWriteFiles "$FREECACHE_SCRIPT_CONTENT" "$BASE_DIR/freecache.sh"
-    defineWriteFiles "$MEMORY_MONITOR_SCRIPT_CONTENT" "$BASE_DIR/memory_monitor.sh"
-
-    makeExecutable "$BASE_DIR/freecache.sh"
-    makeExecutable "$BASE_DIR/memory_monitor.sh"
-
-    reloadEnableStartServices
-
-    enableServiceSafely "earlyoom.service"
-}
-
-# Service and configuration contents
+# Define service and script contents
 FREECACHE_SERVICE_CONTENT=$(cat <<EOF
 [Unit]
 Description=Free Cache when Memory is Low
@@ -357,15 +318,8 @@ OOMD_CONF_CONTENT=$(cat <<EOF
 # oomd Configuration File
 
 [OOM]
-# SwapUsedLimit sets the percentage of swap usage at which oomd will take action
 SwapUsedLimit=50%
-
-# DefaultMemoryPressureLimit sets the memory pressure threshold for a cgroup.
-# oomd will act if the memory pressure exceeds this limit.
 DefaultMemoryPressureLimit=45%
-
-# DefaultMemoryPressureDurationSec specifies the duration memory pressure must
-# exceed the limit for oomd to act.
 DefaultMemoryPressureDurationSec=10s
 EOF
 )
@@ -373,7 +327,6 @@ EOF
 FREECACHE_SCRIPT_CONTENT=$(cat <<EOF
 #!/bin/bash
 
-# Set robust error handling
 set -euo pipefail
 
 log_file="/var/log/freecache.log"
@@ -382,33 +335,27 @@ log_action() {
     echo "\$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "\$log_file"
 }
 
-# Automatically escalate privileges if not run as root
 if [ "\$(id -u)" -ne 0 ]; then
     exec sudo "\$0" "\${@:-}"
 fi
 
-# Ensure the logging directory and file exist, now that we have root privileges
 mkdir -p "$(dirname "$log_file")" || { echo "Failed to create log directory"; exit 1; }
 touch "$log_file" || { echo "Failed to create log file"; exit 1; }
 
 adjust_swappiness() {
     local target_swappiness=10
-
-    # Ensure free_ram_mb is initialized
     local free_ram_mb=\$(free -m | awk '/^Mem:/{print \$4}')
     if [[ -z "\$free_ram_mb" ]]; then
-        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
+        free_ram_mb=0
     fi
-
     sysctl vm.swappiness="\$target_swappiness"
     log_action "Swappiness adjusted to \$target_swappiness."
 }
 
 clear_ram_cache() {
-    # Ensure free_ram_mb is initialized
     local free_ram_mb=\$(free -m | awk '/^Mem:/{print \$4}')
     if [[ -z "\$free_ram_mb" ]]; then
-        free_ram_mb=0  # Default to 0 if the free command fails or returns nothing
+        free_ram_mb=0
     fi
 
     if [ "\$free_ram_mb" -lt 500 ]; then
@@ -418,18 +365,9 @@ clear_ram_cache() {
 }
 
 clear_swap() {
-    local swap_total
-    local swap_used
-    local swap_usage_percent
-
-    swap_total=\$(free | awk '/^Swap:/{print \$2}')
-    swap_used=\$(free | awk '/^Swap:/{print \$3}')
-
-    if [[ -z "\$swap_total" || -z "\$swap_used" || "\$swap_total" -eq 0 ]]; then
-        swap_usage_percent=0  # Set to 0 if swap values can't be determined
-    else
-        swap_usage_percent=\$(awk "BEGIN {printf \"%.0f\", (\$swap_used/\$swap_total) * 100}")
-    fi
+    local swap_total=\$(free | awk '/^Swap:/{print \$2}')
+    local swap_used=\$(free | awk '/^Swap:/{print \$3}')
+    local swap_usage_percent=\$(awk "BEGIN {printf \"%.0f\", (\$swap_used/\$swap_total) * 100}")
 
     if [ "\$swap_usage_percent" -gt 80 ]; then
         swapoff -a && swapon -a
@@ -439,12 +377,10 @@ clear_swap() {
 
 kill_memory_hogs() {
     local mem_threshold=80
-    local current_mem_usage
-    current_mem_usage=\$(free | awk '/^Mem:/{printf("%.0f", \$3/\$2 * 100)}')
+    local current_mem_usage=\$(free | awk '/^Mem:/{printf("%.0f", \$3/\$2 * 100)}')
 
     if [ "\$current_mem_usage" -gt "\$mem_threshold" ]; then
         log_action "Memory usage over \$mem_threshold%. Killing memory hogs..."
-        # Identify and kill the top memory-consuming processes
         ps aux --sort=-%mem | awk 'NR>1{print \$2, \$4, \$11}' | while read -r pid mem cmd; do
             if [ "\$(echo \$mem | cut -d. -f1)" -gt 10 ]; then
                 kill -9 "\$pid"
@@ -454,13 +390,11 @@ kill_memory_hogs() {
     fi
 }
 
-# Main
 adjust_swappiness
 clear_ram_cache
 clear_swap
 kill_memory_hogs
 
-# Log final state
 log_action "Memory and Swap Usage After Operations:"
 free -h | tee -a "\$log_file"
 EOF
@@ -470,16 +404,47 @@ MEMORY_MONITOR_SCRIPT_CONTENT=$(cat <<EOF
 #!/bin/bash
 while true; do
     FREE_RAM=\$(free -m | awk '/^Mem:/{print \$4}')
-    # Adjust this threshold as needed, ensuring it's higher than oomd's threshold
     if [ "\$FREE_RAM" -lt 1000 ]; then
         touch /tmp/low_memory
     else
         rm -f /tmp/low_memory
     fi
-    sleep 60  # Check every 60 seconds
+    sleep 60
 done
 EOF
 )
+
+# Main function to orchestrate the script logic
+main() {
+    checkCommandDependencies
+    resolvePaths
+    createDirectories
+
+    # Backup and define services and scripts
+    backupServiceFile "$EARLYOOM_SERVICE"
+    backupServiceFile "$OOMD_SERVICE"
+
+    defineWriteFiles "$FREECACHE_SERVICE_CONTENT" "$FREECACHE_SERVICE"
+    defineWriteFiles "$MEMORY_MONITOR_SERVICE_CONTENT" "$MEMORY_MONITOR_SERVICE"
+    defineWriteFiles "$OOMD_SERVICE_CONTENT" "$OOMD_SERVICE"
+    defineWriteFiles "$EARLYOOM_SERVICE_CONTENT" "$EARLYOOM_SERVICE"
+    defineWriteFiles "$OOMD_CONF_CONTENT" "$OOMD_CONF"
+
+    validateServiceFile "$FREECACHE_SERVICE"
+    validateServiceFile "$MEMORY_MONITOR_SERVICE"
+    validateServiceFile "$OOMD_SERVICE"
+    validateServiceFile "$EARLYOOM_SERVICE"
+
+    defineWriteFiles "$FREECACHE_SCRIPT_CONTENT" "$BASE_DIR/freecache.sh"
+    defineWriteFiles "$MEMORY_MONITOR_SCRIPT_CONTENT" "$BASE_DIR/memory_monitor.sh"
+
+    makeExecutable "$BASE_DIR/freecache.sh"
+    makeExecutable "$BASE_DIR/memory_monitor.sh"
+
+    reloadEnableStartServices
+
+    enableServiceSafely "earlyoom.service"
+}
 
 # Execute the main function
 main
