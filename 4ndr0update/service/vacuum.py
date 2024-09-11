@@ -712,7 +712,6 @@ def check_rmshit_script(log_file=None):
         '~/.nv/',
         '~/.viminfo',
         '~/.npm/',
-        '~/.java/',
         '~/.swt/',
         '~/.oracle_jre_usage/',
         '~/.jssc/',

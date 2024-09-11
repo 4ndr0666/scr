@@ -8,25 +8,14 @@ check_exit() {
 main () {
 	if [[ "$EUID" -eq 0 ]]; then
 		while true; do
-			REPLY=$(dialog --stdout --title "4ndr0update" --menu "Choose Maintenence Task:" 15 50 8 \
+			REPLY=$(dialog --stdout --title "4ndr0update" --menu "By Your Command:" 15 50 9 \
 					1 "4ndr0update" \
 					2 "Clean Filesystem" \
 					3 "Backup System" \
 					4 "Restore System" \
-					5 "Update Settings" \
+					5 "Run Vacuum (Python)" \
+					6 "Update Settings" \
 					0 "Exit")
-#			clear;
-#			case "$REPLY" in
-#				1) system_upgrade;;
-#				2) system_clean; check_exit;;
-#				3) backup_system; check_exit;;
-#				4) restore_system; check_exit;;
-#				7) update_settings;;
-#				*) clear; exit;;
-#			esac
-#		done
-#	fi
-#}
             clear;
             case "$REPLY" in
                 1)
@@ -46,6 +35,11 @@ main () {
                     check_exit
                     ;;
                 5)
+                    # Run the vacuum.py script from the service directory
+                    python3 "$(pkg_path)/service/vacuum.py"
+                    check_exit
+                    ;;
+                6)
                     update_settings
                     check_exit
                     ;;

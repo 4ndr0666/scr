@@ -50,8 +50,8 @@ execute_main() {
 }
 
 if [[ "$EUID" -ne 0 ]]; then
-	printf "This script must be run as root\n" 1>&2
-	exit 1
+    sudo "$0" "$@"
+    exit $?
 fi
 
 if [[ "$EUID" -eq 0 ]]; then

@@ -3,7 +3,7 @@
 #######################################################################
 
 # User interface of choice (cli, dialog)
-export USER_INTERFACE='dialog'
+export USER_INTERFACE='cli'
 
 # Editor used to modify settings (vim, nano, emacs)
 # NOTE: EDITOR environment variable takes precedence

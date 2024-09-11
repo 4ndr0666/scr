@@ -5,6 +5,15 @@ import logging
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+if os.geteuid() != 0:
+      try:
+          print("Attempting to escalate privileges...")
+          subprocess.check_call(['sudo', sys.executable] + sys.argv)
+          sys.exit()
+      except subprocess.CalledProcessError as e:
+          print(f"Error escalating privileges: {e}")
+          sys.exit(e.returncode)
+
 # Function to create system user and group
 def create_system_user(user, uid, gid, description, groups=None, home_dir=None, shell='/bin/bash', sudo_privileges=False, apply_preset=False):
     """
