@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# N_m3u8DL-RE Wrapper Script - Production-Ready Version with CLI flags, config support, full error handling, and advanced options
+# N_m3u8DL-RE Wrapper Script - Production-Ready Version with Advanced Options, Config Support, and Progress Bar
 
 # Global Defaults and Presets for Common Scenarios
 THREAD_COUNT=8
@@ -63,7 +63,8 @@ show_help() {
     echo "  -r, --retries <number>              Set the download retry count (default: $RETRY_COUNT)"
     echo "  -d, --save-dir <directory>          Set the output directory (default: $SAVE_DIR)"
     echo "  -o, --output <filename>             Set the output filename (default: auto-generated)"
-    echo "  --advanced                          Display advanced options"
+    echo "  -c, --create-config                 Create a configuration file in ~/.config/m3u8/"
+    echo "  --advanced                          Display advanced options for selection"
     echo
     echo "For more information, visit the n-m3u8dl-re repository or documentation."
 }
@@ -95,49 +96,65 @@ generate_save_name() {
     fi
 }
 
-# Function to show the advanced options menu and collect user input
-show_advanced_options() {
-    log_info "Advanced Options Menu:"
-    echo "1. Use ffmpeg concat demuxer (--use-ffmpeg-concat-demuxer)"
-    echo "2. Real-time live stream merging (--live-real-time-merge)"
-    echo "3. Live stream as VOD (--live-perform-as-vod)"
-    echo "4. Set custom proxy (--custom-proxy)"
-    echo "5. Concurrent download (--concurrent-download)"
-    echo "6. Max speed (--max-speed)"
-    echo "7. Skip merge (--skip-merge)"
-    echo "8. Use shaka-packager for decryption (--use-shaka-packager)"
-    echo "9. Set temporary directory (--tmp-dir)"
-    echo "0. Done"
-    echo "Select options (enter numbers separated by space): "
-
-    read -ra advanced_selections
-    for selection in "${advanced_selections[@]}"; do
-        case "$selection" in
-            1) USE_FFMPEG_CONCAT_DEMUXER="--use-ffmpeg-concat-demuxer" ;;
-            2) LIVE_REAL_TIME_MERGE="--live-real-time-merge" ;;
-            3) LIVE_PERFORM_AS_VOD="--live-perform-as-vod" ;;
-            4)
-                echo -n "Enter custom proxy URL: "
-                read -r PROXY_OPTION
-                PROXY_OPTION="--custom-proxy $PROXY_OPTION"
-                ;;
-            5) CONCURRENT_DOWNLOAD="--concurrent-download" ;;
-            6)
-                echo -n "Enter maximum speed (e.g., 15M or 100K): "
-                read -r MAX_SPEED
-                MAX_SPEED="--max-speed $MAX_SPEED"
-                ;;
-            7) MERGE_SEGMENTS="--skip-merge True" ;;
-            8) USE_SHAKA_PACKAGER="--use-shaka-packager" ;;
-            9)
-                echo -n "Enter temporary directory: "
-                read -r TMP_DIR
-                TMP_DIR="--tmp-dir $TMP_DIR"
-                ;;
-            0) break ;;
-            *)
-                log_error "Invalid selection: $selection"
-                ;;
+# Function to apply advanced options
+apply_advanced_options() {
+    log_info "Advanced options enabled. Select one or more options:"
+    echo "1. --binary-merge: Binary merge"
+    echo "2. --no-date-info: No date info during muxing"
+    echo "3. --write-meta-json: Write meta json after parsing"
+    echo "4. --append-url-params: Add URL params to segments"
+    echo "5. --concurrent-download: Concurrent audio/video download"
+    echo "6. --header: Pass custom headers"
+    echo "7. --sub-only: Download subtitles only"
+    echo "8. --sub-format: Subtitle output format (SRT/VTT)"
+    echo "9. --auto-subtitle-fix: Auto-fix subtitles"
+    echo "10. --key: Pass decryption key(s)"
+    echo "11. --key-text-file: Set KID-KEY file"
+    echo "12. --decryption-binary-path: Path to decryption tool"
+    echo "13. --use-shaka-packager: Use shaka-packager for decryption"
+    echo "14. --mp4-real-time-decryption: Real-time MP4 decryption"
+    echo "15. --max-speed: Set speed limit"
+    echo "16. --mux-after-done: Mux streams after download"
+    echo "17. --custom-hls-method: Set HLS encryption method"
+    echo "18. --custom-hls-key: Set HLS decryption key"
+    echo "19. --use-system-proxy: Use system proxy"
+    echo "20. --custom-range: Download specific segments"
+    echo "21. --task-start-at: Schedule task start time"
+    echo "22. --live-perform-as-vod: Download live streams as VOD"
+    echo "23. --live-real-time-merge: Real-time live stream merging"
+    echo "24. --live-keep-segments: Keep live stream segments"
+    echo "25. --live-record-limit: Set recording time limit"
+    
+    read -p "Enter option number(s) separated by space: " -a advanced_selections
+    
+    for option in "${advanced_selections[@]}"; do
+        case $option in
+            1) ADVANCED_OPTIONS+=" --binary-merge";;
+            2) ADVANCED_OPTIONS+=" --no-date-info";;
+            3) ADVANCED_OPTIONS+=" --write-meta-json";;
+            4) ADVANCED_OPTIONS+=" --append-url-params";;
+            5) ADVANCED_OPTIONS+=" -mt";;
+            6) ADVANCED_OPTIONS+=" -H";;
+            7) ADVANCED_OPTIONS+=" --sub-only";;
+            8) ADVANCED_OPTIONS+=" --sub-format SRT";; # Change SRT to VTT if needed
+            9) ADVANCED_OPTIONS+=" --auto-subtitle-fix";;
+            10) ADVANCED_OPTIONS+=" --key";;
+            11) ADVANCED_OPTIONS+=" --key-text-file";;
+            12) ADVANCED_OPTIONS+=" --decryption-binary-path";;
+            13) ADVANCED_OPTIONS+=" --use-shaka-packager";;
+            14) ADVANCED_OPTIONS+=" --mp4-real-time-decryption";;
+            15) ADVANCED_OPTIONS+=" -R";;
+            16) ADVANCED_OPTIONS+=" -M";;
+            17) ADVANCED_OPTIONS+=" --custom-hls-method";;
+            18) ADVANCED_OPTIONS+=" --custom-hls-key";;
+            19) ADVANCED_OPTIONS+=" --use-system-proxy";;
+            20) ADVANCED_OPTIONS+=" --custom-range";;
+            21) ADVANCED_OPTIONS+=" --task-start-at";;
+            22) ADVANCED_OPTIONS+=" --live-perform-as-vod";;
+            23) ADVANCED_OPTIONS+=" --live-real-time-merge";;
+            24) ADVANCED_OPTIONS+=" --live-keep-segments";;
+            25) ADVANCED_OPTIONS+=" --live-record-limit";;
+            *) log_error "Invalid option number: $option";;
         esac
     done
 }
@@ -165,7 +182,7 @@ run_n_m3u8dl() {
     generate_save_name
 
     LOG_FILE="$SAVE_DIR/n_m3u8dl_log.txt"
-    local cmd="n-m3u8dl-re $url --save-dir $SAVE_DIR --save-name $SAVE_NAME --thread-count $THREAD_COUNT --download-retry-count $RETRY_COUNT $USE_FFMPEG_CONCAT_DEMUXER $AUTO_SELECT $DELETE_AFTER_DONE $PROXY_OPTION $LIVE_REAL_TIME_MERGE $LIVE_PERFORM_AS_VOD --log-level $LOG_LEVEL"
+    local cmd="n-m3u8dl-re $url --save-dir $SAVE_DIR --save-name $SAVE_NAME --thread-count $THREAD_COUNT --download-retry-count $RETRY_COUNT $USE_FFMPEG_CONCAT_DEMUXER $AUTO_SELECT $DELETE_AFTER_DONE $ADVANCED_OPTIONS --log-level $LOG_LEVEL"
 
     log_info "Executing: $cmd"
     
@@ -183,6 +200,24 @@ run_n_m3u8dl() {
     fi
 
     kill $!  # Stop the progress bar when download finishes
+}
+
+# Function to create a configuration file
+create_config_file() {
+    local config_dir="$HOME/.config/m3u8/"
+    local config_path="$config_dir/m3u8.conf"
+
+    if [[ ! -d "$config_dir" ]]; then
+        mkdir -p "$config_dir"
+        log_info "Created config directory at $config_dir"
+    fi
+
+    echo "THREAD_COUNT=$THREAD_COUNT" > "$config_path"
+    echo "RETRY_COUNT=$RETRY_COUNT" >> "$config_path"
+    echo "SAVE_DIR=$SAVE_DIR" >> "$config_path"
+    echo "LOG_LEVEL=$LOG_LEVEL" >> "$config_path"
+
+    log_success "Configuration file created at $config_path"
 }
 
 # Function to parse flags and arguments
@@ -209,8 +244,12 @@ parse_args() {
                 SAVE_NAME="$2"
                 shift
                 ;;
+            -c|--create-config)
+                create_config_file
+                exit 0
+                ;;
             --advanced)
-                show_advanced_options
+                apply_advanced_options
                 ;;
             *)
                 URL="$1"
