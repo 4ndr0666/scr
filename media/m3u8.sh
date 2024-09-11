@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# N_m3u8DL-RE Wrapper Script - Production-Ready Version
+# N_m3u8DL-RE Wrapper Script - Production-Ready Version with CLI flags, config support, full error handling, and advanced options
 
 # Global Defaults and Presets for Common Scenarios
 THREAD_COUNT=8
 RETRY_COUNT=5
 TMP_DIR="/tmp/n_m3u8dl_tmp"
 LOG_LEVEL="INFO"
-SAVE_DIR="."
+SAVE_DIR="$PWD"
+SAVE_NAME=""
 AUTO_SELECT="--auto-select"
 MERGE_SEGMENTS="--skip-merge False"
 DELETE_AFTER_DONE="--del-after-done True"
@@ -17,285 +18,219 @@ USE_FFMPEG_CONCAT_DEMUXER="--use-ffmpeg-concat-demuxer"
 LIVE_REAL_TIME_MERGE="--live-real-time-merge"
 LIVE_PERFORM_AS_VOD="--live-perform-as-vod"
 CHECK_SEGMENTS_COUNT="--check-segments-count True"
+CONFIG_FILE="$HOME/.config/m3u8/m3u8.conf"
+LOG_FILE=""
+URL=""
 
-# Dictionary for Mapping Options (Example for Future Scalability)
-declare -A option_map
-option_map=( 
-    [preset_1]="https://example.com/stream1.m3u8" 
-    [preset_2]="https://example.com/stream2.m3u8"
-)
+# Error message color formatting
+ERROR_COLOR="\033[1;31m"
+SUCCESS_COLOR="\033[1;32m"
+INFO_COLOR="\033[1;36m"
+NO_COLOR="\033[0m"
 
-# Function to Display the Help Section
+# Function to log error messages
+log_error() {
+    echo -e "${ERROR_COLOR}Error: $1${NO_COLOR}"
+}
+
+# Function to log success messages
+log_success() {
+    echo -e "${SUCCESS_COLOR}$1${NO_COLOR}"
+}
+
+# Function to log information messages
+log_info() {
+    echo -e "${INFO_COLOR}$1${NO_COLOR}"
+}
+
+# Function to load configuration from a config file
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log_info "Loading configuration from $CONFIG_FILE"
+        source "$CONFIG_FILE"
+    else
+        log_info "No config file found at $CONFIG_FILE, proceeding with defaults."
+    fi
+}
+
+# Function to display help section
 show_help() {
-    echo "Usage: n_m3u8dl_wrapper.sh [options]"
+    echo "Usage: m3u8.sh <URL> [options]"
     echo
     echo "Options:"
-    echo "  -h, --help              Show this help message and exit"
-    echo "  -p, --preset            Choose from preset stream URLs"
-    echo "  -c, --custom            Enter a custom URL"
-    echo "  -t, --threads           Set the download thread count (default: $THREAD_COUNT)"
-    echo "  -r, --retries           Set the download retry count (default: $RETRY_COUNT)"
-    echo "  -P, --proxy             Set a custom proxy URL"
-    echo "  -d, --save-dir          Set the output directory"
-    echo "  -s, --save-name         Set the output filename"
-    echo "  --live                  Enable real-time live stream downloading (VOD or real-time)"
-    echo "  --merge                 Force merge of segments using ffmpeg concat demuxer"
-    echo "  --advanced              Display advanced options"
-    echo "  --confirmation          Add confirmation prompts before running"
+    echo "  -h, --help                          Show this help message and exit"
+    echo "  -t, --threads <number>              Set the download thread count (default: $THREAD_COUNT)"
+    echo "  -r, --retries <number>              Set the download retry count (default: $RETRY_COUNT)"
+    echo "  -d, --save-dir <directory>          Set the output directory (default: $SAVE_DIR)"
+    echo "  -o, --output <filename>             Set the output filename (default: auto-generated)"
+    echo "  --advanced                          Display advanced options"
     echo
     echo "For more information, visit the n-m3u8dl-re repository or documentation."
 }
 
-# Function to Handle User Confirmation
-confirm_action() {
-    read -p "$1 (y/n): " confirm
-    if [[ $confirm != "y" ]]; then
-        echo "Action canceled."
-        exit 1
-    fi
-}
-
-# Function to Validate URL Input
+# Function to validate URL input
 validate_url() {
     if [[ -z "$1" ]]; then
-        echo "Error: No URL provided. Please enter a valid URL."
+        log_error "No URL provided. Please enter a valid URL."
+        exit 1
+    elif ! [[ "$1" =~ ^https?:// ]]; then
+        log_error "Invalid URL format."
         exit 1
     fi
 }
 
-# Function to Validate Directory Input
+# Function to validate directory input
 validate_directory() {
-    if [[ -z "$1" ]]; then
-        echo "Error: No output directory provided. Using default directory."
-        SAVE_DIR="$PWD"
-    fi
-}
-
-# Function to Check and Set Proxy Options
-apply_proxy_option() {
-    echo "Choose a proxy option:"
-    echo "1. Use default proxy: $DEFAULT_PROXY"
-    echo "2. Enter a custom proxy URL"
-    echo "3. Skip proxy"
-
-    read -r proxy_choice
-    case $proxy_choice in
-        1)
-            PROXY_OPTION="--custom-proxy $DEFAULT_PROXY"
-            ;;
-        2)
-            echo -n "Enter your custom proxy URL: "
-            read -r custom_proxy
-            if [[ -z "$custom_proxy" ]]; then
-                echo "Error: No custom proxy provided. Skipping proxy."
-                PROXY_OPTION=""
-            else
-                PROXY_OPTION="--custom-proxy $custom_proxy"
-            fi
-            ;;
-        3)
-            PROXY_OPTION=""
-            ;;
-        *)
-            echo "Invalid choice. Skipping proxy."
-            PROXY_OPTION=""
-            ;;
-    esac
-}
-
-# Function to Apply Advanced Options
-apply_advanced_options() {
-    echo "Applying best practices for advanced options..."
-    echo "Thread count: $THREAD_COUNT, Retry count: $RETRY_COUNT"
-    echo "Temporary directory: $TMP_DIR"
-    apply_proxy_option
-}
-
-# Function to Run the n-m3u8dl-re Command with Input Validation
-run_n_m3u8dl() {
-    local url="$1"
-    local save_dir="$2"
-    local save_name="$3"
-    local is_live="$4"
-    local merge_option="$5"
-
-    # Validate Inputs
-    validate_url "$url"
-    validate_directory "$save_dir"
-
-    # Apply Advanced Options
-    apply_advanced_options
-
-    # Build the Base n-m3u8dl-re Command
-    local log_file="$save_dir/n_m3u8dl_log.txt"
-    echo "Executing: n-m3u8dl-re command..."
-
-    # Determine if Live Stream Options are Needed
-    if [[ "$is_live" == "y" ]]; then
-        live_options="$LIVE_REAL_TIME_MERGE"
-    else
-        live_options=""
-    fi
-
-    # Check if Merging of Segments is Required
-    if [[ "$merge_option" == "y" ]]; then
-        merge_options="$USE_FFMPEG_CONCAT_DEMUXER"
-    else
-        merge_options=""
-    fi
-
-    # Execute the Command
-    n-m3u8dl-re "$url" --save-dir "$save_dir" --save-name "$save_name" \
-        --thread-count "$THREAD_COUNT" --download-retry-count "$RETRY_COUNT" \
-        $PROXY_OPTION $live_options $merge_options $AUTO_SELECT $MERGE_SEGMENTS $DELETE_AFTER_DONE \
-        --write-meta-json --log-level "$LOG_LEVEL" > "$log_file" 2>&1
-
-    # Check for Errors
-    if [[ $? -eq 0 ]]; then
-        echo "Download completed successfully. Check the directory: $save_dir"
-    else
-        echo "Error: Download failed. Check the log file for details: $log_file"
+    if [[ ! -d "$1" ]]; then
+        log_error "Invalid directory. Please provide a valid directory."
         exit 1
     fi
 }
 
-# Function to Handle Preset Streams
-handle_preset() {
-    case "$1" in
-        1)
-            url=${option_map[preset_1]}
-            save_name="Example_Stream_1"
-            ;;
-        2)
-            url=${option_map[preset_2]}
-            save_name="Example_Stream_2"
-            ;;
-        *)
-            echo "Invalid preset option."
-            exit 1
-            ;;
-    esac
-
-    # Prompt for Save Directory
-    echo -n "Enter output directory (leave empty for current directory): "
-    read -r save_dir
-    [ -z "$save_dir" ] && save_dir="."
-
-    echo "Is this a live stream (y/n)?"
-    read -r is_live
-
-    echo "Do you want to merge segments (y/n)?"
-    read -r merge_option
-
-    echo "Starting download for preset stream: $url"
-    run_n_m3u8dl "$url" "$save_dir" "$save_name" "$is_live" "$merge_option"
+# Function to generate an idempotent save name
+generate_save_name() {
+    if [[ -z "$SAVE_NAME" ]]; then
+        SAVE_NAME="m3u8_download_$(date +%Y%m%d%H%M%S)"
+        log_info "No save name provided, using default: $SAVE_NAME"
+    fi
 }
 
-# Function to Handle Custom URL Input
-handle_custom_url() {
-    echo -n "Enter the URL: "
-    read -r url
+# Function to show the advanced options menu and collect user input
+show_advanced_options() {
+    log_info "Advanced Options Menu:"
+    echo "1. Use ffmpeg concat demuxer (--use-ffmpeg-concat-demuxer)"
+    echo "2. Real-time live stream merging (--live-real-time-merge)"
+    echo "3. Live stream as VOD (--live-perform-as-vod)"
+    echo "4. Set custom proxy (--custom-proxy)"
+    echo "5. Concurrent download (--concurrent-download)"
+    echo "6. Max speed (--max-speed)"
+    echo "7. Skip merge (--skip-merge)"
+    echo "8. Use shaka-packager for decryption (--use-shaka-packager)"
+    echo "9. Set temporary directory (--tmp-dir)"
+    echo "0. Done"
+    echo "Select options (enter numbers separated by space): "
 
-    # Validate URL
-    validate_url "$url"
-
-    echo -n "Enter save name (without extension): "
-    read -r save_name
-    echo -n "Enter output directory (leave empty for current directory): "
-    read -r save_dir
-    [ -z "$save_dir" ] && save_dir="$PWD"
-
-    echo "Is this a live stream (y/n)?"
-    read -r is_live
-
-    echo "Do you want to merge segments (y/n)?"
-    read -r merge_option
-
-    echo "Starting custom download: $url"
-    run_n_m3u8dl "$url" "$save_dir" "$save_name" "$is_live" "$merge_option"
-}
-
-# Function to Display the Main Menu
-main_menu() {
-    echo "====================================="
-    echo " N_m3u8DL-RE Wrapper Script - Main Menu"
-    echo "====================================="
-    echo "1. Preset: Example Stream 1"
-    echo "2. Preset: Example Stream 2"
-    echo "3. Enter a custom URL"
-    echo "4. Advanced Options"
-    echo "5. Exit"
-    echo "====================================="
-    echo -n "Choose an option [1-5]: "
-}
-
-# Function to Handle Advanced Options
-advanced_options_menu() {
-    echo "Advanced Options:"
-    echo "1. Set download thread count (current: $THREAD_COUNT)"
-    echo "2. Set retry count (current: $RETRY_COUNT)"
-    echo "3. Enable or disable merging of segments"
-    echo "4. Return to main menu"
-
-    read -r adv_option
-    case "$adv_option" in
-        1)
-            echo -n "Enter thread count: "
-            read -r THREAD_COUNT
-            ;;
-        2)
-            echo -n "Enter retry count: "
-            read -r RETRY_COUNT
-            ;;
-        3)
-            echo "Do you want to merge segments? (y/n): "
-            read -r merge_choice
-            if [[ "$merge_choice" == "y" ]]; then
-                MERGE_SEGMENTS="--skip-merge False"
-            else
-                MERGE_SEGMENTS="--skip-merge True"
-            fi
-            ;;
-        4)
-            return
-            ;;
-        *)
-            echo "Invalid option."
-            ;;
-    esac
-}
-
-# Main function
-main() {
-    while true; do
-        main_menu
-        read -r choice
-        case "$choice" in
-            1|2)
-                handle_preset "$choice"
-                ;;
-            3)
-                handle_custom_url
-                ;;
+    read -ra advanced_selections
+    for selection in "${advanced_selections[@]}"; do
+        case "$selection" in
+            1) USE_FFMPEG_CONCAT_DEMUXER="--use-ffmpeg-concat-demuxer" ;;
+            2) LIVE_REAL_TIME_MERGE="--live-real-time-merge" ;;
+            3) LIVE_PERFORM_AS_VOD="--live-perform-as-vod" ;;
             4)
-                advanced_options_menu
+                echo -n "Enter custom proxy URL: "
+                read -r PROXY_OPTION
+                PROXY_OPTION="--custom-proxy $PROXY_OPTION"
                 ;;
-            5)
-                echo "Exiting..."
-                exit 0
+            5) CONCURRENT_DOWNLOAD="--concurrent-download" ;;
+            6)
+                echo -n "Enter maximum speed (e.g., 15M or 100K): "
+                read -r MAX_SPEED
+                MAX_SPEED="--max-speed $MAX_SPEED"
                 ;;
+            7) MERGE_SEGMENTS="--skip-merge True" ;;
+            8) USE_SHAKA_PACKAGER="--use-shaka-packager" ;;
+            9)
+                echo -n "Enter temporary directory: "
+                read -r TMP_DIR
+                TMP_DIR="--tmp-dir $TMP_DIR"
+                ;;
+            0) break ;;
             *)
-                echo "Invalid option. Please choose between 1 and 5."
+                log_error "Invalid selection: $selection"
                 ;;
         esac
     done
 }
 
-# Check for help flag
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    show_help
-    exit 0
-fi
+# Function to display a simple progress bar
+show_progress_bar() {
+    local progress=0
+    while true; do
+        progress=$((progress+1))
+        printf "\r${INFO_COLOR}[%-50s] %d%%${NO_COLOR}" $(head -c $((progress/2)) < /dev/zero | tr '\0' '=') "$progress"
+        sleep 1
+        if [[ "$progress" -ge 100 ]]; then
+            break
+        fi
+    done
+}
 
-# Call the main function
-main
+# Function to run n_m3u8dl-re command
+run_n_m3u8dl() {
+    local url="$1"
+    
+    # Validate URL and directory
+    validate_url "$url"
+    validate_directory "$SAVE_DIR"
+    generate_save_name
+
+    LOG_FILE="$SAVE_DIR/n_m3u8dl_log.txt"
+    local cmd="n-m3u8dl-re $url --save-dir $SAVE_DIR --save-name $SAVE_NAME --thread-count $THREAD_COUNT --download-retry-count $RETRY_COUNT $USE_FFMPEG_CONCAT_DEMUXER $AUTO_SELECT $DELETE_AFTER_DONE $PROXY_OPTION $LIVE_REAL_TIME_MERGE $LIVE_PERFORM_AS_VOD --log-level $LOG_LEVEL"
+
+    log_info "Executing: $cmd"
+    
+    # Show progress bar in parallel
+    show_progress_bar &
+
+    # Run the download command
+    $cmd > "$LOG_FILE" 2>&1
+
+    # Check if the download was successful
+    if [[ $? -eq 0 ]]; then
+        log_success "Download completed successfully. Check the directory: $SAVE_DIR"
+    else
+        log_error "Download failed. Check the log file for details: $LOG_FILE"
+    fi
+
+    kill $!  # Stop the progress bar when download finishes
+}
+
+# Function to parse flags and arguments
+parse_args() {
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -t|--threads)
+                THREAD_COUNT="$2"
+                shift
+                ;;
+            -r|--retries)
+                RETRY_COUNT="$2"
+                shift
+                ;;
+            -d|--save-dir)
+                SAVE_DIR="$2"
+                shift
+                ;;
+            -o|--output)
+                SAVE_NAME="$2"
+                shift
+                ;;
+            --advanced)
+                show_advanced_options
+                ;;
+            *)
+                URL="$1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# Load config before parsing arguments
+load_config
+
+# Parse the command-line arguments
+parse_args "$@"
+
+# Run the download if URL is provided
+if [[ -n "$URL" ]]; then
+    run_n_m3u8dl "$URL"
+else
+    log_error "URL is required."
+    show_help
+    exit 1
+fi
