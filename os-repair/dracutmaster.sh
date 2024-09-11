@@ -10,7 +10,7 @@ echo "Starting Kernel cleanup and update process..."
 
 # Update the package database and upgrade installed packages, including the kernel
 echo "Installing the latest kernel..."
-sudo pacman -Syu --noconfirm linux linux-headers
+sudo pacman -Syu --noconfirm linux-zen linux-zen-headers
 
 # Get the current running kernel version
 current_kernel=$(uname -r)
@@ -37,7 +37,7 @@ done
 
 # Rebuild initramfs for the current kernel
 echo "Rebuilding initramfs for the current kernel: $current_kernel"
-sudo dracut --force --kver="$(uname -r)" --regenerate-all --fstab --early-microcode --enhanced-cpio --lz4
+sudo dracut --force --kver $current_kernel
 
 # Update GRUB configuration
 echo "Updating GRUB configuration..."

@@ -32,25 +32,41 @@ apply_advanced_options() {
     echo "Applying advanced options..."
     
     # Setting defaults for retry attempts and delay between retries
-    retry_streams="--retry-streams 5 --retry-max 3"
+    retry_streams="--retry-streams 5 --retry-max 0"
     
     # Setting default HLS live edge and segment threads for optimal performance
-    hls_options="--hls-live-edge 3 --stream-segment-threads 3"
+    hls_options="--hls-live-edge 3 --stream-segment-threads 3 --hls-segment-threads 3 --hls-segment-timeout 30"
     
     # Proxy selection menu
     echo "Choose a proxy option:"
-    echo "1. Use popular proxy service (HideMy.name or Proxyscrape)"
-    echo "2. Enter a custom proxy URL"
-    echo "3. No proxy"
+    echo "1. Use a proxy from HideMy.name"
+    echo "2. Use a proxy from Proxyscrape"
+    echo "3. Enter a custom proxy URL"
+    echo "4. No proxy"
     read -r proxy_choice
 
     case $proxy_choice in
         1)
-            # Example of a free proxy from a popular service
-            proxy="http://free-proxy.hidemy.name:8080"
-            proxy_option="--http-proxy $proxy"
+            # Fetching a proxy from HideMy.name
+            proxy=$(curl -s "https://hidemy.name/en/proxy-list/?type=h&anon=4&start=0#list" | grep -oP '(\d{1,3}\.){3}\d{1,3}:\d+' | head -n 1)
+            if [ -z "$proxy" ]; then
+                echo "Error: Failed to fetch proxy from HideMy.name. Skipping proxy setup."
+                proxy_option=""
+            else
+                proxy_option="--http-proxy http://$proxy"
+            fi
             ;;
         2)
+            # Fetching a proxy from Proxyscrape
+            proxy=$(curl -s "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=elite" | head -n 1)
+            if [ -z "$proxy" ]; then
+                echo "Error: Failed to fetch proxy from Proxyscrape. Skipping proxy setup."
+                proxy_option=""
+            else
+                proxy_option="--http-proxy http://$proxy"
+            fi
+            ;;
+        3)
             echo -n "Enter your custom proxy URL (e.g., http://myproxy.example:8080): "
             read -r proxy
             if [ -z "$proxy" ]; then
@@ -60,7 +76,7 @@ apply_advanced_options() {
                 proxy_option="--http-proxy $proxy"
             fi
             ;;
-        3)
+        4)
             proxy_option=""
             ;;
         *)
