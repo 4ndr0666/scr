@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Define log file for debugging
+LOGFILE="/tmp/play_with_mpv.log"
+
+# Define the path to the play_with_mpv.py script
+SCRIPT_PATH="/usr/local/bin/play_with_mpv.py"
+
+# Check if play_with_mpv.py is running
+if pidof play_with_mpv.py >/dev/null; then
+    # If running, ask to turn off
+    if [ "$(printf "No\nYes" | dmenu -i -p "Turn off play_with_mpv?")" = "Yes" ]; then
+        killall play_with_mpv.py
+        notify-send "play_with_mpv disabled."
+    fi
+else
+    # If not running, ask to turn on
+    if [ "$(printf "No\nYes" | dmenu -i -p "Turn on play_with_mpv?")" = "Yes" ]; then
+        alacritty -e /usr/bin/python "$SCRIPT_PATH" >"$LOGFILE" 2>&1 &
+        notify-send "play_with_mpv enabled."
+    fi
+fi
+
+# Update the status bar, ensure to update for Wayland
+sleep 3 && pkill -RTMIN+7 "${STATUSBAR:-waybar}"

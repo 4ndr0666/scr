@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Check if a word is provided
+if [ -z "$1" ]; then
+    echo "Usage: spellcheck <word>"
+    exit 1
+fi
+
+# The word to check
+WORD="$1"
+
+# Use aspell to check the spelling of the word
+CORRECTIONS=$(echo "$WORD" | aspell list)
+
+if [ -z "$CORRECTIONS" ]; then
+    echo "The word '$WORD' is spelled correctly."
+else
+    echo "The word '$WORD' is misspelled."
+    echo "Suggested corrections:"
+    echo "$WORD" | aspell -a | grep "^&" | awk '{print substr($0, index($0,$5))}' | tr -d ',' | tr ' ' '\n' | nl
+fi
