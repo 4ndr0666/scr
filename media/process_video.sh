@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euo pipefail
+#set -euo pipefail
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -33,12 +33,12 @@ for cmd in ffmpeg ffprobe mpv; do
     fi
 done
 # --- Check for SVP plugins
-svp_plugins=("/opt/svp/plugins/libsvpflow1_vs64.so" "/opt/svp/plugins/libsvpflow2_vs64.so")
-for plugin in "${svp_plugins[@]}"; do
-    if [ ! -f "$plugin" ]; then
-        error_exit "SVP plugin $plugin is not found."
-    fi
-done
+#svp_plugins=("/opt/svp/plugins/libsvpflow1_vs64.so" "/opt/svp/plugins/libsvpflow2_vs64.so")
+#for plugin in "${svp_plugins[@]}"; do
+#    if [ ! -f "$plugin" ]; then
+#        error_exit "SVP plugin $plugin is not found."
+#    fi
+#done
 
 # --- Function to read input
 read_input_video() {
