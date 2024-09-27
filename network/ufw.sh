@@ -57,25 +57,26 @@ ufw_config() {
 
     ufw allow in on lo
     ufw deny in from any to 127.0.0.0/8
-    ufw limit ssh
+#    ufw limit ssh
     ufw limit 80/tcp
     ufw limit 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
     ufw allow 6800/tcp # Aria2c
+#    ufw allow 9091/tcp #Transmission
     ufw logging off
 
     if [[ "$jdownloader_flag" == "true" ]]; then
         echo "Configuring UFW rules for JDownloader2..."
-    
+
         # Allow JDownloader ports on the VPN interface (tun0) for incoming traffic
         ufw allow in on tun0 to any port 9665 proto tcp
         ufw allow in on tun0 to any port 9666 proto tcp
-       
+
         # Deny access to these ports from any other interface for incoming traffic
         ufw deny in on enp2s0 to any port 9665 proto tcp
         ufw deny in on enp2s0 to any port 9666 proto tcp
     fi
-    
+
     # Disable IPv6 in UFW
     sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
 
@@ -164,21 +165,21 @@ configure_resolvconf() {
     sudo mv /etc/resolv.conf /etc/resolv.conf.backup
     sudo ln -s /run/resolvconf/resolv.conf /etc/resolv.conf
     sudo resolvconf -u
-    
+
     echo "nameserver 208.67.222.222" | sudo tee /etc/resolvconf/resolv.conf.d/head
     echo "nameserver 208.67.220.220" | sudo tee -a /etc/resolvconf/resolv.conf.d/head
-    
+
     sudo resolvconf -u
 }
 
 # Function to apply OpenVPN settings
 configure_openvpn() {
     echo "Applying OpenVPN settings..."
-    
+
     # Custom OpenVPN settings can be applied via the OpenVPN configuration files.
     # This section assumes that these settings would be placed in the relevant OpenVPN configuration files.
     # OpenVPN example configuration:
-    
+
     # Modify your OpenVPN client config (.ovpn) file to match the following:
     # proto udp
     # remote <your-vpn-server> 1195

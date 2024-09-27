@@ -1,0 +1,637 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import subprocess
+import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from typing import List, Dict, Any
+from fractions import Fraction
+import shutil
+import tempfile
+from tqdm import tqdm
+
+# Configure logging
+logging.basicConfig(
+    filename='video_processing.log',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+
+# Global Constants
+SUPPORTED_CODECS = ['avc', 'h264', 'hev1', 'h265', 'hevc']
+DEFAULT_VIDEO_CODEC = 'libx264'  # Preferred codec
+DEFAULT_AUDIO_CODECS = ['aac', 'libopus', 'libmp3lame']  # Supports AAC, Opus, and MP3
+
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    required_commands = ['ffmpeg', 'mediainfo', 'fzf', 'mpv']
+    missing_commands = []
+    for cmd in required_commands:
+        if not shutil.which(cmd):
+            missing_commands.append(cmd)
+    if missing_commands:
+        print_warning(f"The following required commands are missing: {', '.join(missing_commands)}")
+        print_warning("Please install them using your package manager and try again.")
+        sys.exit(1)
+
+def run_command(command: List[str]) -> str:
+    """Run a system command and return its output. Raise an error if command fails."""
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Command '{' '.join(command)}' failed with exit code {e.returncode}")
+        logging.error(f"Command stdout: {e.stdout}")
+        logging.error(f"Command stderr: {e.stderr}")
+        print_warning(f"An error occurred while executing a command. Check the logs for more details.")
+        raise
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+        print_warning(f"An unexpected error occurred. Check the logs for more details.")
+        raise
+
+class VideoFile:
+    """Represents a video file and its properties."""
+
+    def __init__(self, filepath: str):
+        self.filepath = filepath
+        self.basename = os.path.basename(filepath)
+        self.width = 0
+        self.height = 0
+        self.frame_rate = 0.0
+        self.codec = ''
+        self.audio_codec = ''
+        self.duration = 0.0
+        self.bitrate = 0
+        self.has_audio = False
+        self.issues = []
+        self._get_properties()
+
+    def _get_properties(self):
+        """Extract properties using ffprobe."""
+        try:
+            command = [
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,r_frame_rate,codec_name,duration,bit_rate',
+                '-of', 'json', self.filepath
+            ]
+            result_stdout = run_command(command)
+            data = json.loads(result_stdout)
+            stream = data['streams'][0]
+            self.width = int(stream.get('width', 0))
+            self.height = int(stream.get('height', 0))
+            self.codec = stream.get('codec_name', '')
+            fps_str = stream.get('r_frame_rate', '0/1')
+            self.frame_rate = float(Fraction(fps_str))
+            self.duration = float(stream.get('duration', 0.0))
+            self.bitrate = int(stream.get('bit_rate', 0))
+            logging.info(f"Video properties for {self.filepath}: {self.width}x{self.height}, {self.frame_rate}fps, codec={self.codec}")
+
+            # Check for audio stream
+            command = [
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'a:0',
+                '-show_entries', 'stream=codec_name',
+                '-of', 'json', self.filepath
+            ]
+            result_stdout = run_command(command)
+            data = json.loads(result_stdout)
+            if data.get('streams'):
+                self.has_audio = True
+                self.audio_codec = data['streams'][0].get('codec_name', '')
+                logging.info(f"Audio codec for {self.filepath}: {self.audio_codec}")
+            else:
+                self.has_audio = False
+                logging.info(f"No audio stream in {self.filepath}")
+        except Exception as e:
+            logging.error(f"Error getting properties for {self.filepath}: {e}")
+            raise
+
+    def detect_issues(self, fix_issues=False):
+        """Detect potential issues with the video file and attempt mitigation."""
+        logging.info(f"Detecting issues for video {self.filepath}")
+        if self.width == 0 or self.height == 0:
+            self.issues.append('Resolution not detected.')
+        if self.frame_rate == 0.0:
+            self.issues.append('Frame rate not detected.')
+        if self.codec.lower() not in SUPPORTED_CODECS:
+            self.issues.append(f'Unsupported codec: {self.codec}')
+        if not os.path.exists(self.filepath):
+            self.issues.append('File does not exist.')
+        if self.duration == 0.0:
+            self.issues.append('Duration not detected.')
+
+        # Attempt to fix issues
+        if self.issues:
+            print_warning(f"Issues detected in {self.basename}:")
+            for issue in self.issues:
+                print_warning(f" - {issue}")
+            if fix_issues:
+                self.attempt_fix()
+            else:
+                fix = input("Would you like to attempt to fix these issues? (y/n): ").lower()
+                if fix == 'y':
+                    self.attempt_fix()
+        else:
+            print_status(f"No issues detected in {self.basename}")
+
+    def attempt_fix(self):
+        """Attempt to fix detected issues."""
+        logging.info(f"Attempting to fix issues for video {self.filepath}")
+        output_file = f"fixed_{self.basename}"
+        try:
+            command = [
+                'ffmpeg', '-y', '-i', self.filepath,
+                '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-crf', '18',
+                '-c:a', DEFAULT_AUDIO_CODECS[0], '-b:a', '256k',
+                output_file
+            ]
+            run_command(command)
+            print_status(f"Issues fixed for {self.basename}. Saved as {output_file}")
+            # Update filepath to the fixed file
+            self.filepath = output_file
+            self.basename = os.path.basename(self.filepath)
+            self._get_properties()  # Refresh properties
+            self.issues = []  # Clear issues after fixing
+        except Exception as e:
+            logging.error(f"Error fixing issues for {self.basename}: {e}")
+            print_warning(f"Failed to fix issues for {self.basename}")
+
+class VideoProcessor:
+    """Processes video files based on user commands."""
+
+    def __init__(self):
+        self.executor = ThreadPoolExecutor(max_workers=os.cpu_count())
+
+    def analyze_video(self, video: VideoFile):
+        """Analyze a video file using MediaInfo."""
+        logging.info(f"Analyzing video {video.filepath}")
+        try:
+            command = ['mediainfo', video.filepath]
+            run_command(command)
+        except Exception as e:
+            logging.error(f"Error analyzing video {video.filepath}: {e}")
+            print_warning(f"Error analyzing video {video.basename}")
+
+    def detect_video_issues(self, video: VideoFile, fix_issues=False):
+        """Detect issues in the video file and attempt mitigation."""
+        video.detect_issues(fix_issues=fix_issues)
+
+    def normalize_videos(self, videos: List[VideoFile]):
+        """Normalize videos to common properties."""
+        logging.info("Starting normalization of videos")
+        target_props = self.determine_common_properties(videos)
+        normalized_files = []
+        futures = []
+        for video in videos:
+            futures.append(self.executor.submit(self._normalize_video, video, target_props))
+
+        for future in tqdm(futures, desc="Normalizing videos"):
+            try:
+                result = future.result(timeout=600)
+                if result:
+                    normalized_files.append(result)
+            except TimeoutError:
+                logging.error("Normalization task timed out.")
+                print_warning("A normalization task timed out.")
+            except Exception as e:
+                logging.error(f"Error during normalization: {e}")
+                print_warning("An error occurred during normalization.")
+        return normalized_files
+
+    def _normalize_video(self, video: VideoFile, target_props: Dict[str, Any]):
+        """Normalize a single video."""
+        output_file = f"normalized_{video.basename}"
+        need_reencode = (
+            (video.width, video.height) != target_props['resolution'] or
+            abs(video.frame_rate - target_props['frame_rate']) > 0.1 or
+            video.codec.lower() not in SUPPORTED_CODECS
+        )
+        try:
+            if not need_reencode:
+                logging.info(f"{video.basename} matches target properties, copying streams")
+                command = [
+                    'ffmpeg', '-y', '-i', video.filepath, '-c:v', 'copy', '-c:a', 'copy', output_file
+                ]
+            else:
+                logging.info(f"Re-encoding {video.basename} to match target properties")
+                width, height = target_props['resolution']
+                command = [
+                    'ffmpeg', '-y', '-i', video.filepath,
+                    '-vf', f"scale={width}:{height},fps={target_props['frame_rate']}",
+                    '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-crf', '18',
+                    '-c:a', DEFAULT_AUDIO_CODECS[0], '-b:a', '256k', output_file
+                ]
+            run_command(command)
+            logging.info(f"Normalization complete for {video.basename}")
+            print_status(f"Normalization complete for {video.basename}")
+            return output_file
+        except Exception as e:
+            logging.error(f"Error normalizing video {video.basename}: {e}")
+            print_warning(f"Error normalizing video {video.basename}")
+            return None
+
+    def determine_common_properties(self, videos: List[VideoFile]) -> Dict[str, Any]:
+        """Determine common properties among videos."""
+        logging.info("Determining common properties for normalization")
+        # Collect resolutions and frame rates
+        resolutions = [(video.width, video.height) for video in videos]
+        frame_rates = [video.frame_rate for video in videos]
+
+        # Determine the most common resolution and frame rate
+        target_resolution = max(set(resolutions), key=resolutions.count)
+        target_frame_rate = max(set(frame_rates), key=frame_rates.count)
+
+        logging.info(f"Target resolution: {target_resolution}, frame rate: {target_frame_rate}")
+        return {'resolution': target_resolution, 'frame_rate': target_frame_rate}
+
+    def concatenate_videos(self, videos: List[VideoFile], output_file: str):
+        """Concatenate multiple video files using ffmpeg."""
+        # First, ensure all videos are normalized
+        logging.info("Starting concatenation process")
+        normalized_files = self.normalize_videos(videos)
+        if not normalized_files:
+            print_warning("No videos were successfully normalized. Cannot proceed with concatenation.")
+            return
+
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
+            for file in normalized_files:
+                temp_file.write(f"file '{file}'\n")
+            temp_file_name = temp_file.name
+        try:
+            command = ['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', temp_file_name, '-c', 'copy', output_file]
+            print(f"Merging files into {output_file}...")
+            run_command(command)
+            logging.info(f"Concatenation successful. Output saved to {output_file}.")
+            print_status(f"Concatenation successful. Output saved to {output_file}.")
+        except Exception as e:
+            logging.error(f"Error during concatenation: {e}")
+            print_warning("Error during concatenation. Attempting re-encoding.")
+            # Re-encode if copy fails
+            try:
+                command = [
+                    'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', temp_file_name,
+                    '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-crf', '18',
+                    '-c:a', DEFAULT_AUDIO_CODECS[0], '-b:a', '256k', output_file
+                ]
+                run_command(command)
+                logging.info(f"Concatenation successful after re-encoding. Output saved to {output_file}.")
+                print_status(f"Concatenation successful after re-encoding. Output saved to {output_file}.")
+            except Exception as e:
+                logging.error(f"Error during re-encoded concatenation: {e}")
+                print_warning("Error during concatenation even after re-encoding.")
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+        finally:
+            os.unlink(temp_file_name)
+
+        # Prompt to play the output file
+        playback = input("Would you like to play the output file for verification? (y/n): ").lower()
+        if playback == 'y':
+            try:
+                result_stdout = run_command(['mpv', output_file])
+                self.analyze_mpv_output(result_stdout, output_file)
+            except Exception as e:
+                logging.error(f"Error playing video {output_file}: {e}")
+                print_warning(f"An error occurred while playing the video.")
+
+    def analyze_mpv_output(self, output: str, video_file: str):
+        """Analyze mpv output for errors and provide solutions."""
+        errors = []
+        output_lower = output.lower()
+        if "cannot load libcuda.so.1" in output_lower or "could not dynamically load cuda" in output_lower:
+            errors.append("CUDA library not found. NVIDIA hardware acceleration may not be available.")
+        if "init failed" in output_lower and "libva" in output_lower:
+            errors.append("VAAPI initialization failed. Intel or AMD hardware acceleration may not be available.")
+        if "vdpau" in output_lower and "error" in output_lower:
+            errors.append("VDPAU initialization failed. AMD or NVIDIA hardware acceleration may not be available.")
+        if "dropped" in output_lower:
+            errors.append("Frames are being dropped during playback. This may be due to high frame rate or resolution.")
+
+        if errors:
+            print_warning("Playback issues detected:")
+            for error in errors:
+                print_warning(f" - {error}")
+            # Provide solutions
+            self.provide_playback_solutions(errors, video_file)
+        else:
+            print_status("Playback completed without detected issues.")
+
+    def provide_playback_solutions(self, errors: List[str], video_file: str):
+        """Provide solutions based on detected playback errors."""
+        print("\nPossible Solutions:")
+        if any("cuda" in error.lower() for error in errors):
+            print("- Install NVIDIA drivers and CUDA if you have an NVIDIA GPU.")
+            print("- Or configure mpv to disable CUDA hardware acceleration.")
+        if any("vaapi" in error.lower() for error in errors):
+            print("- Install or update VAAPI drivers if you have an Intel or AMD GPU.")
+            print("- Or configure mpv to disable VAAPI hardware acceleration.")
+        if any("vdpau" in error.lower() for error in errors):
+            print("- Install or update VDPAU drivers if you have an AMD or NVIDIA GPU.")
+            print("- Or configure mpv to disable VDPAU hardware acceleration.")
+        if any("frames are being dropped" in error.lower() for error in errors):
+            choice = input("Would you like to re-encode the video at a lower frame rate? (y/n): ").lower()
+            if choice == 'y':
+                self.reencode_lower_frame_rate(video_file)
+
+    def reencode_lower_frame_rate(self, video_file: str):
+        """Re-encode the video at a lower frame rate."""
+        try:
+            new_frame_rate = input("Enter the new frame rate (e.g., 60, 30): ")
+            output_file = f"reencoded_{os.path.basename(video_file)}"
+            command = [
+                'ffmpeg', '-y', '-i', video_file,
+                '-r', new_frame_rate,
+                '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-crf', '18',
+                '-c:a', 'copy',
+                output_file
+            ]
+            print(f"Re-encoding {os.path.basename(video_file)} to {new_frame_rate} fps...")
+            run_command(command)
+            print_status(f"Re-encoding complete. Output saved to {output_file}.")
+            # Optionally, you may want to replace the original file or update references
+        except Exception as e:
+            logging.error(f"Error re-encoding video {video_file}: {e}")
+            print_warning("Failed to re-encode the video.")
+
+    def extract_audio(self, video: VideoFile, output_file: str, format_choice: str):
+        """Extract audio from a video using ffmpeg."""
+        audio_codec = 'libopus' if format_choice == 'opus' else 'libmp3lame'
+        extension = 'opus' if format_choice == 'opus' else 'mp3'
+        output_file_with_ext = f"{output_file}.{extension}"
+        try:
+            command = ['ffmpeg', '-y', '-i', video.filepath, '-vn', '-acodec', audio_codec, output_file_with_ext]
+            print(f"Extracting audio from {video.basename}...")
+            run_command(command)
+            logging.info(f"Audio extracted successfully. Output saved to {output_file_with_ext}.")
+            print_status(f"Audio extracted successfully. Output saved to {output_file_with_ext}.")
+        except Exception as e:
+            logging.error(f"Error extracting audio from {video.basename}: {e}")
+            print_warning(f"Error extracting audio from {video.basename}")
+
+    def merge_audio_with_video(self, video: VideoFile, audio_file: str, output_file: str):
+        """Merge an audio file with a video file."""
+        try:
+            command = [
+                'ffmpeg', '-y', '-i', video.filepath, '-i', audio_file,
+                '-c:v', 'copy', '-c:a', 'aac', '-shortest', output_file
+            ]
+            print(f"Merging {audio_file} with {video.basename}...")
+            run_command(command)
+            logging.info(f"Audio and video merged successfully. Output saved to {output_file}.")
+            print_status(f"Audio and video merged successfully. Output saved to {output_file}.")
+        except Exception as e:
+            logging.error(f"Error merging audio with video for {video.basename}: {e}")
+            print_warning(f"Error merging audio with video for {video.basename}")
+
+    def handle_metadata(self, video: VideoFile, output_file: str, keep_metadata: bool):
+        """Handle metadata (retain or remove) from a video file."""
+        try:
+            if keep_metadata:
+                command = ['ffmpeg', '-y', '-i', video.filepath, '-map_metadata', '0', '-c', 'copy', output_file]
+            else:
+                command = ['ffmpeg', '-y', '-i', video.filepath, '-map_metadata', '-1', '-c', 'copy', output_file]
+            print(f"Processing metadata for {video.basename}...")
+            run_command(command)
+            logging.info(f"Metadata handling completed. Output saved to {output_file}.")
+            print_status(f"Metadata handling completed. Output saved to {output_file}.")
+        except Exception as e:
+            logging.error(f"Error processing metadata for {video.basename}: {e}")
+            print_warning(f"Error processing metadata for {video.basename}")
+
+    def change_speed(self, video: VideoFile, output_file: str, speed_factor: float):
+        """Change video speed to achieve smooth slow motion."""
+        if speed_factor <= 0:
+            print_warning("Speed factor must be greater than 0.")
+            return
+        try:
+            print(f"Changing speed of {video.basename} by a factor of {speed_factor}...")
+            if video.has_audio:
+                atempo_filters = self.get_atempo_filter_chain(speed_factor)
+                command = [
+                    'ffmpeg', '-y', '-i', video.filepath, '-filter_complex',
+                    f"[0:v]setpts={1/speed_factor}*PTS[v];[0:a]{atempo_filters}[a]",
+                    '-map', '[v]', '-map', '[a]', '-preset', 'fast', output_file
+                ]
+            else:
+                # No audio stream
+                command = [
+                    'ffmpeg', '-y', '-i', video.filepath, '-filter_complex',
+                    f"[0:v]setpts={1/speed_factor}*PTS",
+                    '-preset', 'fast', output_file
+                ]
+            run_command(command)
+            logging.info(f"Speed change successful. Output saved to {output_file}.")
+            print_status(f"Speed change successful. Output saved to {output_file}.")
+        except Exception as e:
+            logging.error(f"Error changing speed of video: {video.basename}: {e}")
+            print_warning(f"Error changing speed of video: {video.basename}")
+
+    def get_atempo_filter_chain(self, speed_factor: float) -> str:
+        """Generate the atempo filter chain for the given speed factor."""
+        factors = []
+        remaining_speed = speed_factor
+        while remaining_speed < 0.5 or remaining_speed > 2.0:
+            if remaining_speed < 0.5:
+                factors.append('0.5')
+                remaining_speed /= 0.5
+            elif remaining_speed > 2.0:
+                factors.append('2.0')
+                remaining_speed /= 2.0
+        factors.append(str(remaining_speed))
+        atempo_filters = ','.join(f'atempo={factor}' for factor in factors)
+        return atempo_filters
+
+    def extract_frames(self, video: VideoFile, output_dir: str):
+        """Extract frames from a video as images using ffmpeg."""
+        output_dir = os.path.expanduser(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+        video_name = os.path.splitext(video.basename)[0]
+        output_pattern = os.path.join(output_dir, f"{video_name}_frame_%04d.png")
+        frame_rate = video.frame_rate  # Use the highest available frame rate
+        try:
+            command = ['ffmpeg', '-y', '-i', video.filepath, '-vf', f"fps={frame_rate}", output_pattern]
+            print(f"Extracting frames from {video.basename} at {frame_rate} fps to {output_dir}...")
+            run_command(command)
+            logging.info(f"Frame extraction successful. Frames saved to {output_dir}.")
+            print_status(f"Frame extraction successful. Frames saved to {output_dir}.")
+        except Exception as e:
+            logging.error(f"Error extracting frames from video: {video.basename}: {e}")
+            print_warning(f"Error extracting frames from video: {video.basename}")
+
+class UserInterface:
+    """Handles user interactions."""
+
+    def __init__(self):
+        self.processor = VideoProcessor()
+
+    def main_menu(self):
+        """Display the main menu and handle user selection."""
+        while True:
+            self.print_header("VIDEO PROCESSING TOOL")
+            menu_options = [
+                "1. Analyze video with MediaInfo",
+                "2. Detect and fix video issues",
+                "3. Normalize videos",
+                "4. Concatenate videos",
+                "5. Extract audio from video",
+                "6. Merge audio with video",
+                "7. Handle metadata",
+                "8. Change video speed",
+                "9. Extract frames from video",
+                "10. Exit"
+            ]
+            for option in menu_options:
+                print(f"  {option}")
+            choice = input("\nSelect an option (or '-h' for help): ")
+            try:
+                if choice == '1':
+                    video = self.select_single_video()
+                    if video:
+                        self.processor.analyze_video(video)
+                elif choice == '2':
+                    video = self.select_single_video()
+                    if video:
+                        self.processor.detect_video_issues(video)
+                elif choice == '3':
+                    videos = self.select_multiple_videos()
+                    if videos:
+                        self.processor.normalize_videos(videos)
+                        print_status("Normalization complete for all videos.")
+                elif choice == '4':
+                    videos = self.select_multiple_videos()
+                    if videos:
+                        output_file = input("Enter the output file name (e.g., output.mp4): ")
+                        self.processor.concatenate_videos(videos, output_file)
+                elif choice == '5':
+                    video = self.select_single_video()
+                    if video:
+                        format_choice = input("Select audio format (opus/mp3): ").lower()
+                        if format_choice not in ['opus', 'mp3']:
+                            print_warning("Invalid format choice. Please select 'opus' or 'mp3'.")
+                            continue
+                        output_file = input("Enter the base name for the output audio file (without extension): ")
+                        self.processor.extract_audio(video, output_file, format_choice)
+                elif choice == '6':
+                    video = self.select_single_video()
+                    if video:
+                        audio_file = input("Enter the path to the audio file to merge: ")
+                        output_file = input("Enter the output file name (e.g., merged_output.mp4): ")
+                        self.processor.merge_audio_with_video(video, audio_file, output_file)
+                elif choice == '7':
+                    video = self.select_single_video()
+                    if video:
+                        output_file = input("Enter the output file name (e.g., output.mp4): ")
+                        keep_metadata = input("Would you like to retain metadata? (y/n): ").lower() == 'y'
+                        self.processor.handle_metadata(video, output_file, keep_metadata)
+                elif choice == '8':
+                    video = self.select_single_video()
+                    if video:
+                        speed_factor_input = input("Enter speed factor (e.g., 0.5 for slow motion): ")
+                        try:
+                            speed_factor = float(speed_factor_input)
+                            if speed_factor <= 0:
+                                print_warning("Speed factor must be greater than 0.")
+                                continue
+                        except ValueError:
+                            print_warning("Invalid speed factor.")
+                            continue
+                        output_file = input("Enter the output file name (e.g., slow_motion_output.mp4): ")
+                        self.processor.change_speed(video, output_file, speed_factor)
+                elif choice == '9':
+                    video = self.select_single_video()
+                    if video:
+                        output_dir = input("Enter the output directory for frames (default: $HOME/Pictures/dmx/): ")
+                        if not output_dir.strip():
+                            output_dir = '$HOME/Pictures/dmx/'
+                        self.processor.extract_frames(video, output_dir)
+                elif choice == '10':
+                    print_status("Exiting program. Goodbye!", "OK")
+                    break
+                elif choice == '-h':
+                    self.print_help()
+                else:
+                    print_warning(f"Unrecognized option: {choice}")
+            except Exception as e:
+                logging.error(f"Error in main menu: {e}")
+                print_warning(f"An error occurred: {e}")
+
+    def select_single_video(self) -> VideoFile:
+        """Select a single video file."""
+        files = self.use_fzf_to_select_files()
+        if files:
+            return VideoFile(files[0])
+        return None
+
+    def select_multiple_videos(self) -> List[VideoFile]:
+        """Select multiple video files."""
+        files = self.use_fzf_to_select_files(multiple=True)
+        return [VideoFile(f) for f in files] if files else []
+
+    @staticmethod
+    def use_fzf_to_select_files(multiple=False) -> List[str]:
+        """Use fzf to select files."""
+        fzf_command = ['fzf']
+        if multiple:
+            fzf_command.append('--multi')
+        try:
+            result = subprocess.run(fzf_command, capture_output=True, text=True, check=True)
+            return result.stdout.strip().split('\n')
+        except subprocess.CalledProcessError:
+            print_warning("No files selected or error with fzf.")
+            return []
+
+    @staticmethod
+    def print_header(title: str):
+        """Print a header."""
+        print("\n" + "="*50)
+        print(f"{title.center(50)}")
+        print("="*50 + "\n")
+
+    @staticmethod
+    def print_help():
+        """Display help information."""
+        help_message = """
+Available Commands:
+1. Analyze video with MediaInfo
+2. Detect and fix video issues
+3. Normalize videos
+4. Concatenate videos
+5. Extract audio from video
+6. Merge audio with video
+7. Handle metadata
+8. Change video speed
+9. Extract frames from video
+10. Exit
+
+Instructions:
+- Use the number keys to select an option.
+- Use '-h' to display this help message.
+"""
+        print(help_message)
+
+# Utility functions for printing messages
+def print_warning(message: str):
+    """Print a warning message."""
+    print(f"⚠️  {message}")
+
+def print_status(message: str, status: str = "OK"):
+    """Print a status message."""
+    status_symbol = "✓" if status == "OK" else "✗"
+    print(f"{message} [{status_symbol}]\n")
+
+# Entry point
+if __name__ == "__main__":
+    check_dependencies()
+    ui = UserInterface()
+    ui.main_menu()
+
+
+
+
+
+
+

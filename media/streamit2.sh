@@ -62,20 +62,17 @@ extract_media_info() {
     local file="$1"
     display_message info "Extracting media information from '$file'..."
     local media_data
-    media_data=$(mediainfo --Output=JSON "$file" 2>/dev/null | jq '.media.track[] | {Format, FrameRate, Height, Width, CodecID}' )
+    media_data=$(mediainfo --Output=JSON "$file" 2>/dev/null)
 
-    if [ $? -ne 0 ] || [ -z "$media_data" ]; then
+    if [ -z "$media_data" ] || ! echo "$media_data" | jq empty; then
         display_message warning "Failed to extract media info. Using default settings."
         return 1
     else
         echo "$media_data" > "${file}.mediainfo.json"
-        local framerate
-        framerate=$(echo "$media_data" | jq -r '.FrameRate')
-        local height
-        height=$(echo "$media_data" | jq -r '.Height')
+        local framerate=$(echo "$media_data" | jq -r '.media.track[] | select(.FrameRate) | .FrameRate')
+        local height=$(echo "$media_data" | jq -r '.media.track[] | select(.Height) | .Height')
         local resolution="${height}p"
-        local codec
-        codec=$(echo "$media_data" | jq -r '.CodecID')
+        local codec=$(echo "$media_data" | jq -r '.media.track[] | select(.CodecID) | .CodecID')
 
         display_message success "Media Info Extracted:"
         display_message info "Frame rate: $framerate fps"
@@ -91,8 +88,7 @@ adjust_settings_based_on_media() {
     display_message info "Adjusting stream settings based on media info..."
 
     if extract_media_info "$file"; then
-        local resolution
-        resolution=$(jq -r '.Height' "${file}.mediainfo.json")
+        local resolution=$(jq -r '.Height' "${file}.mediainfo.json")
         if [[ "$resolution" -lt 720 ]]; then
             echo "Low resolution detected: ${resolution}p. Recommend lowering stream quality."
             read -p "Would you like to accept this recommendation? (y/n): " accept_quality
@@ -195,7 +191,11 @@ run_streamlink() {
     local final_log_file="$HOME/.local/share/logs/streamlink_${output_file%.ts}.log"
 
     display_message info "Executing Streamlink command..."
-    streamlink "$url" "$quality" --output "$output_file" $retry_streams $hls_options $proxy_option > "$final_log_file" 2>&1
+    
+    while streamlink "$url" "$quality" --output "$output_file" $retry_streams $hls_options $proxy_option > "$final_log_file" 2>&1 &; do
+        echo -ne "\rStreaming in progress..."
+        sleep 2
+    done
 
     if [ $? -eq 0 ]; then
         display_message success "Stream started successfully. Output saved to '$output_file'."
@@ -275,7 +275,7 @@ handle_preset_with_media_info() {
 # Main script execution loop
 main_menu() {
     while true; do
-	echo "# --- // STREAMIT.SH //"
+        echo "# --- // STREAMIT.SH //"
         echo "1. LenaStarKilla"
         echo "2. AbStarKilla"
         echo "3. Custom URL"
