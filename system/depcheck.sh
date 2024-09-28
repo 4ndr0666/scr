@@ -1,24 +1,101 @@
 #!/bin/bash
-# Enhanced Dependency Checker and Installer for Arch Linux with CLI and Improved Logic
+# Dependency Checker and Installer for Arch Linux
+# Version: 3.0
+# Date: YYYY-MM-DD
 
+################################################################################
+# Script Name: dependency-checker.sh
+# Description: Checks for missing dependencies of installed packages and installs them.
+#              Supports both official repository packages and AUR packages.
+# Author: Your Name
+################################################################################
+
+# Default configurations
 LOGFILE="/var/log/dependency-checker.log"
 PACMAN_LOCK="/var/lib/pacman/db.lck"
-RETRIES=3
-PKGLIST=""
+VERBOSE=false
+INTERACTIVE=false
+AUR_HELPER=""
+LOG_LEVEL="INFO"
 
-# Function to log messages
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+      sudo "$0" "$@"
+    exit $?
+fi
+  
+# Array to hold missing dependencies
+declare -a MISSING_DEPS
+
+# Function to display usage instructions
+print_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -i             Install missing dependencies"
+    echo "  -c             Check missing dependencies"
+    echo "  -p <packages>  Specify packages to check (comma-separated)"
+    echo "  -l <logfile>   Specify custom log file path"
+    echo "  -v             Enable verbose output"
+    echo "  -h             Show this help message"
+    echo "  -I             Enable interactive mode"
+    echo "  -L <level>     Set log level (INFO, WARN, ERROR)"
+    exit 0
+}
+
+# Function to log messages with levels
 log_message() {
-    echo "$(date +"%Y-%m-%d %T") - $1" | tee -a "$LOGFILE"
+    local level="$1"
+    local message="$2"
+    local timestamp
+    timestamp="$(date +"%Y-%m-%d %T")"
+
+    # Log levels: INFO=1, WARN=2, ERROR=3
+    declare -A LEVELS=(["INFO"]=1 ["WARN"]=2 ["ERROR"]=3)
+    local level_value="${LEVELS[$level]}"
+    local config_level_value="${LEVELS[$LOG_LEVEL]}"
+
+    if [ "$level_value" -ge "$config_level_value" ]; then
+        echo "$timestamp [$level] - $message" | tee -a "$LOGFILE"
+    fi
+}
+
+# Function to check for required tools
+check_requirements() {
+    local required_tools=("pacman" "pactree")
+    for tool in "${required_tools[@]}"; do
+        if ! command -v "$tool" &>/dev/null; then
+            log_message "ERROR" "Required tool '$tool' is not installed. Exiting."
+            exit 1
+        fi
+    done
+}
+
+# Function to detect available AUR helper
+detect_aur_helper() {
+    local helpers=("yay" "paru" "trizen")
+    for helper in "${helpers[@]}"; do
+        if command -v "$helper" &>/dev/null; then
+            AUR_HELPER="$helper"
+            log_message "INFO" "AUR helper detected: $AUR_HELPER"
+            return
+        fi
+    done
+    log_message "WARN" "No AUR helper found. AUR packages will not be installed."
 }
 
 # Function to check if a package is installed
 is_installed() {
-    pacman -Q "$1" &> /dev/null
+    pacman -Q "$1" &>/dev/null
 }
 
 # Function to check if a package is from AUR
 is_aur_package() {
-    yay -Qm "$1" &> /dev/null
+    if [ -n "$AUR_HELPER" ]; then
+        "$AUR_HELPER" -Qm "$1" &>/dev/null
+    else
+        return 1
+    fi
 }
 
 # Function to gather dependencies of a package
@@ -29,174 +106,193 @@ gather_dependencies() {
 # Function to remove pacman lock file if it exists
 remove_pacman_lock() {
     if [ -e "$PACMAN_LOCK" ]; then
-        log_message "Removing Pacman lock file..."
-        sudo rm "$PACMAN_LOCK"
+        log_message "INFO" "Removing Pacman lock file..."
+        sudo rm -f "$PACMAN_LOCK"
     fi
 }
 
-# Spinner for visual feedback
-start_spinner() {
-    global_spinner_active=true
-    while $global_spinner_active; do
-        for c in '/' '-' '\' '|'; do
-            printf "\r$c"
-            sleep 0.1
-        done
-    done
-}
+# Function to handle pacman errors
+handle_pacman_errors() {
+    local stderr="$1"
+    local conflicts
 
-stop_spinner() {
-    global_spinner_active=false
-    printf "\r"
-}
-
-# Handle file conflicts and duplicated database entries
-handle_pacman_output() {
-    stderr="$1"
-    duplicated_entries=$(echo "$stderr" | grep -oP "(?<=error: duplicated database entry ')[^']+")
-    if [ ! -z "$duplicated_entries" ]; then
-        log_message "Duplicated database entries detected: $duplicated_entries"
-        for entry in $duplicated_entries; do
-            log_message "Removing duplicated entry: $entry"
-            sudo pacman -Rdd "$entry" --noconfirm
-        done
-    fi
-    handle_file_conflicts "$stderr"
-}
-
-handle_file_conflicts() {
-    stderr="$1"
     conflicts=$(echo "$stderr" | grep 'exists in filesystem')
-    if [[ ! -z "$conflicts" ]]; then
-        log_message "Resolving file conflicts..."
-        files=$(echo "$conflicts" | awk '{print $5}')
-        sudo pacman -Syu --overwrite "$files" --noconfirm
+    if [ -n "$conflicts" ]; then
+        log_message "WARN" "Resolving file conflicts..."
+        sudo pacman -Syu --overwrite '*' --noconfirm
     fi
 }
 
-# Retry logic for package installation
-install_with_retry() {
+# Function to install a package using pacman or AUR helper
+install_package() {
     local pkg="$1"
-    local count=0
-    until [ "$count" -ge "$RETRIES" ]; do
-        sudo pacman -S "$pkg" --noconfirm && break
-        count=$((count+1))
-        log_message "Retrying installation of $pkg ($count/$RETRIES)..."
-    done
-    if [ "$count" -eq "$RETRIES" ]; then
-        log_message "Failed to install $pkg after $RETRIES attempts."
-    fi
-}
-
-# Ensure package installation based on whether it is a system or AUR package
-ensure_package_installed() {
-    local pkg="$1"
-    if ! pacman -Qs "$pkg" > /dev/null; then
-        log_message "Installing missing package: $pkg..."
-        if is_aur_package "$pkg"; then
-            yay -S "$pkg" --noconfirm
+    if is_aur_package "$pkg"; then
+        if [ -n "$AUR_HELPER" ]; then
+            log_message "INFO" "Installing AUR package: $pkg"
+            "$AUR_HELPER" -S "$pkg" --noconfirm
         else
-            install_with_retry "$pkg"
+            log_message "ERROR" "AUR helper not available to install $pkg."
         fi
     else
-        log_message "Package $pkg is already installed."
+        log_message "INFO" "Installing official package: $pkg"
+        if ! sudo pacman -S --needed "$pkg" --noconfirm; then
+            stderr=$(sudo pacman -S --needed "$pkg" --noconfirm 2>&1 >/dev/null)
+            handle_pacman_errors "$stderr"
+            sudo pacman -S --needed "$pkg" --noconfirm
+        fi
     fi
 }
-
-# CLI Menu
-print_help() {
-    echo "Usage: $0 [OPTIONS]"
-    echo "Options:"
-    echo "  -i             Install missing dependencies"
-    echo "  -c             Check missing dependencies"
-    echo "  -h             Show this help message"
-    exit 0
-}
-
-# Process input flags
-if [[ $# -eq 0 ]]; then
-    print_help
-fi
-
-while getopts "ich" option; do
-    case $option in
-        i)
-            log_message "Installing missing dependencies..."
-            ;;
-        c)
-            log_message "Checking missing dependencies..."
-            ;;
-        h)
-            print_help
-            ;;
-        *)
-            print_help
-            ;;
-    esac
-done
 
 # Graceful exit handling
 graceful_exit() {
-    stop_spinner
     remove_pacman_lock
-    log_message "Script interrupted. Exiting gracefully..."
+    log_message "INFO" "Script interrupted. Exiting gracefully..."
     exit 1
 }
 
+# Trap signals for graceful exit
 trap graceful_exit SIGINT SIGTERM
 
-# Root privilege check
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
-
-# Automatically create package list if none provided
-if [ -z "$PKGLIST" ]; then
-    log_message "No package list provided, generating from pacman -Qqe..."
-    PKGLIST=$(pacman -Qqe)
-fi
-
-# Check missing dependencies
+# Main function to check missing dependencies
 check_missing_dependencies() {
-    for pkg in $PKGLIST; do
-        log_message "Processing package: $pkg..."
+    local packages=("$@")
+    for pkg in "${packages[@]}"; do
         if is_installed "$pkg"; then
-            log_message "$pkg is installed. Checking dependencies..."
+            if [ "$VERBOSE" = true ]; then
+                log_message "INFO" "Checking dependencies for installed package: $pkg"
+            fi
+            local deps
             deps=$(gather_dependencies "$pkg")
             for dep in $deps; do
                 if ! is_installed "$dep"; then
-                    if [[ "$dep" == *"[unresolvable]"* ]]; then
-                        log_message "Missing dependency: $dep (unresolvable)"
-                    else
-                        log_message "Missing dependency: $dep"
-                        MISSING_DEPS+=("$dep")
-                    fi
+                    log_message "INFO" "Missing dependency: $dep"
+                    MISSING_DEPS+=("$dep")
                 fi
             done
         else
-            log_message "$pkg is not installed. Skipping."
+            log_message "INFO" "Package $pkg is not installed."
+            MISSING_DEPS+=("$pkg")
         fi
     done
-}
 
-# Install missing dependencies
-install_missing_dependencies() {
-    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-        log_message "Missing dependencies found: ${MISSING_DEPS[*]}"
-        sudo yay -S "${MISSING_DEPS[@]}" --noconfirm
+    if [ ${#MISSING_DEPS[@]} -eq 0 ]; then
+        log_message "INFO" "All dependencies are satisfied!"
     else
-        log_message "All dependencies are satisfied!"
+        log_message "INFO" "Missing dependencies found: ${MISSING_DEPS[*]}"
     fi
 }
 
-# Main process
-main() {
-    log_message "Starting dependency check..."
-    remove_pacman_lock
-    check_missing_dependencies
-    install_missing_dependencies
-    log_message "Dependency check completed."
+# Function to install missing dependencies
+install_missing_dependencies() {
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        log_message "INFO" "Installing missing dependencies..."
+        for dep in "${MISSING_DEPS[@]}"; do
+            ensure_package_installed "$dep"
+        done
+    else
+        log_message "INFO" "No missing dependencies to install."
+    fi
 }
 
+# Ensure package installation
+ensure_package_installed() {
+    local pkg="$1"
+    if ! is_installed "$pkg"; then
+        install_package "$pkg"
+    else
+        if [ "$VERBOSE" = true ]; then
+            log_message "INFO" "Package $pkg is already installed."
+        fi
+    fi
+}
+
+# Interactive mode for installing dependencies
+interactive_install() {
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        echo "The following dependencies are missing:"
+        for i in "${!MISSING_DEPS[@]}"; do
+            echo "$((i + 1)). ${MISSING_DEPS[$i]}"
+        done
+        read -p "Do you want to install all missing dependencies? [y/N]: " choice
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
+            install_missing_dependencies
+        else
+            log_message "INFO" "Installation aborted by user."
+        fi
+    else
+        log_message "INFO" "No missing dependencies to install."
+    fi
+}
+
+# Parse command-line arguments
+parse_arguments() {
+    local OPTIND
+    while getopts "icp:l:vhIL:" option; do
+        case $option in
+            i)
+                INSTALL_MISSING=true
+                ;;
+            c)
+                CHECK_MISSING=true
+                ;;
+            p)
+                IFS=',' read -ra PKGLIST <<< "$OPTARG"
+                ;;
+            l)
+                LOGFILE="$OPTARG"
+                ;;
+            v)
+                VERBOSE=true
+                ;;
+            h)
+                print_help
+                ;;
+            I)
+                INTERACTIVE=true
+                ;;
+            L)
+                LOG_LEVEL="$OPTARG"
+                ;;
+            *)
+                print_help
+                ;;
+        esac
+    done
+    shift $((OPTIND -1))
+}
+
+# Main execution function
+main() {
+    log_message "INFO" "Starting dependency checker..."
+
+    check_requirements
+    detect_aur_helper
+    remove_pacman_lock
+
+    if [ -z "$CHECK_MISSING" ] && [ -z "$INSTALL_MISSING" ]; then
+        print_help
+    fi
+
+    if [ -z "${PKGLIST[*]}" ]; then
+        log_message "INFO" "No package list provided, generating from installed packages..."
+        mapfile -t PKGLIST < <(pacman -Qqe)
+    fi
+
+    if [ "$CHECK_MISSING" = true ]; then
+        check_missing_dependencies "${PKGLIST[@]}"
+    fi
+
+    if [ "$INSTALL_MISSING" = true ]; then
+        if [ "$INTERACTIVE" = true ]; then
+            interactive_install
+        else
+            install_missing_dependencies
+        fi
+    fi
+
+    log_message "INFO" "Dependency checker completed."
+}
+
+# Entry point
+parse_arguments "$@"
 main
