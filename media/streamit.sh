@@ -1,50 +1,37 @@
 #!/bin/bash
+# Unified Streamit Script - Merged and Refactored
+# Author: Merged from streamit.sh and streamit2.sh
 
-# Streamlink Wrapper Script with Enhanced MediaInfo, Logging, Notifications, and Error Handling
+LOG_FILE="$HOME/.local/share/logs/streamit_merged.log"
+OUTPUT_DIR="/storage/streamlink"  # Dedicated output directory
+MAX_RETRIES=3  # Number of times to retry Streamlink in case of failure
+RETRY_DELAY=10 # Time in seconds to wait between retries
 
-# Configuration
-LOG_FILE="$HOME/.streamlink_wrapper.log"
-EMAIL_RECIPIENT="your_email@example.com"  # Replace with your actual email
-TERMINAL="alacritty"  # Specify your preferred terminal emulator
+# Setup logging for the entire script
+setup_logging() {
+    mkdir -p "$(dirname "$LOG_FILE")"
+    touch "$LOG_FILE"
+}
 
-# Ensure required commands are available
-REQUIRED_COMMANDS=(streamlink mediainfo jq speedtest-cli curl)
-for cmd in "${REQUIRED_COMMANDS[@]}"; do
-    if ! command -v "$cmd" &>/dev/null; then
-        echo "Error: '$cmd' is not installed. Please install it to continue."
-        exit 1
-    fi
-done
-
-# Function to log messages to a file
+# General logging function
 log_message() {
     local log_type="$1"
     local message="$2"
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$log_type] $message" >> "$LOG_FILE"
 }
 
-# Function to send email notifications
-send_email_notification() {
-    local status="$1"
-    local subject="Streamlink Wrapper - $status"
-    echo "The stream has $status. Check the log for details." | mail -s "$subject" "$EMAIL_RECIPIENT"
-}
-
-# Function to display feedback messages with color and icons
+# Function to display messages with colored output
 display_message() {
     local message_type="$1"
     local message="$2"
-
     case "$message_type" in
         success)
             echo -e "\e[32m✔️  $message\e[0m"
             log_message "SUCCESS" "$message"
-            send_email_notification "started successfully"
             ;;
         error)
             echo -e "\e[31m❌  $message\e[0m"
             log_message "ERROR" "$message"
-            send_email_notification "failed"
             ;;
         warning)
             echo -e "\e[33m⚠️  $message\e[0m"
@@ -57,29 +44,39 @@ display_message() {
     esac
 }
 
-# Function to extract media information using mediainfo
+# Helper function to execute system commands with error handling
+execute_command() {
+    local command="$1"
+    eval "$command" 2>> "$LOG_FILE"
+    if [ $? -ne 0 ]; then
+        display_message error "Failed to execute: $command"
+        return 1
+    else
+        display_message success "Successfully executed: $command"
+        return 0
+    fi
+}
+
+# Function to extract media info
 extract_media_info() {
     local file="$1"
     display_message info "Extracting media information from '$file'..."
     local media_data
-    media_data=$(mediainfo --Output=JSON "$file" 2>/dev/null | jq '.media.track[] | {Format, FrameRate, Height, Width, CodecID}' )
-
+    media_data=$(mediainfo --Output=JSON "$file" | jq '.media.track[] | {Format, FrameRate, Height, Width, CodecID}')
+    
     if [ $? -ne 0 ] || [ -z "$media_data" ]; then
         display_message warning "Failed to extract media info. Using default settings."
         return 1
     else
         echo "$media_data" > "${file}.mediainfo.json"
-        local framerate
+        local framerate height codec
         framerate=$(echo "$media_data" | jq -r '.FrameRate')
-        local height
         height=$(echo "$media_data" | jq -r '.Height')
-        local resolution="${height}p"
-        local codec
         codec=$(echo "$media_data" | jq -r '.CodecID')
-
+        
         display_message success "Media Info Extracted:"
         display_message info "Frame rate: $framerate fps"
-        display_message info "Resolution: $resolution"
+        display_message info "Resolution: ${height}p"
         display_message info "Codec: $codec"
         return 0
     fi
@@ -106,162 +103,114 @@ adjust_settings_based_on_media() {
     fi
 }
 
-# Function to check current network bandwidth
-check_bandwidth() {
-    display_message info "Checking current network bandwidth..."
-    local download_speed
-    download_speed=$(speedtest-cli --simple | grep "Download" | awk '{print $2}')
+# Function to check if file exists and rename if necessary
+ensure_unique_filename() {
+    local base_name="$1"
+    local extension="$2"
+    local output_dir="$3"
+    local new_file="$output_dir/$base_name.$extension"
+    local counter=1
 
-    if [[ -z "$download_speed" ]]; then
-        display_message warning "Unable to determine download speed."
-        return 1
-    fi
+    while [ -e "$new_file" ]; do
+        new_file="$output_dir/${base_name}_$counter.$extension"
+        counter=$((counter + 1))
+    done
 
-    echo "Current download speed: $download_speed Mbps"
-
-    if (( $(echo "$download_speed < 5.0" | bc -l) )); then
-        echo "Low bandwidth detected: ${download_speed} Mbps. Adjusting stream quality to 'worst'."
-        quality="worst"
-    else
-        echo "Sufficient bandwidth detected: ${download_speed} Mbps."
-    fi
+    echo "$new_file"
 }
 
-# Function to apply advanced options (retries, HLS settings, proxy)
-apply_advanced_options() {
-    display_message info "Applying advanced options..."
-    retry_streams="--retry-streams 5 --retry-max 0"
-    hls_options="--hls-live-edge 3 --stream-segment-threads 3 --hls-segment-timeout 30"
-
-    # Proxy selection menu
-    echo "Choose a proxy option:"
-    echo "1. Use a proxy from HideMy.name"
-    echo "2. Use a proxy from Proxyscrape"
-    echo "3. Enter a custom proxy URL"
-    echo "4. No proxy"
-    echo -n "Enter your choice [1-4]: "
-    read -r proxy_choice
-
-    case "$proxy_choice" in
-        1)
-            proxy=$(curl -s "https://hidemy.name/en/proxy-list/?type=h&anon=4&start=0#list" | grep -oP '(\d{1,3}\.){3}\d{1,3}:\d+' | head -n 1)
-            if [ -z "$proxy" ]; then
-                display_message error "Failed to fetch proxy from HideMy.name. Skipping proxy setup."
-                proxy_option=""
-            else
-                proxy_option="--http-proxy http://$proxy"
-                display_message info "Proxy set to http://$proxy"
-            fi
-            ;;
-        2)
-            proxy=$(curl -s "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=elite" | head -n 1)
-            if [ -z "$proxy" ]; then
-                display_message error "Failed to fetch proxy from Proxyscrape. Skipping proxy setup."
-                proxy_option=""
-            else
-                proxy_option="--http-proxy http://$proxy"
-                display_message info "Proxy set to http://$proxy"
-            fi
-            ;;
-        3)
-            echo -n "Enter your custom proxy URL (e.g., http://myproxy.example:8080): "
-            read -r proxy
-            if [ -z "$proxy" ]; then
-                display_message warning "No proxy URL provided. Skipping proxy setup."
-                proxy_option=""
-            else
-                proxy_option="--http-proxy $proxy"
-                display_message info "Proxy set to $proxy"
-            fi
-            ;;
-        4)
-            proxy_option=""
-            display_message info "No proxy will be used."
-            ;;
-        *)
-            display_message warning "Invalid choice. Skipping proxy setup."
-            proxy_option=""
-            ;;
-    esac
-
-    echo "Retries: $retry_streams, HLS Options: $hls_options, Proxy: ${proxy_option:-None}"
+# Function to ensure directories exist and create them idempotently
+ensure_directories() {
+    local base_dir="$1"
+    local stream_dir="$base_dir/$(date +%Y-%m-%d)"
+    
+    mkdir -p "$stream_dir"
+    echo "$stream_dir"
 }
 
-# Function to execute Streamlink with inputs and options
+# Function to execute Streamlink with inputs and options, with retry mechanism
 run_streamlink() {
     local url="$1"
     local quality="$2"
-    local output_file="$3"
-    local final_log_file="$HOME/.local/share/logs/streamlink_${output_file%.ts}.log"
+    local base_output_file="$3"
+    local final_output_file
+    local final_log_file
 
-    display_message info "Executing Streamlink command..."
-    streamlink "$url" "$quality" --output "$output_file" $retry_streams $hls_options $proxy_option > "$final_log_file" 2>&1
+    # Ensure directories exist and create them idempotently
+    local stream_output_dir
+    stream_output_dir=$(ensure_directories "$OUTPUT_DIR")
 
-    if [ $? -eq 0 ]; then
-        display_message success "Stream started successfully. Output saved to '$output_file'."
-        display_message info "Log available at '$final_log_file'."
-    else
-        display_message error "Failed to start the stream. Check '$final_log_file' for details."
-        exit 1
+    # Ensure the output file has a unique name
+    final_output_file=$(ensure_unique_filename "$base_output_file" "ts" "$stream_output_dir")
+    final_log_file="$HOME/.local/share/logs/streamlink_${final_output_file##*/}.log"
+
+    local retries=0
+    local success=false
+
+    while [ $retries -lt $MAX_RETRIES ]; do
+        display_message info "Executing Streamlink command (Attempt: $((retries + 1)))..."
+        
+        # Start streamlink in the background and show progress while waiting
+        streamlink "$url" "$quality" --output "$final_output_file" $retry_streams $hls_options $proxy_option > "$final_log_file" 2>&1 &
+        local pid=$!
+
+        # Display a live progress bar
+        while kill -0 $pid 2> /dev/null; do
+            echo -n "."
+            sleep 1
+        done
+
+        wait $pid
+        if [ $? -eq 0 ]; then
+            display_message success "Streamlink executed successfully. Output saved to $final_output_file"
+            success=true
+            break
+        else
+            display_message error "Streamlink execution failed. Retrying in $RETRY_DELAY seconds..."
+            sleep $RETRY_DELAY
+        fi
+
+        retries=$((retries + 1))
+    done
+
+    if [ "$success" = false ]; then
+        display_message error "Streamlink failed after $MAX_RETRIES attempts. Check log: $final_log_file"
     fi
 }
 
-# Function to handle presets
-handle_preset() {
-    case "$1" in
-        1)
-            url="https://twitch.tv/lenastarkilla"
-            quality="best"
-            output_file="LenaStarKilla_$(date +%Y%m%d%H%M%S).ts"
-            ;;
-        2)
-            url="https://twitch.tv/abstarkilla"
-            quality="best"
-            output_file="AbStarKilla_$(date +%Y%m%d%H%M%S).ts"
-            ;;
-        *)
-            display_message error "Invalid preset option."
-            exit 1
-            ;;
-    esac
-    run_streamlink "$url" "$quality" "$output_file"
-}
-
-# Function to handle custom URL input and validation
+# Function to handle custom URL input
 handle_custom_url() {
-    echo -n "Enter the Stream URL: "
+    echo -n "Enter stream URL: "
     read -r url
     echo -n "Enter stream quality (e.g., best, worst, 720p60): "
     read -r quality
-    echo -n "Enter output file name (e.g., video.ts): "
+    echo -n "Enter output file base name (e.g., video): "
     read -r output_file
 
-    # Validate inputs
     if [ -z "$url" ] || [ -z "$quality" ]; then
         display_message error "Invalid input. URL and quality are required."
         exit 1
     fi
 
-    # Default output file if not provided
     if [ -z "$output_file" ]; then
-        output_file="stream_$(date +%Y%m%d%H%M%S).ts"
+        output_file="stream_$(date +%Y%m%d%H%M%S)"
     fi
 
     run_streamlink "$url" "$quality" "$output_file"
 }
 
-# Function to handle command-line arguments for flexibility in usage
+# Function to handle preset URLs and media info adjustment
 handle_preset_with_media_info() {
     case "$1" in
         1)
             url="https://twitch.tv/lenastarkilla"
             quality="best"
-            output_file="LenaStarKilla_$(date +%Y%m%d%H%M%S).ts"
+            output_file="LenaStarKilla_$(date +%Y%m%d%H%M%S)"
             ;;
         2)
             url="https://twitch.tv/abstarkilla"
             quality="best"
-            output_file="AbStarKilla_$(date +%Y%m%d%H%M%S).ts"
+            output_file="AbStarKilla_$(date +%Y%m%d%H%M%S)"
             ;;
         *)
             display_message error "Invalid preset option."
@@ -272,14 +221,43 @@ handle_preset_with_media_info() {
     run_streamlink "$url" "$quality" "$output_file"
 }
 
-# Main script execution loop
+# Function to schedule streams using cron
+schedule_stream() {
+    echo -n "Enter stream URL: "
+    read -r url
+    echo -n "Enter stream quality: "
+    read -r quality
+    echo -n "Enter output file base name: "
+    read -r output_file
+    echo -n "Enter schedule time (in cron format, e.g., '0 5 * * *' for daily 5 AM): "
+    read -r cron_schedule
+
+    if [ -z "$url" ] || [ -z "$quality" ] || [ -z "$cron_schedule" ]; then
+        display_message error "URL, quality, and schedule time are required."
+        exit 1
+    fi
+
+    if [ -z "$output_file" ]; then
+        output_file="stream_$(date +%Y%m%d%H%M%S)"
+    fi
+
+    cron_command="$(which bash) $(realpath "$0") --url '$url' --quality '$quality' --output '$output_file'"
+    
+    # Add cron job to schedule the stream
+    (crontab -l 2>/dev/null; echo "$cron_schedule $cron_command") | crontab -
+
+    display_message success "Stream scheduled successfully with cron for '$cron_schedule'."
+}
+
+# Main menu system
 main_menu() {
     while true; do
-	echo "# --- // STREAMIT.SH //"
-        echo "1. LenaStarKilla"
-        echo "2. AbStarKilla"
-        echo "3. Custom URL"
-        echo "4. Exit"
+        echo "# --- // STREAMIT MENU //"
+        echo "$(tput setaf 6)1$(tput sgr0). Lena"
+        echo "$(tput setaf 6)2$(tput sgr0). Ab"
+        echo "$(tput setaf 6)3$(tput sgr0). Custom URL"
+        echo "$(tput setaf 6)4$(tput sgr0). Schedule"
+        echo "$(tput setaf 6)5$(tput sgr0). Exit"
         echo ""
         echo -n "Select: "
         read -r choice
@@ -291,15 +269,18 @@ main_menu() {
                 handle_custom_url
                 ;;
             4)
+                schedule_stream
+                ;;
+            5)
                 display_message info "Exiting Streamlink Wrapper."
                 exit 0
                 ;;
             *)
-                display_message warning "Invalid option. Please choose between 1 and 4."
+                display_message warning "Invalid option. Please choose between 1 and 5."
                 ;;
         esac
     done
 }
 
-# Execute the main menu
+# Entry point for the script
 main_menu

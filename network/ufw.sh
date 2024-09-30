@@ -57,9 +57,9 @@ ufw_config() {
 
     ufw allow in on lo
     ufw deny in from any to 127.0.0.0/8
-#    ufw limit ssh
-    ufw limit 80/tcp
-    ufw limit 443/tcp
+    ufw limit ssh 22/tcp
+    ufw allow 80/tcp
+    ufw allow 443/tcp
     ufw allow 7531/tcp # PlayWithMPV
     ufw allow 6800/tcp # Aria2c
 #    ufw allow 9091/tcp #Transmission
@@ -149,6 +149,7 @@ enhance_network_performance() {
     {
         echo 'net.core.rmem_max=16777216'
         echo 'net.core.wmem_max=16777216'
+	echo 'net.ipv4.conf.all.rp_filter'
         echo 'net.ipv4.tcp_rmem=4096 87380 16777216'
         echo 'net.ipv4.tcp_wmem=4096 65536 16777216'
         echo 'net.ipv4.tcp_window_scaling=1'
