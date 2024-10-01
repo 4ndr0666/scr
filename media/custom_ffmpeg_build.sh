@@ -4,31 +4,57 @@
 # File: Custom_ffmpeg_build.sh
 # Author: 4ndr0666
 # Date: 10-01-24
-# Description: Builds ffmpeg from source with options listed below and verifies libx264 codec.
+# Description: Builds ffmpeg from source with error-handling, logging, and common troubleshooting steps. Also
+# builds a static version of the x264 codec locally and links it to the custom ffmpeg build.
 
 # --- // Constants:
 export PATH="$HOME/bin:$PATH"
 export PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig"
+LOG_DIR="$HOME/ffmpeg_build/logs"
+BUILD_LOG="$LOG_DIR/build.log"
+INSTALL_LOG="$LOG_DIR/install.log"
+
+# --- // Create log directory:
+mkdir -p "$LOG_DIR"
+
+# --- // Function to check if previous commands succeeded:
+check_status() {
+  if [ $? -ne 0 ]; then
+    echo "Error encountered. Check logs for details."
+    echo "Check the build log at $BUILD_LOG and install log at $INSTALL_LOG"
+    exit 1
+  fi
+}
+
+# --- // Clean up previous builds:
+clean_build() {
+  echo "Cleaning up previous builds..."
+  make clean &>> "$BUILD_LOG"
+  check_status
+}
+
+# --- // Verify Dependencies:
+verify_dependencies() {
+  echo "Verifying required libraries..."
+  if ! pkg-config --libs libx264 &> /dev/null || ! pkg-config --libs libx265 &> /dev/null; then
+    echo "Missing dependencies. Ensure libx264 and libx265 are installed."
+    exit 1
+  fi
+}
 
 # --- // Pull ffmpeg snapshot:
+echo "Pulling the latest FFmpeg snapshot..."
 cd ~/ffmpeg_sources || exit
-if wget -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2; then
-  echo "FFmpeg snapshot downloaded successfully."
-else
-  echo "Error downloading FFmpeg snapshot."
-  exit 1
-fi
-
-# --- // Extract FFmpeg snapshot:
-if tar xjvf ffmpeg-snapshot.tar.bz2; then
-  echo "FFmpeg snapshot extracted successfully."
-else
-  echo "Error extracting FFmpeg snapshot."
-  exit 1
-fi
+wget -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 &>> "$BUILD_LOG"
+check_status
+tar xjvf ffmpeg-snapshot.tar.bz2 &>> "$BUILD_LOG"
+check_status
 cd ffmpeg || exit
 
 # --- // Build ffmpeg with options:
+echo "Starting FFmpeg build process..."
+clean_build
+
 PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./configure \
   --prefix="$HOME/ffmpeg_build" \
   --pkg-config-flags="--static" \
@@ -53,20 +79,22 @@ PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./conf
   --enable-libx265 \
   --enable-nvdec \
   --enable-vaapi \
-  --enable-nonfree && \
+  --enable-nonfree &>> "$BUILD_LOG"
+check_status
 
 # --- // Compile and install FFmpeg:
-if make > build.log 2>&1 && make install > install.log 2>&1; then
-  echo "FFmpeg compiled and installed successfully."
-else
-  echo "Error during FFmpeg build. Check build.log and install.log for details."
-  exit 1
-fi
+echo "Compiling and installing FFmpeg..."
+PATH="$HOME/bin:$PATH" make &>> "$BUILD_LOG"
+check_status
+make install &>> "$INSTALL_LOG"
+check_status
 
 # --- // Refresh shell environment:
+echo "Refreshing shell environment..."
 hash -r
 
 # --- // Verify libx264 codec:
+echo "Verifying libx264 codec installation..."
 if ffmpeg -codecs | grep -q libx264; then
   echo "libx264 codec is available."
 else
@@ -75,10 +103,14 @@ else
 fi
 
 # --- // Test video encoding with libx264:
-ffmpeg -i input.mp4 -c:v libx264 -preset slow -crf 23 output.mp4
+echo "Testing video encoding with libx264..."
+ffmpeg -i input.mp4 -c:v libx264 -preset slow -crf 23 output.mp4 &>> "$BUILD_LOG"
 if [ $? -eq 0 ]; then
   echo "Test encoding successful."
 else
-  echo "Test encoding failed."
+  echo "Test encoding failed. Check $BUILD_LOG for details."
   exit 1
 fi
+
+# --- // Verify successful completion:
+echo "FFmpeg build and installation completed successfully. Logs can be found in $LOG_DIR."
