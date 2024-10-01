@@ -4,7 +4,7 @@
 # File: Custom_ffmpeg_build.sh
 # Author: 4ndr0666
 # Date: 10-01-24
-# Description: Builds ffmpeg from source with error-handling, logging, and common troubleshooting steps. Also
+# Description: Builds ffmpeg from source with error-handling, logging, and common troubleshooting steps. Also 
 # builds a static version of the x264 codec locally and links it to the custom ffmpeg build.
 
 # --- // Constants:
@@ -29,7 +29,7 @@ check_status() {
 # --- // Clean up previous builds:
 clean_build() {
   echo "Cleaning up previous builds..."
-  make clean &>> "$BUILD_LOG"
+  make clean 2>&1 | tee -a "$BUILD_LOG"
   check_status
 }
 
@@ -45,9 +45,9 @@ verify_dependencies() {
 # --- // Pull ffmpeg snapshot:
 echo "Pulling the latest FFmpeg snapshot..."
 cd ~/ffmpeg_sources || exit
-wget -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 &>> "$BUILD_LOG"
+wget -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 2>&1 | tee -a "$BUILD_LOG"
 check_status
-tar xjvf ffmpeg-snapshot.tar.bz2 &>> "$BUILD_LOG"
+tar xjvf ffmpeg-snapshot.tar.bz2 2>&1 | tee -a "$BUILD_LOG"
 check_status
 cd ffmpeg || exit
 
@@ -79,14 +79,14 @@ PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./conf
   --enable-libx265 \
   --enable-nvdec \
   --enable-vaapi \
-  --enable-nonfree &>> "$BUILD_LOG"
+  --enable-nonfree 2>&1 | tee -a "$BUILD_LOG"
 check_status
 
 # --- // Compile and install FFmpeg:
 echo "Compiling and installing FFmpeg..."
-PATH="$HOME/bin:$PATH" make &>> "$BUILD_LOG"
+PATH="$HOME/bin:$PATH" make 2>&1 | tee -a "$BUILD_LOG"
 check_status
-make install &>> "$INSTALL_LOG"
+make install 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
 # --- // Refresh shell environment:
@@ -104,7 +104,7 @@ fi
 
 # --- // Test video encoding with libx264:
 echo "Testing video encoding with libx264..."
-ffmpeg -i input.mp4 -c:v libx264 -preset slow -crf 23 output.mp4 &>> "$BUILD_LOG"
+ffmpeg -i input.mp4 -c:v libx264 -preset slow -crf 23 output.mp4 2>&1 | tee -a "$BUILD_LOG"
 if [ $? -eq 0 ]; then
   echo "Test encoding successful."
 else
