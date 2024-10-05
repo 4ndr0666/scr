@@ -330,13 +330,13 @@ do
            # Configure the SVP settings
            echo 'import vapoursynth as vs' > "$TEMP_SVP_VPY"
            echo 'core = vs.core' >> "$TEMP_SVP_VPY"
-           echo 'core.std.LoadPlugin("/opt/svp/plugins/libsvpflow1_vs64.so")' >> "$TEMP_SVP_VPY"
-           echo 'core.std.LoadPlugin("/opt/svp/plugins/libsvpflow2_vs64.so")' >> "$TEMP_SVP_VPY"
+           echo 'core.std.LoadPlugin("/home/build/vapoursynth-plugin-svpflow2-bin/src/svpflow-4.3.0.168/lib-linux/libsvpflow1_vs64.so")' >> "$TEMP_SVP_VPY"
+           echo 'core.std.LoadPlugin("/home/build/vapoursynth-plugin-svpflow2-bin/src/svpflow-4.3.0.168/lib-linux/libsvpflow2_vs64.so")' >> "$TEMP_SVP_VPY"
            echo 'clip = video_in' >> "$TEMP_SVP_VPY"
-           echo 'src_fps = 60' >> "$TEMP_SVP_VPY"
+           echo 'src_fps = 120' >> "$TEMP_SVP_VPY"
            echo 'super_params = "{rc:true}"' >> "$TEMP_SVP_VPY"
            echo 'analyse_params = "{block:true, main:{search:{coarse:{distance:-6, satd:false}, type:2, satd:false}, penalty:{lambda:1.00}}}"' >> "$TEMP_SVP_VPY"
-           echo 'smoothfps_params = "{rate:{num:60, den:1, algo:23, mask:{cover:100, area:0, area_sharp:100}}, linear:true, algo:13, scene:{mode:0, blend:true}}"' >> "$TEMP_SVP_VPY"
+           echo 'smoothfps_params = "{rate:{num:120, den:1, algo:23, mask:{cover:100, area:0, area_sharp:100}}, linear:true, algo:15, scene:{mode:0, blend:true}}"' >> "$TEMP_SVP_VPY"
        
            # Add the SVP transformation logic
            echo 'super = core.svp1.Super(clip, super_params)' >> "$TEMP_SVP_VPY"

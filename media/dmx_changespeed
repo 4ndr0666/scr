@@ -1,0 +1,87 @@
+def change_speed(self, video: VideoFile, output_file: str, speed_factor: float, smooth_motion: bool = False):
+    """
+    Change the speed of a video with optional smooth motion interpolation.
+
+    :param video: VideoFile object representing the video to process.
+    :param output_file: Output file name for the processed video.
+    :param speed_factor: Speed factor (e.g., 0.5 for slow-motion, 2 for fast-motion).
+    :param smooth_motion: If True, apply advanced motion interpolation for smoother slow-motion effects.
+    """
+    logging.info(f"Changing speed of {video.filepath} by factor {speed_factor}")
+    try:
+        if speed_factor <= 0:
+            print_warning("Speed factor must be greater than 0.")
+            return
+
+        command = ['ffmpeg', '-y', '-i', video.filepath]
+
+        # Prompt for frame rate or default to 60 FPS
+        target_fps = input("Enter the target frame rate (or press Enter to default to 60fps): ")
+        if not target_fps:
+            target_fps = 60
+        else:
+            try:
+                target_fps = float(target_fps)
+            except ValueError:
+                print_warning("Invalid frame rate input. Defaulting to 60fps.")
+                target_fps = 60
+
+        # Adjust video speed (setpts adjusts video playback time)
+        video_filter = f"setpts={1/speed_factor}*PTS"
+
+        if smooth_motion and speed_factor < 1.0:
+            logging.info(f"Applying smooth slow-motion interpolation for {video.filepath}")
+            print_status("Applying smooth slow-motion interpolation. This may take a while...")
+
+            # Motion interpolation with advanced settings
+            video_filter += f",minterpolate=mi_mode=mci:mc_mode=aobmc:me_mode=bilat:me=umh:vsbmc=1:fps={target_fps}:scd=fdiff:scd_threshold=10"
+
+        logging.info(f"Video filter applied: {video_filter}")
+
+        if video.has_audio:
+            # Adjust audio speed
+            atempo_filters = []
+            temp_speed = speed_factor
+            while temp_speed < 0.5 or temp_speed > 2.0:
+                if temp_speed < 0.5:
+                    atempo_filters.append('atempo=0.5')
+                    temp_speed /= 0.5
+                else:
+                    atempo_filters.append('atempo=2.0')
+                    temp_speed /= 2.0
+            atempo_filters.append(f"atempo={temp_speed}")
+            audio_filter = ','.join(atempo_filters)
+            logging.info(f"Audio filter applied: {audio_filter}")
+
+            # Combine filters in filter_complex
+            filter_complex = f"[0:v]{video_filter}[v];[0:a]{audio_filter}[a]"
+            command += [
+                '-filter_complex', filter_complex,
+                '-map', '[v]', '-map', '[a]'
+            ]
+        else:
+            # No audio stream, apply video filter directly
+            command += [
+                '-vf', video_filter
+            ]
+
+        # Set video and audio codec settings
+        command += [
+            '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-b:v', '1M'
+        ]
+
+        if video.has_audio:
+            command += ['-c:a', DEFAULT_AUDIO_CODECS[0], '-b:a', '256k']
+        else:
+            command += ['-an']  # No audio stream
+
+        command += [output_file]
+
+        # Run the command and display output in real-time
+        run_command(command, description=f"Changing speed for {video.basename}", display_output=True)
+
+        print_status(f"Speed change applied to {video.basename}. Saved as {output_file}")
+
+    except Exception as e:
+        logging.error(f"Error changing speed of {video.filepath}: {e}")
+        print_warning(f"Failed to change speed for {video.basename}")
