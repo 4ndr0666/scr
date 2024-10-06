@@ -4,7 +4,7 @@
 function check_dependency() {
     if ! command -v "$1" &> /dev/null; then
         echo "Error: $1 is not installed. Please install it first."
-        exit 1
+        return 1
     fi
 }
 
@@ -52,19 +52,6 @@ consolidate_directories() {
     fi
 }
 
-# Ensure a specific Go tool is installed
-ensure_tool_installed() {
-    local tool_name=$1
-    local tool_source=$2
-
-    if ! command -v "$tool_name" &> /dev/null; then
-        echo "Installing $tool_name..."
-        go install "$tool_source"
-    else
-        echo "$tool_name is already installed."
-    fi
-}
-
 # Add an environment variable to the zenvironment config file if it's not already present
 add_to_zenvironment() {
     local var_name=$1
@@ -88,27 +75,11 @@ remove_empty_directories() {
     done
 }
 
-# Ensure Rust is installed and manage updates if necessary
-ensure_rust_installed() {
-    if ! command -v rustup &> /dev/null; then
-        echo "Rustup is not installed. Installing Rustup..."
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    else
-        echo "Rustup is already installed."
-    fi
-}
-
 # Install or update Cargo tools
 cargo_install_or_update() {
     local tool_name=$1
-
-    if cargo install --list | grep "$tool_name" &> /dev/null; then
-        echo "Updating $tool_name..."
-        cargo install "$tool_name" --force
-    else
-        echo "Installing $tool_name..."
-        cargo install "$tool_name"
-    fi
+    echo "Installing or updating $tool_name..."
+    cargo install "$tool_name" --force
 }
 
 # Backup a given directory
@@ -168,4 +139,16 @@ verify_db_tool_installation() {
         echo "Error: $tool_name is not functioning correctly."
         exit 1
     fi
+}
+
+# Dynamically find a valid editor from a list of common ones
+find_editor() {
+    local editors=("vim" "nano" "micro" "emacs" "code" "sublime" "gedit")
+    for editor in "${editors[@]}"; do
+        if command -v "$editor" &> /dev/null; then
+            echo "$editor"
+            return
+        fi
+    done
+    echo "nano"  # Default fallback editor
 }

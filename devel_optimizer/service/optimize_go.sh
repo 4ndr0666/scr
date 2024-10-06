@@ -65,6 +65,15 @@ install_go() {
     if command -v pacman &> /dev/null; then
         echo "Installing Go using pacman..."
         sudo pacman -Syu go
+    elif command -v apt-get &> /dev/null; then
+        echo "Installing Go using apt-get..."
+        sudo apt-get update && sudo apt-get install -y golang
+    elif command -v dnf &> /dev/null; then
+        echo "Installing Go using dnf..."
+        sudo dnf install -y golang
+    elif command -v brew &> /dev/null; then
+        echo "Installing Go using Homebrew..."
+        brew install go
     else
         echo "Error: Unsupported package manager. Please install Go manually."
         exit 1
@@ -77,29 +86,44 @@ update_go() {
     if command -v pacman &> /dev/null; then
         echo "Updating Go to version $version using pacman..."
         sudo pacman -Syu go
+    elif command -v apt-get &> /dev/null; then
+        echo "Updating Go using apt-get..."
+        sudo apt-get update && sudo apt-get upgrade -y golang
+    elif command -v dnf &> /dev/null; then
+        echo "Updating Go using dnf..."
+        sudo dnf upgrade -y golang
+    elif command -v brew &> /dev/null; then
+        echo "Updating Go using Homebrew..."
+        brew upgrade go
     else
         echo "Error: Unsupported package manager. Please update Go manually."
         exit 1
     fi
 }
 
-# Function to get the latest Go version from pacman
+# Function to get the latest Go version
 get_latest_go_version() {
     if command -v pacman &> /dev/null; then
         latest_go_version=$(pacman -Si go | grep Version | awk '{print $3}')
-        echo "$latest_go_version"
+    elif command -v apt-get &> /dev/null; then
+        latest_go_version=$(apt-cache policy golang | grep Candidate | awk '{print $2}')
+    elif command -v dnf &> /dev/null; then
+        latest_go_version=$(dnf info golang | grep Version | awk '{print $3}')
+    elif command -v brew &> /dev/null; then
+        latest_go_version=$(brew info go | grep stable | awk '{print $3}')
     else
         echo "Error: Unsupported package manager."
         exit 1
     fi
+    echo "$latest_go_version"
 }
 
 # Function to set up Go paths (GOPATH, GOROOT, GOMODCACHE)
 setup_go_paths() {
     echo "Setting up Go environment paths..."
-    export GOPATH="$XDG_DATA_HOME/go"
-    export GOMODCACHE="$XDG_CACHE_HOME/go/mod"
-    export GOROOT="/usr/local/go"
+    export GOPATH="${XDG_DATA_HOME:-$HOME}/go"
+    export GOMODCACHE="${XDG_CACHE_HOME:-$HOME/.cache}/go/mod"
+    export GOROOT=$(go env GOROOT)  # Dynamically determine GOROOT
 
     add_to_zenvironment "GOPATH" "$GOPATH"
     add_to_zenvironment "GOMODCACHE" "$GOMODCACHE"
@@ -122,9 +146,10 @@ consolidate_go_directories() {
 
 # Function to install essential Go tools
 install_go_tools() {
-    echo "Installing Go tools (goimports, golangci-lint)..."
+    echo "Installing Go tools (goimports, golangci-lint, gopls)..."
     go install golang.org/x/tools/cmd/goimports@latest
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    go install golang.org/x/tools/gopls@latest  # Go Language Server
 }
 
 # Function to manage permissions for Go directories

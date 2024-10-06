@@ -1,11 +1,7 @@
 #!/bin/bash
 
 pkg_path() {
-    if [[ -L "$0" ]]; then
-        dirname "$(readlink $0)"
-    else
-        dirname "$0"
-    fi
+    dirname "$(readlink -f "$0")"
 }
 
 # Function to check if an optional dependency is installed
@@ -26,16 +22,17 @@ fallback_view() {
 
 # Repair settings prompt
 repair_settings() {
-    read -r -p "Would you like to repair settings? [y/N] "
-    if [[ "$REPLY" =~ [yY] ]]; then
-        update_settings
+    if [[ -z "$USER_INTERFACE" ]]; then
+        read -r -p "USER_INTERFACE setting is invalid. Would you like to repair settings? [y/N] "
+        if [[ "$REPLY" =~ [yY] ]]; then
+            update_settings
+        fi
     fi
 }
 
 source_settings() {
     source $(pkg_path)/settings.sh
 }
-
 
 # Load all service optimization scripts
 source_service() {
@@ -45,11 +42,11 @@ source_service() {
     source $(pkg_path)/service/optimize_node.sh
     source $(pkg_path)/service/optimize_nvm.sh
     source $(pkg_path)/service/optimize_meson.sh
-    source $(pkg_path)/service/optimize_poetry.sh
-    source $(pkg_path)/service/optimize_rust_tooling.sh  # Added Rust tooling
+    source $(pkg_path)/service/optimize_venv.sh
+    source $(pkg_path)/service/optimize_rust_tooling.sh
     source $(pkg_path)/service/optimize_db_tools.sh
-    source $(pkg_path)/service/settings.sh    
-    source $(pkg_path)/common_functions.sh  # Added Database tools
+    source $(pkg_path)/service/settings.sh  # This must be included
+    source $(pkg_path)/common_functions.sh
 }
 
 # Load the controller

@@ -51,7 +51,10 @@ install_postgresql() {
         echo "PostgreSQL is already installed."
     else
         echo "Installing PostgreSQL..."
-        sudo pacman -S postgresql || sudo apt-get install postgresql || sudo dnf install postgresql
+        sudo pacman -S postgresql || sudo apt-get install postgresql || sudo dnf install postgresql || {
+            echo "Error: Failed to install PostgreSQL."
+            exit 1
+        }
     fi
 }
 
@@ -61,7 +64,10 @@ install_mysql() {
         echo "MySQL is already installed."
     else
         echo "Installing MySQL..."
-        sudo pacman -S mysql || sudo apt-get install mysql-server || sudo dnf install mysql-server
+        sudo pacman -S mysql || sudo apt-get install mysql-server || sudo dnf install mysql-server || {
+            echo "Error: Failed to install MySQL."
+            exit 1
+        }
     fi
 }
 
@@ -71,7 +77,10 @@ install_sqlite() {
         echo "SQLite is already installed."
     else
         echo "Installing SQLite..."
-        sudo pacman -S sqlite || sudo apt-get install sqlite || sudo dnf install sqlite
+        sudo pacman -S sqlite || sudo apt-get install sqlite || sudo dnf install sqlite || {
+            echo "Error: Failed to install SQLite."
+            exit 1
+        }
     fi
 }
 

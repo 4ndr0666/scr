@@ -15,12 +15,12 @@ main() {
                     4 "Optimize Node.js" \
                     5 "Optimize NVM" \
                     6 "Optimize Meson" \
-                    7 "Optimize Poetry" \
+                    7 "Optimize Python" \
                     8 "Optimize Rust Tooling" \
                     9 "Optimize Database Tools" \
                    10 "Update Settings" \
                     0 "Exit")
-            clear;
+            clear
             case "$REPLY" in
                 1)
                     optimize_go
@@ -47,7 +47,7 @@ main() {
                     check_exit
                     ;;
                 7)
-                    optimize_poetry
+                    optimize_venv
                     check_exit
                     ;;
                 8)
@@ -62,14 +62,8 @@ main() {
                    update_settings
                    check_exit
                    ;;
-
                0)
-                    # Confirm exit before quitting
-                    dialog --stdout --title "Confirm Exit" --yesno "Are you sure you want to exit?" 7 40
-                    if [[ $? -eq 0 ]]; then
-                        clear
-                        exit
-                    fi
+                    confirm_exit
                     ;;
                 *)
                     clear
@@ -77,6 +71,16 @@ main() {
                     ;;
             esac
         done
+    fi
+}
+
+# Function to confirm exit
+confirm_exit() {
+    dialog --stdout --title "Confirm Exit" --yesno "Are you sure you want to exit?" 7 40
+    if [[ $? -eq 0 ]]; then
+        clear
+        echo "Exiting. Goodbye!"
+        exit
     fi
 }
 

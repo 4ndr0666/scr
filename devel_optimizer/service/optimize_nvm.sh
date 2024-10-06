@@ -25,10 +25,18 @@ function optimize_nvm_service() {
     # Step 4: Set up environment variables for NVM and Node.js
     echo "Setting up NVM environment variables..."
     export NVM_DIR="$HOME/.config/nvm"
-    export PATH="$NVM_DIR/versions/node/$(nvm version default)/bin:$PATH"
+    
+    # Check if default Node version exists, otherwise use current version
+    if nvm version default &> /dev/null; then
+        NODE_VERSION=$(nvm version default)
+    else
+        NODE_VERSION=$(nvm current)
+    fi
+
+    export PATH="$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH"
 
     add_to_zenvironment "NVM_DIR" "$NVM_DIR"
-    add_to_zenvironment "PATH" "$NVM_DIR/versions/node/$(nvm version default)/bin:$PATH"
+    add_to_zenvironment "PATH" "$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH"
 
     # Step 5: Source NVM and bash completion scripts as defined in zenvironment
     if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -73,6 +81,15 @@ install_nvm() {
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
     export NVM_DIR="$HOME/.config/nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    # Ensure NVM variables persist across sessions
+    if [[ "$SHELL" == *"zsh"* ]]; then
+        echo 'export NVM_DIR="$HOME/.config/nvm"' >> ~/.zshrc
+        echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.zshrc
+    elif [[ "$SHELL" == *"bash"* ]]; then
+        echo 'export NVM_DIR="$HOME/.config/nvm"' >> ~/.bashrc
+        echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+    fi
 }
 
 # Helper function to manage Node.js versions using NVM
@@ -102,7 +119,7 @@ manage_node_versions_via_nvm() {
 npm_global_install_or_update() {
     local package_name=$1
 
-    if npm list -g "$package_name" &> /dev/null; then
+    if npm ls -g "$package_name" --depth=0 &> /dev/null; then
         echo "Updating $package_name..."
         npm update -g "$package_name"
     else
@@ -117,8 +134,14 @@ backup_nvm_configuration() {
 
     local backup_dir="$HOME/.nvm_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
-    cp -r "$NVM_DIR" "$backup_dir"
-    cp -r "$(npm config get prefix)" "$backup_dir"
+    
+    if [[ -d "$NVM_DIR" ]]; then
+        cp -r "$NVM_DIR" "$backup_dir"
+    fi
+
+    if [[ -d "$(npm config get prefix)" ]]; then
+        cp -r "$(npm config get prefix)" "$backup_dir"
+    fi
 
     echo "Backup completed: $backup_dir"
 }
@@ -144,7 +167,9 @@ verify_nvm_setup() {
     fi
 
     # Verify global npm packages
-    if npm list -g npm-check-updates &> /dev/null && npm list -g yarn &> /dev/null && npm list -g nodemon &> /dev/null; then
+    if npm ls -g npm-check-updates --depth=0 &> /dev/null && \
+       npm ls -g yarn --depth=0 &> /dev/null && \
+       npm ls -g nodemon --depth=0 &> /dev/null; then
         echo "Global npm packages are installed and functioning correctly."
     else
         echo "Error: Some global npm packages are missing or not functioning correctly."

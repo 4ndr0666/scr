@@ -22,11 +22,7 @@ function optimize_meson_service() {
 
     # Step 4: Set up environment variables for Meson and Ninja
     echo "Setting up Meson and Ninja environment variables..."
-    export MESON_HOME="$XDG_CONFIG_HOME/meson"
-    export PATH="$MESON_HOME/bin:$PATH"
-
-    add_to_zenvironment "MESON_HOME" "$MESON_HOME"
-    add_to_zenvironment "PATH" "$MESON_HOME/bin:$PATH"
+    setup_meson_environment
 
     # Step 5: Install optional testing and linting tools (meson test, meson lint)
     echo "Installing optional tools for Meson testing and linting..."
@@ -67,6 +63,10 @@ install_meson() {
         sudo apt-get install -y meson
     elif command -v dnf &> /dev/null; then
         sudo dnf install -y meson
+    elif command -v brew &> /dev/null; then
+        brew install meson
+    elif command -v zypper &> /dev/null; then
+        sudo zypper install -y meson
     else
         echo "Unsupported package manager. Please install Meson manually."
         exit 1
@@ -91,6 +91,10 @@ install_ninja() {
         sudo apt-get install -y ninja-build
     elif command -v dnf &> /dev/null; then
         sudo dnf install -y ninja-build
+    elif command -v brew &> /dev/null; then
+        brew install ninja
+    elif command -v zypper &> /dev/null; then
+        sudo zypper install -y ninja
     else
         echo "Unsupported package manager. Please install Ninja manually."
         exit 1
@@ -112,11 +116,13 @@ setup_python_environment_for_meson() {
     if [[ -d "$MESON_HOME/venv" ]]; then
         echo "Virtual environment already exists for Meson. Activating..."
         source "$MESON_HOME/venv/bin/activate"
-    else
+    elif [[ -z "$VIRTUAL_ENV" ]]; then
         echo "Creating a new virtual environment for Meson..."
         python3 -m venv "$MESON_HOME/venv"
         source "$MESON_HOME/venv/bin/activate"
         pip install --upgrade pip
+    else
+        echo "A virtual environment is already active."
     fi
 }
 
@@ -128,6 +134,10 @@ install_python3() {
         sudo apt-get install -y python3
     elif command -v dnf &> /dev/null; then
         sudo dnf install -y python3
+    elif command -v brew &> /dev/null; then
+        brew install python
+    elif command -v zypper &> /dev/null; then
+        sudo zypper install -y python3
     else
         echo "Unsupported package manager. Please install Python manually."
         exit 1
@@ -147,6 +157,18 @@ pip_install_or_update() {
     fi
 }
 
+# Helper function to set up Meson and Ninja environment variables
+setup_meson_environment() {
+    # Check if environment variables are already set
+    if [[ -z "$MESON_HOME" ]]; then
+        export MESON_HOME="$XDG_CONFIG_HOME/meson"
+    fi
+    export PATH="$MESON_HOME/bin:$PATH"
+
+    add_to_zenvironment "MESON_HOME" "$MESON_HOME"
+    add_to_zenvironment "PATH" "$MESON_HOME/bin:$PATH"
+}
+
 # Helper function to configure additional Meson backends or options (optional)
 configure_additional_meson_backends() {
     echo "Configuring additional Meson backends (optional)..."
@@ -161,13 +183,17 @@ configure_additional_meson_backends() {
 
 # Helper function to backup current Meson configuration
 backup_meson_configuration() {
-    echo "Backing up Meson configuration..."
+    if [[ -d "$MESON_HOME" ]]; then
+        echo "Backing up Meson configuration..."
 
-    local backup_dir="$HOME/.meson_backup_$(date +%Y%m%d)"
-    mkdir -p "$backup_dir"
-    cp -r "$MESON_HOME" "$backup_dir"
+        local backup_dir="$HOME/.meson_backup_$(date +%Y%m%d)"
+        mkdir -p "$backup_dir"
+        cp -r "$MESON_HOME" "$backup_dir"
 
-    echo "Backup completed: $backup_dir"
+        echo "Backup completed: $backup_dir"
+    else
+        echo "Meson configuration directory does not exist. Skipping backup."
+    fi
 }
 
 # The controller script will call optimize_meson_service as needed, so there is no need for direct invocation in this file.

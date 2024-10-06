@@ -5,11 +5,11 @@ function optimize_cargo_service() {
     echo "Optimizing Cargo and Rust environment..."
 
     # Step 1: Check if Cargo is installed
-    current_cargo_version=$(cargo --version 2>/dev/null)
-    if [[ $? -ne 0 ]]; then
+    if ! command -v cargo &> /dev/null; then
         echo "Cargo is not installed. Installing Cargo via rustup..."
         install_cargo
     else
+        current_cargo_version=$(cargo --version)
         echo "Cargo is already installed: $current_cargo_version"
     fi
 
@@ -29,6 +29,7 @@ function optimize_cargo_service() {
 
     # Step 5: Set up environment variables for Cargo and Rust (aligning with zenvironment file)
     echo "Setting up Cargo and Rust environment variables..."
+    export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
     export CARGO_HOME="$XDG_DATA_HOME/cargo"
     export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
     export PATH="$CARGO_HOME/bin:$PATH"
@@ -94,14 +95,8 @@ manage_rust_toolchains() {
 # Helper function to install or update Cargo tools
 cargo_install_or_update() {
     local tool_name=$1
-
-    if cargo install --list | grep "$tool_name" &> /dev/null; then
-        echo "Updating $tool_name..."
-        cargo install "$tool_name" --force
-    else
-        echo "Installing $tool_name..."
-        cargo install "$tool_name"
-    fi
+    echo "Installing or updating $tool_name..."
+    cargo install "$tool_name" --force
 }
 
 # Helper function to set up cross-compilation targets (WASM, ARM, etc.)

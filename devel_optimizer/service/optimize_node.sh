@@ -5,11 +5,11 @@ function optimize_node_service() {
     echo "Optimizing Node.js and npm environment..."
 
     # Step 1: Check if Node.js is installed
-    current_node_version=$(node -v 2>/dev/null)
-    if [[ $? -ne 0 ]]; then
+    if ! command -v node &> /dev/null; then
         echo "Node.js is not installed. Installing Node.js..."
         install_node
     else
+        current_node_version=$(node -v)
         echo "Node.js is already installed: $current_node_version"
     fi
 
@@ -95,13 +95,22 @@ install_nvm() {
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    # Ensure the NVM configuration persists across sessions
+    if [[ "$SHELL" == *"zsh"* ]]; then
+        echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.zshrc
+        echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.zshrc
+    elif [[ "$SHELL" == *"bash"* ]]; then
+        echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+        echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+    fi
 }
 
 # Helper function to globally install or update an npm package
 npm_global_install_or_update() {
     local package_name=$1
 
-    if npm list -g "$package_name" &> /dev/null; then
+    if npm ls -g "$package_name" --depth=0 &> /dev/null; then
         echo "Updating $package_name..."
         npm update -g "$package_name"
     else
@@ -130,9 +139,18 @@ backup_node_configuration() {
 
     local backup_dir="$HOME/.node_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
-    cp -r "$NVM_DIR" "$backup_dir"
-    cp -r "$(npm config get prefix)" "$backup_dir"
-    cp -r "$HOME/.npm-cache" "$backup_dir"
+
+    if [[ -d "$NVM_DIR" ]]; then
+        cp -r "$NVM_DIR" "$backup_dir"
+    fi
+
+    if [[ -d "$(npm config get prefix)" ]]; then
+        cp -r "$(npm config get prefix)" "$backup_dir"
+    fi
+
+    if [[ -d "$HOME/.npm-cache" ]]; then
+        cp -r "$HOME/.npm-cache" "$backup_dir"
+    fi
 
     echo "Backup completed: $backup_dir"
 }
