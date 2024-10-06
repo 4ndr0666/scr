@@ -1,72 +1,84 @@
 #!/bin/bash
 
+# Function to get the script path (detecting symlinks)
 pkg_path() {
-	if [[ -L "$0" ]]; then
-		dirname "$(readlink $0)"
-	else
-		dirname "$0"
-	fi
+    dirname "$(readlink -f "$0")"
 }
 
+# Check if an optional dependency is installed
 check_optdepends() {
-	if [[ -n "$(command -v $1)" ]]; then
-		return 0
-	else
-		return 1
-	fi
+    if ! command -v "$1" &> /dev/null; then
+        echo "Error: $1 is not installed. Please install it before proceeding."
+        return 1
+    fi
+    return 0
 }
 
+# Fallback view in case of incorrect USER_INTERFACE setting
 fallback_view() {
-	printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
-	read
-	source $(pkg_path)/view/dialog.sh
+    printf "\nIncorrect USER_INTERFACE setting -- falling back to default 'dialog' interface.\n" 1>&2
+    read
+    source "$(pkg_path)/view/dialog.sh"
 }
 
+# Repair settings prompt
 repair_settings() {
-	read -r -p "Would you like to repair settings? [y/N]"
-	if [[ "$REPLY" =~ [yY] ]]; then
-		update_settings
-	fi
+    read -r -p "Would you like to repair settings? [y/N]: "
+    if [[ "$REPLY" =~ [yY] ]]; then
+        update_settings
+    fi
 }
 
+# Source settings file
 source_settings() {
-	source $(pkg_path)/settings.sh
+    source "$(pkg_path)/settings.sh"
 }
 
+# Dynamically source all service scripts
 source_service() {
-	source $(pkg_path)/service/upgrade.sh
-	source $(pkg_path)/service/cleanup.sh
-	source $(pkg_path)/service/backup.sh
-	source $(pkg_path)/service/settings.sh
+    for script in $(pkg_path)/service/*.sh; do
+        source "$script"
+    done
 }
 
+# Source the controller script
 source_controller() {
-	source $(pkg_path)/controller.sh
+    source "$(pkg_path)/controller.sh"
 }
 
+# Execute the main function
 execute_main() {
-	main
-	test "$?" == 1 && repair_settings
+    main
+    if [[ "$?" == 1 ]]; then
+        repair_settings
+    fi
 }
 
+# Ensure the script is run as root, else re-run with sudo
 if [[ "$EUID" -ne 0 ]]; then
+    echo "Re-running the script with sudo privileges..."
     sudo "$0" "$@"
     exit $?
 fi
 
+# Main flow
 if [[ "$EUID" -eq 0 ]]; then
-	source_settings
-	source_service
-	source_controller
+    source_settings
+    source_service
+    source_controller
 
-	case "$USER_INTERFACE" in
-		'cli')
-			source $(pkg_path)/view/cli.sh;;
-		'dialog')
-			source $(pkg_path)/view/dialog.sh;;
-		*)
-			fallback_view;;	
-	esac
+    # Load the appropriate user interface
+    case "$USER_INTERFACE" in
+        'cli')
+            source "$(pkg_path)/view/cli.sh"
+            ;;
+        'dialog')
+            source "$(pkg_path)/view/dialog.sh"
+            ;;
+        *)
+            fallback_view
+            ;;
+    esac
 
-	execute_main
+    execute_main
 fi
