@@ -221,6 +221,7 @@ PKG_CONFIG_PATH="$FFMPEG_BUILD/lib/pkgconfig:$PKG_CONFIG_PATH" ./configure \
   --enable-libshine \
   --enable-libspeex \
   --enable-libzimg \
+  --enable-libvidstab \
   --enable-libsrt \
   --enable-version3 \
   --enable-libvmaf \
