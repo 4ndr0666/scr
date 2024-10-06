@@ -5,28 +5,26 @@
 # User interface of choice (cli, dialog)
 export USER_INTERFACE='cli'
 
-# Editor used to modify settings (vim, nano, emacs)
-# NOTE: EDITOR environment variable takes precedence
+# Editor used to modify settings (vim, nano, micro)
 export SETTINGS_EDITOR='micro'
 
-# Country to generate the mirror list for (Permanently set to 'United States')
+# Country to generate the mirror list for
 export MIRRORLIST_COUNTRY='United States'
 
+#######################################################################
+####################### AUR Helper Configuration ######################
+#######################################################################
 
-#######################################################################
-############################# AUR Options #############################
-#######################################################################
+# Define the AUR helper to use (trizen, yay, or others)
+export AUR_HELPER="trizen"
 
 # Directory where currently installed AUR packages are stored
-# Ensure this directory exists or is created during runtime
 export AUR_DIR="/home/build"
 
-# Decide whether or not to upgrade AUR Packages while rebuilding
+# Option to decide whether or not to upgrade AUR Packages while rebuilding
 export AUR_UPGRADE=true
 
 # Whitelist of AUR packages that should not show up as dropped packages
-# NOTE: AUR packages in the AUR_DIR will automatically be whitelisted.
-# Add AUR packages you want to preserve here.
 export AUR_WHITELIST=()
 
 # Example:

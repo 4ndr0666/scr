@@ -4,15 +4,10 @@
 
 # Function to modify settings using an appropriate text editor
 modify_settings() {
-    # Attempt to determine the editor if not already set and if there is a SUDO_USER
-    if [[ -z "$EDITOR" && -n "$SUDO_USER" ]]; then
-        EDITOR="$(sudo -i -u $SUDO_USER env | awk '/^EDITOR=/{ print substr($0, 8) }')"
-    fi
-
-    # Use the determined or pre-set editor, or fallback if not valid
-    if [[ -n "$EDITOR" ]]; then
-        execute_editor "$EDITOR" "\nEDITOR environment variable of $EDITOR is not valid"
-    elif [[ "$SETTINGS_EDITOR" =~ (vim|nano|emacs) ]]; then
+    # Check if EDITOR is set and valid
+    if [[ -n "$EDITOR" && $(command -v "$EDITOR") ]]; then
+        execute_editor "$EDITOR"
+    elif [[ "$SETTINGS_EDITOR" =~ (vim|nano|emacs|micro) && $(command -v "$SETTINGS_EDITOR") ]]; then
         execute_editor "$SETTINGS_EDITOR"
     else
         fallback_editor
@@ -21,18 +16,40 @@ modify_settings() {
 
 # Function to execute the chosen editor on the settings file
 execute_editor() {
-    check_optdepends "$1"
-    if [[ "$?" == 0 ]]; then
-        $1 $(pkg_path)/settings.sh
+    local editor="$1"
+    if [[ -x "$(command -v "$editor")" ]]; then
+        "$editor" "$(pkg_path)/settings.sh"
+        if [[ $? -eq 0 ]]; then
+            echo "Settings successfully modified."
+        else
+            echo "Error: Failed to modify settings with $editor."
+        fi
     else
-        printf "${2:-\n$1 is not installed}"
+        echo "Error: $editor is not installed."
         fallback_editor
     fi
 }
 
-# Function to fallback to the default editor if the chosen editor is not available
+# Function to prompt user for available editors if both EDITOR and SETTINGS_EDITOR fail
 fallback_editor() {
-    printf "\nIncorrect SETTINGS_EDITOR setting -- falling back to default\n" 1>&2
-    read
-    vim $(pkg_path)/settings.sh
+    echo "No valid editor found. Please select an editor to use:"
+    select editor in "vim" "nano" "micro" "emacs" "Exit"; do
+        case $REPLY in
+            1) vim "$(pkg_path)/settings.sh"; break;;
+            2) nano "$(pkg_path)/settings.sh"; break;;
+            3) micro "$(pkg_path)/settings.sh"; break;;
+            4) emacs "$(pkg_path)/settings.sh"; break;;
+            5) echo "Exiting without modifying settings."; exit 0;;
+            *) echo "Invalid selection. Please choose again.";;
+        esac
+    done
+}
+
+# Function to determine the package path dynamically
+pkg_path() {
+    if [[ -L "$0" ]]; then
+        dirname "$(readlink -f "$0")"
+    else
+        dirname "$0"
+    fi
 }

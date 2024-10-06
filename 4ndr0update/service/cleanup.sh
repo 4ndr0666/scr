@@ -1,11 +1,14 @@
 #!/bin/bash
 
+# Log file for cleanup operations
+CLEANUP_LOG="/var/log/4ndr0update_cleanup.log"
+
 # Function to show a spinner
 spinner() {
     local pid=$1
     local delay=0.75
     local spinstr='|/-\'
-    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+    while kill -0 "$pid" 2>/dev/null; do
         local temp=${spinstr#?}
         printf " [%c]  " "$spinstr"
         spinstr=$temp${spinstr%"$temp"}
@@ -18,7 +21,7 @@ spinner() {
 # Function to remove orphaned packages with a timeout
 remove_orphaned_packages() {
     printf "\nChecking for orphaned packages...\n"
-    
+
     # Run the orphan check in the background
     (mapfile -t orphaned < <(pacman -Qtdq)) &
     pid=$!
@@ -95,13 +98,16 @@ clean_broken_symlinks() {
             printf '%s\n' "${broken_symlinks[@]}"
             read -r -p "Do you want to remove the broken symlinks above? [y/N] "
             if [[ "$REPLY" =~ [yY] ]]; then
-                if rm "${broken_symlinks[@]}"; then
-                    printf "...Broken symlinks removed successfully.\n"
-                    log_cleanup "Removed broken symlinks: ${broken_symlinks[*]}"
-                else
-                    printf "...Failed to remove some broken symlinks. Check logs for details.\n"
-                    log_cleanup "Failed to remove some broken symlinks."
-                fi
+                # Handle removal failure by skipping problematic symlinks
+                for symlink in "${broken_symlinks[@]}"; do
+                    if rm "$symlink"; then
+                        printf "...Removed broken symlink: %s\n" "$symlink"
+                        log_cleanup "Removed broken symlink: $symlink"
+                    else
+                        printf "...Failed to remove symlink: %s. Check permissions or filesystem status.\n" "$symlink"
+                        log_cleanup "Failed to remove broken symlink: $symlink"
+                    fi
+                done
             else
                 printf "...Broken symlinks were not removed.\n"
             fi
@@ -112,7 +118,6 @@ clean_broken_symlinks() {
         printf "...Search for broken symlinks was skipped.\n"
     fi
 }
-
 
 # Function to remind user to check for old configuration files
 clean_old_config() {
@@ -129,15 +134,4 @@ clean_old_config() {
 log_cleanup() {
     local log_file="/var/log/4ndr0update_cleanup.log"
     echo "$(date): $1" >> "$log_file"
-}
-
-# Function to remind user to check for old configuration files
-clean_old_config() {
-    user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-    test -z "$user_home" && user_home="~"
-    printf "\nREMINDER: Check the following directories for old configuration files:\n"
-    printf "$user_home/\n"
-    printf "$user_home/.config/\n"
-    printf "$user_home/.cache/\n"
-    printf "$user_home/.local/share/\n"
 }

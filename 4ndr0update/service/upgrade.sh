@@ -4,6 +4,23 @@
 # Pacman Configuration
 PACMAN_CONF="/etc/pacman.conf"
 
+# Maximum retries for system commands
+MAX_RETRIES=3
+RETRY_DELAY=2  # seconds
+
+# Function to retry a command with a delay if it fails
+retry_command() {
+    local retries="$MAX_RETRIES"
+    local delay="$RETRY_DELAY"
+    local cmd="$*"
+
+    until $cmd; do
+        ((retries--)) || { echo "Error: Command failed after $MAX_RETRIES attempts: $cmd"; exit 1; }
+        echo "Retrying... ($retries attempts left)"
+        sleep "$delay"
+    done
+}
+
 # Function to update pacman.conf with necessary settings
 update_pacman_conf() {
     if ! grep -q "ParallelDownloads = 5" "$PACMAN_CONF"; then
@@ -29,7 +46,7 @@ configure_reflector() {
     read -r -p "Do you want to get an updated mirrorlist? [y/N] "
     if [[ "$REPLY" =~ [yY] ]]; then
         printf "Updating mirrorlist...\n"
-        reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
+        retry_command reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
         printf "...Mirrorlist updated\n"
     fi
 }
@@ -39,10 +56,7 @@ ensure_package_installed() {
     local pkg="$1"
     if ! pacman -Qs "$pkg" > /dev/null; then
         echo "Package $pkg is missing. Installing..."
-        if ! sudo pacman -S --noconfirm "$pkg"; then
-            echo "Error: Failed to install $pkg. Please check your internet connection or package availability."
-            exit 1
-        fi
+        retry_command sudo pacman -S --noconfirm "$pkg"
     else
         echo "Package $pkg is already installed."
     fi
@@ -61,7 +75,7 @@ check_and_install_dependencies() {
     done
 }
 
-# Set up AUR directory using trizen
+# Set up AUR directory using the chosen AUR helper (from settings.sh)
 aur_setup() {
     printf "\n"
     read -r -p "Do you want to set up the AUR package directory at $AUR_DIR? [y/N] "
@@ -80,13 +94,13 @@ aur_setup() {
     fi
 }
 
-# Function to rebuild AUR packages using trizen as non-root user
+# Function to rebuild AUR packages using the configured AUR helper
 rebuild_aur() {
     printf "\n"
-    read -r -p "Do you want to rebuild all AUR packages using trizen? [y/N] "
+    read -r -p "Do you want to rebuild all AUR packages using $AUR_HELPER? [y/N] "
     if [[ "$REPLY" =~ [yY] ]]; then
-        echo "Rebuilding AUR packages with trizen..."
-        sudo -u "$SUDO_USER" trizen -Syu --noconfirm
+        echo "Rebuilding AUR packages with $AUR_HELPER..."
+        retry_command sudo -u "$SUDO_USER" "$AUR_HELPER" -Syu --noconfirm
         echo "...AUR packages rebuilt."
     fi
 }
@@ -98,15 +112,7 @@ handle_pacfiles() {
     printf "...Done checking for pacfiles\n"
 }
 
-# Minimal pacman.conf for non-standard setups
-minimal_pacman_conf() {
-    local TEMP_CONF
-    TEMP_CONF=$(mktemp)
-    echo -e "[archlinux]\nServer = https://mirror.archlinux.org/\$repo/os/\$arch" >"$TEMP_CONF"
-    echo "$TEMP_CONF"
-}
-
-# Perform a system update using powerpill and trizen
+# Perform a system update using powerpill and the chosen AUR helper
 system_update() {
     local EXTRA_PARAMS=()
 
@@ -114,16 +120,13 @@ system_update() {
     check_and_install_dependencies "powerpill"
 
     echo "Updating package database..."
-    sudo pacman -Sy || { echo "Error: Failed to update package database."; exit 1; }
+    retry_command sudo pacman -Sy
 
     echo "Upgrading system packages with powerpill..."
-    if ! sudo powerpill -Su; then
-        echo "Error: System upgrade failed. Please check your system logs for more details."
-        exit 1
-    fi
+    retry_command sudo powerpill -Su
 
-    echo "Upgrading AUR packages with trizen..."
-    sudo -u "$SUDO_USER" trizen -Syu --noconfirm --needed --refresh --sysupgrade
+    echo "Upgrading AUR packages with $AUR_HELPER..."
+    retry_command sudo -u "$SUDO_USER" "$AUR_HELPER" -Syu --noconfirm --needed --refresh --sysupgrade
     echo "...AUR packages upgraded."
 }
 
