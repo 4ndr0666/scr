@@ -323,15 +323,22 @@ class FFmpegCommandBuilder:
 
 class VideoProcessor:
     """Processes video files based on user commands."""
-    
+
     def __init__(self, max_workers=None):
         self.executor = ThreadPoolExecutor(max_workers=max_workers or MAX_WORKERS)
+        
+        # Try to find SVPflow2 plugin
         try:
-            self.svp_plugins = find_svp_plugins()
-            self.ffms2_plugin = find_ffms2_plugin()
+            self.svp_plugin = find_svp_plugins()  # Now stores only the path to libsvpflow2.so
         except FileNotFoundError as e:
-            logging.warning(f"VapourSynth plugins not found: {e}")
-            self.svp_plugins = None
+            logging.warning(f"SVPflow2 plugin not found: {e}")
+            self.svp_plugin = None
+        
+        # Load FFMS2 plugin if needed
+        try:
+            self.ffms2_plugin = find_ffms2_plugin()  # Assume find_ffms2_plugin already exists
+        except FileNotFoundError as e:
+            logging.warning(f"FFMS2 plugin not found: {e}")
             self.ffms2_plugin = None
 
     def validate_resolution_format(self, resolution: str) -> bool:
@@ -777,13 +784,9 @@ class VideoProcessor:
                 script_file.write(script_content)
                 script_file.flush()
             
-            # Build the command to run vspipe and pipe into ffmpeg
-            command_vspipe = [
-                'vspipe', '--y4m', script_file_name, '-'  # Output to stdout in y4m format
-            ]
-            ffmpeg_command = [
-                'ffmpeg', '-y', '-f', 'yuv4mpegpipe', '-i', '-', '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-b:v', '1M'
-            ]
+            # Update command to run vspipe and ffmpeg
+            command_vspipe = ['vspipe', script_file_name, '-']
+            ffmpeg_command = ['ffmpeg', '-y', '-f', 'yuv4mpegpipe', '-i', '-', '-c:v', DEFAULT_VIDEO_CODEC, '-preset', 'fast', '-b:v', '1M']
             if video.has_audio:
                 ffmpeg_command += ['-i', os.path.abspath(video.filepath), '-map', '0:v', '-map', '1:a', '-c:a', DEFAULT_AUDIO_CODECS[0], '-b:a', '256k']
             else:
@@ -808,23 +811,24 @@ class VideoProcessor:
             if os.path.exists(script_file_name):
                 os.unlink(script_file_name)
 
-def find_svp_plugins() -> Dict[str, str]:
-    """Find the paths to SVP plugin files."""
+def find_svp_plugins() -> str:
+    """Find the path to the SVPflow2 plugin file (libsvpflow2.so)."""
     possible_paths = [
         "/usr/lib/vapoursynth",
         "/usr/local/lib/vapoursynth",
         os.path.expanduser("~/.local/lib/vapoursynth"),
         os.path.expanduser("~/vapoursynth"),
+        # Add the specific path you found
+        "/home/build/vapoursynth-plugin-svpflow2-bin/src/svpflow-4.3.0.168/lib-linux"
     ]
     
     for path in possible_paths:
-        lib1 = os.path.join(path, "libsvpflow1_vs64.so")
         lib2 = os.path.join(path, "libsvpflow2_vs64.so")
-        if os.path.isfile(lib1) and os.path.isfile(lib2):
-            logging.info(f"Found SVP plugins at {path}")
-            return {'lib1': lib1, 'lib2': lib2}
+        if os.path.isfile(lib2):
+            logging.info(f"Found SVPflow2 plugin at {path}")
+            return lib2
     
-    raise FileNotFoundError("SVP plugins 'libsvpflow1_vs64.so' and 'libsvpflow2_vs64.so' not found.")
+    raise FileNotFoundError("SVP plugin 'libsvpflow2_vs64.so' not found in the expected locations.")
 
 def find_ffms2_plugin() -> str:
     """Find the path to the ffms2 VapourSynth plugin."""
@@ -1197,7 +1201,7 @@ class UserInterface:
                     print_warning("Invalid option selected.")
             except ValueError:
                 print_warning("Invalid input. Please enter a number corresponding to the options or 'Exit'.")
-    
+
     def apply_vapoursynth_transformation(self, video: VideoFile, transformation: str):
         """Apply the selected VapourSynth transformation."""
         output_file = input("Enter output file name: ").strip()
@@ -1205,11 +1209,14 @@ class UserInterface:
             safe_transformation = transformation.lower().replace(' ', '_')
             output_file = f"{os.path.splitext(video.basename)[0]}_{safe_transformation}.mp4"
     
+        # Access the ffms2 plugin from the VideoProcessor instance
         ffms2_plugin = self.processor.ffms2_plugin
         if not ffms2_plugin:
             print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
             return
-    
+
+        ffms2_plugin = self.ffms2_plugin
+
         script_content = ""
         if transformation in ["Frame Rate Conversion (Motion Interpolation)", "Slow Motion (Smooth)"]:
             target_fps = input("Enter target FPS (e.g., 60): ").strip()
@@ -1221,8 +1228,8 @@ class UserInterface:
             script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
-            core.std.LoadPlugin(r'{self.processor.svp_plugins['lib1']}')
-            core.std.LoadPlugin(r'{self.processor.svp_plugins['lib2']}')
+            core.std.LoadPlugin(r'{self.svp_plugins['lib1']}')
+            core.std.LoadPlugin(r'{self.svp_plugins['lib2']}')
             core.std.LoadPlugin(r'{ffms2_plugin}')
             clip = core.ffms2.Source(r"{os.path.abspath(video.filepath)}")
             super_clip = core.svp1.Super(clip, pel=2)
@@ -1326,32 +1333,35 @@ class UserInterface:
         else:
             print_warning("Transformation not implemented yet.")
             return
-    
-        self.processor.apply_vapoursynth_script(video, output_file, script_content)
-    
+
+        self.apply_vapoursynth_script(video, output_file, script_content)   
+
     def batch_enhance_video(self, video: VideoFile):
         """Apply a series of enhancements to the video."""
         output_file = input("Enter output file name for enhanced video: ").strip()
         if not output_file:
             output_file = f"{os.path.splitext(video.basename)[0]}_enhanced.mp4"
-    
+        
+        # Access the ffms2 plugin from VideoProcessor
         ffms2_plugin = self.processor.ffms2_plugin
         if not ffms2_plugin:
             print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+    
+        # Ensure SVPflow2 plugin is loaded before accessing it
+        if not self.processor.svp_plugin:
+            print_warning("SVPflow2 plugin not found. Cannot proceed with motion interpolation.")
             return
     
         # Construct a VapourSynth script that applies multiple transformations
         script_content = textwrap.dedent(f"""
         import vapoursynth as vs
         core = vs.core
-        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib1']}')
-        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib2']}')
-        core.std.LoadPlugin('libawarpsharp2.so')
-        core.std.LoadPlugin('libnnedi3.so')
-        core.std.LoadPlugin('librgvs.so')
-        core.std.LoadPlugin('libf3kdb.so')
-        core.std.LoadPlugin('libdehalo_alpha.so')
-        core.std.LoadPlugin('libadjust.so')
+        core.std.LoadPlugin(r'{self.processor.svp_plugin}')  # Load SVPflow2 plugin
+        core.std.LoadPlugin('/usr/lib/vapoursynth/libawarpsharp2.so')
+        core.std.LoadPlugin('/usr/lib/vapoursynth/libnnedi3.so')
+        core.std.LoadPlugin('/usr/lib/vapoursynth/libremovegrain.so')
+        core.std.LoadPlugin('/usr/lib/vapoursynth/libadjust.so')
         core.std.LoadPlugin(r'{ffms2_plugin}')
         clip = core.ffms2.Source(r"{os.path.abspath(video.filepath)}")
     
@@ -1361,23 +1371,20 @@ class UserInterface:
         clip = core.warp.AWarpSharp2(clip, depth=2)
         # Super resolution
         clip = core.nnedi3.nnedi3(clip, field=3)
-        # Dehalo
-        clip = core.dehalo.Alpha(clip)
-        # Debanding
-        clip = core.f3kdb.Deband(clip, y=64, cb=64, cr=64, grainy=64, grainc=64)
         # Color correction
         clip = core.std.Tweak(clip, bright=0.0, cont=1.0, sat=1.0)
-        # Frame rate conversion with motion interpolation
+        # Frame rate conversion with motion interpolation using SVPflow2
         super_clip = core.svp1.Super(clip, pel=2)
         vectors = core.svp1.Analyse(super_clip)
         smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, fpsnum=60000, fpsden=1001)  # 59.94fps
         smooth_clip.set_output()
         """)
-    
+        
         self.processor.apply_vapoursynth_script(video, output_file, script_content)
-    
+   
 # Entry point
 if __name__ == "__main__":
     check_dependencies()
     ui = UserInterface()
     ui.main_menu()
+

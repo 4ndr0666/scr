@@ -10,8 +10,8 @@
 
 # --- // Constants:
 export FFMPEG_SOURCES="$HOME/ffmpeg_sources"
-export FFMPEG_BUILD="$HOME/ffmpeg_build"
-export FFMPEG_BIN="$HOME/bin"
+export FFMPEG_BUILD="/usr/local"
+export FFMPEG_BIN="/usr/local/bin"
 export MPV_BUILD_DIR="$HOME/mpv_build"
 export VSP_PLUGIN_DIR="$HOME/vapoursynth_plugins"
 export LOG_DIR="$HOME/ffmpeg_mpv_build/logs"
@@ -23,7 +23,7 @@ export PKG_CONFIG_PATH="$FFMPEG_BUILD/lib/pkgconfig:$PKG_CONFIG_PATH"
 export LD_LIBRARY_PATH="$FFMPEG_BUILD/lib:$LD_LIBRARY_PATH"
 
 # --- // Create necessary directories:
-mkdir -p "$LOG_DIR" "$FFMPEG_SOURCES" "$FFMPEG_BIN" "$FFMPEG_BUILD" "$MPV_BUILD_DIR" "$VSP_PLUGIN_DIR"
+mkdir -p "$LOG_DIR" "$FFMPEG_SOURCES" "$MPV_BUILD_DIR" "$VSP_PLUGIN_DIR"
 
 # --- // Function to check if previous commands succeeded:
 check_status() {
@@ -59,6 +59,8 @@ verify_dependencies() {
   fi
 }
 
+verify_dependencies
+
 # --- // Install Build Dependencies:
 install_build_dependencies() {
   echo "Installing build dependencies..." | tee -a "$BUILD_LOG"
@@ -83,14 +85,22 @@ install_build_dependencies() {
     srt \
     harfbuzz libxrandr libxinerama libxi libxcursor \
     libpulse alsa-lib \
-    meson ninja
+    meson ninja \
+    shine
 
   check_status
 
   echo "Installing AUR packages..." | tee -a "$BUILD_LOG"
-  yay -Sy --needed --noconfirm fdk-aac vmaf vapoursynth-plugin-mvtools vapoursynth-plugin-vivtc vapoursynth-plugin-f3kdb vapoursynth-plugin-ffms2 vapoursynth-plugin-svpflow
+  yay -Sy --needed --noconfirm svp-bin \
+    vapoursynth-plugin-svpflow2-bin \
+    vapoursynth-plugin-mvtools \
+    vapoursynth-plugin-vivtc \
+    vapoursynth-plugin-ffms2 \
+    vapoursynth-plugin-neo_f3kdb-git
   check_status
 }
+
+install_build_dependencies
 
 # --- // Clone and Build Function:
 clone_and_build() {
@@ -98,6 +108,7 @@ clone_and_build() {
   local dir_name=$2
   local configure_cmd=$3
   local make_install_cmd=$4
+  local env_vars=$5
 
   cd "$FFMPEG_SOURCES" || exit
   if [ ! -d "$dir_name" ]; then
@@ -109,11 +120,11 @@ clone_and_build() {
     make distclean 2>&1 | tee -a "$BUILD_LOG" || true
     rm -rf build 2>&1 | tee -a "$BUILD_LOG" || true
   fi
-  eval "$configure_cmd" 2>&1 | tee -a "$BUILD_LOG"
+  eval "$env_vars $configure_cmd" 2>&1 | tee -a "$BUILD_LOG"
   check_status
   make -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
   check_status
-  eval "$make_install_cmd" 2>&1 | tee -a "$INSTALL_LOG"
+  eval "$env_vars $make_install_cmd" 2>&1 | tee -a "$INSTALL_LOG"
   check_status
 }
 
@@ -122,8 +133,9 @@ echo "Building x264..." | tee -a "$BUILD_LOG"
 clone_and_build \
   "https://code.videolan.org/videolan/x264.git" \
   "x264" \
-  "PKG_CONFIG_PATH=\"$FFMPEG_BUILD/lib/pkgconfig\" ./configure --prefix=\"$FFMPEG_BUILD\" --bindir=\"$FFMPEG_BIN\" --enable-static --disable-opencl" \
-  "make install"
+  "PKG_CONFIG_PATH=\"$FFMPEG_BUILD/lib/pkgconfig\" ./configure --prefix=\"$FFMPEG_BUILD\" --enable-shared --enable-pic --disable-opencl" \
+  "sudo make install" \
+  ""
 
 # --- // Build x265:
 echo "Building x265..." | tee -a "$BUILD_LOG"
@@ -133,11 +145,12 @@ if [ ! -d "x265" ]; then
   check_status
 fi
 cd x265/build/linux || exit
-cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$FFMPEG_BUILD" -DENABLE_SHARED=off ../../source 2>&1 | tee -a "$BUILD_LOG"
+rm -rf *  # Clean previous build files
+cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$FFMPEG_BUILD" -DENABLE_SHARED=ON -DENABLE_PIC=ON ../../source 2>&1 | tee -a "$BUILD_LOG"
 check_status
 make -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
 check_status
-make install 2>&1 | tee -a "$INSTALL_LOG"
+sudo make install 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
 # --- // Build fdk-aac:
@@ -145,8 +158,9 @@ echo "Building fdk-aac..." | tee -a "$BUILD_LOG"
 clone_and_build \
   "https://github.com/mstorsjo/fdk-aac.git" \
   "fdk-aac" \
-  "autoreconf -fiv && ./configure --prefix=\"$FFMPEG_BUILD\" --disable-shared" \
-  "make install"
+  "autoreconf -fiv && ./configure --prefix=\"$FFMPEG_BUILD\" --enable-shared --enable-pic" \
+  "sudo make install" \
+  "export CFLAGS=\"-fPIC\""
 
 # --- // Build libvmaf:
 echo "Building libvmaf..." | tee -a "$BUILD_LOG"
@@ -160,7 +174,7 @@ meson setup build --prefix="$FFMPEG_BUILD" --buildtype release -Denable_float=tr
 check_status
 meson compile -C build -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
 check_status
-meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
+sudo meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
 # --- // Build FFmpeg:
@@ -178,7 +192,6 @@ fi
 echo "Configuring FFmpeg build..." | tee -a "$BUILD_LOG"
 PKG_CONFIG_PATH="$FFMPEG_BUILD/lib/pkgconfig:$PKG_CONFIG_PATH" ./configure \
   --prefix="$FFMPEG_BUILD" \
-  --pkg-config-flags="--static" \
   --extra-cflags="-I$FFMPEG_BUILD/include" \
   --extra-ldflags="-L$FFMPEG_BUILD/lib" \
   --extra-libs="-lpthread -lm" \
@@ -247,7 +260,7 @@ check_status
 echo "Compiling FFmpeg..." | tee -a "$BUILD_LOG"
 make -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
 check_status
-make install 2>&1 | tee -a "$INSTALL_LOG"
+sudo make install 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
 # --- // Build MPV:
@@ -267,9 +280,11 @@ if [ -d "build" ]; then
 fi
 
 echo "Configuring MPV build with Meson..." | tee -a "$BUILD_LOG"
-PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
+PKG_CONFIG_PATH="$FFMPEG_BUILD/lib/pkgconfig:$PKG_CONFIG_PATH" \
+LDFLAGS="-L$FFMPEG_BUILD/lib" \
+LD_LIBRARY_PATH="$FFMPEG_BUILD/lib:$LD_LIBRARY_PATH" \
+CFLAGS="-I$FFMPEG_BUILD/include" \
 meson setup build --prefix="$FFMPEG_BUILD" \
-  --bindir="$FFMPEG_BIN" \
   --buildtype=release \
   -Dlibmpv=true \
   -Dlua=enabled \
@@ -295,56 +310,25 @@ meson compile -C build -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
 check_status
 
 echo "Installing MPV..." | tee -a "$BUILD_LOG"
-meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
+sudo meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
 # --- // Install VapourSynth Plugins:
 install_vapoursynth_plugins() {
-  echo "Installing VapourSynth plugins..." | tee -a "$BUILD_LOG"
-  PLUGIN_LIST=(
-    "https://github.com/darealshinji/vapoursynth-svpflow.git"
-    "https://github.com/HomeOfAviSynthPlusEvolution/VapourSynth-DFTTest.git"
-    "https://github.com/HomeOfVapourSynthEvolution/VapourSynth-BM3D.git"
-  )
-
-  for REPO_URL in "${PLUGIN_LIST[@]}"; do
-    PLUGIN_NAME=$(basename "$REPO_URL" .git)
-    cd "$VSP_PLUGIN_DIR" || exit
-    if [ ! -d "$PLUGIN_NAME" ]; then
-      git clone "$REPO_URL" "$PLUGIN_NAME" 2>&1 | tee -a "$BUILD_LOG"
-      check_status
-    fi
-    cd "$PLUGIN_NAME" || exit
-    if [ -f "Makefile" ] || [ -d "build" ]; then
-      make distclean 2>&1 | tee -a "$BUILD_LOG" || true
-      rm -rf build 2>&1 | tee -a "$BUILD_LOG" || true
-    fi
-    # Assume plugins use Meson or Autotools
-    if [ -f "meson.build" ]; then
-      meson setup build --prefix="$FFMPEG_BUILD" 2>&1 | tee -a "$BUILD_LOG"
-      check_status
-      meson compile -C build -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
-      check_status
-      meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
-      check_status
-    elif [ -f "configure" ]; then
-      ./configure --prefix="$FFMPEG_BUILD" 2>&1 | tee -a "$BUILD_LOG"
-      check_status
-      make -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
-      check_status
-      make install 2>&1 | tee -a "$INSTALL_LOG"
-      check_status
-    else
-      echo "Unknown build system for $PLUGIN_NAME" | tee -a "$BUILD_LOG"
-    fi
-  done
+  echo "Installing VapourSynth plugins via Yay..." | tee -a "$BUILD_LOG"
+  yay -Sy --needed --noconfirm vapoursynth-plugin-svpflow2-bin \
+    vapoursynth-plugin-mvtools \
+    vapoursynth-plugin-vivtc \
+    vapoursynth-plugin-ffms2 \
+    vapoursynth-plugin-neo_f3kdb-git
+  check_status
 }
 
 install_vapoursynth_plugins
 
 # --- // Update Library Cache:
 echo "Updating library cache..." | tee -a "$BUILD_LOG"
-ldconfig 2>&1 | tee -a "$BUILD_LOG"
+sudo ldconfig 2>&1 | tee -a "$BUILD_LOG"
 
 # --- // Verify Installation:
 echo "Verifying FFmpeg installation..." | tee -a "$BUILD_LOG"
@@ -362,7 +346,7 @@ echo "Verifying MPV installation..." | tee -a "$BUILD_LOG"
 which mpv | tee -a "$BUILD_LOG"
 mpv --version | tee -a "$BUILD_LOG"
 if mpv --version &>/dev/null; then
-  echo "MPV is installed successfully in your user directory." | tee -a "$BUILD_LOG"
+  echo "MPV is installed successfully in your system." | tee -a "$BUILD_LOG"
 else
   echo "Error: MPV failed to run. Check for missing libraries or other issues." | tee -a "$BUILD_LOG"
   exit 1
@@ -373,6 +357,7 @@ echo "Cleaning up temporary files..." | tee -a "$BUILD_LOG"
 rm -rf "$FFMPEG_SOURCES"
 rm -rf "$MPV_BUILD_DIR"
 rm -rf "$VSP_PLUGIN_DIR"
+rm -rf "$HOME/yay"
 
 # --- // Cleanup Function:
 cleanup_previous_installation() {
@@ -383,10 +368,8 @@ cleanup_previous_installation() {
   rm -rf "$VSP_PLUGIN_DIR"
   rm -rf "$LOG_DIR"
   rm -rf "$HOME/yay"
-  rm -f "$FFMPEG_BIN/ffmpeg" "$FFMPEG_BIN/ffprobe" "$FFMPEG_BIN/mpv"
-  sed -i '/^export PATH=.*ffmpeg_build.*$/d' "$HOME/.bashrc"
-  sed -i '/^export LD_LIBRARY_PATH=.*ffmpeg_build.*$/d' "$HOME/.bashrc"
-  source "$HOME/.bashrc"
+  sudo rm -f "/usr/local/bin/ffmpeg" "/usr/local/bin/ffprobe" "/usr/local/bin/mpv"
+  sudo ldconfig
 }
 
 if [ "$1" == "--clean" ]; then
