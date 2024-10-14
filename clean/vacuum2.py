@@ -427,19 +427,19 @@ def install_aur_package(dependency):
 
 def manage_cron_job(log_file):
     """
-    Interactively manage system cron jobs, including viewing, adding, editing, and deleting.
+    Interactively manage user cron jobs. If the user is not root, only personal cron jobs are managed.
 
     Args:
         log_file (str): Path to the log file where processing information is logged.
     """
-    log_and_print(f"{INFO} Managing system cron jobs...", 'info')
+    log_and_print(f"{INFO} Managing cron jobs for user...", 'info')
     
     try:
         # Backup existing cron jobs before making any changes
         backup_cron_jobs()
 
-        # Retrieve current cron jobs
-        result = subprocess.run(["sudo", "crontab", "-l"], capture_output=True, text=True, check=True)
+        # Retrieve current cron jobs without root privileges
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         existing_crons = result.stdout.strip().split('\n')
 
         if not existing_crons or existing_crons == ['']:
@@ -447,7 +447,7 @@ def manage_cron_job(log_file):
         else:
             log_and_print(f"{INFO} Existing cron jobs:", 'info')
             for i, cron in enumerate(existing_crons, 1):
-                log_and_print(f"{i}. {format_message(cron, '#15FFFF')}", 'info')
+                log_and_print(f"{i}. {format_message(cron, 'cyan')}", 'info')
 
         # Interactive options: Add, Edit, Delete
         choice = prompt_with_timeout(
@@ -467,8 +467,7 @@ def manage_cron_job(log_file):
         log_and_print(f"{FAILURE} Error managing cron jobs: {e.stderr.strip()}", 'error')
     except Exception as ex:
         log_and_print(f"{FAILURE} Unexpected error: {str(ex)}", 'error')
-
-
+        
 # Helper function to backup cron jobs
 def backup_cron_jobs():
     """
@@ -611,19 +610,25 @@ def remove_broken_symlinks(log_file):
 
     broken_links_backup = []
     
+    # Define default directories to check for symlinks
+    SYMLINKS_CHECK = ['/usr', '/bin', '/lib', '/home']  # Example directories to check
+
     with spinning_spinner():
         try:
-            # Use parallelism to search for broken symlinks in specified directories
-            search_dirs = SYMLINKS_CHECK  # List of directories to check, defined elsewhere
+            # Search for broken symlinks in each directory
+            search_dirs = SYMLINKS_CHECK
             broken_links = []
             
-            # Search in parallel across directories
             def find_broken_symlinks(directory):
                 try:
                     result = subprocess.check_output(["sudo", "find", directory, "-xtype", "l"], text=True)
                     broken_links.extend(result.splitlines())
                 except subprocess.CalledProcessError:
                     log_and_print(f"{FAILURE} Failed to search for broken symlinks in {directory}.", 'error')
+
+            # Execute the search in each directory
+ #           for dir_path in SYMLINKS_CHECK:
+ #               find_broken_symlinks(dir_path)
 
             threads = [threading.Thread(target=find_broken_symlinks, args=(dir_path,)) for dir_path in search_dirs]
             for t in threads:
@@ -702,18 +707,13 @@ def clean_old_kernels(log_file):
 
                     # Skip the currently running kernel
                     if current_kernel_major_version not in pkg_name:
-                        log_and_print(f"{INFO} Old kernel version detected: {format_message(pkg_name, '#15FFFF')}", 'info')
+                        log_and_print(f"{INFO} Old kernel version detected: {format_message(pkg_name, 'cyan')}", 'info')
                         kernels_to_remove.append(pkg_name)
 
             if kernels_to_remove:
                 log_and_print(f"{INFO} The following kernels can be removed:", 'info')
                 for i, kernel in enumerate(kernels_to_remove, 1):
-                    log_and_print(f"{i}. {format_message(kernel, '#15FFFF')}", 'info')
-
-                # Backup option before removing old kernels
-                backup_choice = prompt_with_timeout("Do you want to back up the old kernels before removal? [y/N]: ", timeout=10, default='n').lower()
-                if backup_choice == 'y':
-                    backup_old_kernels(kernels_to_remove)
+                    log_and_print(f"{i}. {format_message(kernel, 'cyan')}", 'info')
 
                 confirm = prompt_with_timeout(f"Do you want to remove these old kernels? [y/N]: ", timeout=10, default='n').lower()
                 if confirm == 'y':
@@ -726,7 +726,6 @@ def clean_old_kernels(log_file):
 
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", 'error')
-
 
 # Helper function to back up old kernels before removal
 def backup_old_kernels(kernels_to_remove):
@@ -776,7 +775,7 @@ def vacuum_journalctl(log_file):
                     timeout=10,
                     default='1d'
                 )
-                log_and_print(f"{INFO} Vacuuming journalctl logs older than {format_message(vacuum_time, '#15FFFF')}...", 'info')
+                log_and_print(f"{INFO} Vacuuming journalctl logs older than {format_message(vacuum_time, 'cyan')}...", 'info')
                 result = subprocess.run(
                     ["sudo", "journalctl", f"--vacuum-time={vacuum_time}"], 
                     check=True, capture_output=True, text=True
@@ -789,7 +788,7 @@ def vacuum_journalctl(log_file):
                     timeout=10,
                     default='200M'
                 )
-                log_and_print(f"{INFO} Vacuuming journalctl logs to reduce total size to {format_message(vacuum_size, '#15FFFF')}...", 'info')
+                log_and_print(f"{INFO} Vacuuming journalctl logs to reduce total size to {format_message(vacuum_size, 'cyan')}...", 'info')
                 result = subprocess.run(
                     ["sudo", "journalctl", f"--vacuum-size={vacuum_size}"], 
                     check=True, capture_output=True, text=True
@@ -876,13 +875,11 @@ def clear_trash(log_file):
         'Temporary Files': "/tmp/*"
     }
 
-    # Ask for confirmation
     confirm = prompt_with_timeout("Do you want to clear trash directories? [y/N]: ", timeout=10, default='n').lower()
     if confirm != 'y':
         log_and_print(f"{INFO} Trash clearing aborted by user.", 'info')
         return
 
-    # Offer the user granular control over which trash directories to clear
     print(f"{INFO} Choose the trash directories to clear (or press 0 to clear all):")
     for idx, (name, path) in enumerate(trash_paths.items(), 1):
         print(f"{idx}) {name} ({path})")
@@ -890,26 +887,18 @@ def clear_trash(log_file):
 
     choice = prompt_with_timeout("Enter your choice [0-3]: ", timeout=10, default='0').strip()
 
-    # Determine paths to clear based on user's choice
-    if choice == '0':
-        paths_to_clear = list(trash_paths.values())
-    elif choice in ['1', '2', '3']:
-        paths_to_clear = [list(trash_paths.values())[int(choice) - 1]]
-    else:
-        log_and_print(f"{FAILURE} Invalid selection. Aborting trash clearing.", 'error')
-        return
+    paths_to_clear = [list(trash_paths.values())[int(choice) - 1]] if choice in ['1', '2', '3'] else list(trash_paths.values())
 
-    # Proceed with clearing the selected trash directories
     with spinning_spinner():
         for path in paths_to_clear:
             if os.path.exists(path):
                 try:
                     subprocess.run(["sudo", "rm", "-rf", path], check=True)
-                    log_and_print(f"{SUCCESS} Trash cleared for path: {format_message(path, '#15FFFF')}.", 'info')
+                    log_and_print(f"{SUCCESS} Trash cleared for path: {format_message(path, 'cyan')}.", 'info')
                 except subprocess.CalledProcessError as e:
                     log_and_print(f"{FAILURE} Error: Failed to clear trash for path {path}: {e.stderr.strip()}", 'error')
             else:
-                log_and_print(f"{FAILURE} Path {format_message(path, '#15FFFF')} does not exist.", 'error')
+                log_and_print(f"{FAILURE} Path {format_message(path, 'cyan')} does not exist.", 'error')
 
 def optimize_databases(log_file):
     """

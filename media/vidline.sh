@@ -37,36 +37,36 @@ trap 'error_exit "An error occurred. Exiting."' ERR
 check_dependencies() {
     if ! command -v vspipe &> /dev/null; then
         echo "VapourSynth not found. Installing..." | tee -a "$LOGFILE"
-        if ! sudo pacman -S vapoursynth; then
+        if ! sudo pacman -S --noconfirm vapoursynth; then
             error_exit "Failed to install VapourSynth"
         fi
     fi
 }
 
-check_dependencies
-
-# Prompt for input video
+# Prompt for input video with fzf
 read_input_video() {
-    while true; do
-        echo -n "Enter the video name (autocomplete available): "
-        read -e INPUT_VIDEO
-        if [[ -f "$INPUT_VIDEO" ]]; then
-            INPUT_DIR=$(dirname "$INPUT_VIDEO")
-            OUTPUT_VIDEO="${INPUT_DIR}/output_$(basename "$INPUT_VIDEO")"
-            break
-        else
-            echo -e "${RED}The video file does not exist. Please enter the correct video name.${RESET}"
-        fi
-    done
+    INPUT_VIDEO=$(fzf --preview 'ffprobe {}' --preview-window=down:3:wrap)
+    if [[ -z "$INPUT_VIDEO" ]]; then
+        error_exit "No video selected."
+    elif [[ ! -f "$INPUT_VIDEO" ]]; then
+        error_exit "Selected file does not exist."
+    fi
+    INPUT_DIR=$(dirname "$INPUT_VIDEO")
+    OUTPUT_VIDEO="${INPUT_DIR}/output_$(basename "$INPUT_VIDEO")"
 }
 
 # Function to execute FFmpeg commands with progress feedback
 execute_ffmpeg_command() {
     local filter="$1"
     local message="$2"
-    local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    local duration
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
 
+    if [[ -z "${INPUT_VIDEO:-}" ]]; then
+        error_exit "Input video not specified."
+    fi
+
+    local duration
     duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$INPUT_VIDEO")
     echo "[$timestamp] $message in progress..." | tee -a "$LOGFILE"
 
@@ -80,145 +80,195 @@ execute_ffmpeg_command() {
 
 # CLI mode: process input commands
 process_cli_command() {
-    case "$1" in
-        --fps)
-            execute_ffmpeg_command "fps=$2" "Frame Rate Conversion to $2fps"
-            ;;
-        --deflicker)
-            execute_ffmpeg_command "deflicker" "Deflicker"
-            ;;
-        --dedot)
-            execute_ffmpeg_command "removegrain=1" "Dedot"
-            ;;
-        --dehalo)
-            execute_ffmpeg_command "unsharp=5:5:-1.5:5:5:-1.5" "Dehalo"
-            ;;
-        --removegrain)
-            execute_ffmpeg_command "removegrain=$2" "RemoveGrain"
-            ;;
-        --deband)
-            execute_ffmpeg_command "deband=$2" "Debanding"
-            ;;
-        --sharpen)
-            execute_ffmpeg_command "unsharp" "Sharpening & Edge Enhancement"
-            ;;
-        --scale)
-            execute_ffmpeg_command "scale=iw*2:ih*2:flags=spline" "Super Resolution"
-            ;;
-        --deshake)
-            execute_ffmpeg_command "deshake" "Deshake"
-            ;;
-        --edge-detect)
-            execute_ffmpeg_command "edgedetect" "Edge Detection"
-            ;;
-        --stabilize)
-            execute_ffmpeg_command "deshake" "Stabilization"
-            ;;
-        --slo-mo)
-            local speed_factor="$2"
-            execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Slo-mo"
-            ;;
-        --speed-up)
-            local speed_factor
-            speed_factor=$(echo "1/$2" | bc -l)
-            execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Speed-up"
-            ;;
-        --convert)
-            execute_ffmpeg_command "format=$2" "Convert to $2 format"
-            ;;
-        --color-correct)
-            execute_ffmpeg_command "eq=gamma=1.5:contrast=1.2:brightness=0.3:saturation=0.7" "Color Correction"
-            ;;
-        --crop-resize)
-            execute_ffmpeg_command "crop=$2,scale=$3" "Crop and Resize"
-            ;;
-        --rotate)
-            case "$2" in
-                90)
-                    execute_ffmpeg_command "transpose=1" "Rotate 90 degrees clockwise"
-                    ;;
-                180)
-                    execute_ffmpeg_command "transpose=2,transpose=2" "Rotate 180 degrees"
-                    ;;
-                -90)
-                    execute_ffmpeg_command "transpose=2" "Rotate 90 degrees counterclockwise"
-                    ;;
-                *)
-                    error_exit "Invalid rotation option"
-                    ;;
-            esac
-            ;;
-        --flip)
-            case "$2" in
-                h)
-                    execute_ffmpeg_command "hflip" "Flip horizontally"
-                    ;;
-                v)
-                    execute_ffmpeg_command "vflip" "Flip vertically"
-                    ;;
-                *)
-                    error_exit "Invalid flip option"
-                    ;;
-            esac
-            ;;
-        --svp-slo-mo)
-            execute_svp_slo_mo "$2"
-            ;;
-        *)
-            error_exit "Invalid CLI option"
-            ;;
-    esac
+    if [[ -z "${INPUT_VIDEO:-}" ]]; then
+        error_exit "Input video not specified. Use --input <video_file> to specify the input video."
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        key="$1"
+        case "$key" in
+            --input)
+                shift
+                INPUT_VIDEO="$1"
+                if [[ ! -f "$INPUT_VIDEO" ]]; then
+                    error_exit "The video file '$INPUT_VIDEO' does not exist."
+                fi
+                INPUT_DIR=$(dirname "$INPUT_VIDEO")
+                OUTPUT_VIDEO="${INPUT_DIR}/output_$(basename "$INPUT_VIDEO")"
+                ;;
+            --fps)
+                shift
+                execute_ffmpeg_command "fps=$1" "Frame Rate Conversion to $1 fps"
+                ;;
+            --deflicker)
+                execute_ffmpeg_command "deflicker" "Deflicker"
+                ;;
+            --dedot)
+                execute_ffmpeg_command "removegrain=1" "Dedot"
+                ;;
+            --dehalo)
+                execute_ffmpeg_command "unsharp=5:5:-1.5:5:5:-1.5" "Dehalo"
+                ;;
+            --removegrain)
+                shift
+                execute_ffmpeg_command "removegrain=$1" "RemoveGrain"
+                ;;
+            --deband)
+                shift
+                execute_ffmpeg_command "deband=$1" "Debanding"
+                ;;
+            --sharpen)
+                execute_ffmpeg_command "unsharp" "Sharpening & Edge Enhancement"
+                ;;
+            --scale)
+                execute_ffmpeg_command "scale=iw*2:ih*2:flags=spline" "Super Resolution"
+                ;;
+            --deshake)
+                execute_ffmpeg_command "deshake" "Deshake"
+                ;;
+            --edge-detect)
+                execute_ffmpeg_command "edgedetect" "Edge Detection"
+                ;;
+            --stabilize)
+                execute_ffmpeg_command "deshake" "Stabilization"
+                ;;
+            --slo-mo)
+                shift
+                local speed_factor="$1"
+                execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Slo-mo"
+                ;;
+            --speed-up)
+                shift
+                local speed_factor
+                speed_factor=$(echo "1/$1" | bc -l)
+                execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Speed-up"
+                ;;
+            --convert)
+                shift
+                OUTPUT_FORMAT="$1"
+                OUTPUT_VIDEO="${OUTPUT_VIDEO%.*}.$OUTPUT_FORMAT"
+                execute_ffmpeg_command "" "Convert to $OUTPUT_FORMAT format"
+                ;;
+            --color-correct)
+                execute_ffmpeg_command "eq=gamma=1.5:contrast=1.2:brightness=0.3:saturation=0.7" "Color Correction"
+                ;;
+            --crop-resize)
+                shift
+                local crop_params="$1"
+                shift
+                local resize_params="$1"
+                execute_ffmpeg_command "crop=$crop_params,scale=$resize_params" "Crop and Resize"
+                ;;
+            --rotate)
+                shift
+                case "$1" in
+                    90)
+                        execute_ffmpeg_command "transpose=1" "Rotate 90 degrees clockwise"
+                        ;;
+                    180)
+                        execute_ffmpeg_command "transpose=2,transpose=2" "Rotate 180 degrees"
+                        ;;
+                    -90)
+                        execute_ffmpeg_command "transpose=2" "Rotate 90 degrees counterclockwise"
+                        ;;
+                    *)
+                        error_exit "Invalid rotation option"
+                        ;;
+                esac
+                ;;
+            --flip)
+                shift
+                case "$1" in
+                    h)
+                        execute_ffmpeg_command "hflip" "Flip horizontally"
+                        ;;
+                    v)
+                        execute_ffmpeg_command "vflip" "Flip vertically"
+                        ;;
+                    *)
+                        error_exit "Invalid flip option"
+                        ;;
+                esac
+                ;;
+            *)
+                error_exit "Invalid CLI option: $key"
+                ;;
+        esac
+        shift
+    done
 }
 
 # CLI help function
 display_cli_help() {
-    echo "Usage: vidline.sh --cli [OPTION] [ARGS]"
-    echo "Options:"
-    echo "  --fps <value>            Convert frame rate to specified value."
-    echo "  --deflicker              Apply deflicker filter."
-    echo "  --dedot                  Apply dedot filter."
-    echo "  --dehalo                 Apply dehalo filter."
-    echo "  --removegrain <type>     Apply removegrain filter with specified type (1-22)."
-    echo "  --deband <params>        Apply debanding with specified parameters."
-    echo "  --sharpen                Apply sharpening and edge enhancement."
-    echo "  --scale                  Double the video resolution using super resolution."
-    echo "  --deshake                Stabilize shaky footage."
-    echo "  --edge-detect            Apply edge detection filter."
-    echo "  --stabilize              Stabilize footage (same as deshake)."
-    echo "  --slo-mo <factor>        Slow down video by the specified factor."
-    echo "  --speed-up <factor>      Speed up video by the specified factor."
-    echo "  --convert <format>       Convert video to the specified format (e.g., mp4, avi)."
-    echo "  --color-correct          Apply color correction."
-    echo "  --crop-resize <crop> <resize>  Crop and resize video."
-    echo "  --rotate <degrees>       Rotate video (90, 180, -90)."
-    echo "  --flip <h|v>             Flip video horizontally (h) or vertically (v)."
-    echo "  --svp-slo-mo <factor>    Apply SVP-based high FPS slo-mo."
-    echo
-    echo "Example:"
-    echo "  vidline.sh --cli --fps 60 --deflicker --svp-slo-mo 0.5"
+    cat << EOF
+Usage: vidline.sh --cli --input <video_file> [OPTIONS]
+
+Options:
+  --input <video_file>       Specify the input video file.
+  --fps <value>              Convert frame rate to specified value.
+  --deflicker                Apply deflicker filter.
+  --dedot                    Apply dedot filter.
+  --dehalo                   Apply dehalo filter.
+  --removegrain <type>       Apply removegrain filter with specified type (1-22).
+  --deband <params>          Apply debanding with specified parameters.
+  --sharpen                  Apply sharpening and edge enhancement.
+  --scale                    Double the video resolution using super resolution.
+  --deshake                  Stabilize shaky footage.
+  --edge-detect              Apply edge detection filter.
+  --stabilize                Stabilize footage (same as deshake).
+  --slo-mo <factor>          Slow down video by the specified factor.
+  --speed-up <factor>        Speed up video by the specified factor.
+  --convert <format>         Convert video to the specified format (e.g., mp4, avi).
+  --color-correct            Apply color correction.
+  --crop-resize <crop> <resize>  Crop and resize video.
+  --rotate <degrees>         Rotate video (90, 180, -90).
+  --flip <h|v>               Flip video horizontally (h) or vertically (v).
+
+Example:
+  vidline.sh --cli --input e8.mp4 --fps 60 --deflicker --slo-mo 0.5
+EOF
     exit 0
 }
 
 # Help Function
 display_help() {
-    echo "Usage: vidline.sh [OPTIONS]"
-    echo "Options:"
-    echo "  -h, --help    Show this help message and exit"
-    echo "  --cli         Enable command-line mode with additional options"
-    echo
-    echo "To see available CLI options:"
-    echo "  vidline.sh --cli"
+    cat << EOF
+Usage: vidline.sh [OPTIONS]
+
+Options:
+  -h, --help    Show this help message and exit
+  --cli         Enable command-line mode with additional options
+
+To see available CLI options:
+  vidline.sh --cli --help
+EOF
     exit 0
 }
 
 # Interactive mode: Present a menu to the user for processing options
 interactive_mode() {
     PS3='Please enter your choice: '
-    options=("Convert Frame Rate" "Apply Deflicker" "Apply Dedot" "Apply Dehalo" "Apply RemoveGrain" "Apply Debanding"
-             "Apply Sharpening" "Apply Super Resolution" "Stabilize Footage" "Apply Edge Detection" "Apply Slo-mo"
-             "Speed Up Video" "Convert Format" "Apply Color Correction" "Crop and Resize" "Rotate Video" "Flip Video" "Quit")
-    select opt in "${options[@]}"
-    do
+    options=(
+        "Convert Frame Rate"
+        "Apply Deflicker"
+        "Apply Dedot"
+        "Apply Dehalo"
+        "Apply RemoveGrain"
+        "Apply Debanding"
+        "Apply Sharpening"
+        "Apply Super Resolution"
+        "Stabilize Footage"
+        "Apply Edge Detection"
+        "Apply Slo-mo"
+        "Speed Up Video"
+        "Convert Format"
+        "Apply Color Correction"
+        "Crop and Resize"
+        "Rotate Video"
+        "Flip Video"
+        "Quit"
+    )
+    select opt in "${options[@]}"; do
         case $opt in
             "Convert Frame Rate")
                 echo -n "Enter desired frame rate: "
@@ -264,12 +314,14 @@ interactive_mode() {
             "Speed Up Video")
                 echo -n "Enter speed factor to speed up: "
                 read speed_factor
-                execute_ffmpeg_command "setpts=$(echo "1/$speed_factor" | bc -l)*PTS" "Speed-up"
+                speed_factor=$(echo "1/$speed_factor" | bc -l)
+                execute_ffmpeg_command "setpts=${speed_factor}*PTS" "Speed-up"
                 ;;
             "Convert Format")
                 echo -n "Enter desired output format (e.g., mp4, avi): "
                 read output_format
-                execute_ffmpeg_command "format=$output_format" "Convert to $output_format format"
+                OUTPUT_VIDEO="${OUTPUT_VIDEO%.*}.$output_format"
+                execute_ffmpeg_command "" "Convert to $output_format format"
                 ;;
             "Apply Color Correction")
                 execute_ffmpeg_command "eq=gamma=1.5:contrast=1.2:brightness=0.3:saturation=0.7" "Color Correction"
@@ -326,19 +378,52 @@ interactive_mode() {
 
 # Main logic
 main() {
+    check_dependencies
+
     if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
         display_help
     elif [[ "${1:-}" == "--cli" ]]; then
         shift
-        if [[ -z "${1:-}" ]]; then
+        if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
             display_cli_help
-        else
-            process_cli_command "$@"
         fi
+
+        # Initialize variables
+        INPUT_VIDEO=""
+        OUTPUT_VIDEO=""
+
+        # Parse arguments
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --input)
+                    shift
+                    INPUT_VIDEO="$1"
+                    if [[ ! -f "$INPUT_VIDEO" ]]; then
+                        error_exit "The video file '$INPUT_VIDEO' does not exist."
+                    fi
+                    INPUT_DIR=$(dirname "$INPUT_VIDEO")
+                    OUTPUT_VIDEO="${INPUT_DIR}/output_$(basename "$INPUT_VIDEO")"
+                    ;;
+                --help|-h)
+                    display_cli_help
+                    ;;
+                *)
+                    # Collect remaining arguments
+                    break
+                    ;;
+            esac
+            shift
+        done
+
+        if [[ -z "${INPUT_VIDEO:-}" ]]; then
+            error_exit "Input video not specified. Use --input <video_file> to specify the input video."
+        fi
+
+        process_cli_command "$@"
     else
         display_banner
+        echo "No CLI options provided. Entering interactive mode with file selection."
         read_input_video
-        echo "No CLI options provided. Entering interactive mode."
         interactive_mode
     fi
 }
