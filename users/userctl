@@ -1,0 +1,125 @@
+#!/bin/bash
+
+# --- // AUTO_ESCALATE:
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
+
+# Function to check and enable wheel group in sudoers
+check_and_enable_wheel_in_sudoers() {
+    if ! grep -q "^%wheel ALL=(ALL) ALL" /etc/sudoers; then
+        echo "Enabling the 'wheel' group in sudoers file..."
+        echo "%wheel ALL=(ALL) ALL" | sudo EDITOR='tee -a' visudo
+        echo "'wheel' group has been enabled for sudo access."
+    else
+        echo "'wheel' group is already enabled in sudoers."
+    fi
+}
+
+# Function to display user's current groups
+view_groups() {
+    id -nG "$1"
+}
+
+# Function to create a group if it doesn't exist
+create_group() {
+    if ! grep -q "^$1:" /etc/group; then
+        echo "Group $1 does not exist. Creating group..."
+        groupadd "$1"
+        echo "Group $1 created."
+    else
+        echo "Group $1 already exists."
+    fi
+}
+
+# Function to create a user and assign the primary group
+create_user() {
+    if ! id "$1" &>/dev/null; then
+        echo "User $1 does not exist. Creating user..."
+        useradd -g "$2" -s /usr/sbin/nologin "$1"
+        echo "User $1 created with primary group $2."
+    else
+        echo "User $1 already exists."
+    fi
+}
+
+# Function to add user to selected group(s)
+add_to_group() {
+    for group in "${@:2}"; do
+        create_group "$group"  # Ensure the group exists before adding
+        usermod -aG "$group" "$1"
+    done
+    echo "$1 added to groups: ${@:2}"
+}
+
+# Function to apply a standard preset of groups to the user
+apply_standard_preset() {
+    local standard_groups=("adm" "users" "disk" "wheel" "cdrom" "audio" "video" "usb" "optical" "storage" "scanner" "lp" "network" "power")
+    echo "Applying standard preset groups to $1..."
+    for group in "${standard_groups[@]}"; do
+        create_group "$group"
+        usermod -aG "$group" "$1"
+        echo "$1 added to $group."
+    done
+}
+
+# Main menu function
+main_menu() {
+    echo "Select operation:"
+    options=("View User's Groups" "Add User to Group" "Remove User from Group" "Apply Standard Group Preset" "Check and Enable Wheel Group in Sudoers")
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1)
+                echo "Enter username:"
+                read -r username
+                echo "Groups for $username:"
+                view_groups "$username"
+                break
+                ;;
+            2)
+                echo "Enter username:"
+                read -r username
+                echo "Select group(s) to add user to:"
+                mapfile -t selected < <(cut -d: -f1 /etc/group | fzf -m)
+                add_to_group "$username" "${selected[@]}"
+                break
+                ;;
+            3)
+                echo "Enter username:"
+                read -r username
+                echo "Select group(s) to remove user from:"
+                mapfile -t selected < <(cut -d: -f1 /etc/group | fzf -m)
+                remove_from_group "$username" "${selected[@]}"
+                break
+                ;;
+            4)
+                echo "Enter username:"
+                read -r username
+                apply_standard_preset "$username"
+                break
+                ;;
+            5)
+                check_and_enable_wheel_in_sudoers
+                break
+                ;;
+            *)
+                echo "Invalid option. Please enter a number from 1 to 5."
+                ;;
+        esac
+    done
+}
+
+# Ensure script is run with root privileges
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run as root."
+    exit 1
+fi
+
+# Ensure fzf is installed
+if ! command -v fzf &> /dev/null; then
+    echo "fzf is not installed. Please install it first."
+    exit 1
+fi
+
+main_menu

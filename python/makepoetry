@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# Ensure the script is run with root privileges
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit
+fi
+
+# Define XDG directories (defaulting if not set in environment)
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$HOME/.run}"
+
+# Set up directories according to XDG standards
+echo "Setting up Poetry environment directories following XDG standards..."
+mkdir -p "$XDG_DATA_HOME/poetry/venvs"
+mkdir -p "$XDG_DATA_HOME/python-projects"
+
+# Update and install necessary packages
+echo "Updating system packages and installing necessary dependencies..."
+sudo pacman -Syu --noconfirm
+sudo pacman -S --noconfirm python python-pip python-pipx python-virtualenv poetry
+
+# Set up Poetry in a dedicated virtual environment
+echo "Installing Poetry..."
+python -m venv "$XDG_DATA_HOME/poetry/venvs/poetry"
+source "$XDG_DATA_HOME/poetry/venvs/poetry/bin/activate"
+pip install --upgrade pip
+pip install poetry
+
+# Link Poetry to the shell environment
+echo "Linking Poetry to your shell environment..."
+ln -sf "$XDG_DATA_HOME/poetry/venvs/poetry/bin/poetry" /usr/local/bin/poetry
+
+# Ensure Poetry is installed correctly
+echo "Ensuring Poetry is installed correctly..."
+poetry --version
+
+# Source the function script to ensure functions like poetry_cmd are available
+if [ -f "$XDG_CONFIG_HOME/shellz/functions/functions.zsh" ]; then
+  echo "Sourcing functions.zsh..."
+  source "$XDG_CONFIG_HOME/shellz/functions/functions.zsh"
+fi
+
+# Configure Poetry to follow XDG standards
+echo "Configuring Poetry to follow XDG standards..."
+poetry config cache-dir "$XDG_CACHE_HOME/poetry"
+poetry config config-dir "$XDG_CONFIG_HOME/poetry"
+poetry config virtualenvs.path "$XDG_DATA_HOME/poetry/venvs"
+poetry config virtualenvs.in-project true
+
+# Set up an example project to test the environment
+echo "Setting up an example project to test the environment..."
+cd "$XDG_DATA_HOME/python-projects"
+poetry new example_project
+cd example_project
+
+echo "Adding 'requests' package to the example project..."
+poetry add requests
+
+echo "Poetry environment setup is complete!"
+echo "You can now use 'poetry_cmd' to manage your Python projects."
+
+# Deactivate the virtual environment
+deactivate
+
+echo "Script execution finished."
