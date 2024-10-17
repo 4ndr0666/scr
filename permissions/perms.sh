@@ -188,37 +188,80 @@ compaudit() {
 # ---- // DISPLAY HELP:
 display_help() {
     clear
-    echo "# --- // CHMOD_INDEX // ========"
+
+    # Check if terminal supports colors
+    if [[ -t 1 ]]; then
+        ncolors=$(tput colors)
+        if [[ -n "$ncolors" && "$ncolors" -ge 8 ]]; then
+            bold=$(tput bold)
+            underline=$(tput smul)
+            reset=$(tput sgr0)
+            blue=$(tput setaf 4)
+            yellow=$(tput setaf 3)
+            green=$(tput setaf 2)
+            magenta=$(tput setaf 5)
+        fi
+    fi
+
+    echo -e "${blue}# --- // CHMOD_INDEX // ========${reset}"
     echo ""
-    echo "DEFAULT SUDOERS:"
-    echo "chown -c root:root /etc/sudoers"
-    echo "chmod -c 0440 /etc/sudoers"
+
+    echo -e "${yellow}DEFAULT SUDOERS:${reset}"
+    echo "  chown -c root:root /etc/sudoers"
+    echo "  chmod -c 0440 /etc/sudoers"
     echo ""
-    echo "REMOVE EXECUTABLE:"
-    echo "644: +rw for owner, no permissions for group, +r for others"
+    
+    echo -e "${yellow}COMMON PERMISSION SETTINGS:${reset}"
+    
+    printf "%-6s %-20s %-50s\n" "CHMOD" "SYMBOLIC" "DESCRIPTION"
+    printf "%-6s %-20s %-50s\n" "-----" "--------" "-----------"
+    printf "%-6s %-20s %-50s\n" "400" "r--------" "Read-only for owner"
+    printf "%-6s %-20s %-50s\n" "600" "rw-------" "Read and write for owner"
+    printf "%-6s %-20s %-50s\n" "644" "rw-r--r--" "Owner read/write; others read"
+    printf "%-6s %-20s %-50s\n" "700" "rwx------" "Full permissions for owner"
+    printf "%-6s %-20s %-50s\n" "755" "rwxr-xr-x" "Owner full; others read/execute"
+    printf "%-6s %-20s %-50s\n" "775" "rwxrwxr-x" "Owner & group full; others read/execute"
+    printf "%-6s %-20s %-50s\n" "777" "rwxrwxrwx" "All users have full permissions"
+    printf "%-6s %-20s %-50s\n" "440" "r--r--r--" "Read-only for owner and group"
+    printf "%-6s %-20s %-50s\n" "550" "r-xr-x---" "Read/execute for owner and group"
+    printf "%-6s %-20s %-50s\n" "750" "rwxr-x---" "Full for owner; read/execute for group"
+    printf "%-6s %-20s %-50s\n" "664" "rw-rw-r--" "Read/write for owner and group; read for others"
+    printf "%-6s %-20s %-50s\n" "666" "rw-rw-rw-" "Read/write for everyone"
+    printf "%-6s %-20s %-50s\n" "744" "rwxr--r--" "Owner read/write/execute; others read"
+    printf "%-6s %-20s %-50s\n" "711" "rwx--x--x" "Owner full; others execute only"
     echo ""
-    echo "USER ONLY ACCESS:"
-    echo "600: +rw for owner, no permissions for group or others"
+
+    echo -e "${yellow}SPECIAL PERMISSION BITS:${reset}"
+    printf "%-6s %-20s %-50s\n" "BIT" "SYMBOLIC" "DESCRIPTION"
+    printf "%-6s %-20s %-50s\n" "----" "--------" "-----------"
+    printf "%-6s %-20s %-50s\n" "4xxx" "Setuid" "Executes with file owner's permissions"
+    printf "%-6s %-20s %-50s\n" "2xxx" "Setgid" "Executes with group's permissions; new files inherit group ID"
+    printf "%-6s %-20s %-50s\n" "1xxx" "Sticky Bit" "Only owner/root can delete/modify within directory"
     echo ""
-    echo "751: +rwx for owner, +rx for group, +x for others"
+
+    echo -e "${yellow}DEFAULT PERMISSIONS FOR COMMON SYSTEM FILES AND DIRECTORIES:${reset}"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "FILE/DIRECTORY" "OWNER" "GROUP" "CHMOD" "DESCRIPTION"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "--------------" "-----" "-----" "-----" "-----------"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/etc/sudoers" "root" "root" "0440" "Sudo privileges config"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/etc/passwd" "root" "root" "0644" "User account info"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/etc/shadow" "root" "shadow" "0640" "Secure passwords"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/etc/ssh/ssh_config" "root" "root" "0644" "SSH client config"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "~/.ssh/id_rsa" "user" "user" "0600" "Private SSH key"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "~/.ssh/id_rsa.pub" "user" "user" "0644" "Public SSH key"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "~/.gnupg/" "user" "user" "0700" "GnuPG config and keys"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/usr/bin/" "root" "root" "0755" "Executable binaries"
+    printf "%-30s %-10s %-10s %-10s %-10s\n" "/var/www/" "root" "www-data" "0775" "Web server files"
     echo ""
-    echo "755: +rwx for owner, +rx for group, +rx for others"
+
+    echo -e "${yellow}TIPS FOR MANAGING PERMISSIONS:${reset}"
+    echo " 1. ${bold}Least Privilege Principle${reset}: Grant the minimum permissions necessary for functionality."
+    echo " 2. ${bold}Regular Audits${reset}: Periodically check permissions using tools like \`ls -l\` or \`stat\`."
+    echo " 3. ${bold}Use Groups Effectively${reset}: Manage collaborative access by assigning users to appropriate groups."
+    echo " 4. ${bold}Automate with Scripts${reset}: Use your functions and aliases to enforce consistent permission settings."
+    echo " 5. ${bold}Backup Before Changes${reset}: Always backup important configurations before modifying permissions."
     echo ""
-    echo "744: +wx for owner, no permissions for group, +r for others"
-    echo ""
-    echo "711: +rwx for owner, no permissions for group, +x for others"
-    echo ""
-    echo "700: +rwx for owner, no permissions for group or others"
-    echo ""
-    echo "640: +r for owner, +r for group, no permissions for others"
-    echo ""
-    echo "777: +rwx for owner, +rwx for group, +rwx for others"
-    echo ""
-    echo "666: +rw for owner, +rw for group, +rw for others"
-    echo "" 
-    echo "400: +r for owner, no permissions for group or others"
-    echo ""
-    echo "Press any key to return to the main menu."
+
+    echo -e "${blue}Press any key to return to the main menu.${reset}"
     read -rn 1
 }
 
