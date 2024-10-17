@@ -54,7 +54,7 @@ verify_dependencies() {
   if ! command -v yay &> /dev/null; then
     echo "Installing yay AUR helper..." | tee -a "$BUILD_LOG"
     git clone https://aur.archlinux.org/yay.git "$HOME/yay" && cd "$HOME/yay" && makepkg -si --noconfirm
-    cd "$HOME"
+    cd "$HOME" || echo "error installing yay."
     check_status
   fi
 }

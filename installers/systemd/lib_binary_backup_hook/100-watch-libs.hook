@@ -1,0 +1,18 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Path
+Target = usr/lib/libavutil.so*
+Target = usr/lib/libplacebo.so*
+Target = usr/lib/libavcodec.so*
+
+[Action]
+Description = Backing up critical media libraries...
+When = PreTransaction
+Exec = /usr/local/bin/backup_critical_libs.sh
+
+#[Action]
+#Description = Checking for changes in critical media libraries...
+#When = PreTransaction
+#Exec = /usr/bin/sh -c 'echo "Critical library change detected. Please ensure compatibility before proceeding."'

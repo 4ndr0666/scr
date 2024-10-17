@@ -1,0 +1,108 @@
+# Welcome to Vim Tutor!
+#
+# Follow the instructions below to learn basic Vim commands.
+
+###############################################################################
+# 1. NAVIGATING WITH VIM                                                      #
+# ----------------------------------------------------------------------------#
+# Vim uses "H", "J", "K", and "L" to move the cursor:
+# - Press H to move left
+# - Press J to move down
+# - Press K to move up
+# - Press L to move right
+#
+# Try navigating this text using these keys, without using arrow keys!
+#
+# Once you've practiced moving, you can scroll down to the next section.
+###############################################################################
+
+###############################################################################
+# 2. QUITTING VIM                                                             #
+# ----------------------------------------------------------------------------#
+# Quitting Vim can be tricky at first, but it's simple once you know the
+# commands:
+#
+# - Type :q! to quit without saving.
+# - Type ZZ to save and quit.
+#
+# If you're ready to move on, quit Vim using one of the methods above, and
+# run this script again to continue.
+#
+# If you already know how to quit, continue by scrolling down to the next
+# section.
+###############################################################################
+
+###############################################################################
+# 3. EDITING TEXT                                                             #
+# ----------------------------------------------------------------------------#
+# Vim allows you to edit text in powerful ways using simple commands:
+#
+# - Press i to enter insert mode and start typing text before the cursor.
+# - Press A to jump to the end of a line and start typing.
+# - Press dw to delete a word.
+# - Press d$ to delete from the cursor to the end of a line.
+#
+# Try inserting, appending, and deleting text in this section.
+#
+# Once you've practiced editing, move to the next section.
+###############################################################################
+
+###############################################################################
+# 4. UNDO AND REDO                                                            #
+# ----------------------------------------------------------------------------#
+# Vim has robust undo and redo functionality:
+#
+# - Press u to undo the last change.
+# - Press Ctrl + R to redo the change you just undid.
+#
+# Make some edits and try using undo and redo to reverse and restore them.
+###############################################################################
+
+###############################################################################
+# 5. VISUAL MODE                                                              #
+# ----------------------------------------------------------------------------#
+# Visual mode allows you to select text easily:
+#
+# - Press v to enter visual mode and select text character by character.
+# - Press V to select entire lines.
+# - Press Ctrl + V to select text in a rectangular block (block visual mode).
+#
+# Try using visual mode to select and delete or change parts of this text.
+###############################################################################
+
+###############################################################################
+# 6. YANKING (COPYING) AND PASTING                                            #
+# ----------------------------------------------------------------------------#
+# In Vim, yanking means copying, and you can yank/paste text easily:
+#
+# - Press yy to yank (copy) an entire line.
+# - Press yw to yank a word.
+# - Press p to paste the yanked text after the cursor.
+#
+# Practice yanking and pasting text here.
+###############################################################################
+
+###############################################################################
+# 7. SEARCHING FOR TEXT                                                       #
+# ----------------------------------------------------------------------------#
+# Vim's search functionality is powerful:
+#
+# - Type / followed by a search term to find that text.
+# - Press n to jump to the next match.
+# - Press N to jump to the previous match.
+#
+# Try searching for the word "Vim" in this document.
+###############################################################################
+
+###############################################################################
+# 8. REPLACING TEXT                                                           #
+# ----------------------------------------------------------------------------#
+# Vim allows you to replace text easily:
+#
+# - Press R to enter replace mode and start typing to overwrite text.
+# - Press cw to change a word.
+#
+# Try replacing text here by typing R to overwrite this line.
+###############################################################################
+
+# Congrats! You've finished this simple Vim tutorial. Practice makes perfect!

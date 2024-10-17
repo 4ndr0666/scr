@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # --- Factory Reset Permissions Script ---
 # Description: This script resets the permissions of critical system directories and files
@@ -23,11 +23,11 @@ declare -A dir_permissions=(
     ["/media"]=755
     ["/mnt"]=755
     ["/opt"]=755
-    ["/proc"]=555
+    # ["/proc"]=555        # Removed or handle exclusion
     ["/root"]=700
     ["/run"]=755
     ["/srv"]=755
-    ["/sys"]=555
+    # ["/sys"]=555         # Removed or handle exclusion
     ["/tmp"]=1777
     ["/usr"]=755
     ["/var"]=755
@@ -59,27 +59,53 @@ declare -A file_permissions=(
 )
 
 # --- Centralized log file ---
-log_file="/var/log/permissions_audit.log"
+log_file="/home/andro/.local/share/logs/permissions_audit.log"
 
 # --- Logging function ---
 log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | sudo tee -a "$log_file" > /dev/null
 }
 
+# --- Spinner Function ---
+spinner() {
+    local pid=$!
+    local delay=0.1
+    local spinstr='|/-\'
+    while kill -0 "$pid" 2>/dev/null; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep "$delay"
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
 # --- Backup existing permissions ---
 backup_permissions() {
-    local backup_file="/tmp/permissions_backup_$(date +%Y%m%d%H%M%S).txt"
+    local backup_file="/Nas/Backups/permissions_backup_$(date +%Y%m%d%H%M%S).txt"
     log_action "Backing up current permissions to $backup_file..."
-    for dir in "${!dir_permissions[@]}"; do
-        if [[ -d $dir ]]; then
-            sudo find "$dir" -exec stat -c "%a %n" {} \; >> "$backup_file"
-        fi
-    done
-    for file in "${!file_permissions[@]}"; do
-        if [[ -e $file ]]; then
-            sudo stat -c "%a %n" "$file" >> "$backup_file"
-        fi
-    done
+
+    {
+        for dir in "${!dir_permissions[@]}"; do
+            if [[ -d $dir ]]; then
+                # Exclude /proc and /sys to prevent hanging
+                if [[ "$dir" == "/proc" || "$dir" == "/sys" ]]; then
+                    log_action "Skipping virtual filesystem directory: $dir"
+                    continue
+                fi
+                sudo find "$dir" -path "/proc" -prune -o -path "/sys" -prune -o -exec stat -c "%a %n" {} \; >> "$backup_file"
+            fi
+        done
+        for file in "${!file_permissions[@]}"; do
+            if [[ -e $file ]]; then
+                sudo stat -c "%a %n" "$file" >> "$backup_file"
+            fi
+        done
+    } &
+
+    spinner
+    wait
     log_action "Backup completed."
 }
 
@@ -94,11 +120,19 @@ reset_dir_permissions() {
                 if [[ "$dry_run" == true ]]; then
                     echo "Dry Run: sudo chmod ${dir_permissions[$dir]} $dir"
                 else
-                    sudo chmod "${dir_permissions[$dir]}" "$dir"
-                    log_action "Permissions set for $dir to ${dir_permissions[$dir]}."
+                    {
+                        sudo chmod "${dir_permissions[$dir]}" "$dir"
+                    } &
+                    spinner
+                    wait
+                    if [ $? -eq 0 ]; then
+                        log_action "Permissions set for $dir to ${dir_permissions[$dir]}."
+                    else
+                        log_action "Failed to set permissions for $dir." >&2
+                    fi
                 fi
             else
-                log_action "Permissions for $dir are already correct."
+                log_action "Permissions for $dir are already correct, skipping."
             fi
         else
             log_action "Directory $dir does not exist; skipping."
@@ -139,22 +173,38 @@ reset_subdir_file_permissions() {
             echo "Dry Run: sudo find $dir -type f -exec chmod 644 {} \\;"
             echo "Dry Run: sudo find $dir -type f -perm /u+x -exec chmod 755 {} \\;"
         else
-            sudo find "$dir" -type d -exec chmod 755 {} \;
-            sudo find "$dir" -type f -exec chmod 644 {} \;
-            sudo find "$dir" -type f -perm /u+x -exec chmod 755 {} \;
-            log_action "Permissions reset for files and directories within $dir."
+            {
+                sudo find "$dir" -type d -exec chmod 755 {} \;
+                sudo find "$dir" -type f -exec chmod 644 {} \;
+                sudo find "$dir" -type f -perm /u+x -exec chmod 755 {} \;
+            } &
+            spinner
+            wait
+            log_action "Permissions reset for $dir."
         fi
     fi
 }
 
 # --- Handle special permissions (setuid, setgid, sticky bit) ---
 handle_special_permissions() {
-    local dir=$1
+    local dry_run=$1
+    local dir=$2
     if [[ -d "$dir" ]]; then
-        log_action "Handling special permissions for $dir..."
-        sudo find "$dir" -type f -perm -4000 -exec chmod u+s {} \;  # setuid
-        sudo find "$dir" -type f -perm -2000 -exec chmod g+s {} \;  # setgid
-        sudo find "$dir" -type d -perm -1000 -exec chmod +t {} \;   # sticky bit
+        if [[ "$dry_run" == true ]]; then
+            echo "Dry Run: sudo find $dir -type f -perm -4000 -exec chmod u+s {} \\;"
+            echo "Dry Run: sudo find $dir -type f -perm -2000 -exec chmod g+s {} \\;"
+            echo "Dry Run: sudo find $dir -type d -perm -1000 -exec chmod +t {} \\;"
+        else
+            log_action "Handling special permissions for $dir..."
+            {
+                sudo find "$dir" -type f -perm -4000 -exec chmod u+s {} \;  # setuid
+                sudo find "$dir" -type f -perm -2000 -exec chmod g+s {} \;  # setgid
+                sudo find "$dir" -type d -perm -1000 -exec chmod +t {} \;   # sticky bit
+            } &
+            spinner
+            wait
+            log_action "Special permissions handled for $dir."
+        fi
     fi
 }
 
@@ -193,9 +243,9 @@ main() {
     reset_subdir_file_permissions "$dry_run" "$HOME/.local"
 
     # Handle special permissions
-    handle_special_permissions "/tmp"
-    handle_special_permissions "/usr"
-    handle_special_permissions "/var"
+    handle_special_permissions "$dry_run" "/tmp"
+    handle_special_permissions "$dry_run" "/usr"
+    handle_special_permissions "$dry_run" "/var"
 
     log_action "Permissions reset complete."
 }

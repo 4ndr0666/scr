@@ -14,6 +14,18 @@ DEFAULT_ENCODER="libx264"
 DEFAULT_FORMAT="mp4"
 REMOVE_SUBS_SOUND="yes"
 
+# Function to update resolution variables
+update_resolution() {
+    IFS='x' read -r WIDTH HEIGHT <<< "$DEFAULT_RESOLUTION"
+    if [ -z "$WIDTH" ] || [ -z "$HEIGHT" ] || ! [[ $WIDTH =~ ^[0-9]+$ ]] || ! [[ $HEIGHT =~ ^[0-9]+$ ]]; then
+        echo "Error: Invalid resolution format. Use WIDTHxHEIGHT, e.g., 1920x1080"
+        exit 1
+    fi
+}
+
+# Initialize resolution variables
+update_resolution
+
 # Usage function
 usage() {
     echo "Usage: $0 [options]"
@@ -34,6 +46,7 @@ while getopts "r:f:a:c:e:o:kh" opt; do
     case $opt in
         r)
             DEFAULT_RESOLUTION="$OPTARG"
+            update_resolution
             ;;
         f)
             DEFAULT_FRAMERATE="$OPTARG"
@@ -65,8 +78,8 @@ done
 shift $((OPTIND -1))
 
 # Check for dependencies
-for cmd in ffmpeg ffprobe fzf; do
-    if ! command -v $cmd >/dev/null 2>&1; then
+for cmd in ffmpeg ffprobe fzf bc; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Error: $cmd is not installed."
         exit 1
     fi
@@ -77,13 +90,15 @@ trap cleanup EXIT
 
 # Function to select files using fzf
 select_files() {
-    files=$(fzf --multi --prompt="Select video files to merge> " --preview='ffprobe -v error -show_entries stream=width,height,avg_frame_rate,codec_name -of default=noprint_wrappers=1 "{}"')
-    if [ -z "$files" ]; then
+    mapfile -t files < <(fzf --multi --prompt="Select video files to merge> " --preview='ffprobe -v error -show_entries stream=width,height,avg_frame_rate,codec_name -of default=noprint_wrappers=1 "{}"')
+    if [ ${#files[@]} -eq 0 ]; then
         echo "No files selected. Exiting."
         exit 1
     fi
     echo "Selected files:"
-    echo "$files"
+    for file in "${files[@]}"; do
+        echo "$file"
+    done
 }
 
 # Function to normalize video
@@ -91,18 +106,24 @@ normalize_video() {
     local file="$1"
     local output_file="$2"
 
-    # Remove subtitles and sound if required
-    if [ "$REMOVE_SUBS_SOUND" = "yes" ]; then
-        audio_opts="-an"
-    else
-        audio_opts=""
-    fi
+    echo "Normalizing video: $file"
 
     # Build ffmpeg command
-    ffmpeg -y -i "$file" -vf "scale=${DEFAULT_RESOLUTION},pad=${DEFAULT_RESOLUTION}:(ow-iw)/2:(oh-ih)/2" -r $DEFAULT_FRAMERATE -c:v $DEFAULT_ENCODER -crf $DEFAULT_CRF $audio_opts "$output_file" >/dev/null 2>&1
-    if [ $? -ne 0 ]; then
+    ffmpeg_cmd=()
+    ffmpeg_cmd+=("ffmpeg" "-y" "-i" "$file")
+    ffmpeg_cmd+=("-vf" "scale=w=${WIDTH}:h=${HEIGHT}:force_original_aspect_ratio=decrease,pad=w=${WIDTH}:h=${HEIGHT}:x=(ow-iw)/2:y=(oh-ih)/2:color=black")
+    ffmpeg_cmd+=("-r" "$DEFAULT_FRAMERATE")
+    ffmpeg_cmd+=("-c:v" "$DEFAULT_ENCODER" "-crf" "$DEFAULT_CRF")
+    if [ "$REMOVE_SUBS_SOUND" = "yes" ]; then
+        ffmpeg_cmd+=("-an")
+    fi
+    ffmpeg_cmd+=("-movflags" "+faststart")
+    ffmpeg_cmd+=("$output_file")
+
+    # Execute ffmpeg command
+    if ! "${ffmpeg_cmd[@]}"; then
         echo "Error normalizing $file"
-        exit 1
+        return 1
     fi
 }
 
@@ -117,29 +138,35 @@ handle_small_videos() {
         file1="${small_files[$i]}"
         base_name1=$(basename "$file1")
         output_file1="$temp_dir/normalized_small_$base_name1"
-        normalize_video "$file1" "$output_file1"
+        if ! normalize_video "$file1" "$output_file1"; then
+            echo "Error processing $file1"
+            return 1
+        fi
 
         if [ $((i+1)) -lt $num_small_videos ]; then
             # There is a second video
             file2="${small_files[$((i+1))]}"
             base_name2=$(basename "$file2")
             output_file2="$temp_dir/normalized_small_$base_name2"
-            normalize_video "$file2" "$output_file2"
+            if ! normalize_video "$file2" "$output_file2"; then
+                echo "Error processing $file2"
+                return 1
+            fi
 
             # Stack the two videos side by side
             combined_output="$temp_dir/combined_small_${i}.mp4"
-            ffmpeg -y -i "$output_file1" -i "$output_file2" -filter_complex "[0:v][1:v]hstack=inputs=2" -c:v $DEFAULT_ENCODER -crf $DEFAULT_CRF "$combined_output" >/dev/null 2>&1
-            if [ $? -ne 0 ]; then
+            echo "Combining videos side by side: $output_file1 and $output_file2"
+            if ! ffmpeg -y -i "$output_file1" -i "$output_file2" -filter_complex "[0:v][1:v]hstack=inputs=2" -c:v "$DEFAULT_ENCODER" -crf "$DEFAULT_CRF" "$combined_output"; then
                 echo "Error combining $output_file1 and $output_file2"
-                exit 1
+                return 1
             fi
         else
             # Only one video left, pad it
             combined_output="$temp_dir/combined_small_${i}.mp4"
-            ffmpeg -y -i "$output_file1" -vf "pad=${DEFAULT_RESOLUTION}:(ow-iw)/2:(oh-ih)/2:color=black" -c:v $DEFAULT_ENCODER -crf $DEFAULT_CRF "$combined_output" >/dev/null 2>&1
-            if [ $? -ne 0 ]; then
+            echo "Padding video to fit: $output_file1"
+            if ! ffmpeg -y -i "$output_file1" -vf "pad=w=${WIDTH}:h=${HEIGHT}:x=(ow-iw)/2:y=(oh-ih)/2:color=black" -c:v "$DEFAULT_ENCODER" -crf "$DEFAULT_CRF" "$combined_output"; then
                 echo "Error padding $output_file1"
-                exit 1
+                return 1
             fi
         fi
 
@@ -155,10 +182,10 @@ merge_videos() {
     local input_list="$1"
     local output_file="$2"
 
-    ffmpeg -y -f concat -safe 0 -i "$input_list" -c copy "$output_file" >/dev/null 2>&1
-    if [ $? -ne 0 ]; then
+    echo "Merging videos into $output_file"
+    if ! ffmpeg -y -f concat -safe 0 -i "$input_list" -c copy "$output_file"; then
         echo "Error merging videos."
-        exit 1
+        return 1
     fi
 }
 
@@ -185,16 +212,30 @@ main() {
     input_list="$temp_dir/input_list.txt"
     touch "$input_list"
 
+    # Get target aspect ratio
+    IFS=':' read -r target_w target_h <<< "$DEFAULT_ASPECT_RATIO"
+    if [ -z "$target_w" ] || [ -z "$target_h" ] || ! [[ $target_w =~ ^[0-9]+$ ]] || ! [[ $target_h =~ ^[0-9]+$ ]]; then
+        echo "Error: Invalid target aspect ratio."
+        exit 1
+    fi
+    target_aspect_ratio=$(echo "scale=4; $target_w/$target_h" | bc)
+
     # Process each file
-    for file in $files; do
+    for file in "${files[@]}"; do
+        # Check if file exists
+        if [ ! -f "$file" ]; then
+            echo "Error: File not found - $file"
+            exit 1
+        fi
+
         # Analyze video properties
         width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$file")
         height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$file")
-        aspect_ratio=$(echo "scale=2; $width/$height" | bc)
-
-        # Target aspect ratio
-        IFS=':' read target_w target_h <<< "$DEFAULT_ASPECT_RATIO"
-        target_aspect_ratio=$(echo "scale=2; $target_w/$target_h" | bc)
+        if [ -z "$width" ] || [ -z "$height" ]; then
+            echo "Error: Could not get video dimensions for $file"
+            exit 1
+        fi
+        aspect_ratio=$(echo "scale=4; $width/$height" | bc)
 
         # Compare aspect ratios
         if (( $(echo "$aspect_ratio < $target_aspect_ratio" | bc -l) )); then
@@ -209,22 +250,28 @@ main() {
     for file in "${regular_videos[@]}"; do
         base_name=$(basename "$file")
         output_file="$temp_dir/normalized_$base_name"
-        normalize_video "$file" "$output_file" &
+        if ! normalize_video "$file" "$output_file"; then
+            echo "Error processing $file"
+            exit 1
+        fi
         echo "file '$output_file'" >> "$input_list"
     done
-
-    # Wait for normalization
-    wait
 
     # Handle small videos
     if [ "${#small_videos[@]}" -gt 0 ]; then
         # Place small videos side by side
-        handle_small_videos "${small_videos[@]}"
+        if ! handle_small_videos "${small_videos[@]}"; then
+            echo "Error handling small videos"
+            exit 1
+        fi
     fi
 
     # Merge videos
     output_file="merged_output.$DEFAULT_FORMAT"
-    merge_videos "$input_list" "$output_file"
+    if ! merge_videos "$input_list" "$output_file"; then
+        echo "Error merging videos"
+        exit 1
+    fi
 
     echo "Merged video saved as $output_file"
 }

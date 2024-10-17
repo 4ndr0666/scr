@@ -1,5 +1,37 @@
 #!/bin/bash
 
+# Function to check if fzf is installed
+check_fzf() {
+    if ! command -v fzf &> /dev/null; then
+        echo "fzf is not installed. Please install it using your package manager."
+        echo "For example, on Debian/Ubuntu: sudo apt-get install fzf"
+        echo "On macOS with Homebrew: brew install fzf"
+        exit 1
+    fi
+}
+
+# Function to select a directory using fzf
+select_directory() {
+    local dir
+    dir=$(find / -type d 2>/dev/null | fzf --height 40% --reverse --prompt="Select a directory: ")
+    if [ -z "$dir" ]; then
+        echo "No directory selected. Exiting."
+        exit 1
+    fi
+    echo "$dir"
+}
+
+# Function to select a file using fzf
+select_file() {
+    local file
+    file=$(find / -type f 2>/dev/null | fzf --height 40% --reverse --prompt="Select a file: ")
+    if [ -z "$file" ]; then
+        echo "No file selected. Exiting."
+        exit 1
+    fi
+    echo "$file"
+}
+
 # Function to display a menu
 display_menu() {
     echo "Choose an option:"
@@ -11,18 +43,20 @@ display_menu() {
     echo "6) Exit"
 }
 
-# Function to check for root privileges
-check_root() {
+# Function to check for root privileges and fzf
+check_root_and_fzf() {
     if [ "$EUID" -ne 0 ]; then
         echo "This script requires root privileges. Please run as root or use sudo."
         exit 1
     fi
+
+    check_fzf
 }
 
 # Function to create a backup
 backup_system_permissions() {
-    read -rp "Enter the backup directory path: " backup_dir
-    [ -z "$backup_dir" ] && { echo "Backup directory path cannot be empty."; exit 1; }
+    echo "Select the backup directory path:"
+    backup_dir=$(select_directory)
 
     mkdir -p "$backup_dir" || { echo "Failed to create backup directory. Check your permissions."; exit 1; }
 
@@ -37,7 +71,9 @@ backup_system_permissions() {
 
 # Function to restore a backup
 restore_system_permissions() {
-    read -rp "Enter the backup directory path: " backup_dir
+    echo "Select the backup directory path:"
+    backup_dir=$(select_directory)
+
     read -rp "Enter the old user name: " old_user
     read -rp "Enter the target user name: " target_user
 
@@ -64,7 +100,7 @@ restore_system_permissions() {
         perms=$(echo "$line" | awk '{print $1}')
         owner=$(echo "$line" | awk '{print $3}')
         group=$(echo "$line" | awk '{print $4}')
-        path=$(echo "$line" | awk '{print substr($0, index($0,$9))}')
+        path=$(echo "$line" | awk '{print substr($0, index($0,$5))}') # Adjusted to $5 assuming path starts here
 
         # Change ownership only if it matches the old_user
         if [[ "$owner" == "$old_user" ]]; then
@@ -130,8 +166,8 @@ change_username() {
     sudo usermod -d "/home/$new_user" -l "$new_user" "$old_user"
 
     # Update ownership of home directory and files
-    sudo find /home/$new_user -user $old_user -exec chown -h $new_user {} \\;
-    sudo find / -path /proc -prune -o -path /sys -prune -o -path /dev -prune -o -path /run -prune -o -path /tmp -prune -o -path /mnt -prune -o -path /media -prune -o -path /lost+found -prune -o -user $old_user -exec chown -h $new_user {} \\;
+    sudo find /home/$new_user -user "$old_user" -exec chown -h "$new_user" {} \;
+    sudo find / -path /proc -prune -o -path /sys -prune -o -path /dev -prune -o -path /run -prune -o -path /tmp -prune -o -path /mnt -prune -o -path /media -prune -o -path /lost+found -prune -o -user "$old_user" -exec chown -h "$new_user" {} \;
 
     # Update ACLs
     sudo find /home/$new_user -exec getfacl {} + > /tmp/acl_backup.txt
@@ -143,7 +179,9 @@ change_username() {
 
 # Function to lock a file
 lock_file() {
-    read -rp "Enter the file path to lock: " file_path
+    echo "Select the file to lock:"
+    file_path=$(select_file)
+
     if [ -e "$file_path" ]; then
         sudo chattr +i "$file_path" || { echo "Failed to lock $file_path"; exit 1; }
         echo "File $file_path locked successfully."
@@ -155,7 +193,9 @@ lock_file() {
 
 # Function to unlock a file
 unlock_file() {
-    read -rp "Enter the file path to unlock: " file_path
+    echo "Select the file to unlock:"
+    file_path=$(select_file)
+
     if [ -e "$file_path" ]; then
         sudo chattr -i "$file_path" || { echo "Failed to unlock $file_path"; exit 1; }
         echo "File $file_path unlocked successfully."
@@ -165,12 +205,25 @@ unlock_file() {
     fi
 }
 
-# Function for auto privilege escalation
+# Function for auto privilege escalation and checking fzf
 auto_escalate() {
     if [ "$EUID" -ne 0 ]; then
         echo "This script requires root privileges. Attempting to escalate privileges..."
         exec sudo "$0" "$@"
     fi
+
+    check_fzf
+}
+
+# Function to display a menu
+display_menu() {
+    echo "Choose an option:"
+    echo "1) Backup System Permissions"
+    echo "2) Restore System Permissions"
+    echo "3) Change Username"
+    echo "4) Lock File"
+    echo "5) Unlock File"
+    echo "6) Exit"
 }
 
 # Main script logic
@@ -190,7 +243,6 @@ while true; do
         3)
             read -rp "Enter the old username: " old_username
             read -rp "Enter the new username: " new_username
-
 
             change_username "$old_username" "$new_username"
             ;;
