@@ -1,0 +1,564 @@
+#!/usr/bin/python3
+
+import os
+import sys
+import subprocess
+import shutil
+import logging
+from pathlib import Path
+import time
+from colorama import init, Fore, Style
+from tempfile import NamedTemporaryFile
+
+init(autoreset=True)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Constants
+DEFAULT_OUTPUT_DIR = "/home/andro/Videos"
+SCREENCAPS_DIR = "/home/andro/Pictures/screencaps/"
+MUSIC_DIR = "/home/andro/Music"
+
+def check_dependencies():
+    """Check if ffmpeg and fzf are installed."""
+    missing_tools = []
+    if shutil.which("ffmpeg") is None:
+        missing_tools.append("ffmpeg")
+    if shutil.which("fzf") is None:
+        missing_tools.append("fzf")
+    if missing_tools:
+        logging.error(f"The following tools are not installed: {', '.join(missing_tools)}. Please install them to use this script.")
+        sys.exit(1)
+
+def select_files(prompt="Select files"):
+    """Use fzf to select files."""
+    try:
+        result = subprocess.run(f'find . -type f | fzf --multi --reverse --prompt="{prompt} > "', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        if result.returncode == 0:
+            files = result.stdout.strip().split('\n')
+            return files
+        else:
+            logging.error("No files selected.")
+            return []
+    except Exception as e:
+        logging.error(f"An error occurred while selecting files: {e}")
+        return []
+
+def analyze_video():
+    """Analyze video files."""
+    video_paths = select_files("Select video files to analyze")
+    if not video_paths:
+        return
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Analyzing video: {video_path}")
+        cmd = ['ffprobe', '-v', 'error', '-show_format', '-show_streams', video_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            logging.error(f"An error occurred during analysis of {video_path}.")
+            print(result.stderr)
+
+def autofix_video():
+    """Fix common issues in video files by re-encoding."""
+    video_paths = select_files("Select video files to autofix")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Fixing video: {video_path}")
+        # Dynamically determine codecs
+        video_codec = 'libx264'
+        audio_codec = 'aac' if shutil.which('aac') else 'libopus'
+        output_path = os.path.join(output_dir, f"fixed_{os.path.basename(video_path)}")
+        cmd = ['ffmpeg', '-i', video_path, '-c:v', video_codec, '-c:a', audio_codec, '-strict', 'experimental', output_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Video fixed successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during fixing of {video_path}.")
+            print(result.stderr.decode())
+
+def normalize_video():
+    """Normalize video files to ensure common properties."""
+    video_paths = select_files("Select video files to normalize")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Normalizing video: {video_path}")
+        output_path = os.path.join(output_dir, f"normalized_{os.path.basename(video_path)}")
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-preset', 'fast',
+            '-crf', '15',
+            '-threads', '4',
+            '-vf', 'scale=1280:720,fps=30',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Video normalized successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during normalization of {video_path}.")
+            print(result.stderr.decode())
+
+def change_speed():
+    """Change the playback speed of a video."""
+    video_paths = select_files("Select video files to change speed")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    print("Choose a speed option:")
+    print("1. Slow motion (setpts=PTS*3)")
+    print("2. Decrease speed by half")
+    print("3. Double the speed")
+    print("4. Custom speed factor")
+    choice = input("Select an option: ").strip()
+    if choice == '1':
+        speed_factor = 1/3
+    elif choice == '2':
+        speed_factor = 2
+    elif choice == '3':
+        speed_factor = 0.5
+    elif choice == '4':
+        speed = input("Enter the speed factor (e.g., 0.5 for half speed, 2 for double speed): ").strip()
+        try:
+            speed_factor = float(speed)
+        except ValueError:
+            logging.error("Invalid speed factor.")
+            return
+    else:
+        logging.error("Invalid choice.")
+        return
+    fps_options = ['30', '60', '120']
+    print("Select desired FPS (frames per second):")
+    for idx, fps in enumerate(fps_options, 1):
+        print(f"{idx}. {fps}")
+    fps_choice = input("Select an option: ").strip()
+    try:
+        fps_index = int(fps_choice) -1
+        fps_value = fps_options[fps_index]
+    except (IndexError, ValueError):
+        logging.warning("Invalid choice. Defaulting to 120 fps.")
+        fps_value = '120'
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Changing speed of video: {video_path}")
+        output_path = os.path.join(output_dir, f"speed_changed_{os.path.basename(video_path)}")
+        video_filter = f"setpts={1/speed_factor}*PTS,fps={fps_value}"
+        # Handle audio tempo adjustments
+        if 0.5 <= speed_factor <= 2.0:
+            audio_filter = f"atempo={speed_factor}"
+        else:
+            logging.error("Speed factor out of range for audio.")
+            continue
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-filter:v', video_filter,
+            '-filter:a', audio_filter,
+            '-preset', 'fast',
+            '-crf', '15',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-threads', '4',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Speed changed successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during speed change of {video_path}.")
+            print(result.stderr.decode())
+
+def change_resolution():
+    """Change the resolution of a video."""
+    video_paths = select_files("Select video files to change resolution")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    resolutions = {
+        '1': '1280x720',   # 720p
+        '2': '1920x1080',  # 1080p
+        '3': '3840x2160',  # 2160p
+        '4': '4096x2160'   # 4K
+    }
+    print("Select desired resolution:")
+    print("1. 720p")
+    print("2. 1080p (default)")
+    print("3. 2160p")
+    print("4. 4K")
+    choice = input("Select an option: ").strip()
+    resolution = resolutions.get(choice, resolutions['2'])  # Default to 1080p
+    enhance_option = input("Do you want to enable motion interpolation for smooth slow motion? (y/n): ").strip().lower()
+    if enhance_option == 'y':
+        # Add motion interpolation filter
+        interpolation_filter = "minterpolate='mi_mode=mci:mc_mode=aobmc:vsbmc=1'"
+    else:
+        interpolation_filter = ""
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Changing resolution of video: {video_path}")
+        output_path = os.path.join(output_dir, f"resolution_changed_{os.path.basename(video_path)}")
+        scale_filter = f"scale={resolution}:force_original_aspect_ratio=decrease"
+        video_filter = scale_filter
+        if interpolation_filter:
+            video_filter += f',{interpolation_filter}'
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-vf', video_filter,
+            '-preset', 'fast',
+            '-crf', '15',
+            '-c:v', 'libx264',
+            '-c:a', 'copy',
+            '-threads', '4',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Resolution changed successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during resolution change of {video_path}.")
+            print(result.stderr.decode())
+
+def convert_video():
+    """Convert a video to a different format."""
+    video_paths = select_files("Select video files to convert")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    # Determine available formats (simplified example)
+    available_formats = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv']
+    print("Available output formats:")
+    for idx, fmt in enumerate(available_formats, 1):
+        print(f"{idx}. {fmt}")
+    choice = input("Select an output format or enter custom format: ").strip()
+    if choice.isdigit() and 1 <= int(choice) <= len(available_formats):
+        output_format = available_formats[int(choice) -1]
+    else:
+        output_format = choice
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Converting video: {video_path}")
+        output_path = os.path.join(output_dir, f"{Path(video_path).stem}.{output_format}")
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-preset', 'fast',
+            '-crf', '15',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p10le',  # 10-bit depth
+            '-profile:v', 'high',
+            '-threads', '4',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Video converted successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during video conversion of {video_path}.")
+            print(result.stderr.decode())
+
+def hd_screencaps():
+    """Take high-definition screenshots from a video."""
+    video_paths = select_files("Select video files for screencaps")
+    if not video_paths:
+        return
+    output_dir = SCREENCAPS_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    print("Select screenshot option:")
+    print("1. Capture every frame")
+    print("2. Capture at intervals")
+    choice = input("Select an option: ").strip()
+    if choice == '1':
+        fps = None  # Will capture every frame
+    elif choice == '2':
+        interval = input("Enter the interval in seconds between screenshots: ").strip()
+        try:
+            interval = float(interval)
+            fps = 1 / interval
+        except ValueError:
+            logging.error("Invalid interval.")
+            return
+    else:
+        logging.error("Invalid choice.")
+        return
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Extracting HD screenshots from: {video_path}")
+        output_pattern = os.path.join(output_dir, f"{Path(video_path).stem}_%06d.png")
+        if fps:
+            cmd = [
+                'ffmpeg', '-i', video_path,
+                '-vf', f'fps={fps}',
+                '-vsync', 'vfr',
+                '-q:v', '2',
+                output_pattern
+            ]
+        else:
+            cmd = [
+                'ffmpeg', '-i', video_path,
+                '-vsync', 'vfr',
+                '-q:v', '2',
+                output_pattern
+            ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Screenshots extracted successfully to {output_dir}")
+        else:
+            logging.error(f"An error occurred during screenshot extraction of {video_path}.")
+            print(result.stderr.decode())
+
+def concatenate_videos():
+    """Concatenate multiple videos into one."""
+    video_paths = select_files("Select video files to concatenate")
+    if not video_paths or len(video_paths) < 2:
+        logging.error("You must select at least two video files.")
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "concatenated_video.mp4")
+    # Normalize videos first
+    normalized_videos = []
+    for video_path in video_paths:
+        normalized_video = os.path.join(output_dir, f"normalized_{os.path.basename(video_path)}")
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-preset', 'fast',
+            '-crf', '15',
+            '-threads', '4',
+            normalized_video
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            normalized_videos.append(normalized_video)
+        else:
+            logging.error(f"An error occurred during normalization of {video_path}.")
+            print(result.stderr.decode())
+            return
+    # Create a temporary file list for ffmpeg
+    with NamedTemporaryFile(mode='w+', delete=False) as temp_file:
+        for nv in normalized_videos:
+            temp_file.write(f"file '{nv}'\n")
+        temp_file_name = temp_file.name
+    logging.info("Concatenating videos...")
+    cmd = [
+        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_file_name,
+        '-c', 'copy', output_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    os.remove(temp_file_name)
+    # Remove normalized intermediate files
+    for nv in normalized_videos:
+        os.remove(nv)
+    if result.returncode == 0:
+        logging.info(f"Videos concatenated successfully: {output_path}")
+    else:
+        logging.error("An error occurred during concatenation.")
+        print(result.stderr.decode())
+
+def extract_audio():
+    """Extract audio from a video file."""
+    video_paths = select_files("Select video files to extract audio")
+    if not video_paths:
+        return
+    output_dir = MUSIC_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Extracting audio from: {video_path}")
+        output_path = os.path.join(output_dir, f"{Path(video_path).stem}.opus")
+        cmd = [
+            'ffmpeg', '-i', video_path,
+            '-vn',  # no video
+            '-c:a', 'libopus',
+            '-b:a', '128k',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Audio extracted successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during audio extraction of {video_path}.")
+            print(result.stderr.decode())
+
+def embed_audio():
+    """Embed audio into a video file."""
+    video_paths = select_files("Select video files to embed audio into")
+    if not video_paths:
+        return
+    audio_paths = select_files("Select audio files to embed")
+    if not audio_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    if len(video_paths) != len(audio_paths):
+        logging.error("The number of video files and audio files must be the same.")
+        return
+    for video_path, audio_path in zip(video_paths, audio_paths):
+        if not os.path.isfile(video_path):
+            logging.error(f"Video file not found: {video_path}")
+            continue
+        if not os.path.isfile(audio_path):
+            logging.error(f"Audio file not found: {audio_path}")
+            continue
+        logging.info(f"Embedding audio into video: {video_path}")
+        output_path = os.path.join(output_dir, f"audio_embedded_{os.path.basename(video_path)}")
+        cmd = [
+            'ffmpeg', '-i', video_path, '-i', audio_path,
+            '-c:v', 'copy', '-c:a', 'aac',
+            '-shortest',
+            output_path
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Audio embedded successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during audio embedding into {video_path}.")
+            print(result.stderr.decode())
+
+def edit_metadata():
+    """Edit metadata of video files."""
+    video_paths = select_files("Select video files to edit metadata")
+    if not video_paths:
+        return
+    output_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    # Define metadata fields to retain
+    retained_metadata_fields = ['title', 'artist', 'comment', 'genre']
+    metadata = {}
+    print("Enter metadata key-value pairs (leave key empty to finish):")
+    while True:
+        key = input("Key: ").strip()
+        if key == '':
+            break
+        if key not in retained_metadata_fields:
+            logging.warning(f"Field '{key}' is not a standard field and will not be retained.")
+            continue
+        value = input("Value: ").strip()
+        metadata[key] = value
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        logging.info(f"Editing metadata of video: {video_path}")
+        output_path = os.path.join(output_dir, f"metadata_edited_{os.path.basename(video_path)}")
+        cmd = ['ffmpeg', '-i', video_path, '-c', 'copy']
+        # Remove existing metadata
+        cmd.extend(['-map_metadata', '-1'])
+        # Add new metadata
+        for key, value in metadata.items():
+            cmd.extend(['-metadata', f'{key}={value}'])
+        cmd.append(output_path)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            logging.info(f"Metadata edited successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during metadata editing of {video_path}.")
+            print(result.stderr.decode())
+
+def generate_report():
+    """Generate a detailed report of video files."""
+    video_paths = select_files("Select video files to generate report")
+    if not video_paths:
+        return
+    output_dir = "/home/andro/"
+    for video_path in video_paths:
+        if not os.path.isfile(video_path):
+            logging.error(f"File not found: {video_path}")
+            continue
+        report_name = f"{Path(video_path).stem}_report.txt"
+        output_path = os.path.join(output_dir, report_name)
+        logging.info(f"Generating report for: {video_path}")
+        if shutil.which('mediainfo'):
+            cmd = ['mediainfo', video_path]
+        else:
+            cmd = ['ffprobe', '-v', 'error', '-show_format', '-show_streams', video_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        if result.returncode == 0:
+            with open(output_path, 'w') as f:
+                f.write(result.stdout)
+            logging.info(f"Report generated successfully: {output_path}")
+        else:
+            logging.error(f"An error occurred during report generation of {video_path}.")
+            print(result.stderr)
+
+def main():
+    """Main function to display menu and handle user input."""
+    check_dependencies()
+    while True:
+        print(Fore.CYAN + "\nVideo Processing Script")
+        print(Fore.CYAN + "=======================")
+        print(Fore.GREEN + "1. Analyze")
+        print("2. Autofix")
+        print("3. Normalize")
+        print("4. Change Speed")
+        print("5. Resolution")
+        print("6. Convert")
+        print("7. HD Screencaps")
+        print("8. Concatenate/Merge")
+        print("9. Extract Audio")
+        print("10. Embed Audio")
+        print("11. Metadata")
+        print("12. Report")
+        print("Q. Quit")
+
+        choice = input("Select an option: ").strip().lower()
+        if choice == '1':
+            analyze_video()
+        elif choice == '2':
+            autofix_video()
+        elif choice == '3':
+            normalize_video()
+        elif choice == '4':
+            change_speed()
+        elif choice == '5':
+            change_resolution()
+        elif choice == '6':
+            convert_video()
+        elif choice == '7':
+            hd_screencaps()
+        elif choice == '8':
+            concatenate_videos()
+        elif choice == '9':
+            extract_audio()
+        elif choice == '10':
+            embed_audio()
+        elif choice == '11':
+            edit_metadata()
+        elif choice == '12':
+            generate_report()
+        elif choice == 'q':
+            logging.info("Exiting...")
+            break
+        else:
+            logging.warning("Invalid choice. Please try again.")
+
+if __name__ == '__main__':
+    main()
