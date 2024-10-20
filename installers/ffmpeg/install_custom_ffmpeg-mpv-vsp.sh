@@ -37,7 +37,7 @@ check_status() {
 # --- // Verify Required Tools:
 verify_dependencies() {
   echo "Verifying required tools..." | tee -a "$BUILD_LOG"
-  REQUIRED_TOOLS=(git cmake make gcc g++ yasm pkg-config python3 meson ninja mercurial)
+  REQUIRED_TOOLS=(git cmake make gcc g++ yasm pkg-config python3 meson ninja)
   MISSING_TOOLS=()
   for TOOL in "${REQUIRED_TOOLS[@]}"; do
     if ! command -v "$TOOL" &> /dev/null; then
@@ -89,8 +89,7 @@ install_build_dependencies() {
     shine \
     vapoursynth \
     mediainfo \
-    fzf \
-    mercurial
+    fzf
 
   check_status
 
@@ -147,12 +146,19 @@ clone_and_build \
 echo "Building x265..." | tee -a "$BUILD_LOG"
 cd "$FFMPEG_SOURCES" || exit
 if [ ! -d "x265" ]; then
-  hg clone https://bitbucket.org/multicoreware/x265_git x265 2>&1 | tee -a "$BUILD_LOG"
+  git clone https://bitbucket.org/multicoreware/x265_git x265 2>&1 | tee -a "$BUILD_LOG"
   check_status
 fi
-cd x265/build/linux || exit
-rm -rf *  # Clean previous build files
-cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$FFMPEG_BUILD" -DCMAKE_INSTALL_BINDIR="$FFMPEG_BIN" -DENABLE_SHARED=ON -DENABLE_PIC=ON ../../source 2>&1 | tee -a "$BUILD_LOG"
+cd x265 || exit
+# Clean previous build if it exists
+if [ -d "build" ]; then
+  rm -rf build 2>&1 | tee -a "$BUILD_LOG"
+fi
+mkdir build
+cd build || exit
+cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$FFMPEG_BUILD" \
+  -DCMAKE_INSTALL_BINDIR="$FFMPEG_BIN" \
+  -DENABLE_SHARED=ON -DENABLE_PIC=ON ../source 2>&1 | tee -a "$BUILD_LOG"
 check_status
 make -j"$(nproc)" 2>&1 | tee -a "$BUILD_LOG"
 check_status
@@ -183,11 +189,25 @@ check_status
 meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
 check_status
 
-# --- // Build FFmpeg:
+# --- // Build FFmpeg (CLONING):
+#echo "Building FFmpeg..." | tee -a "$BUILD_LOG"
+#cd "$FFMPEG_SOURCES" || exit
+#if [ ! -d "ffmpeg" ]; then
+#  git clone git@git.ffmpeg.org:ffmpeg.fit ffmpeg 2>&1 | tee -a "$BUILD_LOG" # --- // GIT SSH (current)
+#git clone git://source.ffmpge.org/ffmpeg.git ffmpeg 2>&1 | tee -a "$BUILD_LOG" # --- // GIT PROTOCOL
+#https://github.com/FFmpeg/FFmpeg.git ffmpeg 2>&1 | tee -a "$BUILD_LOG" # --- // GIT MIRROR
+#  check_status
+#fi
+#cd ffmpeg || exit
+#if [ -f "config.h" ]; then
+#  make distclean 2>&1 | tee -a "$BUILD_LOG"
+#fi
+
+# --- // Build FFmpeg (SKIP CLONING TO USE TARBALL):
 echo "Building FFmpeg..." | tee -a "$BUILD_LOG"
 cd "$FFMPEG_SOURCES" || exit
 if [ ! -d "ffmpeg" ]; then
-  git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg 2>&1 | tee -a "$BUILD_LOG"
+  # git clone step skipped
   check_status
 fi
 cd ffmpeg || exit
@@ -373,28 +393,30 @@ cleanup_previous_installation() {
 
   # Remove build directories
   rm -rf "$FFMPEG_SOURCES"
-  rm -rf "$FFMPEG_BUILD"
   rm -rf "$MPV_BUILD_DIR"
   rm -rf "$VSP_PLUGIN_DIR"
-  rm -rf "$LOG_DIR"
   rm -rf "$HOME/yay"
 
   # Remove installed binaries
   rm -f "$FFMPEG_BIN/ffmpeg" "$FFMPEG_BIN/ffprobe" "$FFMPEG_BIN/mpv"
 
-  # Remove installed libraries
-  rm -rf "$FFMPEG_BUILD/lib"
-
-  # Remove installed includes
-  rm -rf "$FFMPEG_BUILD/include"
-
-  # Remove pkgconfig files
-  rm -rf "$FFMPEG_BUILD/lib/pkgconfig"
+  # Remove installed libraries and includes only if in home directory
+  if [[ "$FFMPEG_BUILD" == "$HOME"* ]]; then
+    rm -rf "$FFMPEG_BUILD/lib"
+    rm -rf "$FFMPEG_BUILD/include"
+    rm -rf "$FFMPEG_BUILD/lib/pkgconfig"
+  else
+    echo "FFMPEG_BUILD is not in home directory, skipping removal of $FFMPEG_BUILD" | tee -a "$BUILD_LOG"
+  fi
 
   # Update library cache
   sudo ldconfig
 
+  # Do not delete logs directory until after logging
   echo "Previous installations have been cleaned up." | tee -a "$BUILD_LOG"
+
+  # Remove logs directory
+  rm -rf "$LOG_DIR"
 }
 
 if [ "$1" == "--clean" ]; then

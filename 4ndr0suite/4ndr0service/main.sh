@@ -1,25 +1,31 @@
 #!/bin/bash
 
-# --- Main Script for Service Optimization Suite ---
+# File: 4ndr0service
+# Author: 4ndr0666
+# Date 10-20-24
 
-# Ensure common_functions.sh is sourced
-source "$(dirname "$(readlink -f "$0")")/common_functions.sh" || handle_error "Failed to source 'common_functions.sh'."
+# ======================================= // 4ndr0service //
+log_file="/home/andro/.local/share/logs/service_optimization.log"
 
-# Ensure controller.sh is sourced
-source "$(pkg_path)/controller.sh" || handle_error "Failed to source 'controller.sh'."
-
-# --- Function: pkg_path ---
-# Purpose: Determine the package path, handling symbolic links.
-pkg_path() {
-    if [[ -L "$0" ]]; then
-        dirname "$(readlink "$0")"
-    else
-        dirname "$(readlink -f "$0")"
-    fi
+log() {
+    local message="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$log_file"
 }
 
-# --- Function: check_optdepends ---
-# Purpose: Check if an optional dependency is installed.
+handle_error() {
+    local message="$1"
+    log "ERROR: $message"
+    exit 1
+}
+
+pkg_path() {
+	if [[ -L "$0" ]]; then
+		dirname "$(readlink $0)"
+	else
+		dirname "$0"
+	fi
+}
+
 check_optdepends() {
     if command -v "$1" &> /dev/null; then
         return 0
@@ -28,16 +34,12 @@ check_optdepends() {
     fi
 }
 
-# --- Function: fallback_view ---
-# Purpose: Fallback to default view if USER_INTERFACE setting is incorrect.
 fallback_view() {
     log "Incorrect USER_INTERFACE setting -- falling back to default."
     read -r -p "Press Enter to continue..." || true
     source "$(pkg_path)/view/dialog.sh" || handle_error "Failed to source 'dialog.sh'."
 }
 
-# --- Function: repair_settings ---
-# Purpose: Prompt user to repair settings if USER_INTERFACE is invalid.
 repair_settings() {
     if [[ -z "$USER_INTERFACE" ]]; then
         read -r -p "USER_INTERFACE setting is invalid. Would you like to repair settings? [y/N] " response
@@ -52,22 +54,32 @@ repair_settings() {
     fi
 }
 
-# --- Function: source_all_services ---
-# Purpose: Source all service optimization scripts.
+source_settings() {
+	source "$(pkg_path)/settings.sh"
+}
+
 source_all_services() {
-    local services_dir="$(pkg_path)/service"
-    for service_script in "$services_dir"/optimize_*.sh; do
-        if [[ -f "$service_script" ]]; then
-            source "$service_script" || handle_error "Failed to source '$service_script'."
-            log "Sourced service script: '$service_script'."
-        else
-            log "No service scripts found in '$services_dir'. Skipping."
-        fi
+    for script in $(pkg_path)/service/*.sh; do
+#        if [[ -f "$script" ]]; then
+        source "$script"
+#        else
+#            echo "No service scripts found in '$script'. Skipping."
+#        fi 
     done
 }
 
-# --- Function: source_views ---
-# Purpose: Source the appropriate view script based on USER_INTERFACE.
+#source_all_services() {
+#    local services_dir="$(pkg_path)/service"
+#    for service_script in "$services_dir"/optimize_*.sh; do
+#        if [[ -f "$service_script" ]]; then
+#            source "$service_script" || handle_error "Failed to source '$service_script'."
+#            log "Sourced service script: '$service_script'."
+#        else
+#            log "No service scripts found in '$services_dir'. Skipping."
+#        fi
+#    done
+#}
+
 source_views() {
     case "$USER_INTERFACE" in
         'cli')
@@ -80,12 +92,18 @@ source_views() {
             fallback_view
             ;;
     esac
+
+    execute_main
 }
 
 # --- Function: execute_main ---
 # Purpose: Execute the main controller and handle potential errors.
 execute_main() {
-    main_controller || log "WARNING: Some optimizations may have failed."
+    main
+    if [[ "$?" == 1 ]]; then
+        repair_settings
+    fi
+#    main_controller || log "WARNING: Some optimizations may have failed."
 }
 
 # --- Function: ensure_running_as_root ---
@@ -98,28 +116,16 @@ ensure_running_as_root() {
     fi
 }
 
-# --- Main Execution Flow ---
+
 main_execution_flow() {
-    ensure_running_as_root "$@"
-
-    # Source settings
+    ensure_running_as_root "$@"   
     source_settings || handle_error "Failed to source 'settings.sh'."
-
-    # Source all service scripts
     source_all_services
-
-    # Source controller
-    source_controller || handle_error "Failed to source 'controller.sh'."
-
-    # Handle different user interface options
+    source "$(pkg_path)/controller.sh" || handle_error "Failed to source 'controller.sh'."
+#   source_controller || handle_error "Failed to source 'controller.sh'."
     source_views
-
-    # Execute the main controller
-    execute_main
-
-    # Perform additional tasks or cleanup if necessary
     log "Service optimization process completed successfully."
 }
 
-# --- Execute the Main Execution Flow ---
 main_execution_flow "$@"
+

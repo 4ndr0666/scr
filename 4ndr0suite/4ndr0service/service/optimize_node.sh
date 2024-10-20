@@ -2,8 +2,6 @@
 
 # --- Node.js Environment Optimization Script ---
 
-# Ensure common_functions.sh is sourced
-source "$(dirname "$(readlink -f "$0")")/../common_functions.sh" || handle_error "Failed to source 'common_functions.sh'."
 
 # --- Function: optimize_node_service ---
 # Purpose: Optimize Node.js and npm environment by installing necessary tools, managing versions, and configuring settings.
