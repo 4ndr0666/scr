@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# This script sets the wallpaper using swaybg on Wayland/Wayfire.
+
+# Location of the wallpaper link
+bgloc="${XDG_DATA_HOME:-$HOME/.local/share}/bg"
+
+# Check the input type (image or directory)
+trueloc="$(readlink -f "$1")" &&
+case "$(file --mime-type -b "$trueloc")" in
+    image/* ) ln -sf "$trueloc" "$bgloc" && swaybg --output '*' --mode fill --image "$bgloc" && notify-send -i "$bgloc" "Wallpaper changed." ;;
+    inode/directory ) ln -sf "$(find "$trueloc" -iregex '.*.\(jpg\|jpeg\|png\|gif\)' -type f | shuf -n 1)" "$bgloc" && swaybg --output '*' --mode fill --image "$bgloc" && notify-send -i "$bgloc" "Random Wallpaper chosen." ;;
+    *) notify-send "🖼️ Error" "Not a valid image or directory." ; exit 1;;
+esac
+
+# If pywal is installed, update colorscheme
+if command -v wal >/dev/null 2>&1; then
+    wal -n -i "$(readlink -f "$bgloc")" -o "${XDG_CONFIG_HOME:-$HOME/.config}/wal/postrun" >/dev/null 2>&1
+fi
