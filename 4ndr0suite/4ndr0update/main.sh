@@ -2,28 +2,32 @@
 
 # Function to get the script path (detecting symlinks)
 pkg_path() {
-    dirname "$(readlink -f "$0")"
+	if [[ -L "$0" ]]; then
+		dirname "$(readlink $0)"
+	else
+		dirname "$0"
+	fi
 }
 
 # Check if an optional dependency is installed
 check_optdepends() {
-    if ! command -v "$1" &> /dev/null; then
-        echo "Error: $1 is not installed. Please install it before proceeding."
-        return 1
-    fi
-    return 0
+	if [[ -n "$(command -v $1)" ]]; then
+		return 0
+	else
+		return 1
+	fi
 }
 
 # Fallback view in case of incorrect USER_INTERFACE setting
 fallback_view() {
-    printf "\nIncorrect USER_INTERFACE setting -- falling back to default 'dialog' interface.\n" 1>&2
+    printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
     read
-    source "$(pkg_path)/view/dialog.sh"
+    source $(pkg_path)/view/dialog.sh
 }
 
 # Repair settings prompt
 repair_settings() {
-    read -r -p "Would you like to repair settings? [y/N]: "
+    read -r -p "Would you like to repair settings? [y/N]"
     if [[ "$REPLY" =~ [yY] ]]; then
         update_settings
     fi
@@ -31,7 +35,7 @@ repair_settings() {
 
 # Source settings file
 source_settings() {
-    source "$(pkg_path)/settings.sh"
+    source $(pkg_path)/settings.sh
 }
 
 # Dynamically source all service scripts
@@ -43,7 +47,7 @@ source_service() {
 
 # Source the controller script
 source_controller() {
-    source "$(pkg_path)/controller.sh"
+    source $(pkg_path)/controller.sh
 }
 
 # Execute the main function
@@ -54,12 +58,15 @@ execute_main() {
     fi
 }
 
-# Ensure the script is run as root, else re-run with sudo
-if [[ "$EUID" -ne 0 ]]; then
-    echo "Re-running the script with sudo privileges..."
+# --- // 4ndr0 version:
+if [ "$(id -u)" -ne 0 ]; then
     sudo "$0" "$@"
     exit $?
 fi
+sleep 1
+echo "💀WARNING💀 - you are now operating as root..."
+sleep 1
+echo
 
 # Main flow
 if [[ "$EUID" -eq 0 ]]; then
@@ -70,10 +77,10 @@ if [[ "$EUID" -eq 0 ]]; then
     # Load the appropriate user interface
     case "$USER_INTERFACE" in
         'cli')
-            source "$(pkg_path)/view/cli.sh"
+	    source $(pkg_path)/view/cli.sh
             ;;
         'dialog')
-            source "$(pkg_path)/view/dialog.sh"
+	    source $(pkg_path)/view/dialog.sh
             ;;
         *)
             fallback_view

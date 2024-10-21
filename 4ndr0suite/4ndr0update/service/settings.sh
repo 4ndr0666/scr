@@ -1,13 +1,14 @@
 #!/bin/bash
-# settings.sh
-# Script for modifying the settings of the 4ndr0update tool using a chosen text editor.
 
-# Function to modify settings using an appropriate text editor
 modify_settings() {
     # Check if EDITOR is set and valid
-    if [[ -n "$EDITOR" && $(command -v "$EDITOR") ]]; then
-        execute_editor "$EDITOR"
-    elif [[ "$SETTINGS_EDITOR" =~ (vim|nano|emacs|micro) && $(command -v "$SETTINGS_EDITOR") ]]; then
+    if [[ -z "$EDITOR" && -n "$SUDO_USER" ]]; then
+            EDITOR="$(sudo -i -u $SUDO_USER env | awk '/^EDITOR=/{ print substr($0, 8) }')"
+    fi
+    
+    if [[ -n "$EDITOR" ]]; then
+            execute_editor "$EDITOR" "\nEDITOR environment variable of $EDITOR is not valid"
+    elif [[ "$SETTINGS_EDITOR" =~ (vim|neovim|nano|emacs|micro|lite-xl) && $(command -v "$SETTINGS_EDITOR") ]]; then
         execute_editor "$SETTINGS_EDITOR"
     else
         fallback_editor
@@ -32,14 +33,16 @@ execute_editor() {
 
 # Function to prompt user for available editors if both EDITOR and SETTINGS_EDITOR fail
 fallback_editor() {
-    echo "No valid editor found. Please select an editor to use:"
-    select editor in "vim" "nano" "micro" "emacs" "Exit"; do
+    printf "\nNo valid editor found. Please select an editor to use\n" 1>&2
+    select editor in "vim" "neovim" "nano" "emacs" "micro" "lite-xl" "Exit"; do
         case $REPLY in
             1) vim "$(pkg_path)/settings.sh"; break;;
-            2) nano "$(pkg_path)/settings.sh"; break;;
-            3) micro "$(pkg_path)/settings.sh"; break;;
-            4) emacs "$(pkg_path)/settings.sh"; break;;
-            5) echo "Exiting without modifying settings."; exit 0;;
+            2) neovimn "$(pkg_path)/settings.sh"; break;;
+            3) nano "$(pkg_path)/settings.sh"; break;;
+	    4) emacs "$(pkg_path)/settings.sh"; break;;
+            5) micro "$(pkg_path)/settings.sh"; break;;
+            6) lite-xl "$(pkg_path)/settings.sh"; break;;
+            7) echo "Exiting without modifying settings."; exit 0;;
             *) echo "Invalid selection. Please choose again.";;
         esac
     done

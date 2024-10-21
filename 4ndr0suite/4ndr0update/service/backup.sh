@@ -1,11 +1,11 @@
 #!/bin/bash
 
-LOG_FILE="/var/log/system_backup.log"
+LOG_FILE="/var/log/4ndr0update_backup.log"
 
 # Function to log messages
 log_message() {
     local message="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    printf "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
 }
 
 # Function to check free space at the backup location
@@ -53,22 +53,22 @@ execute_backup() {
     if [[ -d "$BACKUP_LOCATION" ]]; then
         read -r -p "Do you want to backup the system to $BACKUP_LOCATION? [y/N] "
         if [[ "$REPLY" =~ [yY] ]]; then
-            check_free_space || return 1
+#            check_free_space || return 1
 
-            log_message "Starting system backup..."
+            log_message "\nStarting system backup...\n"
             rsync -aAXHS --info=progress2 --delete \
             --exclude-from <(printf '%s\n' "${BACKUP_EXCLUDE[@]}") \
             --exclude={"/swapfile","/lost+found","$BACKUP_LOCATION"} \
             / "$BACKUP_LOCATION" || { log_message "Error: Backup failed."; return 1; }
 
             touch "$BACKUP_LOCATION/verified_backup_image.lock"
-            log_message "Backup completed at $BACKUP_LOCATION."
+            log_message "Backup completed at $BACKUP_LOCATION\n"
 
             generate_backup_hash
         fi
     else
-        log_message "Error: $BACKUP_LOCATION is not an existing directory."
-        read -r -p "Do you want to create the backup directory at $BACKUP_LOCATION? [y/N] "
+        log_message "\nError: $BACKUP_LOCATION is not an existing directory\n"
+        read -r -p "Do you want to create the backup directory at $BACKUP_LOCATION? [y/N]"
         if [[ "$REPLY" =~ [yY] ]]; then
             mkdir -p "$BACKUP_LOCATION"
             execute_backup
@@ -78,14 +78,14 @@ execute_backup() {
 
 # Function to execute the system restore
 execute_restore() {
-    read -r -p "Do you want to restore the system from $BACKUP_LOCATION? [y/N] "
+    read -r -p "Do you want to restore the system from $BACKUP_LOCATION? [y/N]"
     if [[ "$REPLY" =~ [yY] ]]; then
         if [[ -f "$BACKUP_LOCATION/verified_backup_image.lock" ]]; then
-            log_message "Starting system restore..."
+            log_message "\nStarting system restore...\n"
 
             verify_backup_integrity
             if [[ $? -ne 0 ]]; then
-                log_message "Error: Backup integrity verification failed. Aborting restore."
+                log_message "\nError: Backup integrity verification failed. Aborting restore\n"
                 return 1
             fi
 
@@ -117,6 +117,6 @@ dry_run() {
         --exclude={"/swapfile","/lost+found","/verified_backup_image.lock","$BACKUP_LOCATION"} \
         "$BACKUP_LOCATION/" /
     else
-        log_message "Skipping dry run."
+        log_message "\nSkipping dry run\n"
     fi
 }

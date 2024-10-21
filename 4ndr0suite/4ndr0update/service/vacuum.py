@@ -9,9 +9,11 @@ import stat
 import time
 import logging
 import datetime
-import itertools
-import threading
+import pexpect
+import re
 from functools import partial
+import threading
+import itertools
 from contextlib import contextmanager
 
 # Set up basic logging configuration
@@ -32,7 +34,7 @@ INFO = "➡️"
 COLORS = {
     "red": "\033[0;31m",
     "GREEN": "\033[38;2;57;255;20m",  # Soft green
-    "cyan": "\033[38;2;21;255;255m",  # #15FFFF
+    "cyan": "\033[38;2;21;255;255m",  # cyan
     "yellow": "\033[0;33m",  # Yellow for warnings
     "bold": "\033[1m",
     "reset": "\033[0m",
@@ -320,7 +322,7 @@ def install_missing_dependency(dependency, interactive=False):
         dependency (str): Name of the missing dependency.
         interactive (bool): If True, prompt the user before installing the dependency.
     """
-    log_and_print(f"{INFO} Attempting to verify or install missing dependency: {format_message(dependency, '#15FFFF')}", 'info')
+    log_and_print(f"{INFO} Attempting to verify or install missing dependency: {format_message(dependency, 'cyan')}", 'info')
 
     try:
         # Check if the package is installed
@@ -329,43 +331,43 @@ def install_missing_dependency(dependency, interactive=False):
         
         if result.returncode == 0:
             # If installed, check file integrity and update the package if needed
-            log_and_print(f"{INFO} {format_message(dependency, '#15FFFF')} is installed. Verifying file integrity...", 'info')
+            log_and_print(f"{INFO} {format_message(dependency, 'cyan')} is installed. Verifying file integrity...", 'info')
 
             integrity_check_cmd = ["sudo", "pacman", "-Qkk", dependency]
             integrity_result = subprocess.run(integrity_check_cmd, capture_output=True, text=True)
 
             if "0 missing files" not in integrity_result.stdout:
-                log_and_print(f"{WARN} Missing or mismatched files detected for {format_message(dependency, '#15FFFF')}. Reinstalling package...", 'warning')
+                log_and_print(f"{WARN} Missing or mismatched files detected for {format_message(dependency, 'cyan')}. Reinstalling package...", 'warning')
                 
                 # Reinstall the package if integrity issues are found
                 reinstall_cmd = ["sudo", "pacman", "-S", "--noconfirm", "--needed", dependency]
                 reinstall_result = subprocess.run(reinstall_cmd, capture_output=True, text=True)
 
                 if reinstall_result.returncode == 0:
-                    log_and_print(f"{SUCCESS} Successfully reinstalled {format_message(dependency, '#15FFFF')} to fix integrity issues.", 'info')
+                    log_and_print(f"{SUCCESS} Successfully reinstalled {format_message(dependency, 'cyan')} to fix integrity issues.", 'info')
                 else:
-                    log_and_print(f"{FAILURE} Failed to reinstall {format_message(dependency, '#15FFFF')}.", 'error')
+                    log_and_print(f"{FAILURE} Failed to reinstall {format_message(dependency, 'cyan')}.", 'error')
             else:
-                log_and_print(f"{SUCCESS} {format_message(dependency, '#15FFFF')} passed integrity check. No issues found.", 'info')
+                log_and_print(f"{SUCCESS} {format_message(dependency, 'cyan')} passed integrity check. No issues found.", 'info')
 
             # Ensure the package is fully up to date
-            log_and_print(f"{INFO} Ensuring {format_message(dependency, '#15FFFF')} is up to date...", 'info')
+            log_and_print(f"{INFO} Ensuring {format_message(dependency, 'cyan')} is up to date...", 'info')
             update_cmd = ["sudo", "pacman", "-Sy", "--noconfirm", dependency]
             update_result = subprocess.run(update_cmd, capture_output=True, text=True)
             
             if update_result.returncode == 0:
-                log_and_print(f"{SUCCESS} {format_message(dependency, '#15FFFF')} is up to date.", 'info')
+                log_and_print(f"{SUCCESS} {format_message(dependency, 'cyan')} is up to date.", 'info')
             else:
-                log_and_print(f"{FAILURE} Failed to update {format_message(dependency, '#15FFFF')}.", 'error')
+                log_and_print(f"{FAILURE} Failed to update {format_message(dependency, 'cyan')}.", 'error')
 
         else:
             # If not installed, check if it's an AUR package and handle installation accordingly
-            log_and_print(f"{INFO} {format_message(dependency, '#15FFFF')} is not installed. Installing...", 'info')
+            log_and_print(f"{INFO} {format_message(dependency, 'cyan')} is not installed. Installing...", 'info')
             
             if interactive:
-                user_input = input(f"Do you want to install {format_message(dependency, '#15FFFF')}? [y/N]: ").strip().lower()
+                user_input = input(f"Do you want to install {format_message(dependency, 'cyan')}? [y/N]: ").strip().lower()
                 if user_input != 'y':
-                    log_and_print(f"{INFO} Installation of {format_message(dependency, '#15FFFF')} canceled by user.", 'info')
+                    log_and_print(f"{INFO} Installation of {format_message(dependency, 'cyan')} canceled by user.", 'info')
                     return
 
             # Attempt to install the package via pacman or AUR helper
@@ -373,18 +375,18 @@ def install_missing_dependency(dependency, interactive=False):
             install_result = subprocess.run(install_cmd, capture_output=True, text=True)
 
             if install_result.returncode == 0:
-                log_and_print(f"{SUCCESS} Successfully installed {format_message(dependency, '#15FFFF')}.", 'info')
+                log_and_print(f"{SUCCESS} Successfully installed {format_message(dependency, 'cyan')}.", 'info')
             else:
-                log_and_print(f"{FAILURE} Failed to install {format_message(dependency, '#15FFFF')} via pacman. Checking AUR...", 'error')
+                log_and_print(f"{FAILURE} Failed to install {format_message(dependency, 'cyan')} via pacman. Checking AUR...", 'error')
                 
                 if check_aur_helper_installed():
                     aur_install_result = install_aur_package(dependency)
                     if aur_install_result:
-                        log_and_print(f"{SUCCESS} Successfully installed {format_message(dependency, '#15FFFF')} from AUR.", 'info')
+                        log_and_print(f"{SUCCESS} Successfully installed {format_message(dependency, 'cyan')} from AUR.", 'info')
                     else:
-                        log_and_print(f"{FAILURE} Failed to install {format_message(dependency, '#15FFFF')} from AUR.", 'error')
+                        log_and_print(f"{FAILURE} Failed to install {format_message(dependency, 'cyan')} from AUR.", 'error')
                 else:
-                    log_and_print(f"{FAILURE} No AUR helper found. Cannot install {format_message(dependency, '#15FFFF')}.", 'error')
+                    log_and_print(f"{FAILURE} No AUR helper found. Cannot install {format_message(dependency, 'cyan')}.", 'error')
 
     except subprocess.CalledProcessError as e:
         log_and_print(f"{FAILURE} Error occurred during installation or verification: {str(e)}", 'error')
@@ -400,7 +402,7 @@ def check_aur_helper_installed():
     aur_helpers = ["yay", "paru", "trizen"]
     for helper in aur_helpers:
         if shutil.which(helper):
-            log_and_print(f"{INFO} AUR helper {format_message(helper, '#15FFFF')} found.", 'info')
+            log_and_print(f"{INFO} AUR helper {format_message(helper, 'cyan')} found.", 'info')
             return True
     log_and_print(f"{FAILURE} No AUR helper found.", 'error')
     return False
@@ -419,7 +421,7 @@ def install_aur_package(dependency):
     aur_helpers = ["yay", "paru", "trizen"]
     for helper in aur_helpers:
         if shutil.which(helper):
-            log_and_print(f"{INFO} Installing {format_message(dependency, '#15FFFF')} from AUR using {format_message(helper, '#15FFFF')}...", 'info')
+            log_and_print(f"{INFO} Installing {format_message(dependency, 'cyan')} from AUR using {format_message(helper, 'cyan')}...", 'info')
             install_cmd = [helper, "-S", "--noconfirm", dependency]
             result = subprocess.run(install_cmd, capture_output=True, text=True)
             return result.returncode == 0
@@ -447,7 +449,7 @@ def manage_cron_job(log_file):
         else:
             log_and_print(f"{INFO} Existing cron jobs:", 'info')
             for i, cron in enumerate(existing_crons, 1):
-                log_and_print(f"{i}. {format_message(cron, '#15FFFF')}", 'info')
+                log_and_print(f"{i}. {format_message(cron, 'cyan')}", 'info')
 
         # Interactive options: Add, Edit, Delete
         choice = prompt_with_timeout(
@@ -594,10 +596,10 @@ def validate_cron_syntax(cron_entry):
     """
     cron_pattern = r'^(\*|[0-5]?\d) (\*|[01]?\d|2[0-3]) (\*|[0-2]?\d|3[01]) (\*|[01]?\d|2[0-3]) (\*|[0-6]) .+$'
     if re.match(cron_pattern, cron_entry):
-        log_and_print(f"{SUCCESS} Cron syntax validated for {format_message(cron_entry, '#15FFFF')}.", 'info')
+        log_and_print(f"{SUCCESS} Cron syntax validated for {format_message(cron_entry, 'cyan')}.", 'info')
         return True
     else:
-        log_and_print(f"{FAILURE} Invalid cron syntax: {format_message(cron_entry, '#15FFFF')}.", 'error')
+        log_and_print(f"{FAILURE} Invalid cron syntax: {format_message(cron_entry, 'cyan')}.", 'error')
         return False
 
 def remove_broken_symlinks(log_file):
@@ -634,7 +636,7 @@ def remove_broken_symlinks(log_file):
             if broken_links:
                 log_and_print(f"{INFO} Broken symbolic links found:", 'info')
                 for i, link in enumerate(broken_links, 1):
-                    log_and_print(f"{i}. {format_message(link, '#15FFFF')}", 'info')
+                    log_and_print(f"{i}. {format_message(link, 'cyan')}", 'info')
 
                 # Offer backup before deletion
                 backup_choice = prompt_with_timeout("Do you want to back up the list of broken symlinks before deletion? [y/N]: ", timeout=10, default='n').lower()
@@ -646,7 +648,7 @@ def remove_broken_symlinks(log_file):
                     if confirm_deletion(link):
                         try:
                             os.remove(link)
-                            log_and_print(f"{SUCCESS} Deleted broken symlink: {format_message(link, '#15FFFF')}", 'info')
+                            log_and_print(f"{SUCCESS} Deleted broken symlink: {format_message(link, 'cyan')}", 'info')
                             deleted_links.append(link)
                         except OSError as e:
                             log_and_print(f"{FAILURE} Error deleting broken symlink {link}: {e}", 'error')
@@ -702,13 +704,13 @@ def clean_old_kernels(log_file):
 
                     # Skip the currently running kernel
                     if current_kernel_major_version not in pkg_name:
-                        log_and_print(f"{INFO} Old kernel version detected: {format_message(pkg_name, '#15FFFF')}", 'info')
+                        log_and_print(f"{INFO} Old kernel version detected: {format_message(pkg_name, 'cyan')}", 'info')
                         kernels_to_remove.append(pkg_name)
 
             if kernels_to_remove:
                 log_and_print(f"{INFO} The following kernels can be removed:", 'info')
                 for i, kernel in enumerate(kernels_to_remove, 1):
-                    log_and_print(f"{i}. {format_message(kernel, '#15FFFF')}", 'info')
+                    log_and_print(f"{i}. {format_message(kernel, 'cyan')}", 'info')
 
                 # Backup option before removing old kernels
                 backup_choice = prompt_with_timeout("Do you want to back up the old kernels before removal? [y/N]: ", timeout=10, default='n').lower()
@@ -740,14 +742,14 @@ def backup_old_kernels(kernels_to_remove):
     os.makedirs(backup_dir, exist_ok=True)
 
     for kernel in kernels_to_remove:
-        log_and_print(f"{INFO} Backing up {format_message(kernel, '#15FFFF')} to {backup_dir}", 'info')
+        log_and_print(f"{INFO} Backing up {format_message(kernel, 'cyan')} to {backup_dir}", 'info')
         try:
             # Use rsync or cp to backup kernel-related files (initramfs, vmlinuz, etc.)
             kernel_files = subprocess.check_output(["find", "/boot", "-name", f"*{kernel}*"], text=True).strip().split('\n')
             for kernel_file in kernel_files:
                 if kernel_file:
                     shutil.copy(kernel_file, backup_dir)
-                    log_and_print(f"{SUCCESS} Backed up {format_message(kernel_file, '#15FFFF')}", 'info')
+                    log_and_print(f"{SUCCESS} Backed up {format_message(kernel_file, 'cyan')}", 'info')
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error backing up kernel files for {kernel}: {e.stderr.strip()}", 'error')
 
@@ -776,7 +778,7 @@ def vacuum_journalctl(log_file):
                     timeout=10,
                     default='1d'
                 )
-                log_and_print(f"{INFO} Vacuuming journalctl logs older than {format_message(vacuum_time, '#15FFFF')}...", 'info')
+                log_and_print(f"{INFO} Vacuuming journalctl logs older than {format_message(vacuum_time, 'cyan')}...", 'info')
                 result = subprocess.run(
                     ["sudo", "journalctl", f"--vacuum-time={vacuum_time}"], 
                     check=True, capture_output=True, text=True
@@ -789,7 +791,7 @@ def vacuum_journalctl(log_file):
                     timeout=10,
                     default='200M'
                 )
-                log_and_print(f"{INFO} Vacuuming journalctl logs to reduce total size to {format_message(vacuum_size, '#15FFFF')}...", 'info')
+                log_and_print(f"{INFO} Vacuuming journalctl logs to reduce total size to {format_message(vacuum_size, 'cyan')}...", 'info')
                 result = subprocess.run(
                     ["sudo", "journalctl", f"--vacuum-size={vacuum_size}"], 
                     check=True, capture_output=True, text=True
@@ -844,9 +846,9 @@ def clear_cache(log_file):
                 for browser_dir in browser_cache_dirs:
                     if os.path.exists(browser_dir):
                         shutil.rmtree(browser_dir, ignore_errors=True)
-                        log_and_print(f"{SUCCESS} Cleared cache for {format_message(browser_dir, '#15FFFF')}", 'info')
+                        log_and_print(f"{SUCCESS} Cleared cache for {format_message(browser_dir, 'cyan')}", 'info')
                     else:
-                        log_and_print(f"{INFO} No cache found for {format_message(browser_dir, '#15FFFF')}", 'info')
+                        log_and_print(f"{INFO} No cache found for {format_message(browser_dir, 'cyan')}", 'info')
 
             # Option 3: Clear font cache
             if cache_choice == '3' or cache_choice == '4':
@@ -905,11 +907,11 @@ def clear_trash(log_file):
             if os.path.exists(path):
                 try:
                     subprocess.run(["sudo", "rm", "-rf", path], check=True)
-                    log_and_print(f"{SUCCESS} Trash cleared for path: {format_message(path, '#15FFFF')}.", 'info')
+                    log_and_print(f"{SUCCESS} Trash cleared for path: {format_message(path, 'cyan')}.", 'info')
                 except subprocess.CalledProcessError as e:
                     log_and_print(f"{FAILURE} Error: Failed to clear trash for path {path}: {e.stderr.strip()}", 'error')
             else:
-                log_and_print(f"{FAILURE} Path {format_message(path, '#15FFFF')} does not exist.", 'error')
+                log_and_print(f"{FAILURE} Path {format_message(path, 'cyan')} does not exist.", 'error')
 
 def optimize_databases(log_file):
     """
@@ -1729,7 +1731,7 @@ def configure_zram():
             mem_total_cmd = "awk '/MemTotal/ {print int($2 * 1024 * 0.25)}' /proc/meminfo"
             mem_total_output = subprocess.check_output(mem_total_cmd, shell=True).strip()
             mem_total = int(mem_total_output)
-            log_and_print(f"Calculated ZRam size: {format_message(str(mem_total), '#15FFFF')} bytes", 'info')
+            log_and_print(f"Calculated ZRam size: {format_message(str(mem_total), 'cyan')} bytes", 'info')
 
             # Find or create the ZRam device
             try:
@@ -1745,11 +1747,11 @@ def configure_zram():
                 log_and_print(f"{SUCCESS} Created new ZRam device: {zram_device}", 'info')
 
             # Set up ZRam as swap
-            log_and_print(f"Setting up {format_message(zram_device, '#15FFFF')} as swap...", 'info')
+            log_and_print(f"Setting up {format_message(zram_device, 'cyan')} as swap...", 'info')
             subprocess.run(["sudo", "mkswap", zram_device], check=True)
             subprocess.run(["sudo", "swapon", zram_device, "-p", "32767"], check=True)
 
-            log_and_print(f"{SUCCESS} ZRam configured successfully on {zram_device} with size {format_message(str(mem_total), '#15FFFF')} bytes.", 'info')
+            log_and_print(f"{SUCCESS} ZRam configured successfully on {zram_device} with size {format_message(str(mem_total), 'cyan')} bytes.", 'info')
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error configuring ZRam: {str(e)}", 'error')
     else:
@@ -1794,11 +1796,11 @@ def disable_unused_services(log_file):
                 subprocess.run(["sudo", "systemctl", "disable", service], check=True)
                 subprocess.run(["sudo", "systemctl", "stop", service], check=True)
                 subprocess.run(["sudo", "systemctl", "mask", service], check=True)
-                log_and_print(f"{SUCCESS} Disabled and masked {format_message(service, '#15FFFF')}.", 'info')
+                log_and_print(f"{SUCCESS} Disabled and masked {format_message(service, 'cyan')}.", 'info')
             else:
                 log_and_print(f"{INFO} {service} is already disabled.", 'info')
         except subprocess.CalledProcessError as e:
-            log_and_print(f"{FAILURE} Error: Failed to disable {format_message(service, '#15FFFF')}: {e.stderr.strip()}", 'error')
+            log_and_print(f"{FAILURE} Error: Failed to disable {format_message(service, 'cyan')}: {e.stderr.strip()}", 'error')
 
 def run_all_tasks(log_file):
     """

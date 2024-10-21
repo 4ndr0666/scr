@@ -6,7 +6,7 @@
 export USER_INTERFACE='cli'
 
 # Editor used to modify settings (vim, nano, micro)
-export SETTINGS_EDITOR='micro'
+export SETTINGS_EDITOR='lite-xl'
 
 # Country to generate the mirror list for
 export MIRRORLIST_COUNTRY='United States'
@@ -25,7 +25,7 @@ export AUR_DIR="/home/build"
 export AUR_UPGRADE=true
 
 # Whitelist of AUR packages that should not show up as dropped packages
-export AUR_WHITELIST=()
+export AUR_WHITELIST=("ffmpeg" "ffpmeg-full-git" "ffmpeg-git" "expressvpn")
 
 # Example:
 # export AUR_WHITELIST=("yay" "paru" "spotify")

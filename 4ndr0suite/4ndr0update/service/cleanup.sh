@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# Log file for cleanup operations
-CLEANUP_LOG="/var/log/4ndr0update_cleanup.log"
+# Function to log cleanup actions
+log_cleanup() {
+    local log_file="/var/log/4ndr0update_cleanup.log"
+    echo "$(date): $1" >> "$log_file"
+}
 
 # Function to show a spinner
 spinner() {
@@ -62,11 +65,10 @@ remove_orphaned_packages() {
 # Function to clean up the package cache
 clean_package_cache() {
     printf "\n"
-    read -r -p "Do you want to clean up the package cache? [y/N] "
+    read -r -p "Do you want to clean up the package cache? [y/N]"
     if [[ "$REPLY" =~ [yY] ]]; then
         printf "Cleaning up the package cache...\n"
         if paccache -r; then
-            printf "...Package cache cleaned up successfully.\n"
             log_cleanup "Cleaned up package cache."
         else
             printf "...Failed to clean up the package cache. Check logs for details.\n"
@@ -96,7 +98,7 @@ clean_broken_symlinks() {
         if [[ "${broken_symlinks[*]}" ]]; then
             printf "BROKEN SYMLINKS FOUND:\n"
             printf '%s\n' "${broken_symlinks[@]}"
-            read -r -p "Do you want to remove the broken symlinks above? [y/N] "
+            read -r -p "Do you want to remove the broken symlinks above? [y/N]"
             if [[ "$REPLY" =~ [yY] ]]; then
                 # Handle removal failure by skipping problematic symlinks
                 for symlink in "${broken_symlinks[@]}"; do
@@ -130,8 +132,3 @@ clean_old_config() {
     printf "$user_home/.local/share/\n"
 }
 
-# Function to log cleanup actions
-log_cleanup() {
-    local log_file="/var/log/4ndr0update_cleanup.log"
-    echo "$(date): $1" >> "$log_file"
-}

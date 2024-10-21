@@ -1,8 +1,4 @@
 #!/bin/bash
-# Unified Arch Linux update script with integrated configuration, package checks, and dependency verification
-
-# Pacman Configuration
-PACMAN_CONF="/etc/pacman.conf"
 
 # Maximum retries for system commands
 MAX_RETRIES=3
@@ -21,19 +17,6 @@ retry_command() {
     done
 }
 
-# Function to update pacman.conf with necessary settings
-update_pacman_conf() {
-    if ! grep -q "ParallelDownloads = 5" "$PACMAN_CONF"; then
-        sudo sed -i '/^#ParallelDownloads =/c\ParallelDownloads = 5' "$PACMAN_CONF"
-        echo "Enabled parallel downloads in pacman.conf"
-    fi
-    sudo sed -i '/^#Color/c\Color' "$PACMAN_CONF"
-    sudo sed -i '/^#CheckSpace/c\CheckSpace' "$PACMAN_CONF"
-    sudo sed -i '/^#ILoveCandy/c\ILoveCandy' "$PACMAN_CONF"
-    echo "Pacman configuration updated for ParallelDownloads, Color, CheckSpace, and ILoveCandy."
-}
-
-# Ensure Reflector is set up correctly
 configure_reflector() {
     if ! systemctl is-enabled reflector.timer > /dev/null 2>&1; then
         sudo systemctl enable --now reflector.timer
@@ -99,9 +82,9 @@ rebuild_aur() {
     printf "\n"
     read -r -p "Do you want to rebuild all AUR packages using $AUR_HELPER? [y/N] "
     if [[ "$REPLY" =~ [yY] ]]; then
-        echo "Rebuilding AUR packages with $AUR_HELPER..."
+        printf "Rebuilding AUR packages with $AUR_HELPER..."
         retry_command sudo -u "$SUDO_USER" "$AUR_HELPER" -Syu --noconfirm
-        echo "...AUR packages rebuilt."
+        printf "...AUR packages rebuilt."
     fi
 }
 
@@ -118,16 +101,12 @@ system_update() {
 
     ensure_package_installed "powerpill"
     check_and_install_dependencies "powerpill"
-
-    echo "Updating package database..."
+	
+    printf "\nPerforming system upgrade...\n"
     retry_command sudo pacman -Sy
-
-    echo "Upgrading system packages with powerpill..."
     retry_command sudo powerpill -Su
-
-    echo "Upgrading AUR packages with $AUR_HELPER..."
-    retry_command sudo -u "$SUDO_USER" "$AUR_HELPER" -Syu --noconfirm --needed --refresh --sysupgrade
-    echo "...AUR packages upgraded."
+    retry_command yay -Su --noconfirm --needed --refresh --sysupgrade
+    printf "System updated!\n"
 }
 
 # Elevate privileges if not root
