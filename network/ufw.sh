@@ -149,7 +149,6 @@ enhance_network_performance() {
     {
         echo 'net.core.rmem_max=16777216'
         echo 'net.core.wmem_max=16777216'
-	echo 'net.ipv4.conf.all.rp_filter'
         echo 'net.ipv4.tcp_rmem=4096 87380 16777216'
         echo 'net.ipv4.tcp_wmem=4096 65536 16777216'
         echo 'net.ipv4.tcp_window_scaling=1'

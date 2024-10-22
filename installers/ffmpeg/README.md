@@ -1,4 +1,4 @@
-### Custom FFmpeg, Mpv and vapoursynth installation
+### Custom FFmpeg, Svp, Mpv and Vapoursynth installation script
 
-1. Ensure the ffmpeg.conf is placed inside /etc/ld.so.conf.d/
+1. Ensure the ffmpeg.conf file is placed inside /etc/ld.so.conf.d/
 

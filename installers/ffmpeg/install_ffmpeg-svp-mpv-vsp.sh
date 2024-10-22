@@ -69,11 +69,12 @@ verify_dependencies() {
   fi
 }
 
+
 # --- // Install Build Dependencies:
 install_build_dependencies() {
   echo "Installing build dependencies..." | tee -a "$BUILD_LOG"
   sudo pacman -Sy --needed --noconfirm \
-    autoconf automake cmake extra-cmake-modules git gtk3 \
+    base-devel git autoconf automake cmake extra-cmake-modules \
     libtool nasm yasm pkgconf \
     bzip2 fontconfig freetype2 fribidi gmp gnutls \
     gsm jack lame libass libavc1394 libbluray libdrm \
@@ -92,12 +93,24 @@ install_build_dependencies() {
     xvidcore \
     srt \
     harfbuzz libxrandr libxinerama libxi libxcursor \
-    libpulse alsa-lib
+    libpulse alsa-lib \
+    meson ninja \
+    shine \
+    vapoursynth \
+    mediainfo \
+    fzf
 
   check_status
 
   echo "Installing AUR packages..." | tee -a "$BUILD_LOG"
-  yay -Sy --needed --noconfirm fdk-aac vmaf
+  yay -Sy --needed --noconfirm \
+    svp-bin \
+    vapoursynth-plugin-svpflow2-bin \
+    vapoursynth-plugin-mvtools \
+    vapoursynth-plugin-vivtc \
+    vapoursynth-plugin-ffms2 \
+    vapoursynth-plugin-neo_f3kdb-git
+
   check_status
 }
 
@@ -281,7 +294,7 @@ build_ffmpeg() {
     --enable-version3 \
     --enable-libvmaf \
     --enable-vaapi \
-    --enable-libmfx \
+    --enable-libvpl
     --enable-opencl \
     --enable-opengl \
     --enable-libshaderc \
@@ -307,6 +320,8 @@ build_ffmpeg() {
     --enable-libxml2 \
     --enable-libfontconfig \
     --enable-gnutls 2>&1 | tee -a "$BUILD_LOG"
+#    --disable-debug \
+#    --disable-doc 2>&1 | tee -a "$BUILD_LOG"
   check_status
 
   echo "Compiling FFmpeg..." | tee -a "$BUILD_LOG"
@@ -362,6 +377,18 @@ build_mpv() {
 
   echo "Installing MPV..." | tee -a "$BUILD_LOG"
   meson install -C build 2>&1 | tee -a "$INSTALL_LOG"
+  check_status
+}
+
+# --- // Install VapourSynth Plugins:
+install_vapoursynth_plugins() {
+  echo "Installing VapourSynth plugins via Yay..." | tee -a "$BUILD_LOG"
+  yay -Sy --needed --noconfirm \
+    vapoursynth-plugin-svpflow2-bin \
+    vapoursynth-plugin-mvtools \
+    vapoursynth-plugin-vivtc \
+    vapoursynth-plugin-ffms2 \
+    vapoursynth-plugin-neo_f3kdb-git
   check_status
 }
 
