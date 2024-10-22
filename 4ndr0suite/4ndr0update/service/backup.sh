@@ -25,7 +25,7 @@ check_free_space() {
 # Function to generate a hash for backup integrity
 generate_backup_hash() {
     log_message "Generating hash for backup verification..."
-    find "$BACKUP_LOCATION" -type f -exec sha256sum {} \; > "$BACKUP_LOCATION/backup_hash.sha256"
+    find "$BACKUP_LOCATION" -type f -exec sha256sum {} \; > "$BACKUP_LOCATION/backup_hash.sha256" /dev/null 2>&1
     log_message "Backup hash saved at $BACKUP_LOCATION/backup_hash.sha256"
 }
 

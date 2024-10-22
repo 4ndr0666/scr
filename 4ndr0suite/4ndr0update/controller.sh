@@ -6,7 +6,8 @@ fetch_news() {
 }
 
 system_upgrade() {
-	echo "➡️ Starting system upgrade..."
+       printf "➡️ Starting system upgrade..."
+       fetch_news
        configure_reflector
        aur_setup
        rebuild_aur
@@ -47,18 +48,18 @@ system_upgrade() {
 #		echo "Error: System update failed."
 #		exit 1
 #	fi
-	echo "✔️ System updated!"
+	printf "✔️ System updated!"
 	printf "\n"
 }
 
 # Function to handle system cleaning process
 system_clean() {
-	echo "➡️ Cleaning system..."
+	printf "➡️ Cleaning system..."
     remove_orphaned_packages
     clean_package_cache
     clean_broken_symlinks
     clean_old_config
-    printf "\n"
+    printf "✔️ System cleaning complete!" 
 #	if remove_orphaned_packages; then
 #		echo "Orphaned packages removed."
 #	else
@@ -79,17 +80,17 @@ system_clean() {
 #		echo "Error: Failed to clean broken symlinks."
 #		exit 1
 #	fi
-	echo "✔️ System cleaning complete!"
+	printf "✔️ System cleaning complete!"
 	printf "\n"
 }
 
 # Function to backup system
 backup_system() {
-	echo "➡️ Starting system backup..."
+	printf "➡️ Starting system backup..."
 	if execute_backup; then
-		echo "✔️ System backup completed successfully."
+		printf "✔️ System backup completed successfully."
 	else
-		echo "Error: System backup failed."
+		printf "Error: System backup failed."
 		exit 1
 	fi
 	printf "\n"
@@ -99,9 +100,9 @@ backup_system() {
 restore_system() {
 	echo "➡️ Starting system restore..."
 	if execute_restore; then
-		echo "✔️ System restored successfully."
+		printf "✔️ System restored successfully."
 	else
-		echo "Error: System restore failed."
+		printf "Error: System restore failed."
 		exit 1
 	fi
 	printf "\n"
@@ -109,9 +110,9 @@ restore_system() {
 
 # Function to update system settings
 update_settings() {
-	echo "➡️ Updating settings..."
+	printf "➡️ Updating settings..."
 	modify_settings
 	source_settings
-	echo "✔️ Settings updated successfully."
+	printf "✔️ Settings updated successfully."
 	printf "\n"
 }

@@ -24,13 +24,13 @@ configure_reflector() {
     else
         echo "Reflector timer already enabled."
     fi
-
     printf "\n"
-    read -r -p "Do you want to get an updated mirrorlist? [y/N] "
+
+    read -r -p "Do you want to get an updated mirrorlist? [y/N]"
     if [[ "$REPLY" =~ [yY] ]]; then
-        printf "Updating mirrorlist...\n"
-        retry_command reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
-        printf "...Mirrorlist updated\n"
+	printf "Updating mirrorlist...\n"
+	reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
+	printf "...Mirrorlist updated\n"
     fi
 }
 
@@ -101,7 +101,7 @@ system_update() {
 
     ensure_package_installed "powerpill"
     check_and_install_dependencies "powerpill"
-	
+
     printf "\nPerforming system upgrade...\n"
     retry_command sudo pacman -Sy
     retry_command sudo powerpill -Su
@@ -110,7 +110,7 @@ system_update() {
 }
 
 # Elevate privileges if not root
-if [[ $EUID -ne 0 ]]; then
-    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
-    exit 1
-fi
+#if [[ $EUID -ne 0 ]]; then
+#    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
+#    exit 1
+#fi

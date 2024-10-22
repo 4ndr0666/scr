@@ -21,8 +21,8 @@ check_optdepends() {
 # Fallback view in case of incorrect USER_INTERFACE setting
 fallback_view() {
     printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
-    read
-    source $(pkg_path)/view/dialog.sh
+    read -r
+    source "$(pkg_path)"/view/dialog.sh
 }
 
 # Repair settings prompt
@@ -35,19 +35,19 @@ repair_settings() {
 
 # Source settings file
 source_settings() {
-    source $(pkg_path)/settings.sh
+    source "$(pkg_path)"/settings.sh
 }
 
 # Dynamically source all service scripts
 source_service() {
-    for script in $(pkg_path)/service/*.sh; do
+    for script in "$(pkg_path)"/service/*.sh; do
         source "$script"
     done
 }
 
 # Source the controller script
 source_controller() {
-    source $(pkg_path)/controller.sh
+    source "$(pkg_path)"/controller.sh
 }
 
 # Execute the main function
@@ -63,11 +63,10 @@ if [ "$(id -u)" -ne 0 ]; then
     sudo "$0" "$@"
     exit $?
 fi
+printf "💀WARNING💀 - you are now operating as root..."
 sleep 1
-echo "💀WARNING💀 - you are now operating as root..."
-sleep 1
-echo
-
+echo ""
+echo ""
 # Main flow
 if [[ "$EUID" -eq 0 ]]; then
     source_settings
@@ -77,10 +76,10 @@ if [[ "$EUID" -eq 0 ]]; then
     # Load the appropriate user interface
     case "$USER_INTERFACE" in
         'cli')
-	    source $(pkg_path)/view/cli.sh
+	    source "$(pkg_path)"/view/cli.sh
             ;;
         'dialog')
-	    source $(pkg_path)/view/dialog.sh
+	    source "$(pkg_path)"/view/dialog.sh
             ;;
         *)
             fallback_view
