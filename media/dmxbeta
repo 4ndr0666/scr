@@ -1,0 +1,2959 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import subprocess
+import json
+import logging
+import shutil
+import tempfile
+import textwrap
+import platform
+import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from typing import List, Dict, Any
+from fractions import Fraction
+from tqdm import tqdm
+from datetime import datetime
+from pathlib import Path
+
+# --- Ensure custom_ffmpeg_build on path:
+os.environ['PATH'] = f"{os.path.expanduser('~/bin')}:{os.environ.get('PATH', '')}"
+
+# --- Constants
+SUPPORTED_CODECS = ['avc', 'h264', 'hev1', 'h265', 'hevc', 'vp8', 'vp9']
+DEFAULT_AUDIO_CODECS = ['aac', 'libopus', 'libmp3lame']
+REQUIRED_TOOLS = ['ffmpeg', 'ffprobe', 'mediainfo', 'fzf', 'vspipe']
+VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm']
+GREEN = "\033[38;2;57;255;20m"
+BOLD = "\033[1m"
+RED = "\033[0;31m"
+NC = "\033[0m"  # No Color
+MAX_WORKERS = os.cpu_count()
+
+# --- Configuration Constants
+DEFAULT_CONFIG = {
+    "FFMPEG_SOURCES": os.path.expanduser("$HOME/ffmpeg_sources"),
+    "FFMPEG_BUILD": os.path.expanduser("$HOME/ffmpeg_build"),
+    "FFMPEG_BIN": os.path.expanduser("$HOME/bin"),
+    "MPV_BUILD_DIR": os.path.expanduser("$HOME/mpv_build")
+}
+CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'dmx'
+CONFIG_FILE = CONFIG_DIR / 'config.json'
+
+# Configure logging
+logging.basicConfig(
+    filename='video_processing.log',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+
+def print_warning(message: str):
+    """Print a warning message with proper formatting."""
+    safe_message = message.encode('ascii', 'ignore').decode()  # Remove non-ASCII characters for safety
+    print(f"{RED}⚠️  {safe_message}{NC}")
+    logging.warning(safe_message)
+
+def print_status(message: str, status: str = "OK"):
+    """Print a status message with a corresponding symbol."""
+    symbols = {
+        "OK": f"{GREEN}✓{NC}",
+        "ERROR": f"{RED}❌{NC}",
+        "WARNING": f"{RED}⚠️{NC}",
+        "INFO": f"{GREEN}ℹ️{NC}",
+    }
+    status_symbol = symbols.get(status.upper(), f"{RED}❔{NC}")  # Default to a question mark if unknown status
+    print(f"{message} [{status_symbol}]\n")
+    logging.info(f"{message} [{status}]")
+
+def combine_filters(*filters: str) -> str:
+    """
+    Combine multiple FFmpeg video filters into a single filter string separated by commas.
+
+    Args:
+        *filters (str): Individual filter strings.
+
+    Returns:
+        str: Combined filter string separated by commas.
+    """
+    return ",".join(filters)
+
+def round_frame_rate(frame_rate: float, decimals: int = 2) -> float:
+    """
+    Round the frame rate to a specified number of decimal places.
+
+    Args:
+        frame_rate (float): The frame rate to round.
+        decimals (int, optional): Number of decimal places. Defaults to 2.
+
+    Returns:
+        float: Rounded frame rate.
+    """
+    return round(frame_rate, decimals)
+
+def check_encoder_availability(encoder: str) -> bool:
+    """
+    Check if a specific encoder is available in FFmpeg.
+
+    Args:
+        encoder (str): The encoder to check (e.g., 'libvpx-vp9').
+
+    Returns:
+        bool: True if the encoder is available, False otherwise.
+    """
+    try:
+        result = subprocess.run([FFMPEG_PATH, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        available_encoders = result.stdout.lower()
+        return encoder.lower() in available_encoders
+    except Exception as e:
+        logging.error(f"Error checking encoder availability for {encoder}: {e}")
+        return False
+
+def auto_install_dependencies():
+    """
+    Automatically install missing dependencies using Pacman or Yay.
+    """
+    # Determine the package manager
+    if shutil.which('pacman'):
+        pkg_manager = 'pacman'
+    elif shutil.which('yay'):
+        pkg_manager = 'yay'
+    else:
+        print_warning("Neither Pacman nor Yay package manager found. Please install dependencies manually.")
+        return
+
+    # List of dependencies to install
+    dependencies = ['ffmpeg', 'mediainfo', 'fzf', 'vapoursynth', 'python-pip']
+
+    # Install each dependency
+    for pkg in dependencies:
+        if shutil.which(pkg) is None:
+            try:
+                logging.info(f"Installing missing dependency: {pkg}")
+                print_status(f"Installing {pkg}...", "INFO")
+                if pkg_manager == 'pacman':
+                    subprocess.check_call(['sudo', 'pacman', '-S', '--noconfirm', pkg])
+                elif pkg_manager == 'yay':
+                    subprocess.check_call(['yay', '-S', '--noconfirm', pkg])
+                logging.info(f"Successfully installed {pkg}")
+                print_status(f"Installed {pkg}.", "OK")
+            except subprocess.CalledProcessError as e:
+                logging.error(f"Failed to install {pkg} using {pkg_manager}: {e}")
+                print_warning(f"Failed to install {pkg}. Please install it manually.")
+
+def run_command(command: List[str], description: str = "", display_output: bool = False) -> str:
+    """
+    Run a system command and optionally display its output in real-time.
+
+    Args:
+        command (List[str]): The command and its arguments to execute.
+        description (str, optional): Description of the command for logging. Defaults to "".
+        display_output (bool, optional): Whether to display command output in real-time. Defaults to False.
+
+    Returns:
+        str: The standard output from the command.
+
+    Raises:
+        subprocess.CalledProcessError: If the command exits with a non-zero status.
+        Exception: For any unexpected errors during command execution.
+    """
+    try:
+        logging.info(f"Running command: {' '.join(command)}")
+        if display_output:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            output = ''
+            for line in process.stdout:
+                print(line, end='')  # Display output in real-time
+                output += line
+            process.wait()
+            return_code = process.returncode
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, command, output=output)
+            logging.info(f"{description} - Command executed successfully.")
+            return output
+        else:
+            result = subprocess.run(command, check=True, capture_output=True, text=True)
+            logging.info(f"{description} - Command executed successfully.")
+            return result.stdout
+
+    except subprocess.CalledProcessError as e:
+        logging.error(f"{description} - Command failed with exit code {e.returncode}: {' '.join(command)}")
+        logging.error(f"FFmpeg Error Output: {e.output}")  # Log FFmpeg's stderr
+        print_warning(f"Command failed: {e}")
+        raise
+
+    except Exception as e:
+        logging.error(f"{description} - Unexpected error: {e}")
+        print_warning("Unexpected error occurred during execution. Check logs for more details.")
+        raise
+
+def estimate_bitrate(width: int, height: int) -> str:
+    """
+    Estimate the video bitrate based on resolution.
+
+    Args:
+        width (int): Width of the video.
+        height (int): Height of the video.
+
+    Returns:
+        str: Estimated bitrate (e.g., '5M').
+    """
+    pixels = width * height
+    if pixels <= 640 * 480:
+        bitrate = '1M'
+    elif pixels <= 1280 * 720:
+        bitrate = '2.5M'
+    elif pixels <= 1920 * 1080:
+        bitrate = '5M'
+    elif pixels <= 2560 * 1440:
+        bitrate = '10M'
+    elif pixels <= 3840 * 2160:
+        bitrate = '20M'
+    else:
+        bitrate = '40M'
+    return bitrate
+
+class DependencyError(Exception):
+    """Custom exception for missing dependencies."""
+    pass
+
+def check_dependencies():
+    """
+    Check if required dependencies and FFmpeg encoders are installed.
+    Exits the script if any dependencies are missing.
+    """
+    # Check if required dependencies are installed
+    missing_commands = [cmd for cmd in REQUIRED_TOOLS if shutil.which(cmd) is None]
+    if missing_commands:
+        print_warning(f"The following required commands are missing: {', '.join(missing_commands)}")
+        print_warning("Attempting to install missing dependencies...")
+        auto_install_dependencies()
+
+    # Re-check for missing commands after installation attempt
+    missing_commands = [cmd for cmd in REQUIRED_TOOLS if shutil.which(cmd) is None]
+    if missing_commands:
+        print_warning(f"The following required commands are still missing: {', '.join(missing_commands)}")
+        print_warning("Please install them manually and try again.")
+        sys.exit(1)
+
+    # Check for available video encoders in FFmpeg
+    try:
+        result = subprocess.run([FFMPEG_PATH, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        available_encoders = result.stdout.lower()
+
+        # Update the list of supported encoders based on what's available
+        global SUPPORTED_VIDEO_ENCODERS
+        if 'libx264' in available_encoders:
+            SUPPORTED_VIDEO_ENCODERS.append('libx264')
+        if 'libx265' in available_encoders:
+            SUPPORTED_VIDEO_ENCODERS.append('libx265')
+        if 'libvpx' in available_encoders:
+            SUPPORTED_VIDEO_ENCODERS.append('libvpx')  # For VP8
+        if 'libvpx-vp9' in available_encoders:
+            SUPPORTED_VIDEO_ENCODERS.append('libvpx-vp9')  # For VP9
+
+        if not SUPPORTED_VIDEO_ENCODERS:
+            print_warning("No supported video encoders (libx264, libx265, libvpx, libvpx-vp9) are available in FFmpeg.")
+            print_warning("Please install FFmpeg with the necessary encoders and try again.")
+            sys.exit(1)
+        else:
+            logging.info(f"Supported video encoders: {', '.join(SUPPORTED_VIDEO_ENCODERS)}")
+
+    except Exception as e:
+        logging.error(f"Error checking FFmpeg encoders: {e}")
+        print_warning("An error occurred while checking FFmpeg encoders. Check the logs for more details.")
+        sys.exit(1)
+
+    # Check if VapourSynth module is available
+    try:
+        import vapoursynth as vs
+        logging.info("VapourSynth module is available.")
+    except ImportError:
+        print_warning("VapourSynth module is not installed. Please install it and try again.")
+        sys.exit(1)
+
+    logging.info("All dependencies are satisfied.")
+
+def load_config() -> Dict[str, str]:
+    """
+    Load the configuration from the config file. If it doesn't exist, create it with default values.
+
+    Returns:
+        Dict[str, str]: Configuration dictionary.
+    """
+    try:
+        if not CONFIG_DIR.exists():
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Created configuration directory at {CONFIG_DIR}")
+            print_status(f"Created configuration directory at {CONFIG_DIR}", "INFO")
+
+        if not CONFIG_FILE.exists():
+            with CONFIG_FILE.open('w') as f:
+                json.dump(DEFAULT_CONFIG, f, indent=4)
+            logging.info(f"Created default configuration file at {CONFIG_FILE}")
+            print_status(f"Created default configuration file at {CONFIG_FILE}", "INFO")
+            return DEFAULT_CONFIG
+        else:
+            with CONFIG_FILE.open('r') as f:
+                config = json.load(f)
+            logging.info(f"Loaded configuration from {CONFIG_FILE}")
+            return config
+    except Exception as e:
+        logging.error(f"Error loading configuration: {e}")
+        print_warning("Failed to load configuration. Check logs for details.")
+        return DEFAULT_CONFIG
+
+def save_config(config: Dict[str, str]):
+    """
+    Save the configuration to the config file.
+
+    Args:
+        config (Dict[str, str]): Configuration dictionary to save.
+    """
+    try:
+        with CONFIG_FILE.open('w') as f:
+            json.dump(config, f, indent=4)
+        logging.info(f"Configuration saved to {CONFIG_FILE}")
+    except Exception as e:
+        logging.error(f"Error saving configuration: {e}")
+        print_warning("Failed to save configuration. Check logs for details.")
+
+class VideoFile:
+    """Represents a video file and its properties."""
+
+    def __init__(self, filepath: str, config: Dict[str, str]):
+        """
+        Initialize a VideoFile instance with video metadata.
+
+        Args:
+            filepath (str): Path to the video file.
+            config (Dict[str, str]): Configuration dictionary containing binary paths.
+        """
+        self.filepath = Path(os.path.abspath(filepath))
+        self.basename = self.filepath.name
+
+        # Initialize video properties
+        self.width: int = 0
+        self.height: int = 0
+        self.frame_rate: float = 0.0
+        self.codec: str = ''
+        self.audio_codec: str = ''
+        self.duration: float = 0.0
+        self.bitrate: int = 0
+        self.has_audio: bool = False
+        self.issues: List[str] = []
+
+        # Load configuration
+        self.config = config
+
+        # Fetch video properties
+        self._get_properties()
+
+    def _get_properties(self):
+        """Extract properties using ffprobe."""
+        try:
+            # Get video properties using ffprobe
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,r_frame_rate,codec_name,duration,bit_rate',
+                '-of', 'json', str(self.filepath)
+            ]
+            result_stdout = run_command(command, description=f"Getting video properties for {self.basename}")
+            data = json.loads(result_stdout)
+            stream = data.get('streams', [None])[0]
+
+            if stream is None:
+                raise ValueError(f"No stream information found for {self.filepath}")
+
+            self.width = int(stream.get('width', 0))
+            self.height = int(stream.get('height', 0))
+            self.codec = stream.get('codec_name', '')
+            fps_str = stream.get('r_frame_rate', '0/1')
+            self.frame_rate = float(Fraction(fps_str))
+            self.duration = float(stream.get('duration', 0.0))
+            self.bitrate = int(stream.get('bit_rate', 0))
+            logging.info(f"Video properties for {self.filepath}: {self.width}x{self.height}, {self.frame_rate}fps, codec={self.codec}")
+
+            # Check for audio stream
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-v', 'error',
+                '-select_streams', 'a:0',
+                '-show_entries', 'stream=codec_name',
+                '-of', 'json', str(self.filepath)
+            ]
+            result_stdout = run_command(command, description=f"Checking audio properties for {self.basename}")
+            data = json.loads(result_stdout)
+            if data.get('streams'):
+                self.has_audio = True
+                self.audio_codec = data['streams'][0].get('codec_name', '')
+                logging.info(f"Audio codec for {self.filepath}: {self.audio_codec}")
+            else:
+                self.has_audio = False
+                logging.info(f"No audio stream in {self.filepath}")
+        except Exception as e:
+            logging.error(f"Error getting properties for {self.filepath}: {e}")
+            raise ValueError(f"Failed to extract properties for {self.filepath}. Error: {e}")
+
+    def detect_issues(self, fix_issues: bool = False):
+        """
+        Detect potential issues with the video file such as missing properties or unsupported formats.
+
+        Args:
+            fix_issues (bool, optional): Whether to attempt fixing detected issues. Defaults to False.
+        """
+        logging.info(f"Detecting issues for video {self.filepath}")
+
+        if not self.filepath.exists():
+            self.issues.append('File does not exist.')
+        if self.width == 0 or self.height == 0:
+            self.issues.append('Resolution not detected.')
+        if self.frame_rate == 0.0:
+            self.issues.append('Frame rate not detected.')
+        if self.codec.lower() not in SUPPORTED_CODECS:
+            self.issues.append(f'Unsupported codec: {self.codec}')
+        if self.duration == 0.0:
+            self.issues.append('Duration not detected.')
+
+        if self.issues:
+            print_warning(f"Issues detected in {self.basename}:")
+            for issue in self.issues:
+                print_warning(f" - {issue}")
+
+            if fix_issues:
+                self.attempt_fix()
+            else:
+                fix = input("Would you like to attempt to fix these issues? (y/n): ").strip().lower()
+                if fix == 'y':
+                    self.attempt_fix()
+        else:
+            print_status(f"No issues detected in {self.basename}")
+
+    def attempt_fix(self, output_dir: str = '.'):
+        """
+        Attempt to fix detected issues in the video file by re-encoding.
+
+        Args:
+            output_dir (str, optional): Directory to save the fixed video. Defaults to current directory.
+        """
+        logging.info(f"Attempting to fix issues for video {self.filepath}")
+
+        output_file = Path(output_dir) / f"fixed_{self.basename}"
+        try:
+            # Prepare base ffmpeg command
+            command = [self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(self.filepath)]
+
+            # Choose an available encoder
+            encoder = None
+            for enc in SUPPORTED_VIDEO_ENCODERS:
+                if check_encoder_availability(enc):
+                    encoder = enc
+                    break
+
+            if encoder is None:
+                raise ValueError("No suitable video encoder available.")
+
+            # Estimate bitrate
+            bitrate = estimate_bitrate(self.width, self.height)
+
+            # Re-encode with selected codec settings
+            command += ['-c:v', encoder, '-b:v', bitrate]
+
+            # Encoder-specific settings
+            if encoder.startswith('libvpx'):
+                command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+            # Handle audio if available
+            if self.has_audio:
+                command += ['-c:a', 'copy']  # Copy audio stream
+            else:
+                command += ['-an']  # No audio stream
+
+            command += [str(output_file)]
+
+            # Run ffmpeg command to fix issues
+            run_command(command, description=f"Fixing issues for {self.basename}")
+            print_status(f"Issues fixed for {self.basename}. Saved as {output_file}")
+            logging.info(f"Issues fixed successfully for {self.filepath}")
+
+            # Update video properties after fixing
+            self.filepath = output_file.resolve()
+            self.basename = self.filepath.name
+            self._get_properties()  # Re-fetch the video properties
+            self.issues.clear()  # Clear issues after fixing
+
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to fix issues for {self.basename}: Command failed with error {e}")
+            print_warning(f"Failed to fix issues for {self.basename}")
+        except Exception as e:
+            logging.error(f"Error fixing issues for {self.basename}: {e}")
+            print_warning(f"Unexpected error while fixing issues for {self.basename}")
+
+class FFmpegCommandBuilder:
+    """Helper class to build FFmpeg commands for various tasks."""
+
+    @staticmethod
+    def build_adjust_resolution_command(video: VideoFile, resolution: str, output_file: Path) -> List[str]:
+        """
+        Build FFmpeg command to adjust video resolution.
+
+        Args:
+            video (VideoFile): The video file to process.
+            resolution (str): Target resolution in WIDTHxHEIGHT format.
+            output_file (Path): Path to save the adjusted video.
+
+        Returns:
+            List[str]: The FFmpeg command as a list of arguments.
+        """
+        # Use the same container format as the source
+        output_extension = output_file.suffix
+        output_file = output_file.with_suffix(output_extension)
+
+        # Choose an available encoder
+        encoder = None
+        for enc in SUPPORTED_VIDEO_ENCODERS:
+            if check_encoder_availability(enc):
+                encoder = enc
+                break
+        if encoder is None:
+            raise ValueError("No suitable video encoder available.")
+
+        # Estimate bitrate
+        width, height = map(int, resolution.split('x'))
+        bitrate = estimate_bitrate(width, height)
+
+        # Create a filter chain using the helper function
+        filter_chain = combine_filters(f"scale={resolution}")
+
+        command = [
+            video.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath),
+            '-vf', filter_chain,
+            '-c:v', encoder,
+            '-preset', 'fast',              # Use fast preset for encoding
+            '-b:v', bitrate
+        ]
+
+        # Encoder-specific settings
+        if encoder.startswith('libvpx'):
+            command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+        if video.has_audio:
+            command += ['-c:a', 'copy']  # Copy audio if possible
+        else:
+            command += ['-an']
+
+        command += [str(output_file)]
+        return command
+
+    @staticmethod
+    def build_convert_format_command(video: VideoFile, new_format: str, output_file: Path) -> List[str]:
+        """
+        Build FFmpeg command to convert video format.
+
+        Args:
+            video (VideoFile): The video file to convert.
+            new_format (str): Target container format (e.g., 'mp4', 'mkv').
+            output_file (Path): Path to save the converted video.
+
+        Returns:
+            List[str]: The FFmpeg command as a list of arguments.
+
+        Raises:
+            ValueError: If the specified format is unsupported.
+        """
+        # Map of supported formats and their corresponding codecs
+        format_codecs = {
+            'mp4': ['-c:v', 'copy', '-c:a', 'copy'],
+            'mkv': ['-c:v', 'copy', '-c:a', 'copy'],
+            'avi': ['-c:v', 'libxvid', '-c:a', 'libmp3lame'],
+            'mov': ['-c:v', 'copy', '-c:a', 'copy'],
+            'webm': ['-c:v', 'copy', '-c:a', 'copy']
+        }
+
+        # Get codec settings for the desired format
+        codecs = format_codecs.get(new_format.lower())
+
+        if not codecs:
+            raise ValueError(f"Unsupported format: {new_format}")  # Raise error for unsupported formats
+
+        # Build the FFmpeg command
+        command = [video.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath)] + codecs + [str(output_file)]
+
+        return command
+
+    @staticmethod
+    def build_filter_command(video: VideoFile, filters: str, output_file: Path) -> List[str]:
+        """
+        Build FFmpeg command to apply filters to the video.
+
+        Args:
+            video (VideoFile): The video file to process.
+            filters (str): Comma-separated list of filters to apply.
+            output_file (Path): Path to save the filtered video.
+
+        Returns:
+            List[str]: The FFmpeg command as a list of arguments.
+        """
+        # Use the same container format as the source
+        output_extension = output_file.suffix
+        output_file = output_file.with_suffix(output_extension)
+
+        # Choose an available encoder
+        encoder = None
+        for enc in SUPPORTED_VIDEO_ENCODERS:
+            if check_encoder_availability(enc):
+                encoder = enc
+                break
+        if encoder is None:
+            raise ValueError("No suitable video encoder available.")
+
+        # Estimate bitrate
+        bitrate = estimate_bitrate(video.width, video.height)
+
+        # Create a filter chain from user-provided filters, separated by commas
+        filter_chain = combine_filters(*[f.strip() for f in filters.split(',') if f.strip()])
+
+        # Build FFmpeg command with the provided filter chain
+        command = [
+            video.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath),  # Input file
+            '-vf', filter_chain,  # Video filters
+            '-c:v', encoder,  # Set video codec
+            '-preset', 'fast',  # Use fast preset for encoding	    
+            '-b:v', bitrate
+        ]
+
+        # Encoder-specific settings
+        if encoder.startswith('libvpx'):
+            command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+        if video.has_audio:
+            command += ['-c:a', 'copy']  # Copy audio if possible
+        else:
+            command += ['-an']
+
+        command += [str(output_file)]  # Add output file path
+        return command
+
+class VideoProcessor:
+    """Processes video files based on user commands."""
+
+    def __init__(self, config: Dict[str, str], max_workers: int = None):
+        """
+        Initialize the VideoProcessor with a ThreadPoolExecutor and load necessary plugins.
+
+        Args:
+            config (Dict[str, str]): Configuration dictionary containing binary paths.
+            max_workers (int, optional): Maximum number of threads for processing. Defaults to CPU count.
+        """
+        self.config = config
+        self.executor = ThreadPoolExecutor(max_workers=max_workers or MAX_WORKERS)
+
+        # Try to find SVPflow plugins
+        try:
+            self.svp_plugins = find_svp_plugins()
+            logging.info("SVPflow plugins loaded successfully.")
+        except FileNotFoundError as e:
+            logging.warning(f"SVPflow plugins not found: {e}")
+            self.svp_plugins = None
+
+        # Load FFMS2 plugin
+        try:
+            self.ffms2_plugin = find_ffms2_plugin()
+            logging.info("FFMS2 plugin loaded successfully.")
+        except FileNotFoundError as e:
+            logging.warning(f"FFMS2 plugin not found: {e}")
+            self.ffms2_plugin = None
+
+    def validate_resolution_format(self, resolution: str) -> bool:
+        """
+        Validate the resolution format (WIDTHxHEIGHT).
+
+        Args:
+            resolution (str): Resolution string to validate.
+
+        Returns:
+            bool: True if valid, False otherwise.
+        """
+        pattern = r'^\d+x\d+$'
+        return re.match(pattern, resolution) is not None
+
+    def apply_vapoursynth_script(self, video: VideoFile, output_file: str, script_content: str):
+        """
+        Apply a VapourSynth script to a video.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the transformed video.
+            script_content (str): VapourSynth script content.
+        """
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.vpy', delete=False) as script_file:
+                script_file_name = script_file.name
+                script_file.write(script_content)
+                script_file.flush()
+
+            # Build the command to run vspipe and pipe into ffmpeg
+            command_vspipe = [
+                'vspipe', '--y4m', script_file_name, '-'  # Output to stdout in y4m format
+            ]
+
+            # Use the same container format as the source
+            video_path = video.filepath
+            output_path = Path(output_file)
+            output_extension = video_path.suffix
+            output_file = output_path.with_suffix(output_extension)
+
+            # Choose an available encoder
+            encoder = None
+            for enc in SUPPORTED_VIDEO_ENCODERS:
+                if check_encoder_availability(enc):
+                    encoder = enc
+                    break
+            if encoder is None:
+                raise ValueError("No suitable video encoder available.")
+
+            # Estimate bitrate
+            bitrate = estimate_bitrate(video.width, video.height)
+
+            ffmpeg_command = [
+                video.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-f', 'yuv4mpegpipe', '-i', '-', '-c:v', encoder, '-b:v', bitrate
+            ]
+
+            # Encoder-specific settings
+            if encoder.startswith('libvpx'):
+                ffmpeg_command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+            if video.has_audio:
+                ffmpeg_command += ['-i', str(video.filepath), '-map', '0:v', '-map', '1:a', '-c:a', 'copy']
+            else:
+                ffmpeg_command += ['-an']
+            ffmpeg_command += [str(output_file)]
+
+            # Run vspipe and ffmpeg in a pipeline
+            logging.info(f"Running VapourSynth script and FFmpeg pipeline for {video.basename}")
+            with subprocess.Popen(command_vspipe, stdout=subprocess.PIPE) as vspipe_proc:
+                with subprocess.Popen(ffmpeg_command, stdin=vspipe_proc.stdout) as ffmpeg_proc:
+                    vspipe_proc.stdout.close()
+                    ffmpeg_proc.communicate()
+                    if ffmpeg_proc.returncode != 0:
+                        raise subprocess.CalledProcessError(ffmpeg_proc.returncode, ffmpeg_command)
+            print_status(f"Transformation applied to {video.basename}. Saved as {output_file}")
+            logging.info(f"VapourSynth transformation applied successfully to {video.filepath}")
+        except Exception as e:
+            logging.error(f"Error applying VapourSynth script to {video.filepath}: {e}")
+            print_warning(f"Failed to apply transformation to {video.basename}")
+        finally:
+            # Ensure the temporary script file is deleted
+            if 'script_file_name' in locals() and os.path.exists(script_file_name):
+                try:
+                    os.unlink(script_file_name)
+                    logging.info(f"Temporary script file {script_file_name} deleted.")
+                except Exception as e:
+                    logging.warning(f"Could not delete temporary script file {script_file_name}: {e}")
+
+    def analyze_video(self, video: VideoFile):
+        """
+        Analyze a video file using MediaInfo and print the details.
+
+        Args:
+            video (VideoFile): The video file to analyze.
+        """
+        logging.info(f"Analyzing video {video.filepath}")
+        try:
+            command = [self.config.get("FFMPEG_BIN", "ffmpeg"), '-i', str(video.filepath)]
+            output = run_command(command, description=f"Analyzing video {video.basename}", display_output=True)
+            print(output)  # Print the media information to the console
+        except Exception as e:
+            logging.error(f"Error analyzing video {video.filepath}: {e}")
+            print_warning(f"Failed to analyze video {video.basename}. Check logs for details.")
+
+    def normalize_videos(self, videos: List[VideoFile], output_dir: str) -> List[str]:
+        """
+        Normalize a list of videos to common properties.
+
+        Args:
+            videos (List[VideoFile]): List of video files to normalize.
+            output_dir (str): Directory to save normalized videos.
+
+        Returns:
+            List[str]: Paths to successfully normalized files.
+        """
+        logging.info("Starting normalization of videos")
+
+        target_props = self.determine_common_properties(videos)  # Determine common resolution and frame rate
+        normalized_files = []  # List to store successfully normalized files
+        futures = []  # List of future tasks
+
+        # Submit video normalization tasks to a thread pool
+        for video in videos:
+            futures.append(self.executor.submit(self._normalize_video, video, target_props, output_dir))
+
+        # Handle future results
+        for future in tqdm(futures, desc="Normalizing videos"):
+            try:
+                result = future.result(timeout=3600)  # Timeout of 1 hour for large files
+                if result:
+                    normalized_files.append(result)
+            except TimeoutError:
+                logging.error("Normalization task timed out.")
+                print_warning("A normalization task timed out. Check logs for details.")
+            except Exception as e:
+                logging.error(f"Error during normalization: {e}")
+                print_warning(f"An error occurred during normalization: {e}")
+
+        return normalized_files
+
+    def _normalize_video(self, video: VideoFile, target_props: Dict[str, Any], output_dir: str) -> str:
+        """
+        Normalize a single video to target properties.
+
+        Args:
+            video (VideoFile): The video file to normalize.
+            target_props (Dict[str, Any]): Target resolution and frame rate.
+            output_dir (str): Directory to save the normalized video.
+
+        Returns:
+            str: Path to the normalized video file, or None if failed.
+        """
+        output_extension = video.filepath.suffix
+        output_file = Path(output_dir) / f"normalized_{video.basename}"
+
+        # Determine if the video needs re-encoding based on resolution, frame rate, or codec
+        need_reencode = (
+            (video.width, video.height) != target_props['resolution'] or
+            abs(video.frame_rate - target_props['frame_rate']) > 0.1 or
+            video.codec.lower() not in SUPPORTED_CODECS
+        )
+
+        try:
+            if not need_reencode:
+                logging.info(f"{video.basename} matches target properties, copying streams")
+                # Copy video and audio streams without re-encoding
+                command = [self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath)]
+                if video.has_audio:
+                    command += ['-c:v', 'copy', '-c:a', 'copy']
+                else:
+                    command += ['-c:v', 'copy', '-an']
+                command += [str(output_file)]
+            else:
+                logging.info(f"Re-encoding {video.basename} to match target properties")
+                # Build command using the FFmpegCommandBuilder
+                resolution_str = f"{target_props['resolution'][0]}x{target_props['resolution'][1]}"
+                command = FFmpegCommandBuilder.build_adjust_resolution_command(
+                    video, resolution_str, output_file
+                )
+
+                # Adjust frame rate if necessary
+                if abs(video.frame_rate - target_props['frame_rate']) > 0.1:
+                    # Round the target frame rate
+                    target_fps = round_frame_rate(target_props['frame_rate'], 2)
+                    # Combine fps and scale filters into a single -vf argument
+                    existing_vf = command[command.index('-vf') + 1]
+                    combined_vf = combine_filters(f"fps={target_fps}", existing_vf)
+                    command[command.index('-vf') + 1] = combined_vf
+
+            run_command(command, description=f"Normalizing video {video.basename}")
+            logging.info(f"Normalization complete for {video.basename}")
+            print_status(f"Normalization complete for {video.basename}")
+            return str(output_file)  # Return the path of the normalized file
+        except Exception as e:
+            logging.error(f"Error normalizing video {video.basename}: {e}")
+            print_warning(f"Error normalizing video {video.basename}. Check logs for details.")
+            return None
+
+    def determine_common_properties(self, videos: List[VideoFile]) -> Dict[str, Any]:
+        """
+        Determine the most common resolution and frame rate across a list of videos.
+
+        Args:
+            videos (List[VideoFile]): List of video files.
+
+        Returns:
+            Dict[str, Any]: Dictionary containing target resolution and frame rate.
+        """
+        logging.info("Determining common properties for normalization")
+
+        # Collect the resolutions and frame rates from the video list
+        resolutions = [(video.width, video.height) for video in videos]
+        frame_rates = [video.frame_rate for video in videos]
+
+        # Find the most common resolution and frame rate
+        target_resolution = max(set(resolutions), key=resolutions.count)
+        target_frame_rate = max(set(frame_rates), key=frame_rates.count)
+
+        logging.info(f"Target resolution: {target_resolution}, frame rate: {target_frame_rate}")
+
+        return {'resolution': target_resolution, 'frame_rate': target_frame_rate}  # Return as a dictionary
+
+    def change_speed(self, video: VideoFile, output_file: str, speed_factor: float, smooth_motion: bool = False):
+        """
+        Change the speed of a video with optional smooth motion interpolation.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the processed video.
+            speed_factor (float): Factor by which to change the speed (e.g., 0.5 for slow motion, 2 for fast motion).
+            smooth_motion (bool, optional): Whether to enable advanced motion interpolation. Defaults to False.
+        """
+        logging.info(f"Changing speed of {video.filepath} by factor {speed_factor}")
+
+        try:
+            if speed_factor <= 0:
+                print_warning("Speed factor must be greater than 0.")
+                return
+
+            # Adjust PTS based on user input
+            if speed_factor < 1:
+                pts_multiplier = 1 / speed_factor  # Slow motion
+            else:
+                pts_multiplier = 1 / speed_factor  # Fast motion
+
+            # Use the same container format as the source
+            video_path = video.filepath
+            output_path = Path(output_file)
+            output_extension = video_path.suffix
+            output_file = output_path.with_suffix(output_extension)
+
+            # Choose an available encoder
+            encoder = None
+            for enc in SUPPORTED_VIDEO_ENCODERS:
+                if check_encoder_availability(enc):
+                    encoder = enc
+                    break
+            if encoder is None:
+                raise ValueError("No suitable video encoder available.")
+
+            # Estimate bitrate
+            bitrate = estimate_bitrate(video.width, video.height)
+
+            if smooth_motion and self.svp_plugins and self.ffms2_plugin:
+                # Use VapourSynth for smooth motion interpolation
+                target_fps = video.frame_rate * speed_factor
+                script_content = textwrap.dedent(f"""
+                import vapoursynth as vs
+                core = vs.core
+                core.std.LoadPlugin(r"{self.svp_plugins['lib1']}")
+                core.std.LoadPlugin(r"{self.svp_plugins['lib2']}")
+                core.std.LoadPlugin(r"{self.ffms2_plugin}")
+                clip = core.ffms2.Source(r"{video.filepath}")
+                super_params = dict(pel=2)
+                analyse_params = dict(main=dict(search=dict(coarse=dict(distance=-6))))
+                smoothfps_params = dict(fpsnum=int({target_fps} * 1000), fpsden=1000)
+                super_clip = core.svp1.Super(clip, super_params)
+                vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+                smooth_clip = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"], vectors["clip"], vectors["data"], smoothfps_params)
+                smooth_clip.set_output()
+                """)
+                self.apply_vapoursynth_script(video, output_file, script_content)
+            else:
+                # Use FFmpeg for speed adjustment
+                setpts_filter = f"setpts={pts_multiplier}*PTS"
+                # Adjust audio tempo
+                atempo_filters = []
+                remaining_speed = speed_factor if speed_factor > 1 else 1 / speed_factor
+                while remaining_speed > 2.0:
+                    atempo_filters.append("atempo=2.0")
+                    remaining_speed /= 2.0
+                while remaining_speed < 0.5:
+                    atempo_filters.append("atempo=0.5")
+                    remaining_speed *= 2.0
+                atempo_filters.append(f"atempo={remaining_speed}")
+                atempo_filter = ",".join(atempo_filters)
+                filter_complex = f"[0:v]{setpts_filter}[v]"
+                if video.has_audio:
+                    filter_complex += f";[0:a]{atempo_filter}[a]"
+
+                # Construct FFmpeg command
+                command = [
+                    self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath),
+                    '-filter_complex', filter_complex,
+                    '-map', '[v]',
+                ]
+                if video.has_audio:
+                    command += ['-map', '[a]']
+                else:
+                    command += ['-an']
+
+                command += ['-c:v', encoder, '-b:v', bitrate]
+
+                # Encoder-specific settings
+                if encoder.startswith('libvpx'):
+                    command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+                if video.has_audio:
+                    command += ['-c:a', 'copy']
+
+                command += [str(output_file)]
+                run_command(command, description=f"Changing speed of {video.basename}")
+                print_status(f"Speed changed for {video.basename}. Saved as {output_file}")
+
+        except Exception as e:
+            logging.error(f"Error changing speed of {video.filepath}: {e}")
+            print_warning(f"Failed to change speed for {video.basename}")
+
+    def adjust_resolution(self, video: VideoFile, output_file: str, resolution: str):
+        """
+        Adjust the resolution of a video.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the resized video.
+            resolution (str): Target resolution in WIDTHxHEIGHT format.
+        """
+        logging.info(f"Adjusting resolution of {video.filepath} to {resolution}")
+        try:
+            # Validate the resolution format (e.g., 1920x1080)
+            if not self.validate_resolution_format(resolution):
+                print_warning("Invalid resolution format. Please use WIDTHxHEIGHT (e.g., 1920x1080).")
+                return
+
+            # Build the FFmpeg command for adjusting resolution
+            output_path = Path(output_file)
+            command = FFmpegCommandBuilder.build_adjust_resolution_command(
+                video, resolution, output_path
+            )
+            run_command(command, description=f"Adjusting resolution for {video.basename}")
+
+            # Log and print success status
+            print_status(f"Resolution adjusted for {video.basename}. Saved as {output_path.with_suffix(video.filepath.suffix)}")
+            logging.info(f"Resolution adjusted successfully for {video.filepath}")
+        except Exception as e:
+            # Log and print error status
+            logging.error(f"Error adjusting resolution of {video.filepath}: {e}")
+            print_warning(f"Failed to adjust resolution for {video.basename}")
+
+    def convert_video_format(self, video: VideoFile, output_file: str, new_format: str):
+        """
+        Convert the video format to a different container (e.g., MP4, MKV, AVI).
+
+        Args:
+            video (VideoFile): The video file to convert.
+            output_file (str): Path to save the converted video.
+            new_format (str): Target container format.
+        """
+        logging.info(f"Converting format of {video.filepath} to {new_format}")
+        try:
+            # Build the FFmpeg command to convert the video format
+            output_path = Path(output_file)
+            command = FFmpegCommandBuilder.build_convert_format_command(video, new_format, output_path)
+
+            # Run the command and log the result
+            run_command(command, description=f"Converting format for {video.basename}")
+            print_status(f"Format conversion completed for {video.basename}. Saved as {output_path}")
+            logging.info(f"Format conversion successful for {video.filepath}")
+        except ValueError as ve:
+            # Handle invalid format
+            logging.error(f"Invalid format specified for {video.filepath}: {ve}")
+            print_warning(str(ve))
+        except Exception as e:
+            # Handle any other exceptions during format conversion
+            logging.error(f"Error converting format of {video.filepath}: {e}")
+            print_warning(f"Failed to convert format for {video.basename}")
+
+    def apply_filters(self, video: VideoFile, output_file: str, filters: str):
+        """
+        Apply a set of filters to the video.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the filtered video.
+            filters (str): Comma-separated list of filters to apply.
+        """
+        logging.info(f"Applying filters to {video.filepath}: {filters}")
+        try:
+            # Build the FFmpeg command with the specified filters
+            output_path = Path(output_file)
+            command = FFmpegCommandBuilder.build_filter_command(video, filters, output_path)
+
+            # Execute the command and log the outcome
+            run_command(command, description=f"Applying filters to {video.basename}")
+            print_status(f"Filters applied to {video.basename}. Saved as {output_path}")
+            logging.info(f"Filters applied successfully to {video.filepath}")
+        except Exception as e:
+            # Log and display any errors during the process
+            logging.error(f"Error applying filters to {video.filepath}: {e}")
+            print_warning(f"Failed to apply filters to {video.basename}")
+
+    def extract_frames(self, video: VideoFile, output_dir: str):
+        """
+        Extract frames from the video at 1 frame per second and save them as images.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_dir (str): Directory to save extracted frames.
+        """
+        logging.info(f"Extracting frames from {video.filepath}")
+        try:
+            # Ensure the output directory exists
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Output directory set to {output_path}")
+
+            # Construct FFmpeg command to extract frames at 1 frame per second
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath),
+                '-vf', 'fps=1', str(output_path / 'frame_%04d.png')
+            ]
+
+            # Run the command and log the outcome
+            run_command(command, description=f"Extracting frames from {video.basename}", display_output=True)
+            print_status(f"Frames extracted from {video.basename}. Saved in {output_path}")
+            logging.info(f"Frame extraction completed for {video.filepath}")
+        except Exception as e:
+            # Log and print any errors that occur during extraction
+            logging.error(f"Error extracting frames from {video.filepath}: {e}")
+            print_warning(f"Failed to extract frames from {video.basename}")
+
+    def concatenate_videos(self, videos: List[VideoFile], output_file: str):
+        """
+        Concatenate multiple video files using FFmpeg.
+
+        Args:
+            videos (List[VideoFile]): List of video files to concatenate.
+            output_file (str): Path to save the concatenated video.
+        """
+        logging.info("Starting video concatenation process")
+
+        # Normalize videos before concatenation
+        normalized_files = self.normalize_videos(videos, Path(output_file).parent)
+        if not normalized_files:
+            print_warning("No videos were successfully normalized. Cannot proceed with concatenation.")
+            return
+
+        # Create a temporary file with paths of normalized files
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
+                temp_file_name = temp_file.name
+                for file in normalized_files:
+                    temp_file.write(f"file '{Path(file).resolve()}'\n")
+                temp_file.flush()
+
+            try:
+                # Use the same container format as the first source
+                first_video = videos[0]
+                output_path = Path(output_file)
+                output_extension = first_video.filepath.suffix
+                output_file_final = output_path.with_suffix(output_extension)
+
+                # Build FFmpeg command for concatenation without re-encoding
+                command = [self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-f', 'concat', '-safe', '0', '-i', temp_file_name]
+                if first_video.has_audio:
+                    command += ['-c', 'copy']
+                else:
+                    command += ['-c:v', 'copy', '-an']
+                command += [str(output_file_final)]
+
+                # Run the concatenation command
+                logging.info(f"Running ffmpeg concat command: {' '.join(command)}")
+                run_command(command, description="Concatenating videos without re-encoding")
+                logging.info(f"Concatenation successful. Output saved to {output_file_final}")
+                print_status(f"Concatenation successful. Output saved to {output_file_final}")
+
+            except subprocess.CalledProcessError as e:
+                logging.warning(f"Concatenation failed: {e}. Attempting re-encoding.")
+
+                try:
+                    # If the first attempt fails, try re-encoding the videos
+                    encoder = None
+                    first_video = videos[0]
+                    for enc in SUPPORTED_VIDEO_ENCODERS:
+                        if check_encoder_availability(enc):
+                            encoder = enc
+                            break
+                    if encoder is None:
+                        raise ValueError("No suitable video encoder available.")
+
+                    # Estimate bitrate
+                    width, height = first_video.width, first_video.height
+                    bitrate = estimate_bitrate(width, height)
+
+                    command = [self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-f', 'concat', '-safe', '0', '-i', temp_file_name]
+                    command += ['-c:v', encoder, '-b:v', bitrate]
+
+                    # Encoder-specific settings
+                    if encoder.startswith('libvpx'):
+                        command += ['-pix_fmt', 'yuv420p', '-deadline', 'good']
+
+                    if first_video.has_audio:
+                        command += ['-c:a', 'copy']
+                    else:
+                        command += ['-an']
+                    command += [str(output_path.with_suffix(output_extension))]
+
+                    # Run the re-encoding command
+                    logging.info(f"Running ffmpeg re-encoding command: {' '.join(command)}")
+                    run_command(command, description="Concatenating videos with re-encoding")
+                    logging.info(f"Concatenation (re-encoding) successful. Output saved to {output_path.with_suffix(output_extension)}")
+                    print_status(f"Concatenation (re-encoding) successful. Output saved to {output_path.with_suffix(output_extension)}")
+
+                except Exception as e:
+                    logging.error(f"Error during re-encoded concatenation: {e}")
+                    print_warning("Error during concatenation even after re-encoding.")
+                    if output_path.exists():
+                        try:
+                            output_path.unlink()
+                            logging.info(f"Removed incomplete output file {output_path}")
+                        except Exception as unlink_e:
+                            logging.warning(f"Could not remove incomplete output file {output_path}: {unlink_e}")
+
+            finally:
+                # Ensure the temporary file is deleted
+                try:
+                    os.unlink(temp_file_name)
+                    logging.info(f"Temporary file {temp_file_name} deleted.")
+                except FileNotFoundError:
+                    logging.warning(f"Temporary file {temp_file_name} was already removed.")
+        except Exception as e:
+            logging.error(f"Error during concatenation setup: {e}")
+            print_warning("Failed to set up concatenation process.")
+
+    def extract_audio(self, video: VideoFile, output_file: str, format_choice: str):
+        """
+        Extract the audio track from the video file and save it in the chosen format (MP3, Opus, AAC).
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the extracted audio.
+            format_choice (str): Audio format choice ('mp3', 'opus', 'aac').
+        """
+        logging.info(f"Extracting audio from {video.filepath} in format {format_choice}")
+
+        try:
+            # Check if the video contains an audio stream
+            if not video.has_audio:
+                print_warning(f"No audio stream found in {video.basename}.")
+                return
+
+            # Map format choice to corresponding FFmpeg codec
+            format_codecs = {
+                'mp3': 'libmp3lame',
+                'opus': 'libopus',
+                'aac': 'aac'
+            }
+            audio_codec = format_codecs.get(format_choice.lower())
+            if not audio_codec:
+                print_warning(f"Unsupported audio format: {format_choice}")
+                return
+
+            # Build the FFmpeg command for audio extraction
+            output_path = Path(output_file).with_suffix(f".{format_choice.lower()}")
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath),
+                '-vn',  # No video
+                '-c:a', audio_codec,  # Audio codec
+                '-b:a', '256k',  # Bitrate
+                str(output_path)
+            ]
+
+            # Run the command and log the outcome
+            run_command(command, description=f"Extracting audio from {video.basename}", display_output=True)
+            print_status(f"Audio extracted from {video.basename}. Saved as {output_path}")
+            logging.info(f"Audio extraction successful for {video.filepath}")
+
+        except Exception as e:
+            # Handle and log errors during audio extraction
+            logging.error(f"Error extracting audio from {video.filepath}: {e}")
+            print_warning(f"Failed to extract audio from {video.basename}")
+
+    def merge_audio_with_video(self, video: VideoFile, audio_file: str, output_file: str):
+        """
+        Merge an external audio file with a video.
+
+        Args:
+            video (VideoFile): The video file to process.
+            audio_file (str): Path to the external audio file.
+            output_file (str): Path to save the merged video.
+        """
+        logging.info(f"Merging audio from {audio_file} with {video.filepath}")
+
+        try:
+            # Check if the external audio file exists
+            audio_path = Path(audio_file)
+            if not audio_path.exists():
+                print_warning(f"Audio file does not exist: {audio_file}")
+                return
+
+            # Use the same container format as the source
+            video_path = video.filepath
+            output_path = Path(output_file).with_suffix(video_path.suffix)
+
+            # Build the FFmpeg command to merge the audio and video streams
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-y',  # Overwrite output if it exists
+                '-i', str(video_path),  # Input video file
+                '-i', str(audio_path),  # Input audio file
+                '-c:v', 'copy',  # Copy video without re-encoding
+                '-c:a', 'copy',  # Copy audio without re-encoding
+                '-map', '0:v:0',  # Map the video stream from the first input
+                '-map', '1:a:0',  # Map the audio stream from the second input
+                str(output_path)  # Output file
+            ]
+
+            # Run the command and log the outcome
+            run_command(command, description=f"Merging audio with {video.basename}")
+            print_status(f"Audio merged with {video.basename}. Saved as {output_path}")
+            logging.info(f"Audio merge successful for {video.filepath}")
+
+        except Exception as e:
+            # Handle and log any errors during the merging process
+            logging.error(f"Error merging audio with {video.filepath}: {e}")
+            print_warning(f"Failed to merge audio with {video.basename}")
+
+    def handle_metadata(self, video: VideoFile, output_file: str, keep_metadata: bool = True):
+        """
+        Handle metadata retention or removal in the video file.
+
+        Args:
+            video (VideoFile): The video file to process.
+            output_file (str): Path to save the processed video.
+            keep_metadata (bool, optional): Whether to retain metadata. Defaults to True.
+        """
+        logging.info(f"Handling metadata for {video.filepath}. Keep metadata: {keep_metadata}")
+
+        try:
+            # Use the same container format as the source
+            output_path = Path(output_file).with_suffix(video.filepath.suffix)
+
+            # Build the FFmpeg command to either retain or remove metadata
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-y',  # Overwrite the output if it exists
+                '-i', str(video.filepath)  # Input video file
+            ]
+
+            # Depending on user choice, either keep or remove metadata
+            if keep_metadata:
+                command += ['-map_metadata', '0']  # Retain metadata
+            else:
+                command += ['-map_metadata', '-1']  # Remove all metadata
+
+            command += ['-c:v', 'copy', '-c:a', 'copy', str(output_path)]  # Copy both video and audio
+
+            # Run the command and log the outcome
+            run_command(command, description=f"Handling metadata for {video.basename}")
+            print_status(f"Metadata handling complete for {video.basename}. Saved as {output_path}")
+            logging.info(f"Metadata handling successful for {video.filepath}")
+
+        except Exception as e:
+            # Log and print any errors that occur during metadata handling
+            logging.error(f"Error handling metadata for {video.filepath}: {e}")
+            print_warning(f"Failed to handle metadata for {video.basename}")
+
+    def generate_video_report(self, video: VideoFile, output_file: str):
+        """
+        Generate a detailed report for the video file.
+
+        Args:
+            video (VideoFile): The video file to analyze.
+            output_file (str): Path to save the report (e.g., JSON file).
+        """
+        logging.info(f"Generating video report for {video.filepath}")
+
+        try:
+            # Build the FFprobe command to extract detailed video information in JSON format
+            command = [
+                self.config.get("FFMPEG_BIN", "ffmpeg"), '-y', '-i', str(video.filepath)
+            ]
+
+            # Run the command and retrieve the report
+            report = run_command(command, description=f"Generating video report for {video.basename}")
+
+            # Write the report to the specified output file
+            output_path = Path(output_file)
+            with output_path.open('w') as f:
+                f.write(report)
+
+            print_status(f"Video report generated for {video.basename}. Saved as {output_path}")
+            logging.info(f"Video report generated successfully for {video.filepath}")
+
+        except Exception as e:
+            # Handle and log errors during report generation
+            logging.error(f"Error generating report for {video.filepath}: {e}")
+            print_warning(f"Failed to generate report for {video.basename}")
+
+    def handle_vapoursynth(self, video: VideoFile):
+        """
+        Handle applying a VapourSynth transformation to a video.
+
+        Args:
+            video (VideoFile): The video file to process.
+        """
+        logging.info(f"Applying VapourSynth transformation to {video.filepath}")
+        # Implementation as per previous segments or further adjustments
+
+class UserInterface:
+    """Handles user interactions."""
+
+    def __init__(self):
+        """
+        Initialize the UserInterface with a VideoProcessor.
+        """
+        self.config = load_config()  # Load configuration
+        self.processor = VideoProcessor(self.config)  # Initialize VideoProcessor with config
+        logging.info("UserInterface initialized with VideoProcessor")
+        self.binary_paths_menu()
+
+    def binary_paths_menu(self):
+        """
+        Provide the user with an option to specify binary paths and store them in the config file.
+        """
+        while True:
+            print(f"{GREEN}#{NC} ===== Binary Paths Configuration =====")
+            print("1. View Current Binary Paths")
+            print("2. Modify Binary Paths")
+            print("3. Exit Binary Paths Configuration")
+            choice = input(f"{GREEN}Select an option: {NC}").strip()
+
+            if choice == '1':
+                self.view_binary_paths()
+            elif choice == '2':
+                self.modify_binary_paths()
+            elif choice == '3':
+                print_status("Exiting Binary Paths Configuration.", "INFO")
+                break
+            else:
+                print_warning("Invalid option selected. Please try again.")
+
+    def view_binary_paths(self):
+        """Display the current binary paths from the configuration."""
+        print(f"{GREEN}Current Binary Paths:{NC}")
+        for key, value in self.config.items():
+            print(f"{key}: {value}")
+        print("")  # Empty line for spacing
+
+    def modify_binary_paths(self):
+        """
+        Prompt the user to specify new binary paths and update the configuration file.
+        """
+        print(f"{GREEN}Modify Binary Paths:{NC}")
+        updated = False
+        for key in DEFAULT_CONFIG.keys():
+            current_path = self.config.get(key, DEFAULT_CONFIG[key])
+            new_path = input(f"Enter path for {key} [{current_path}]: ").strip()
+            if new_path:
+                self.config[key] = os.path.expanduser(new_path)
+                logging.info(f"Updated {key} to {self.config[key]}")
+                updated = True
+
+        if updated:
+            save_config(self.config)
+            print_status("Binary paths updated successfully.", "OK")
+        else:
+            print_status("No changes made to binary paths.", "INFO")
+
+    def main_menu(self):
+        """
+        Display the main menu and handle user selection.
+        Continuously prompts the user until they choose to quit.
+        """
+        while True:
+            # Display menu
+            print(f"{GREEN}#{NC} ========= {GREEN}// DMX //{NC}")
+            print(f"{GREEN}1.{NC}) Analyze         {GREEN}9.{NC}) Screencaps")
+            print(f"{GREEN}2.{NC}) Autofix         {GREEN}10.{NC}) Concatenate")
+            print(f"{GREEN}3.{NC}) Normalize       {GREEN}11.{NC}) Extract Audio")
+            print(f"{GREEN}4.{NC}) Change Speed    {GREEN}12.{NC}) Merge Audio")
+            print(f"{GREEN}5.{NC}) Resolution      {GREEN}13.{NC}) Metadata")
+            print(f"{GREEN}6.{NC}) Convert         {GREEN}14.{NC}) Report")
+            print(f"{GREEN}7.{NC}) Filters         {GREEN}15.{NC}) VapourSynth")
+            print(f"{GREEN}8.{NC}) Help            {GREEN}Q{NC}) Quit")
+            print("")
+
+            choice = input(f"{GREEN}By your command: {NC}").strip().lower()
+
+            try:
+                # Menu option handling
+                if choice == '1':
+                    self.handle_analyze()
+
+                elif choice == '2':
+                    self.handle_autofix()
+
+                elif choice == '3':
+                    self.handle_normalize()
+
+                elif choice == '4':
+                    self.handle_change_speed()
+
+                elif choice == '5':
+                    self.handle_adjust_resolution()
+
+                elif choice == '6':
+                    self.handle_convert_format()
+
+                elif choice == '7':
+                    self.handle_filters()
+
+                elif choice == '8':
+                    self.print_help()
+
+                elif choice == '9':
+                    self.handle_screencaps()
+
+                elif choice == '10':
+                    self.handle_concatenate()
+
+                elif choice == '11':
+                    self.handle_extract_audio()
+
+                elif choice == '12':
+                    self.handle_merge_audio()
+
+                elif choice == '13':
+                    self.handle_metadata()
+
+                elif choice == '14':
+                    self.handle_generate_report()
+
+                elif choice == '15':
+                    self.handle_vapoursynth()
+
+                elif choice == 'q':
+                    print("Exiting DMX!")
+                    logging.info("User exited the program.")
+                    break
+
+                else:
+                    print_warning(f"Unrecognized option: {choice}")
+
+            except Exception as e:
+                logging.error(f"Error in main menu: {e}")
+                print_warning(f"An error occurred: {e}")
+
+    def handle_analyze(self):
+        """Handle the video analysis operation using MediaInfo."""
+        video = self.select_single_video()
+        if video:
+            self.processor.analyze_video(video)
+
+    def handle_autofix(self):
+        """Handle the detect and autofix operation for a video."""
+        video = self.select_single_video()
+        if video:
+            video.detect_issues(fix_issues=True)
+
+    def handle_normalize(self):
+        """Handle the video normalization operation."""
+        videos = self.select_multiple_videos()
+        if videos:
+            output_dir = input("Enter custom directory for normalized videos or press Enter for current directory: ").strip()
+            if not output_dir:
+                output_dir = "."
+            self.processor.normalize_videos(videos, output_dir)
+
+    def handle_change_speed(self):
+        """Handle changing the speed of a video."""
+        video = self.select_single_video()
+        if video:
+            speed_factor_input = input("Enter Speed factor (e.g., 0.5 for slow motion, 2 for fast motion): ")
+            try:
+                speed_factor = float(speed_factor_input)
+                if speed_factor <= 0:
+                    print_warning("Speed factor must be greater than 0.")
+                    return
+            except ValueError:
+                print_warning("Invalid speed factor.")
+                return
+
+            smooth_motion_input = input("Enable advanced motion interpolation? (y/n): ").lower()
+            smooth_motion = smooth_motion_input == 'y'
+
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_speed_change"
+
+            self.processor.change_speed(video, output_file, speed_factor, smooth_motion)
+
+    def handle_adjust_resolution(self):
+        """Handle adjusting the resolution of a video."""
+        video = self.select_single_video()
+        if video:
+            resolution = input("Enter new resolution (e.g., 1920x1080): ").strip()
+            if not self.processor.validate_resolution_format(resolution):
+                print_warning("Invalid resolution format. Please use WIDTHxHEIGHT (e.g., 1920x1080).")
+                return
+
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_resolution"
+
+            self.processor.adjust_resolution(video, output_file, resolution)
+
+    def handle_convert_format(self):
+        """Handle converting the video format."""
+        video = self.select_single_video()
+        if video:
+            new_format = input("Enter new format (e.g., mp4, mkv, avi, mov, webm): ").strip()
+            if not new_format:
+                print_warning("No format entered.")
+                return
+
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}.{new_format.lower()}"
+
+            self.processor.convert_video_format(video, output_file, new_format)
+
+    def handle_filters(self):
+        """Handle applying filters to the video."""
+        video = self.select_single_video()
+        if video:
+            filters = input("Enter the video filters to apply, separated by commas (e.g., grayscale,negate): ").strip()
+            if not filters:
+                print_warning("No filters entered.")
+                return
+
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_filtered"
+
+            self.processor.apply_filters(video, output_file, filters)
+
+    def handle_screencaps(self):
+        """Handle extracting frames from a video and saving them as images."""
+        video = self.select_single_video()
+        if video:
+            output_dir = input("Enter custom directory for screencaps or press Enter for './screencaps/': ").strip()
+            if not output_dir:
+                output_dir = os.path.expanduser('./screencaps/')
+            self.processor.extract_frames(video, output_dir)
+
+    def handle_concatenate(self):
+        """Handle concatenating multiple videos into a single video."""
+        videos = self.select_multiple_videos()
+        if videos:
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"concatenated_{self.generate_timestamp()}"
+            self.processor.concatenate_videos(videos, output_file)
+
+    def handle_extract_audio(self):
+        """Handle extracting the audio track from a video."""
+        video = self.select_single_video()
+        if video:
+            format_choice = input("Select audio format (opus/mp3/aac): ").strip().lower()
+            if format_choice not in ['opus', 'mp3', 'aac']:
+                print_warning("Unsupported audio format selected.")
+                return
+
+            output_file = input("Enter the base name for the output audio file (without extension): ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_audio.{format_choice.lower()}"
+            else:
+                output_file = f"{output_file}.{format_choice.lower()}"
+
+            self.processor.extract_audio(video, output_file, format_choice)
+
+    def handle_merge_audio(self):
+        """Handle merging an external audio file with a video."""
+        video = self.select_single_video()
+        if video:
+            audio_file = input("Enter the path to the audio file to merge: ").strip()
+            if not audio_file:
+                print_warning("No audio file path entered.")
+                return
+            if not Path(audio_file).is_file():
+                print_warning("The specified audio file does not exist.")
+                return
+
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"merged_{self.generate_timestamp()}"
+
+            self.processor.merge_audio_with_video(video, audio_file, output_file)
+
+    def handle_metadata(self):
+        """Handle adding/removing metadata in a video file."""
+        video = self.select_single_video()
+        if video:
+            output_file = input("Enter output file name: ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_metadata"
+
+            keep_metadata_input = input("Keep the metadata? (y/n): ").strip().lower()
+            keep_metadata = keep_metadata_input == 'y'
+
+            self.processor.handle_metadata(video, output_file, keep_metadata)
+
+    def handle_generate_report(self):
+        """Handle generating a detailed report for a video."""
+        video = self.select_single_video()
+        if video:
+            output_file = input("Enter output file name (e.g., video_report.json): ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_report.json"
+
+            self.processor.generate_video_report(video, output_file)
+
+    def handle_vapoursynth(self):
+        """Handle applying a VapourSynth transformation to a video."""
+        video = self.select_single_video()
+        if video:
+            self.vapoursynth_menu(video)
+
+    def generate_timestamp(self) -> str:
+        """
+        Generate a simple timestamp string for use in filenames.
+
+        Returns:
+            str: Timestamp string in the format YYYYMMDD_HHMMSS.
+        """
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    def select_single_video(self) -> VideoFile:
+        """
+        Select a single video file using fzf.
+
+        Returns:
+            VideoFile: The selected video file, or None if no file is selected.
+        """
+        files = self.use_fzf_to_select_files()
+        if files:
+            return VideoFile(files[0], self.config)
+        print_warning("No file selected.")
+        return None
+
+    def select_multiple_videos(self) -> List[VideoFile]:
+        """
+        Select multiple video files using fzf.
+
+        Returns:
+            List[VideoFile]: List of selected video files, or empty list if no files are selected.
+        """
+        files = self.use_fzf_to_select_files(multiple=True)
+        if files:
+            return [VideoFile(f, self.config) for f in files]
+        print_warning("No files selected.")
+        return []
+
+    @staticmethod
+    def use_fzf_to_select_files(multiple: bool = False) -> List[str]:
+        """
+        Use fzf to select files from the current directory.
+
+        Args:
+            multiple (bool, optional): Whether to allow multiple selections. Defaults to False.
+
+        Returns:
+            List[str]: List of selected file paths.
+        """
+        fzf_command = ['fzf']
+        if multiple:
+            fzf_command.append('--multi')
+        try:
+            # Get list of files in current directory
+            current_dir = Path('.')
+            files_in_dir = [str(f) for f in current_dir.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS]
+            if not files_in_dir:
+                print_warning("No video files found in the current directory.")
+                return []
+
+            # Run fzf with the list of files
+            result = subprocess.run(fzf_command, input='\n'.join(files_in_dir), capture_output=True, text=True, check=True)
+            selected_files = [line for line in result.stdout.strip().split('\n') if line]
+            return selected_files
+        except subprocess.CalledProcessError:
+            print_warning("No files selected or error with fzf.")
+            return []
+        except Exception as e:
+            logging.error(f"Error using fzf to select files: {e}")
+            print_warning("An unexpected error occurred while selecting files.")
+            return []
+
+    @staticmethod
+    def print_help():
+        """Display help information."""
+        help_message = f"""
+{GREEN}Available Commands:{NC}
+1. Analyze the Video with MediaInfo
+2. Detect and Auto-fix Video Issues
+3. Normalize Videos for Concatenation
+4. Change Video Speed (Fast/Slow) w/ Interpolation
+5. Adjust Video Resolution
+6. Convert Video into another format
+7. Apply Video Filters
+8. Help
+9. Extract Frames as Screencaps
+10. Concatenate Videos Into Single Video
+11. Extract Audio from Video
+12. Merge New Audio with Video
+13. Edit or Remove Metadata
+14. Generate Video Report
+15. Apply Advanced Transformations (VapourSynth)
+Q. Quit
+
+{GREEN}Instructions:{NC}
+- Use the number keys to select an option.
+- Use 'Q' to quit the program.
+"""
+        print(help_message)
+
+    def vapoursynth_menu(self, video: VideoFile):
+        """
+        Display the VapourSynth transformations menu and handle user selection.
+
+        Args:
+            video (VideoFile): The video file to process.
+        """
+        options = [
+            "Frame Rate Conversion (Motion Interpolation)",
+            "Inverse Telecine (IVTC)",
+            "Deflicker",
+            "Dedot",
+            "Dehalo",
+            "Grain Generation",
+            "Remove Grain",
+            "Debanding",
+            "Sharpening & Edge Enhancement",
+            "Color Correction",
+            "Super Resolution",
+            "Deshake",
+            "Edge Detection",
+            "Zooming",
+            "Stabilization",
+            "Slo-mo",
+            "Exit"
+        ]
+        for idx, opt in enumerate(options, 1):
+            print(f"{idx}. {opt}")
+
+        while True:
+            choice = input("Select a transformation (or type 'Exit' to return to main menu): ").strip()
+            if choice.lower() == 'exit':
+                break
+            try:
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(options):
+                    transformation = options[choice_idx]
+                    if transformation == "Exit":
+                        break
+                    self.apply_vapoursynth_transformation(video, transformation)
+                else:
+                    print_warning("Invalid option selected.")
+            except ValueError:
+                print_warning("Invalid input. Please enter a number corresponding to the options or 'Exit'.")
+
+    def apply_vapoursynth_transformation(self, video: VideoFile, transformation: str):
+        """
+        Apply the selected VapourSynth transformation.
+
+        Args:
+            video (VideoFile): The video file to process.
+            transformation (str): The transformation to apply.
+        """
+        output_file = input("Enter output file name: ").strip()
+        if not output_file:
+            safe_transformation = transformation.lower().replace(' ', '_').replace('(', '').replace(')', '')
+            output_file = f"{video.filepath.stem}_{safe_transformation}.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        if transformation in ["Frame Rate Conversion (Motion Interpolation)", "Slo-mo"]:
+            target_fps = input("Enter target FPS (e.g., 60): ").strip()
+            try:
+                target_fps = float(target_fps)
+            except ValueError:
+                print_warning("Invalid FPS value.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib1']}")
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib2']}")
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            super_params = dict(pel=2)
+            analyse_params = dict(main=dict(search=dict(coarse=dict(distance=-6))))
+            smoothfps_params = dict(fpsnum=int({target_fps} * 1000), fpsden=1000)
+            super_clip = core.svp1.Super(clip, super_params)
+            vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+            smooth_clip = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"], vectors["clip"], vectors["data"], smoothfps_params)
+            smooth_clip.set_output()
+            """)
+        elif transformation == "Remove Grain":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.rgvs.RemoveGrain(clip, mode=17)
+            clip.set_output()
+            """)
+        elif transformation == "Sharpening & Edge Enhancement":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.warp.AWarpSharp2(clip, depth=2)
+            clip.set_output()
+            """)
+        elif transformation == "Super Resolution":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.nnedi3.nnedi3(clip, field=3)
+            clip.set_output()
+            """)
+        elif transformation == "Dehalo":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.dehalo.Alpha(clip)
+            clip.set_output()
+            """)
+        elif transformation == "Debanding":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.f3kdb.Deband(clip, y=64, cb=64, cr=64, grainy=64, grainc=64)
+            clip.set_output()
+            """)
+        elif transformation == "Color Correction":
+            brightness = input("Enter brightness adjustment (default 0.0): ").strip() or "0.0"
+            contrast = input("Enter contrast adjustment (default 1.0): ").strip() or "1.0"
+            saturation = input("Enter saturation adjustment (default 1.0): ").strip() or "1.0"
+            try:
+                brightness = float(brightness)
+                contrast = float(contrast)
+                saturation = float(saturation)
+            except ValueError:
+                print_warning("Invalid input values. Using default settings.")
+                brightness, contrast, saturation = 0.0, 1.0, 1.0
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.Tweak(clip, bright={brightness}, cont={contrast}, sat={saturation})
+            clip.set_output()
+            """)
+        elif transformation == "Zooming":
+            print("Note: Currently, zooming parameters must be entered manually.")
+            x = input("Enter x coordinate for cropping (default 0): ").strip() or "0"
+            y = input("Enter y coordinate for cropping (default 0): ").strip() or "0"
+            width = input("Enter width for cropping (e.g., 640): ").strip()
+            height = input("Enter height for cropping (e.g., 480): ").strip()
+            try:
+                x = int(x)
+                y = int(y)
+                width = int(width)
+                height = int(height)
+            except ValueError:
+                print_warning("Invalid cropping parameters.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.CropAbs(clip, width={width}, height={height}, left={x}, top={y})
+            clip = core.resize.Bicubic(clip, width=clip.width, height=clip.height)
+            clip.set_output()
+            """)
+        else:
+            print_warning("Transformation not implemented yet.")
+            return
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+    def batch_enhance_video(self, video: VideoFile):
+        """Apply a series of enhancements to the video."""
+
+        output_file = input("Enter output file name for enhanced video: ").strip()
+        if not output_file:
+            output_file = f"{video.filepath.stem}_enhanced.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        # Ensure SVPflow2 plugin is loaded before accessing it
+        if not self.processor.svp_plugins:
+            print_warning("SVPflow2 plugin not found. Cannot proceed with motion interpolation.")
+            return
+
+        # Construct a VapourSynth script that applies multiple transformations
+        script_content = textwrap.dedent(f"""
+        import vapoursynth as vs
+        core = vs.core
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib1']}')
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib2']}')
+        core.std.LoadPlugin(r'{ffms2_plugin}')
+        core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+        core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+        core.std.LoadPlugin('libremovegrain.so')  # Ensure removegrain plugin is available
+        core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+        core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+        core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+
+        clip = core.ffms2.Source(r"{os.path.abspath(video.filepath)}")
+
+        # Remove grain
+        clip = core.rgvs.RemoveGrain(clip, mode=17)
+        # Sharpening and edge enhancement
+        clip = core.warp.AWarpSharp2(clip, depth=2)
+        # Super resolution
+        clip = core.nnedi3.nnedi3(clip, field=3)
+        # Color correction
+        clip = core.std.Tweak(clip, bright=0.0, cont=1.0, sat=1.0)
+        # Frame rate conversion with motion interpolation using SVPflow2
+        super_clip = core.svp1.Super(clip, pel=2)
+        vectors = core.svp1.Analyse(super_clip)
+        smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, fpsnum=60000, fpsden=1001)  # 59.94fps
+        smooth_clip.set_output()
+        """)
+
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+    def configure_binary_paths(self):
+        """
+        Provide the user with an option to specify binary paths and store them in the config file.
+        Ensures the configuration directory exists.
+        """
+        print(f"{GREEN}Binary Paths Configuration:{NC}")
+        print("Would you like to configure custom binary paths? (y/n): ", end='')
+        choice = input().strip().lower()
+        if choice != 'y':
+            return
+
+        try:
+            for key in DEFAULT_CONFIG.keys():
+                current_path = self.config.get(key, DEFAULT_CONFIG[key])
+                new_path = input(f"Enter path for {key} [{current_path}]: ").strip()
+                if new_path:
+                    self.config[key] = os.path.expanduser(new_path)
+                    logging.info(f"Updated {key} to {self.config[key]}")
+
+            save_config(self.config)
+            print_status("Binary paths updated successfully.", "OK")
+        except Exception as e:
+            logging.error(f"Error configuring binary paths: {e}")
+            print_warning("Failed to configure binary paths. Check logs for details.")
+
+    def handle_binary_paths_configuration(self):
+        """
+        Handle the binary paths configuration menu.
+        """
+        while True:
+            print(f"{GREEN}#{NC} ===== Binary Paths Configuration =====")
+            print("1. View Current Binary Paths")
+            print("2. Modify Binary Paths")
+            print("3. Reset to Default Paths")
+            print("4. Exit Configuration")
+            choice = input(f"{GREEN}Select an option: {NC}").strip()
+
+            if choice == '1':
+                self.view_binary_paths()
+            elif choice == '2':
+                self.modify_binary_paths()
+            elif choice == '3':
+                self.reset_to_default_paths()
+            elif choice == '4':
+                print_status("Exiting Binary Paths Configuration.", "INFO")
+                break
+            else:
+                print_warning("Invalid option selected. Please try again.")
+
+    def view_binary_paths(self):
+        """Display the current binary paths from the configuration."""
+        print(f"{GREEN}Current Binary Paths:{NC}")
+        for key, value in self.config.items():
+            print(f"{key}: {value}")
+        print("")  # Empty line for spacing
+
+    def modify_binary_paths(self):
+        """
+        Prompt the user to specify new binary paths and update the configuration file.
+        """
+        print(f"{GREEN}Modify Binary Paths:{NC}")
+        updated = False
+        for key in DEFAULT_CONFIG.keys():
+            current_path = self.config.get(key, DEFAULT_CONFIG[key])
+            new_path = input(f"Enter path for {key} [{current_path}]: ").strip()
+            if new_path:
+                self.config[key] = os.path.expanduser(new_path)
+                logging.info(f"Updated {key} to {self.config[key]}")
+                updated = True
+
+        if updated:
+            save_config(self.config)
+            print_status("Binary paths updated successfully.", "OK")
+        else:
+            print_status("No changes made to binary paths.", "INFO")
+
+    def reset_to_default_paths(self):
+        """
+        Reset binary paths to their default values.
+        """
+        self.config = DEFAULT_CONFIG.copy()
+        save_config(self.config)
+        print_status("Binary paths reset to default values.", "OK")
+        logging.info("Binary paths reset to default values.")
+
+    def print_help(self):
+        """Display help information."""
+        help_message = f"""
+{GREEN}Available Commands:{NC}
+1. Analyze the Video with MediaInfo
+2. Detect and Auto-fix Video Issues
+3. Normalize Videos for Concatenation
+4. Change Video Speed (Fast/Slow) w/ Interpolation
+5. Adjust Video Resolution
+6. Convert Video into another format
+7. Apply Video Filters
+8. Help
+9. Extract Frames as Screencaps
+10. Concatenate Videos Into Single Video
+11. Extract Audio from Video
+12. Merge New Audio with Video
+13. Edit or Remove Metadata
+14. Generate Video Report
+15. Apply Advanced Transformations (VapourSynth)
+Q. Quit
+
+{GREEN}Instructions:{NC}
+- Use the number keys to select an option.
+- Use 'Q' to quit the program.
+"""
+        print(help_message)
+
+    def vapoursynth_menu(self, video: VideoFile):
+        """
+        Display the VapourSynth transformations menu and handle user selection.
+
+        Args:
+            video (VideoFile): The video file to process.
+        """
+        options = [
+            "Frame Rate Conversion (Motion Interpolation)",
+            "Inverse Telecine (IVTC)",
+            "Deflicker",
+            "Dedot",
+            "Dehalo",
+            "Grain Generation",
+            "Remove Grain",
+            "Debanding",
+            "Sharpening & Edge Enhancement",
+            "Color Correction",
+            "Super Resolution",
+            "Deshake",
+            "Edge Detection",
+            "Zooming",
+            "Stabilization",
+            "Slo-mo",
+            "Exit"
+        ]
+        for idx, opt in enumerate(options, 1):
+            print(f"{idx}. {opt}")
+
+        while True:
+            choice = input("Select a transformation (or type 'Exit' to return to main menu): ").strip()
+            if choice.lower() == 'exit':
+                break
+            try:
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(options):
+                    transformation = options[choice_idx]
+                    if transformation == "Exit":
+                        break
+                    self.apply_vapoursynth_transformation(video, transformation)
+                else:
+                    print_warning("Invalid option selected.")
+            except ValueError:
+                print_warning("Invalid input. Please enter a number corresponding to the options or 'Exit'.")
+
+    def apply_vapoursynth_transformation(self, video: VideoFile, transformation: str):
+        """
+        Apply the selected VapourSynth transformation.
+
+        Args:
+            video (VideoFile): The video file to process.
+            transformation (str): The transformation to apply.
+        """
+        output_file = input("Enter output file name: ").strip()
+        if not output_file:
+            safe_transformation = transformation.lower().replace(' ', '_').replace('(', '').replace(')', '')
+            output_file = f"{video.filepath.stem}_{safe_transformation}.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        if transformation in ["Frame Rate Conversion (Motion Interpolation)", "Slo-mo"]:
+            target_fps = input("Enter target FPS (e.g., 60): ").strip()
+            try:
+                target_fps = float(target_fps)
+            except ValueError:
+                print_warning("Invalid FPS value.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib1']}")
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib2']}")
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            super_params = dict(pel=2)
+            analyse_params = dict(main=dict(search=dict(coarse=dict(distance=-6))))
+            smoothfps_params = dict(fpsnum=int({target_fps} * 1000), fpsden=1000)
+            super_clip = core.svp1.Super(clip, super_params)
+            vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+            smooth_clip = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"], vectors["clip"], vectors["data"], smoothfps_params)
+            smooth_clip.set_output()
+            """)
+        elif transformation == "Remove Grain":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.rgvs.RemoveGrain(clip, mode=17)
+            clip.set_output()
+            """)
+        elif transformation == "Sharpening & Edge Enhancement":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.warp.AWarpSharp2(clip, depth=2)
+            clip.set_output()
+            """)
+        elif transformation == "Super Resolution":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.nnedi3.nnedi3(clip, field=3)
+            clip.set_output()
+            """)
+        elif transformation == "Dehalo":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.dehalo.Alpha(clip)
+            clip.set_output()
+            """)
+        elif transformation == "Debanding":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.f3kdb.Deband(clip, y=64, cb=64, cr=64, grainy=64, grainc=64)
+            clip.set_output()
+            """)
+        elif transformation == "Color Correction":
+            brightness = input("Enter brightness adjustment (default 0.0): ").strip() or "0.0"
+            contrast = input("Enter contrast adjustment (default 1.0): ").strip() or "1.0"
+            saturation = input("Enter saturation adjustment (default 1.0): ").strip() or "1.0"
+            try:
+                brightness = float(brightness)
+                contrast = float(contrast)
+                saturation = float(saturation)
+            except ValueError:
+                print_warning("Invalid input values. Using default settings.")
+                brightness, contrast, saturation = 0.0, 1.0, 1.0
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.Tweak(clip, bright={brightness}, cont={contrast}, sat={saturation})
+            clip.set_output()
+            """)
+        elif transformation == "Zooming":
+            print("Note: Currently, zooming parameters must be entered manually.")
+            x = input("Enter x coordinate for cropping (default 0): ").strip() or "0"
+            y = input("Enter y coordinate for cropping (default 0): ").strip() or "0"
+            width = input("Enter width for cropping (e.g., 640): ").strip()
+            height = input("Enter height for cropping (e.g., 480): ").strip()
+            try:
+                x = int(x)
+                y = int(y)
+                width = int(width)
+                height = int(height)
+            except ValueError:
+                print_warning("Invalid cropping parameters.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.CropAbs(clip, width={width}, height={height}, left={x}, top={y})
+            clip = core.resize.Bicubic(clip, width=clip.width, height=clip.height)
+            clip.set_output()
+            """)
+        else:
+            print_warning("Transformation not implemented yet.")
+            return
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+    def batch_enhance_video(self, video: VideoFile):
+        """Apply a series of enhancements to the video."""
+
+        output_file = input("Enter output file name for enhanced video: ").strip()
+        if not output_file:
+            output_file = f"{video.filepath.stem}_enhanced.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        # Ensure SVPflow2 plugin is loaded before accessing it
+        if not self.processor.svp_plugins:
+            print_warning("SVPflow2 plugin not found. Cannot proceed with motion interpolation.")
+            return
+
+        # Construct a VapourSynth script that applies multiple transformations
+        script_content = textwrap.dedent(f"""
+        import vapoursynth as vs
+        core = vs.core
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib1']}')
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib2']}')
+        core.std.LoadPlugin(r'{ffms2_plugin}')
+        core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+        core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+        core.std.LoadPlugin('libremovegrain.so')  # Ensure removegrain plugin is available
+        core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+        core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+        core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+
+        clip = core.ffms2.Source(r"{os.path.abspath(video.filepath)}")
+
+        # Remove grain
+        clip = core.rgvs.RemoveGrain(clip, mode=17)
+        # Sharpening and edge enhancement
+        clip = core.warp.AWarpSharp2(clip, depth=2)
+        # Super resolution
+        clip = core.nnedi3.nnedi3(clip, field=3)
+        # Color correction
+        clip = core.std.Tweak(clip, bright=0.0, cont=1.0, sat=1.0)
+        # Frame rate conversion with motion interpolation using SVPflow2
+        super_clip = core.svp1.Super(clip, pel=2)
+        vectors = core.svp1.Analyse(super_clip)
+        smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, fpsnum=60000, fpsden=1001)  # 59.94fps
+        smooth_clip.set_output()
+        """)
+
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+    def handle_binary_paths_configuration(self):
+        """
+        Handle the binary paths configuration menu.
+        """
+        while True:
+            print(f"{GREEN}#{NC} ===== Binary Paths Configuration =====")
+            print("1. View Current Binary Paths")
+            print("2. Modify Binary Paths")
+            print("3. Reset to Default Paths")
+            print("4. Exit Configuration")
+            choice = input(f"{GREEN}Select an option: {NC}").strip()
+
+            if choice == '1':
+                self.view_binary_paths()
+            elif choice == '2':
+                self.modify_binary_paths()
+            elif choice == '3':
+                self.reset_to_default_paths()
+            elif choice == '4':
+                print_status("Exiting Binary Paths Configuration.", "INFO")
+                break
+            else:
+                print_warning("Invalid option selected. Please try again.")
+
+    def view_binary_paths(self):
+        """Display the current binary paths from the configuration."""
+        print(f"{GREEN}Current Binary Paths:{NC}")
+        for key, value in self.config.items():
+            print(f"{key}: {value}")
+        print("")  # Empty line for spacing
+
+    def modify_binary_paths(self):
+        """
+        Prompt the user to specify new binary paths and update the configuration file.
+        """
+        print(f"{GREEN}Modify Binary Paths:{NC}")
+        updated = False
+        for key in DEFAULT_CONFIG.keys():
+            current_path = self.config.get(key, DEFAULT_CONFIG[key])
+            new_path = input(f"Enter path for {key} [{current_path}]: ").strip()
+            if new_path:
+                self.config[key] = os.path.expanduser(new_path)
+                logging.info(f"Updated {key} to {self.config[key]}")
+                updated = True
+
+        if updated:
+            save_config(self.config)
+            print_status("Binary paths updated successfully.", "OK")
+        else:
+            print_status("No changes made to binary paths.", "INFO")
+
+    def reset_to_default_paths(self):
+        """
+        Reset binary paths to their default values.
+        """
+        self.config = DEFAULT_CONFIG.copy()
+        save_config(self.config)
+        print_status("Binary paths reset to default values.", "OK")
+        logging.info("Binary paths reset to default values.")
+
+    @staticmethod
+    def use_fzf_to_select_files(multiple: bool = False) -> List[str]:
+        """
+        Use fzf to select files from the current directory.
+
+        Args:
+            multiple (bool, optional): Whether to allow multiple selections. Defaults to False.
+
+        Returns:
+            List[str]: List of selected file paths.
+        """
+        fzf_command = ['fzf']
+        if multiple:
+            fzf_command.append('--multi')
+        try:
+            # Get list of files in current directory
+            current_dir = Path('.')
+            files_in_dir = [str(f) for f in current_dir.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS]
+            if not files_in_dir:
+                print_warning("No video files found in the current directory.")
+                return []
+
+            # Run fzf with the list of files
+            result = subprocess.run(fzf_command, input='\n'.join(files_in_dir), capture_output=True, text=True, check=True)
+            selected_files = [line for line in result.stdout.strip().split('\n') if line]
+            return selected_files
+        except subprocess.CalledProcessError:
+            print_warning("No files selected or error with fzf.")
+            return []
+        except Exception as e:
+            logging.error(f"Error using fzf to select files: {e}")
+            print_warning("An unexpected error occurred while selecting files.")
+            return []
+
+class UserInterface:
+    """Handles user interactions."""
+
+    def __init__(self):
+        """
+        Initialize the UserInterface with a VideoProcessor.
+        """
+        self.config = load_config()  # Load configuration
+        self.processor = VideoProcessor(self.config)  # Initialize VideoProcessor with config
+        logging.info("UserInterface initialized with VideoProcessor")
+        self.binary_paths_menu()
+
+    def binary_paths_menu(self):
+        """
+        Provide the user with an option to specify binary paths and store them in the config file.
+        """
+        while True:
+            print(f"{GREEN}#{NC} ===== Binary Paths Configuration =====")
+            print("1. View Current Binary Paths")
+            print("2. Modify Binary Paths")
+            print("3. Reset to Default Paths")
+            print("4. Exit Configuration")
+            choice = input(f"{GREEN}Select an option: {NC}").strip()
+
+            if choice == '1':
+                self.view_binary_paths()
+            elif choice == '2':
+                self.modify_binary_paths()
+            elif choice == '3':
+                self.reset_to_default_paths()
+            elif choice == '4':
+                print_status("Exiting Binary Paths Configuration.", "INFO")
+                break
+            else:
+                print_warning("Invalid option selected. Please try again.")
+
+    def view_binary_paths(self):
+        """Display the current binary paths from the configuration."""
+        print(f"{GREEN}Current Binary Paths:{NC}")
+        for key, value in self.config.items():
+            print(f"{key}: {value}")
+        print("")  # Empty line for spacing
+
+    def modify_binary_paths(self):
+        """
+        Prompt the user to specify new binary paths and update the configuration file.
+        """
+        print(f"{GREEN}Modify Binary Paths:{NC}")
+        updated = False
+        for key in DEFAULT_CONFIG.keys():
+            current_path = self.config.get(key, DEFAULT_CONFIG[key])
+            new_path = input(f"Enter path for {key} [{current_path}]: ").strip()
+            if new_path:
+                self.config[key] = os.path.expanduser(new_path)
+                logging.info(f"Updated {key} to {self.config[key]}")
+                updated = True
+
+        if updated:
+            save_config(self.config)
+            print_status("Binary paths updated successfully.", "OK")
+        else:
+            print_status("No changes made to binary paths.", "INFO")
+
+    def reset_to_default_paths(self):
+        """
+        Reset binary paths to their default values.
+        """
+        self.config = DEFAULT_CONFIG.copy()
+        save_config(self.config)
+        print_status("Binary paths reset to default values.", "OK")
+        logging.info("Binary paths reset to default values.")
+
+    def main_menu(self):
+        """
+        Display the main menu and handle user selection.
+        Continuously prompts the user until they choose to quit.
+        """
+        while True:
+            # Display menu
+            print(f"{GREEN}#{NC} ========= {GREEN}// DMX //{NC}")
+            print(f"{GREEN}1.{NC}) Analyze         {GREEN}9.{NC}) Screencaps")
+            print(f"{GREEN}2.{NC}) Autofix         {GREEN}10.{NC}) Concatenate")
+            print(f"{GREEN}3.{NC}) Normalize       {GREEN}11.{NC}) Extract Audio")
+            print(f"{GREEN}4.{NC}) Change Speed    {GREEN}12.{NC}) Merge Audio")
+            print(f"{GREEN}5.{NC}) Resolution      {GREEN}13.{NC}) Metadata")
+            print(f"{GREEN}6.{NC}) Convert         {GREEN}14.{NC}) Report")
+            print(f"{GREEN}7.{NC}) Filters         {GREEN}15.{NC}) VapourSynth")
+            print(f"{GREEN}8.{NC}) Help            {GREEN}Q{NC}) Quit")
+            print("")
+
+            choice = input(f"{GREEN}By your command: {NC}").strip().lower()
+
+            try:
+                # Menu option handling
+                if choice == '1':
+                    self.handle_analyze()
+
+                elif choice == '2':
+                    self.handle_autofix()
+
+                elif choice == '3':
+                    self.handle_normalize()
+
+                elif choice == '4':
+                    self.handle_change_speed()
+
+                elif choice == '5':
+                    self.handle_adjust_resolution()
+
+                elif choice == '6':
+                    self.handle_convert_format()
+
+                elif choice == '7':
+                    self.handle_filters()
+
+                elif choice == '8':
+                    self.print_help()
+
+                elif choice == '9':
+                    self.handle_screencaps()
+
+                elif choice == '10':
+                    self.handle_concatenate()
+
+                elif choice == '11':
+                    self.handle_extract_audio()
+
+                elif choice == '12':
+                    self.handle_merge_audio()
+
+                elif choice == '13':
+                    self.handle_metadata()
+
+                elif choice == '14':
+                    self.handle_generate_report()
+
+                elif choice == '15':
+                    self.handle_vapoursynth()
+
+                elif choice == 'q':
+                    print("Exiting DMX!")
+                    logging.info("User exited the program.")
+                    break
+
+                else:
+                    print_warning(f"Unrecognized option: {choice}")
+
+            except Exception as e:
+                logging.error(f"Error in main menu: {e}")
+                print_warning(f"An error occurred: {e}")
+
+    def handle_generate_report(self):
+        """Handle generating a detailed report for a video."""
+        video = self.select_single_video()
+        if video:
+            output_file = input("Enter output file name (e.g., video_report.json): ").strip()
+            if not output_file:
+                output_file = f"{video.filepath.stem}_report.json"
+
+            self.processor.generate_video_report(video, output_file)
+
+    def handle_vapoursynth(self):
+        """Handle applying a VapourSynth transformation to a video."""
+        video = self.select_single_video()
+        if video:
+            self.vapoursynth_menu(video)
+
+    def generate_timestamp(self) -> str:
+        """
+        Generate a simple timestamp string for use in filenames.
+
+        Returns:
+            str: Timestamp string in the format YYYYMMDD_HHMMSS.
+        """
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    def select_single_video(self) -> VideoFile:
+        """
+        Select a single video file using fzf.
+
+        Returns:
+            VideoFile: The selected video file, or None if no file is selected.
+        """
+        files = self.use_fzf_to_select_files()
+        if files:
+            return VideoFile(files[0], self.config)
+        print_warning("No file selected.")
+        return None
+
+    def select_multiple_videos(self) -> List[VideoFile]:
+        """
+        Select multiple video files using fzf.
+
+        Returns:
+            List[VideoFile]: List of selected video files, or empty list if no files are selected.
+        """
+        files = self.use_fzf_to_select_files(multiple=True)
+        if files:
+            return [VideoFile(f, self.config) for f in files]
+        print_warning("No files selected.")
+        return []
+
+    @staticmethod
+    def use_fzf_to_select_files(multiple: bool = False) -> List[str]:
+        """
+        Use fzf to select files from the current directory.
+
+        Args:
+            multiple (bool, optional): Whether to allow multiple selections. Defaults to False.
+
+        Returns:
+            List[str]: List of selected file paths.
+        """
+        fzf_command = ['fzf']
+        if multiple:
+            fzf_command.append('--multi')
+        try:
+            # Get list of files in current directory
+            current_dir = Path('.')
+            files_in_dir = [str(f) for f in current_dir.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS]
+            if not files_in_dir:
+                print_warning("No video files found in the current directory.")
+                return []
+
+            # Run fzf with the list of files
+            result = subprocess.run(fzf_command, input='\n'.join(files_in_dir), capture_output=True, text=True, check=True)
+            selected_files = [line for line in result.stdout.strip().split('\n') if line]
+            return selected_files
+        except subprocess.CalledProcessError:
+            print_warning("No files selected or error with fzf.")
+            return []
+        except Exception as e:
+            logging.error(f"Error using fzf to select files: {e}")
+            print_warning("An unexpected error occurred while selecting files.")
+            return []
+
+    def print_help(self):
+        """Display help information."""
+        help_message = f"""
+{GREEN}Available Commands:{NC}
+1. Analyze the Video with MediaInfo
+2. Detect and Auto-fix Video Issues
+3. Normalize Videos for Concatenation
+4. Change Video Speed (Fast/Slow) w/ Interpolation
+5. Adjust Video Resolution
+6. Convert Video into another format
+7. Apply Video Filters
+8. Help
+9. Extract Frames as Screencaps
+10. Concatenate Videos Into Single Video
+11. Extract Audio from Video
+12. Merge New Audio with Video
+13. Edit or Remove Metadata
+14. Generate Video Report
+15. Apply Advanced Transformations (VapourSynth)
+Q. Quit
+
+{GREEN}Instructions:{NC}
+- Use the number keys to select an option.
+- Use 'Q' to quit the program.
+"""
+        print(help_message)
+
+    def vapoursynth_menu(self, video: VideoFile):
+        """
+        Display the VapourSynth transformations menu and handle user selection.
+
+        Args:
+            video (VideoFile): The video file to process.
+        """
+        options = [
+            "Frame Rate Conversion (Motion Interpolation)",
+            "Inverse Telecine (IVTC)",
+            "Deflicker",
+            "Dedot",
+            "Dehalo",
+            "Grain Generation",
+            "Remove Grain",
+            "Debanding",
+            "Sharpening & Edge Enhancement",
+            "Color Correction",
+            "Super Resolution",
+            "Deshake",
+            "Edge Detection",
+            "Zooming",
+            "Stabilization",
+            "Slo-mo",
+            "Exit"
+        ]
+        for idx, opt in enumerate(options, 1):
+            print(f"{idx}. {opt}")
+
+        while True:
+            choice = input("Select a transformation (or type 'Exit' to return to main menu): ").strip()
+            if choice.lower() == 'exit':
+                break
+            try:
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(options):
+                    transformation = options[choice_idx]
+                    if transformation == "Exit":
+                        break
+                    self.apply_vapoursynth_transformation(video, transformation)
+                else:
+                    print_warning("Invalid option selected.")
+            except ValueError:
+                print_warning("Invalid input. Please enter a number corresponding to the options or 'Exit'.")
+
+    def apply_vapoursynth_transformation(self, video: VideoFile, transformation: str):
+        """
+        Apply the selected VapourSynth transformation.
+
+        Args:
+            video (VideoFile): The video file to process.
+            transformation (str): The transformation to apply.
+        """
+        output_file = input("Enter output file name: ").strip()
+        if not output_file:
+            safe_transformation = transformation.lower().replace(' ', '_').replace('(', '').replace(')', '')
+            output_file = f"{video.filepath.stem}_{safe_transformation}.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        if transformation in ["Frame Rate Conversion (Motion Interpolation)", "Slo-mo"]:
+            target_fps = input("Enter target FPS (e.g., 60): ").strip()
+            try:
+                target_fps = float(target_fps)
+            except ValueError:
+                print_warning("Invalid FPS value.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib1']}")
+            core.std.LoadPlugin(r"{self.processor.svp_plugins['lib2']}")
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            super_params = dict(pel=2)
+            analyse_params = dict(main=dict(search=dict(coarse=dict(distance=-6))))
+            smoothfps_params = dict(fpsnum=int({target_fps} * 1000), fpsden=1000)
+            super_clip = core.svp1.Super(clip, super_params)
+            vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, analyse_params)
+            smooth_clip = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"], vectors["clip"], vectors["data"], smoothfps_params)
+            smooth_clip.set_output()
+            """)
+        elif transformation == "Remove Grain":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.rgvs.RemoveGrain(clip, mode=17)
+            clip.set_output()
+            """)
+        elif transformation == "Sharpening & Edge Enhancement":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.warp.AWarpSharp2(clip, depth=2)
+            clip.set_output()
+            """)
+        elif transformation == "Super Resolution":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.nnedi3.nnedi3(clip, field=3)
+            clip.set_output()
+            """)
+        elif transformation == "Dehalo":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.dehalo.Alpha(clip)
+            clip.set_output()
+            """)
+        elif transformation == "Debanding":
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.f3kdb.Deband(clip, y=64, cb=64, cr=64, grainy=64, grainc=64)
+            clip.set_output()
+            """)
+        elif transformation == "Color Correction":
+            brightness = input("Enter brightness adjustment (default 0.0): ").strip() or "0.0"
+            contrast = input("Enter contrast adjustment (default 1.0): ").strip() or "1.0"
+            saturation = input("Enter saturation adjustment (default 1.0): ").strip() or "1.0"
+            try:
+                brightness = float(brightness)
+                contrast = float(contrast)
+                saturation = float(saturation)
+            except ValueError:
+                print_warning("Invalid input values. Using default settings.")
+                brightness, contrast, saturation = 0.0, 1.0, 1.0
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.Tweak(clip, bright={brightness}, cont={contrast}, sat={saturation})
+            clip.set_output()
+            """)
+        elif transformation == "Zooming":
+            print("Note: Currently, zooming parameters must be entered manually.")
+            x = input("Enter x coordinate for cropping (default 0): ").strip() or "0"
+            y = input("Enter y coordinate for cropping (default 0): ").strip() or "0"
+            width = input("Enter width for cropping (e.g., 640): ").strip()
+            height = input("Enter height for cropping (e.g., 480): ").strip()
+            try:
+                x = int(x)
+                y = int(y)
+                width = int(width)
+                height = int(height)
+            except ValueError:
+                print_warning("Invalid cropping parameters.")
+                return
+            script_content = textwrap.dedent(f"""
+            import vapoursynth as vs
+            core = vs.core
+            core.std.LoadPlugin(r"{ffms2_plugin}")
+            clip = core.ffms2.Source(r"{video.filepath}")
+            clip = core.std.CropAbs(clip, width={width}, height={height}, left={x}, top={y})
+            clip = core.resize.Bicubic(clip, width=clip.width, height=clip.height)
+            clip.set_output()
+            """)
+        else:
+            print_warning("Transformation not implemented yet.")
+            return
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+    def batch_enhance_video(self, video: VideoFile):
+        """Apply a series of enhancements to the video."""
+
+        output_file = input("Enter output file name for enhanced video: ").strip()
+        if not output_file:
+            output_file = f"{video.filepath.stem}_enhanced.mp4"
+
+        ffms2_plugin = self.processor.ffms2_plugin
+        if not ffms2_plugin:
+            print_warning("ffms2 plugin not found. Cannot proceed with VapourSynth transformations.")
+            return
+
+        # Ensure SVPflow2 plugin is loaded before accessing it
+        if not self.processor.svp_plugins:
+            print_warning("SVPflow2 plugin not found. Cannot proceed with motion interpolation.")
+            return
+
+        # Construct a VapourSynth script that applies multiple transformations
+        script_content = textwrap.dedent(f"""
+        import vapoursynth as vs
+        core = vs.core
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib1']}')
+        core.std.LoadPlugin(r'{self.processor.svp_plugins['lib2']}')
+        core.std.LoadPlugin(r'{ffms2_plugin}')
+        core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
+        core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
+        core.std.LoadPlugin('libremovegrain.so')  # Ensure removegrain plugin is available
+        core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
+        core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
+        core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
+
+        clip = core.ffms2.Source(r"{os.path.abspath(video.filepath)}")
+
+        # Remove grain
+        clip = core.rgvs.RemoveGrain(clip, mode=17)
+        # Sharpening and edge enhancement
+        clip = core.warp.AWarpSharp2(clip, depth=2)
+        # Super resolution
+        clip = core.nnedi3.nnedi3(clip, field=3)
+        # Color correction
+        clip = core.std.Tweak(clip, bright=0.0, cont=1.0, sat=1.0)
+        # Frame rate conversion with motion interpolation using SVPflow2
+        super_clip = core.svp1.Super(clip, pel=2)
+        vectors = core.svp1.Analyse(super_clip)
+        smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, fpsnum=60000, fpsden=1001)  # 59.94fps
+        smooth_clip.set_output()
+        """)
+
+        self.processor.apply_vapoursynth_script(video, output_file, script_content)
+
+# Entry point
+if __name__ == "__main__":
+    check_dependencies()
+    ui = UserInterface()
+    ui.main_menu()

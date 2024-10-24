@@ -1,255 +1,296 @@
 #!/bin/bash
-# File: system_hardening.sh
-# Author: 4ndr0666
-# Edited: 04-11-2024
 
-# --- // SYSTEM HARDENING // ========
+# ufw2.sh - System Hardening Script with UFW, Sysctl, and Service Configurations
+# Author: [Your Name]
+# Description: Configures UFW firewall rules, sysctl settings, and disables IPv6 on specific services for system hardening.
+# Usage: sudo ./ufw2.sh [--vpn PORT] [--jdownloader]
 
-# --- // AUTO_ESCALATE:
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
+# Exit immediately if a command exits with a non-zero status
+#set -e
 
-# Function to modify IPv6 settings
-modify_ipv6_setting() {
-    local setting=$1
-    echo "Modifying IPv6 settings to $setting..."
-
-    local sysctl_file="/etc/sysctl.d/99-sysctl.conf"
-
-    # Prepare sysctl configuration file for idempotency
-    grep -v "net.ipv6.conf" "$sysctl_file" > "${sysctl_file}.tmp"
-    mv "${sysctl_file}.tmp" "$sysctl_file"
-
-    local interfaces=(all default lo enp2s0 tun0)
-    for interface in "${interfaces[@]}"; do
-        echo "net.ipv6.conf.$interface.disable_ipv6 = $setting" >> "$sysctl_file"
-    done
-
-    for interface in $(ls /proc/sys/net/ipv6/conf/ | grep -vE '^(all|default|lo)$'); do
-        if [[ -d "/proc/sys/net/ipv6/conf/$interface" ]]; then
-            echo "net.ipv6.conf.$interface.disable_ipv6 = $setting" >> "$sysctl_file"
-        fi
-    done
-
-    echo "Persisting IPv6 settings..."
-    /sbin/sysctl -p "$sysctl_file"
+# Function to display usage information
+usage() {
+    echo "Usage: sudo ./ufw2.sh [--vpn PORT] [--jdownloader]"
+    echo ""
+    echo "Options:"
+    echo "  --vpn PORT         Enable VPN-specific UFW rules with the specified Lightway UDP port."
+    echo "  --jdownloader      Enable JDownloader2-specific UFW rules."
+    exit 1
 }
 
-# Function to configure UFW with advanced rules
-ufw_config() {
-    local jdownloader_flag=$1
-    local vpn_flag=$2
-    echo "Setting up advanced UFW rules..."
+# Parse command-line arguments
+VPN_FLAG=false
+VPN_PORT=""
+JD_FLAG=false
 
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --vpn)
+            VPN_FLAG=true
+            VPN_PORT="$2"
+            if [[ -z "$VPN_PORT" ]]; then
+                echo "Error: --vpn requires a PORT argument."
+                usage
+            fi
+            shift # past argument
+            shift # past value
+            ;;
+        --jdownloader)
+            JD_FLAG=true
+            shift # past argument
+            ;;
+        *)    # unknown option
+            echo "Error: Unknown option $1"
+            usage
+            ;;
+    esac
+done
 
-    if [[ "$vpn_flag" == "true" ]]; then
-        echo "Applying VPN-specific UFW rules..."
-        ufw allow out on tun0 to 100.64.100.1 port 1195 proto udp  # Allow custom VPN gateway port
+# Function to set sysctl configurations
+sysctl_config() {
+    echo "Configuring sysctl settings..."
+
+    # Define sysctl settings to be appended
+    SYSCTL_SETTINGS="
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_window_scaling = 1
+net.core.netdev_max_backlog = 5000
+"
+
+    # Ensure /etc/sysctl.d/99-IPv4.conf exists
+    sudo touch /etc/sysctl.d/99-IPv4.conf
+
+    # Append settings only if they don't exist
+    while read -r line; do
+        grep -qF -- "$line" /etc/sysctl.d/99-IPv4.conf || echo "$line" | sudo tee -a /etc/sysctl.d/99-IPv4.conf > /dev/null
+    done <<< "$SYSCTL_SETTINGS"
+
+    # Reload sysctl settings
+    sudo sysctl --system
+}
+
+# Function to update /etc/host.conf to prevent IP spoofing
+host_conf_config() {
+    echo "Configuring /etc/host.conf to prevent IP spoofing..."
+
+    HOST_CONF_CONTENT="order bind,hosts
+multi on"
+
+    # Check if /etc/host.conf exists; if not, create it
+    if [[ ! -f /etc/host.conf ]]; then
+        echo "Creating /etc/host.conf..."
+        echo -e "$HOST_CONF_CONTENT" | sudo tee /etc/host.conf > /dev/null
     else
-        ufw allow out on tun0 to 100.64.100.1 port 53 proto udp  # Allow DNS traffic on VPN
-        ufw deny out on enp2s0 to any port 53 proto udp  # Block DNS on local network
+        # Append lines only if they don't exist
+        while read -r line; do
+            grep -qF -- "$line" /etc/host.conf || echo "$line" | sudo tee -a /etc/host.conf > /dev/null
+        done <<< "$HOST_CONF_CONTENT"
     fi
-
-    ufw allow in on lo
-    ufw deny in from any to 127.0.0.0/8
-    ufw limit ssh 22/tcp
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    ufw allow 7531/tcp # PlayWithMPV
-    ufw allow 6800/tcp # Aria2c
-#    ufw allow 9091/tcp #Transmission
-    ufw logging off
-
-    if [[ "$jdownloader_flag" == "true" ]]; then
-        echo "Configuring UFW rules for JDownloader2..."
-
-        # Allow JDownloader ports on the VPN interface (tun0) for incoming traffic
-        ufw allow in on tun0 to any port 9665 proto tcp
-        ufw allow in on tun0 to any port 9666 proto tcp
-
-        # Deny access to these ports from any other interface for incoming traffic
-        ufw deny in on enp2s0 to any port 9665 proto tcp
-        ufw deny in on enp2s0 to any port 9666 proto tcp
-    fi
-
-    # Disable IPv6 in UFW
-    sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
-
-    # Enable UFW
-    sleep 1
-    ufw --force enable
-    systemctl enable --now ufw.service
 }
 
-# Function to disable IPv6 for various services
+# Function to disable IPv6 on specific services
 disable_ipv6_services() {
     echo "Disabling IPv6 for SSH..."
-    sed -i 's/^#AddressFamily any/AddressFamily inet/' /etc/ssh/sshd_config
-    systemctl restart sshd
+    SSH_CONFIG="/etc/ssh/sshd_config"
+    if grep -q "^AddressFamily" "$SSH_CONFIG"; then
+        sudo sed -i 's/^AddressFamily.*/AddressFamily inet/' "$SSH_CONFIG"
+    else
+        echo "AddressFamily inet" | sudo tee -a "$SSH_CONFIG" > /dev/null
+    fi
+    sudo systemctl restart sshd
 
     echo "Disabling IPv6 for systemd-resolved..."
-    sed -i 's/^#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
-    systemctl restart systemd-resolved
+    RESOLVED_CONF="/etc/systemd/resolved.conf"
+    if grep -q "^DNSStubListener" "$RESOLVED_CONF"; then
+        sudo sed -i 's/^DNSStubListener=.*/DNSStubListener=no/' "$RESOLVED_CONF"
+    else
+        echo "DNSStubListener=no" | sudo tee -a "$RESOLVED_CONF" > /dev/null
+    fi
+    sudo systemctl restart systemd-resolved
 
+    echo "Disabling IPv6 for Avahi-daemon..."
+    AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
     if systemctl is-enabled --quiet avahi-daemon.service 2>/dev/null; then
-        echo "Disabling IPv6 for Avahi-daemon..."
-        sed -i 's/^#use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
-        systemctl restart avahi-daemon
+        if grep -q "^use-ipv6" "$AVAHI_CONF"; then
+            sudo sed -i 's/^use-ipv6=.*/use-ipv6=no/' "$AVAHI_CONF"
+        else
+            echo "use-ipv6=no" | sudo tee -a "$AVAHI_CONF" > /dev/null
+        fi
+        sudo systemctl restart avahi-daemon
     else
         echo "Avahi-daemon is masked or disabled, skipping..."
     fi
 }
 
-# Function to prompt for VPN port and apply UFW rule
-prompt_vpn_port() {
-    while true; do
-        read -rp "Enter the VPN port (UDP) (leave blank if no VPN): " vpn_port
-        if [[ -z "$vpn_port" ]]; then
-            echo "No VPN port provided. Skipping VPN configuration."
-            break
-        elif [[ "$vpn_port" =~ ^[0-9]+$ ]]; then
-            ufw allow in on enp2s0 to any port "$vpn_port" proto udp
-            ufw allow out on tun0 from any port "$vpn_port" proto udp
-            break
+# Function to configure UFW rules
+configure_ufw() {
+    echo "Configuring UFW firewall rules..."
+
+    # Enable UFW without prompts
+    sudo ufw --force enable
+
+    # Set default policies
+    sudo ufw default deny incoming
+    sudo ufw default allow outgoing
+
+    # Allow loopback interface
+    sudo ufw allow in on lo to any
+
+    # Configure VPN-specific rules
+    if [[ "$VPN_FLAG" == "true" && -n "$VPN_PORT" ]]; then
+        echo "Applying VPN-specific UFW rules for port $VPN_PORT..."
+        sudo ufw allow out on tun0 to 100.64.100.1 port "$VPN_PORT" proto udp
+        sudo ufw allow in on tun0 to any port "$VPN_PORT" proto udp
+    else
+        echo "VPN is not active. Applying non-VPN UFW rules..."
+        sudo ufw allow out on tun0 to 100.64.100.1 port 53 proto udp
+        sudo ufw deny out on enp2s0 to any port 53 proto udp
+    fi
+
+    # Allow specific services on enp2s0
+    declare -A SERVICES_ENP2S0=(
+        ["80/tcp"]="HTTP Traffic"
+        ["443/tcp"]="HTTPS Traffic"
+        ["7531/tcp"]="PlayWithMPV"
+        ["6800/tcp"]="Aria2c"
+        ["40735/udp"]="Lightway UDP"
+    )
+
+    for port_protocol in "${!SERVICES_ENP2S0[@]}"; do
+        port=$(echo "$port_protocol" | cut -d'/' -f1)
+        proto=$(echo "$port_protocol" | cut -d'/' -f2)
+        desc=${SERVICES_ENP2S0[$port_protocol]}
+
+        # Check if the rule already exists
+        if ! sudo ufw status numbered | grep -qw "$port_protocol on enp2s0"; then
+            echo "Adding rule: Allow $desc on enp2s0 port $port/$proto"
+            sudo ufw allow in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
         else
-            echo "Invalid port provided. Please enter a valid number."
+            echo "Rule already exists: Allow $desc on enp2s0 port $port/$proto"
         fi
     done
-}
 
-# Function to check if NetworkManager is active
-check_network_manager() {
-    if command -v nmcli &> /dev/null; then
-        if systemctl is-active --quiet NetworkManager; then
-            echo "### ============ // Network Check // ============ ###"
-            echo "Network Manager Status = Enabled/Active"
+    # Allow JDownloader2 ports if flag is set
+    if [[ "$JD_FLAG" == "true" ]]; then
+        echo "Applying JDownloader2-specific UFW rules..."
+        declare -A JDOWNLOADER_PORTS=(
+            ["9665/tcp"]="JDownloader2 Port 9665"
+            ["9666/tcp"]="JDownloader2 Port 9666"
+        )
+
+        for port_protocol in "${!JDOWNLOADER_PORTS[@]}"; do
+            port=$(echo "$port_protocol" | cut -d'/' -f1)
+            proto=$(echo "$port_protocol" | cut -d'/' -f2)
+            desc=${JDOWNLOADER_PORTS[$port_protocol]}
+
+            # Allow on tun0
+            if ! sudo ufw status numbered | grep -qw "$port_protocol on tun0"; then
+                echo "Allowing $desc on tun0"
+                sudo ufw allow in on tun0 to any port "$port" proto "$proto" comment "$desc"
+            else
+                echo "Rule already exists: Allow $desc on tun0 port $port/$proto"
+            fi
+
+            # Deny on enp2s0
+            DENY_RULE="Deny $desc on enp2s0 port $port/$proto"
+            if ! sudo ufw status numbered | grep -qw "Deny in on enp2s0 to any port $port proto $proto"; then
+                echo "Denying $desc on enp2s0"
+                sudo ufw deny in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
+            else
+                echo "Rule already exists: Deny $desc on enp2s0 port $port/$proto"
+            fi
+        done
+    fi
+
+    # Allow SSH with rate limiting
+    if ! sudo ufw status numbered | grep -qw "22/tcp"; then
+        echo "Adding rate-limited SSH access"
+        sudo ufw limit ssh/tcp comment "Rate-limited SSH"
+    else
+        echo "SSH rule already exists"
+    fi
+
+    # Allow incoming Lightway UDP port on enp2s0
+    if [[ "$VPN_FLAG" != "true" ]]; then
+        if ! sudo ufw status numbered | grep -qw "40735/udp on enp2s0"; then
+            echo "Allowing Lightway UDP on enp2s0"
+            sudo ufw allow in on enp2s0 to any port 40735 proto udp comment "Lightway UDP"
         else
-            echo "### ============ // Network Check // ============ ###"
-            echo "WARNING: Network Manager Status = Disabled!"
+            echo "Lightway UDP rule already exists on enp2s0"
         fi
     fi
+
+    # Allow incoming Lightway UDP port on tun0 if VPN is active
+    if [[ "$VPN_FLAG" == "true" && -n "$VPN_PORT" ]]; then
+        if ! sudo ufw status numbered | grep -qw "$VPN_PORT/udp on tun0"; then
+            echo "Allowing Lightway UDP on tun0"
+            sudo ufw allow in on tun0 to any port "$VPN_PORT" proto udp comment "Lightway UDP on tun0"
+        else
+            echo "Lightway UDP rule already exists on tun0"
+        fi
+    fi
+
+    # Disable IPv6 in UFW (already handled earlier in sysctl and service configurations)
+    # Ensure IPv6 is disabled in UFW default settings
+    sudo sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
+
+    # Reload UFW to apply changes
+    sudo ufw reload
 }
 
-# Function to enhance sysctl configuration for network performance
+# Function to enhance network performance settings
 enhance_network_performance() {
-    local sysctl_file="/etc/sysctl.d/99-sysctl.conf"
-
     echo "Enhancing network performance settings..."
 
-    # Remove old settings if they exist to ensure idempotency
-    grep -v -E "net.core.rmem_max|net.core.wmem_max|net.ipv4.tcp_rmem|net.ipv4.tcp_wmem|net.ipv4.tcp_window_scaling|net.core.netdev_max_backlog" \
-    "$sysctl_file" > "${sysctl_file}.tmp" && mv "${sysctl_file}.tmp" "$sysctl_file"
+    # Define network performance settings
+    NETWORK_SETTINGS="
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_window_scaling = 1
+net.core.netdev_max_backlog = 5000
+"
 
-    # Add optimized network settings
-    {
-        echo 'net.core.rmem_max=16777216'
-        echo 'net.core.wmem_max=16777216'
-        echo 'net.ipv4.tcp_rmem=4096 87380 16777216'
-        echo 'net.ipv4.tcp_wmem=4096 65536 16777216'
-        echo 'net.ipv4.tcp_window_scaling=1'
-        echo 'net.core.netdev_max_backlog=5000'
-    } >> "$sysctl_file"
+    # Ensure /etc/sysctl.d/99-IPv4.conf exists
+    sudo touch /etc/sysctl.d/99-IPv4.conf
 
-    /sbin/sysctl -p "$sysctl_file"
+    # Append settings only if they don't exist
+    while read -r line; do
+        grep -qF -- "$line" /etc/sysctl.d/99-IPv4.conf || echo "$line" | sudo tee -a /etc/sysctl.d/99-IPv4.conf > /dev/null
+    done <<< "$NETWORK_SETTINGS"
+
+    # Reload sysctl settings
+    sudo sysctl --system
 }
 
-# Function to configure resolv.conf for when VPN is OFF
-configure_resolvconf() {
-    echo "Configuring resolv.conf for non-VPN usage..."
-
-    sudo mv /etc/resolv.conf /etc/resolv.conf.backup
-    sudo ln -s /run/resolvconf/resolv.conf /etc/resolv.conf
-    sudo resolvconf -u
-
-    echo "nameserver 208.67.222.222" | sudo tee /etc/resolvconf/resolv.conf.d/head
-    echo "nameserver 208.67.220.220" | sudo tee -a /etc/resolvconf/resolv.conf.d/head
-
-    sudo resolvconf -u
-}
-
-# Function to apply OpenVPN settings
-configure_openvpn() {
-    echo "Applying OpenVPN settings..."
-
-    # Custom OpenVPN settings can be applied via the OpenVPN configuration files.
-    # This section assumes that these settings would be placed in the relevant OpenVPN configuration files.
-    # OpenVPN example configuration:
-
-    # Modify your OpenVPN client config (.ovpn) file to match the following:
-    # proto udp
-    # remote <your-vpn-server> 1195
-    # comp-lzo
-    # tun-mtu 1500
-    # fragment 1300
-    # mssfix
-    # remote-random
-    # cipher AES-256-CBC
-    # auth SHA512
-    # tls-auth <key_file>
-}
-
-# Function to display usage syntax
-usage() {
-    echo "Usage: $0 [--on] [--jdownloader] [--vpn] for IPv6 configuration and VPN setup"
-    exit 1
-}
-
-# Main script logic
-main() {
-    local ipv6_setting=1 # Default to 'off'
-    local jdownloader_flag=false
-    local vpn_flag=false
-
-    # Parse options
-    while [[ "$#" -gt 0 ]]; do
-        case $1 in
-            --on) ipv6_setting=0 ;; # Enable IPv6 if --on is provided
-            --jdownloader) jdownloader_flag=true ;; # Set flag if --jdownloader is provided
-            --vpn) vpn_flag=true ;; # Set flag if --vpn is provided
-            *) usage ;; # Show usage if unrecognized option is found
-        esac
-        shift
-    done
-
-    modify_ipv6_setting "$ipv6_setting"
-    sleep 1
-    echo
-
-    ufw_config "$jdownloader_flag" "$vpn_flag"
-    sleep 1
-    echo
-
-#    if [[ "$vpn_flag" == "false" ]]; then
-#        configure_resolvconf
-#    else
-#        configure_openvpn
-#    fi
-#    sleep 1
-#    echo
-
-    prompt_vpn_port
-    sleep 1
-    echo
-
-    enhance_network_performance
-    sleep 1
-    echo
-
+# Function to apply all configurations
+apply_configurations() {
+    sysctl_config
+    host_conf_config
     disable_ipv6_services
-    sleep 1
-    echo
-
-    check_network_manager
-    sleep 2
-    echo
-
-    echo "### ============================== // LISTENING PORTS // ============================== ###"
-    netstat -tunlp
+    configure_ufw
+    enhance_network_performance
 }
 
-main "$@"
+# Function to display final status
+final_verification() {
+    echo ""
+    echo "### UFW Status ###"
+    sudo ufw status verbose
+
+    echo ""
+    echo "### Listening Ports ###"
+    sudo netstat -tunlp
+}
+
+# Main execution
+apply_configurations
+final_verification
+
+echo ""
+echo "System hardening completed successfully."
