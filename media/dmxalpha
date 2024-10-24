@@ -31,10 +31,10 @@ MAX_WORKERS = os.cpu_count()
 
 # --- Configuration Constants
 DEFAULT_CONFIG = {
-    "FFMPEG_SOURCES": os.path.expanduser("$HOME/ffmpeg_sources"),
-    "FFMPEG_BUILD": os.path.expanduser("$HOME/ffmpeg_build"),
-    "FFMPEG_BIN": os.path.expanduser("$HOME/bin"),
-    "MPV_BUILD_DIR": os.path.expanduser("$HOME/mpv_build")
+    "FFMPEG_SOURCES": os.path.expanduser("~/ffmpeg_sources"),
+    "FFMPEG_BUILD": os.path.expanduser("~/ffmpeg_build"),
+    "FFMPEG_BIN": os.path.expanduser("~/bin/ffmpeg"),
+    "MPV_BUILD_DIR": os.path.expanduser("~/mpv_build")
 }
 CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'dmx'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
