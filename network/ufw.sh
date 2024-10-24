@@ -2,7 +2,7 @@
 
 # ufw2.sh - System Hardening Script with UFW, Sysctl, and Service Configurations
 # Author: [Your Name]
-# Description: Configures UFW firewall rules, sysctl settings, and disables IPv6 on specific services for system hardening.
+# Description: Configures UFW firewall rules, sysctl settings, disables IPv6 on specific services, and ensures system configurations are aligned for system hardening.
 # Usage: sudo ./ufw2.sh [--vpn PORT] [--jdownloader]
 
 # Exit immediately if a command exits with a non-zero status
@@ -51,8 +51,23 @@ done
 sysctl_config() {
     echo "Configuring sysctl settings..."
 
-    # Define sysctl settings to be appended
-    SYSCTL_SETTINGS="
+    # Define desired content for /etc/sysctl.conf
+    SYSCTL_CONF_CONTENT="
+# /etc/sysctl.conf - Custom sysctl settings
+# This file is managed by ufw2.sh. Do not edit manually.
+"
+
+    # Ensure /etc/sysctl.conf has the correct content
+    if [[ ! -f /etc/sysctl.conf ]] || ! grep -qF "# This file is managed by ufw2.sh. Do not edit manually." /etc/sysctl.conf; then
+        echo "Creating or updating /etc/sysctl.conf..."
+        echo -e "$SYSCTL_CONF_CONTENT" | sudo tee /etc/sysctl.conf > /dev/null
+    else
+        echo "/etc/sysctl.conf is already correctly configured."
+    fi
+
+    # Define desired content for /etc/sysctl.d/99-IPv4.conf
+    SYSCTL_IPV4_CONTENT="
+# /etc/sysctl.d/99-IPv4.conf - Network Performance Enhancements
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 87380 16777216
@@ -61,15 +76,34 @@ net.ipv4.tcp_window_scaling = 1
 net.core.netdev_max_backlog = 5000
 "
 
-    # Ensure /etc/sysctl.d/99-IPv4.conf exists
-    sudo touch /etc/sysctl.d/99-IPv4.conf
+    # Ensure /etc/sysctl.d/99-IPv4.conf has the correct content
+    if [[ ! -f /etc/sysctl.d/99-IPv4.conf ]] || ! grep -qF "net.core.rmem_max = 16777216" /etc/sysctl.d/99-IPv4.conf; then
+        echo "Creating or updating /etc/sysctl.d/99-IPv4.conf..."
+        echo -e "$SYSCTL_IPV4_CONTENT" | sudo tee /etc/sysctl.d/99-IPv4.conf > /dev/null
+    else
+        echo "/etc/sysctl.d/99-IPv4.conf is already correctly configured."
+    fi
 
-    # Append settings only if they don't exist
-    while read -r line; do
-        grep -qF -- "$line" /etc/sysctl.d/99-IPv4.conf || echo "$line" | sudo tee -a /etc/sysctl.d/99-IPv4.conf > /dev/null
-    done <<< "$SYSCTL_SETTINGS"
+    # Define desired content for /etc/sysctl.d/99-IPv6.conf
+    SYSCTL_IPV6_CONTENT="
+# /etc/sysctl.d/99-IPv6.conf - IPv6 Configurations
+net.ipv6.conf.default.autoconf = 0
+net.ipv6.conf.all.autoconf = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+net.ipv6.conf.tun0.disable_ipv6 = 1 # ExpressVPN
+"
 
-    # Reload sysctl settings
+    # Ensure /etc/sysctl.d/99-IPv6.conf has the correct content
+    if [[ ! -f /etc/sysctl.d/99-IPv6.conf ]] || ! grep -qF "net.ipv6.conf.default.autoconf = 0" /etc/sysctl.d/99-IPv6.conf; then
+        echo "Creating or updating /etc/sysctl.d/99-IPv6.conf..."
+        echo -e "$SYSCTL_IPV6_CONTENT" | sudo tee /etc/sysctl.d/99-IPv6.conf > /dev/null
+    else
+        echo "/etc/sysctl.d/99-IPv6.conf is already correctly configured."
+    fi
+
+    # Reload sysctl settings to apply changes
+    echo "Applying sysctl settings..."
     sudo sysctl --system
 }
 
@@ -85,10 +119,11 @@ multi on"
         echo "Creating /etc/host.conf..."
         echo -e "$HOST_CONF_CONTENT" | sudo tee /etc/host.conf > /dev/null
     else
-        # Append lines only if they don't exist
+        # Ensure each line exists
         while read -r line; do
             grep -qF -- "$line" /etc/host.conf || echo "$line" | sudo tee -a /etc/host.conf > /dev/null
         done <<< "$HOST_CONF_CONTENT"
+        echo "/etc/host.conf is already correctly configured."
     fi
 }
 
@@ -102,6 +137,7 @@ disable_ipv6_services() {
         echo "AddressFamily inet" | sudo tee -a "$SSH_CONFIG" > /dev/null
     fi
     sudo systemctl restart sshd
+    echo "IPv6 disabled for SSH."
 
     echo "Disabling IPv6 for systemd-resolved..."
     RESOLVED_CONF="/etc/systemd/resolved.conf"
@@ -111,6 +147,7 @@ disable_ipv6_services() {
         echo "DNSStubListener=no" | sudo tee -a "$RESOLVED_CONF" > /dev/null
     fi
     sudo systemctl restart systemd-resolved
+    echo "IPv6 disabled for systemd-resolved."
 
     echo "Disabling IPv6 for Avahi-daemon..."
     AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
@@ -121,6 +158,7 @@ disable_ipv6_services() {
             echo "use-ipv6=no" | sudo tee -a "$AVAHI_CONF" > /dev/null
         fi
         sudo systemctl restart avahi-daemon
+        echo "IPv6 disabled for Avahi-daemon."
     else
         echo "Avahi-daemon is masked or disabled, skipping..."
     fi
@@ -151,7 +189,7 @@ configure_ufw() {
         sudo ufw deny out on enp2s0 to any port 53 proto udp
     fi
 
-    # Allow specific services on enp2s0
+    # Define specific services to allow on enp2s0
     declare -A SERVICES_ENP2S0=(
         ["80/tcp"]="HTTP Traffic"
         ["443/tcp"]="HTTPS Traffic"
@@ -160,6 +198,7 @@ configure_ufw() {
         ["40735/udp"]="Lightway UDP"
     )
 
+    # Apply rules for services on enp2s0
     for port_protocol in "${!SERVICES_ENP2S0[@]}"; do
         port=$(echo "$port_protocol" | cut -d'/' -f1)
         proto=$(echo "$port_protocol" | cut -d'/' -f2)
@@ -174,7 +213,7 @@ configure_ufw() {
         fi
     done
 
-    # Allow JDownloader2 ports if flag is set
+    # Configure JDownloader2-specific UFW rules if flag is set
     if [[ "$JD_FLAG" == "true" ]]; then
         echo "Applying JDownloader2-specific UFW rules..."
         declare -A JDOWNLOADER_PORTS=(
@@ -196,7 +235,6 @@ configure_ufw() {
             fi
 
             # Deny on enp2s0
-            DENY_RULE="Deny $desc on enp2s0 port $port/$proto"
             if ! sudo ufw status numbered | grep -qw "Deny in on enp2s0 to any port $port proto $proto"; then
                 echo "Denying $desc on enp2s0"
                 sudo ufw deny in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
@@ -214,7 +252,7 @@ configure_ufw() {
         echo "SSH rule already exists"
     fi
 
-    # Allow incoming Lightway UDP port on enp2s0
+    # Allow incoming Lightway UDP port on enp2s0 if VPN is not active
     if [[ "$VPN_FLAG" != "true" ]]; then
         if ! sudo ufw status numbered | grep -qw "40735/udp on enp2s0"; then
             echo "Allowing Lightway UDP on enp2s0"
@@ -234,12 +272,18 @@ configure_ufw() {
         fi
     fi
 
-    # Disable IPv6 in UFW (already handled earlier in sysctl and service configurations)
-    # Ensure IPv6 is disabled in UFW default settings
-    sudo sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
+    # Disable IPv6 in UFW default settings
+    if grep -q "^IPV6=yes" /etc/default/ufw; then
+        sudo sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
+        echo "Disabled IPv6 in UFW default settings."
+    else
+        echo "IPv6 is already disabled in UFW default settings."
+    fi
 
     # Reload UFW to apply changes
+    echo "Reloading UFW to apply changes..."
     sudo ufw reload
+    echo "UFW firewall rules configured successfully."
 }
 
 # Function to enhance network performance settings
@@ -264,8 +308,10 @@ net.core.netdev_max_backlog = 5000
         grep -qF -- "$line" /etc/sysctl.d/99-IPv4.conf || echo "$line" | sudo tee -a /etc/sysctl.d/99-IPv4.conf > /dev/null
     done <<< "$NETWORK_SETTINGS"
 
-    # Reload sysctl settings
+    # Reload sysctl settings to apply changes
+    echo "Applying network performance settings..."
     sudo sysctl --system
+    echo "Network performance settings enhanced."
 }
 
 # Function to apply all configurations

@@ -1,0 +1,46 @@
+{
+    "extractor": {
+        "template": {
+            "type": "url",
+            "url": "https://imgspice.com/a3tpltlx1zby/Jessica_Simpson_sexy_bikini_candids_21x_UHQ_{num:02d}.jpg",
+            "range": {
+                "num": [
+                    1,
+                    35
+                ]
+            },
+            "format": "int"
+        },
+        "sleep-request": [
+            2.0,
+            4.8
+        ]
+    },
+    "downloader": {
+        "rate": "1M",
+        "retries": 3,
+        "timeout": 8.0,
+        "part-directory": "",
+        "skip": false
+    },
+    "output": {
+        "directory": ".",
+        "log": {
+            "level": "info",
+            "logfile": {
+                "mode": "w",
+                "level": "debug"
+            }
+        },
+        "unsupportedfile": {
+            "mode": "a",
+            "format": "{asctime} {message}",
+            "format-date": "%Y-%m-%d-%H-%M-%S"
+        },
+        "shorten": "eaw",
+        "ansi": true
+    },
+    "http": {
+        "timeout": 8.0
+    }
+}
