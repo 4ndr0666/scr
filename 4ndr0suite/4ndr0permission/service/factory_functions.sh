@@ -223,3 +223,49 @@ factory_python() {
         return 1
     fi
 }
+
+# --- // FACTORY_SYSTEM_FUNCTION:
+factory_system() {
+    echo "🔧 Resetting ownership and permissions for entire system..."
+    log_action "factory_system: Starting."
+    
+    # Reset ownership (without sudo if possible)
+    chown -R "$USER":"$USER" ~/.ssh
+    if [[ $? -ne 0 ]]; then
+        echo -e "\033[1;31m❌ Error: Failed to reset ownership for ~/.ssh.\033[0m"
+        log_action "factory_ssh: Failed to reset ownership."
+        return 1
+    fi
+    
+    # Set permissions for ~/.ssh directory
+    chmod 700 ~/.ssh
+    if [[ $? -ne 0 ]]; then
+        echo -e "\033[1;31m❌ Error: Failed to set permissions for ~/.ssh.\033[0m"
+        log_action "factory_ssh: Failed to set ~/.ssh permissions."
+        return 1
+    fi
+    
+    # Set permissions for subdirectories
+    find ~/.ssh -type d -exec chmod 700 {} \;
+    if [[ $? -ne 0 ]]; then
+        echo -e "\033[1;31m❌ Error: Failed to set permissions for subdirectories in ~/.ssh.\033[0m"
+        log_action "factory_ssh: Failed to set subdirectory permissions."
+        return 1
+    fi
+    
+    # Set permissions for private key files
+    chmod 600 ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_ed25519 ~/.ssh/id_ecdsa ~/.ssh/id_* 2>/dev/null
+    if [[ $? -ne 0 ]]; then
+        echo -e "\033[1;33m⚠️ Warning: Some private key files may not exist. Skipping missing files.\033[0m"
+        log_action "factory_ssh: Warning - some private key files may not exist."
+    fi
+    
+    # Set permissions for public key files
+    chmod 644 ~/.ssh/id_rsa.pub ~/.ssh/id_dsa.pub ~/.ssh/id_ed25519.pub ~/.ssh/id_ecdsa.pub ~/.ssh/*.pub 2>/dev/null
+    
+    # Set permissions for known_hosts and config
+    chmod 600 ~/.ssh/authorized_keys ~/.ssh/known_hosts ~/.ssh/config 2>/dev/null
+    
+    echo -e "\033[1;32m✅ Successfully reset ownership and permissions for ~/.ssh.\033[0m"
+    log_action "factory_ssh: Completed successfully."
+}
