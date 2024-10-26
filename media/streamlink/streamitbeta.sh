@@ -1,26 +1,43 @@
 #!/bin/bash
-# Unified Streamit Script - Merged and Refactored
-# Author: Merged from streamit.sh and streamit2.sh
+# Unified Streamit Script - Refactored and Production-Ready
+# Author: [Your Name]
+# Description: A comprehensive script to manage streaming via Streamlink with robust error handling and configurability.
 
+set -euo pipefail
+IFS=$'\n\t'
+
+# -----------------------------
+# Configuration Variables
+# -----------------------------
 LOG_FILE="$HOME/.local/share/logs/streamit_merged.log"
 OUTPUT_DIR="/storage/streamlink"  # Dedicated output directory
 MAX_RETRIES=3  # Number of times to retry Streamlink in case of failure
 RETRY_DELAY=10 # Time in seconds to wait between retries
 
-# Setup logging for the entire script
+# Streamlink Additional Options
+# These can be customized as needed or sourced from an external config file
+RETRY_STREAMS="--retry-streams 3"
+HLS_OPTIONS="--hls-live-edge 3"
+PROXY_OPTION=""  # Example: "--http-proxy http://proxyserver:port"
+
+# -----------------------------
+# Utility Functions
+# -----------------------------
+
+# Function to setup logging
 setup_logging() {
     mkdir -p "$(dirname "$LOG_FILE")"
     touch "$LOG_FILE"
 }
 
-# General logging function
+# Function to log messages with timestamp and type
 log_message() {
     local log_type="$1"
     local message="$2"
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$log_type] $message" >> "$LOG_FILE"
 }
 
-# Function to display messages with colored output
+# Function to display messages with colored output and logging
 display_message() {
     local message_type="$1"
     local message="$2"
@@ -44,15 +61,20 @@ display_message() {
     esac
 }
 
+# Function to check if the script is running interactively
+is_interactive() {
+    [[ -t 0 ]]
+}
+
 # Helper function to execute system commands with error handling
 execute_command() {
-    local command="$1"
-    eval "$command" 2>> "$LOG_FILE"
+    local -a command=("$@")
+    "${command[@]}" 2>> "$LOG_FILE"
     if [ $? -ne 0 ]; then
-        display_message error "Failed to execute: $command"
+        display_message error "Failed to execute: ${command[*]}"
         return 1
     else
-        display_message success "Successfully executed: $command"
+        display_message success "Successfully executed: ${command[*]}"
         return 0
     fi
 }
@@ -64,29 +86,47 @@ extract_media_info() {
 
     # Use ffprobe to get media info in JSON format
     local media_data
-    media_data=$(ffprobe -v quiet -print_format json -show_streams "$stream_url")
-
-    if [ $? -ne 0 ] || [ -z "$media_data" ]; then
+    media_data=$(ffprobe -v quiet -print_format json -show_streams "$stream_url") || {
         display_message warning "Failed to extract media info from stream URL."
         return 1
-    else
-        echo "$media_data" > "/tmp/stream_media_info.json"
-        local framerate height codec
-        framerate=$(echo "$media_data" | jq -r '.streams[] | select(.codec_type=="video") | .avg_frame_rate' | head -n1)
-        height=$(echo "$media_data" | jq -r '.streams[] | select(.codec_type=="video") | .height' | head -n1)
-        codec=$(echo "$media_data" | jq -r '.streams[] | select(.codec_type=="video") | .codec_name' | head -n1)
+    }
 
-        # Calculate the actual frame rate
-        if [[ "$framerate" == *"/"* ]]; then
-            framerate=$(awk "BEGIN { print $(echo "$framerate" | tr '/' '/') }")
-        fi
-
-        display_message success "Media Info Extracted:"
-        display_message info "Frame rate: $framerate fps"
-        display_message info "Resolution: ${height}p"
-        display_message info "Codec: $codec"
-        return 0
+    if [ -z "$media_data" ]; then
+        display_message warning "No media data retrieved from ffprobe."
+        return 1
     fi
+
+    # Securely create a temporary file for media info
+    local tmp_file
+    tmp_file=$(mktemp /tmp/stream_media_info.XXXXXX.json)
+    echo "$media_data" > "$tmp_file"
+
+    # Parse media information
+    local framerate height codec
+    framerate=$(jq -r '.streams[] | select(.codec_type=="video") | .avg_frame_rate' "$tmp_file" | head -n1)
+    height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' "$tmp_file" | head -n1)
+    codec=$(jq -r '.streams[] | select(.codec_type=="video") | .codec_name' "$tmp_file" | head -n1)
+
+    # Clean up temporary file
+    rm -f "$tmp_file"
+
+    # Calculate the actual frame rate
+    if [[ "$framerate" == *"/"* ]]; then
+        local numerator denominator
+        numerator=$(echo "$framerate" | cut -d'/' -f1)
+        denominator=$(echo "$framerate" | cut -d'/' -f2)
+        if [[ "$denominator" -ne 0 ]]; then
+            framerate=$(awk "BEGIN { printf \"%.2f\", $numerator/$denominator }")
+        else
+            framerate="0"
+        fi
+    fi
+
+    display_message success "Media Info Extracted:"
+    display_message info "Frame rate: $framerate fps"
+    display_message info "Resolution: ${height}p"
+    display_message info "Codec: $codec"
+    return 0
 }
 
 # Function to adjust stream settings based on media info
@@ -99,10 +139,19 @@ adjust_settings_based_on_media() {
         resolution=$(jq -r '.streams[] | select(.codec_type=="video") | .height' /tmp/stream_media_info.json | head -n1)
         if [[ "$resolution" -lt 720 ]]; then
             display_message warning "Low resolution detected: ${resolution}p. Recommend lowering stream quality."
-            read -p "Would you like to accept this recommendation? (y/n): " accept_quality
-            if [[ "$accept_quality" =~ ^[Yy]$ ]]; then
+            
+            if is_interactive; then
+                read -p "Would you like to accept this recommendation? (y/n): " accept_quality
+                if [[ "$accept_quality" =~ ^[Yy]$ ]]; then
+                    quality="worst"
+                    display_message info "Stream quality set to 'worst'."
+                else
+                    display_message info "Using user-specified quality: '$quality'."
+                fi
+            else
+                # Default behavior for non-interactive
+                display_message info "Setting stream quality to 'worst' due to low resolution."
                 quality="worst"
-                display_message info "Stream quality set to 'worst'."
             fi
         fi
     else
@@ -110,7 +159,7 @@ adjust_settings_based_on_media() {
     fi
 }
 
-# Function to check if file exists and rename if necessary
+# Function to ensure a unique filename
 ensure_unique_filename() {
     local base_name="$1"
     local extension="$2"
@@ -157,18 +206,18 @@ run_streamlink() {
     while [ $retries -lt $MAX_RETRIES ]; do
         display_message info "Executing Streamlink command (Attempt: $((retries + 1)))..."
 
-        # Start streamlink in the background and show progress while waiting
-        streamlink "$url" "$quality" --output "$final_output_file" > "$final_log_file" 2>&1 &
+        # Start Streamlink in the background
+        streamlink "$url" "$quality" --output "$final_output_file" $RETRY_STREAMS $HLS_OPTIONS $PROXY_OPTION > "$final_log_file" 2>&1 &
         local pid=$!
 
-        # Display a live progress bar
-        while kill -0 $pid 2> /dev/null; do
-            echo -n "."
-            sleep 1
-        done
+        # Display a spinner while waiting
+        spinner "$pid" &
 
-        wait $pid
-        if [ $? -eq 0 ]; then
+        wait "$pid"
+        local exit_code=$?
+        kill "$!" 2>/dev/null || true  # Stop spinner
+
+        if [ $exit_code -eq 0 ]; then
             display_message success "Streamlink executed successfully. Output saved to $final_output_file"
             success=true
             break
@@ -185,6 +234,20 @@ run_streamlink() {
     fi
 }
 
+# Function to display a spinner while a background process is running
+spinner() {
+    local pid="$1"
+    local delay=0.1
+    local spinstr='|/-\'
+    while kill -0 "$pid" 2>/dev/null; do
+        for char in ${spinstr}; do
+            printf "\r%s" "$char"
+            sleep "$delay"
+        done
+    done
+    printf "\r"
+}
+
 # Function to handle custom URL input
 handle_custom_url() {
     echo -n "Enter stream URL: "
@@ -194,6 +257,7 @@ handle_custom_url() {
     echo -n "Enter output file base name (e.g., video): "
     read -r output_file
 
+    # Validate inputs
     if [ -z "$url" ] || [ -z "$quality" ]; then
         display_message error "Invalid input. URL and quality are required."
         exit 1
@@ -229,6 +293,15 @@ handle_preset_with_media_info() {
     run_streamlink "$url" "$quality" "$output_file"
 }
 
+# Function to validate URL format
+validate_url() {
+    local url="$1"
+    if [[ ! "$url" =~ ^https?:// ]]; then
+        display_message error "Invalid URL: $url"
+        exit 1
+    fi
+}
+
 # Function to schedule streams using cron
 schedule_stream() {
     echo -n "Enter stream URL: "
@@ -240,6 +313,7 @@ schedule_stream() {
     echo -n "Enter schedule time (in cron format, e.g., '0 5 * * *' for daily 5 AM): "
     read -r cron_schedule
 
+    # Validate inputs
     if [ -z "$url" ] || [ -z "$quality" ] || [ -z "$cron_schedule" ]; then
         display_message error "URL, quality, and schedule time are required."
         exit 1
@@ -249,25 +323,106 @@ schedule_stream() {
         output_file="stream_$(date +%Y%m%d%H%M%S)"
     fi
 
-    cron_command="$(which bash) $(realpath "$0") --url '$url' --quality '$quality' --output '$output_file'"
+    validate_url "$url"
+
+    # Construct the cron command
+    local script_path
+    script_path=$(realpath "$0")
+    local cron_command
+    cron_command="$(which bash) \"$script_path\" --url \"$url\" --quality \"$quality\" --output \"$output_file\""
 
     # Add cron job to schedule the stream
-    (crontab -l 2>/dev/null; echo "$cron_schedule $cron_command") | crontab -
+    (crontab -l 2>/dev/null; echo "$cron_schedule $cron_command") | crontab - || {
+        display_message error "Failed to add cron job. Please check your cron configuration."
+        exit 1
+    }
 
     display_message success "Stream scheduled successfully with cron for '$cron_schedule'."
 }
 
-# Main menu system
+# -----------------------------
+# Command-Line Argument Parsing
+# -----------------------------
+# Allows the script to be called with --url, --quality, --output for scheduled tasks
+
+parse_arguments() {
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            --url)
+                url="$2"
+                shift
+                ;;
+            --quality)
+                quality="$2"
+                shift
+                ;;
+            --output)
+                output_file="$2"
+                shift
+                ;;
+            --help|-h)
+                display_help
+                exit 0
+                ;;
+            *)
+                display_message warning "Unknown parameter passed: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# Function to display help message
+display_help() {
+    echo "Usage: $0 [--url <stream_url>] [--quality <stream_quality>] [--output <output_file>]"
+    echo ""
+    echo "Options:"
+    echo "  --url       Specify the stream URL."
+    echo "  --quality   Specify the stream quality (e.g., best, worst, 720p60)."
+    echo "  --output    Specify the output file base name."
+    echo "  --help, -h  Display this help message."
+}
+
+# -----------------------------
+# Main Execution Flow
+# -----------------------------
+
+# Trap to ensure cleanup on exit
+trap 'cleanup' EXIT
+
+cleanup() {
+    rm -f /tmp/stream_media_info.json 2>/dev/null || true
+    # Add any additional cleanup tasks here
+}
+
+# Initialize logging
+setup_logging
+
+# Parse command-line arguments
+parse_arguments "$@"
+
+# If URL and quality are provided via command-line, execute directly
+if [[ -n "${url:-}" && -n "${quality:-}" ]]; then
+    if [[ -z "${output_file:-}" ]]; then
+        output_file="stream_$(date +%Y%m%d%H%M%S)"
+    fi
+    validate_url "$url"
+    adjust_settings_based_on_media "$url"
+    run_streamlink "$url" "$quality" "$output_file"
+    exit 0
+fi
+
+# Main menu system for interactive use
 main_menu() {
     while true; do
-        echo "# --- // STREAMIT MENU //"
+        echo "# --- // STREAMIT MENU // ---"
         echo "$(tput setaf 6)1$(tput sgr0). Lena"
         echo "$(tput setaf 6)2$(tput sgr0). Ab"
         echo "$(tput setaf 6)3$(tput sgr0). Custom URL"
         echo "$(tput setaf 6)4$(tput sgr0). Schedule"
         echo "$(tput setaf 6)5$(tput sgr0). Exit"
         echo ""
-        echo -n "Select: "
+        echo -n "Select an option (1-5): "
         read -r choice
         case "$choice" in
             1|2)
@@ -280,7 +435,7 @@ main_menu() {
                 schedule_stream
                 ;;
             5)
-                display_message info "Exiting Streamlink Wrapper."
+                display_message info "Exiting Streamlink Wrapper. Goodbye!"
                 exit 0
                 ;;
             *)
@@ -290,6 +445,5 @@ main_menu() {
     done
 }
 
-# Entry point for the script
-setup_logging
+# Start the main menu if not executing a scheduled task
 main_menu

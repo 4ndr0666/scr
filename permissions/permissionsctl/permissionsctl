@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+set -x
 
 # Permissions Management Script
 # Author: [Your Name]
@@ -9,8 +11,8 @@
 set -euo pipefail
 
 # --- Configuration ---
-CONFIG_FILE="~/.config/permissions_policy.yaml"     # Path to the permissions policy file
-LOG_FILE="~/.local/share/logs/permissions_management.log" # Path to the log file
+CONFIG_FILE="/etc/permissions_policy.yaml"     # Path to the permissions policy file
+LOG_FILE="$HOME/.local/share/logs/permissions_management.log" # Path to the log file
 BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
 CRON_JOB="@daily root $0 audit"                # Cron job entry
 
@@ -29,7 +31,7 @@ install_dependencies() {
 
     if [ "${#to_install[@]}" -ne 0 ]; then
         echo "Installing dependencies: ${to_install[*]}"
-        sudo pacman -Syu --noconfirm "${to_install[@]}"
+        sudo pacman -Syu --needed --noconfirm "${to_install[@]}"
     fi
 }
 
@@ -44,17 +46,15 @@ setup_directories() {
     sudo chmod 600 "$LOG_FILE"
 }
 
-# Setup cron job for regular audits
 setup_cron() {
     if ! sudo crontab -l 2>/dev/null | grep -Fq "$0 audit"; then
-        (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab -
+        (sudo crontab -l 2>/dev/null; echo "@daily $USER sudo $0 audit") | sudo crontab -
         echo "Cron job added for regular audits."
     else
         echo "Cron job already exists."
     fi
 }
 
-# Generate permissions policy from package metadata and include custom paths
 generate_permissions_policy() {
     echo "Generating permissions policy..."
     local temp_policy="/tmp/permissions_policy.yaml"
@@ -68,7 +68,13 @@ generate_permissions_policy() {
 
     # Get list of all files and directories on the system
     local system_paths
-    system_paths=$(find / -xdev -path /proc -prune -o -path /sys -prune -o -path /run -prune -o -path /dev -prune -o -type f -o -type d -print 2>/dev/null | sort -u)
+    system_paths=$(sudo find / -xdev \
+        -path /proc -prune -o \
+        -path /sys -prune -o \
+        -path /run -prune -o \
+        -path /dev -prune -o \
+        -path /tmp -prune -o \
+        -type f -o -type d -print 2>/dev/null | sort -u)
 
     # Identify custom paths
     local custom_paths
