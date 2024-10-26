@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+#
+# Permissions Management Script
+# Author: [Your Name]
+#
+# Description:
+# This script manages file and directory permissions and ownerships based on a policy
+# defined in a YAML configuration file. It can backup current permissions, audit them
+# against the policy, and fix discrepancies.
+
+set -euo pipefail
+
+# --- Configuration ---
+CONFIG_FILE="/etc/permissions_policy.yaml"     # Path to the permissions policy file
+LOG_FILE="/var/log/permissions_management.log" # Path to the log file
+BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
+
+# --- Logging Function ---
+log_action() {
+    local level="$1"
+    local message="$2"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" >> "$LOG_FILE"
+}
+
+# --- Load Permissions Policy ---
+load_policy() {
+    if ! command -v yq >/dev/null 2>&1; then
+        echo "Error: 'yq' is required to parse the YAML configuration."
+        echo "Please install 'yq' and try again."
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "Error: Configuration file '$CONFIG_FILE' not found."
+        exit 1
+    fi
+}
+
+# --- Backup Current Permissions ---
+backup_permissions() {
+    local timestamp
+    timestamp=$(date +%Y%m%d%H%M%S)
+    local backup_dir="$BACKUP_DIR_BASE/$timestamp"
+    mkdir -p "$backup_dir"
+
+    # Backup permissions for all paths specified in the policy
+    while IFS= read -r path; do
+        if [[ -e "$path" ]]; then
+            getfacl -R "$path" > "$backup_dir/$(echo "$path" | tr '/' '_').acl"
+        else
+            echo "Warning: $path does not exist. Skipping backup."
+        fi
+    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+
+    log_action "INFO" "Permissions backed up to $backup_dir"
+    echo "Permissions backed up to $backup_dir"
+}
+
+# --- Audit Permissions ---
+audit_permissions() {
+    local discrepancies=0
+
+    # Audit permissions and ownerships for all paths specified in the policy
+    while IFS= read -r path; do
+        local type
+        type=$(test -d "$path" && echo "directories" || echo "files")
+        local desired_owner desired_group desired_perms
+
+        desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
+        desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
+        desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
+
+        if [[ -e "$path" ]]; then
+            local current_owner current_group current_perms
+            current_owner=$(stat -c '%U' "$path")
+            current_group=$(stat -c '%G' "$path")
+            current_perms=$(stat -c '%a' "$path")
+
+            if [[ "$current_owner" != "$desired_owner" ]]; then
+                echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
+                discrepancies=$((discrepancies + 1))
+            fi
+            if [[ "$current_group" != "$desired_group" ]]; then
+                echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
+                discrepancies=$((discrepancies + 1))
+            fi
+            if [[ "$current_perms" != "$desired_perms" ]]; then
+                echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
+                discrepancies=$((discrepancies + 1))
+            fi
+        else
+            echo "Warning: $path does not exist."
+            discrepancies=$((discrepancies + 1))
+        fi
+    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+
+    if [[ "$discrepancies" -eq 0 ]]; then
+        echo "All permissions and ownerships are as per the policy."
+    else
+        echo "Total discrepancies found: $discrepancies"
+        log_action "WARNING" "$discrepancies discrepancies found during audit."
+    fi
+}
+
+# --- Fix Permissions ---
+fix_permissions() {
+    local changes=0
+
+    # Fix permissions and ownerships for all paths specified in the policy
+    while IFS= read -r path; do
+        local type
+        type=$(test -d "$path" && echo "directories" || echo "files")
+        local desired_owner desired_group desired_perms
+
+        desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
+        desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
+        desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
+
+        if [[ -e "$path" ]]; then
+            local current_owner current_group current_perms
+            current_owner=$(stat -c '%U' "$path")
+            current_group=$(stat -c '%G' "$path")
+            current_perms=$(stat -c '%a' "$path")
+
+            if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
+                chown "$desired_owner:$desired_group" "$path"
+                log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
+                changes=$((changes + 1))
+            fi
+            if [[ "$current_perms" != "$desired_perms" ]]; then
+                chmod "$desired_perms" "$path"
+                log_action "INFO" "Changed permissions of $path to $desired_perms"
+                changes=$((changes + 1))
+            fi
+        else
+            echo "Warning: $path does not exist."
+        fi
+    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+
+    if [[ "$changes" -eq 0 ]]; then
+        echo "No changes were necessary. Permissions are already as per the policy."
+    else
+        echo "Total changes made: $changes"
+        log_action "INFO" "Total changes made during fix: $changes"
+    fi
+}
+
+# --- Main Function ---
+main() {
+    if [[ "$EUID" -ne 0 ]]; then
+        echo "This script must be run as root."
+        exit 1
+    fi
+
+    if [[ $# -lt 1 ]]; then
+        echo "Usage: $0 {backup|audit|fix}"
+        exit 1
+    fi
+
+    load_policy
+
+    case "$1" in
+        backup)
+            backup_permissions
+            ;;
+        audit)
+            audit_permissions
+            ;;
+        fix)
+            fix_permissions
+            ;;
+        *)
+            echo "Invalid option: $1"
+            echo "Usage: $0 {backup|audit|fix}"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
