@@ -62,34 +62,36 @@ audit_permissions() {
 
     # Audit permissions and ownerships for all paths specified in the policy
     while IFS= read -r path; do
-        local type
-        type=$(test -d "$path" && echo "directories" || echo "files")
-        local desired_owner desired_group desired_perms
+        local type desired_owner desired_group desired_perms
+        if [[ -d "$path" ]]; then
+            type="directories"
+        elif [[ -f "$path" ]]; then
+            type="files"
+        else
+            echo "Warning: $path does not exist."
+            discrepancies=$((discrepancies + 1))
+            continue
+        fi
 
         desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
         desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
         desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
 
-        if [[ -e "$path" ]]; then
-            local current_owner current_group current_perms
-            current_owner=$(stat -c '%U' "$path")
-            current_group=$(stat -c '%G' "$path")
-            current_perms=$(stat -c '%a' "$path")
+        local current_owner current_group current_perms
+        current_owner=$(stat -c '%U' "$path")
+        current_group=$(stat -c '%G' "$path")
+        current_perms=$(stat -c '%a' "$path")
 
-            if [[ "$current_owner" != "$desired_owner" ]]; then
-                echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
-                discrepancies=$((discrepancies + 1))
-            fi
-            if [[ "$current_group" != "$desired_group" ]]; then
-                echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
-                discrepancies=$((discrepancies + 1))
-            fi
-            if [[ "$current_perms" != "$desired_perms" ]]; then
-                echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
-                discrepancies=$((discrepancies + 1))
-            fi
-        else
-            echo "Warning: $path does not exist."
+        if [[ "$current_owner" != "$desired_owner" ]]; then
+            echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
+            discrepancies=$((discrepancies + 1))
+        fi
+        if [[ "$current_group" != "$desired_group" ]]; then
+            echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
+            discrepancies=$((discrepancies + 1))
+        fi
+        if [[ "$current_perms" != "$desired_perms" ]]; then
+            echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
             discrepancies=$((discrepancies + 1))
         fi
     done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
@@ -108,32 +110,34 @@ fix_permissions() {
 
     # Fix permissions and ownerships for all paths specified in the policy
     while IFS= read -r path; do
-        local type
-        type=$(test -d "$path" && echo "directories" || echo "files")
-        local desired_owner desired_group desired_perms
+        local type desired_owner desired_group desired_perms
+        if [[ -d "$path" ]]; then
+            type="directories"
+        elif [[ -f "$path" ]]; then
+            type="files"
+        else
+            echo "Warning: $path does not exist."
+            continue
+        fi
 
         desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
         desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
         desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
 
-        if [[ -e "$path" ]]; then
-            local current_owner current_group current_perms
-            current_owner=$(stat -c '%U' "$path")
-            current_group=$(stat -c '%G' "$path")
-            current_perms=$(stat -c '%a' "$path")
+        local current_owner current_group current_perms
+        current_owner=$(stat -c '%U' "$path")
+        current_group=$(stat -c '%G' "$path")
+        current_perms=$(stat -c '%a' "$path")
 
-            if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
-                chown "$desired_owner:$desired_group" "$path"
-                log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
-                changes=$((changes + 1))
-            fi
-            if [[ "$current_perms" != "$desired_perms" ]]; then
-                chmod "$desired_perms" "$path"
-                log_action "INFO" "Changed permissions of $path to $desired_perms"
-                changes=$((changes + 1))
-            fi
-        else
-            echo "Warning: $path does not exist."
+        if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
+            chown "$desired_owner:$desired_group" "$path"
+            log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
+            changes=$((changes + 1))
+        fi
+        if [[ "$current_perms" != "$desired_perms" ]]; then
+            chmod "$desired_perms" "$path"
+            log_action "INFO" "Changed permissions of $path to $desired_perms"
+            changes=$((changes + 1))
         fi
     done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
 

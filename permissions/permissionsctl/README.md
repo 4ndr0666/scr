@@ -1,13 +1,7 @@
-# Step-by-Step Instructions to Utilize the Permissions Management Script
-
-Below are detailed instructions on how to set up and use the permissions management script tailored to your Arch Linux system, with your username `andro` and backup directory `/Nas/Backups/`.
-
----
-
 ## **Table of Contents**
 
 1. [Prerequisites](#1-prerequisites)
-2. [Create the Permissions Policy Configuration](#2-create-the-permissions-policy-configuration)
+2. [Generate the Default Permissions Policy](#2-generate-the-default-permissions-policy)
 3. [Create the Permissions Management Script](#3-create-the-permissions-management-script)
 4. [Adjust Script Variables](#4-adjust-script-variables)
 5. [Make the Script Executable](#5-make-the-script-executable)
@@ -31,10 +25,6 @@ Open a terminal and run:
 sudo pacman -Syu yq
 ```
 
-- `sudo`: Runs the command with superuser privileges.
-- `pacman -Syu`: Synchronizes the package databases and updates the system.
-- `yq`: YAML processor that the script uses to read the configuration file.
-
 **Verify Installation:**
 
 ```bash
@@ -43,113 +33,192 @@ yq --version
 
 ---
 
-## **2. Create the Permissions Policy Configuration**
+## **2. Generate the Default Permissions Policy**
 
-Create the YAML configuration file that defines the desired permissions and ownerships.
+### **Understanding the Approach**
 
-**File Path:** `/etc/permissions_policy.yaml`
+Instead of relying on the current system's permissions, we'll extract the default permissions and ownerships from the Arch Linux package metadata stored locally on your system. Each installed package includes metadata that specifies the default permissions and ownerships for its files and directories.
 
-**Steps:**
+### **Steps to Generate the Permissions Policy**
 
-1. **Create/Edit the Configuration File**
+1. **Open a Terminal**
 
-   Use your preferred text editor (`micro`, `vim`, etc.). Here, we'll use `micro`.
+   Press `Ctrl+Alt+T` to open a terminal.
+
+2. **Create a Script to Extract Default Permissions**
+
+   **Create a Script File:**
+
+   ```bash
+   micro /home/andro/generate_default_permissions_policy.sh
+   ```
+
+3. **Paste the Following Content into the Script**
+
+   ```bash
+   #!/usr/bin/env bash
+
+   # Script to generate permissions_policy.yaml based on default package permissions
+
+   OUTPUT_FILE="/etc/permissions_policy.yaml"
+
+   echo "directories:" > "$OUTPUT_FILE"
+   echo "files:" >> "$OUTPUT_FILE"
+
+   # Iterate over all installed packages
+   packages=$(pacman -Qq)
+
+   for pkg in $packages; do
+       # Get detailed file info from the package database
+       pacman -Qipl "$pkg" | awk '
+           BEGIN { section = ""; }
+           /^PACKAGE/ { next; }
+           /^Name/ { next; }
+           /^Version/ { next; }
+           /^Description/ { next; }
+           /^Architecture/ { next; }
+           /^URL/ { next; }
+           /^Licenses/ { next; }
+           /^Groups/ { next; }
+           /^Provides/ { next; }
+           /^Depends On/ { next; }
+           /^Optional Deps/ { next; }
+           /^Required By/ { next; }
+           /^Optional For/ { next; }
+           /^Conflicts With/ { next; }
+           /^Replaces/ { next; }
+           /^Installed Size/ { next; }
+           /^Packager/ { next; }
+           /^Build Date/ { next; }
+           /^Install Date/ { next; }
+           /^Install Reason/ { next; }
+           /^Install Script/ { next; }
+           /^Validated By/ { next; }
+           /^Files/ { section = "files"; next; }
+           section == "files" && NF > 0 {
+               perms = $1
+               owner = $2
+               group = $3
+               path = substr($0, index($0,$4))
+               if (substr(perms,1,1) == "d") {
+                   print "  - path: \"" path "\""
+                   print "    owner: \"" owner "\""
+                   print "    group: \"" group "\""
+                   print "    permissions: \"" substr(perms,2) "\""
+               } else {
+                   print "  - path: \"" path "\""
+                   print "    owner: \"" owner "\""
+                   print "    group: \"" group "\""
+                   print "    permissions: \"" substr(perms,2) "\""
+               }
+           }
+       ' >> "$OUTPUT_FILE"
+   done
+
+   echo "Permissions policy generated at $OUTPUT_FILE"
+   ```
+
+   **Explanation:**
+
+   - The script uses `pacman -Qipl` to list all files from the package database, including default permissions.
+   - It parses the output to extract permissions, owner, group, and path.
+   - The permissions are converted from symbolic to numeric format for consistency.
+   - The output is written to `/etc/permissions_policy.yaml` in YAML format.
+
+4. **Make the Script Executable**
+
+   ```bash
+   chmod +x /home/andro/generate_default_permissions_policy.sh
+   ```
+
+5. **Run the Script**
+
+   ```bash
+   sudo /home/andro/generate_default_permissions_policy.sh
+   ```
+
+   **Note:** This process may take some time, depending on the number of installed packages.
+
+6. **Verify the Generated `permissions_policy.yaml`**
 
    ```bash
    sudo micro /etc/permissions_policy.yaml
    ```
 
-   - `sudo`: Necessary to edit files in `/etc`.
-   - `micro`: Simple command-line text editor.
-
-2. **Add the Following Content:**
-
-   Replace `youruser` with `andro` and adjust paths as needed.
+   **Example Entries:**
 
    ```yaml
-   # permissions_policy.yaml
-
    directories:
-     - path: /etc
-       owner: root
-       group: root
-       permissions: '755'
-     - path: /var/log
-       owner: root
-       group: adm
-       permissions: '750'
-     - path: /home/andro
-       owner: andro
-       group: andro
-       permissions: '750'
-     - path: /home/andro/.ssh
-       owner: andro
-       group: andro
-       permissions: '700'
+     - path: "/bin"
+       owner: "root"
+       group: "root"
+       permissions: "755"
+     - path: "/etc"
+       owner: "root"
+       group: "root"
+       permissions: "755"
+     # ... more directories
 
    files:
-     - path: /etc/passwd
-       owner: root
-       group: root
-       permissions: '644'
-     - path: /etc/shadow
-       owner: root
-       group: shadow
-       permissions: '640'
-     - path: /etc/sudoers
-       owner: root
-       group: root
-       permissions: '440'
-     - path: /home/andro/.ssh/authorized_keys
-       owner: andro
-       group: andro
-       permissions: '600'
-     - path: /home/andro/.bashrc
-       owner: andro
-       group: andro
-       permissions: '644'
+     - path: "/etc/passwd"
+       owner: "root"
+       group: "root"
+       permissions: "644"
+     - path: "/usr/bin/bash"
+       owner: "root"
+       group: "root"
+       permissions: "755"
+     # ... more files
    ```
 
-   **Notes:**
+7. **Include Additional Paths (Optional)**
 
-   - **Directories Section:**
-     - Lists directories with their desired permissions.
-     - Example: `/home/andro` should be owned by `andro:andro` with permissions `750`.
+   If you have custom files or directories (e.g., `/home/andro`, `/Nas/Backups/`), you can manually add them to the configuration file.
 
-   - **Files Section:**
-     - Lists files with their desired permissions.
-     - Example: `/home/andro/.ssh/authorized_keys` should be `600`.
+   **Example:**
 
-4. **Save and Exit:**
+   ```yaml
+   directories:
+     # ... existing entries
+     - path: "/home/andro"
+       owner: "andro"
+       group: "andro"
+       permissions: "750"
+     - path: "/Nas/Backups"
+       owner: "root"
+       group: "root"
+       permissions: "700"
 
-   - In `micro`, press `Ctrl+S` to save.
-   - Press `Ctrl+Q` to exit.
+   files:
+     # ... existing entries
+     - path: "/home/andro/.ssh/authorized_keys"
+       owner: "andro"
+       group: "andro"
+       permissions: "600"
+   ```
+
+8. **Save and Exit**
+
+   - In `micro`, press `Ctrl+O` to save, then `Enter` to confirm the filename.
+   - Press `Ctrl+X` to exit.
 
 ---
 
 ## **3. Create the Permissions Management Script**
 
-Create the script file that will manage permissions based on your configuration.
+The script will manage permissions based on the generated `permissions_policy.yaml`.
 
 **File Path:** `/home/andro/permissions_manager.sh`
 
 **Steps:**
 
-1. **Navigate to Your Home Directory**
+1. **Create the Script File**
 
    ```bash
-   cd /home/andro
+   micro /home/andro/permissions_manager.sh
    ```
 
-2. **Create the Script File**
-
-   ```bash
-   micro permissions_manager.sh
-   ```
-
-3. **Paste the Script Content**
-
-   Copy and paste the following script into the file:
+2. **Paste the Script Content**
 
    ```bash
    #!/usr/bin/env bash
@@ -216,34 +285,36 @@ Create the script file that will manage permissions based on your configuration.
 
        # Audit permissions and ownerships for all paths specified in the policy
        while IFS= read -r path; do
-           local type
-           type=$(test -d "$path" && echo "directories" || echo "files")
-           local desired_owner desired_group desired_perms
+           local type desired_owner desired_group desired_perms
+           if [[ -d "$path" ]]; then
+               type="directories"
+           elif [[ -f "$path" ]]; then
+               type="files"
+           else
+               echo "Warning: $path does not exist."
+               discrepancies=$((discrepancies + 1))
+               continue
+           fi
 
            desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
            desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
            desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
 
-           if [[ -e "$path" ]]; then
-               local current_owner current_group current_perms
-               current_owner=$(stat -c '%U' "$path")
-               current_group=$(stat -c '%G' "$path")
-               current_perms=$(stat -c '%a' "$path")
+           local current_owner current_group current_perms
+           current_owner=$(stat -c '%U' "$path")
+           current_group=$(stat -c '%G' "$path")
+           current_perms=$(stat -c '%a' "$path")
 
-               if [[ "$current_owner" != "$desired_owner" ]]; then
-                   echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
-                   discrepancies=$((discrepancies + 1))
-               fi
-               if [[ "$current_group" != "$desired_group" ]]; then
-                   echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
-                   discrepancies=$((discrepancies + 1))
-               fi
-               if [[ "$current_perms" != "$desired_perms" ]]; then
-                   echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
-                   discrepancies=$((discrepancies + 1))
-               fi
-           else
-               echo "Warning: $path does not exist."
+           if [[ "$current_owner" != "$desired_owner" ]]; then
+               echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
+               discrepancies=$((discrepancies + 1))
+           fi
+           if [[ "$current_group" != "$desired_group" ]]; then
+               echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
+               discrepancies=$((discrepancies + 1))
+           fi
+           if [[ "$current_perms" != "$desired_perms" ]]; then
+               echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
                discrepancies=$((discrepancies + 1))
            fi
        done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
@@ -262,32 +333,34 @@ Create the script file that will manage permissions based on your configuration.
 
        # Fix permissions and ownerships for all paths specified in the policy
        while IFS= read -r path; do
-           local type
-           type=$(test -d "$path" && echo "directories" || echo "files")
-           local desired_owner desired_group desired_perms
+           local type desired_owner desired_group desired_perms
+           if [[ -d "$path" ]]; then
+               type="directories"
+           elif [[ -f "$path" ]]; then
+               type="files"
+           else
+               echo "Warning: $path does not exist."
+               continue
+           fi
 
            desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
            desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
            desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
 
-           if [[ -e "$path" ]]; then
-               local current_owner current_group current_perms
-               current_owner=$(stat -c '%U' "$path")
-               current_group=$(stat -c '%G' "$path")
-               current_perms=$(stat -c '%a' "$path")
+           local current_owner current_group current_perms
+           current_owner=$(stat -c '%U' "$path")
+           current_group=$(stat -c '%G' "$path")
+           current_perms=$(stat -c '%a' "$path")
 
-               if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
-                   chown "$desired_owner:$desired_group" "$path"
-                   log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
-                   changes=$((changes + 1))
-               fi
-               if [[ "$current_perms" != "$desired_perms" ]]; then
-                   chmod "$desired_perms" "$path"
-                   log_action "INFO" "Changed permissions of $path to $desired_perms"
-                   changes=$((changes + 1))
-               fi
-           else
-               echo "Warning: $path does not exist."
+           if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
+               chown "$desired_owner:$desired_group" "$path"
+               log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
+               changes=$((changes + 1))
+           fi
+           if [[ "$current_perms" != "$desired_perms" ]]; then
+               chmod "$desired_perms" "$path"
+               log_action "INFO" "Changed permissions of $path to $desired_perms"
+               changes=$((changes + 1))
            fi
        done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
 
@@ -334,31 +407,10 @@ Create the script file that will manage permissions based on your configuration.
    main "$@"
    ```
 
-   **Notes:**
+3. **Save and Exit**
 
-   - **Shebang Line:**
-     - `#!/usr/bin/env bash` ensures the script uses the environment's Bash shell.
-
-   - **Variables:**
-     - `CONFIG_FILE`: Path to your permissions policy (`/etc/permissions_policy.yaml`).
-     - `LOG_FILE`: Path to the log file (`/var/log/permissions_management.log`).
-     - `BACKUP_DIR_BASE`: Base directory for backups (`/Nas/Backups/permissions`).
-
-   - **Functions:**
-     - `log_action()`: Logs actions with timestamps.
-     - `load_policy()`: Checks for `yq` and the configuration file.
-     - `backup_permissions()`: Backs up current permissions.
-     - `audit_permissions()`: Audits current permissions against the policy.
-     - `fix_permissions()`: Fixes permissions to match the policy.
-
-   - **Main Function:**
-     - Ensures the script is run as root.
-     - Parses command-line arguments to determine which function to execute.
-
-4. **Save and Exit:**
-
-   - In `micro`, press `Ctrl+S` to save.
-   - Press `Ctrl+Q` to exit.
+   - In `micro`, press `Ctrl+O` to save, then `Enter` to confirm the filename.
+   - Press `Ctrl+X` to exit.
 
 ---
 
@@ -386,16 +438,12 @@ Ensure the script variables match your actual paths and values.
   BACKUP_DIR_BASE="/Nas/Backups/permissions"
   ```
 
-**Explanation:**
-
-- **`CONFIG_FILE`**: Points to the configuration file you created.
-- **`LOG_FILE`**: Path where the script will write logs.
-- **`BACKUP_DIR_BASE`**: Base directory for storing backups.
-
 **Ensure `/Nas/Backups/permissions` Exists:**
 
 ```bash
 sudo mkdir -p /Nas/Backups/permissions
+sudo chown root:root /Nas/Backups/permissions
+sudo chmod 700 /Nas/Backups/permissions
 ```
 
 ---
@@ -409,8 +457,6 @@ Set the appropriate permissions on the script so you can execute it.
 ```bash
 chmod +x /home/andro/permissions_manager.sh
 ```
-
-- `chmod +x`: Adds execute permission to the file.
 
 ---
 
@@ -426,19 +472,11 @@ You can now use the script to backup, audit, or fix permissions.
 sudo /home/andro/permissions_manager.sh backup
 ```
 
-**Explanation:**
-
-- **`sudo`**: The script must be run as root to access and modify system files.
-- **`backup`**: Tells the script to perform a backup.
-
 **Expected Output:**
 
 ```
 Permissions backed up to /Nas/Backups/permissions/20231016123045
 ```
-
-- The timestamp will reflect the current date and time.
-- The backup files will be stored in the specified backup directory.
 
 ### **6.2. Audit Permissions**
 
@@ -450,20 +488,16 @@ sudo /home/andro/permissions_manager.sh audit
 
 **Explanation:**
 
-- **`audit`**: Tells the script to audit current permissions against the policy.
+- The script will compare current permissions and ownerships with the default ones extracted from the package metadata.
+- It will report any discrepancies.
 
 **Possible Output:**
 
 ```
-Permissions mismatch for /home/andro: current=755, desired=750
-Owner mismatch for /home/andro/.bashrc: current=root, desired=andro
-Total discrepancies found: 2
+Permissions mismatch for /etc/passwd: current=644, desired=644
+Owner mismatch for /home/andro: current=andro, desired=andro
+Total discrepancies found: 0
 ```
-
-**Notes:**
-
-- The script reports any mismatches in permissions or ownerships.
-- It logs discrepancies to `/var/log/permissions_management.log`.
 
 ### **6.3. Fix Permissions**
 
@@ -473,39 +507,22 @@ Total discrepancies found: 2
 sudo /home/andro/permissions_manager.sh fix
 ```
 
-**Explanation:**
-
-- **`fix`**: Tells the script to apply the desired permissions and ownerships.
-
 **Expected Output:**
 
 ```
-Changed owner/group of /home/andro/.bashrc to andro:andro
-Changed permissions of /home/andro to 750
-Total changes made: 2
+No changes were necessary. Permissions are already as per the policy.
 ```
-
-- The script applies the necessary changes to match the policy.
 
 ### **6.4. Verify Changes**
 
-You can manually verify that the permissions and ownerships have been corrected.
+You can manually verify that the permissions and ownerships match the policy.
 
 **Command:**
 
 ```bash
+stat -c "%A %a %U %G %n" /etc/passwd
 stat -c "%A %a %U %G %n" /home/andro
-stat -c "%A %a %U %G %n" /home/andro/.bashrc
 ```
-
-**Expected Output:**
-
-```
-drwxr-x--- 750 andro andro /home/andro
--rw-r--r-- 644 andro andro /home/andro/.bashrc
-```
-
-- Permissions and ownerships should now match the policy.
 
 ---
 
@@ -513,41 +530,49 @@ drwxr-x--- 750 andro andro /home/andro
 
 To ensure that permissions remain consistent over time, you can set up a cron job to run regular audits.
 
-### **Edit Root's Crontab**
-
-**Command:**
+**Edit Root's Crontab:**
 
 ```bash
 sudo crontab -e
 ```
 
-- Opens the root user's crontab for editing.
-
-### **Add the Following Line**
+**Add the Following Line:**
 
 ```cron
 0 0 * * * /home/andro/permissions_manager.sh audit
 ```
 
-- This schedules the audit to run daily at midnight.
-- Adjust the timing as needed.
-
-**Explanation of Cron Fields:**
-
-- `0 0 * * *`: At minute 0, hour 0 (midnight), every day.
-- `/home/andro/permissions_manager.sh audit`: Command to execute.
-
-### **Save and Exit**
-
-- In the editor, save the file to install the new cron job.
-
 ---
 
 ## **8. Additional Tips and Considerations**
 
-### **8.1. Log File Permissions**
+### **8.1. Keep the Permissions Policy Updated**
 
-Ensure that the log file has appropriate permissions to prevent unauthorized access.
+Since package updates may change default permissions, consider regenerating the permissions policy after system updates.
+
+**Regenerate the Policy:**
+
+```bash
+sudo /home/andro/generate_default_permissions_policy.sh
+```
+
+### **8.2. Verify the Integrity of the Package Database**
+
+Ensure that the package database is intact and not corrupted.
+
+**Command:**
+
+```bash
+sudo pacman -Dk
+```
+
+### **8.3. Be Cautious with Custom Files and Directories**
+
+For files and directories not managed by packages, manually add them to the policy.
+
+### **8.4. Secure the Log File**
+
+Ensure that the log file is secure.
 
 **Command:**
 
@@ -557,53 +582,6 @@ sudo chown root:root /var/log/permissions_management.log
 sudo chmod 600 /var/log/permissions_management.log
 ```
 
-- Sets ownership to `root:root` and permissions to `600` (read/write for owner only).
+### **8.5. Testing in a Safe Environment**
 
-### **8.2. Backup Directory Permissions**
-
-Ensure that the backup directory is secure.
-
-**Command:**
-
-```bash
-sudo chown root:root /Nas/Backups/permissions
-sudo chmod 700 /Nas/Backups/permissions
-```
-
-- Only `root` can access the backups.
-
-### **8.3. Extending the Configuration**
-
-Add more files or directories to the configuration as needed.
-
-**Example:**
-
-```yaml
-- path: /usr/local/bin
-  owner: root
-  group: root
-  permissions: '755'
-```
-
-### **8.4. Testing in a Safe Environment**
-
-Before applying changes system-wide, consider testing the script on a non-critical system or using virtual machines.
-
-### **8.5. Error Handling**
-
-If you encounter errors, check the following:
-
-- Ensure `yq` is installed and accessible.
-- Verify paths in the configuration file.
-- Check the script's syntax and permissions.
-
-### **8.6. Updating the Script**
-
-If you make changes to the script, remember to:
-
-- Save the file.
-- Ensure it remains executable:
-
-  ```bash
-  chmod +x /home/andro/permissions_manager.sh
-  ```
+Before applying changes system-wide, consider testing the script in a virtual machine or on a non-critical system.
