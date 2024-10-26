@@ -1,102 +1,203 @@
 #!/usr/bin/env bash
-#
+
 # Permissions Management Script
 # Author: [Your Name]
-#
 # Description:
-# This script manages file and directory permissions and ownerships based on a policy
-# defined in a YAML configuration file. It can backup current permissions, audit them
-# against the policy, and fix discrepancies.
+# Automates the management of file and directory permissions and ownerships based on a policy.
+# Automatically detects custom paths and integrates them into the permissions policy.
 
 set -euo pipefail
 
 # --- Configuration ---
-CONFIG_FILE="/etc/permissions_policy.yaml"     # Path to the permissions policy file
-LOG_FILE="/var/log/permissions_management.log" # Path to the log file
+CONFIG_FILE="~/.config/permissions_policy.yaml"     # Path to the permissions policy file
+LOG_FILE="~/.local/share/logs/permissions_management.log" # Path to the log file
 BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
+CRON_JOB="@daily root $0 audit"                # Cron job entry
 
-# --- Logging Function ---
+# --- Functions ---
+
+# Install dependencies if not present
+install_dependencies() {
+    local dependencies=("yq" "pacutils" "findutils")
+    local to_install=()
+
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            to_install+=("$dep")
+        fi
+    done
+
+    if [ "${#to_install[@]}" -ne 0 ]; then
+        echo "Installing dependencies: ${to_install[*]}"
+        sudo pacman -Syu --noconfirm "${to_install[@]}"
+    fi
+}
+
+# Create necessary directories and set permissions
+setup_directories() {
+    sudo mkdir -p "$BACKUP_DIR_BASE"
+    sudo chown root:root "$BACKUP_DIR_BASE"
+    sudo chmod 700 "$BACKUP_DIR_BASE"
+
+    sudo touch "$LOG_FILE"
+    sudo chown root:root "$LOG_FILE"
+    sudo chmod 600 "$LOG_FILE"
+}
+
+# Setup cron job for regular audits
+setup_cron() {
+    if ! sudo crontab -l 2>/dev/null | grep -Fq "$0 audit"; then
+        (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab -
+        echo "Cron job added for regular audits."
+    else
+        echo "Cron job already exists."
+    fi
+}
+
+# Generate permissions policy from package metadata and include custom paths
+generate_permissions_policy() {
+    echo "Generating permissions policy..."
+    local temp_policy="/tmp/permissions_policy.yaml"
+
+    echo "directories:" > "$temp_policy"
+    echo "files:" >> "$temp_policy"
+
+    # Get list of files and directories installed by packages
+    local package_paths
+    package_paths=$(sudo pacman -Ql | awk '{print $2}' | sort -u)
+
+    # Get list of all files and directories on the system
+    local system_paths
+    system_paths=$(find / -xdev -path /proc -prune -o -path /sys -prune -o -path /run -prune -o -path /dev -prune -o -type f -o -type d -print 2>/dev/null | sort -u)
+
+    # Identify custom paths
+    local custom_paths
+    custom_paths=$(comm -23 <(echo "$system_paths") <(echo "$package_paths"))
+
+    # Combine package paths and custom paths
+    local all_paths
+    all_paths=$(echo -e "$package_paths\n$custom_paths" | sort -u)
+
+    # Process all paths to generate permissions policy
+    while IFS= read -r path; do
+        if [ -e "$path" ]; then
+            local owner group perms
+            owner=$(stat -c '%U' "$path")
+            group=$(stat -c '%G' "$path")
+            perms=$(stat -c '%a' "$path")
+            path_escaped=$(printf '%q' "$path")
+
+            if [ -d "$path" ]; then
+                echo "  - path: \"$path_escaped\"" >> "$temp_policy"
+                echo "    owner: \"$owner\"" >> "$temp_policy"
+                echo "    group: \"$group\"" >> "$temp_policy"
+                echo "    permissions: \"$perms\"" >> "$temp_policy"
+            elif [ -f "$path" ]; then
+                echo "  - path: \"$path_escaped\"" >> "$temp_policy"
+                echo "    owner: \"$owner\"" >> "$temp_policy"
+                echo "    group: \"$group\"" >> "$temp_policy"
+                echo "    permissions: \"$perms\"" >> "$temp_policy"
+            fi
+        fi
+    done <<< "$all_paths"
+
+    # Move the temporary policy to the final location
+    sudo mv "$temp_policy" "$CONFIG_FILE"
+    sudo chown root:root "$CONFIG_FILE"
+    sudo chmod 600 "$CONFIG_FILE"
+
+    echo "Permissions policy generated at $CONFIG_FILE"
+}
+
+# Logging function
 log_action() {
     local level="$1"
     local message="$2"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" | sudo tee -a "$LOG_FILE" >/dev/null
 }
 
-# --- Load Permissions Policy ---
+print_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  setup       Set up environment" 
+    echo "  backup      Save all permissions"
+    echo "  audit       Perform security audit"
+    echo "  fix         Apply factory defaults"
+    exit 0
+}
+
+# Load permissions policy
 load_policy() {
     if ! command -v yq >/dev/null 2>&1; then
         echo "Error: 'yq' is required to parse the YAML configuration."
-        echo "Please install 'yq' and try again."
         exit 1
     fi
 
-    if [[ ! -f "$CONFIG_FILE" ]]; then
+    if [ ! -f "$CONFIG_FILE" ]; then
         echo "Error: Configuration file '$CONFIG_FILE' not found."
         exit 1
     fi
 }
 
-# --- Backup Current Permissions ---
+# Backup current permissions
 backup_permissions() {
     local timestamp
     timestamp=$(date +%Y%m%d%H%M%S)
     local backup_dir="$BACKUP_DIR_BASE/$timestamp"
-    mkdir -p "$backup_dir"
+    sudo mkdir -p "$backup_dir"
 
-    # Backup permissions for all paths specified in the policy
-    while IFS= read -r path; do
-        if [[ -e "$path" ]]; then
-            getfacl -R "$path" > "$backup_dir/$(echo "$path" | tr '/' '_').acl"
+    yq e '.directories[].path, .files[].path' "$CONFIG_FILE" | while IFS= read -r path; do
+        if [ -e "$path" ]; then
+            sudo getfacl -pR "$path" > "$backup_dir/$(echo "$path" | tr '/' '_').acl"
         else
             echo "Warning: $path does not exist. Skipping backup."
         fi
-    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+    done
 
     log_action "INFO" "Permissions backed up to $backup_dir"
     echo "Permissions backed up to $backup_dir"
 }
 
-# --- Audit Permissions ---
+# Audit permissions
 audit_permissions() {
     local discrepancies=0
 
-    # Audit permissions and ownerships for all paths specified in the policy
-    while IFS= read -r path; do
-        local type desired_owner desired_group desired_perms
-        if [[ -d "$path" ]]; then
-            type="directories"
-        elif [[ -f "$path" ]]; then
-            type="files"
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -d "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path")
+            curr_group=$(stat -c '%G' "$path")
+            curr_perms=$(stat -c '%a' "$path")
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+                echo "Discrepancy found in $path"
+                discrepancies=$((discrepancies + 1))
+            fi
         else
-            echo "Warning: $path does not exist."
-            discrepancies=$((discrepancies + 1))
-            continue
-        fi
-
-        desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
-        desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
-        desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
-
-        local current_owner current_group current_perms
-        current_owner=$(stat -c '%U' "$path")
-        current_group=$(stat -c '%G' "$path")
-        current_perms=$(stat -c '%a' "$path")
-
-        if [[ "$current_owner" != "$desired_owner" ]]; then
-            echo "Owner mismatch for $path: current=$current_owner, desired=$desired_owner"
+            echo "Warning: Directory $path does not exist."
             discrepancies=$((discrepancies + 1))
         fi
-        if [[ "$current_group" != "$desired_group" ]]; then
-            echo "Group mismatch for $path: current=$current_group, desired=$desired_group"
-            discrepancies=$((discrepancies + 1))
-        fi
-        if [[ "$current_perms" != "$desired_perms" ]]; then
-            echo "Permissions mismatch for $path: current=$current_perms, desired=$desired_perms"
-            discrepancies=$((discrepancies + 1))
-        fi
-    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+    done
 
-    if [[ "$discrepancies" -eq 0 ]]; then
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -f "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path")
+            curr_group=$(stat -c '%G' "$path")
+            curr_perms=$(stat -c '%a' "$path")
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+                echo "Discrepancy found in $path"
+                discrepancies=$((discrepancies + 1))
+            fi
+        else
+            echo "Warning: File $path does not exist."
+            discrepancies=$((discrepancies + 1))
+        fi
+    done
+
+    if [ "$discrepancies" -eq 0 ]; then
         echo "All permissions and ownerships are as per the policy."
     else
         echo "Total discrepancies found: $discrepancies"
@@ -104,81 +205,100 @@ audit_permissions() {
     fi
 }
 
-# --- Fix Permissions ---
+# Fix permissions
 fix_permissions() {
     local changes=0
 
-    # Fix permissions and ownerships for all paths specified in the policy
-    while IFS= read -r path; do
-        local type desired_owner desired_group desired_perms
-        if [[ -d "$path" ]]; then
-            type="directories"
-        elif [[ -f "$path" ]]; then
-            type="files"
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -d "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path")
+            curr_group=$(stat -c '%G' "$path")
+            curr_perms=$(stat -c '%a' "$path")
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+                sudo chown "$owner:$group" "$path"
+                log_action "INFO" "Changed owner/group of $path to $owner:$group"
+                changes=$((changes + 1))
+            fi
+            if [ "$curr_perms" != "$perms" ]; then
+                sudo chmod "$perms" "$path"
+                log_action "INFO" "Changed permissions of $path to $perms"
+                changes=$((changes + 1))
+            fi
         else
-            echo "Warning: $path does not exist."
-            continue
+            echo "Warning: Directory $path does not exist."
         fi
+    done
 
-        desired_owner=$(yq e ".${type}[] | select(.path == \"$path\").owner" "$CONFIG_FILE")
-        desired_group=$(yq e ".${type}[] | select(.path == \"$path\").group" "$CONFIG_FILE")
-        desired_perms=$(yq e ".${type}[] | select(.path == \"$path\").permissions" "$CONFIG_FILE")
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -f "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path")
+            curr_group=$(stat -c '%G' "$path")
+            curr_perms=$(stat -c '%a' "$path")
 
-        local current_owner current_group current_perms
-        current_owner=$(stat -c '%U' "$path")
-        current_group=$(stat -c '%G' "$path")
-        current_perms=$(stat -c '%a' "$path")
-
-        if [[ "$current_owner" != "$desired_owner" ]] || [[ "$current_group" != "$desired_group" ]]; then
-            chown "$desired_owner:$desired_group" "$path"
-            log_action "INFO" "Changed owner/group of $path to $desired_owner:$desired_group"
-            changes=$((changes + 1))
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+                sudo chown "$owner:$group" "$path"
+                log_action "INFO" "Changed owner/group of $path to $owner:$group"
+                changes=$((changes + 1))
+            fi
+            if [ "$curr_perms" != "$perms" ]; then
+                sudo chmod "$perms" "$path"
+                log_action "INFO" "Changed permissions of $path to $perms"
+                changes=$((changes + 1))
+            fi
+        else
+            echo "Warning: File $path does not exist."
         fi
-        if [[ "$current_perms" != "$desired_perms" ]]; then
-            chmod "$desired_perms" "$path"
-            log_action "INFO" "Changed permissions of $path to $desired_perms"
-            changes=$((changes + 1))
-        fi
-    done < <(yq e '.directories[].path, .files[].path' "$CONFIG_FILE")
+    done
 
-    if [[ "$changes" -eq 0 ]]; then
-        echo "No changes were necessary. Permissions are already as per the policy."
+    if [ "$changes" -eq 0 ]; then
+        echo "No changes were necessary."
     else
         echo "Total changes made: $changes"
         log_action "INFO" "Total changes made during fix: $changes"
     fi
 }
 
-# --- Main Function ---
+# Main function
 main() {
-    if [[ "$EUID" -ne 0 ]]; then
-        echo "This script must be run as root."
+    # Ensure the script is run as the user 'andro'
+    if [ "$(whoami)" != "andro" ]; then
+        echo "This script must be run as the user 'andro'."
         exit 1
     fi
 
-    if [[ $# -lt 1 ]]; then
-        echo "Usage: $0 {backup|audit|fix}"
-        exit 1
-    fi
-
-    load_policy
-
-    case "$1" in
+    # Parse command-line arguments
+    local action="${1:-}"
+        
+    case "$action" in
+        setup)
+            install_dependencies
+            setup_directories
+            setup_cron
+            generate_permissions_policy
+            ;;
         backup)
+            load_policy
             backup_permissions
             ;;
         audit)
+            load_policy
             audit_permissions
             ;;
         fix)
+            load_policy
             fix_permissions
             ;;
         *)
-            echo "Invalid option: $1"
-            echo "Usage: $0 {backup|audit|fix}"
+            print_help
+#            echo "Usage: $0 {setup|backup|audit|fix}"
             exit 1
             ;;
     esac
 }
+
+# --- Execution ---
 
 main "$@"
