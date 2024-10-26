@@ -277,20 +277,18 @@ fi
 # Main menu system for interactive use
 main_menu() {
     while true; do
-        echo "##########################################################"
-        echo "###           VIDEO FINDER MAIN MENU                  ###"
-        echo "##########################################################"
+        echo "# --- // Vidfinder //"                 
         echo ""
-        echo "1. Enter Webpage URL"
-        echo "2. Change Download Directory"
-        echo "3. Change Download Method for .m3u8 Streams"
+        echo "1. Enter URL"
+        echo "2. Change Dl Dir"
+        echo "3. Change Dl Method for .m3u8 Streams"
         echo "4. Exit"
         echo ""
         echo -n "Select an option (1-4): "
         read -r choice
         case "$choice" in
             1)
-                echo -n "Enter the webpage URL: "
+                echo -n "Enter the URL: "
                 read -r webpage_url
                 validate_url "$webpage_url"
                 mkdir -p "$DOWNLOAD_DIR"
