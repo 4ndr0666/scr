@@ -53,6 +53,15 @@ run_cleaner() {
     echo
 }
 
+dep_check() {
+  for dep in bc find sqlite3 xargs; do
+    if ! command -v "$dep" > /dev/null 2>&1; then
+      echo "I require $dep but it's not installed. Aborting." >&2
+      exit 1
+    fi
+  done
+}
+
 # Function to check if a browser is running
 if_running() {
     local process_name="$1"
@@ -132,7 +141,7 @@ for user in $priv; do
     done
 
     # [BRAVE]
-    for b in {BraveSoftware/Brave-Browser,Brave-Browser}; do
+    for b in {BraveSoftware/Brave-Browser,Brave-Browser,Brave-Browser-Beta,Brave-Browser-Nightly}; do
         echo -en "[${YLW}$user${RST}] ${GRN}Scanning for $b${RST}"
         if [[ -d "/home/$user/.config/$b/Default" ]]; then
             echo "Debug: Entering Brave directory: /home/$user/.config/$b"
@@ -142,6 +151,7 @@ for user in $priv; do
             while read -r profiledir; do
                 echo -e "[${YLW}${profiledir##'./'}${RST}]"
                 cd "/home/$user/.config/$b/$profiledir" || continue
+		dep_check
                 run_cleaner
             done < <(find . -maxdepth 1 -type d -iname "Default" -o -iname "Profile*")
         else
