@@ -40,11 +40,8 @@ cleanup() {
 # --- // Menu:
 display_menu() {
     clear
-    echo -e "${GRE}====================================================="
-    echo -e "${GRE}FIXGPG.SH - A gpg management script by 4ndr0666"
-    echo -e "${GRE}====================================================="
-
-    echo -e "${c0}=============== // ${GRE}Main Menu${c0} // ====================="
+    echo -e "${GRE}# ===================== // Fixgpg.sh //"
+    echo ""
     echo "1) Backup .gnupg Directory"
     echo "2) Create New .gnupg Directory"
     echo "3) Restore GnuPG Data"
@@ -57,14 +54,15 @@ display_menu() {
     echo "10) Reinitialize GPG Agent"
     echo "11) Clean Up Test Directory"
     echo "12) Incremental Backup"
-    echo "13) Apply Security Template"
+    echo "13) Change Keyserver"
     echo "14) Generate Advanced GPG Key"
     echo "15) Export Keys in Different Formats"
     echo "16) Automated Security Audit"
     echo "17) Exit"
+    echo ""
     echo -e "By your command: ${RED}\c"
-}
-
+}    
+    
 # --- // Backup_dir:
 backupGnupgDir() {
     local backupDir="$1"
@@ -190,7 +188,7 @@ incrementalBackupGnupg() {
     echo "Incremental backup completed."
 }
 
-# --- // Security_templates:
+# --- // Keyserverss:
 applySecurityTemplate() {
     local template="$1"
     echo "Applying security template: $template..."
@@ -199,11 +197,16 @@ applySecurityTemplate() {
         "high-security")
             gpgconf --change-options gpg > ~/.gnupg/gpg.conf
             echo "use-agent" >> ~/.gnupg/gpg.conf
-            echo "keyserver hkp://keys.gnupg.net" >> ~/.gnupg/gpg.conf
+            echo "keyserver hkps://keyserver.ubuntu.com" >> ~/.gnupg/gpg.conf
+#            gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 5680CA389D365A88
             echo "keyserver-options auto-key-retrieve" >> ~/.gnupg/gpg.conf
             ;;
         "standard")
-            # Standard template configuration
+            gpgconf --change-options gpg > ~/.gnupg/gpg.conf
+            echo "use-agent" >> ~/.gnupg/gpg.conf
+            echo "keyserver hkps://keys.opnpgp.org" >> ~/.gnupg/gpg.conf
+#            gpg --keyserver hkps://keys.openpgp.org --recv-keys 5680CA389D365A88
+            echo "keyserver-options auto-key-retrieve" >> ~/.gnupg/gpg.conf
             ;;
         *)
             echo "Unknown template. Exiting."

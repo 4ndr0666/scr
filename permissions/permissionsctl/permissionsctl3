@@ -1,26 +1,92 @@
 #!/usr/bin/env bash
-set -euo pipefail
-set -x
 
 # Permissions Management Script
 # Author: [Your Name]
 # Description:
-# Automates the management of file and directory permissions and ownerships based on a policy.
-# Automatically detects custom paths and integrates them into the permissions policy.
+# Manages file and directory permissions and ownerships based on a policy.
+# Intelligently includes custom paths from the user's home directory.
 
 set -euo pipefail
 
 # --- Configuration ---
 CONFIG_FILE="/etc/permissions_policy.yaml"     # Path to the permissions policy file
-LOG_FILE="$HOME/.local/share/logs/permissions_management.log" # Path to the log file
+LOG_FILE="/var/log/permissions_management.log"
 BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
 CRON_JOB="@daily root $0 audit"                # Cron job entry
 
+# List of critical system directories to include
+SYSTEM_DIRS=(
+    /bin
+    /sbin
+    /usr/bin
+    /usr/sbin
+    /lib
+    /lib64
+    /etc
+    /var
+    /opt
+    /boot
+)
+
+# User's home directory
+USER_HOME="/home/andro"
+
+# List of important directories in the home directory to include
+HOME_DIRS=(
+    "$USER_HOME/.cheater"
+    "$USER_HOME/.chatgpt.conf"
+    "$USER_HOME/.fzf.zsh"
+    "$USER_HOME/.gnupg"
+    "$USER_HOME/.gitconfig"
+    "$USER_HOME/.gitignore_gloabl"
+    "$USER_HOME/.gitmodules"
+    "$USER_HOME/.gtkrc-2.0"
+    "$USER_HOME/.icons"
+    "$USER_HOME/.jd"
+    "$USER_HOME/.local"
+    "$USER_HOME/.profile"
+    "$USER_HOME/.rustup"
+    "$USER_HOME/.screenlayout"
+    "$USER_HOME/.ssh"
+    "$USER_HOME/.themes"
+    "$USER_HOME/.Xauthority"
+    "$USER_HOME/.Xresources"
+    "$USER_HOME/.yarnrc"
+    "$USER_HOME/.zsh"
+    "$USER_HOME/.zshrc"    
+    "$USER_HOME/bin"
+    "$USER_HOME/ffmpeg_build"
+    "$USER_HOME/ffmpeg_mpv_build"
+    "$USER_HOME/ffmpeg_sources"
+    "$USER_HOME/mpv_build"
+    "$USER_HOME/node_modules"
+)
+
 # --- Functions ---
+
+# Function to display progress bar
+show_progress() {
+    local current=$1
+    local total=$2
+    local width=50  # Width of the progress bar
+    local progress=$(( current * width / total ))
+    local percent=$(( current * 100 / total ))
+    local bar=""
+    
+    for ((i=0; i<progress; i++)); do
+        bar+="#"
+    done
+    for ((i=progress; i<width; i++)); do
+        bar+=" "
+    done
+    
+    # Move cursor to the beginning of the line and print the progress bar
+    printf "\r\033[1;36m[%s] %d%%\033[0m" "$bar" "$percent"
+}
 
 # Install dependencies if not present
 install_dependencies() {
-    local dependencies=("yq" "pacutils" "findutils")
+    local dependencies=("yq" "pacutils")
     local to_install=()
 
     for dep in "${dependencies[@]}"; do
@@ -31,7 +97,7 @@ install_dependencies() {
 
     if [ "${#to_install[@]}" -ne 0 ]; then
         echo "Installing dependencies: ${to_install[*]}"
-        sudo pacman -Syu --needed --noconfirm "${to_install[@]}"
+        sudo pacman -Syu --noconfirm "${to_install[@]}"
     fi
 }
 
@@ -41,80 +107,120 @@ setup_directories() {
     sudo chown root:root "$BACKUP_DIR_BASE"
     sudo chmod 700 "$BACKUP_DIR_BASE"
 
+    sudo mkdir -p "$(dirname "$LOG_FILE")"
     sudo touch "$LOG_FILE"
     sudo chown root:root "$LOG_FILE"
     sudo chmod 600 "$LOG_FILE"
 }
 
+# Setup cron job for regular audits
 setup_cron() {
     if ! sudo crontab -l 2>/dev/null | grep -Fq "$0 audit"; then
-        (sudo crontab -l 2>/dev/null; echo "@daily $USER sudo $0 audit") | sudo crontab -
+        (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab -
         echo "Cron job added for regular audits."
     else
         echo "Cron job already exists."
     fi
 }
 
+# Generate permissions policy with progress bar
 generate_permissions_policy() {
     echo "Generating permissions policy..."
     local temp_policy="/tmp/permissions_policy.yaml"
+    local dir_entries_file="/tmp/permissions_policy_directories.yaml"
+    local file_entries_file="/tmp/permissions_policy_files.yaml"
 
+    # Initialize policy file and temporary files
     echo "directories:" > "$temp_policy"
+    echo "" > "$dir_entries_file"
     echo "files:" >> "$temp_policy"
+    echo "" > "$file_entries_file"
 
-    # Get list of files and directories installed by packages
-    local package_paths
-    package_paths=$(sudo pacman -Ql | awk '{print $2}' | sort -u)
+    # Collect all paths to be processed
+    local all_paths=()
 
-    # Get list of all files and directories on the system
-    local system_paths
-    system_paths=$(sudo find / -xdev \
-        -path /proc -prune -o \
-        -path /sys -prune -o \
-        -path /run -prune -o \
-        -path /dev -prune -o \
-        -path /tmp -prune -o \
-        -path /var/lib -prune -o \
-        -path /var/log -prune -o \
-        -type f -o -type d -print 2>/dev/null | sort -u)
+    # Collect package paths once using pacman -Qql
+    echo "Collecting package paths..."
+    local all_package_paths
+    all_package_paths=$(sudo pacman -Qql)
 
-    # Identify custom paths
-    local custom_paths
-    custom_paths=$(comm -23 <(echo "$system_paths") <(echo "$package_paths"))
-
-    # Combine package paths and custom paths
-    local all_paths
-    all_paths=$(echo -e "$package_paths\n$custom_paths" | sort -u)
-
-    # Process all paths to generate permissions policy
+    # Filter package paths to include only those under SYSTEM_DIRS
+    echo "Filtering package paths for system directories..."
     while IFS= read -r path; do
-        if [ -e "$path" ]; then
-            local owner group perms
-            owner=$(stat -c '%U' "$path")
-            group=$(stat -c '%G' "$path")
-            perms=$(stat -c '%a' "$path")
-            path_escaped=$(printf '%q' "$path")
-
-            if [ -d "$path" ]; then
-                echo "  - path: \"$path_escaped\"" >> "$temp_policy"
-                echo "    owner: \"$owner\"" >> "$temp_policy"
-                echo "    group: \"$group\"" >> "$temp_policy"
-                echo "    permissions: \"$perms\"" >> "$temp_policy"
-            elif [ -f "$path" ]; then
-                echo "  - path: \"$path_escaped\"" >> "$temp_policy"
-                echo "    owner: \"$owner\"" >> "$temp_policy"
-                echo "    group: \"$group\"" >> "$temp_policy"
-                echo "    permissions: \"$perms\"" >> "$temp_policy"
+        for dir in "${SYSTEM_DIRS[@]}"; do
+            if [[ "$path" == "$dir"* ]]; then
+                all_paths+=("$path")
+                break
             fi
+        done
+    done <<< "$all_package_paths"
+
+    # Collect home directory paths
+    echo "Collecting home directory paths..."
+    for dir in "${HOME_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            echo "Processing home directory: $dir"
+            while IFS= read -r path; do
+                all_paths+=("$path")
+            done < <(find "$dir" -type f -o -type d 2>/dev/null | sort -u)
+        else
+            echo "Warning: Home directory $dir does not exist. Skipping."
         fi
-    done <<< "$all_paths"
+    done
+
+    # Calculate total number of paths
+    local total_paths=${#all_paths[@]}
+    echo "Total paths to process: $total_paths"
+
+    # Initialize current path counter
+    local current_path=0
+
+    # Process all paths and update progress bar
+    for path in "${all_paths[@]}"; do
+        current_path=$((current_path + 1))
+        add_path_to_policy "$path" "$dir_entries_file" "$file_entries_file"
+        show_progress "$current_path" "$total_paths"
+    done
+
+    # Append the directory and file entries to the policy file
+    cat "$dir_entries_file" >> "$temp_policy"
+    cat "$file_entries_file" >> "$temp_policy"
+
+    # Clean up temporary files
+    rm "$dir_entries_file" "$file_entries_file"
 
     # Move the temporary policy to the final location
     sudo mv "$temp_policy" "$CONFIG_FILE"
     sudo chown root:root "$CONFIG_FILE"
     sudo chmod 600 "$CONFIG_FILE"
 
+    # Move to a new line after progress bar
+    echo ""
     echo "Permissions policy generated at $CONFIG_FILE"
+}
+
+add_path_to_policy() {
+    local path="$1"
+    local dir_entries_file="$2"
+    local file_entries_file="$3"
+    local owner group perms
+
+    owner=$(stat -c '%U' "$path")
+    group=$(stat -c '%G' "$path")
+    perms=$(stat -c '%a' "$path")
+    path_escaped=$(printf '%q' "$path")
+
+    if [ -d "$path" ]; then
+        echo "  - path: \"$path_escaped\"" >> "$dir_entries_file"
+        echo "    owner: \"$owner\"" >> "$dir_entries_file"
+        echo "    group: \"$group\"" >> "$dir_entries_file"
+        echo "    permissions: \"$perms\"" >> "$dir_entries_file"
+    elif [ -f "$path" ]; then
+        echo "  - path: \"$path_escaped\"" >> "$file_entries_file"
+        echo "    owner: \"$owner\"" >> "$file_entries_file"
+        echo "    group: \"$group\"" >> "$file_entries_file"
+        echo "    permissions: \"$perms\"" >> "$file_entries_file"
+    fi
 }
 
 # Logging function
@@ -228,7 +334,7 @@ fix_permissions() {
                 sudo chown "$owner:$group" "$path"
                 log_action "INFO" "Changed owner/group of $path to $owner:$group"
                 changes=$((changes + 1))
-            fi
+            fi            
             if [ "$curr_perms" != "$perms" ]; then
                 sudo chmod "$perms" "$path"
                 log_action "INFO" "Changed permissions of $path to $perms"
@@ -279,7 +385,7 @@ main() {
 
     # Parse command-line arguments
     local action="${1:-}"
-        
+
     case "$action" in
         setup)
             install_dependencies
@@ -301,12 +407,9 @@ main() {
             ;;
         *)
             print_help
-#            echo "Usage: $0 {setup|backup|audit|fix}"
             exit 1
             ;;
     esac
 }
-
-# --- Execution ---
 
 main "$@"

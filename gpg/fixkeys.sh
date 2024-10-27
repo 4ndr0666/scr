@@ -11,12 +11,10 @@ auto_escalate() {
         exit $?
     fi
 }
-    
+
 GREEN_COLOR='\033[0;32m'
-RED_COLOR='\033[0;31m'
 NO_COLOR='\033[0m' # No Color
 SUCCESS="✔️"
-FAILURE="❌"
 INFO="➡️"
 EXPLOSION="💥"
 
@@ -26,18 +24,14 @@ prominent() {
     echo -e "${BOLD}${color}$message${NO_COLOR}"
 }
 
-bug() {
-    local message="$1"
-    local color="${2:-$RED_COLOR}"
-    echo -e "${BOLD}${color}$message${NO_COLOR}"
-}
-
-
 # --- // FUNCTIONS:
 reinstall() {
-    prominent "${EXPLOSION}Reinstalling the arch-keyring..."
+    prominent "${EXPLOSION} Reinstalling the arch-keyring..."
     sleep 2
-    pacman -Sy archlinux-keyring --noconfirm
+    if ! pacman -Sy archlinux-keyring --noconfirm; then
+        echo "Failed to reinstall archlinux-keyring."
+        exit 1
+    fi
 }
 
 clean() {
@@ -57,7 +51,9 @@ populate() {
     prominent "${SUCCESS}Populating the keyring and explicitly adding the ubuntu keyserver..."
     sleep 2
     pacman-key --populate
-    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+    echo "keyserver hkps://keyserver.ubuntu.com" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf || \
+    echo "keyserver hkps://keys.openpgp.org" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+#    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
 }
 
 sync() {
@@ -68,7 +64,6 @@ sync() {
 # --- // MAIN:
 main() {
     auto_escalate
-#    banner
     reinstall
     clean
     init
