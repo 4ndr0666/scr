@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+
+# Permissions Management Script
+# Author: [Your Name]
+# Description:
+# Resets file and directory permissions and ownerships to their defaults as per the installed packages.
+# Provides options to audit and fix permissions, backup current permissions, and setup regular audits.
+
+set -euo pipefail
+
+# --- Configuration ---
+LOG_FILE="/var/log/permissions_management.log"
+BACKUP_DIR_BASE="/Nas/Backups/permissions"
+CRON_JOB="@daily root $0 audit"
+PACMAN_CACHE_DIR="/var/cache/pacman/pkg"
+
+# --- Functions ---
+
+# Install dependencies if not present
+install_dependencies() {
+    local dependencies=("pacman" "zstd")
+    local to_install=()
+
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            to_install+=("$dep")
+        fi
+    done
+
+    if [ "${#to_install[@]}" -ne 0 ]; then
+        echo "Installing dependencies: ${to_install[*]}"
+        sudo pacman -Syu --noconfirm "${to_install[@]}"
+    fi
+}
+
+# Create necessary directories and set permissions
+setup_directories() {
+    sudo mkdir -p "$BACKUP_DIR_BASE"
+    sudo chown root:root "$BACKUP_DIR_BASE"
+    sudo chmod 700 "$BACKUP_DIR_BASE"
+
+    sudo mkdir -p "$(dirname "$LOG_FILE")"
+    sudo touch "$LOG_FILE"
+    sudo chown root:root "$LOG_FILE"
+    sudo chmod 600 "$LOG_FILE"
+}
+
+# Setup cron job for regular audits
+setup_cron() {
+    if ! sudo crontab -l 2>/dev/null | grep -Fq "$0 audit"; then
+        (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab -
+        echo "Cron job added for regular audits."
+    else
+        echo "Cron job already exists."
+    fi
+}
+
+# Backup current permissions
+backup_permissions() {
+    local timestamp
+    timestamp=$(date +%Y%m%d%H%M%S)
+    local backup_dir="$BACKUP_DIR_BASE/$timestamp"
+    sudo mkdir -p "$backup_dir"
+
+    echo "Backing up current permissions..."
+    sudo getfacl -pR / > "$backup_dir/full_permissions_backup.acl"
+
+    log_action "INFO" "Permissions backed up to $backup_dir"
+    echo "Permissions backed up to $backup_dir"
+}
+
+# Audit permissions
+audit_permissions() {
+    echo "Auditing permissions..."
+    local discrepancies=0
+
+    while IFS= read -r package; do
+        name=$(echo "$package" | awk '{print $1}')
+        version=$(echo "$package" | awk '{print $2}')
+        package_file=$(find_package_file "$name" "$version")
+
+        if [ -z "$package_file" ]; then
+            echo "Package file for $name not found. Skipping."
+            continue
+        fi
+
+        while IFS= read -r file; do
+            system_path="/$file"
+            if [ -e "$system_path" ]; then
+                package_perms=$(get_package_permissions "$package_file" "$file")
+                system_perms=$(stat -c '%a' "$system_path")
+
+                if [ "$package_perms" != "$system_perms" ]; then
+                    echo "Discrepancy in $system_path: system=$system_perms, package=$package_perms"
+                    discrepancies=$((discrepancies + 1))
+                fi
+            fi
+        done < <(tar -tf "$package_file" | grep -v '/$' | grep -v '^\.$')
+    done < <(pacman -Q)
+
+    if [ "$discrepancies" -eq 0 ]; then
+        echo "All permissions are as per the installed packages."
+    else
+        echo "Total discrepancies found: $discrepancies"
+        log_action "WARNING" "$discrepancies discrepancies found during audit."
+    fi
+}
+
+# Fix permissions from packages
+fix_permissions_from_packages() {
+    echo "Fixing permissions..."
+    local changes=0
+
+    while IFS= read -r package; do
+        name=$(echo "$package" | awk '{print $1}')
+        version=$(echo "$package" | awk '{print $2}')
+        package_file=$(find_package_file "$name" "$version")
+
+        if [ -z "$package_file" ]; then
+            echo "Package file for $name not found. Skipping."
+            continue
+        fi
+
+        while IFS= read -r file_info; do
+            file=$(echo "$file_info" | awk '{print $6}')
+            package_perms=$(echo "$file_info" | awk '{print $1}')
+            system_path="/$file"
+
+            if [ -e "$system_path" ]; then
+                system_perms=$(stat -c '%a' "$system_path")
+
+                if [ "$package_perms" != "$system_perms" ]; then
+                    sudo chmod "$package_perms" "$system_path"
+                    changes=$((changes + 1))
+                    echo "Fixed permissions for $system_path"
+                    log_action "INFO" "Changed permissions of $system_path to $package_perms"
+                fi
+            fi
+        done < <(get_package_file_info "$package_file")
+    done < <(pacman -Q)
+
+    if [ "$changes" -eq 0 ]; then
+        echo "No changes were necessary."
+    else
+        echo "Total changes made: $changes"
+        log_action "INFO" "Total changes made during fix: $changes"
+    fi
+}
+
+# Find the package file in the cache or download it if missing
+find_package_file() {
+    local name="$1"
+    local version="$2"
+    local package_file
+
+    package_file=$(find "$PACMAN_CACHE_DIR" -type f -name "${name}-${version}-*.pkg.tar.*" | head -n 1)
+
+    if [ -z "$package_file" ]; then
+        echo "Package $name not found in cache. Downloading..."
+        sudo pacman -Sw "$name" --noconfirm
+        package_file=$(find "$PACMAN_CACHE_DIR" -type f -name "${name}-${version}-*.pkg.tar.*" | head -n 1)
+    fi
+
+    echo "$package_file"
+}
+
+# Get permissions and file list from a package file
+get_package_file_info() {
+    local package_file="$1"
+    if [[ "$package_file" == *.tar.zst ]]; then
+        tar --zstd -tvf "$package_file" 2>/dev/null
+    else
+        tar -tvf "$package_file" 2>/dev/null
+    fi
+}
+
+# Get permissions for a specific file in a package
+get_package_permissions() {
+    local package_file="$1"
+    local file="$2"
+
+    if [[ "$package_file" == *.tar.zst ]]; then
+        tar --zstd -tvf "$package_file" "$file" 2>/dev/null | awk '{print $1}' | head -n 1
+    else
+        tar -tvf "$package_file" "$file" 2>/dev/null | awk '{print $1}' | head -n 1
+    fi
+}
+
+# Logging function
+log_action() {
+    local level="$1"
+    local message="$2"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" | sudo tee -a "$LOG_FILE" >/dev/null
+}
+
+print_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  setup       Set up environment and cron job"
+    echo "  backup      Backup current permissions"
+    echo "  audit       Audit permissions against installed packages"
+    echo "  fix         Fix permissions to match installed packages"
+    exit 0
+}
+
+# Main function
+main() {
+    # Ensure the script is run as the user 'root'
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "This script must be run as root."
+        exit 1
+    fi
+
+    # Parse command-line arguments
+    local action="${1:-}"
+
+    case "$action" in
+        setup)
+            install_dependencies
+            setup_directories
+            setup_cron
+            ;;
+        backup)
+            backup_permissions
+            ;;
+        audit)
+            audit_permissions
+            ;;
+        fix)
+            fix_permissions_from_packages
+            ;;
+        *)
+            print_help
+            ;;
+    esac
+}
+
+main "$@"

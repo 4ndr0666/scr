@@ -2,16 +2,16 @@
 
 # Function to get the script path (detecting symlinks)
 pkg_path() {
-	if [[ -L "$0" ]]; then
-		dirname "$(readlink $0)"
-	else
-		dirname "$0"
-	fi
+    if [[ -L "$0" ]]; then
+        dirname "$(readlink -f "$0")"
+    else
+        dirname "$0"
+    fi
 }
 
 # Check if an optional dependency is installed
 check_optdepends() {
-	if [[ -n "$(command -v $1)" ]]; then
+	if [[ -n "$(command -v "$1")" ]]; then
 		return 0
 	else
 		return 1
@@ -58,28 +58,33 @@ execute_main() {
     fi
 }
 
-# --- // 4ndr0 version:
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
-printf "💀WARNING💀 - you are now operating as root..."
+# Print warning
+#printf "💀WARNING💀 - you are now operating as root...\n"
+#sleep 1
+#echo ""
+
+printf "Welcome to 💀4ndr0update💀!...\n"
 sleep 1
 echo ""
-echo ""
+
 # Main flow
-if [[ "$EUID" -eq 0 ]]; then
-    source_settings
-    source_service
-    source_controller
+# Ensure that we are root
+#if [ "$(id -u)" -eq 0 ]; then
+#    # Debug statements to check variables
+#    echo "Original User: $ORIG_USER"
+#    echo "Current User: $(id -un)"
+
+source_settings
+source_service
+source_controller
 
     # Load the appropriate user interface
     case "$USER_INTERFACE" in
         'cli')
-	    source "$(pkg_path)"/view/cli.sh
+            source "$(pkg_path)/view/cli.sh"
             ;;
         'dialog')
-	    source "$(pkg_path)"/view/dialog.sh
+            source "$(pkg_path)/view/dialog.sh"
             ;;
         *)
             fallback_view
@@ -87,4 +92,7 @@ if [[ "$EUID" -eq 0 ]]; then
     esac
 
     execute_main
-fi
+#else
+#    echo "Error: Script must be run as root."
+#    exit 1
+#fi

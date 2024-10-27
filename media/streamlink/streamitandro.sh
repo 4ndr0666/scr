@@ -3,8 +3,6 @@
 # Author: [Your Name]
 # Description: A comprehensive script to manage streaming via Streamlink with robust error handling and configurability.
 
-set -euo pipefail
-IFS=$'\n\t'
 
 # -----------------------------
 # Configuration Variables
@@ -61,10 +59,6 @@ display_message() {
     esac
 }
 
-# Function to check if the script is running interactively
-is_interactive() {
-    [[ -t 0 ]]
-}
 
 # Helper function to execute system commands with error handling
 execute_command() {
@@ -140,18 +134,10 @@ adjust_settings_based_on_media() {
         if [[ "$resolution" -lt 720 ]]; then
             display_message warning "Low resolution detected: ${resolution}p. Recommend lowering stream quality."
             
-            if is_interactive; then
                 read -p "Would you like to accept this recommendation? (y/n): " accept_quality
                 if [[ "$accept_quality" =~ ^[Yy]$ ]]; then
                     quality="worst"
                     display_message info "Stream quality set to 'worst'."
-                else
-                    display_message info "Using user-specified quality: '$quality'."
-                fi
-            else
-                # Default behavior for non-interactive
-                display_message info "Setting stream quality to 'worst' due to low resolution."
-                quality="worst"
             fi
         fi
     else
@@ -210,14 +196,14 @@ run_streamlink() {
         streamlink "$url" "$quality" --output "$final_output_file" $RETRY_STREAMS $HLS_OPTIONS $PROXY_OPTION > "$final_log_file" 2>&1 &
         local pid=$!
 
-        # Display a spinner while waiting
-        spinner "$pid" &
+        # Display a live progress bar
+        while kill -0 $pid 2> /dev/null; do
+            echo -n "."
+            sleep 1
+        done
 
-        wait "$pid"
-        local exit_code=$?
-        kill "$!" 2>/dev/null || true  # Stop spinner
-
-        if [ $exit_code -eq 0 ]; then
+        wait $pid
+        if [ $? -eq 0 ]; then
             display_message success "Streamlink executed successfully. Output saved to $final_output_file"
             success=true
             break
@@ -232,20 +218,6 @@ run_streamlink() {
     if [ "$success" = false ]; then
         display_message error "Streamlink failed after $MAX_RETRIES attempts. Check log: $final_log_file"
     fi
-}
-
-# Function to display a spinner while a background process is running
-spinner() {
-    local pid="$1"
-    local delay=0.1
-    local spinstr='|/-\'
-    while kill -0 "$pid" 2>/dev/null; do
-        for char in ${spinstr}; do
-            printf "\r%s" "$char"
-            sleep "$delay"
-        done
-    done
-    printf "\r"
 }
 
 # Function to handle custom URL input
@@ -415,7 +387,7 @@ fi
 # Main menu system for interactive use
 main_menu() {
     while true; do
-        echo "# --- // STREAMIT MENU // ---"
+        echo "# --- // STREAMIT MENU //"
         echo "$(tput setaf 6)1$(tput sgr0). Lena"
         echo "$(tput setaf 6)2$(tput sgr0). Ab"
         echo "$(tput setaf 6)3$(tput sgr0). Custom URL"

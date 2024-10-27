@@ -51,9 +51,9 @@ populate() {
     prominent "${SUCCESS}Populating the keyring and explicitly adding the ubuntu keyserver..."
     sleep 2
     pacman-key --populate
-    echo "keyserver hkps://keyserver.ubuntu.com" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf || \
-    echo "keyserver hkps://keys.openpgp.org" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
-#    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+#    echo "keyserver hkps://keyserver.ubuntu.com" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf || \
+#    echo "keyserver hkps://keys.openpgp.org" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
 }
 
 sync() {

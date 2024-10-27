@@ -140,7 +140,7 @@ get_fps() {
 }
 
 # Function to capture frames using FFmpeg with a spinner
-capture_frames() {
+screencaps() {
     local video="$1"
     local start="$2"
     local end="$3"
@@ -226,16 +226,16 @@ handle_custom_url() {
 main_menu() {
     while true; do
         echo ""
-        echo "# --- // CAPTURE MENU // ---"
+        echo "# === // Caps //"
 
         # Define menu options
-        options=("Capture Frames" "Help" "Exit")
+        options=("Screencaps" "Help" "Exit")
 
         # Use fzf for menu selection
-        selected=$(printf '%s\n' "${options[@]}" | fzf --height 10 --border --prompt="Select an option: ")
+        selected=$(printf '%s\n' "${options[@]}" | fzf --height 10 --border --prompt="By your command: ")
 
         case "$selected" in
-            "Capture Frames")
+            "Screencaps")
                 # Select video file using fzf
                 video_file=$(select_video) || continue
 
@@ -248,7 +248,7 @@ main_menu() {
                 validate_time_sequence "$start_time" "$end_time" || continue
 
                 get_fps "$video_file"
-                capture_frames "$video_file" "$start_time" "$end_time"
+                screencaps "$video_file" "$start_time" "$end_time"
                 ;;
             "Help")
                 display_help
@@ -273,7 +273,7 @@ display_help() {
     echo "  Exit: Close the application."
     echo ""
     echo "Usage Instructions:"
-    echo "  1. Select 'Capture Frames' from the menu."
+    echo "  1. Select 'Screencaps' from the menu."
     echo "  2. Choose a video file using the fuzzy finder (fzf)."
     echo "  3. Enter the start and end times in hh:mm:ss format."
     echo "  4. The script will extract frames and save them in the designated directory."

@@ -5,6 +5,11 @@ fetch_news() {
 	printf "\n"
 }
 
+fixgpg() {
+	fixkeys
+	printf "\n"
+}
+
 system_upgrade() {
        printf "➡️ Starting system upgrade..."
        fetch_news
@@ -12,8 +17,8 @@ system_upgrade() {
        aur_setup
        rebuild_aur
        handle_pacfiles
-       system_update
-
+       system_update || { fixgpg && system_update; }
+        
 #	if configure_reflector; then
 #		echo "Reflector configured successfully."
 #	else
@@ -60,6 +65,7 @@ system_clean() {
     clean_broken_symlinks
     clean_old_config
     printf "✔️ System cleaning complete!" 
+    printf "\n"
 #	if remove_orphaned_packages; then
 #		echo "Orphaned packages removed."
 #	else
@@ -80,8 +86,6 @@ system_clean() {
 #		echo "Error: Failed to clean broken symlinks."
 #		exit 1
 #	fi
-	printf "✔️ System cleaning complete!"
-	printf "\n"
 }
 
 # Function to backup system

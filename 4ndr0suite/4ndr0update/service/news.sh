@@ -2,31 +2,21 @@
 
 arch_news() {
     export COLUMNS
-    python3 "$(pkg_path)"/service/arch_news.py | cat
+    python3 "$(pkg_path)/service/arch_news.py" | cat
 }
 
 fetch_warnings() {
     export COLUMNS
     printf "\nChecking Arch Linux news...\n"
-    last_upgrade="$(sed -n '/pacman -Syu/h; ${x;s/.\([0-9-]*\).*/\1/p;}' /var/log/pacman.log)"
 
-    if [[ -n "$last_upgrade" ]]; then
-        python "$(pkg_path)"/util/arch_news.py "$last_upgrade"
-    else
-        python "$(pkg_path)"/util/arch_news.py
-    fi
-    alerts="$?"
-
-    if [[ "$alerts" == 1 ]]; then
-        printf "WARNING: This upgrade requires out-of-the-ordinary user intervention\n"
-        printf "Continue only after fully resolving the above issue(s)\n"
-
-        printf "\n"
-        read -r -p "Are you ready to continue? [y/N]"
-        if [[ ! "$REPLY" =~ [yY] ]]; then
-            exit
-        fi
-    else
+    if arch_news; then
         printf "...No new Arch Linux news posts\n"
+    else
+        printf "WARNING: New Arch Linux news requires your attention.\n"
+        printf "\n"
+        read -r -p "Have you read and addressed the above news items? [y/N] "
+        if [[ ! "$REPLY" =~ [yY] ]]; then
+            exit 1
+        fi
     fi
 }

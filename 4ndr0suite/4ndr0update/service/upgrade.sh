@@ -61,56 +61,103 @@ check_and_install_dependencies() {
 # Set up AUR directory using the chosen AUR helper (from settings.sh)
 aur_setup() {
     printf "\n"
-    read -r -p "Do you want to set up the AUR package directory at $AUR_DIR? [y/N] "
-    if [[ "$REPLY" =~ [yY] ]]; then
+    read -r -p "Do you want to setup the AUR package directory at $AUR_DIR? [y/N] "
+    if [[ "$REPLY" =~ ^[yY]$ ]]; then
         printf "Setting up AUR package directory...\n"
         if [[ ! -d "$AUR_DIR" ]]; then
             mkdir -p "$AUR_DIR"
-            chown "$SUDO_USER:$SUDO_USER" "$AUR_DIR"
         fi
-
-        chgrp "$SUDO_USER" "$AUR_DIR"
-        chmod g+ws "$AUR_DIR"
-        setfacl -d --set u::rwx,g::rx,o::rx "$AUR_DIR"
-        setfacl -m u::rwx,g::rwx,o::- "$AUR_DIR"
-        printf "...AUR package directory set up at $AUR_DIR\n"
+        # Adjust permissions if necessary
+        chmod u+rwx "$AUR_DIR"
+        printf "...AUR package directory set up at %s\n" "$AUR_DIR"
     fi
 }
 
-# Function to rebuild AUR packages using the configured AUR helper
+# Function to rebuild AUR packages
 rebuild_aur() {
-    printf "\n"
-    read -r -p "Do you want to rebuild all AUR packages using $AUR_HELPER? [y/N] "
-    if [[ "$REPLY" =~ [yY] ]]; then
-        printf "Rebuilding AUR packages with $AUR_HELPER..."
-        retry_command sudo -u "$SUDO_USER" "$AUR_HELPER" -Syu --noconfirm
-        printf "...AUR packages rebuilt."
+    if [[ -w "$AUR_DIR" ]]; then
+        printf "\n"
+        read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N] "
+        if [[ "$REPLY" =~ ^[yY]$ ]]; then
+            printf "Rebuilding AUR packages...\n"
+            if [[ -n "$(ls -A "$AUR_DIR")" ]]; then
+                starting_dir="$(pwd)"
+                for aur_pkg in "$AUR_DIR"/*/; do
+                    if [[ -d "$aur_pkg" ]]; then
+                        if [[ ! -w "$aur_pkg" ]]; then
+                            chmod -R u+w "$aur_pkg"
+                        fi
+                        cd "$aur_pkg" || continue
+                        if [[ "$AUR_UPGRADE" == "true" ]]; then
+                            git pull origin master
+                        fi
+                        # Source PKGBUILD to get depends and makedepends arrays
+                        if [[ -f PKGBUILD ]]; then
+                            source PKGBUILD
+                            # Install dependencies
+                            if [[ "${#depends[@]}" -gt 0 || "${#makedepends[@]}" -gt 0 ]]; then
+                                sudo pacman -S --needed --asdeps "${depends[@]}" "${makedepends[@]}" --noconfirm
+                            fi
+                            # Build package
+                            makepkg -fc --noconfirm
+                            # Install package
+                            sudo pacman -U "$(makepkg --packagelist)" --noconfirm
+                        else
+                            printf "No PKGBUILD found in %s, skipping...\n" "$aur_pkg"
+                        fi
+                        cd "$starting_dir" || exit
+                    fi
+                done
+                printf "...Done rebuilding AUR packages\n"
+            else
+                printf "...No AUR packages in %s\n" "$AUR_DIR"
+            fi
+        else
+            printf "...Skipping AUR package rebuild.\n"
+        fi
+    else
+        printf "\nAUR package directory not set up or not writable.\n"
+        aur_setup
+    fi
+}
+
+# Function to check for .pacnew and .pacsave files
+handle_pacfiles() {
+    printf "\nChecking for pacfiles...\n"
+    if [[ -n "$(sudo find /etc -type f \( -name '*.pacnew' -o -name '*.pacsave' \) 2>/dev/null)" ]]; then
+        echo "The following .pacnew or .pacsave files were found:"
+        sudo find /etc -type f \( -name '*.pacnew' -o -name '*.pacsave' \)
+        read -r -p "Do you want to view and merge these files now? [y/N] "
+        if [[ "$REPLY" =~ ^[yY]$ ]]; then
+            sudo DIFFPROG=meld pacdiff
+        fi
+    else
+        echo "...No .pacnew or .pacsave files found."
     fi
 }
 
 # Handle pacfiles
-handle_pacfiles() {
-    printf "\nChecking for pacfiles...\n"
-    pacdiff
-    printf "...Done checking for pacfiles\n"
-}
+#handle_pacfiles() {
+#    printf "\nChecking for pacfiles...\n"
+#    pacdiff
+#    printf "...Done checking for pacfiles\n"
+#}
 
 # Perform a system update using powerpill and the chosen AUR helper
 system_update() {
-    local EXTRA_PARAMS=()
-
-    ensure_package_installed "powerpill"
-    check_and_install_dependencies "powerpill"
+    local EXTRA_PARAMS=(--noconfirm --needed --disable-download-timeout --timeupdate --singlelineresults --assume-installed ffmpeg)
 
     printf "\nPerforming system upgrade...\n"
-    retry_command sudo pacman -Sy
-    retry_command sudo powerpill -Su
-    retry_command yay -Su --noconfirm --needed --refresh --sysupgrade
+    retry_command sudo /usr/bin/pacman -Syyu --noconfirm
+#    retry_command sudo powerpill -Su --noconfirm
+
+    if ! retry_command sudo /usr/bin/pacman -Syyu --noconfirm; then
+        echo "Error: System update failed."
+        return 1
+    fi
+
+#    /usr/bin/yay -Su "${EXTRA_PARAMS[@]}"
+# 
+
     printf "System updated!\n"
 }
-
-# Elevate privileges if not root
-#if [[ $EUID -ne 0 ]]; then
-#    exec sudo --preserve-env="PACMAN_EXTRA_OPTS" "$0" "$@"
-#    exit 1
-#fi

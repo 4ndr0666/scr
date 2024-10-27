@@ -6,76 +6,51 @@ log_cleanup() {
     echo "$(date): $1" >> "$log_file"
 }
 
-# Function to show a spinner
-spinner() {
-    local pid=$1
-    local delay=0.75
-    local spinstr='|/-\'
-    while kill -0 "$pid" 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
-        spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-        printf "\b\b\b\b\b\b"
-    done
-    printf "    \b\b\b\b"
-}
-
 # Function to remove orphaned packages with a timeout
-remove_orphaned_packages() {
-    printf "\nChecking for orphaned packages...\n"
-
-    # Run the orphan check in the background
-    (mapfile -t orphaned < <(pacman -Qtdq)) &
-    pid=$!
-
-    # Start the spinner
-    spinner $pid &
-    spinner_pid=$!
-
-    # Set a timeout of 60 seconds
-    ( sleep 60 && kill -9 $pid 2>/dev/null && kill -9 $spinner_pid 2>/dev/null && printf "\nTimeout reached. Process killed.\n" ) &
-    timeout_pid=$!
-
-    # Wait for the orphan check to complete
-    wait $pid
-    kill $spinner_pid 2>/dev/null
-    kill $timeout_pid 2>/dev/null
-
-    if [[ "${orphaned[*]}" ]]; then
-        printf "ORPHANED PACKAGES FOUND:\n"
-        printf '%s\n' "${orphaned[@]}"
-        read -r -p "Do you want to remove the above orphaned packages? [y/N] "
-        if [[ "$REPLY" =~ [yY] ]]; then
-            if pacman -Rns --noconfirm "${orphaned[@]}"; then
-                printf "...Successfully removed orphaned packages.\n"
-                log_cleanup "Removed orphaned packages: ${orphaned[*]}"
-            else
-                printf "...Failed to remove some orphaned packages. Check logs for details.\n"
-                log_cleanup "Failed to remove some orphaned packages."
-            fi
+remove_orphans() {
+    printf "Do you want to remove orphan packages? [y/N] "
+    read -r response
+    if [[ "$response" =~ ^[yY]$ ]]; then
+        printf "Removing orphan packages...\n"
+        orphans=$(pacman -Qtdq)
+        if [[ -n "$orphans" ]]; then
+            sudo pacman -Rns $orphans
+            printf "Orphan packages removed.\n"
         else
-            printf "...Orphaned packages were not removed.\n"
+            printf "No orphan packages found.\n"
         fi
     else
-        printf "...No orphaned packages found.\n"
+        printf "Skipping orphan package removal.\n"
     fi
 }
+
 
 # Function to clean up the package cache
 clean_package_cache() {
     printf "\n"
-    read -r -p "Do you want to clean up the package cache? [y/N]"
-    if [[ "$REPLY" =~ [yY] ]]; then
+    read -r -p "Do you want to clean up the package cache? [y/N] "
+    if [[ "$REPLY" =~ ^[yY]$ ]]; then
         printf "Cleaning up the package cache...\n"
-        if paccache -r; then
-            log_cleanup "Cleaned up package cache."
+        retry_command sudo pacman -Sc --noconfirm
+        log_cleanup "Cleaned up package cache."
+    else
+        printf "...Skipping package cache clean.\n"
+        log_cleanup "Skipped cleaning package cache."
+    fi
+    printf "\n"
+
+    read -r -p "Do you want to remove unused AUR packages in the $AUR_DIR? [y/N] "
+    if [[ "$REPLY" =~ ^[yY]$ ]]; then
+        if [[ -d "$AUR_DIR" ]]; then
+            rm -rf "$AUR_DIR"/*
+            printf "...Unused AUR packages removed from %s\n" "$AUR_DIR"
+            log_cleanup "Removed unused AUR packages"
         else
-            printf "...Failed to clean up the package cache. Check logs for details.\n"
-            log_cleanup "Failed to clean up package cache."
+            printf "...AUR directory %s does not exist.\n" "$AUR_DIR"
+            log_cleanup "Failed to remove unused AUR packages because directory does not exist."
         fi
     else
-        printf "...Package cache cleanup was skipped.\n"
+        printf "...Skipping removal of unused AUR packages.\n"
     fi
 }
 
@@ -83,41 +58,19 @@ clean_package_cache() {
 clean_broken_symlinks() {
     printf "\n"
     read -r -p "Do you want to search for broken symlinks? [y/N] "
-    if [[ "$REPLY" =~ [yY] ]]; then
+    if [[ "$REPLY" =~ ^[yY]$ ]]; then
         printf "Checking for broken symlinks...\n"
-        
-        # Start the search in the background
-        (mapfile -t broken_symlinks < <(find "${SYMLINKS_CHECK[@]}" -xtype l -print)) &
-        pid=$!
-        
-        # Start the spinner
-        spinner $pid
-        
-        wait $pid
-
-        if [[ "${broken_symlinks[*]}" ]]; then
-            printf "BROKEN SYMLINKS FOUND:\n"
-            printf '%s\n' "${broken_symlinks[@]}"
-            read -r -p "Do you want to remove the broken symlinks above? [y/N]"
-            if [[ "$REPLY" =~ [yY] ]]; then
-                # Handle removal failure by skipping problematic symlinks
-                for symlink in "${broken_symlinks[@]}"; do
-                    if rm "$symlink"; then
-                        printf "...Removed broken symlink: %s\n" "$symlink"
-                        log_cleanup "Removed broken symlink: $symlink"
-                    else
-                        printf "...Failed to remove symlink: %s. Check permissions or filesystem status.\n" "$symlink"
-                        log_cleanup "Failed to remove broken symlink: $symlink"
-                    fi
-                done
+        for dir in "${SYMLINKS_CHECK[@]}"; do
+            if [[ -d "$dir" ]]; then
+                find "$dir" -xtype l
             else
-                printf "...Broken symlinks were not removed.\n"
+                printf "Directory %s does not exist.\n" "$dir"
+                log_cleanup "Failed to remove symlinks because directory does not exist."
             fi
-        else
-            printf "...No broken symlinks found.\n"
-        fi
+        done
+        printf "...Done checking for broken symlinks.\n"
     else
-        printf "...Search for broken symlinks was skipped.\n"
+        printf "...Skipping check for broken symlinks.\n"
     fi
 }
 
@@ -131,4 +84,3 @@ clean_old_config() {
     printf "$user_home/.cache/\n"
     printf "$user_home/.local/share/\n"
 }
-
