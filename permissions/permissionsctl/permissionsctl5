@@ -1,0 +1,802 @@
+#!/usr/bin/env bash
+
+# Permissions Management Script
+# Author: [Your Name]
+# Description:
+# Manages file and directory permissions and ownerships based on a policy.
+# Intelligently includes custom paths from the user's home directory.
+
+set -euo pipefail
+
+# --- Configuration ---
+CONFIG_FILE="/home/andro/.config/permissionsctl/permissions_policy.yaml"     # Path to the permissions policy file
+LOG_FILE="/home/andro/.local/share/logs/permissions_management.log"
+BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
+CRON_JOB="@daily root $0 audit"                # Cron job entry
+
+# Default user (can be overridden by command-line argument)
+DEFAULT_USER="andro"
+
+# List of critical system directories to include
+SYSTEM_DIRS=(
+    /bin
+    /sbin
+    /usr/bin
+    /usr/sbin
+    /lib
+    /lib64
+    /etc
+    /var
+    /opt
+    /boot
+)
+
+# User's home directory (can be overridden by command-line argument)
+USER_HOME="/home/${DEFAULT_USER}"
+
+# List of important directories in the home directory to include
+HOME_DIRS=(
+    "$USER_HOME/.cheater"
+    "$USER_HOME/.chatgpt.conf"
+    "$USER_HOME/.fzf.zsh"
+    "$USER_HOME/.gnupg"
+    "$USER_HOME/.gitconfig"
+    "$USER_HOME/.gitignore_global"
+    "$USER_HOME/.gitmodules"
+    "$USER_HOME/.gtkrc-2.0"
+    "$USER_HOME/.icons"
+    "$USER_HOME/.jd"
+    "$USER_HOME/.local"
+    "$USER_HOME/.profile"
+    "$USER_HOME/.rustup"
+    "$USER_HOME/.screenlayout"
+    "$USER_HOME/.ssh"
+    "$USER_HOME/.themes"
+    "$USER_HOME/.Xauthority"
+    "$USER_HOME/.Xresources"
+    "$USER_HOME/.yarnrc"
+    "$USER_HOME/.zsh"
+    "$USER_HOME/.zshrc"
+    "$USER_HOME/bin"
+    "$USER_HOME/ffmpeg_build"
+    "$USER_HOME/ffmpeg_mpv_build"
+    "$USER_HOME/ffmpeg_sources"
+    "$USER_HOME/mpv_build"
+    "$USER_HOME/node_modules"
+)
+
+# --- Functions ---
+
+# Logging function with log rotation
+log_action() {
+    local level="$1"
+    local message="$2"
+    local max_size=10485760  # 10MB
+
+    # Rotate log if it exceeds max size
+    if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE")" -ge "$max_size" ]; then
+        sudo mv "$LOG_FILE" "${LOG_FILE}.$(date '+%Y%m%d%H%M%S').bak" || {
+            echo "Error: Failed to rotate log file."
+            exit 1
+        }
+        sudo touch "$LOG_FILE" || {
+            echo "Error: Failed to create new log file after rotation."
+            exit 1
+        }
+        sudo chown root:root "$LOG_FILE" || {
+            echo "Error: Failed to set ownership for new log file."
+            exit 1
+        }
+        sudo chmod 600 "$LOG_FILE" || {
+            echo "Error: Failed to set permissions for new log file."
+            exit 1
+        }
+    fi
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" | tee -a "$LOG_FILE" >/dev/null
+}
+
+# Print help
+print_help() {
+    echo "Usage: $0 [OPTIONS] [USERNAME]"
+    echo ""
+    echo "Options:"
+    echo "  setup       Set up environment"
+    echo "  backup      Save all permissions"
+    echo "  audit       Perform security audit"
+    echo "  fix         Apply factory defaults"
+    echo "  help        Display this help message"
+    exit 0
+}
+
+# Detect package manager
+detect_package_manager() {
+    if command -v pacman >/dev/null 2>&1; then
+        echo "pacman"
+    elif command -v apt-get >/dev/null 2>&1; then
+        echo "apt-get"
+    elif command -v yum >/dev/null 2>&1; then
+        echo "yum"
+    else
+        echo "unsupported"
+    fi
+}
+
+# Install dependencies if not present
+install_dependencies() {
+    local package_manager
+    package_manager=$(detect_package_manager)
+    if [ "$package_manager" == "unsupported" ]; then
+        echo "Unsupported package manager. Please install 'yq' and 'pacutils' manually."
+        log_action "ERROR" "Unsupported package manager."
+        exit 1
+    fi
+
+    local dependencies=("yq" "pacutils")
+    local to_install=()
+
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            to_install+=("$dep")
+        fi
+    done
+
+    if [ "${#to_install[@]}" -ne 0 ]; then
+        echo "Installing dependencies: ${to_install[*]}"
+        log_action "INFO" "Installing dependencies: ${to_install[*]}"
+        if [ "$package_manager" == "pacman" ]; then
+            sudo pacman -S --noconfirm "${to_install[@]}" || {
+                echo "Error: Failed to install dependencies."
+                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
+                exit 1
+            }
+        elif [ "$package_manager" == "apt-get" ]; then
+            sudo apt-get update || {
+                echo "Error: Failed to update package lists."
+                log_action "ERROR" "Failed to update package lists."
+                exit 1
+            }
+            sudo apt-get install -y "${to_install[@]}" || {
+                echo "Error: Failed to install dependencies."
+                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
+                exit 1
+            }
+        elif [ "$package_manager" == "yum" ]; then
+            sudo yum install -y "${to_install[@]}" || {
+                echo "Error: Failed to install dependencies."
+                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
+                exit 1
+            }
+        fi
+    else
+        echo "All dependencies are already installed."
+        log_action "INFO" "All dependencies are already installed."
+    fi
+}
+
+# Create necessary directories and set permissions
+setup_directories() {
+    sudo mkdir -p "$BACKUP_DIR_BASE" || {
+        echo "Error: Failed to create backup directory."
+        log_action "ERROR" "Failed to create backup directory at $BACKUP_DIR_BASE."
+        exit 1
+    }
+    sudo chown root:root "$BACKUP_DIR_BASE" || {
+        echo "Error: Failed to set ownership for backup directory."
+        log_action "ERROR" "Failed to set ownership for backup directory at $BACKUP_DIR_BASE."
+        exit 1
+    }
+    sudo chmod 700 "$BACKUP_DIR_BASE" || {
+        echo "Error: Failed to set permissions for backup directory."
+        log_action "ERROR" "Failed to set permissions for backup directory at $BACKUP_DIR_BASE."
+        exit 1
+    }
+
+    sudo mkdir -p "$(dirname "$LOG_FILE")" || {
+        echo "Error: Failed to create log directory."
+        log_action "ERROR" "Failed to create log directory at $(dirname "$LOG_FILE")."
+        exit 1
+    }
+    sudo touch "$LOG_FILE" || {
+        echo "Error: Failed to create log file."
+        log_action "ERROR" "Failed to create log file at $LOG_FILE."
+        exit 1
+    }
+    sudo chown root:root "$LOG_FILE" || {
+        echo "Error: Failed to set ownership for log file."
+        log_action "ERROR" "Failed to set ownership for log file at $LOG_FILE."
+        exit 1
+    }
+    sudo chmod 600 "$LOG_FILE" || {
+        echo "Error: Failed to set permissions for log file."
+        log_action "ERROR" "Failed to set permissions for log file at $LOG_FILE."
+        exit 1
+    }
+}
+
+# Setup cron job for regular audits
+setup_cron() {
+    if ! sudo crontab -l 2>/dev/null | grep -Fq "$CRON_JOB"; then
+        (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab - || {
+            echo "Error: Failed to add cron job."
+            log_action "ERROR" "Failed to add cron job: $CRON_JOB."
+            exit 1
+        }
+        echo "Cron job added for regular audits."
+        log_action "INFO" "Cron job added for regular audits."
+    else
+        echo "Cron job already exists."
+        log_action "INFO" "Cron job already exists."
+    fi
+}
+
+# Show progress bar
+show_progress() {
+    local current=$1
+    local total=$2
+    local width=50  # Width of the progress bar
+    local progress=$(( current * width / total ))
+    local percent=$(( current * 100 / total ))
+    local bar=""
+
+    # Check terminal capability
+    if tput colors >/dev/null 2>&1; then
+        use_colors=true
+    else
+        use_colors=false
+    fi
+
+    for ((i=0; i<progress; i++)); do
+        bar+="#"
+    done
+    for ((i=progress; i<width; i++)); do
+        bar+=" "
+    done
+
+    if [ "$use_colors" == true ]; then
+        # Move cursor to the beginning of the line
+        printf "\r\033[1;36m[%s] %d%%\033[0m" "$bar" "$percent"
+    else
+        printf "\r[%s] %d%%" "$bar" "$percent"
+    fi
+}
+
+# Generate permissions policy with progress bar
+generate_permissions_policy() {
+    echo "Generating permissions policy..."
+    log_action "INFO" "Generating permissions policy."
+
+    local temp_policy
+    temp_policy=$(mktemp /tmp/permissions_policy.XXXXXX.yaml) || {
+        echo "Error: Failed to create temporary policy file."
+        log_action "ERROR" "Failed to create temporary policy file."
+        exit 1
+    }
+    local dir_entries_file
+    dir_entries_file=$(mktemp /tmp/permissions_policy_directories.XXXXXX.yaml) || {
+        echo "Error: Failed to create temporary directory entries file."
+        log_action "ERROR" "Failed to create temporary directory entries file."
+        exit 1
+    }
+    local file_entries_file
+    file_entries_file=$(mktemp /tmp/permissions_policy_files.XXXXXX.yaml) || {
+        echo "Error: Failed to create temporary file entries file."
+        log_action "ERROR" "Failed to create temporary file entries file."
+        exit 1
+    }
+
+    # Initialize policy file and temporary files
+    echo "directories:" > "$temp_policy"
+    echo "" > "$dir_entries_file"
+    echo "files:" >> "$temp_policy"
+    echo "" > "$file_entries_file"
+
+    # Collect all paths to be processed
+    local all_paths=()
+
+    # Process system directories
+    for dir in "${SYSTEM_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            local package_manager
+            package_manager=$(detect_package_manager)
+            if [ "$package_manager" == "pacman" ]; then
+                local package_paths
+                package_paths=$(sudo pacman -Ql | awk '{print $2}' | grep "^$dir" | sort -u) || {
+                    echo "Error: Failed to list package paths for $dir."
+                    log_action "ERROR" "Failed to list package paths for $dir."
+                    exit 1
+                }
+                while IFS= read -r path; do
+                    if [ -e "$path" ]; then
+                        all_paths+=("$path")
+                    fi
+                done <<< "$package_paths"
+            elif [ "$package_manager" == "apt-get" ]; then
+                local package_paths
+                package_paths=$(dpkg -L "$(dpkg -S "$dir" | awk -F: '{print $1}')" | grep "^$dir" | sort -u) || {
+                    echo "Error: Failed to list package paths for $dir."
+                    log_action "ERROR" "Failed to list package paths for $dir."
+                    exit 1
+                }
+                while IFS= read -r path; do
+                    if [ -e "$path" ]; then
+                        all_paths+=("$path")
+                    fi
+                done <<< "$package_paths"
+            elif [ "$package_manager" == "yum" ]; then
+                local package_paths
+                package_paths=$(rpm -ql "$(rpm -qf "$dir" | head -n1)" | grep "^$dir" | sort -u) || {
+                    echo "Error: Failed to list package paths for $dir."
+                    log_action "ERROR" "Failed to list package paths for $dir."
+                    exit 1
+                }
+                while IFS= read -r path; do
+                    if [ -e "$path" ]; then
+                        all_paths+=("$path")
+                    fi
+                done <<< "$package_paths"
+            fi
+        fi
+    done
+
+    # Process important home directories
+    for dir in "${HOME_DIRS[@]}"; do
+        if [ -e "$dir" ]; then
+            local home_paths
+            home_paths=$(find "$dir" -type f -o -type d 2>/dev/null | sort -u) || {
+                echo "Warning: Failed to find paths in $dir."
+                log_action "WARNING" "Failed to find paths in $dir."
+                continue
+            }
+            while IFS= read -r path; do
+                if [ -e "$path" ]; then
+                    all_paths+=("$path")
+                fi
+            done <<< "$home_paths"
+        fi
+    done
+
+    local total_paths=${#all_paths[@]}
+    echo "Total paths to process: $total_paths"
+    log_action "INFO" "Total paths to process: $total_paths"
+
+    local current_path=0
+
+    # Process all paths and update progress bar
+    for path in "${all_paths[@]}"; do
+        current_path=$((current_path + 1))
+        add_path_to_policy "$path" "$dir_entries_file" "$file_entries_file"
+        show_progress "$current_path" "$total_paths"
+    done
+
+    # Append the directory and file entries to the policy file
+    cat "$dir_entries_file" >> "$temp_policy" || {
+        echo "Error: Failed to append directory entries to policy file."
+        log_action "ERROR" "Failed to append directory entries to policy file."
+        exit 1
+    }
+    cat "$file_entries_file" >> "$temp_policy" || {
+        echo "Error: Failed to append file entries to policy file."
+        log_action "ERROR" "Failed to append file entries to policy file."
+        exit 1
+    }
+
+    # Clean up temporary files
+    rm "$dir_entries_file" "$file_entries_file" || {
+        echo "Warning: Failed to remove temporary files."
+        log_action "WARNING" "Failed to remove temporary files."
+    }
+
+    # Move the temporary policy to the final location
+    sudo mv "$temp_policy" "$CONFIG_FILE" || {
+        echo "Error: Failed to move policy file to $CONFIG_FILE."
+        log_action "ERROR" "Failed to move policy file to $CONFIG_FILE."
+        exit 1
+    }
+    sudo chown root:root "$CONFIG_FILE" || {
+        echo "Error: Failed to set ownership for $CONFIG_FILE."
+        log_action "ERROR" "Failed to set ownership for $CONFIG_FILE."
+        exit 1
+    }
+    sudo chmod 600 "$CONFIG_FILE" || {
+        echo "Error: Failed to set permissions for $CONFIG_FILE."
+        log_action "ERROR" "Failed to set permissions for $CONFIG_FILE."
+        exit 1
+    }
+
+    # Move to a new line after progress bar
+    echo ""
+    echo "Permissions policy generated at $CONFIG_FILE"
+    log_action "INFO" "Permissions policy generated at $CONFIG_FILE"
+}
+
+add_path_to_policy() {
+    local path="$1"
+    local dir_entries_file="$2"
+    local file_entries_file="$3"
+    local owner group perms
+
+    owner=$(stat -c '%U' "$path") || {
+        echo "Warning: Unable to determine owner for $path."
+        log_action "WARNING" "Unable to determine owner for $path."
+        return
+    }
+    group=$(stat -c '%G' "$path") || {
+        echo "Warning: Unable to determine group for $path."
+        log_action "WARNING" "Unable to determine group for $path."
+        return
+    }
+    perms=$(stat -c '%a' "$path") || {
+        echo "Warning: Unable to determine permissions for $path."
+        log_action "WARNING" "Unable to determine permissions for $path."
+        return
+    }
+    path_escaped=$(printf '%q' "$path")
+
+    if [ -d "$path" ]; then
+        echo "  - path: \"$path_escaped\"" >> "$dir_entries_file" || {
+            echo "Error: Failed to add directory entry for $path."
+            log_action "ERROR" "Failed to add directory entry for $path."
+            exit 1
+        }
+        echo "    owner: \"$owner\"" >> "$dir_entries_file" || {
+            echo "Error: Failed to add owner for $path."
+            log_action "ERROR" "Failed to add owner for $path."
+            exit 1
+        }
+        echo "    group: \"$group\"" >> "$dir_entries_file" || {
+            echo "Error: Failed to add group for $path."
+            log_action "ERROR" "Failed to add group for $path."
+            exit 1
+        }
+        echo "    permissions: \"$perms\"" >> "$dir_entries_file" || {
+            echo "Error: Failed to add permissions for $path."
+            log_action "ERROR" "Failed to add permissions for $path."
+            exit 1
+        }
+    elif [ -f "$path" ]; then
+        echo "  - path: \"$path_escaped\"" >> "$file_entries_file" || {
+            echo "Error: Failed to add file entry for $path."
+            log_action "ERROR" "Failed to add file entry for $path."
+            exit 1
+        }
+        echo "    owner: \"$owner\"" >> "$file_entries_file" || {
+            echo "Error: Failed to add owner for $path."
+            log_action "ERROR" "Failed to add owner for $path."
+            exit 1
+        }
+        echo "    group: \"$group\"" >> "$file_entries_file" || {
+            echo "Error: Failed to add group for $path."
+            log_action "ERROR" "Failed to add group for $path."
+            exit 1
+        }
+        echo "    permissions: \"$perms\"" >> "$file_entries_file" || {
+            echo "Error: Failed to add permissions for $path."
+            log_action "ERROR" "Failed to add permissions for $path."
+            exit 1
+        }
+    fi
+}
+
+# Load permissions policy
+load_policy() {
+    if ! command -v yq >/dev/null 2>&1; then
+        echo "Error: 'yq' is required to parse the YAML configuration."
+        log_action "ERROR" "'yq' is not installed."
+        exit 1
+    fi
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Error: Configuration file '$CONFIG_FILE' not found."
+        log_action "ERROR" "Configuration file '$CONFIG_FILE' not found."
+        exit 1
+    fi
+
+    # Validate YAML structure
+    if ! yq e '.' "$CONFIG_FILE" >/dev/null 2>&1; then
+        echo "Error: Configuration file '$CONFIG_FILE' is not valid YAML."
+        log_action "ERROR" "Configuration file '$CONFIG_FILE' is not valid YAML."
+        exit 1
+    fi
+}
+
+# Backup current permissions
+backup_permissions() {
+    local timestamp
+    timestamp=$(date +%Y%m%d%H%M%S)
+    local backup_dir="$BACKUP_DIR_BASE/$timestamp"
+    sudo mkdir -p "$backup_dir" || {
+        echo "Error: Failed to create backup directory at $backup_dir."
+        log_action "ERROR" "Failed to create backup directory at $backup_dir."
+        exit 1
+    }
+
+    yq e '.directories[].path, .files[].path' "$CONFIG_FILE" | while IFS= read -r path; do
+        if [ -e "$path" ]; then
+            sudo getfacl -pR "$path" > "$backup_dir/$(echo "$path" | tr '/' '_').acl" || {
+                echo "Error: Failed to backup permissions for $path."
+                log_action "ERROR" "Failed to backup permissions for $path."
+                exit 1
+            }
+        else
+            echo "Warning: $path does not exist. Skipping backup."
+            log_action "WARNING" "$path does not exist. Skipping backup."
+        fi
+    done
+
+    log_action "INFO" "Permissions backed up to $backup_dir"
+    echo "Permissions backed up to $backup_dir"
+}
+
+# Audit permissions
+audit_permissions() {
+    local discrepancies=0
+
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -d "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path") || {
+                echo "Warning: Unable to determine owner for $path."
+                log_action "WARNING" "Unable to determine owner for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+            curr_group=$(stat -c '%G' "$path") || {
+                echo "Warning: Unable to determine group for $path."
+                log_action "WARNING" "Unable to determine group for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+            curr_perms=$(stat -c '%a' "$path") || {
+                echo "Warning: Unable to determine permissions for $path."
+                log_action "WARNING" "Unable to determine permissions for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+                echo "Discrepancy found in $path"
+                log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
+                discrepancies=$((discrepancies + 1))
+            fi
+        else
+            echo "Warning: Directory $path does not exist."
+            log_action "WARNING" "Directory $path does not exist."
+            discrepancies=$((discrepancies + 1))
+        fi
+    done
+
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -f "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path") || {
+                echo "Warning: Unable to determine owner for $path."
+                log_action "WARNING" "Unable to determine owner for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+            curr_group=$(stat -c '%G' "$path") || {
+                echo "Warning: Unable to determine group for $path."
+                log_action "WARNING" "Unable to determine group for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+            curr_perms=$(stat -c '%a' "$path") || {
+                echo "Warning: Unable to determine permissions for $path."
+                log_action "WARNING" "Unable to determine permissions for $path."
+                discrepancies=$((discrepancies + 1))
+                continue
+            }
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+                echo "Discrepancy found in $path"
+                log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
+                discrepancies=$((discrepancies + 1))
+            fi
+        else
+            echo "Warning: File $path does not exist."
+            log_action "WARNING" "File $path does not exist."
+            discrepancies=$((discrepancies + 1))
+        fi
+    done
+
+    if [ "$discrepancies" -eq 0 ]; then
+        echo "All permissions and ownerships are as per the policy."
+        log_action "INFO" "All permissions and ownerships are as per the policy."
+    else
+        echo "Total discrepancies found: $discrepancies"
+        log_action "WARNING" "Total discrepancies found: $discrepancies"
+    fi
+}
+
+# Fix permissions
+fix_permissions() {
+    local changes=0
+
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -d "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path") || {
+                echo "Warning: Unable to determine owner for $path."
+                log_action "WARNING" "Unable to determine owner for $path."
+                continue
+            }
+            curr_group=$(stat -c '%G' "$path") || {
+                echo "Warning: Unable to determine group for $path."
+                log_action "WARNING" "Unable to determine group for $path."
+                continue
+            }
+            curr_perms=$(stat -c '%a' "$path") || {
+                echo "Warning: Unable to determine permissions for $path."
+                log_action "WARNING" "Unable to determine permissions for $path."
+                continue
+            }
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+                sudo chown "$owner:$group" "$path" || {
+                    echo "Error: Failed to change owner/group of $path."
+                    log_action "ERROR" "Failed to change owner/group of $path."
+                    exit 1
+                }
+                log_action "INFO" "Changed owner/group of $path to $owner:$group"
+                changes=$((changes + 1))
+            fi
+
+            if [ "$curr_perms" != "$perms" ]; then
+                sudo chmod "$perms" "$path" || {
+                    echo "Error: Failed to change permissions of $path."
+                    log_action "ERROR" "Failed to change permissions of $path."
+                    exit 1
+                }
+                log_action "INFO" "Changed permissions of $path to $perms"
+                changes=$((changes + 1))
+            fi
+        else
+            echo "Warning: Directory $path does not exist."
+            log_action "WARNING" "Directory $path does not exist."
+        fi
+    done
+
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
+        if [ -f "$path" ]; then
+            local curr_owner curr_group curr_perms
+            curr_owner=$(stat -c '%U' "$path") || {
+                echo "Warning: Unable to determine owner for $path."
+                log_action "WARNING" "Unable to determine owner for $path."
+                continue
+            }
+            curr_group=$(stat -c '%G' "$path") || {
+                echo "Warning: Unable to determine group for $path."
+                log_action "WARNING" "Unable to determine group for $path."
+                continue
+            }
+            curr_perms=$(stat -c '%a' "$path") || {
+                echo "Warning: Unable to determine permissions for $path."
+                log_action "WARNING" "Unable to determine permissions for $path."
+                continue
+            }
+
+            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+                sudo chown "$owner:$group" "$path" || {
+                    echo "Error: Failed to change owner/group of $path."
+                    log_action "ERROR" "Failed to change owner/group of $path."
+                    exit 1
+                }
+                log_action "INFO" "Changed owner/group of $path to $owner:$group"
+                changes=$((changes + 1))
+            fi
+
+            if [ "$curr_perms" != "$perms" ]; then
+                sudo chmod "$perms" "$path" || {
+                    echo "Error: Failed to change permissions of $path."
+                    log_action "ERROR" "Failed to change permissions of $path."
+                    exit 1
+                }
+                log_action "INFO" "Changed permissions of $path to $perms"
+                changes=$((changes + 1))
+            fi
+        else
+            echo "Warning: File $path does not exist."
+            log_action "WARNING" "File $path does not exist."
+        fi
+    done
+
+    if [ "$changes" -eq 0 ]; then
+        echo "No changes were necessary."
+        log_action "INFO" "No changes were necessary."
+    else
+        echo "Total changes made: $changes"
+        log_action "INFO" "Total changes made during fix: $changes"
+    fi
+}
+
+# Main function
+main() {
+    # Ensure the script is run with elevated privileges
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "This script must be run as root."
+        exit 1
+    fi
+
+    # Check if at least one argument is provided
+    if [ "$#" -lt 1 ]; then
+        print_help
+    fi
+
+    # Parse command-line arguments
+    local action="$1"
+    local user="${2:-$DEFAULT_USER}"
+
+    # Validate username
+    if ! id "$user" >/dev/null 2>&1; then
+        echo "Error: User '$user' does not exist."
+        log_action "ERROR" "User '$user' does not exist."
+        exit 1
+    fi
+
+    # Update USER_HOME based on provided user
+    USER_HOME="/home/$user"
+
+    # Update HOME_DIRS based on new USER_HOME
+    HOME_DIRS=(
+        "$USER_HOME/.cheater"
+        "$USER_HOME/.chatgpt.conf"
+        "$USER_HOME/.fzf.zsh"
+        "$USER_HOME/.gnupg"
+        "$USER_HOME/.gitconfig"
+        "$USER_HOME/.gitignore_global"
+        "$USER_HOME/.gitmodules"
+        "$USER_HOME/.gtkrc-2.0"
+        "$USER_HOME/.icons"
+        "$USER_HOME/.jd"
+        "$USER_HOME/.local"
+        "$USER_HOME/.profile"
+        "$USER_HOME/.rustup"
+        "$USER_HOME/.screenlayout"
+        "$USER_HOME/.ssh"
+        "$USER_HOME/.themes"
+        "$USER_HOME/.Xauthority"
+        "$USER_HOME/.Xresources"
+        "$USER_HOME/.yarnrc"
+        "$USER_HOME/.zsh"
+        "$USER_HOME/.zshrc"
+        "$USER_HOME/bin"
+        "$USER_HOME/ffmpeg_build"
+        "$USER_HOME/ffmpeg_mpv_build"
+        "$USER_HOME/ffmpeg_sources"
+        "$USER_HOME/mpv_build"
+        "$USER_HOME/node_modules"
+    )
+
+    case "$action" in
+        setup)
+            install_dependencies
+            setup_directories
+            setup_cron
+            generate_permissions_policy
+            ;;
+        backup)
+            load_policy
+            backup_permissions
+            ;;
+        audit)
+            load_policy
+            audit_permissions
+            ;;
+        fix)
+            load_policy
+            fix_permissions
+            ;;
+        help)
+            print_help
+            ;;
+        *)
+            echo "Invalid action: $action"
+            log_action "ERROR" "Invalid action provided: $action"
+            print_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

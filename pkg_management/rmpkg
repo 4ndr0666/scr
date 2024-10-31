@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [[ -n "$1" ]]; then
-    doas pacman -Rns $@ && exit
+    sudo pacman -Rns $@ && exit
 else
 echo -e '\e[1;37m[PACMAN] \e[1;35mRemove packages (TAB to select, ENTER to install, PREVIEW_WINDOW: ?- toggle, shift+up/down- movement)\e[0m';\
 pacman -Qq |\
@@ -12,5 +12,5 @@ pacman -Qq |\
  --bind 'shift-up:preview-up' \
  --bind 'shift-down:preview-down' \
  --bind 'ctrl-a:select-all' |\
- xargs -ro doas pacman -Rns
+ xargs -ro sudo pacman -Rns
 fi
