@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
+# File: permissionsctl5
+# Author: 4ndr0666
+# Date: 10-31-2024
+# Description: Manages file and directory permissions and ownerships based on a policy.
+#              Intelligently includes custom paths from the user's home directory.
 
-# Permissions Management Script
-# Author: [Your Name]
-# Description:
-# Manages file and directory permissions and ownerships based on a policy.
-# Intelligently includes custom paths from the user's home directory.
-
+# ============================== // PERMISSIONSCTL //
 set -euo pipefail
 
-# --- Configuration ---
+# --- // Configuration:
 CONFIG_FILE="/home/andro/.config/permissionsctl/permissions_policy.yaml"     # Path to the permissions policy file
 LOG_FILE="/home/andro/.local/share/logs/permissions_management.log"
 BACKUP_DIR_BASE="/Nas/Backups/permissions"     # Base directory for backups
-CRON_JOB="@daily root $0 audit"                # Cron job entry
+CRON_JOB="@daily root /usr/local/bin/permissionsctl5 audit"                # Cron job entry
 
-# Default user (can be overridden by command-line argument)
+# --- // Username:                             # Override in cli
 DEFAULT_USER="andro"
 
-# List of critical system directories to include
+# --- // Basic dirs:
 SYSTEM_DIRS=(
     /bin
     /sbin
@@ -31,43 +31,36 @@ SYSTEM_DIRS=(
     /boot
 )
 
-# User's home directory (can be overridden by command-line argument)
+# --- // User_home_dir:                       # Override in cli
 USER_HOME="/home/${DEFAULT_USER}"
 
-# List of important directories in the home directory to include
+# --- // Personal_dirs:
 HOME_DIRS=(
-    "$USER_HOME/.cheater"
-    "$USER_HOME/.chatgpt.conf"
-    "$USER_HOME/.fzf.zsh"
+    "$USER_HOME/.config"
+    "$USER_HOME/Downloads"
+    "$USER_HOME/Documents"
+    "$USER_HOME/Pictures"
+    "$USER_HOME/Wallpapers"
+    "$USER_HOME/Videos"
+    "$USER_HOME/gallery-dl"
+    "$USER_HOME/Avatars"
     "$USER_HOME/.gnupg"
-    "$USER_HOME/.gitconfig"
-    "$USER_HOME/.gitignore_global"
-    "$USER_HOME/.gitmodules"
-    "$USER_HOME/.gtkrc-2.0"
-    "$USER_HOME/.icons"
     "$USER_HOME/.jd"
     "$USER_HOME/.local"
-    "$USER_HOME/.profile"
-    "$USER_HOME/.rustup"
-    "$USER_HOME/.screenlayout"
     "$USER_HOME/.ssh"
-    "$USER_HOME/.themes"
     "$USER_HOME/.Xauthority"
-    "$USER_HOME/.Xresources"
-    "$USER_HOME/.yarnrc"
-    "$USER_HOME/.zsh"
-    "$USER_HOME/.zshrc"
     "$USER_HOME/bin"
-    "$USER_HOME/ffmpeg_build"
-    "$USER_HOME/ffmpeg_mpv_build"
-    "$USER_HOME/ffmpeg_sources"
-    "$USER_HOME/mpv_build"
-    "$USER_HOME/node_modules"
 )
 
-# --- Functions ---
+# --- // YAML_escape:
+yaml_escape() {
+    local input="$1"
+    # Escape single quotes by replacing ' with ''
+    local escaped="${input//\'/\'\'}"
+    echo "'$escaped'"
+}
 
-# Logging function with log rotation
+# --- // Setup_log:
 log_action() {
     local level="$1"
     local message="$2"
@@ -96,7 +89,7 @@ log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" | tee -a "$LOG_FILE" >/dev/null
 }
 
-# Print help
+# --- // Help:
 print_help() {
     echo "Usage: $0 [OPTIONS] [USERNAME]"
     echo ""
@@ -109,25 +102,23 @@ print_help() {
     exit 0
 }
 
-# Detect package manager
+# --- // Package Manager Detection:
 detect_package_manager() {
-    if command -v pacman >/dev/null 2>&1; then
+    if command -v yay >/dev/null 2>&1; then
+        echo "yay"
+    elif command -v pacman >/dev/null 2>&1; then
         echo "pacman"
-    elif command -v apt-get >/dev/null 2>&1; then
-        echo "apt-get"
-    elif command -v yum >/dev/null 2>&1; then
-        echo "yum"
     else
         echo "unsupported"
     fi
 }
 
-# Install dependencies if not present
+# --- // Install Dependencies:
 install_dependencies() {
     local package_manager
     package_manager=$(detect_package_manager)
     if [ "$package_manager" == "unsupported" ]; then
-        echo "Unsupported package manager. Please install 'yq' and 'pacutils' manually."
+        echo "Unsupported package manager. Please run on Arch Linux only."
         log_action "ERROR" "Unsupported package manager."
         exit 1
     fi
@@ -144,25 +135,14 @@ install_dependencies() {
     if [ "${#to_install[@]}" -ne 0 ]; then
         echo "Installing dependencies: ${to_install[*]}"
         log_action "INFO" "Installing dependencies: ${to_install[*]}"
-        if [ "$package_manager" == "pacman" ]; then
+        if [ "$package_manager" == "yay" ]; then
+            yay -S --noconfirm "${to_install[@]}" || {
+                echo "Error: Failed to install dependencies."
+                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
+                exit 1
+            }
+        elif [ "$package_manager" == "pacman" ]; then
             sudo pacman -S --noconfirm "${to_install[@]}" || {
-                echo "Error: Failed to install dependencies."
-                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
-                exit 1
-            }
-        elif [ "$package_manager" == "apt-get" ]; then
-            sudo apt-get update || {
-                echo "Error: Failed to update package lists."
-                log_action "ERROR" "Failed to update package lists."
-                exit 1
-            }
-            sudo apt-get install -y "${to_install[@]}" || {
-                echo "Error: Failed to install dependencies."
-                log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
-                exit 1
-            }
-        elif [ "$package_manager" == "yum" ]; then
-            sudo yum install -y "${to_install[@]}" || {
                 echo "Error: Failed to install dependencies."
                 log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
                 exit 1
@@ -174,7 +154,7 @@ install_dependencies() {
     fi
 }
 
-# Create necessary directories and set permissions
+# --- // Setup Environment:
 setup_directories() {
     sudo mkdir -p "$BACKUP_DIR_BASE" || {
         echo "Error: Failed to create backup directory."
@@ -214,7 +194,7 @@ setup_directories() {
     }
 }
 
-# Setup cron job for regular audits
+# --- // Setup Cron Job:
 setup_cron() {
     if ! sudo crontab -l 2>/dev/null | grep -Fq "$CRON_JOB"; then
         (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab - || {
@@ -230,7 +210,7 @@ setup_cron() {
     fi
 }
 
-# Show progress bar
+# --- // Progress Bar:
 show_progress() {
     local current=$1
     local total=$2
@@ -261,7 +241,7 @@ show_progress() {
     fi
 }
 
-# Generate permissions policy with progress bar
+# --- // Generate Permissions Policy:
 generate_permissions_policy() {
     echo "Generating permissions policy..."
     log_action "INFO" "Generating permissions policy."
@@ -311,21 +291,9 @@ generate_permissions_policy() {
                         all_paths+=("$path")
                     fi
                 done <<< "$package_paths"
-            elif [ "$package_manager" == "apt-get" ]; then
+            elif [ "$package_manager" == "yay" ]; then
                 local package_paths
-                package_paths=$(dpkg -L "$(dpkg -S "$dir" | awk -F: '{print $1}')" | grep "^$dir" | sort -u) || {
-                    echo "Error: Failed to list package paths for $dir."
-                    log_action "ERROR" "Failed to list package paths for $dir."
-                    exit 1
-                }
-                while IFS= read -r path; do
-                    if [ -e "$path" ]; then
-                        all_paths+=("$path")
-                    fi
-                done <<< "$package_paths"
-            elif [ "$package_manager" == "yum" ]; then
-                local package_paths
-                package_paths=$(rpm -ql "$(rpm -qf "$dir" | head -n1)" | grep "^$dir" | sort -u) || {
+                package_paths=$(yay -Ql | awk '{print $2}' | grep "^$dir" | sort -u) || {
                     echo "Error: Failed to list package paths for $dir."
                     log_action "ERROR" "Failed to list package paths for $dir."
                     exit 1
@@ -343,7 +311,7 @@ generate_permissions_policy() {
     for dir in "${HOME_DIRS[@]}"; do
         if [ -e "$dir" ]; then
             local home_paths
-            home_paths=$(find "$dir" -type f -o -type d 2>/dev/null | sort -u) || {
+            home_paths=$(find "$dir" -type f -o -type d -P 2>/dev/null | sort -u) || {
                 echo "Warning: Failed to find paths in $dir."
                 log_action "WARNING" "Failed to find paths in $dir."
                 continue
@@ -356,9 +324,21 @@ generate_permissions_policy() {
         fi
     done
 
+    # Remove duplicate paths
+    IFS=$'\n' all_paths=($(sort -u <<<"${all_paths[*]}"))
+    unset IFS
+
     local total_paths=${#all_paths[@]}
     echo "Total paths to process: $total_paths"
     log_action "INFO" "Total paths to process: $total_paths"
+
+    # Check for excessive number of paths
+    local max_paths=100000
+    if [ "$total_paths" -gt "$max_paths" ]; then
+        echo "Error: Number of paths ($total_paths) exceeds the maximum allowed ($max_paths)."
+        log_action "ERROR" "Number of paths ($total_paths) exceeds the maximum allowed ($max_paths)."
+        exit 1
+    fi
 
     local current_path=0
 
@@ -387,6 +367,17 @@ generate_permissions_policy() {
         log_action "WARNING" "Failed to remove temporary files."
     }
 
+    # Validate the generated YAML file
+    if ! yq eval '.' "$temp_policy" >/dev/null 2>&1; then
+        echo "Error: Generated YAML file is invalid."
+        log_action "ERROR" "Generated YAML file at $temp_policy is invalid."
+        rm "$temp_policy" || {
+            echo "Warning: Failed to remove invalid YAML file."
+            log_action "WARNING" "Failed to remove invalid YAML file at $temp_policy."
+        }
+        exit 1
+    fi
+
     # Move the temporary policy to the final location
     sudo mv "$temp_policy" "$CONFIG_FILE" || {
         echo "Error: Failed to move policy file to $CONFIG_FILE."
@@ -410,6 +401,7 @@ generate_permissions_policy() {
     log_action "INFO" "Permissions policy generated at $CONFIG_FILE"
 }
 
+# --- // Add Path to Policy:
 add_path_to_policy() {
     local path="$1"
     local dir_entries_file="$2"
@@ -431,46 +423,46 @@ add_path_to_policy() {
         log_action "WARNING" "Unable to determine permissions for $path."
         return
     }
-    path_escaped=$(printf '%q' "$path")
+    path_escaped=$(yaml_escape "$path")
 
     if [ -d "$path" ]; then
-        echo "  - path: \"$path_escaped\"" >> "$dir_entries_file" || {
+        echo "  - path: $path_escaped" >> "$dir_entries_file" || {
             echo "Error: Failed to add directory entry for $path."
             log_action "ERROR" "Failed to add directory entry for $path."
             exit 1
         }
-        echo "    owner: \"$owner\"" >> "$dir_entries_file" || {
+        echo "    owner: '$owner'" >> "$dir_entries_file" || {
             echo "Error: Failed to add owner for $path."
             log_action "ERROR" "Failed to add owner for $path."
             exit 1
         }
-        echo "    group: \"$group\"" >> "$dir_entries_file" || {
+        echo "    group: '$group'" >> "$dir_entries_file" || {
             echo "Error: Failed to add group for $path."
             log_action "ERROR" "Failed to add group for $path."
             exit 1
         }
-        echo "    permissions: \"$perms\"" >> "$dir_entries_file" || {
+        echo "    permissions: '$perms'" >> "$dir_entries_file" || {
             echo "Error: Failed to add permissions for $path."
             log_action "ERROR" "Failed to add permissions for $path."
             exit 1
         }
     elif [ -f "$path" ]; then
-        echo "  - path: \"$path_escaped\"" >> "$file_entries_file" || {
+        echo "  - path: $path_escaped" >> "$file_entries_file" || {
             echo "Error: Failed to add file entry for $path."
             log_action "ERROR" "Failed to add file entry for $path."
             exit 1
         }
-        echo "    owner: \"$owner\"" >> "$file_entries_file" || {
+        echo "    owner: '$owner'" >> "$file_entries_file" || {
             echo "Error: Failed to add owner for $path."
             log_action "ERROR" "Failed to add owner for $path."
             exit 1
         }
-        echo "    group: \"$group\"" >> "$file_entries_file" || {
+        echo "    group: '$group'" >> "$file_entries_file" || {
             echo "Error: Failed to add group for $path."
             log_action "ERROR" "Failed to add group for $path."
             exit 1
         }
-        echo "    permissions: \"$perms\"" >> "$file_entries_file" || {
+        echo "    permissions: '$perms'" >> "$file_entries_file" || {
             echo "Error: Failed to add permissions for $path."
             log_action "ERROR" "Failed to add permissions for $path."
             exit 1
@@ -478,7 +470,7 @@ add_path_to_policy() {
     fi
 }
 
-# Load permissions policy
+# --- // Load Permissions Policy:
 load_policy() {
     if ! command -v yq >/dev/null 2>&1; then
         echo "Error: 'yq' is required to parse the YAML configuration."
@@ -493,14 +485,14 @@ load_policy() {
     fi
 
     # Validate YAML structure
-    if ! yq e '.' "$CONFIG_FILE" >/dev/null 2>&1; then
+    if ! yq eval '.' "$CONFIG_FILE" >/dev/null 2>&1; then
         echo "Error: Configuration file '$CONFIG_FILE' is not valid YAML."
         log_action "ERROR" "Configuration file '$CONFIG_FILE' is not valid YAML."
         exit 1
     fi
 }
 
-# Backup current permissions
+# --- // Backup Permissions:
 backup_permissions() {
     local timestamp
     timestamp=$(date +%Y%m%d%H%M%S)
@@ -528,7 +520,7 @@ backup_permissions() {
     echo "Permissions backed up to $backup_dir"
 }
 
-# Audit permissions
+# --- // Audit Permissions:
 audit_permissions() {
     local discrepancies=0
 
@@ -609,7 +601,7 @@ audit_permissions() {
     fi
 }
 
-# Fix permissions
+# --- // Fix Permissions:
 fix_permissions() {
     local changes=0
 
@@ -710,7 +702,7 @@ fix_permissions() {
     fi
 }
 
-# Main function
+# --- // Entry Point:
 main() {
     # Ensure the script is run with elevated privileges
     if [ "$(id -u)" -ne 0 ]; then
@@ -739,33 +731,20 @@ main() {
 
     # Update HOME_DIRS based on new USER_HOME
     HOME_DIRS=(
-        "$USER_HOME/.cheater"
-        "$USER_HOME/.chatgpt.conf"
-        "$USER_HOME/.fzf.zsh"
+        "$USER_HOME/.config"
+        "$USER_HOME/Downloads"
+        "$USER_HOME/Documents"
+        "$USER_HOME/Pictures"
+        "$USER_HOME/Wallpapers"
+        "$USER_HOME/Videos"
+        "$USER_HOME/gallery-dl"
+        "$USER_HOME/Avatars"
         "$USER_HOME/.gnupg"
-        "$USER_HOME/.gitconfig"
-        "$USER_HOME/.gitignore_global"
-        "$USER_HOME/.gitmodules"
-        "$USER_HOME/.gtkrc-2.0"
-        "$USER_HOME/.icons"
         "$USER_HOME/.jd"
         "$USER_HOME/.local"
-        "$USER_HOME/.profile"
-        "$USER_HOME/.rustup"
-        "$USER_HOME/.screenlayout"
         "$USER_HOME/.ssh"
-        "$USER_HOME/.themes"
         "$USER_HOME/.Xauthority"
-        "$USER_HOME/.Xresources"
-        "$USER_HOME/.yarnrc"
-        "$USER_HOME/.zsh"
-        "$USER_HOME/.zshrc"
         "$USER_HOME/bin"
-        "$USER_HOME/ffmpeg_build"
-        "$USER_HOME/ffmpeg_mpv_build"
-        "$USER_HOME/ffmpeg_sources"
-        "$USER_HOME/mpv_build"
-        "$USER_HOME/node_modules"
     )
 
     case "$action" in

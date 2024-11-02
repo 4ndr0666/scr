@@ -8,7 +8,7 @@ set -e  # Exit immediately if a command exits with a non-zero status.
 CUSTOM_BIN_DIR="$HOME/bin"
 CUSTOM_BINARIES=("ffmpeg" "ffplay" "ffprobe" "x264")
 BACKUP_SUFFIX=".bak"
-LOG_DIR="/var/log/custom-garuda-update"
+LOG_DIR="/home/andro/.local/share/logs/custom-garuda-update"
 LOG_FILE="$LOG_DIR/update_$(date +'%Y%m%d_%H%M%S').log"
 
 # === Logging Setup ===
@@ -76,7 +76,7 @@ refresh_mirrorlist() {
 # === Update Keyrings ===
 update_keyrings() {
     log ">>> Updating keyrings..."
-    sudo pacman -Sy archlinux-keyring garuda-keyring || {
+    sudo pacman -Sy --needed archlinux-keyring || {
         error_exit "Failed to update keyrings."
     }
     log "Keyrings updated successfully."
@@ -105,7 +105,7 @@ trap cleanup EXIT
 # === Main Execution Flow ===
 init_logging
 backup_binaries
-refresh_mirrorlist
+#refresh_mirrorlist
 update_keyrings
 
 log ">>> Starting system update using garuda-update..."
@@ -114,6 +114,6 @@ log ">>> Starting system update using garuda-update..."
 garuda-update "$@"
 
 log ">>> Performing AUR package updates..."
-update_aur_packages
+#update_aur_packages
 
 # Restoration is handled by the trap on EXIT

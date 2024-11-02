@@ -3,7 +3,7 @@
 # --- Central Control Script for Initial System Setup ---
 
 # Set up log directory and file
-LOG_DIR="$XDG_DATA_HOME/firstrun_logs"
+LOG_DIR="$XDG_DATA_HOME/logs/firstrun_logs"
 LOG_FILE="$LOG_DIR/firstrun.log"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
