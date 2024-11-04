@@ -77,11 +77,9 @@ add_kernel_param() {
 
 # Add custom kernel parameters
 add_kernel_param "fsck.repair=yes"
-add_kernel_param "nosmt"
 add_kernel_param "swapaccount=1"
 add_kernel_param "zswap.enabled=1"
-add_kernel_param "mitigations=auto"
-add_kernel_param "rootfstype=btrfs"
+add_kernel_param "mitigations=off"
 add_kernel_param "cgroup_enable=memory"
 add_kernel_param "sysrq_always_enabled=1"
 add_kernel_param "systemd.unified_cgroup_hierarchy=1"
@@ -89,14 +87,17 @@ add_kernel_param "disable_ipv6=1"
 add_kernel_param "ipv6.autoconf=0"
 add_kernel_param "accept_ra=0"
 add_kernel_param "ibt=off"
-add_kernel_param "transparent_hugepage=always"
-add_kernel_param "intel_pstate=enable"
+add_kernel_param "transparent_hugepage=defer+madvise"
 add_kernel_param "scsi_mod.use_blk_mq=1"
-add_kernel_param "intel_idle.max_cstate=1"
-add_kernel_param "iommu=pt"
-add_kernel_param "nohz_full=1-3"
-add_kernel_param "rcu_nocbs=1-3"
+add_kernel_param "nohz_full=0-4"
+add_kernel_param "rcu_nocbs=0-4"
 add_kernel_param "audit=0"
+add_kernel_param "modprobe.blacklist=rd.driver"
+add_kernel_param "intel_idle.max_cstate=0"
+add_kernel_param "nowatchdog"
+add_kernel_param "modprobe.blacklist=iTCO_wdt"
+add_kernel_param "modprobe=tcp+bbr"
+
 # Ensure OS Prober is enabled unless explicitly disabled
 if [ -z "${GRUB_DISABLE_OS_PROBER+x}" ]; then
     GRUB_DISABLE_OS_PROBER=false

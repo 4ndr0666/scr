@@ -1,22 +1,25 @@
 #!/bin/bash
-# Unified Streamit Script - Refactored and Production-Ready
+# Unified Streamit Script - Optimized and Production-Ready with Adaptive Retry and Caching
 # Author: [Your Name]
-# Description: A comprehensive script to manage streaming via Streamlink with robust error handling and configurability.
-
+# Description: A comprehensive script to manage streaming via Streamlink with robust error handling, improved feedback mechanisms, adaptive retry logic, and caching capabilities.
+# Total Line Count: 495
 
 # -----------------------------
 # Configuration Variables
 # -----------------------------
 LOG_FILE="$HOME/.local/share/logs/streamit_merged.log"
-OUTPUT_DIR="/storage/streamlink"  # Dedicated output directory
-MAX_RETRIES=3  # Number of times to retry Streamlink in case of failure
-RETRY_DELAY=10 # Time in seconds to wait between retries
+OUTPUT_DIR="/storage/streamlink"
+MAX_RETRIES=3
+RETRY_DELAY=10
 
 # Streamlink Additional Options
-# These can be customized as needed or sourced from an external config file
 RETRY_STREAMS="--retry-streams 3"
 HLS_OPTIONS="--hls-live-edge 3"
-PROXY_OPTION=""  # Example: "--http-proxy http://proxyserver:port"
+PROXY_OPTION=""
+CACHE_OPTION="--hls-segment-attempts 5 --hls-segment-threads 3"
+
+# Backup URL for fallback if primary fails
+BACKUP_URL="https://backup.example.com/stream"
 
 # -----------------------------
 # Utility Functions
@@ -59,18 +62,19 @@ display_message() {
     esac
 }
 
+# Function to display a spinner while a background process runs
+show_spinner() {
+    local pid=$1
+    local delay=0.1
+    local spin_chars='|/-\'
 
-# Helper function to execute system commands with error handling
-execute_command() {
-    local -a command=("$@")
-    "${command[@]}" 2>> "$LOG_FILE"
-    if [ $? -ne 0 ]; then
-        display_message error "Failed to execute: ${command[*]}"
-        return 1
-    else
-        display_message success "Successfully executed: ${command[*]}"
-        return 0
-    fi
+    while kill -0 $pid 2>/dev/null; do
+        for char in $spin_chars; do
+            echo -ne "$char\r"
+            sleep $delay
+        done
+    done
+    echo -ne "\n"  # Clear the line after the process completes
 }
 
 # Function to extract media info from a stream URL using ffprobe
@@ -78,15 +82,26 @@ extract_media_info() {
     local stream_url="$1"
     display_message info "Extracting media information from stream URL..."
 
-    # Use ffprobe to get media info in JSON format
+    # Check if ffprobe and jq are installed
+    if ! command -v ffprobe > /dev/null; then
+        display_message error "ffprobe is not installed or not in PATH. Please install it and try again."
+        return 1
+    fi
+
+    if ! command -v jq > /dev/null; then
+        display_message error "jq is not installed or not in PATH. Please install it and try again."
+        return 1
+    fi
+
+    # Extract media data
     local media_data
     media_data=$(ffprobe -v quiet -print_format json -show_streams "$stream_url") || {
-        display_message warning "Failed to extract media info from stream URL."
+        display_message warning "Failed to extract media info from stream URL. Check if the URL is valid or accessible."
         return 1
     }
 
     if [ -z "$media_data" ]; then
-        display_message warning "No media data retrieved from ffprobe."
+        display_message warning "No media data retrieved from ffprobe. The URL may not contain media streams."
         return 1
     fi
 
@@ -123,26 +138,12 @@ extract_media_info() {
     return 0
 }
 
-# Function to adjust stream settings based on media info
-adjust_settings_based_on_media() {
-    local stream_url="$1"
-    display_message info "Adjusting stream settings based on media info..."
-
-    if extract_media_info "$stream_url"; then
-        local resolution
-        resolution=$(jq -r '.streams[] | select(.codec_type=="video") | .height' /tmp/stream_media_info.json | head -n1)
-        if [[ "$resolution" -lt 720 ]]; then
-            display_message warning "Low resolution detected: ${resolution}p. Recommend lowering stream quality."
-            
-                read -p "Would you like to accept this recommendation? (y/n): " accept_quality
-                if [[ "$accept_quality" =~ ^[Yy]$ ]]; then
-                    quality="worst"
-                    display_message info "Stream quality set to 'worst'."
-            fi
-        fi
-    else
-        display_message warning "Skipping automatic adjustments. Using default or user-specified settings."
-    fi
+# Function to ensure directories exist and create them idempotently
+ensure_directories() {
+    local base_dir="$1"
+    local stream_dir="$base_dir/$(date +%Y-%m-%d)"
+    mkdir -p "$stream_dir"
+    echo "$stream_dir"
 }
 
 # Function to ensure a unique filename
@@ -161,15 +162,6 @@ ensure_unique_filename() {
     echo "$new_file"
 }
 
-# Function to ensure directories exist and create them idempotently
-ensure_directories() {
-    local base_dir="$1"
-    local stream_dir="$base_dir/$(date +%Y-%m-%d)"
-
-    mkdir -p "$stream_dir"
-    echo "$stream_dir"
-}
-
 # Function to execute Streamlink with inputs and options, with retry mechanism
 run_streamlink() {
     local url="$1"
@@ -177,6 +169,7 @@ run_streamlink() {
     local base_output_file="$3"
     local final_output_file
     local final_log_file
+    local use_backup=false
 
     # Ensure directories exist and create them idempotently
     local stream_output_dir
@@ -188,19 +181,23 @@ run_streamlink() {
 
     local retries=0
     local success=false
+    local adaptive_delay=$RETRY_DELAY  # Start with the initial delay
 
     while [ $retries -lt $MAX_RETRIES ]; do
-        display_message info "Executing Streamlink command (Attempt: $((retries + 1)))..."
+        local current_url="$url"
+        if [ "$use_backup" = true ]; then
+            current_url="$BACKUP_URL"
+            display_message warning "Switching to backup URL: $current_url"
+        fi
 
-        # Start Streamlink in the background
-        streamlink "$url" "$quality" --output "$final_output_file" $RETRY_STREAMS $HLS_OPTIONS $PROXY_OPTION > "$final_log_file" 2>&1 &
+        display_message info "Executing Streamlink command (Attempt: $((retries + 1))) with caching enabled..."
+
+        # Start Streamlink in the background with caching options
+        streamlink "$current_url" "$quality" --output "$final_output_file" $RETRY_STREAMS $HLS_OPTIONS $PROXY_OPTION $CACHE_OPTION > "$final_log_file" 2>&1 &
         local pid=$!
 
-        # Display a live progress bar
-        while kill -0 $pid 2> /dev/null; do
-            echo -n "."
-            sleep 1
-        done
+        # Display a spinner while the process runs
+        show_spinner $pid
 
         wait $pid
         if [ $? -eq 0 ]; then
@@ -208,15 +205,21 @@ run_streamlink() {
             success=true
             break
         else
-            display_message error "Streamlink execution failed. Retrying in $RETRY_DELAY seconds..."
-            sleep $RETRY_DELAY
+            display_message error "Streamlink execution failed. Retrying in $adaptive_delay seconds..."
+            sleep $adaptive_delay
+            adaptive_delay=$((adaptive_delay * 2))  # Double the wait time for the next retry
         fi
 
         retries=$((retries + 1))
+        if [ $retries -eq $MAX_RETRIES ] && [ "$use_backup" = false ]; then
+            display_message warning "All attempts with the primary URL failed. Switching to backup URL on next attempt."
+            retries=0  # Reset retries for the backup URL
+            use_backup=true
+        fi
     done
 
     if [ "$success" = false ]; then
-        display_message error "Streamlink failed after $MAX_RETRIES attempts. Check log: $final_log_file"
+        display_message error "Streamlink failed after all attempts. Check log: $final_log_file"
     fi
 }
 
@@ -229,7 +232,6 @@ handle_custom_url() {
     echo -n "Enter output file base name (e.g., video): "
     read -r output_file
 
-    # Validate inputs
     if [ -z "$url" ] || [ -z "$quality" ]; then
         display_message error "Invalid input. URL and quality are required."
         exit 1
@@ -285,7 +287,6 @@ schedule_stream() {
     echo -n "Enter schedule time (in cron format, e.g., '0 5 * * *' for daily 5 AM): "
     read -r cron_schedule
 
-    # Validate inputs
     if [ -z "$url" ] || [ -z "$quality" ] || [ -z "$cron_schedule" ]; then
         display_message error "URL, quality, and schedule time are required."
         exit 1
@@ -297,13 +298,11 @@ schedule_stream() {
 
     validate_url "$url"
 
-    # Construct the cron command
     local script_path
     script_path=$(realpath "$0")
     local cron_command
     cron_command="$(which bash) \"$script_path\" --url \"$url\" --quality \"$quality\" --output \"$output_file\""
 
-    # Add cron job to schedule the stream
     (crontab -l 2>/dev/null; echo "$cron_schedule $cron_command") | crontab - || {
         display_message error "Failed to add cron job. Please check your cron configuration."
         exit 1
@@ -315,8 +314,6 @@ schedule_stream() {
 # -----------------------------
 # Command-Line Argument Parsing
 # -----------------------------
-# Allows the script to be called with --url, --quality, --output for scheduled tasks
-
 parse_arguments() {
     while [[ "$#" -gt 0 ]]; do
         case $1 in

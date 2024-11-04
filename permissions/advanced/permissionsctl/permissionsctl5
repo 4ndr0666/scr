@@ -48,7 +48,6 @@ HOME_DIRS=(
     "$USER_HOME/.jd"
     "$USER_HOME/.local"
     "$USER_HOME/.ssh"
-    "$USER_HOME/.Xauthority"
     "$USER_HOME/bin"
 )
 
@@ -86,7 +85,22 @@ log_action() {
         }
     fi
 
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" | tee -a "$LOG_FILE" >/dev/null
+    # Append log message to buffer
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" >> "${LOG_FILE}.buffer"
+}
+
+# --- // Flush Logs:
+flush_logs() {
+    if [ -f "${LOG_FILE}.buffer" ]; then
+        cat "${LOG_FILE}.buffer" >> "$LOG_FILE" || {
+            echo "Error: Failed to write logs to $LOG_FILE."
+            exit 1
+        }
+        rm -f "${LOG_FILE}.buffer" || {
+            echo "Warning: Failed to remove log buffer file."
+            log_action "WARNING" "Failed to remove log buffer file."
+        }
+    fi
 }
 
 # --- // Help:
@@ -123,7 +137,7 @@ install_dependencies() {
         exit 1
     fi
 
-    local dependencies=("yq" "pacutils")
+    local dependencies=("yq" "pacutils" "parallel")
     local to_install=()
 
     for dep in "${dependencies[@]}"; do
@@ -136,13 +150,13 @@ install_dependencies() {
         echo "Installing dependencies: ${to_install[*]}"
         log_action "INFO" "Installing dependencies: ${to_install[*]}"
         if [ "$package_manager" == "yay" ]; then
-            yay -S --noconfirm "${to_install[@]}" || {
+            yay -S --noconfirm --needed "${to_install[@]}" || {
                 echo "Error: Failed to install dependencies."
                 log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
                 exit 1
             }
         elif [ "$package_manager" == "pacman" ]; then
-            sudo pacman -S --noconfirm "${to_install[@]}" || {
+            sudo pacman -S --noconfirm --needed "${to_install[@]}" || {
                 echo "Error: Failed to install dependencies."
                 log_action "ERROR" "Failed to install dependencies: ${to_install[*]}"
                 exit 1
@@ -210,37 +224,6 @@ setup_cron() {
     fi
 }
 
-# --- // Progress Bar:
-show_progress() {
-    local current=$1
-    local total=$2
-    local width=50  # Width of the progress bar
-    local progress=$(( current * width / total ))
-    local percent=$(( current * 100 / total ))
-    local bar=""
-
-    # Check terminal capability
-    if tput colors >/dev/null 2>&1; then
-        use_colors=true
-    else
-        use_colors=false
-    fi
-
-    for ((i=0; i<progress; i++)); do
-        bar+="#"
-    done
-    for ((i=progress; i<width; i++)); do
-        bar+=" "
-    done
-
-    if [ "$use_colors" == true ]; then
-        # Move cursor to the beginning of the line
-        printf "\r\033[1;36m[%s] %d%%\033[0m" "$bar" "$percent"
-    else
-        printf "\r[%s] %d%%" "$bar" "$percent"
-    fi
-}
-
 # --- // Generate Permissions Policy:
 generate_permissions_policy() {
     echo "Generating permissions policy..."
@@ -271,83 +254,49 @@ generate_permissions_policy() {
     echo "files:" >> "$temp_policy"
     echo "" > "$file_entries_file"
 
-    # Collect all paths to be processed
-    local all_paths=()
+    # Export necessary functions and variables for parallel
+    export -f add_path_to_policy
+    export -f yaml_escape
+    export -f log_action
+    export dir_entries_file
+    export file_entries_file
+    export temp_policy
+    export LOG_FILE
 
     # Process system directories
-    for dir in "${SYSTEM_DIRS[@]}"; do
-        if [ -d "$dir" ]; then
-            local package_manager
-            package_manager=$(detect_package_manager)
-            if [ "$package_manager" == "pacman" ]; then
-                local package_paths
-                package_paths=$(sudo pacman -Ql | awk '{print $2}' | grep "^$dir" | sort -u) || {
-                    echo "Error: Failed to list package paths for $dir."
-                    log_action "ERROR" "Failed to list package paths for $dir."
-                    exit 1
-                }
-                while IFS= read -r path; do
-                    if [ -e "$path" ]; then
-                        all_paths+=("$path")
-                    fi
-                done <<< "$package_paths"
-            elif [ "$package_manager" == "yay" ]; then
-                local package_paths
-                package_paths=$(yay -Ql | awk '{print $2}' | grep "^$dir" | sort -u) || {
-                    echo "Error: Failed to list package paths for $dir."
-                    log_action "ERROR" "Failed to list package paths for $dir."
-                    exit 1
-                }
-                while IFS= read -r path; do
-                    if [ -e "$path" ]; then
-                        all_paths+=("$path")
-                    fi
-                done <<< "$package_paths"
+    {
+        for dir in "${SYSTEM_DIRS[@]}"; do
+            if [ -d "$dir" ]; then
+                package_manager=$(detect_package_manager)
+                if [ "$package_manager" == "pacman" ]; then
+                    sudo pacman -Ql | awk '{print $2}' | grep "^$dir" || {
+                        echo "Error: Failed to list package paths for $dir."
+                        log_action "ERROR" "Failed to list package paths for $dir."
+                    }
+                elif [ "$package_manager" == "yay" ]; then
+                    yay -Ql | awk '{print $2}' | grep "^$dir" || {
+                        echo "Error: Failed to list package paths for $dir."
+                        log_action "ERROR" "Failed to list package paths for $dir."
+                    }
+                fi
             fi
-        fi
-    done
+        done
+    } | sort -u | parallel --jobs 4 "add_path_to_policy '{}' '$dir_entries_file' '$file_entries_file'"
 
     # Process important home directories
-    for dir in "${HOME_DIRS[@]}"; do
-        if [ -e "$dir" ]; then
-            local home_paths
-            home_paths=$(find "$dir" -type f -o -type d -P 2>/dev/null | sort -u) || {
-                echo "Warning: Failed to find paths in $dir."
-                log_action "WARNING" "Failed to find paths in $dir."
-                continue
-            }
-            while IFS= read -r path; do
-                if [ -e "$path" ]; then
-                    all_paths+=("$path")
-                fi
-            done <<< "$home_paths"
-        fi
-    done
-
-    # Remove duplicate paths
-    IFS=$'\n' all_paths=($(sort -u <<<"${all_paths[*]}"))
-    unset IFS
-
-    local total_paths=${#all_paths[@]}
-    echo "Total paths to process: $total_paths"
-    log_action "INFO" "Total paths to process: $total_paths"
-
-    # Check for excessive number of paths
-    local max_paths=100000
-    if [ "$total_paths" -gt "$max_paths" ]; then
-        echo "Error: Number of paths ($total_paths) exceeds the maximum allowed ($max_paths)."
-        log_action "ERROR" "Number of paths ($total_paths) exceeds the maximum allowed ($max_paths)."
-        exit 1
-    fi
-
-    local current_path=0
-
-    # Process all paths and update progress bar
-    for path in "${all_paths[@]}"; do
-        current_path=$((current_path + 1))
-        add_path_to_policy "$path" "$dir_entries_file" "$file_entries_file"
-        show_progress "$current_path" "$total_paths"
-    done
+    {
+        for dir in "${HOME_DIRS[@]}"; do
+            if [ -d "$dir" ]; then
+                find -P "$dir" \( -type f -o -type d \) 2>/dev/null || {
+                    echo "Warning: Failed to find paths in $dir."
+                    log_action "WARNING" "Failed to find paths in $dir."
+                }
+            else
+                echo "Warning: Directory $dir does not exist."
+                log_action "WARNING" "Directory $dir does not exist."
+            fi
+        done
+    } | sort -u | parallel --jobs 4 "add_path_to_policy '{}' '$dir_entries_file' '$file_entries_file'"
 
     # Append the directory and file entries to the policy file
     cat "$dir_entries_file" >> "$temp_policy" || {
@@ -395,8 +344,9 @@ generate_permissions_policy() {
         exit 1
     }
 
-    # Move to a new line after progress bar
-    echo ""
+    # Flush any remaining logs
+    flush_logs
+
     echo "Permissions policy generated at $CONFIG_FILE"
     log_action "INFO" "Permissions policy generated at $CONFIG_FILE"
 }
@@ -407,6 +357,12 @@ add_path_to_policy() {
     local dir_entries_file="$2"
     local file_entries_file="$3"
     local owner group perms
+
+    if [ ! -e "$path" ]; then
+        echo "Warning: Path $path does not exist."
+        log_action "WARNING" "Path $path does not exist."
+        return
+    fi
 
     owner=$(stat -c '%U' "$path") || {
         echo "Warning: Unable to determine owner for $path."
@@ -431,42 +387,18 @@ add_path_to_policy() {
             log_action "ERROR" "Failed to add directory entry for $path."
             exit 1
         }
-        echo "    owner: '$owner'" >> "$dir_entries_file" || {
-            echo "Error: Failed to add owner for $path."
-            log_action "ERROR" "Failed to add owner for $path."
-            exit 1
-        }
-        echo "    group: '$group'" >> "$dir_entries_file" || {
-            echo "Error: Failed to add group for $path."
-            log_action "ERROR" "Failed to add group for $path."
-            exit 1
-        }
-        echo "    permissions: '$perms'" >> "$dir_entries_file" || {
-            echo "Error: Failed to add permissions for $path."
-            log_action "ERROR" "Failed to add permissions for $path."
-            exit 1
-        }
+        echo "    owner: '$owner'" >> "$dir_entries_file"
+        echo "    group: '$group'" >> "$dir_entries_file"
+        echo "    permissions: '$perms'" >> "$dir_entries_file"
     elif [ -f "$path" ]; then
         echo "  - path: $path_escaped" >> "$file_entries_file" || {
             echo "Error: Failed to add file entry for $path."
             log_action "ERROR" "Failed to add file entry for $path."
             exit 1
         }
-        echo "    owner: '$owner'" >> "$file_entries_file" || {
-            echo "Error: Failed to add owner for $path."
-            log_action "ERROR" "Failed to add owner for $path."
-            exit 1
-        }
-        echo "    group: '$group'" >> "$file_entries_file" || {
-            echo "Error: Failed to add group for $path."
-            log_action "ERROR" "Failed to add group for $path."
-            exit 1
-        }
-        echo "    permissions: '$perms'" >> "$file_entries_file" || {
-            echo "Error: Failed to add permissions for $path."
-            log_action "ERROR" "Failed to add permissions for $path."
-            exit 1
-        }
+        echo "    owner: '$owner'" >> "$file_entries_file"
+        echo "    group: '$group'" >> "$file_entries_file"
+        echo "    permissions: '$perms'" >> "$file_entries_file"
     fi
 }
 
@@ -503,19 +435,27 @@ backup_permissions() {
         exit 1
     }
 
-    yq e '.directories[].path, .files[].path' "$CONFIG_FILE" | while IFS= read -r path; do
-        if [ -e "$path" ]; then
-            sudo getfacl -pR "$path" > "$backup_dir/$(echo "$path" | tr '/' '_').acl" || {
-                echo "Error: Failed to backup permissions for $path."
-                log_action "ERROR" "Failed to backup permissions for $path."
-                exit 1
-            }
-        else
-            echo "Warning: $path does not exist. Skipping backup."
-            log_action "WARNING" "$path does not exist. Skipping backup."
-        fi
-    done
+    # Export functions for parallel
+    export -f log_action
+    export -f backup_permissions
 
+    yq e '.directories[].path, .files[].path' "$CONFIG_FILE" | parallel --jobs 4 '
+    path={}
+    if [ -e "$path" ]; then
+        # Replace "/" with "_" to create a valid filename
+        filename=$(echo "$path" | tr "/" "_")
+        sudo getfacl -pR "$path" > "'"$backup_dir"'"/"$filename".acl || {
+            echo "Error: Failed to backup permissions for $path."
+            log_action "ERROR" "Failed to backup permissions for $path."
+            exit 1
+        }
+    else
+        echo "Warning: $path does not exist. Skipping backup."
+        log_action "WARNING" "$path does not exist. Skipping backup."
+    fi
+    '
+
+    flush_logs
     log_action "INFO" "Permissions backed up to $backup_dir"
     echo "Permissions backed up to $backup_dir"
 }
@@ -524,73 +464,55 @@ backup_permissions() {
 audit_permissions() {
     local discrepancies=0
 
-    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
-        if [ -d "$path" ]; then
-            local curr_owner curr_group curr_perms
-            curr_owner=$(stat -c '%U' "$path") || {
-                echo "Warning: Unable to determine owner for $path."
-                log_action "WARNING" "Unable to determine owner for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
-            curr_group=$(stat -c '%G' "$path") || {
-                echo "Warning: Unable to determine group for $path."
-                log_action "WARNING" "Unable to determine group for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
-            curr_perms=$(stat -c '%a' "$path") || {
-                echo "Warning: Unable to determine permissions for $path."
-                log_action "WARNING" "Unable to determine permissions for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
+    # Export functions and variables for parallel
+    export -f log_action
+    export -f audit_permissions
 
-            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
-                echo "Discrepancy found in $path"
-                log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
-                discrepancies=$((discrepancies + 1))
-            fi
-        else
-            echo "Warning: Directory $path does not exist."
-            log_action "WARNING" "Directory $path does not exist."
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | parallel --jobs 4 '
+    path=$(echo "{}" | awk "{print \$1}")
+    owner=$(echo "{}" | awk "{print \$2}")
+    group=$(echo "{}" | awk "{print \$3}")
+    perms=$(echo "{}" | awk "{print \$4}")
+
+    if [ -d "$path" ]; then
+        curr_owner=$(stat -c "%U" "$path")
+        curr_group=$(stat -c "%G" "$path")
+        curr_perms=$(stat -c "%a" "$path")
+
+        if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+            echo "Discrepancy found in $path"
+            log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
             discrepancies=$((discrepancies + 1))
         fi
-    done
+    else
+        echo "Warning: Directory $path does not exist."
+        log_action "WARNING" "Directory $path does not exist."
+        discrepancies=$((discrepancies + 1))
+    fi
+    '
 
-    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
-        if [ -f "$path" ]; then
-            local curr_owner curr_group curr_perms
-            curr_owner=$(stat -c '%U' "$path") || {
-                echo "Warning: Unable to determine owner for $path."
-                log_action "WARNING" "Unable to determine owner for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
-            curr_group=$(stat -c '%G' "$path") || {
-                echo "Warning: Unable to determine group for $path."
-                log_action "WARNING" "Unable to determine group for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
-            curr_perms=$(stat -c '%a' "$path") || {
-                echo "Warning: Unable to determine permissions for $path."
-                log_action "WARNING" "Unable to determine permissions for $path."
-                discrepancies=$((discrepancies + 1))
-                continue
-            }
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | parallel --jobs 4 '
+    path=$(echo "{}" | awk "{print \$1}")
+    owner=$(echo "{}" | awk "{print \$2}")
+    group=$(echo "{}" | awk "{print \$3}")
+    perms=$(echo "{}" | awk "{print \$4}")
 
-            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
-                echo "Discrepancy found in $path"
-                log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
-                discrepancies=$((discrepancies + 1))
-            fi
-        else
-            echo "Warning: File $path does not exist."
-            log_action "WARNING" "File $path does not exist."
+    if [ -f "$path" ]; then
+        curr_owner=$(stat -c "%U" "$path")
+        curr_group=$(stat -c "%G" "$path")
+        curr_perms=$(stat -c "%a" "$path")
+
+        if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ] || [ "$curr_perms" != "$perms" ]; then
+            echo "Discrepancy found in $path"
+            log_action "WARNING" "Discrepancy found in $path: Expected owner=$owner, group=$group, perms=$perms | Found owner=$curr_owner, group=$curr_group, perms=$curr_perms."
             discrepancies=$((discrepancies + 1))
         fi
-    done
+    else
+        echo "Warning: File $path does not exist."
+        log_action "WARNING" "File $path does not exist."
+        discrepancies=$((discrepancies + 1))
+    fi
+    '
 
     if [ "$discrepancies" -eq 0 ]; then
         echo "All permissions and ownerships are as per the policy."
@@ -605,93 +527,75 @@ audit_permissions() {
 fix_permissions() {
     local changes=0
 
-    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
-        if [ -d "$path" ]; then
-            local curr_owner curr_group curr_perms
-            curr_owner=$(stat -c '%U' "$path") || {
-                echo "Warning: Unable to determine owner for $path."
-                log_action "WARNING" "Unable to determine owner for $path."
-                continue
-            }
-            curr_group=$(stat -c '%G' "$path") || {
-                echo "Warning: Unable to determine group for $path."
-                log_action "WARNING" "Unable to determine group for $path."
-                continue
-            }
-            curr_perms=$(stat -c '%a' "$path") || {
-                echo "Warning: Unable to determine permissions for $path."
-                log_action "WARNING" "Unable to determine permissions for $path."
-                continue
-            }
+    # Export functions and variables for parallel
+    export -f log_action
+    export -f fix_permissions
 
-            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
-                sudo chown "$owner:$group" "$path" || {
-                    echo "Error: Failed to change owner/group of $path."
-                    log_action "ERROR" "Failed to change owner/group of $path."
-                    exit 1
-                }
-                log_action "INFO" "Changed owner/group of $path to $owner:$group"
-                changes=$((changes + 1))
-            fi
+    yq e '.directories[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | parallel --jobs 4 '
+    path=$(echo "{}" | awk "{print \$1}")
+    owner=$(echo "{}" | awk "{print \$2}")
+    group=$(echo "{}" | awk "{print \$3}")
+    perms=$(echo "{}" | awk "{print \$4}")
 
-            if [ "$curr_perms" != "$perms" ]; then
-                sudo chmod "$perms" "$path" || {
-                    echo "Error: Failed to change permissions of $path."
-                    log_action "ERROR" "Failed to change permissions of $path."
-                    exit 1
-                }
-                log_action "INFO" "Changed permissions of $path to $perms"
-                changes=$((changes + 1))
-            fi
-        else
-            echo "Warning: Directory $path does not exist."
-            log_action "WARNING" "Directory $path does not exist."
+    if [ -d "$path" ]; then
+        curr_owner=$(stat -c "%U" "$path")
+        curr_group=$(stat -c "%G" "$path")
+        curr_perms=$(stat -c "%a" "$path")
+
+        if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+            sudo chown "$owner:$group" "$path" || {
+                echo "Error: Failed to change owner/group of $path."
+                log_action "ERROR" "Failed to change owner/group of $path."
+                exit 1
+            }
+            log_action "INFO" "Changed owner/group of $path to $owner:$group"
+            changes=$((changes + 1))
         fi
-    done
 
-    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | while IFS=$'\t' read -r path owner group perms; do
-        if [ -f "$path" ]; then
-            local curr_owner curr_group curr_perms
-            curr_owner=$(stat -c '%U' "$path") || {
-                echo "Warning: Unable to determine owner for $path."
-                log_action "WARNING" "Unable to determine owner for $path."
-                continue
+        if [ "$curr_perms" != "$perms" ]; then
+            sudo chmod "$perms" "$path" || {
+                echo "Error: Failed to change permissions of $path."
+                log_action "ERROR" "Failed to change permissions of $path."
+                exit 1
             }
-            curr_group=$(stat -c '%G' "$path") || {
-                echo "Warning: Unable to determine group for $path."
-                log_action "WARNING" "Unable to determine group for $path."
-                continue
-            }
-            curr_perms=$(stat -c '%a' "$path") || {
-                echo "Warning: Unable to determine permissions for $path."
-                log_action "WARNING" "Unable to determine permissions for $path."
-                continue
-            }
-
-            if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
-                sudo chown "$owner:$group" "$path" || {
-                    echo "Error: Failed to change owner/group of $path."
-                    log_action "ERROR" "Failed to change owner/group of $path."
-                    exit 1
-                }
-                log_action "INFO" "Changed owner/group of $path to $owner:$group"
-                changes=$((changes + 1))
-            fi
-
-            if [ "$curr_perms" != "$perms" ]; then
-                sudo chmod "$perms" "$path" || {
-                    echo "Error: Failed to change permissions of $path."
-                    log_action "ERROR" "Failed to change permissions of $path."
-                    exit 1
-                }
-                log_action "INFO" "Changed permissions of $path to $perms"
-                changes=$((changes + 1))
-            fi
-        else
-            echo "Warning: File $path does not exist."
-            log_action "WARNING" "File $path does not exist."
+            log_action "INFO" "Changed permissions of $path to $perms"
+            changes=$((changes + 1))
         fi
-    done
+    fi
+    '
+
+    yq e '.files[] | [.path, .owner, .group, .permissions] | @tsv' "$CONFIG_FILE" | parallel --jobs 4 '
+    path=$(echo "{}" | awk "{print \$1}")
+    owner=$(echo "{}" | awk "{print \$2}")
+    group=$(echo "{}" | awk "{print \$3}")
+    perms=$(echo "{}" | awk "{print \$4}")
+
+    if [ -f "$path" ]; then
+        curr_owner=$(stat -c "%U" "$path")
+        curr_group=$(stat -c "%G" "$path")
+        curr_perms=$(stat -c "%a" "$path")
+
+        if [ "$curr_owner" != "$owner" ] || [ "$curr_group" != "$group" ]; then
+            sudo chown "$owner:$group" "$path" || {
+                echo "Error: Failed to change owner/group of $path."
+                log_action "ERROR" "Failed to change owner/group of $path."
+                exit 1
+            }
+            log_action "INFO" "Changed owner/group of $path to $owner:$group"
+            changes=$((changes + 1))
+        fi
+
+        if [ "$curr_perms" != "$perms" ]; then
+            sudo chmod "$perms" "$path" || {
+                echo "Error: Failed to change permissions of $path."
+                log_action "ERROR" "Failed to change permissions of $path."
+                exit 1
+            }
+            log_action "INFO" "Changed permissions of $path to $perms"
+            changes=$((changes + 1))
+        fi
+    fi
+    '
 
     if [ "$changes" -eq 0 ]; then
         echo "No changes were necessary."
@@ -743,7 +647,6 @@ main() {
         "$USER_HOME/.jd"
         "$USER_HOME/.local"
         "$USER_HOME/.ssh"
-        "$USER_HOME/.Xauthority"
         "$USER_HOME/bin"
     )
 
@@ -753,18 +656,22 @@ main() {
             setup_directories
             setup_cron
             generate_permissions_policy
+            flush_logs
             ;;
         backup)
             load_policy
             backup_permissions
+            flush_logs
             ;;
         audit)
             load_policy
             audit_permissions
+            flush_logs
             ;;
         fix)
             load_policy
             fix_permissions
+            flush_logs
             ;;
         help)
             print_help
