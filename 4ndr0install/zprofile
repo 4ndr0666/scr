@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 # File: /home/$USER/.config/zsh/.zprofile
 # Author: 4ndr0666
 # Edited: 10-19-24
@@ -8,11 +7,9 @@
 static_dirs=(
 #    "$HOME/.npm-global/bin"
 #    "$HOME/.gem/ruby/2.7.0/bin"  # Adjust Ruby version as needed
-#    "$HOME/.pyenv/bin"
-#    "$HOME/.pyenv/shims"
 #    "$HOME/.config/yarn/global/node_modules/.bin"
-    "$HOME/.local/share/go/"
-    "/usr/local/go/bin"
+    "$HOME/.local/share/go"
+#    "/usr/local/go/bin"
 #    "${JAVA_HOME:-/usr/lib/jvm/default/bin}"  # Use JAVA_HOME if set, else default
 #    "$HOME/.rvm/bin"
 #    "$HOME/.virtualenvs"
@@ -26,26 +23,22 @@ static_dirs=(
     "/usr/local/sbin"
     "/usr/bin"
 )
-
 cache_file="$HOME/.cache/dynamic_dirs.list"
 
 # Generate and cache directory list if cache doesn't exist or is outdated
 if [[ ! -f "$cache_file" || /Nas/Build/git/syncing/scr/ -nt "$cache_file" ]]; then
     echo "Updating dynamic directories cache..."
+
     find /Nas/Build/git/syncing/scr/ -type d \
         \( -name '.git' -o -name '.github' \) -prune -o -type d -print > "$cache_file"
 fi
 
 #$(find /Nas/Build/git/syncing/scr -type d | paste -sd ':' -)  # FIND
-#(/Nas/Build/git/syncing/scr/**/*(/))                          # ZSH GLOBBING 
-
-# Load dynamic directories from cache
+#(/Nas/Build/git/syncing/scr/**/*(/))                          # ZSH GLOBBING
 dynamic_dirs=($(/usr/bin/cat "$cache_file"))
 
-# Combine static and dynamic directories
 all_dirs=("${static_dirs[@]}" "${dynamic_dirs[@]}")
 
-# Ensure PATH contains unique entries
 typeset -U PATH
 
 # Iterate over all directories and add those with executables to PATH
@@ -57,10 +50,8 @@ for dir in "${all_dirs[@]}"; do
         # echo "Added to PATH: $dir"
     fi
 done
-
-# Export the updated PATH
 export PATH
-unsetopt PROMPT_SP 2>/dev/null
+#unsetopt PROMPT_SP 2>/dev/null
 
 # ======================== // DEFAULT_PROGRAMS //
 export MICRO_TRUECOLOR=1
@@ -120,8 +111,9 @@ export SQLITE_HISTORY="$XDG_DATA_HOME"/sqlite_history
 # export KODI_DATA="$XDG_DATA_HOME/kodi"
 export ZDOTDIR="$HOME"/.config/zsh/
 export DICS=/usr/share/stardict/dic/
-export AUR_DIR=/home/build
+export AUR_DIR="$XDG_DATA_HOME/aur_build"
 export TEXMFVAR="$XDG_CACHE_HOME"/texlive/texmf-var
+#export ELECTRON_MIRROR="https://npm.taobao.org/mirrors/electron/"
 export RUSTUP_HOME="$XDG_DATA_HOME"/rustup
 export RBENV_ROOT="$XDG_DATA_HOME"/rbenv
 export PARALLEL_HOME="$XDG_CONFIG_HOME"/parallel
@@ -134,14 +126,16 @@ export GEM_HOME="$XDG_DATA_HOME"/gem
 export DOTNET_CLI_HOME="$XDG_DATA_HOME"/dotnet
 export HISTFILE="$XDG_STATE_HOME"/zsh/history
 export HISTFILE="${XDG_STATE_HOME}"/bash/history
+#export LIBVA_DRIVER_NAME=mesa
+#export LIBVA_DISPLAY=wayland
 
 #if [ ! -d "$HISTFILE" ]; then
 #    mkdir -p "$HISTFILE"
 #fi
 
-mkdir -p "$WINEPREFIX" "$CARGO_HOME" "$GOPATH" "$GOMODCACHE"
+mkdir -p "$WINEPREFIX" "$CARGO_HOME" "$GOPATH" "$GOMODCACHE" "$XDG_DATA_HOME/lib" "$XDG_DATA_HOME/aur_build" "$XDG_DATA_HOME/stardict/dic/" "$XDG_DATA_HOME/bin" "$XDG_DATA_HOME/go/bin" "$XDG_DATA_HOME/cargo/bin" "$XDG_CONFIG_HOME/nvm"
 
-# ================================================ // X11:
+# ================================================ // X11_ENV //
 #export GTK2_RC_FILES="$HOME/.gtkrc-2.0"
 # --- OPENBOX:
 # export XGD_CURRENT_DESKTOP='openbox'
@@ -168,7 +162,8 @@ mkdir -p "$WINEPREFIX" "$CARGO_HOME" "$GOPATH" "$GOMODCACHE"
 #source <(fzf --zsh)
 
 # ======================================= // LIBRARY_AND_SECURITY //
-export LD_LIBRARY_PATH="/home/andro/ffmpeg_build/lib:$HOME/.local/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$XDG_DATA_HOME/lib:/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 export SUDO_ASKPASS="/usr/bin/pinentry-dmenu"
 # export XAUTHORITY="$XDG_RUNTIME_DIR/Xauthority"
 
@@ -185,13 +180,12 @@ chmod 700 "$GNUPGHOME"
 
 # ========================================== // Pager:
 # --- // Bat:
-export MANPAGER="sh -c 'col -bx | bat -l man -p | less -R'"
+export MANPAGER="batman"
 
 # --- // Fzf:
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-
+#[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 bindkey '^R' fzf-history-widget
-
+export FZF_DEFAULT_COMMAND='fd --type f'              # Default cmd to use in tty
 export FZF_DEFAULT_OPTS="
   --layout=reverse
   --height=40%
@@ -200,11 +194,13 @@ export FZF_DEFAULT_OPTS="
   --cycle
   --inline-info
   --tiebreak=index
-  --preview='bat --style=numbers --color=always --line-range :500 {} | head -n 100'
-  --preview-window='right:50%'
+  --preview='bat --color=always --line-range :500 {}'
+  --preview-window='~3'
   --color=bg+:-1,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
   --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
   --color=marker:#f5e0dc,fg+:#a6e3a1,prompt:#cba6f7,hl+:#f38ba8"
+
+#  --preview-window='right:50%'
 
 #export FZF_DEFAULT_OPTS="
 #  --layout=reverse
