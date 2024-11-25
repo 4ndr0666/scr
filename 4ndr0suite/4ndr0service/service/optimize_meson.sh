@@ -199,7 +199,8 @@ backup_meson_configuration() {
     if [[ -d "$MESON_HOME" ]]; then
         echo "Backing up Meson configuration..."
 
-        local backup_dir="$XDG_STATE_HOME/backups/meson_backup_$(date +%Y%m%d)"
+        local backup_dir
+        backup_dir="$XDG_STATE_HOME/backups/meson_backup_$(date +%Y%m%d)"
         mkdir -p "$backup_dir"
         cp -r "$MESON_HOME" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $MESON_HOME"
 
@@ -213,4 +214,38 @@ backup_meson_configuration() {
 handle_error() {
     echo "Error: $1" >&2
     exit 1
+}
+
+# Helper function: Check if a directory is writable
+check_directory_writable() {
+    local dir_path=$1
+
+    if [ -w "$dir_path" ]; then
+        echo "Directory $dir_path is writable."
+    else
+        echo "Error: Directory $dir_path is not writable."
+        exit 1
+    fi
+}
+
+# Helper function: Consolidate contents from source to target directory
+consolidate_directories() {
+    local source_dir=$1
+    local target_dir=$2
+
+    if [ -d "$source_dir" ]; then
+        rsync -av "$source_dir/" "$target_dir/" || echo "Warning: Failed to consolidate $source_dir to $target_dir."
+        echo "Consolidated directories from $source_dir to $target_dir."
+    else
+        echo "Source directory $source_dir does not exist. Skipping consolidation."
+    fi
+}
+
+# Helper function: Remove empty directories
+remove_empty_directories() {
+    local dirs=("$@")
+    for dir in "${dirs[@]}"; do
+        find "$dir" -type d -empty -delete
+        echo "Removed empty directories in $dir."
+    done
 }

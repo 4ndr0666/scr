@@ -71,6 +71,7 @@ install_cargo() {
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     export CARGO_HOME="$XDG_DATA_HOME/cargo"
     export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
+    # shellcheck source=/dev/null
     source "$CARGO_HOME/env"
 }
 
@@ -117,10 +118,44 @@ configure_cargo_binary_cache() {
 backup_cargo_configuration() {
     echo "Backing up Cargo and Rust configuration..."
 
-    local backup_dir="$XDG_STATE_HOME/backups/cargo_backup_$(date +%Y%m%d)"
+    local backup_dir
+    backup_dir="$XDG_STATE_HOME/backups/cargo_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
     cp -r "$CARGO_HOME" "$backup_dir"
     cp -r "$RUSTUP_HOME" "$backup_dir"
 
     echo "Backup completed: $backup_dir"
+}
+
+# Helper function: Check if a directory is writable
+check_directory_writable() {
+    local dir_path=$1
+
+    if [ -w "$dir_path" ]; then
+        echo "Directory $dir_path is writable."
+    else
+        echo "Error: Directory $dir_path is not writable."
+        exit 1
+    fi
+}
+
+# Helper function: Consolidate contents from source to target directory
+consolidate_directories() {
+    local source_dir=$1
+    local target_dir=$2
+
+    if [ -d "$source_dir" ]; then
+        rsync -av "$source_dir/" "$target_dir/" || echo "Warning: Failed to consolidate $source_dir to $target_dir."
+        echo "Consolidated directories from $source_dir to $target_dir."
+    else
+        echo "Source directory $source_dir does not exist. Skipping consolidation."
+    fi
+}
+
+# Helper function: Remove empty directories
+remove_empty_directories() {
+    local dir_path=$1
+
+    find "$dir_path" -type d -empty -delete
+    echo "Removed empty directories in $dir_path."
 }

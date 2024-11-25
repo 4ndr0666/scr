@@ -1,0 +1,110 @@
+#!/bin/bash
+# File: controller.sh
+# Author: 4ndr0666
+# Edited: 11-24-24
+# Description: Central controller for the 4ndr0service Suite.
+
+# Function to determine the absolute path of the calling script without changing the shell's directory
+pkg_path() {
+    local script_dir
+    script_dir=$(dirname "${BASH_SOURCE[0]}")
+    # Resolve to an absolute path without changing the current directory
+    (cd "$script_dir" && pwd)
+}
+
+# Log function
+log() {
+    local message="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+}
+
+# Function to source all service scripts
+source_all_services() {
+    local services_dir
+    services_dir="$(pkg_path)/service/"
+    
+    if [[ ! -d "$services_dir" ]]; then
+        log "Services directory '$services_dir' does not exist. Exiting."
+        exit 1
+    fi
+
+    for script in "$services_dir"optimize_*.sh; do
+        if [[ -f "$script" ]]; then
+            source "$script" || { log "Failed to source $script"; }
+            log "Sourced service script: '$script'"
+        fi
+    done
+}
+
+# Export necessary functions for subshells
+export -f log
+export -f handle_error
+export -f optimize_service
+export -f main_controller
+export -f create_directory_if_not_exists
+export -f check_directory_writable
+export -f backup_settings
+export -f clean_old_backups
+export -f modify_settings
+export -f source_all_services
+export -f optimize_cargo_service
+export -f optimize_db_tools_service
+export -f optimize_electron_service
+export -f optimize_go_service
+export -f optimize_meson_service
+export -f optimize_node_service
+export -f optimize_nvm_service
+export -f optimize_ruby_service
+export -f optimize_rust_tooling_service
+export -f optimize_venv_service
+
+# Source settings.sh
+if [[ -f "$(pkg_path)/settings.sh" ]]; then
+    source "$(pkg_path)/settings.sh" || { log "Failed to source settings.sh"; exit 1; }
+else
+    log "Settings script not found at '$(pkg_path)/settings.sh'. Exiting."
+    exit 1
+fi
+
+# Source settings_functions.sh
+if [[ -f "$(pkg_path)/functions/settings_functions.sh" ]]; then
+    source "$(pkg_path)/functions/settings_functions.sh" || { log "Failed to source settings_functions.sh"; exit 1; }
+    log "Sourced settings_functions.sh"
+else
+    log "Settings functions script not found at '$(pkg_path)/functions/settings_functions.sh'. Exiting."
+    exit 1
+fi
+
+# Source all service scripts
+source_all_services
+
+# Source views based on user interface
+source_views() {
+    case "$USER_INTERFACE" in
+        cli)
+            local cli_script="$(pkg_path)/view/cli.sh"
+            if [[ -f "$cli_script" ]]; then
+                source "$cli_script" || { log "Failed to source $cli_script"; }
+            else
+                log "Controller script not found at '$cli_script'. Exiting."
+                exit 1
+            fi
+            ;;
+        dialog)
+            local dialog_script="$(pkg_path)/view/dialog.sh"
+            if [[ -f "$dialog_script" ]]; then
+                source "$dialog_script" || { log "Failed to source $dialog_script"; }
+            else
+                log "Dialog script not found at '$dialog_script'. Exiting."
+                exit 1
+            fi
+            ;;
+        *)
+            log "Unknown USER_INTERFACE: '$USER_INTERFACE'. Exiting."
+            exit 1
+            ;;
+    esac
+}
+
+# Call the function to source views
+source_views

@@ -1,8 +1,7 @@
 #!/bin/bash
-
 # File: optimize_ruby.sh
 # Author: 4ndr0666
-# Edited: 10-20-24
+# Edited: 11-24-24
 # Description: Optimizes Ruby environment in alignment with XDG Base Directory Specifications.
 
 # Function to optimize Ruby environment
@@ -74,12 +73,16 @@ function optimize_ruby_service() {
 # Helper function to install Ruby using multiple package managers
 install_ruby() {
     if command -v pacman &> /dev/null; then
+        echo "Installing Ruby using pacman..."
         sudo pacman -S --noconfirm ruby || handle_error "Failed to install Ruby with pacman."
     elif command -v apt-get &> /dev/null; then
-        sudo apt-get install -y ruby-full || handle_error "Failed to install Ruby with apt-get."
+        echo "Installing Ruby using apt-get..."
+        sudo apt-get update && sudo apt-get install -y ruby-full || handle_error "Failed to install Ruby with apt-get."
     elif command -v dnf &> /dev/null; then
+        echo "Installing Ruby using dnf..."
         sudo dnf install -y ruby || handle_error "Failed to install Ruby with dnf."
     elif command -v zypper &> /dev/null; then
+        echo "Installing Ruby using zypper..."
         sudo zypper install -y ruby || handle_error "Failed to install Ruby with zypper."
     else
         echo "Unsupported package manager. Please install Ruby manually."
@@ -146,7 +149,7 @@ ensure_bundler_config() {
 
 # Helper function to ensure RubyGems configuration is correct
 ensure_rubygems_config() {
-    gem sources --add https://rubygems.org/ --remove https://rubygems.org/
+    gem sources --add https://rubygems.org/ --remove https://rubygems.org/ 2>/dev/null
     echo "Ensuring RubyGems source is set correctly."
 }
 
@@ -186,3 +189,5 @@ remove_empty_directories() {
         echo "Removed empty directories in $dir."
     done
 }
+
+# The controller script will call optimize_ruby_service as needed, so there is no need for direct invocation in this file.

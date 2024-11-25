@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # File: optimize_rust_tooling.sh
 # Author: 4ndr0666
 # Edited: 10-20-24
@@ -67,6 +66,7 @@ install_rustup() {
 
     export CARGO_HOME="$XDG_DATA_HOME/cargo"
     export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
+    # shellcheck source=/dev/null
     [ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed to source Rustup environment."
 }
 
@@ -86,7 +86,8 @@ cargo_install_or_update() {
 backup_rust_configuration() {
     echo "Backing up Rust configuration..."
 
-    local backup_dir="$XDG_STATE_HOME/backups/rust_backup_$(date +%Y%m%d)"
+    local backup_dir
+    backup_dir="$XDG_STATE_HOME/backups/rust_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
     cp -r "$CARGO_HOME" "$backup_dir/cargo/" || echo "Warning: Could not copy $CARGO_HOME"
     cp -r "$RUSTUP_HOME" "$backup_dir/rustup/" || echo "Warning: Could not copy $RUSTUP_HOME"
@@ -123,13 +124,15 @@ verify_rust_tooling_setup() {
     fi
 }
 
-# Helper function: Handle errors
+# Helper function: handle_error ---
+# Purpose: Handle errors by displaying a message and exiting.
 handle_error() {
     echo "Error: $1" >&2
     exit 1
 }
 
-# Helper function: Check if a directory is writable
+# Helper function: check_directory_writable ---
+# Purpose: Check if a directory is writable.
 check_directory_writable() {
     local dir_path=$1
 
@@ -141,7 +144,8 @@ check_directory_writable() {
     fi
 }
 
-# Helper function: Consolidate contents from source to target directory
+# Helper function: consolidate_directories ---
+# Purpose: Consolidate contents from source to target directory.
 consolidate_directories() {
     local source_dir=$1
     local target_dir=$2
@@ -154,7 +158,8 @@ consolidate_directories() {
     fi
 }
 
-# Helper function: Remove empty directories
+# Helper function: remove_empty_directories ---
+# Purpose: Remove empty directories.
 remove_empty_directories() {
     local dirs=("$@")
     for dir in "${dirs[@]}"; do
@@ -162,3 +167,5 @@ remove_empty_directories() {
         echo "Removed empty directories in $dir."
     done
 }
+
+# The controller script will call optimize_rust_tooling_service as needed, so there is no need for direct invocation in this file.

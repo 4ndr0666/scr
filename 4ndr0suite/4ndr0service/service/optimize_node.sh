@@ -111,7 +111,7 @@ manage_nvm_and_node_versions() {
 # --- Helper Function: install_nvm ---
 # Purpose: Install NVM (Node Version Manager) using curl or wget.
 install_nvm() {
-    echo "Installing NVM..."
+    echo "Installing NVM via the official NVM script..."
     if command -v curl &> /dev/null; then
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash || handle_error "Failed to install NVM using curl."
     elif command -v wget &> /dev/null; then
@@ -181,8 +181,10 @@ configure_npm_cache_and_global_directory() {
 backup_node_configuration() {
     echo "Backing up Node.js and npm configuration..."
 
-    local backup_dir="$XDG_STATE_HOME/backups/node_backup_$(date +%Y%m%d)"
+    local backup_dir
+    backup_dir="$XDG_STATE_HOME/backups/node_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
+
     rsync -av "$NVM_DIR/" "$backup_dir/nvm/" 2>/dev/null || echo "Warning: Could not copy $NVM_DIR"
     rsync -av "$XDG_DATA_HOME/npm-global/" "$backup_dir/npm-global/" 2>/dev/null || echo "Warning: Could not copy npm-global"
     rsync -av "$XDG_CACHE_HOME/npm-cache/" "$backup_dir/npm-cache/" 2>/dev/null || echo "Warning: Could not copy npm-cache"
@@ -227,22 +229,11 @@ consolidate_directories() {
 # --- Helper Function: remove_empty_directories ---
 # Purpose: Remove empty directories.
 remove_empty_directories() {
-    local dir_path=$1
-
-    find "$dir_path" -type d -empty -delete
-    echo "Removed empty directories in $dir_path."
+    local dirs=("$@")
+    for dir in "${dirs[@]}"; do
+        find "$dir" -type d -empty -delete
+        echo "Removed empty directories in $dir."
+    done
 }
 
-# --- Helper Function: npm_global_install_or_update ---
-# Purpose: Install or update a global npm package.
-npm_global_install_or_update() {
-    local package_name=$1
-
-    if npm ls -g "$package_name" --depth=0 &> /dev/null; then
-        echo "Updating $package_name..."
-        npm update -g "$package_name" || echo "Warning: Failed to update $package_name."
-    else
-        echo "Installing $package_name globally..."
-        npm install -g "$package_name" || echo "Warning: Failed to install $package_name."
-    fi
-}
+# The controller script will call optimize_node_service as needed, so there is no need for direct invocation in this file.

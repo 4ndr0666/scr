@@ -64,21 +64,36 @@ function optimize_go_service() {
 install_go() {
     if command -v pacman &> /dev/null; then
         echo "Installing Go using pacman..."
-        sudo pacman -S --noconfirm go || handle_error "Failed to install Go with pacman."
+        if sudo pacman -S --noconfirm go; then
+            echo "Go installed successfully using pacman."
+        else
+            handle_error "Failed to install Go with pacman."
+        fi
     elif command -v apt-get &> /dev/null; then
         echo "Installing Go using apt-get..."
-        sudo apt-get update && sudo apt-get install -y golang || handle_error "Failed to install Go with apt-get."
+        if sudo apt-get update && sudo apt-get install -y golang; then
+            echo "Go installed successfully using apt-get."
+        else
+            handle_error "Failed to install Go with apt-get."
+        fi
     elif command -v dnf &> /dev/null; then
         echo "Installing Go using dnf..."
-        sudo dnf install -y golang || handle_error "Failed to install Go with dnf."
+        if sudo dnf install -y golang; then
+            echo "Go installed successfully using dnf."
+        else
+            handle_error "Failed to install Go with dnf."
+        fi
     elif command -v brew &> /dev/null; then
         echo "Installing Go using Homebrew..."
-        brew install go || handle_error "Failed to install Go with Homebrew."
+        if brew install go; then
+            echo "Go installed successfully using Homebrew."
+        else
+            handle_error "Failed to install Go with Homebrew."
+        fi
     else
         echo "Error: Unsupported package manager. Please install Go manually."
         exit 1
     fi
-    echo "Go installed successfully."
 }
 
 # Function to update Go to the latest version
@@ -86,21 +101,36 @@ update_go() {
     local version=$1
     if command -v pacman &> /dev/null; then
         echo "Updating Go to version $version using pacman..."
-        sudo pacman -Syu go || handle_error "Failed to update Go with pacman."
+        if sudo pacman -Syu go; then
+            echo "Go updated successfully to version $version using pacman."
+        else
+            handle_error "Failed to update Go with pacman."
+        fi
     elif command -v apt-get &> /dev/null; then
         echo "Updating Go using apt-get..."
-        sudo apt-get update && sudo apt-get upgrade -y golang || handle_error "Failed to update Go with apt-get."
+        if sudo apt-get update && sudo apt-get upgrade -y golang; then
+            echo "Go updated successfully to version $version using apt-get."
+        else
+            handle_error "Failed to update Go with apt-get."
+        fi
     elif command -v dnf &> /dev/null; then
         echo "Updating Go using dnf..."
-        sudo dnf upgrade -y golang || handle_error "Failed to update Go with dnf."
+        if sudo dnf upgrade -y golang; then
+            echo "Go updated successfully to version $version using dnf."
+        else
+            handle_error "Failed to update Go with dnf."
+        fi
     elif command -v brew &> /dev/null; then
         echo "Updating Go using Homebrew..."
-        brew upgrade go || handle_error "Failed to update Go with Homebrew."
+        if brew upgrade go; then
+            echo "Go updated successfully to version $version using Homebrew."
+        else
+            handle_error "Failed to update Go with Homebrew."
+        fi
     else
         echo "Error: Unsupported package manager. Please update Go manually."
         exit 1
     fi
-    echo "Go updated successfully to version $version."
 }
 
 # Function to get the latest Go version
@@ -123,11 +153,16 @@ get_latest_go_version() {
 # Function to set up Go paths (GOPATH, GOROOT, GOMODCACHE)
 setup_go_paths() {
     echo "Setting up Go environment paths..."
+    local temp_goroot
+    temp_goroot=$(go env GOROOT)
+    if [[ -z "$temp_goroot" ]]; then
+        handle_error "GOROOT is not set correctly."
+    fi
+
     export GOPATH="$XDG_DATA_HOME/go"
     export GOMODCACHE="$XDG_CACHE_HOME/go/mod"
-    export GOROOT=$(go env GOROOT)  # Dynamically determine GOROOT
+    export GOROOT="$temp_goroot"
 
-    # Environment variables are already set in .zprofile, so no need to modify them here.
     echo "GOPATH: $GOPATH"
     echo "GOMODCACHE: $GOMODCACHE"
     echo "GOROOT: $GOROOT"
@@ -144,9 +179,23 @@ consolidate_go_directories() {
 # Function to install essential Go tools
 install_go_tools() {
     echo "Installing Go tools (goimports, golangci-lint, gopls)..."
-    go install golang.org/x/tools/cmd/goimports@latest
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-    go install golang.org/x/tools/gopls@latest  # Go Language Server
+    if go install golang.org/x/tools/cmd/goimports@latest; then
+        echo "goimports installed successfully."
+    else
+        echo "Warning: Failed to install goimports."
+    fi
+
+    if go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; then
+        echo "golangci-lint installed successfully."
+    else
+        echo "Warning: Failed to install golangci-lint."
+    fi
+
+    if go install golang.org/x/tools/gopls@latest; then
+        echo "gopls (Go Language Server) installed successfully."
+    else
+        echo "Warning: Failed to install gopls."
+    fi
 }
 
 # Function to manage permissions for Go directories
@@ -156,27 +205,38 @@ manage_permissions() {
     check_directory_writable "$GOMODCACHE"
 }
 
-# Function to update environment variables
-update_environment_variables() {
-    echo "Environment variables are managed in .zprofile. No action needed here."
-}
-
 # Function to manage multi-version Go support
 manage_go_versions() {
     echo "Managing multi-version Go support..."
+
     if ! command -v goenv &> /dev/null; then
         echo "Go Version Manager (goenv) is not installed. Installing goenv..."
         git clone https://github.com/syndbg/goenv.git "$XDG_DATA_HOME/goenv" || handle_error "Failed to clone goenv repository."
         export GOENV_ROOT="$XDG_DATA_HOME/goenv"
         export PATH="$GOENV_ROOT/bin:$PATH"
-        # Assuming 'add_to_shell_config' has been removed from service scripts
+
+        # Add goenv environment variables to .zprofile
         echo "export GOENV_ROOT=\"$GOENV_ROOT\"" >> "$ZDOTDIR/.zprofile"
         echo "export PATH=\"$GOENV_ROOT/bin:\$PATH\"" >> "$ZDOTDIR/.zprofile"
+
         # Source goenv
-        # shellcheck source=/dev/null
-        [ -s "$GOENV_ROOT/bin/goenv" ] && eval "$(goenv init -)" || handle_error "Failed to initialize goenv."
+        if [ -s "$GOENV_ROOT/bin/goenv" ]; then
+            if ! eval "$(goenv init -)"; then
+                handle_error "Failed to initialize goenv."
+            fi
+        else
+            handle_error "goenv script not found."
+        fi
     else
         echo "goenv is already installed."
+        # Ensure goenv is initialized
+        if [ -s "$GOENV_ROOT/bin/goenv" ]; then
+            if ! eval "$(goenv init -)"; then
+                handle_error "Failed to initialize goenv."
+            fi
+        else
+            handle_error "goenv script not found."
+        fi
     fi
 }
 
@@ -207,11 +267,11 @@ perform_final_cleanup() {
     # Remove unused files, cache, or temporary directories
     if [[ -d "$GOPATH/tmp" ]]; then
         echo "Cleaning up temporary files in $GOPATH/tmp..."
-        rm -rf "$GOPATH/tmp"
+        rm -rf "${GOPATH:?}/tmp"
     fi
     if [[ -d "$GOMODCACHE/tmp" ]]; then
         echo "Cleaning up temporary files in $GOMODCACHE/tmp..."
-        rm -rf "$GOMODCACHE/tmp"
+        rm -rf "${GOMODCACHE:?}/tmp"
     fi
     echo "Final cleanup completed."
 }
@@ -220,4 +280,37 @@ perform_final_cleanup() {
 handle_error() {
     echo "Error: $1" >&2
     exit 1
+}
+
+# Helper function: Check if a directory is writable
+check_directory_writable() {
+    local dir_path=$1
+
+    if [ -w "$dir_path" ]; then
+        echo "Directory $dir_path is writable."
+    else
+        echo "Error: Directory $dir_path is not writable."
+        exit 1
+    fi
+}
+
+# Helper function: Consolidate contents from source to target directory
+consolidate_directories() {
+    local source_dir=$1
+    local target_dir=$2
+
+    if [ -d "$source_dir" ]; then
+        rsync -av "$source_dir/" "$target_dir/" || echo "Warning: Failed to consolidate $source_dir to $target_dir."
+        echo "Consolidated directories from $source_dir to $target_dir."
+    else
+        echo "Source directory $source_dir does not exist. Skipping consolidation."
+    fi
+}
+
+# Helper function: Remove empty directories
+remove_empty_directories() {
+    local dir_path=$1
+
+    find "$dir_path" -type d -empty -delete
+    echo "Removed empty directories in $dir_path."
 }

@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # File: optimize_nvm.sh
 # Author: 4ndr0666
 # Edited: 10-20-24
@@ -38,7 +37,7 @@ function optimize_nvm_service() {
         NODE_VERSION=$(nvm current)
     fi
 
-    export PATH="$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH"
+    export PATH="$NVM_DIR/versions/node/${NODE_VERSION}/bin:$PATH"
 
     # Environment variables are already set in .zprofile, so no need to modify them here.
 
@@ -125,34 +124,59 @@ npm_global_install_or_update() {
 
     if npm ls -g "$package_name" --depth=0 &> /dev/null; then
         echo "Updating $package_name..."
-        npm update -g "$package_name" || echo "Warning: Failed to update $package_name."
+        if npm update -g "$package_name"; then
+            echo "$package_name updated successfully."
+        else
+            echo "Warning: Failed to update $package_name."
+        fi
     else
         echo "Installing $package_name globally..."
-        npm install -g "$package_name" || echo "Warning: Failed to install $package_name."
+        if npm install -g "$package_name"; then
+            echo "$package_name installed successfully."
+        else
+            echo "Warning: Failed to install $package_name."
+        fi
     fi
 }
 
-# --- Helper Function: backup_nvm_configuration ---
-# Purpose: Backup current NVM and npm configuration.
-backup_nvm_configuration() {
-    echo "Backing up NVM and npm configuration..."
+# --- Helper Function: configure_npm_cache_and_global_directory ---
+# Purpose: Configure npm cache and global directory for improved performance.
+configure_npm_cache_and_global_directory() {
+    echo "Configuring npm cache directory..."
+    npm config set cache "$XDG_CACHE_HOME/npm-cache" || handle_error "Failed to set npm cache directory."
 
-    local backup_dir="$XDG_STATE_HOME/backups/nvm_backup_$(date +%Y%m%d)"
+    echo "Configuring npm global prefix directory..."
+    npm config set prefix "$XDG_DATA_HOME/npm-global" || handle_error "Failed to set npm global prefix directory."
+
+    # Update PATH
+    export PATH="$XDG_DATA_HOME/npm-global/bin:$PATH"
+    # Environment variables are already set in .zprofile, so no need to modify them here.
+
+    echo "npm cache and global directory configured successfully."
+}
+
+# --- Helper Function: backup_node_configuration ---
+# Purpose: Backup current Node.js and npm configuration directories.
+backup_node_configuration() {
+    echo "Backing up Node.js and npm configuration..."
+
+    local backup_dir
+    backup_dir="$XDG_STATE_HOME/backups/node_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
 
     if [[ -d "$NVM_DIR" ]]; then
-        cp -r "$NVM_DIR" "$backup_dir/nvm/" || echo "Warning: Could not copy $NVM_DIR"
+        rsync -av "$NVM_DIR/" "$backup_dir/nvm/" 2>/dev/null || echo "Warning: Could not copy $NVM_DIR"
     fi
 
     local npm_prefix
     npm_prefix=$(npm config get prefix) || handle_error "Failed to get npm prefix."
 
     if [[ -d "$npm_prefix" ]]; then
-        cp -r "$npm_prefix" "$backup_dir/npm_prefix/" || echo "Warning: Could not copy npm prefix directory."
+        rsync -av "$npm_prefix/" "$backup_dir/npm-prefix/" 2>/dev/null || echo "Warning: Could not copy npm prefix directory."
     fi
 
     if [[ -d "$XDG_CACHE_HOME/npm-cache" ]]; then
-        cp -r "$XDG_CACHE_HOME/npm-cache" "$backup_dir/npm_cache/" || echo "Warning: Could not copy npm cache directory."
+        rsync -av "$XDG_CACHE_HOME/npm-cache/" "$backup_dir/npm-cache/" 2>/dev/null || echo "Warning: Could not copy npm cache directory."
     fi
 
     echo "Backup completed: $backup_dir"
@@ -190,13 +214,15 @@ verify_nvm_setup() {
     fi
 }
 
-# Helper function: Handle errors
+# --- Helper Function: handle_error ---
+# Purpose: Handle errors by displaying a message and exiting.
 handle_error() {
     echo "Error: $1" >&2
     exit 1
 }
 
-# Helper function: Check if a directory is writable
+# --- Helper Function: check_directory_writable ---
+# Purpose: Check if a directory is writable.
 check_directory_writable() {
     local dir_path=$1
 
@@ -208,7 +234,8 @@ check_directory_writable() {
     fi
 }
 
-# Helper function: Consolidate contents from source to target directory
+# --- Helper Function: consolidate_directories ---
+# Purpose: Consolidate contents from source directory to target directory.
 consolidate_directories() {
     local source_dir=$1
     local target_dir=$2
@@ -221,7 +248,8 @@ consolidate_directories() {
     fi
 }
 
-# Helper function: Remove empty directories
+# --- Helper Function: remove_empty_directories ---
+# Purpose: Remove empty directories.
 remove_empty_directories() {
     local dirs=("$@")
     for dir in "${dirs[@]}"; do

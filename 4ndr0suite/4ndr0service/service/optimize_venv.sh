@@ -19,7 +19,7 @@ function optimize_venv_service() {
 
     # Step 2: Set up a new virtual environment if not already present
     echo "Setting up virtual environment..."
-    if [ ! -d ".venv" ]; then
+    if [ ! -d "$VENV_HOME/.venv" ]; then
         echo "Creating new virtual environment..."
         python3 -m venv "$VENV_HOME/.venv" || handle_error "Failed to create virtual environment."
     else
@@ -28,7 +28,7 @@ function optimize_venv_service() {
 
     # Step 3: Activate the virtual environment
     echo "Activating the virtual environment..."
-    source "$VENV_HOME/.venv/bin/activate" --prompt '💀 '
+    source "$VENV_HOME/.venv/bin/activate" --prompt '💀 ' || handle_error "Failed to activate virtual environment."
 
     # Step 4: Install project dependencies if requirements.txt exists
     if [ -f "requirements.txt" ]; then
@@ -102,7 +102,8 @@ pipx_install_or_update() {
 backup_python_configuration() {
     echo "Backing up Python virtual environments and pipx configurations..."
 
-    local backup_dir="$XDG_STATE_HOME/backups/python_backup_$(date +%Y%m%d)"
+    local backup_dir
+    backup_dir="$XDG_STATE_HOME/backups/python_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
 
     if [[ -d "$VENV_HOME/.venv" ]]; then
