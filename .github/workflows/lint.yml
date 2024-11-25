@@ -1,0 +1,38 @@
+name: Shell Script Linting and Formatting
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install shellcheck
+      run: sudo apt-get install shellcheck
+
+    - name: Install shfmt
+      run: |
+        wget https://github.com/mvdan/sh/releases/download/v3.4.1/shfmt_v3.4.1_linux_amd64 -O shfmt
+        chmod +x shfmt
+        sudo mv shfmt /usr/local/bin/
+
+    - name: Run shfmt
+      run: |
+        shfmt -l -w .
+        git config --global user.email "you@example.com"
+        git config --global user.name "Your Name"
+        git add .
+        git commit -m "Automated code formatting" || echo "No changes to commit"
+
+    - name: Run shellcheck
+      run: |
+        scripts=$(find . -type f -name "*.sh")
+        for script in $scripts; do
+          shellcheck "$script"
+        done
