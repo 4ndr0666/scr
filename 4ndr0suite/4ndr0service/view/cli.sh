@@ -9,8 +9,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 main() {
-    PS3='Service Setup: '
-    options=("Go" "Ruby" "Cargo" "Node.js" "NVM" "Meson" "Python" "Rust Tooling" "Database Tools" "Update Settings" "Exit")
+    PS3="Setup Service: "    
+    options=("Go" "Ruby" "Cargo" "Node.js" "NVM" "Meson" "Python" "Rust" "Sql" "Settings" "Exit") 
+
     select opt in "${options[@]}"; do
         case $REPLY in
             1) 
