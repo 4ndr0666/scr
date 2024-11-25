@@ -1,6 +1,10 @@
 #!/bin/bash
+# File: optimize_meson.sh
+# Author: 4ndr0666
+# Edited: 11-24-24
+# Description: Optimizes Meson build system environment in alignment with XDG Base Directory Specifications.
 
-# Function to optimize Meson environment
+# Function to optimize Meson build system environment
 function optimize_meson_service() {
     echo "Optimizing Meson build system environment..."
 
@@ -33,6 +37,7 @@ function optimize_meson_service() {
     check_directory_writable "$MESON_HOME"
 
     # Step 7: Configure additional backends or options (optional)
+    echo "Configuring additional Meson backends (optional)..."
     configure_additional_meson_backends
 
     # Step 8: Clean up and consolidate Meson directories
@@ -55,22 +60,27 @@ function optimize_meson_service() {
 install_meson() {
     if command -v pip &> /dev/null; then
         echo "Installing Meson via pip..."
-        pip install --user meson
+        pip install --user meson || handle_error "Failed to install Meson with pip."
     elif command -v pacman &> /dev/null; then
         echo "Installing Meson via pacman..."
-        sudo pacman -S meson
+        sudo pacman -S --noconfirm meson || handle_error "Failed to install Meson with pacman."
     elif command -v apt-get &> /dev/null; then
-        sudo apt-get install -y meson
+        echo "Installing Meson via apt-get..."
+        sudo apt-get install -y meson || handle_error "Failed to install Meson with apt-get."
     elif command -v dnf &> /dev/null; then
-        sudo dnf install -y meson
+        echo "Installing Meson via dnf..."
+        sudo dnf install -y meson || handle_error "Failed to install Meson with dnf."
     elif command -v brew &> /dev/null; then
-        brew install meson
+        echo "Installing Meson via Homebrew..."
+        brew install meson || handle_error "Failed to install Meson with Homebrew."
     elif command -v zypper &> /dev/null; then
-        sudo zypper install -y meson
+        echo "Installing Meson via zypper..."
+        sudo zypper install -y meson || handle_error "Failed to install Meson with zypper."
     else
         echo "Unsupported package manager. Please install Meson manually."
         exit 1
     fi
+    echo "Meson installed successfully."
 }
 
 # Helper function to check if Ninja build system is installed
@@ -86,19 +96,20 @@ check_ninja_installation() {
 # Helper function to install Ninja build system
 install_ninja() {
     if command -v pacman &> /dev/null; then
-        sudo pacman -S ninja
+        sudo pacman -S --noconfirm ninja || handle_error "Failed to install Ninja with pacman."
     elif command -v apt-get &> /dev/null; then
-        sudo apt-get install -y ninja-build
+        sudo apt-get install -y ninja-build || handle_error "Failed to install Ninja with apt-get."
     elif command -v dnf &> /dev/null; then
-        sudo dnf install -y ninja-build
+        sudo dnf install -y ninja-build || handle_error "Failed to install Ninja with dnf."
     elif command -v brew &> /dev/null; then
-        brew install ninja
+        brew install ninja || handle_error "Failed to install Ninja with Homebrew."
     elif command -v zypper &> /dev/null; then
-        sudo zypper install -y ninja
+        sudo zypper install -y ninja || handle_error "Failed to install Ninja with zypper."
     else
         echo "Unsupported package manager. Please install Ninja manually."
         exit 1
     fi
+    echo "Ninja installed successfully."
 }
 
 # Helper function to set up Python environment and ensure Meson dependencies are installed
@@ -118,7 +129,7 @@ setup_python_environment_for_meson() {
         source "$MESON_HOME/venv/bin/activate"
     elif [[ -z "$VIRTUAL_ENV" ]]; then
         echo "Creating a new virtual environment for Meson..."
-        python3 -m venv "$MESON_HOME/venv"
+        python3 -m venv "$MESON_HOME/venv" || handle_error "Failed to create virtual environment."
         source "$MESON_HOME/venv/bin/activate"
         pip install --upgrade pip
     else
@@ -129,19 +140,20 @@ setup_python_environment_for_meson() {
 # Helper function to install Python via package managers
 install_python3() {
     if command -v pacman &> /dev/null; then
-        sudo pacman -S python
+        sudo pacman -S --noconfirm python || handle_error "Failed to install Python with pacman."
     elif command -v apt-get &> /dev/null; then
-        sudo apt-get install -y python3
+        sudo apt-get install -y python3 || handle_error "Failed to install Python with apt-get."
     elif command -v dnf &> /dev/null; then
-        sudo dnf install -y python3
+        sudo dnf install -y python3 || handle_error "Failed to install Python with dnf."
     elif command -v brew &> /dev/null; then
-        brew install python
+        brew install python || handle_error "Failed to install Python with Homebrew."
     elif command -v zypper &> /dev/null; then
-        sudo zypper install -y python3
+        sudo zypper install -y python3 || handle_error "Failed to install Python with zypper."
     else
         echo "Unsupported package manager. Please install Python manually."
         exit 1
     fi
+    echo "Python3 installed successfully."
 }
 
 # Helper function to install or update Python packages
@@ -150,10 +162,10 @@ pip_install_or_update() {
 
     if pip show "$package_name" &> /dev/null; then
         echo "Updating $package_name..."
-        pip install --user --upgrade "$package_name"
+        pip install --user --upgrade "$package_name" || handle_error "Failed to update $package_name."
     else
         echo "Installing $package_name via pip..."
-        pip install --user "$package_name"
+        pip install --user "$package_name" || handle_error "Failed to install $package_name."
     fi
 }
 
@@ -165,8 +177,9 @@ setup_meson_environment() {
     fi
     export PATH="$MESON_HOME/bin:$PATH"
 
-    add_to_zenvironment "MESON_HOME" "$MESON_HOME"
-    add_to_zenvironment "PATH" "$MESON_HOME/bin:$PATH"
+    # Environment variables are already set in .zprofile, so no need to modify them here.
+    echo "MESON_HOME: $MESON_HOME"
+    echo "Updated PATH with MESON_HOME/bin."
 }
 
 # Helper function to configure additional Meson backends or options (optional)
@@ -177,7 +190,7 @@ configure_additional_meson_backends() {
         echo "Build directory already exists. Using existing build directory."
     else
         echo "Creating a new build directory for Meson..."
-        meson setup build --backend=ninja
+        meson setup build --backend=ninja || handle_error "Failed to set up Meson build directory."
     fi
 }
 
@@ -186,9 +199,9 @@ backup_meson_configuration() {
     if [[ -d "$MESON_HOME" ]]; then
         echo "Backing up Meson configuration..."
 
-        local backup_dir="$HOME/.meson_backup_$(date +%Y%m%d)"
+        local backup_dir="$XDG_STATE_HOME/backups/meson_backup_$(date +%Y%m%d)"
         mkdir -p "$backup_dir"
-        cp -r "$MESON_HOME" "$backup_dir"
+        cp -r "$MESON_HOME" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $MESON_HOME"
 
         echo "Backup completed: $backup_dir"
     else
@@ -196,4 +209,8 @@ backup_meson_configuration() {
     fi
 }
 
-# The controller script will call optimize_meson_service as needed, so there is no need for direct invocation in this file.
+# Helper function: Handle errors
+handle_error() {
+    echo "Error: $1" >&2
+    exit 1
+}

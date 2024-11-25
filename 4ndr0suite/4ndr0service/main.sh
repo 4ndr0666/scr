@@ -1,131 +1,112 @@
 #!/bin/bash
-
-# File: 4ndr0service
+# File: main.sh
 # Author: 4ndr0666
-# Date 10-20-24
+# Date: 2024-11-01
+# Description: Main entry point for the 4ndr0service Suite.
 
-# ======================================= // 4ndr0service //
-log_file="/home/andro/.local/share/logs/service_optimization.log"
+# ======================================= // MAIN.SH //
 
-log() {
-    local message="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$log_file"
-}
-
-handle_error() {
-    local message="$1"
-    log "ERROR: $message"
-    exit 1
-}
-
+# Function: pkg_path
+# Purpose: Determine the absolute directory path of the current script.
 pkg_path() {
-	if [[ -L "$0" ]]; then
-		dirname "$(readlink $0)"
-	else
-		dirname "$0"
-	fi
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    echo "$script_dir"
 }
 
-check_optdepends() {
-    if command -v "$1" &> /dev/null; then
-        return 0
-    else
-        return 1
-    fi
-}
+# Source Controller Script
+CONTROLLER_SCRIPT="$(pkg_path)/controller.sh"
 
-fallback_view() {
-    log "Incorrect USER_INTERFACE setting -- falling back to default."
-    read -r -p "Press Enter to continue..." || true
-    source "$(pkg_path)/view/dialog.sh" || handle_error "Failed to source 'dialog.sh'."
-}
+if [[ -f "$CONTROLLER_SCRIPT" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONTROLLER_SCRIPT" || { echo "Failed to source controller.sh"; exit 1; }
+else
+    echo "Controller script not found at '$CONTROLLER_SCRIPT'. Exiting."
+    exit 1
+fi
 
-repair_settings() {
-    if [[ -z "$USER_INTERFACE" ]]; then
-        read -r -p "USER_INTERFACE setting is invalid. Would you like to repair settings? [y/N] " response
-        case "$response" in
-            [yY][eE][sS]|[yY])
-                update_settings || handle_error "Failed to repair settings."
-                ;;
-            *)
-                log "Settings repair declined by the user."
-                ;;
-        esac
-    fi
-}
+# Source Settings Script
+if [[ -f "$SETTINGS_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$SETTINGS_FILE" || { log "Failed to source settings.sh"; exit 1; }
+else
+    log "Settings file not found at '$SETTINGS_FILE'. Exiting."
+    exit 1
+fi
 
-source_settings() {
-	source "$(pkg_path)/settings.sh"
-}
+# Ensure Backup Directory Exists
+create_directory_if_not_exists "$BACKUP_DIR"
 
-source_all_services() {
-    for script in $(pkg_path)/service/*.sh; do
-#        if [[ -f "$script" ]]; then
-        source "$script"
-#        else
-#            echo "No service scripts found in '$script'. Skipping."
-#        fi 
-    done
-}
-
-#source_all_services() {
-#    local services_dir="$(pkg_path)/service"
-#    for service_script in "$services_dir"/optimize_*.sh; do
-#        if [[ -f "$service_script" ]]; then
-#            source "$service_script" || handle_error "Failed to source '$service_script'."
-#            log "Sourced service script: '$service_script'."
-#        else
-#            log "No service scripts found in '$services_dir'. Skipping."
-#        fi
-#    done
-#}
-
+# Determine and Source UI Script
 source_views() {
     case "$USER_INTERFACE" in
         'cli')
-            source "$(pkg_path)/view/cli.sh" || handle_error "Failed to source 'cli.sh'."
+            local cli_script
+            cli_script="$(pkg_path)/view/cli.sh"
+            if [[ -f "$cli_script" ]]; then
+                # shellcheck disable=SC1090
+                source "$cli_script" || { log "Failed to source 'cli.sh'"; exit 1; }
+                log "Sourced CLI view script."
+                # Launch the CLI
+                if main; then
+                    log "CLI launched successfully."
+                else
+                    log "CLI encountered an error."
+                    exit 1
+                fi
+            else
+                log "CLI script '$cli_script' not found. Exiting."
+                exit 1
+            fi
             ;;
         'dialog')
-            source "$(pkg_path)/view/dialog.sh" || handle_error "Failed to source 'dialog.sh'."
+            local dialog_script
+            dialog_script="$(pkg_path)/view/dialog.sh"
+            if [[ -f "$dialog_script" ]]; then
+                # shellcheck disable=SC1090
+                source "$dialog_script" || { log "Failed to source 'dialog.sh'"; exit 1; }
+                log "Sourced Dialog view script."
+                # Launch the Dialog
+                if main; then
+                    log "Dialog launched successfully."
+                else
+                    log "Dialog encountered an error."
+                    exit 1
+                fi
+            else
+                log "Dialog script '$dialog_script' not found. Exiting."
+                exit 1
+            fi
             ;;
         *)
             fallback_view
             ;;
     esac
-
-    execute_main
 }
 
-# --- Function: execute_main ---
-# Purpose: Execute the main controller and handle potential errors.
-execute_main() {
-    main
-    if [[ "$?" == 1 ]]; then
-        repair_settings
+fallback_view() {
+    log "Incorrect USER_INTERFACE setting -- falling back to default (dialog)."
+    local dialog_script
+    dialog_script="$(pkg_path)/view/dialog.sh"
+    if [[ -f "$dialog_script" ]]; then
+        # shellcheck disable=SC1090
+        source "$dialog_script" || { log "Failed to source 'dialog.sh'"; exit 1; }
+        log "Sourced Dialog view script as fallback."
+        # Launch the Dialog
+        if main; then
+            log "Dialog launched successfully."
+        else
+            log "Dialog encountered an error."
+            exit 1
+        fi
+    else
+        log "Fallback Dialog script '$dialog_script' not found. Exiting."
+        exit 1
     fi
-#    main_controller || log "WARNING: Some optimizations may have failed."
 }
 
-# --- Function: ensure_running_as_root ---
-# Purpose: Ensure the script is running with root privileges.
-ensure_running_as_root() {
-    if [[ "$EUID" -ne 0 ]]; then
-        log "Script is not running as root. Attempting to elevate privileges with sudo..."
-        sudo "$0" "$@" || handle_error "Failed to elevate privileges with sudo."
-        exit $?
-    fi
-}
+source_views
 
+log "Service optimization process initiated."
 
-main_execution_flow() {
-    ensure_running_as_root "$@"   
-    source_settings || handle_error "Failed to source 'settings.sh'."
-    source_all_services
-    source "$(pkg_path)/controller.sh" || handle_error "Failed to source 'controller.sh'."
-#   source_controller || handle_error "Failed to source 'controller.sh'."
-    source_views
-    log "Service optimization process completed successfully."
-}
-
-main_execution_flow "$@"
-
+# ======================================= // END MAIN.SH //

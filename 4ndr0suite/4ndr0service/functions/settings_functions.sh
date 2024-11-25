@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # File: settings_functions.sh
 # Author: 4ndr0666
 # Date: 10-20-24

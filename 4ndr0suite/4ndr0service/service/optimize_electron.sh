@@ -1,4 +1,8 @@
 #!/bin/bash
+# File: optimize_electron.sh
+# Author: 4ndr0666
+# Edited: 11-24-24
+# Description: Optimizes Electron environment in alignment with XDG Base Directory Specifications.
 
 # Function to optimize Electron environment
 function optimize_electron_service() {
@@ -23,16 +27,10 @@ function optimize_electron_service() {
 
     # Step 3: Configure environment variables for Electron
     echo "Setting up environment variables for Electron..."
-
-    # Set the Electron cache directory
-    export ELECTRON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/electron"
-    add_to_zenvironment "ELECTRON_CACHE" "$ELECTRON_CACHE"
-
-    # Set the platform hint for Wayland EGL
+    export ELECTRON_CACHE="$XDG_CACHE_HOME/electron"
     export ELECTRON_OZONE_PLATFORM_HINT="wayland-egl"
-    add_to_zenvironment "ELECTRON_OZONE_PLATFORM_HINT" "$ELECTRON_OZONE_PLATFORM_HINT"
 
-    echo "Electron environment variables have been set."
+    # Environment variables are already set in .zprofile, so no need to modify them here.
 
     # Step 4: Clean up Electron cache if needed
     echo "Cleaning up Electron cache if needed..."
@@ -67,9 +65,9 @@ backup_electron_configuration() {
     echo "Backing up Electron configuration..."
 
     if [ -d "$ELECTRON_CACHE" ]; then
-        local backup_dir="$HOME/.electron_backup_$(date +%Y%m%d)"
+        local backup_dir="$XDG_STATE_HOME/backups/electron_backup_$(date +%Y%m%d)"
         mkdir -p "$backup_dir"
-        cp -r "$ELECTRON_CACHE" "$backup_dir"
+        cp -r "$ELECTRON_CACHE" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $ELECTRON_CACHE"
         echo "Backup completed: $backup_dir"
     else
         echo "No Electron cache found. Skipping backup."
@@ -88,5 +86,3 @@ npm_global_install_or_update() {
         npm install -g "$package_name"
     fi
 }
-
-# The controller script will call optimize_electron_service as needed, so there is no need for direct invocation in this file.

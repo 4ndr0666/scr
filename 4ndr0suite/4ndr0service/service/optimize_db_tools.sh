@@ -1,4 +1,8 @@
 #!/bin/bash
+# File: optimize_db_tools.sh
+# Author: 4ndr0666
+# Edited: 11-24-24
+# Description: Optimizes database tools environment in alignment with XDG Base Directory Specifications.
 
 # Function to optimize database tools environment
 function optimize_db_tools_service() {
@@ -23,10 +27,7 @@ function optimize_db_tools_service() {
     export SQLITE_HOME="$XDG_DATA_HOME/sqlite"
     export PATH="$PSQL_HOME/bin:$MYSQL_HOME/bin:$SQLITE_HOME/bin:$PATH"
 
-    add_to_zenvironment "PSQL_HOME" "$PSQL_HOME"
-    add_to_zenvironment "MYSQL_HOME" "$MYSQL_HOME"
-    add_to_zenvironment "SQLITE_HOME" "$SQLITE_HOME"
-    add_to_zenvironment "PATH" "$PSQL_HOME/bin:$MYSQL_HOME/bin:$SQLITE_HOME/bin:$PATH"
+    # Environment variables are already set in .zprofile, so no need to modify them here.
 
     # Step 5: Check permissions for database tool directories
     check_directory_writable "$PSQL_HOME"
@@ -43,6 +44,9 @@ function optimize_db_tools_service() {
     # Step 8: Final cleanup and summary
     echo "Performing final cleanup..."
     echo "Database tools optimization complete."
+    echo "PSQL_HOME: $PSQL_HOME"
+    echo "MYSQL_HOME: $MYSQL_HOME"
+    echo "SQLITE_HOME: $SQLITE_HOME"
 }
 
 # Helper function to install PostgreSQL
@@ -51,10 +55,26 @@ install_postgresql() {
         echo "PostgreSQL is already installed."
     else
         echo "Installing PostgreSQL..."
-        sudo pacman -S postgresql || sudo apt-get install postgresql || sudo dnf install postgresql || {
+        if sudo pacman -S --noconfirm postgresql; then
+            echo "PostgreSQL installed successfully."
+            # Initialize PostgreSQL database (optional)
+            sudo -iu postgres initdb --locale en_US.UTF-8 -D /var/lib/postgres/data
+            # Enable and start PostgreSQL service
+            sudo systemctl enable --now postgresql
+        elif sudo apt-get install -y postgresql; then
+            echo "PostgreSQL installed successfully."
+            # Enable and start PostgreSQL service
+            sudo systemctl enable --now postgresql
+        elif sudo dnf install -y postgresql-server; then
+            echo "PostgreSQL installed successfully."
+            # Initialize PostgreSQL database (optional)
+            sudo postgresql-setup --initdb
+            # Enable and start PostgreSQL service
+            sudo systemctl enable --now postgresql
+        else
             echo "Error: Failed to install PostgreSQL."
             exit 1
-        }
+        fi
     fi
 }
 
@@ -64,10 +84,26 @@ install_mysql() {
         echo "MySQL is already installed."
     else
         echo "Installing MySQL..."
-        sudo pacman -S mysql || sudo apt-get install mysql-server || sudo dnf install mysql-server || {
+        if sudo pacman -S --noconfirm mysql; then
+            echo "MySQL installed successfully."
+            # Initialize MySQL database (optional)
+            sudo mysql_install_db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
+            # Enable and start MySQL service
+            sudo systemctl enable --now mysqld
+        elif sudo apt-get install -y mysql-server; then
+            echo "MySQL installed successfully."
+            # Enable and start MySQL service
+            sudo systemctl enable --now mysql
+        elif sudo dnf install -y mysql-server; then
+            echo "MySQL installed successfully."
+            # Initialize MySQL database (optional)
+            sudo mysqld --initialize
+            # Enable and start MySQL service
+            sudo systemctl enable --now mysqld
+        else
             echo "Error: Failed to install MySQL."
             exit 1
-        }
+        fi
     fi
 }
 
@@ -77,10 +113,16 @@ install_sqlite() {
         echo "SQLite is already installed."
     else
         echo "Installing SQLite..."
-        sudo pacman -S sqlite || sudo apt-get install sqlite || sudo dnf install sqlite || {
+        if sudo pacman -S --noconfirm sqlite; then
+            echo "SQLite installed successfully."
+        elif sudo apt-get install -y sqlite3; then
+            echo "SQLite installed successfully."
+        elif sudo dnf install -y sqlite; then
+            echo "SQLite installed successfully."
+        else
             echo "Error: Failed to install SQLite."
             exit 1
-        }
+        fi
     fi
 }
 
@@ -88,11 +130,11 @@ install_sqlite() {
 backup_db_tools_configuration() {
     echo "Backing up database tool configurations..."
 
-    local backup_dir="$HOME/.db_tools_backup_$(date +%Y%m%d)"
+    local backup_dir="$XDG_STATE_HOME/backups/db_tools_backup_$(date +%Y%m%d)"
     mkdir -p "$backup_dir"
-    cp -r "$PSQL_HOME" "$backup_dir"
-    cp -r "$MYSQL_HOME" "$backup_dir"
-    cp -r "$SQLITE_HOME" "$backup_dir"
+    cp -r "$PSQL_HOME" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $PSQL_HOME"
+    cp -r "$MYSQL_HOME" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $MYSQL_HOME"
+    cp -r "$SQLITE_HOME" "$backup_dir" 2>/dev/null || echo "Warning: Could not copy $SQLITE_HOME"
 
     echo "Backup completed: $backup_dir"
 }
@@ -125,5 +167,3 @@ verify_db_tools_setup() {
         exit 1
     fi
 }
-
-# The controller script will call optimize_db_tools_service as needed, so there is no need for direct invocation in this file.

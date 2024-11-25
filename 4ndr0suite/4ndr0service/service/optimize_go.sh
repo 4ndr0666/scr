@@ -1,4 +1,8 @@
 #!/bin/bash
+# File: optimize_go.sh
+# Author: 4ndr0666
+# Edited: 11-24-24
+# Description: Optimizes Go environment in alignment with XDG Base Directory Specifications.
 
 # Function to optimize Go environment
 function optimize_go_service() {
@@ -36,19 +40,15 @@ function optimize_go_service() {
     echo "Checking and managing permissions for Go directories..."
     manage_permissions
 
-    # Step 6: Add environment variables to the shell configuration
-    echo "Adding environment variables to configuration..."
-    update_environment_variables
-
-    # Step 7: Handle multi-version Go support (if required)
+    # Step 6: Manage multi-version Go support (if required)
     echo "Managing multi-version Go support (if applicable)..."
     manage_go_versions
 
-    # Step 8: Perform basic validation of Go installation
+    # Step 7: Perform basic validation of Go installation
     echo "Validating Go installation..."
     validate_go_installation
 
-    # Step 9: Final cleanup
+    # Step 8: Final cleanup
     echo "Performing final cleanup..."
     perform_final_cleanup
 
@@ -64,20 +64,21 @@ function optimize_go_service() {
 install_go() {
     if command -v pacman &> /dev/null; then
         echo "Installing Go using pacman..."
-        sudo pacman -Syu go
+        sudo pacman -S --noconfirm go || handle_error "Failed to install Go with pacman."
     elif command -v apt-get &> /dev/null; then
         echo "Installing Go using apt-get..."
-        sudo apt-get update && sudo apt-get install -y golang
+        sudo apt-get update && sudo apt-get install -y golang || handle_error "Failed to install Go with apt-get."
     elif command -v dnf &> /dev/null; then
         echo "Installing Go using dnf..."
-        sudo dnf install -y golang
+        sudo dnf install -y golang || handle_error "Failed to install Go with dnf."
     elif command -v brew &> /dev/null; then
         echo "Installing Go using Homebrew..."
-        brew install go
+        brew install go || handle_error "Failed to install Go with Homebrew."
     else
         echo "Error: Unsupported package manager. Please install Go manually."
         exit 1
     fi
+    echo "Go installed successfully."
 }
 
 # Function to update Go to the latest version
@@ -85,20 +86,21 @@ update_go() {
     local version=$1
     if command -v pacman &> /dev/null; then
         echo "Updating Go to version $version using pacman..."
-        sudo pacman -Syu go
+        sudo pacman -Syu go || handle_error "Failed to update Go with pacman."
     elif command -v apt-get &> /dev/null; then
         echo "Updating Go using apt-get..."
-        sudo apt-get update && sudo apt-get upgrade -y golang
+        sudo apt-get update && sudo apt-get upgrade -y golang || handle_error "Failed to update Go with apt-get."
     elif command -v dnf &> /dev/null; then
         echo "Updating Go using dnf..."
-        sudo dnf upgrade -y golang
+        sudo dnf upgrade -y golang || handle_error "Failed to update Go with dnf."
     elif command -v brew &> /dev/null; then
         echo "Updating Go using Homebrew..."
-        brew upgrade go
+        brew upgrade go || handle_error "Failed to update Go with Homebrew."
     else
         echo "Error: Unsupported package manager. Please update Go manually."
         exit 1
     fi
+    echo "Go updated successfully to version $version."
 }
 
 # Function to get the latest Go version
@@ -121,15 +123,11 @@ get_latest_go_version() {
 # Function to set up Go paths (GOPATH, GOROOT, GOMODCACHE)
 setup_go_paths() {
     echo "Setting up Go environment paths..."
-    export GOPATH="${XDG_DATA_HOME:-$HOME}/go"
-    export GOMODCACHE="${XDG_CACHE_HOME:-$HOME/.cache}/go/mod"
+    export GOPATH="$XDG_DATA_HOME/go"
+    export GOMODCACHE="$XDG_CACHE_HOME/go/mod"
     export GOROOT=$(go env GOROOT)  # Dynamically determine GOROOT
 
-    add_to_zenvironment "GOPATH" "$GOPATH"
-    add_to_zenvironment "GOMODCACHE" "$GOMODCACHE"
-    add_to_zenvironment "GOROOT" "$GOROOT"
-    add_to_zenvironment "PATH" "$GOPATH/bin:$GOROOT/bin:$PATH"
-
+    # Environment variables are already set in .zprofile, so no need to modify them here.
     echo "GOPATH: $GOPATH"
     echo "GOMODCACHE: $GOMODCACHE"
     echo "GOROOT: $GOROOT"
@@ -138,8 +136,7 @@ setup_go_paths() {
 # Function to consolidate Go directories
 consolidate_go_directories() {
     echo "Consolidating Go directories..."
-    create_directory_if_not_exists "$GOPATH"
-    create_directory_if_not_exists "$GOMODCACHE"
+    mkdir -p "$GOPATH" "$GOMODCACHE"
     check_directory_writable "$GOPATH"
     check_directory_writable "$GOMODCACHE"
 }
@@ -161,11 +158,7 @@ manage_permissions() {
 
 # Function to update environment variables
 update_environment_variables() {
-    echo "Adding environment variables to the shell configuration..."
-    add_to_zenvironment "GOPATH" "$GOPATH"
-    add_to_zenvironment "GOMODCACHE" "$GOMODCACHE"
-    add_to_zenvironment "GOROOT" "$GOROOT"
-    add_to_zenvironment "PATH" "$GOPATH/bin:$GOROOT/bin:$PATH"
+    echo "Environment variables are managed in .zprofile. No action needed here."
 }
 
 # Function to manage multi-version Go support
@@ -173,13 +166,17 @@ manage_go_versions() {
     echo "Managing multi-version Go support..."
     if ! command -v goenv &> /dev/null; then
         echo "Go Version Manager (goenv) is not installed. Installing goenv..."
-        git clone https://github.com/syndbg/goenv.git ~/.goenv
-        export GOENV_ROOT="$HOME/.goenv"
+        git clone https://github.com/syndbg/goenv.git "$XDG_DATA_HOME/goenv" || handle_error "Failed to clone goenv repository."
+        export GOENV_ROOT="$XDG_DATA_HOME/goenv"
         export PATH="$GOENV_ROOT/bin:$PATH"
-        add_to_zenvironment "GOENV_ROOT" "$GOENV_ROOT"
-        add_to_zenvironment "PATH" "$GOENV_ROOT/bin:$PATH"
+        # Assuming 'add_to_shell_config' has been removed from service scripts
+        echo "export GOENV_ROOT=\"$GOENV_ROOT\"" >> "$ZDOTDIR/.zprofile"
+        echo "export PATH=\"$GOENV_ROOT/bin:\$PATH\"" >> "$ZDOTDIR/.zprofile"
+        # Source goenv
+        # shellcheck source=/dev/null
+        [ -s "$GOENV_ROOT/bin/goenv" ] && eval "$(goenv init -)" || handle_error "Failed to initialize goenv."
     else
-        echo "Goenv is already installed. To manage versions, use 'goenv install <version>'"
+        echo "goenv is already installed."
     fi
 }
 
@@ -219,4 +216,8 @@ perform_final_cleanup() {
     echo "Final cleanup completed."
 }
 
-# The controller script will call optimize_go_service as needed, so there is no need for direct invocation in this file.
+# Helper function: Handle errors
+handle_error() {
+    echo "Error: $1" >&2
+    exit 1
+}
