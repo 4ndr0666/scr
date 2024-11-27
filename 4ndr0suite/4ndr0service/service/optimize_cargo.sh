@@ -1,161 +1,250 @@
 #!/bin/bash
 # File: optimize_cargo.sh
 # Author: 4ndr0666
-# Edited: 11-24-24
-# Description: Optimizes Cargo and Rust environment in alignment with XDG Base Directory Specifications.
+# Date: 2024-11-24
+# Description: Optimizes Cargo environment in alignment with XDG Base Directory Specifications.
 
-# Function to optimize Cargo and Rust environment
-function optimize_cargo_service() {
-    echo "Optimizing Cargo and Rust environment..."
+set -euo pipefail
+IFS=$'\n\t'
 
-    # Step 1: Check if Cargo is installed
-    if command -v cargo &> /dev/null; then
-        echo "Cargo is already installed."
-    else
-        echo "Cargo is not installed. Installing Cargo via rustup..."
-        install_cargo
-    fi
+# Define color codes for enhanced output
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-    # Step 2: Manage Rust toolchains (stable, nightly, and custom)
-    manage_rust_toolchains
+# Define LOG_FILE if not already defined
+LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
+mkdir -p "$(dirname "$LOG_FILE")"
 
-    # Step 3: Ensure common Rust tools (clippy, rustfmt) are installed and up to date
-    echo "Ensuring common Rust tools (clippy, rustfmt) are installed and up to date..."
-    rustup component add clippy rustfmt
-
-    # Step 4: Install or update additional Cargo tools (cargo-audit, cargo-outdated, cargo-bloat, cargo-flamegraph)
-    echo "Ensuring additional Cargo tools are installed..."
-    cargo_install_or_update "cargo-audit"
-    cargo_install_or_update "cargo-outdated"
-    cargo_install_or_update "cargo-bloat"
-    cargo_install_or_update "cargo-flamegraph"
-
-    # Step 5: Set up environment variables for Cargo and Rust (aligning with zenvironment file)
-    echo "Setting up environment variables for Cargo and Rust..."
-    export CARGO_HOME="$XDG_DATA_HOME/cargo"
-    export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
-    export PATH="$CARGO_HOME/bin:$PATH"
-
-    # Environment variables are already set in .zprofile, so no need to modify them here.
-
-    # Step 6: Check permissions for Cargo and Rust directories
-    check_directory_writable "$CARGO_HOME"
-    check_directory_writable "$RUSTUP_HOME"
-
-    # Step 7: Set up cross-compilation targets and architectures (WASM, ARM, etc.)
-    setup_cross_compilation
-
-    # Step 8: Configure Cargo to use a pre-built binary cache (optional)
-    configure_cargo_binary_cache
-
-    # Step 9: Backup current Cargo and Rust configuration (optional)
-    backup_cargo_configuration
-
-    # Step 10: Clean up and consolidate Cargo directories
-    echo "Consolidating Cargo directories..."
-    consolidate_directories "$HOME/.cargo" "$CARGO_HOME"
-    remove_empty_directories "$CARGO_HOME"
-
-    # Step 11: Final cleanup and summary
-    echo "Performing final cleanup..."
-    echo "Cargo and Rust environment optimization complete."
-    echo "Cargo version: $(cargo --version)"
-    echo "Rustup version: $(rustup --version)"
-    echo "CARGO_HOME: $CARGO_HOME"
-    echo "RUSTUP_HOME: $RUSTUP_HOME"
+# Function to log messages with timestamp
+log() {
+    local message="$1"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
 }
 
-# Helper function to install Cargo and Rust using rustup
-install_cargo() {
-    echo "Installing Rust via rustup..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    export CARGO_HOME="$XDG_DATA_HOME/cargo"
-    export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
-    # shellcheck source=/dev/null
-    source "$CARGO_HOME/env"
+# Function to handle errors and exit
+handle_error() {
+    local error_message="$1"
+    echo -e "${RED}❌ Error: $error_message${NC}" >&2
+    log "ERROR: $error_message"
+    exit 1
 }
 
-# Helper function to manage Rust toolchains (stable, nightly, custom)
-manage_rust_toolchains() {
-    echo "Managing Rust toolchains via rustup..."
-    rustup update stable
-    rustup default stable
-
-    # Optionally install nightly or other toolchains
-    echo "Installing nightly toolchain (optional)..."
-    rustup install nightly
-    rustup target add wasm32-unknown-unknown --toolchain nightly
-}
-
-# Helper function to install or update Cargo tools
-cargo_install_or_update() {
-    local tool_name=$1
-    echo "Installing or updating $tool_name..."
-    cargo install "$tool_name" --force
-}
-
-# Helper function to set up cross-compilation targets (WASM, ARM, etc.)
-setup_cross_compilation() {
-    echo "Setting up cross-compilation targets..."
-
-    # WASM target
-    rustup target add wasm32-unknown-unknown
-
-    # ARM target for cross-compilation (e.g., Raspberry Pi)
-    rustup target add armv7-unknown-linux-gnueabihf
-}
-
-# Helper function to configure Cargo binary caching (optional)
-configure_cargo_binary_cache() {
-    echo "Configuring Cargo to use a binary cache..."
-
-    # Example: Configure S3 or local cache for pre-built binaries
-    # cargo install sccache
-    # export CARGO_TARGET_DIR="$XDG_CACHE_HOME/cargo-cache"
-}
-
-# Helper function to backup current Cargo configuration
-backup_cargo_configuration() {
-    echo "Backing up Cargo and Rust configuration..."
-
-    local backup_dir
-    backup_dir="$XDG_STATE_HOME/backups/cargo_backup_$(date +%Y%m%d)"
-    mkdir -p "$backup_dir"
-    cp -r "$CARGO_HOME" "$backup_dir"
-    cp -r "$RUSTUP_HOME" "$backup_dir"
-
-    echo "Backup completed: $backup_dir"
-}
-
-# Helper function: Check if a directory is writable
+# Function to check if a directory is writable
 check_directory_writable() {
-    local dir_path=$1
+    local dir_path="$1"
 
-    if [ -w "$dir_path" ]; then
-        echo "Directory $dir_path is writable."
+    if [[ -w "$dir_path" ]]; then
+        echo "✅ Directory $dir_path is writable."
+        log "Directory '$dir_path' is writable."
     else
-        echo "Error: Directory $dir_path is not writable."
+        echo -e "${RED}❌ Error: Directory $dir_path is not writable.${NC}"
+        log "ERROR: Directory '$dir_path' is not writable."
         exit 1
     fi
 }
 
-# Helper function: Consolidate contents from source to target directory
-consolidate_directories() {
-    local source_dir=$1
-    local target_dir=$2
+# Define Cargo directories based on XDG specifications
+export CARGO_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/cargo"
+export RUSTUP_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/rustup"
 
-    if [ -d "$source_dir" ]; then
-        rsync -av "$source_dir/" "$target_dir/" || echo "Warning: Failed to consolidate $source_dir to $target_dir."
-        echo "Consolidated directories from $source_dir to $target_dir."
+# Function to optimize Cargo environment
+optimize_cargo_service() {
+    echo "🔧 Starting Cargo environment optimization..."
+
+    # Step 1: Check if rustup is installed
+    if ! command -v rustup &> /dev/null; then
+        echo "📦 rustup is not installed. Installing rustup and Cargo..."
+        install_rustup
     else
-        echo "Source directory $source_dir does not exist. Skipping consolidation."
+        echo "✅ rustup is already installed."
+        log "rustup is already installed."
+    fi
+
+    # Step 2: Update rustup and Cargo
+    echo "🔄 Updating rustup and Cargo..."
+    update_rustup_and_cargo
+
+    # Step 3: Set up environment variables
+    echo "🛠️ Setting up environment variables for Cargo and rustup..."
+    export PATH="$CARGO_HOME/bin:$PATH"
+
+    # Step 4: Consolidate Cargo directories
+    echo "🧹 Consolidating Cargo directories..."
+    consolidate_cargo_directories
+
+    # Step 5: Install or update essential Cargo tools
+    echo "🔧 Installing or updating essential Cargo tools..."
+    install_cargo_tools
+
+    # Step 6: Manage permissions for Cargo directories
+    echo "🔐 Managing permissions for Cargo directories..."
+    manage_permissions
+
+    # Step 7: Validate Cargo installation
+    echo "✅ Validating Cargo installation..."
+    validate_cargo_installation
+
+    # Step 8: Final cleanup
+    echo "🧼 Performing final cleanup..."
+    perform_final_cleanup
+
+    # Final summary
+    echo "🎉 Cargo environment optimization complete."
+    echo -e "${CYAN}CARGO_HOME:${NC} $CARGO_HOME"
+    echo -e "${CYAN}RUSTUP_HOME:${NC} $RUSTUP_HOME"
+    echo -e "${CYAN}Cargo version:${NC} $(cargo --version)"
+    echo -e "${CYAN}rustup version:${NC} $(rustup --version)"
+}
+
+# Function to install rustup and Cargo
+install_rustup() {
+    echo "📦 Installing rustup..."
+    if curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path; then
+        echo "✅ rustup installed successfully."
+        log "rustup installed successfully."
+    else
+        handle_error "Failed to install rustup."
     fi
 }
 
-# Helper function: Remove empty directories
-remove_empty_directories() {
-    local dir_path=$1
-
-    find "$dir_path" -type d -empty -delete
-    echo "Removed empty directories in $dir_path."
+# Function to update rustup and Cargo
+update_rustup_and_cargo() {
+    # Check if rustup self-update is allowed
+    if rustup self update &> /dev/null; then
+        if rustup update; then
+            echo "✅ rustup and Cargo updated successfully."
+            log "rustup and Cargo updated successfully."
+        else
+            echo "⚠️ Warning: Failed to update Cargo."
+            log "Warning: Failed to update Cargo."
+        fi
+    else
+        echo "⚠️ rustup self-update is disabled for this build."
+        echo "⚠️ Please use your system package manager to update rustup."
+        log "rustup self-update is disabled. Instructed user to use system package manager."
+    fi
 }
+
+# Function to install or update a Cargo package
+cargo_install_or_update() {
+    local package_name="$1"
+
+    if cargo install --list | grep -q "^$package_name v"; then
+        echo "🔄 Updating Cargo package: $package_name..."
+        if cargo install "$package_name" --force; then
+            echo "✅ $package_name updated successfully."
+            log "$package_name updated successfully."
+        else
+            echo "⚠️ Warning: Failed to update $package_name."
+            log "Warning: Failed to update $package_name."
+        fi
+    else
+        echo "📦 Installing Cargo package: $package_name..."
+        if cargo install "$package_name"; then
+            echo "✅ $package_name installed successfully."
+            log "$package_name installed successfully."
+        else
+            echo "⚠️ Warning: Failed to install $package_name."
+            log "Warning: Failed to install $package_name."
+        fi
+    fi
+}
+
+# Function to perform directory consolidation and cleanup
+consolidate_cargo_directories() {
+    echo "🧹 Ensuring Cargo directories exist and are correct..."
+
+    # Ensure directories exist
+    mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" || handle_error "Failed to create Cargo directories."
+
+    # Move any existing .cargo or .rustup directories to XDG locations
+    if [[ -d "$HOME/.cargo" && "$HOME/.cargo" != "$CARGO_HOME" ]]; then
+        echo "🧹 Moving existing .cargo directory to $CARGO_HOME..."
+        mv "$HOME/.cargo" "$CARGO_HOME" || handle_error "Failed to move .cargo to $CARGO_HOME."
+    fi
+
+    if [[ -d "$HOME/.rustup" && "$HOME/.rustup" != "$RUSTUP_HOME" ]]; then
+        echo "🧹 Moving existing .rustup directory to $RUSTUP_HOME..."
+        mv "$HOME/.rustup" "$RUSTUP_HOME" || handle_error "Failed to move .rustup to $RUSTUP_HOME."
+    fi
+
+    log "Cargo directories consolidated and verified as writable."
+}
+
+# Function to install essential Cargo tools
+install_cargo_tools() {
+    echo "🔧 Installing essential Cargo tools (cargo-update, cargo-audit)..."
+
+    # cargo-install-update
+    cargo_install_or_update "cargo-update"
+
+    # cargo-audit
+    cargo_install_or_update "cargo-audit"
+}
+
+# Function to manage permissions for Cargo directories
+manage_permissions() {
+    echo "🔐 Verifying permissions for Cargo directories..."
+
+    check_directory_writable "$CARGO_HOME"
+    check_directory_writable "$RUSTUP_HOME"
+
+    log "Permissions for Cargo directories are verified."
+}
+
+# Function to validate Cargo installation
+validate_cargo_installation() {
+    echo "✅ Validating Cargo installation..."
+
+    # Check Cargo version
+    if ! cargo --version &> /dev/null; then
+        handle_error "Cargo is not installed correctly."
+    fi
+
+    # Check rustup version
+    if ! rustup --version &> /dev/null; then
+        handle_error "rustup is not installed correctly."
+    fi
+
+    echo "✅ Cargo and rustup are installed and configured correctly."
+    log "Cargo installation validated successfully."
+}
+
+# Function to perform final cleanup tasks
+perform_final_cleanup() {
+    echo "🧼 Performing final cleanup tasks..."
+
+    # Remove temporary files if they exist
+    if [[ -d "$CARGO_HOME/tmp" ]]; then
+        echo "🗑️ Cleaning up temporary files in $CARGO_HOME/tmp..."
+        rm -rf "${CARGO_HOME:?}/tmp" || log "⚠️ Warning: Failed to remove temporary files in '$CARGO_HOME/tmp'."
+        log "Temporary files in '$CARGO_HOME/tmp' removed."
+    fi
+
+    if [[ -d "$RUSTUP_HOME/tmp" ]]; then
+        echo "🗑️ Cleaning up temporary files in $RUSTUP_HOME/tmp..."
+        rm -rf "${RUSTUP_HOME:?}/tmp" || log "⚠️ Warning: Failed to remove temporary files in '$RUSTUP_HOME/tmp'."
+        log "Temporary files in '$RUSTUP_HOME/tmp' removed."
+    fi
+
+    echo "🧼 Final cleanup completed."
+    log "Final cleanup tasks completed."
+}
+
+# Export necessary functions for use by the controller
+export -f log
+export -f handle_error
+export -f check_directory_writable
+export -f install_rustup
+export -f update_rustup_and_cargo
+export -f cargo_install_or_update
+export -f consolidate_cargo_directories
+export -f install_cargo_tools
+export -f manage_permissions
+export -f validate_cargo_installation
+export -f perform_final_cleanup
+export -f optimize_cargo_service
+
+# The controller script will call optimize_cargo_service as needed, so there is no need for direct invocation here.
