@@ -1,125 +1,621 @@
 #!/bin/bash
+# File: grouctl 
+# Author: 4ndr0666
+# Edited: 11-27-24
+# Description: A minimalistic and powerful tool for managing user groups, including creation, deletion,
+#              adding/removing users to/from groups, and applying standard group presets.
 
-# --- // AUTO_ESCALATE:
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
+# ============================== // GROUPCTL //
+set -euo pipefail
+IFS=$'\n\t'
 
-# Function to check and enable wheel group in sudoers
-check_and_enable_wheel_in_sudoers() {
-    if ! grep -q "^%wheel ALL=(ALL) ALL" /etc/sudoers; then
-        echo "Enabling the 'wheel' group in sudoers file..."
-        echo "%wheel ALL=(ALL) ALL" | sudo EDITOR='tee -a' visudo
-        echo "'wheel' group has been enabled for sudo access."
-    else
-        echo "'wheel' group is already enabled in sudoers."
+# --- // Colors:
+RC='\033[0m'
+RED='\033[31m'
+YELLOW='\033[33m'
+CYAN='\033[36m'
+GREEN='\033[32m'
+
+# --- // Constants:
+LOG_FILE="/var/log/group_manager.log"
+BACKUP_DIR="/root/group_manager_backups/$(date +%F_%T)"
+USER_TO_MANAGE=()
+VERBOSE=false
+DRY_RUN=false
+PACKAGER=""
+
+# --- // Priv_check:
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        printf "%b\n" "${RED}[!] This script must be run with root privileges. Please run it using sudo or as root.${RC}"
+        exit 1
     fi
 }
 
-# Function to display user's current groups
-view_groups() {
-    id -nG "$1"
+# --- // Logging: 
+log() {
+    local MESSAGE="$1"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') $MESSAGE" >> "$LOG_FILE"
 }
 
-# Function to create a group if it doesn't exist
+log_verbose() {
+    if [ "$VERBOSE" = true ]; then
+        local MESSAGE="$1"
+        echo -e "$(date '+%Y-%m-%d %H:%M:%S') $MESSAGE" >> "$LOG_FILE"
+    fi
+}
+
+# --- // Validate: 
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# --- // Trap:
+terminate_script() {
+    log "${RED}[!] Script terminated prematurely.${RC}"
+    exit 1
+}
+
+trap terminate_script SIGINT SIGTERM
+
+# --- // Package Manager Detection:
+determine_package_manager() {
+    PACKAGERS=('pacman' 'apt-get' 'dnf' 'zypper')
+    for pgm in "${PACKAGERS[@]}"; do
+        if command_exists "$pgm"; then
+            PACKAGER=$pgm
+            printf "%b\n" "${CYAN}Using $pgm as package manager.${RC}"
+            return 0
+        fi
+    done
+
+    printf "%b\n" "${RED}[!] No supported package manager found.${RC}"
+    exit 1
+}
+
+# --- // Install Package:
+install_package() {
+    local PKG="$1"
+    if [ "$DRY_RUN" = false ]; then
+        case "$PACKAGER" in
+            pacman)
+                pacman -S --noconfirm "$PKG" >> "$LOG_FILE" 2>&1
+                ;;
+            apt-get)
+                apt-get install -y "$PKG" >> "$LOG_FILE" 2>&1
+                ;;
+            dnf)
+                dnf install -y "$PKG" >> "$LOG_FILE" 2>&1
+                ;;
+            zypper)
+                zypper install -y "$PKG" >> "$LOG_FILE" 2>&1
+                ;;
+            *)
+                printf "%b\n" "${RED}[!] Automatic installation not supported for your package manager. Please install $PKG manually.${RC}"
+                exit 1
+                ;;
+        esac
+        printf "%b\n" "${GREEN}[+] Installed $PKG.${RC}"
+    else
+        printf "%b\n" "${YELLOW}[Dry Run] Would install $PKG.${RC}"
+    fi
+}
+
+# --- // Check and Install Dependencies:
+check_dependencies() {
+    printf "%b\n" "${GREEN}[*] Checking and installing dependencies...${RC}"
+    local DEPENDENCIES=('fzf' 'shellcheck' 'polkit' 'chpasswd' 'usermod' 'chattr' 'openssl')
+    for PKG in "${DEPENDENCIES[@]}"; do
+        if [ "$PKG" = "polkit" ]; then
+            if ! is_polkit_installed; then
+                printf "%b\n" "${YELLOW}[!] $PKG is not installed. Installing...${RC}"
+                install_package "$PKG"
+            else
+                printf "%b\n" "${CYAN}[-] $PKG is already installed.${RC}"
+            fi
+        elif ! command_exists "$PKG"; then
+            printf "%b\n" "${YELLOW}[!] $PKG is not installed. Installing...${RC}"
+            install_package "$PKG"
+        else
+            printf "%b\n" "${CYAN}[-] $PKG is already installed.${RC}"
+        fi
+    done
+}
+
+# --- // Check if Polkit is Installed:
+is_polkit_installed() {
+    case "$PACKAGER" in
+        pacman)
+            pacman -Qs polkit &>/dev/null
+            ;;
+        apt-get)
+            dpkg -l polkit &>/dev/null
+            ;;
+        dnf)
+            dnf list installed polkit &>/dev/null
+            ;;
+        zypper)
+            zypper se -i polkit &>/dev/null
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# --- // Display Help Message:
+show_help() {
+    printf "%b\n" "${GREEN}Usage: ./group_manager.sh [options] [username1] [username2] ...${RC}"
+    echo ""
+    printf "%b\n" "Options:"
+    printf "%b\n" "  -h, --help        Show this help message and exit."
+    printf "%b\n" "  -v, --verbose     Enable verbose logging."
+    printf "%b\n" "  -d, --dry-run     Perform a trial run with no changes made."
+    echo ""
+    printf "%b\n" "If no username is provided, the script will prompt you to enter one."
+    exit 0
+}
+
+# --- // Parse Command-Line Arguments:
+parse_arguments() {
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                ;;
+            -d|--dry-run)
+                DRY_RUN=true
+                ;;
+            *)
+                USER_TO_MANAGE+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    # Prompt for username if none provided
+    if [ "${#USER_TO_MANAGE[@]}" -eq 0 ]; then
+        read -rp "Enter the username(s) to manage (separate multiple users with spaces): " -a USER_TO_MANAGE
+        if [ "${#USER_TO_MANAGE[@]}" -eq 0 ]; then
+            printf "%b\n" "${RED}[!] No username provided. Exiting.${RC}"
+            exit 1
+        fi
+    fi
+}
+
+# --- // Confirmation Prompt:
+confirm_action() {
+    local PROMPT="$1"
+    while true; do
+        read -rp "$PROMPT [Y/n]: " yn
+        case $yn in
+            [Yy]*|"" ) return 0;;
+            [Nn]* ) return 1;;
+            * ) echo "Please answer yes or no.";;
+        esac
+    done
+}
+
+# --- // Backup Files:
+backup_files() {
+    log "${GREEN}[*] Backing up critical configuration files...${RC}"
+    if [ "$DRY_RUN" = false ]; then
+        mkdir -p "$BACKUP_DIR"
+        # Backup essential files
+        for FILE in /etc/group /etc/gshadow /etc/sudoers /etc/sudoers.d; do
+            if [ -e "$FILE" ]; then
+                cp -r "$FILE" "$BACKUP_DIR"/ || {
+                    log "${RED}[!] Failed to backup $FILE.${RC}"
+                }
+            else
+                log "${YELLOW}[!] File $FILE does not exist. Skipping backup.${RC}"
+            fi
+        done
+        log "${GREEN}[+] Backup completed at $BACKUP_DIR${RC}"
+    else
+        log_verbose "${YELLOW}[Dry Run] Would backup critical configuration files to $BACKUP_DIR.${RC}"
+    fi
+}
+
+# --- // Correct File Permissions and Ownership:
+correct_permissions() {
+    local FILE="$1"
+    local PERM="$2"
+    local OWNER="$3"
+    local GROUP="$4"
+
+    if [ -e "$FILE" ]; then
+        local CURRENT_PERM
+        local CURRENT_OWNER
+        local CURRENT_GROUP
+        local FILE_ATTR
+
+        CURRENT_PERM=$(stat -c "%a" "$FILE")
+        CURRENT_OWNER=$(stat -c "%U" "$FILE")
+        CURRENT_GROUP=$(stat -c "%G" "$FILE")
+        FILE_ATTR=$(lsattr "$FILE" | awk '{print $1}')
+
+        if [[ "$CURRENT_PERM" != "$PERM" || "$CURRENT_OWNER" != "$OWNER" || "$CURRENT_GROUP" != "$GROUP" ]]; then
+            log "${GREEN}[*] Correcting permissions for $FILE...${RC}"
+            if [ "$DRY_RUN" = false ]; then
+                chmod "$PERM" "$FILE" && chown "$OWNER":"$GROUP" "$FILE"
+                log "${GREEN}[+] Permissions and ownership corrected for $FILE.${RC}"
+            else
+                log_verbose "${YELLOW}[Dry Run] Would chmod $PERM and chown $OWNER:$GROUP $FILE.${RC}"
+            fi
+        else
+            log_verbose "${YELLOW}[-] $FILE permissions and ownership are already correct.${RC}"
+        fi
+
+        # Check for immutable attribute
+        if echo "$FILE_ATTR" | grep -q 'i'; then
+            log "${YELLOW}[!] $FILE has immutable attribute set. Removing...${RC}"
+            if [ "$DRY_RUN" = false ]; then
+                chattr -i "$FILE"
+                log "${GREEN}[+] Immutable attribute removed from $FILE.${RC}"
+            else
+                log_verbose "${YELLOW}[Dry Run] Would remove immutable attribute from $FILE.${RC}"
+            fi
+        else
+            log_verbose "${YELLOW}[-] $FILE does not have immutable attribute set.${RC}"
+        fi
+    else
+        log "${RED}[!] File $FILE does not exist. Skipping permission correction.${RC}"
+    fi
+}
+
+# --- // Apply Permissions to Critical Files and Directories:
+apply_permissions() {
+    log "${GREEN}[*] Applying correct permissions to critical files and directories...${RC}"
+    declare -A FILES
+    FILES["/etc/group"]="644 root root"
+    FILES["/etc/gshadow"]="640 root root"
+    FILES["/etc/sudoers"]="440 root root"
+    FILES["/etc/sudoers.d"]="755 root root"
+
+    for FILE in "${!FILES[@]}"; do
+        local PERM OWNER GROUP
+        PERM=$(echo "${FILES[$FILE]}" | awk '{print $1}')
+        OWNER=$(echo "${FILES[$FILE]}" | awk '{print $2}')
+        GROUP=$(echo "${FILES[$FILE]}" | awk '{print $3}')
+        correct_permissions "$FILE" "$PERM" "$OWNER" "$GROUP"
+    done
+}
+
+# --- // Remove Lock Files:
+remove_lock_files() {
+    log "${GREEN}[*] Removing lock files if they exist...${RC}"
+    local LOCK_FILES=('/etc/group.lock' '/etc/gshadow.lock' '/etc/sudoers.lock' '/etc/sudoers.d.lock')
+    for LOCK in "${LOCK_FILES[@]}"; do
+        if [ -f "$LOCK" ]; then
+            if [ "$DRY_RUN" = false ]; then
+                rm -f "$LOCK"
+                log "${GREEN}[+] Removed lock file: $LOCK${RC}"
+            else
+                log_verbose "${YELLOW}[Dry Run] Would remove lock file: $LOCK.${RC}"
+            fi
+        else
+            log_verbose "${YELLOW}[-] No lock file found: $LOCK.${RC}"
+        fi
+    done
+}
+
+# --- // Create a Group if It Doesn't Exist:
 create_group() {
-    if ! grep -q "^$1:" /etc/group; then
-        echo "Group $1 does not exist. Creating group..."
-        groupadd "$1"
-        echo "Group $1 created."
+    local GROUP="$1"
+    if ! grep -q "^$GROUP:" /etc/group; then
+        log "${GREEN}[+] Creating group: $GROUP.${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            groupadd "$GROUP" && log "${GREEN}[+] Group $GROUP created successfully.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would create group: $GROUP.${RC}"
+        fi
     else
-        echo "Group $1 already exists."
+        log_verbose "${YELLOW}[-] Group $GROUP already exists.${RC}"
     fi
 }
 
-# Function to create a user and assign the primary group
-create_user() {
-    if ! id "$1" &>/dev/null; then
-        echo "User $1 does not exist. Creating user..."
-        useradd -g "$2" -s /usr/sbin/nologin "$1"
-        echo "User $1 created with primary group $2."
+# --- // Delete a Group if It Exists:
+delete_group() {
+    local GROUP="$1"
+    if grep -q "^$GROUP:" /etc/group; then
+        log "${GREEN}[+] Deleting group: $GROUP.${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            groupdel "$GROUP" && log "${GREEN}[+] Group $GROUP deleted successfully.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would delete group: $GROUP.${RC}"
+        fi
     else
-        echo "User $1 already exists."
+        log_verbose "${YELLOW}[-] Group $GROUP does not exist.${RC}"
     fi
 }
 
-# Function to add user to selected group(s)
-add_to_group() {
-    for group in "${@:2}"; do
-        create_group "$group"  # Ensure the group exists before adding
-        usermod -aG "$group" "$1"
+# --- // Display User's Current Groups:
+view_user_groups() {
+    local USER="$1"
+    if id "$USER" &>/dev/null; then
+        local GROUPS
+        GROUPS=$(id -nG "$USER")
+        printf "%b\n" "${CYAN}Groups for user '$USER':${RC} $GROUPS"
+    else
+        printf "%b\n" "${RED}[!] User '$USER' does not exist.${RC}"
+    fi
+}
+
+# --- // Add User to Selected Groups:
+add_user_to_groups() {
+    local USER="$1"
+    shift
+    local GROUPS=("$@")
+
+    for GROUP in "${GROUPS[@]}"; do
+        create_group "$GROUP"
+        log "${GREEN}[+] Adding user '$USER' to group '$GROUP'.${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            usermod -aG "$GROUP" "$USER" && log "${GREEN}[+] User '$USER' added to group '$GROUP'.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would add user '$USER' to group '$GROUP'.${RC}"
+        fi
     done
-    echo "$1 added to groups: ${@:2}"
 }
 
-# Function to apply a standard preset of groups to the user
+# --- // Remove User from Selected Groups:
+remove_user_from_groups() {
+    local USER="$1"
+    shift
+    local GROUPS=("$@")
+
+    for GROUP in "${GROUPS[@]}"; do
+        if id -nG "$USER" | grep -qw "$GROUP"; then
+            log "${GREEN}[+] Removing user '$USER' from group '$GROUP'.${RC}"
+            if [ "$DRY_RUN" = false ]; then
+                gpasswd -d "$USER" "$GROUP" && log "${GREEN}[+] User '$USER' removed from group '$GROUP'.${RC}"
+            else
+                log_verbose "${YELLOW}[Dry Run] Would remove user '$USER' from group '$GROUP'.${RC}"
+            fi
+        else
+            log_verbose "${YELLOW}[-] User '$USER' is not a member of group '$GROUP'.${RC}"
+        fi
+    done
+}
+
+# --- // Apply Standard Preset of Groups to the User:
 apply_standard_preset() {
-    local standard_groups=("adm" "users" "disk" "wheel" "cdrom" "audio" "video" "usb" "optical" "storage" "scanner" "lp" "network" "power")
-    echo "Applying standard preset groups to $1..."
-    for group in "${standard_groups[@]}"; do
-        create_group "$group"
-        usermod -aG "$group" "$1"
-        echo "$1 added to $group."
+    local USER="$1"
+    local STANDARD_GROUPS=("adm" "users" "disk" "wheel" "cdrom" "audio" "video" "usb" "optical" "storage" "scanner" "lp" "network" "power")
+
+    log "${GREEN}[*] Applying standard preset groups to user '$USER'...${RC}"
+    for GROUP in "${STANDARD_GROUPS[@]}"; do
+        create_group "$GROUP"
+        log "${GREEN}[+] Adding user '$USER' to group '$GROUP'.${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            usermod -aG "$GROUP" "$USER" && log "${GREEN}[+] User '$USER' added to group '$GROUP'.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would add user '$USER' to group '$GROUP'.${RC}"
+        fi
     done
 }
 
-# Main menu function
+# --- // Enable a Group in Sudoers:
+enable_group_in_sudoers() {
+    local GROUP="$1"
+    local SUDOERS_FILE="/etc/sudoers.d/${GROUP}-sudo"
+
+    if [ ! -f "$SUDOERS_FILE" ]; then
+        log "${GREEN}[*] Enabling group '$GROUP' in sudoers...${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            echo "%$GROUP ALL=(ALL) ALL" > "$SUDOERS_FILE"
+            chmod 440 "$SUDOERS_FILE"
+            log "${GREEN}[+] Group '$GROUP' has been enabled for sudo access.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would enable group '$GROUP' in sudoers by creating $SUDOERS_FILE.${RC}"
+        fi
+    else
+        log_verbose "${YELLOW}[-] Group '$GROUP' is already enabled in sudoers.${RC}"
+    fi
+}
+
+# --- // Disable a Group in Sudoers:
+disable_group_in_sudoers() {
+    local GROUP="$1"
+    local SUDOERS_FILE="/etc/sudoers.d/${GROUP}-sudo"
+
+    if [ -f "$SUDOERS_FILE" ]; then
+        log "${GREEN}[*] Disabling group '$GROUP' in sudoers...${RC}"
+        if [ "$DRY_RUN" = false ]; then
+            rm -f "$SUDOERS_FILE"
+            log "${GREEN}[+] Group '$GROUP' has been disabled for sudo access.${RC}"
+        else
+            log_verbose "${YELLOW}[Dry Run] Would disable group '$GROUP' in sudoers by removing $SUDOERS_FILE.${RC}"
+        fi
+    else
+        log_verbose "${YELLOW}[-] Group '$GROUP' is not enabled in sudoers.${RC}"
+    fi
+}
+
+# --- // Generate Summary Report:
+generate_summary_report() {
+    log "${GREEN}[*] Generating summary report...${RC}"
+    if [ "$DRY_RUN" = false ]; then
+        {
+            echo ""
+            echo "==================== Summary Report ===================="
+            echo "User(s) Managed: ${USER_TO_MANAGE[*]}"
+            echo "Backup Location: $BACKUP_DIR"
+            echo "Log File: $LOG_FILE"
+            echo "Date: $(date)"
+            echo "========================================================="
+        } >> "$LOG_FILE"
+    else
+        log_verbose "${YELLOW}[Dry Run] Would generate summary report.${RC}"
+    fi
+}
+
+# --- // Generate Comprehensive Report:
+generate_comprehensive_report() {
+    log "${GREEN}[*] Generating comprehensive report...${RC}"
+    if [ "$DRY_RUN" = false ]; then
+        cp "$LOG_FILE" "$BACKUP_DIR"/
+        log "${GREEN}[+] Report generated at $BACKUP_DIR/group_manager.log${RC}"
+    else
+        log_verbose "${YELLOW}[Dry Run] Would copy log file to backup directory.${RC}"
+    fi
+}
+
+# --- // Final Syntax Check:
+final_syntax_check() {
+    log "${GREEN}[*] Performing final syntax check with ShellCheck...${RC}"
+    if command_exists shellcheck; then
+        shellcheck "$0" | tee -a "$LOG_FILE"
+    else
+        log "${RED}[!] ShellCheck not installed. Skipping syntax check.${RC}"
+    fi
+}
+
+# --- // Main Menu:
 main_menu() {
     echo "Select operation:"
-    options=("View User's Groups" "Add User to Group" "Remove User from Group" "Apply Standard Group Preset" "Check and Enable Wheel Group in Sudoers")
+    options=("View User's Groups" "Add User to Group" "Remove User from Group" "Apply Standard Group Preset" "Create a New Group" "Delete a Group" "Enable Group in Sudoers" "Disable Group in Sudoers" "Exit")
     select opt in "${options[@]}"; do
-        case $REPLY in
-            1)
+        case "$opt" in
+            "View User's Groups")
                 echo "Enter username:"
                 read -r username
-                echo "Groups for $username:"
-                view_groups "$username"
-                break
+                view_user_groups "$username"
                 ;;
-            2)
+            "Add User to Group")
                 echo "Enter username:"
                 read -r username
-                echo "Select group(s) to add user to:"
-                mapfile -t selected < <(cut -d: -f1 /etc/group | fzf -m)
-                add_to_group "$username" "${selected[@]}"
-                break
+                if id "$username" &>/dev/null; then
+                    echo "Select group(s) to add user to (use space to separate multiple groups):"
+                    mapfile -t selected < <(cut -d: -f1 /etc/group | fzf -m)
+                    if [ "${#selected[@]}" -gt 0 ]; then
+                        add_user_to_groups "$username" "${selected[@]}"
+                    else
+                        printf "%b\n" "${YELLOW}[!] No groups selected.${RC}"
+                    fi
+                else
+                    printf "%b\n" "${RED}[!] User '$username' does not exist.${RC}"
+                fi
                 ;;
-            3)
+            "Remove User from Group")
                 echo "Enter username:"
                 read -r username
-                echo "Select group(s) to remove user from:"
-                mapfile -t selected < <(cut -d: -f1 /etc/group | fzf -m)
-                remove_from_group "$username" "${selected[@]}"
-                break
+                if id "$username" &>/dev/null; then
+                    echo "Select group(s) to remove user from (use space to separate multiple groups):"
+                    mapfile -t selected < <(id -nG "$username" | tr ' ' '\n' | fzf -m)
+                    if [ "${#selected[@]}" -gt 0 ]; then
+                        remove_user_from_groups "$username" "${selected[@]}"
+                    else
+                        printf "%b\n" "${YELLOW}[!] No groups selected.${RC}"
+                    fi
+                else
+                    printf "%b\n" "${RED}[!] User '$username' does not exist.${RC}"
+                fi
                 ;;
-            4)
+            "Apply Standard Group Preset")
                 echo "Enter username:"
                 read -r username
-                apply_standard_preset "$username"
-                break
+                if id "$username" &>/dev/null; then
+                    apply_standard_preset "$username"
+                else
+                    printf "%b\n" "${RED}[!] User '$username' does not exist.${RC}"
+                fi
                 ;;
-            5)
-                check_and_enable_wheel_in_sudoers
+            "Create a New Group")
+                echo "Enter group name to create:"
+                read -r groupname
+                if [[ "$groupname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    create_group "$groupname"
+                else
+                    printf "%b\n" "${RED}[!] Invalid group name. Use only letters, numbers, underscores, or hyphens.${RC}"
+                fi
+                ;;
+            "Delete a Group")
+                echo "Enter group name to delete:"
+                read -r groupname
+                if [[ "$groupname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    if [[ "$groupname" == "root" || "$groupname" == "sudo" ]]; then
+                        printf "%b\n" "${RED}[!] Cannot delete critical group '$groupname'.${RC}"
+                    else
+                        delete_group "$groupname"
+                    fi
+                else
+                    printf "%b\n" "${RED}[!] Invalid group name. Use only letters, numbers, underscores, or hyphens.${RC}"
+                fi
+                ;;
+            "Enable Group in Sudoers")
+                echo "Enter group name to enable in sudoers:"
+                read -r groupname
+                if [[ "$groupname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    enable_group_in_sudoers "$groupname"
+                else
+                    printf "%b\n" "${RED}[!] Invalid group name. Use only letters, numbers, underscores, or hyphens.${RC}"
+                fi
+                ;;
+            "Disable Group in Sudoers")
+                echo "Enter group name to disable in sudoers:"
+                read -r groupname
+                if [[ "$groupname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    disable_group_in_sudoers "$groupname"
+                else
+                    printf "%b\n" "${RED}[!] Invalid group name. Use only letters, numbers, underscores, or hyphens.${RC}"
+                fi
+                ;;
+            "Exit")
+                printf "%b\n" "${GREEN}[+] Exiting group_manager.sh.${RC}"
                 break
                 ;;
             *)
-                echo "Invalid option. Please enter a number from 1 to 5."
+                echo "Invalid option. Please enter a number between 1 and 9."
                 ;;
         esac
     done
 }
 
-# Ensure script is run with root privileges
-if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root."
-    exit 1
-fi
+# ------------------------------ Main Execution ------------------------------
 
-# Ensure fzf is installed
-if ! command -v fzf &> /dev/null; then
-    echo "fzf is not installed. Please install it first."
-    exit 1
-fi
+# Check if the script is run as root
+check_root
 
+# Parse command-line arguments
+parse_arguments "$@"
+
+# Determine package manager
+determine_package_manager
+
+# Initialize log file with correct permissions
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+chown root:root "$LOG_FILE"
+log "${GREEN}[+] Log file created at $LOG_FILE.${RC}"
+log "${GREEN}[+] Starting group_manager.sh for user(s): ${USER_TO_MANAGE[*]}${RC}"
+
+# Check and install dependencies
+check_dependencies
+
+# Remove lock files if any
+remove_lock_files
+
+# Apply correct permissions to critical files
+apply_permissions
+
+# Backup critical files
+backup_files
+
+# Launch main menu
 main_menu
+
+# Generate reports
+generate_summary_report
+generate_comprehensive_report
+
+# Final syntax check
+final_syntax_check
+
+# Finalize script
+log "${GREEN}[+] group_manager.sh completed successfully.${RC}"
+printf "%b\n" "${GREEN}[+] All tasks completed. Please review the log at $LOG_FILE for details.${RC}"
