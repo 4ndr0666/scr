@@ -1,471 +1,692 @@
 #!/usr/bin/env bash
-
-# File: permission_manifest.sh
+# File: Permmaster
+# Edited: 11-27-24
 # Author: 4ndr0666
-# Edited: 11-2-2024
-# Description: PermMaster - A versatile tool for managing system permissions on Arch Linux.
+# PermMaster - A multi-tool for managing system permissions on Arch Linux.
 
-# ============================== // PERMISSION_MANIFEST //
-
+# ========================== // PERMMASTER //
 # --- // Colors:
-GRE='\033[0;32m'
-BOLD='\033[1m'
-RED='\033[0;31m'
-NC='\033[0m'
-EXPLOSION="💥"
-SUCCESS="✔️"
-FAILURE="❌"
-STATS="➡️"
+RED=$(tput setaf 1)
+GRN=$(tput setaf 2)
+CYA=$(tput setaf 6)
+YEL=$(tput setaf 3)
+NC=$(tput sgr0)
+BOLD=$(tput bold)
+UNDERLINE=$(tput smul)
+SUCCESS="${GRN}[✓]${NC}"
+FAILURE="${RED}[✗]${NC}"
+INFO="${CYA}[i]${NC}"
+WARNING="${YEL}[!]${NC}"
 
-# --- // Utility Functions:
-green() {
-    echo -e "${BOLD}${GRE}$1${NC}"
-}
-
-red() {
-    echo -e "${BOLD}${RED}$1${NC}"
-}
+# --- // Logging:
+LOG_FILE="/var/log/perm_master.log"
 
 log_action() {
-    local level="INFO"
-    [[ -n "$2" ]] && level="$2"
     local message="$1"
-    local log_file="/var/log/perm_master.log"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] - $message" >> "$log_file"
+    local level="$2"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" >> "$LOG_FILE"
 }
 
-check_dependencies() {
-    local dependencies=("pacman" "paccheck" "pacrepairfile" "bsdtar" "awk" "find" "getfacl" "setfacl" "getfattr" "setfattr" )
-    local missing_deps=()
-    for dep in "${dependencies[@]}"; do
-        if ! command -v "$dep" &>/dev/null; then
-            missing_deps+=("$dep")
-        fi
-    done
-
-    if [ "${#missing_deps[@]}" -ne 0 ]; then
-        red "$FAILURE Missing dependencies: ${missing_deps[*]}"
-        read -rp "Do you want to install them now? [Y/n]: " choice
-        choice=${choice:-Y}
-        if [[ "$choice" =~ ^[Yy]$ ]]; then
-            sudo pacman -S --noconfirm "${missing_deps[@]}"
-            log_action "Installed missing dependencies: ${missing_deps[*]}" "DEBUG"
-        else
-            red "$FAILURE Cannot proceed without installing missing dependencies."
-            exit 1
-        fi
-    fi
-}
-
+# --- // PATH_validation:
 validate_path() {
-    local input="$1"
-    if [[ "$input" =~ ^(/[-_./A-Za-z0-9]+)?$ ]] && [[ "$input" != *..* ]] && [[ ! "$input" =~ [[:space:]] ]]; then
-        echo "$input"
+    local path="$1"
+    if [[ -e "$path" ]]; then
+        echo "$path"
     else
-        red "$FAILURE Invalid or potentially dangerous path: $input"
-        log_action "Invalid path provided: $input" "ERROR"
+        echo "${FAILURE} Path '$path' does not exist."
+        log_action "Invalid path: $path" "ERROR"
         return 1
     fi
 }
 
+# --- // Confirm:
 confirm_action() {
     local prompt="$1"
-    local default_choice="${2:-N}"
-    read -rp "$prompt [Y/n]: " choice
-    choice=${choice:-$default_choice}
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        return 0
-    else
+    read -rp "$prompt [y/N]: " response
+    case "$response" in
+        [Yy]* ) return 0 ;;
+        * ) return 1 ;;
+    esac
+}
+
+# --- // Dependencies Check:
+check_dependencies() {
+    local dependencies=("getfacl" "setfacl" "getfattr" "setfattr" "pacman" "chmod" "chown" "find" "rsync" "awk")
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            echo "${FAILURE} Dependency '$dep' is not installed."
+            log_action "Missing dependency: $dep" "ERROR"
+            exit 1
+        fi
+    done
+}
+
+# --- // Exclusions:
+EXCLUDE_PATHS=(
+    "/home/*/.cache"
+    "/home/*/.local/share/Trash"
+    "/var/cache"
+    "/var/tmp"
+    "/tmp"
+    "/dev/shm"
+    "/run/user/*"
+    "/sys"
+    "/proc"
+    "/dev"
+)
+
+# Function to build exclusion parameters for find
+build_find_exclude() {
+    local excludes=()
+    for path in "${EXCLUDE_PATHS[@]}"; do
+        excludes+=("-path" "$path" "-prune" "-o")
+    done
+    echo "${excludes[@]}"
+}
+
+# --- // Snapshot:
+create_snapshot() {
+    log_action "Creating permissions snapshot." "INFO"
+    read -rp "Enter the full path to save the snapshot (without extension): " snapshot_file
+    snapshot_file=${snapshot_file:-permissions_snapshot}
+    snapshot_dir=$(dirname "$snapshot_file")
+    mkdir -p "$snapshot_dir" || {
+        echo "${FAILURE} Failed to create directory for snapshot."
+        log_action "Failed to create directory: $snapshot_dir" "ERROR"
         return 1
-    fi
+    }
+
+    read -rp "Enter the directory to snapshot [/]: " target_dir
+    target_dir=${target_dir:-/}
+    target_dir=$(validate_path "$target_dir") || return 1
+
+    echo "${INFO} Creating permissions snapshot for $target_dir..."
+
+    # Permissions and Ownership
+    # Build the 'find' command as an array to prevent shell expansion
+    find_args=("$target_dir")
+    for path in "${EXCLUDE_PATHS[@]}"; do
+        find_args+=("-path" "$path" "-prune" "-o")
+    done
+    find_args+=("(" "-type" "f" "-o" "-type" "d" ")" "-print0")
+
+    # Capture permissions and ownership
+    find "${find_args[@]}" | while IFS= read -r -d '' path; do
+        perm=$(stat -c "%a" "$path")
+        user=$(stat -c "%U" "$path")
+        group=$(stat -c "%G" "$path")
+        echo "$perm $user $group $path" >> "$snapshot_file.perms"
+    done
+
+    # ACLs
+    echo "${INFO} Creating ACL snapshot..."
+    find "${find_args[@]}" | xargs -0 getfacl --absolute-names > "$snapshot_file.acl" 2>/dev/null
+
+    # Extended Attributes
+    echo "${INFO} Creating Extended Attributes snapshot..."
+    find "${find_args[@]}" | xargs -0 getfattr --absolute-names > "$snapshot_file.attrs" 2>/dev/null
+
+    echo "${SUCCESS} Permissions snapshot saved to $snapshot_file.*"
+    log_action "Permissions snapshot created at $snapshot_file.*" "INFO"
 }
 
 backup_permissions() {
-    local backup_dir="/var/backups/perm_master"
-    mkdir -p "$backup_dir"
-    local timestamp=$(date '+%Y%m%d%H%M%S')
-    tar -czf "$backup_dir/permissions_backup_$timestamp.tar.gz" permissions_manifest.* 2>/dev/null
-    green "$SUCCESS Backup created at $backup_dir/permissions_backup_$timestamp.tar.gz"
-    log_action "Backup created at $backup_dir/permissions_backup_$timestamp.tar.gz" "INFO"
-}
+    log_action "Backing up current permissions snapshot." "INFO"
+    read -rp "Enter the permissions snapshot file prefix to backup [permissions_snapshot]: " snapshot_file
+    snapshot_file=${snapshot_file:-permissions_snapshot}
+    snapshot_file=$(validate_path "$snapshot_file") || return 1
 
-create_manifest() {
-    log_action "Starting manifest creation." "DEBUG"
-    read -rp "Enter the directory to create permissions manifest for [/]: " target_dir
-    target_dir=${target_dir:-/}
-    target_dir=$(validate_path "$target_dir") || return
-
-    read -rp "Enter the output file [permissions_manifest]: " manifest_file
-    manifest_file=${manifest_file:-permissions_manifest}
-    manifest_file=$(validate_path "$manifest_file") || return
-
-    if [[ ! -d "$target_dir" ]]; then
-        red "$FAILURE Directory $target_dir does not exist."
-        log_action "Directory $target_dir does not exist." "ERROR"
-        return
-    fi
-
-    if ! confirm_action "This will create a permissions manifest for $target_dir. Continue?"; then
-        red "$FAILURE Operation cancelled."
-        log_action "Manifest creation operation cancelled by user." "INFO"
-        return
-    fi
-
-    echo "Creating permissions manifest for $target_dir..."
-    log_action "Dumping ACLs and attributes." "INFO"
-    sudo getfacl -R --absolute-names "$target_dir" > "$manifest_file.acl"
-    sudo getfattr -R -d "$target_dir" > "$manifest_file.attrs"
-    sudo find "$target_dir" -printf '%m %u %g %p\n' | tee "$manifest_file.perms" | xargs -P 4 -I {} echo 'Processing entry: {}'
-    green "$SUCCESS Permissions manifest saved to $manifest_file.*"
-    log_action "Created permissions manifest for $target_dir." "INFO"
-}
-
-apply_manifest() {
-    log_action "Starting application of manifest." "DEBUG"
-    read -rp "Enter the base directory to apply permissions to [/]: " target_dir
-    target_dir=${target_dir:-/}
-    target_dir=$(validate_path "$target_dir") || return
-
-    read -rp "Enter the permissions manifest file prefix [permissions_manifest]: " manifest_file
-    manifest_file=${manifest_file:-permissions_manifest}
-    manifest_file=$(validate_path "$manifest_file") || return
-
-    if [[ -f "$manifest_file.acl" && -f "$manifest_file.attrs" && -f "$manifest_file.perms" ]]; then
-        echo 'Applying permissions from manifest...'
-        log_action "All necessary manifest files found for application." "DEBUG"
+    if [[ -f "$snapshot_file.perms" ]]; then
+        cp "$snapshot_file.perms" "$snapshot_file.perms.bak"
+        cp "$snapshot_file.acl" "$snapshot_file.acl.bak" 2>/dev/null
+        cp "$snapshot_file.attrs" "$snapshot_file.attrs.bak" 2>/dev/null
+        echo "${SUCCESS} Permissions snapshot backed up as $snapshot_file.*.bak"
+        log_action "Permissions snapshot backed up." "INFO"
     else
-        red "$FAILURE Manifest files missing."
-        log_action "Manifest files $manifest_file.* are missing." "ERROR"
-        return
-    fi
-
-    if ! confirm_action "This will change permissions across the filesystem. Are you sure?"; then
-        red "$FAILURE Operation cancelled."
-        log_action "Manifest application operation cancelled by user." "INFO"
-        return
-    fi
-
-    echo "Applying permissions from $manifest_file.*..."
-    sudo setfacl --restore="$manifest_file.acl"
-    sudo setfattr --restore="$manifest_file.attrs"
-    while IFS=' ' read -r perm user group path; do
-        if [[ -z "$path" ]]; then
-            red "$FAILURE Empty path entry, skipping."
-            log_action "Empty path entry detected, skipping." "WARNING"
-            continue
-        fi
-        if [[ -e "$path" ]]; then
-            sudo chown "$user:$group" "$path"
-            sudo chmod "$perm" "$path"
-        else
-            red "$FAILURE Path $path does not exist. Skipping."
-            log_action "Path $path does not exist. Skipping." "WARNING"
-        fi
-    done < "$manifest_file.perms"
-    green "$SUCCESS Permissions applied from $manifest_file.*"
-    log_action "Permissions applied successfully from $manifest_file." "INFO"
-}
-
-apply_manifest_dry_run() {
-    log_action "Starting dry-run of manifest application." "DEBUG"
-    echo "Dry-run: Simulating changes from $manifest_file.*"
-    while IFS=' ' read -r perm user group path; do
-        echo "Would apply chown $user:$group and chmod $perm on $path"
-    done < "$manifest_file.perms"
-    green "$SUCCESS Dry-run completed. No changes made."
-    log_action "Dry-run completed for manifest application." "INFO"
-}
-
-audit_pacsift() {
-    echo "$STATS Auditing and fixing permissions with pacsift..."
-    log_action "Starting pacsift audit." "DEBUG"
-
-    # Declare variables separately to avoid masking return values
-    local timestamp
-    timestamp=$(date '+%Y%m%d%H%M%S')
-
-    local tmp_output
-    tmp_output="/tmp/paccheck_output_${timestamp}.log"
-
-    local tmp_log
-    tmp_log="/tmp/pacsift_repair_${timestamp}.log"
-
-    # Check if paccheck supports the required flag
-    if paccheck --help | grep -q 'file-properties'; then
-        log_action "Running paccheck --file-properties and saving output to $tmp_output" "DEBUG"
-
-        # Run paccheck and redirect output properly using sudo
-        if ! sudo paccheck --file-properties --quiet | sudo tee "$tmp_output" > /dev/null 2>&1; then
-            red "$FAILURE paccheck encountered an issue. Review $tmp_output for details."
-            log_action "paccheck encountered an issue. Check $tmp_output for details." "ERROR"
-            cat "$tmp_output"
-            return 1
-        fi
-
-        # Check if the paccheck output contains discrepancies like UID, GID, or time mismatches
-        if grep -qE 'UID mismatch|GID mismatch|modification time mismatch' "$tmp_output"; then
-            log_action "Discrepancies found. Attempting repairs with pacrepairfile." "INFO"
-
-            # Extract the paths and attempt repairs
-            if ! awk -F': ' '{print $2}' "$tmp_output" | sed -E 's/^(.*) .*$/\1/' | sudo pacrepairfile - | sudo tee "$tmp_log" > /dev/null 2>&1; then
-                red "$FAILURE pacrepairfile encountered an issue. Review $tmp_log for details."
-                log_action "pacrepairfile encountered an issue. Check $tmp_log for details." "ERROR"
-                cat "$tmp_log"
-                return 1
-            fi
-
-            green "$SUCCESS Permissions audited and corrected using pacsift. See $tmp_log for details."
-            log_action "Permissions audited and corrected successfully using pacsift." "INFO"
-        else
-            green "$SUCCESS No discrepancies found by paccheck."
-            log_action "No discrepancies found by paccheck." "INFO"
-        fi
-    else
-        red "$FAILURE Unsupported paccheck version or invalid flags used."
-        log_action "Unsupported paccheck version or invalid flags used. Update or check pacutils package." "ERROR"
+        echo "${FAILURE} Snapshot file '$snapshot_file.perms' not found."
+        log_action "Snapshot file '$snapshot_file.perms' not found for backup." "ERROR"
         return 1
     fi
 }
 
+apply_snapshot() {
+    log_action "Applying permissions snapshot." "INFO"
+    read -rp "Enter the permissions snapshot file prefix [permissions_snapshot]: " snapshot_file
+    snapshot_file=${snapshot_file:-permissions_snapshot}
+    snapshot_file=$(validate_path "$snapshot_file") || return 1
+
+    read -rp "Enter the base directory to apply permissions to [/]: " target_dir
+    target_dir=${target_dir:-/}
+    target_dir=$(validate_path "$target_dir") || return 1
+
+    if [[ -f "$snapshot_file.perms" && -f "$snapshot_file.acl" && -f "$snapshot_file.attrs" ]]; then
+        echo "${INFO} Applying ACLs..."
+        find "${find_args[@]}" | xargs -0 setfacl --restore=- < "$snapshot_file.acl" || {
+            echo "${FAILURE} Failed to restore ACLs."
+            log_action "Failed to restore ACLs from $snapshot_file.acl" "ERROR"
+            # Continue even if ACLs fail
+        }
+
+        echo "${INFO} Applying Extended Attributes..."
+        find "${find_args[@]}" | xargs -0 setfattr --restore=- < "$snapshot_file.attrs" 2>/dev/null || log_action "Failed to restore extended attributes from $snapshot_file.attrs" "WARNING"
+
+        echo "${INFO} Applying Permissions and Ownership..."
+        while IFS=' ' read -r perm user group path; do
+            if [[ -e "$path" ]]; then
+                chown "$user:$group" "$path" &>/dev/null || {
+                    echo "${WARNING} Failed to chown '$path' to $user:$group"
+                    log_action "Failed to chown '$path' to $user:$group" "WARNING"
+                }
+                chmod "$perm" "$path" &>/dev/null || {
+                    echo "${WARNING} Failed to chmod '$path' to $perm"
+                    log_action "Failed to chmod '$path' to $perm" "WARNING"
+                }
+            else
+                echo "${WARNING} Path '$path' does not exist. Skipping."
+                log_action "Path '$path' does not exist. Skipping." "WARNING"
+            fi
+        done < "$snapshot_file.perms"
+
+        echo "${SUCCESS} Permissions applied from $snapshot_file.*"
+        log_action "Permissions applied successfully from $snapshot_file." "INFO"
+    else
+        echo "${FAILURE} Snapshot files '$snapshot_file.*' not found."
+        log_action "Snapshot files '$snapshot_file.*' not found." "ERROR"
+        return 1
+    fi
+}
+
+apply_snapshot_dry_run() {
+    log_action "Starting dry-run of snapshot application." "DEBUG"
+    read -rp "Enter the permissions snapshot file prefix [permissions_snapshot]: " snapshot_file
+    snapshot_file=${snapshot_file:-permissions_snapshot}
+    snapshot_file=$(validate_path "$(dirname "$snapshot_file")") || return 1
+
+    read -rp "Enter the base directory to simulate applying permissions to [/]: " target_dir
+    target_dir=${target_dir:-/}
+    target_dir=$(validate_path "$target_dir") || return 1
+
+    if [[ -f "$snapshot_file.perms" ]]; then
+        echo "Dry-run: Simulating changes from $snapshot_file.perms"
+        while IFS=' ' read -r perm user group path; do
+            echo "Would apply: chown $user:$group and chmod $perm on '$path'"
+        done < "$snapshot_file.perms"
+        echo "${SUCCESS} Dry-run completed. No changes made."
+        log_action "Dry-run completed for snapshot application." "INFO"
+    else
+        echo "${FAILURE} Snapshot file '$snapshot_file.perms' not found."
+        log_action "Snapshot file '$snapshot_file.perms' not found for dry-run." "ERROR"
+        return 1
+    fi
+}
+
+# --- Standard Permissions Functions:
+
+import_standard_permissions() {
+    log_action "Importing standard permissions." "DEBUG"
+    read -rp "Enter the base directory to apply standard permissions to [/]: " target_dir
+    target_dir=${target_dir:-/}
+    target_dir=$(validate_path "$target_dir") || return 1
+
+    if confirm_action "This will overwrite current permissions with standard permissions. Continue?"; then
+        echo "${INFO} Applying standard permissions..."
+
+        declare -A standard_permissions=(
+            ["/bin"]="root:root:755"
+            ["/boot"]="root:root:755"
+            ["/dev"]="root:root:755"
+            ["/dev/shm"]="root:root:1777"
+            ["/etc"]="root:root:755"
+            ["/home"]="root:root:755"
+            ["/lib"]="root:root:755"
+            ["/lib64"]="root:root:755"
+            ["/mnt"]="root:root:755"
+            ["/opt"]="root:root:755"
+            ["/root"]="root:root:750"
+            ["/run"]="root:root:755"
+            ["/sbin"]="root:root:755"
+            ["/srv"]="root:root:755"
+            ["/tmp"]="root:root:1777"
+            ["/usr"]="root:root:755"
+            ["/var"]="root:root:755"
+            ["/etc/shadow"]="root:root:600"
+            ["/etc/gshadow"]="root:root:600"
+            ["/etc/passwd"]="root:root:644"
+            ["/etc/group"]="root:root:644"
+            ["/etc/sudoers"]="root:root:440"
+        )
+
+        # Apply standard permissions and ownership
+        for path in "${!standard_permissions[@]}"; do
+            local full_path="$target_dir$path"
+            if [[ -e "$full_path" ]]; then
+                IFS=':' read -r user group perm <<< "${standard_permissions[$path]}"
+                chown "$user:$group" "$full_path" &>/dev/null || {
+                    echo "${WARNING} Failed to chown '$full_path' to $user:$group"
+                    log_action "Failed to chown '$full_path' to $user:$group" "WARNING"
+                }
+                chmod "$perm" "$full_path" &>/dev/null || {
+                    echo "${WARNING} Failed to chmod '$full_path' to $perm"
+                    log_action "Failed to chmod '$full_path' to $perm" "WARNING"
+                }
+                echo "${SUCCESS} Set '$full_path' to $user:$group with permissions $perm."
+                log_action "Set '$full_path' to $user:$group with permissions $perm." "INFO"
+            else
+                echo "${WARNING} Path '$full_path' does not exist. Skipping."
+                log_action "Path '$full_path' does not exist. Skipping." "WARNING"
+            fi
+        done
+
+        # Special handling for /dev/shm
+        if [[ -d "$target_dir/dev/shm" ]]; then
+            chmod 1777 "$target_dir/dev/shm" && log_action "Set /dev/shm to 1777." "INFO" || {
+                echo "${WARNING} Failed to set /dev/shm to 1777."
+                log_action "Failed to set /dev/shm to 1777." "WARNING"
+            }
+        fi
+
+        # Apply special bits and handle symbolic links
+        echo "${INFO} Setting special bits and handling symbolic links..."
+        chmod +t /tmp && log_action "Set sticky bit on /tmp." "INFO"
+        chmod g+s /usr/bin && log_action "Set setgid bit on /usr/bin." "INFO"
+
+        echo "${SUCCESS} Standard permissions applied."
+        log_action "Standard permissions applied successfully." "INFO"
+    else
+        echo "${FAILURE} Operation cancelled."
+        log_action "Standard permissions import cancelled by user." "INFO"
+        return 1
+    fi
+}
+
+# --- Auditing and Fixing Functions:
+
 audit_pacman() {
-    echo "$STATS Auditing and fixing permissions with pacman..."
+    echo "${INFO} Auditing and fixing permissions with pacman..."
     log_action "Starting pacman audit for permission issues." "DEBUG"
-    permission_errors=$(sudo pacman -Qkk 2>/dev/null | grep -E 'Permissions differ|Ownership differs')
+    local permission_errors
+    permission_errors=$(pacman -Qkk 2>/dev/null | grep -E 'Permissions differ|Ownership differs') || true
 
     if [[ -z "$permission_errors" ]]; then
-        green "$SUCCESS All files have correct permissions and ownerships."
+        echo "${SUCCESS} All files have correct permissions and ownerships."
         log_action "All files have correct permissions and ownerships." "INFO"
         return
     fi
 
-    echo "$STATS Fixing permissions and ownerships..."
+    echo "${INFO} Fixing permissions and ownerships..."
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
+        local file
         file=$(echo "$line" | awk '{print $2}')
         if [[ -e "$file" ]]; then
+            local pkg
             pkg=$(pacman -Qo "$file" 2>/dev/null | awk '{print $5}')
             if [[ -n "$pkg" ]]; then
-                echo "$STATS Restoring $file from package $pkg"
-                sudo pacman -S "$pkg" --noconfirm --needed || {
-                    red "$FAILURE Failed to reinstall $pkg for $file."
-                    log_action "Failed to reinstall $pkg for $file." "ERROR"
+                echo "${INFO} Restoring '$file' from package '$pkg'"
+                pacman -S "$pkg" --noconfirm --needed || {
+                    echo "${FAILURE} Failed to reinstall '$pkg' for '$file'."
+                    log_action "Failed to reinstall '$pkg' for '$file'." "ERROR"
                 }
             else
-                red "$FAILURE File $file is not owned by any package. Skipping."
-                log_action "File $file is not owned by any package. Skipping." "WARNING"
+                echo "${WARNING} File '$file' is not owned by any package. Skipping."
+                log_action "File '$file' is not owned by any package. Skipping." "WARNING"
             fi
         else
-            red "$FAILURE File $file does not exist. Skipping."
-            log_action "File $file does not exist. Skipping." "WARNING"
+            echo "${WARNING} File '$file' does not exist. Skipping."
+            log_action "File '$file' does not exist. Skipping." "WARNING"
         fi
     done <<< "$permission_errors"
-    green "$SUCCESS Permissions audited and corrected using pacman."
+    echo "${SUCCESS} Permissions audited and corrected using pacman."
     log_action "Permissions audited and corrected using pacman." "INFO"
 }
 
-reset_pkgs() {
-    log_action "Starting full reset of package permissions..." "INFO"
-    echo "$STATS Resetting permissions for all installed packages..."
+# --- Reset Functions:
+
+reset_pkg_permissions() {
+    log_action "Starting reset of package permissions..." "INFO"
+    echo "${INFO} Resetting permissions for all installed packages..."
     local pkg_list
-    pkg_list=$(pacman -Qq)
-    
+    pkg_list=$(pacman -Qqn)
+
     for pkg in $pkg_list; do
-        echo "$STATS Resetting permissions for package $pkg"
-        sudo pacman -Qkk "$pkg" 2>/dev/null | grep -E 'Permissions differ|Ownership differs' && {
-            sudo pacman -S "$pkg" --noconfirm --needed || {
-                red "$FAILURE Failed to reinstall $pkg to reset permissions."
-                log_action "Failed to reinstall $pkg for full reset." "ERROR"
-            }
-        }
+        echo "${INFO} Resetting permissions for package '$pkg'"
+        files=$(pacman -Ql "$pkg" | awk '{print $2}')
+        for file in $files; do
+            if [[ -e "$file" ]]; then
+                # Retrieve expected permissions and ownership
+                expected_perms=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Permissions differ' | awk -F 'should be ' '{print $2}' | awk -F ',' '{print $1}')
+                expected_owner=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Ownership differs' | awk '{print $3}')
+                expected_group=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Ownership differs' | awk '{print $4}')
+
+                if [[ -n "$expected_owner" && -n "$expected_group" ]]; then
+                    chown "$expected_owner:$expected_group" "$file" &>/dev/null || {
+                        echo "${WARNING} Failed to chown '$file' to $expected_owner:$expected_group"
+                        log_action "Failed to chown '$file' to $expected_owner:$expected_group" "WARNING"
+                    }
+                fi
+
+                if [[ -n "$expected_perms" ]]; then
+                    chmod "$expected_perms" "$file" &>/dev/null || {
+                        echo "${WARNING} Failed to chmod '$file' to $expected_perms"
+                        log_action "Failed to chmod '$file' to $expected_perms" "WARNING"
+                    }
+                fi
+            fi
+        done
     done
-    green "$SUCCESS Completed full reset of package permissions."
-    log_action "Completed full reset of package permissions." "INFO"
+    echo "${SUCCESS} Completed reset of package permissions."
+    log_action "Completed reset of package permissions." "INFO"
+}
+
+reinstall_pkgs() {
+    log_action "Starting reinstallation of all packages..." "INFO"
+    echo "${INFO} Reinstalling all installed packages..."
+    pacman -Qqn > /tmp/pkg_list
+    pacman -S --noconfirm --needed - < /tmp/pkg_list || {
+        echo "${FAILURE} Failed to reinstall packages."
+        log_action "Failed to reinstall packages." "ERROR"
+        return 1
+    }
+    echo "${SUCCESS} All packages reinstalled."
+    log_action "All packages reinstalled successfully." "INFO"
 }
 
 reset_directories() {
     log_action "Resetting system directory permissions." "DEBUG"
     declare -A dir_permissions=(
-        ["/etc"]=755
-        ["/var"]=755
-        ["/usr"]=755
-        ["/bin"]=755
-        ["/sbin"]=755
-        ["/lib"]=755
-        ["/lib64"]=755
-        ["/opt"]=755
-        ["/home"]=755
-        ["/root"]=750
-        ["/tmp"]=1777
-        ["/srv"]=755
-        ["/mnt"]=755
-        ["/media"]=755
+        ["/bin"]="755"
+        ["/boot"]="755"
+        ["/dev"]="755"
+        ["/dev/shm"]="1777"
+        ["/etc"]="755"
+        ["/home"]="755"
+        ["/lib"]="755"
+        ["/lib64"]="755"
+        ["/mnt"]="755"
+        ["/opt"]="755"
+        ["/root"]="750"
+        ["/run"]="755"
+        ["/sbin"]="755"
+        ["/srv"]="755"
+        ["/tmp"]="1777"
+        ["/usr"]="755"
+        ["/var"]="755"
     )
 
     for dir in "${!dir_permissions[@]}"; do
         if [[ -d "$dir" ]]; then
-            sudo chmod "${dir_permissions[$dir]}" "$dir" && log_action "Set permissions for $dir to ${dir_permissions[$dir]}." "INFO"
-            sudo chown root:root "$dir" && log_action "Set ownership for $dir to root:root." "INFO"
+            local perm
+            perm="${dir_permissions[$dir]}"
+            chmod "$perm" "$dir" &>/dev/null || {
+                echo "${WARNING} Failed to set permissions for '$dir' to $perm."
+                log_action "Failed to set permissions for '$dir' to $perm." "WARNING"
+            }
+            chown root:root "$dir" &>/dev/null || {
+                echo "${WARNING} Failed to set ownership for '$dir' to root:root."
+                log_action "Failed to set ownership for '$dir' to root:root." "WARNING"
+            }
+            echo "${SUCCESS} Set '$dir' to root:root with permissions $perm."
+            log_action "Set '$dir' to root:root with permissions $perm." "INFO"
+        else
+            echo "${WARNING} Directory '$dir' does not exist. Skipping."
+            log_action "Directory '$dir' does not exist. Skipping." "WARNING"
         fi
     done
-    green "$SUCCESS System directories permissions reset."
+
+    # Handle special bits and symbolic links
+    echo "${INFO} Setting special bits and handling symbolic links..."
+    chmod +t /tmp && log_action "Set sticky bit on /tmp." "INFO"
+    chmod g+s /usr/bin && log_action "Set setgid bit on /usr/bin." "INFO"
+
+    echo "${SUCCESS} System directories permissions reset."
     log_action "System directories permissions reset completed." "INFO"
 }
 
 reset_etc() {
     log_action "Resetting /etc permissions..." "DEBUG"
-    sudo find /etc -type f | xargs -P 4 -I {} chmod 644 {} && log_action "Set file permissions in /etc to 644." "INFO"
-    sudo find /etc -type d | xargs -P 4 -I {} chmod 755 {} && log_action "Set directory permissions in /etc to 755." "INFO"
-    sudo chmod 600 /etc/shadow /etc/gshadow && log_action "Restricted access to /etc/shadow and /etc/gshadow." "INFO"
-    sudo chmod 644 /etc/passwd /etc/group && log_action "Set permissions for /etc/passwd and /etc/group to 644." "INFO"
-    sudo chmod 440 /etc/sudoers && log_action "Set /etc/sudoers to 440." "INFO"
-    sudo setfacl --restore="/etc/permissions.acl" 2>/dev/null || true
-    sudo setfattr --restore="/etc/permissions.attrs" 2>/dev/null || true
-    green "$SUCCESS /etc permissions reset."
-    log_action "/etc permissions reset completed." "INFO"
+    if [[ -d "/etc" ]]; then
+        find /etc -type f -exec chmod 644 {} \; -exec chown root:root {} \; &>/dev/null
+        find /etc -type d -exec chmod 755 {} \; -exec chown root:root {} \; &>/dev/null
+        chmod 600 /etc/shadow /etc/gshadow &>/dev/null && log_action "Restricted access to /etc/shadow and /etc/gshadow." "INFO" || {
+            echo "${WARNING} Failed to set permissions for /etc/shadow and /etc/gshadow."
+            log_action "Failed to set permissions for /etc/shadow and /etc/gshadow." "WARNING"
+        }
+        chmod 644 /etc/passwd /etc/group &>/dev/null && log_action "Set permissions for /etc/passwd and /etc/group to 644." "INFO" || {
+            echo "${WARNING} Failed to set permissions for /etc/passwd and /etc/group."
+            log_action "Failed to set permissions for /etc/passwd and /etc/group." "WARNING"
+        }
+        chmod 440 /etc/sudoers &>/dev/null && log_action "Set /etc/sudoers to 440." "INFO" || {
+            echo "${WARNING} Failed to set permissions for /etc/sudoers."
+            log_action "Failed to set permissions for /etc/sudoers." "WARNING"
+        }
+        echo "${SUCCESS} /etc permissions reset."
+        log_action "/etc permissions reset completed." "INFO"
+    else
+        echo "${WARNING} /etc directory does not exist."
+        log_action "/etc directory does not exist. Skipping." "WARNING"
+    fi
 }
 
 reset_home() {
-    log_action "Resetting /home permissions..." "DEBUG"
+    log_action "Resetting /home permissions..." "INFO"
+    echo "${INFO} Resetting permissions for all user home directories..."
     for dir in /home/*; do
         if [[ -d "$dir" ]]; then
+            local user
             user=$(basename "$dir")
-            sudo chown -R "$user":"$user" "$dir" && log_action "Set ownership for $dir to $user." "INFO"
-            sudo chmod 700 "$dir" && log_action "Set directory permissions for $dir to 700." "INFO"
-            sudo find "$dir" -type d | xargs -P 4 -I {} chmod 700 {} && log_action "Set permissions for directories under $dir to 700." "INFO"
-            sudo find "$dir" -type f | xargs -P 4 -I {} chmod 600 {} && log_action "Set permissions for files under $dir to 600." "INFO"
-            sudo setfacl --restore="$dir/permissions.acl" 2>/dev/null || true
-            sudo setfattr --restore="$dir/permissions.attrs" 2>/dev/null || true
+            echo "${INFO} Processing home directory: $user"
+
+            # Preserve execute permissions for executables
+            echo "${INFO} Preserving execute permissions for executables in '$dir'..."
+            exec_files_snapshot="/tmp/exec_files_snapshot_$user.txt"
+            find "$dir" -type f \( -perm -u=x -o -perm -g=x -o -perm -o=x \) -print0 > "$exec_files_snapshot"
+
+            # Apply ownership and initial permissions
+            chown -R "$user:$user" "$dir" &>/dev/null || {
+                echo "${WARNING} Failed to chown '$dir' to $user:$user"
+                log_action "Failed to chown '$dir' to $user:$user" "WARNING"
+            }
+            chmod 755 "$dir" &>/dev/null || {
+                echo "${WARNING} Failed to set permissions for '$dir' to 755."
+                log_action "Failed to set permissions for '$dir' to 755." "WARNING"
+            }
+
+            # Update permissions for subdirectories with progress feedback
+            local total_dirs=$(find "$dir" -type d | wc -l)
+            local count_dirs=0
+
+            echo "${INFO} Resetting directory permissions for '$user'..."
+            find_args=("$dir")
+            for path in "${EXCLUDE_PATHS[@]}"; do
+                find_args+=("-path" "$path" "-prune" "-o")
+            done
+            find_args+=("(" "-type" "d" ")" "-print0")
+
+            find "${find_args[@]}" | while IFS= read -r -d '' subdir; do
+                chmod 755 "$subdir" &>/dev/null || {
+                    echo "${WARNING} Failed to set permissions for '$subdir' to 755."
+                    log_action "Failed to set permissions for '$subdir' to 755." "WARNING"
+                }
+                chown "$user:$user" "$subdir" &>/dev/null || {
+                    echo "${WARNING} Failed to chown '$subdir' to $user:$user."
+                    log_action "Failed to chown '$subdir' to $user:$user." "WARNING"
+                }
+                ((count_dirs++))
+                printf "Processing $user: %d/%d directories\r" "$count_dirs" "$total_dirs"
+            done
+            echo
+
+            # Update permissions for files with progress feedback
+            local total_files=$(find "$dir" -type f | wc -l)
+            local count_files=0
+
+            echo "${INFO} Resetting file permissions for '$user'..."
+            find_args=("$dir")
+            for path in "${EXCLUDE_PATHS[@]}"; do
+                find_args+=("-path" "$path" "-prune" "-o")
+            done
+            find_args+=("(" "-type" "f" ")" "-print0")
+
+            find "${find_args[@]}" | while IFS= read -r -d '' file; do
+                chmod 644 "$file" &>/dev/null || {
+                    echo "${WARNING} Failed to set permissions for '$file' to 644."
+                    log_action "Failed to set permissions for '$file' to 644." "WARNING"
+                }
+                chown "$user:$user" "$file" &>/dev/null || {
+                    echo "${WARNING} Failed to chown '$file' to $user:$user."
+                    log_action "Failed to chown '$file' to $user:$user." "WARNING"
+                }
+                ((count_files++))
+                printf "Processing $user: %d/%d files\r" "$count_files" "$total_files"
+            done
+            echo
+
+            # Restore execute permissions for previously executable files
+            if [[ -s "$exec_files_snapshot" ]]; then
+                echo "${INFO} Restoring execute permissions for executables in '$dir'..."
+                while IFS= read -r -d '' exec_file; do
+                    chmod +x "$exec_file" &>/dev/null || {
+                        echo "${WARNING} Failed to set execute permissions for '$exec_file'."
+                        log_action "Failed to set execute permissions for '$exec_file'." "WARNING"
+                    }
+                done < "$exec_files_snapshot"
+                rm -f "$exec_files_snapshot"
+            fi
+
+            echo "${SUCCESS} Reset permissions for '$dir'."
+            log_action "Reset permissions for '$dir'." "INFO"
         fi
     done
-    green "$SUCCESS /home permissions reset."
+    echo "${SUCCESS} /home permissions reset."
     log_action "/home permissions reset completed." "INFO"
 }
+
+# --- Reporting and Help Functions:
 
 generate_report() {
     local report_file="/var/log/perm_master_report_$(date '+%Y%m%d%H%M%S').json"
     echo "{" > "$report_file"
     echo "\"report_time\": \"$(date '+%Y-%m-%d %H:%M:%S')\"," >> "$report_file"
     echo "\"actions\": [" >> "$report_file"
-    grep -E '\[INFO\]' /var/log/perm_master.log | awk '{print "{\"timestamp\":\""$1" "$2"\", \"message\":\""$6"\"},"}' >> "$report_file"
+    grep -E '\[INFO\]' "$LOG_FILE" | awk '{
+        timestamp = $1 " " $2;
+        $1 = ""; $2 = "";
+        message = substr($0, index($0,$3));
+        printf "{\"timestamp\":\"%s\", \"message\":\"%s\"},\n", timestamp, message
+    }' >> "$report_file"
+    # Remove trailing comma
     sed -i '$ s/,$//' "$report_file"
     echo "]" >> "$report_file"
     echo "}" >> "$report_file"
-    green "$SUCCESS Report generated at $report_file"
-    log_action "Detailed report generated at $report_file" "INFO"
-}
-
-send_email_notification() {
-    local subject="PermMaster Report - $(date '+%Y-%m-%d %H:%M:%S')"
-    local recipient="admin@example.com"
-    mail -s "$subject" "$recipient" < /var/log/perm_master.log
-    green "$SUCCESS Email notification sent to $recipient"
-    log_action "Email notification sent to $recipient" "INFO"
+    echo "${SUCCESS} Report generated at '$report_file'"
+    log_action "Detailed report generated at '$report_file'" "INFO"
 }
 
 display_help() {
     echo "PermMaster - A multi-tool for managing system permissions on Arch Linux."
     echo ""
     echo "Usage:"
-    echo "  sudo ./permission_manifest.sh"
+    echo "  sudo ./perm_master.sh"
     echo ""
     echo "Options:"
-    echo "  1. Create Permissions Manifest"
+    echo "  1. Create Permissions Snapshot"
     echo "     - Generates a snapshot of current permissions, ACLs, and extended attributes."
-    echo "     - Example: Creates 'permissions_manifest.perms', 'permissions_manifest.acl', and 'permissions_manifest.attrs'."
     echo ""
-    echo "  2. Apply Permissions Manifest"
-    echo "     - Restores permissions from the manifest files."
-    echo "     - Example: Uses 'permissions_manifest.perms', 'permissions_manifest.acl', and 'permissions_manifest.attrs' to restore."
+    echo "  2. Apply Permissions Snapshot"
+    echo "     - Restores permissions from the snapshot files."
     echo ""
-    echo "  3. Apply Permissions Manifest (DRYRUN)"
-    echo "     - Doesnt make changes instead shows what would be done."
-    echo "     - Example: Same as above but printed not executed."
+    echo "  3. Apply Permissions Snapshot (Dry-Run)"
+    echo "     - Simulates applying permissions without making changes."
     echo ""
     echo "  4. Backup Current Permissions"
-    echo "     - Create backup of system permissions"
-    echo "     - Example: "
-    echo "" 
+    echo "     - Creates a backup of the current permissions snapshot."
+    echo ""
     echo "  5. Audit and Fix with Pacman"
     echo "     - Uses 'pacman -Qkk' to audit and fix permissions of package-managed files."
-    echo "     - Example: Identifies files with incorrect permissions and reinstalls packages as needed."
     echo ""
-    echo "  6. Audit and Fix with Pacsift"
-    echo "     - Uses 'paccheck' and 'pacrepairfile' from 'pacutils' to audit and fix permissions."
-    echo "     - Example: Automatically repairs files with incorrect permissions."
-    echo ""
-    echo "  7. Reset Package Permissions"
+    echo "  6. Reset Package Permissions"
     echo "     - Resets permissions of all installed packages."
-    echo "     - Note: This is equivalent to option 3."
+    echo ""
+    echo "  7. Reinstall All Packages"
+    echo "     - Reinstalls all installed packages."
     echo ""
     echo "  8. Reset System Directories"
     echo "     - Resets permissions of common system directories to their defaults."
-    echo "     - Example: Sets '/etc' to 755 and ownership to 'root:root'."
     echo ""
     echo "  9. Reset /etc Permissions"
-    echo "     - Resets permissions within the '/etc' directory, including ACLs and extended attributes."
+    echo "     - Resets permissions within the '/etc' directory."
     echo ""
-    echo "  10. Reset /home Permissions"
-    echo "     - Resets permissions within the '/home' directory for all users, including ACLs and extended attributes."
+    echo " 10. Reset /home Permissions"
+    echo "     - Resets permissions within the '/home' directory for all users."
     echo ""
-    echo " 11. Generate Detailed Report"
-    echo " 12. Send Email Notification with Report"
+    echo " 11. Import Standard Permissions"
+    echo "     - Applies standard permissions as per system defaults."
+    echo ""
+    echo " 12. Generate Detailed Report"
+    echo "     - Generates a JSON report of actions taken."
+    echo ""
     echo " 13. Help"
     echo "     - Displays this help message."
     echo ""
     echo "  0. Exit"
     echo "     - Exits the script."
 }
+
 display_menu() {
     clear
-    green "$EXPLOSION ---------- // PermMaster //"
+    echo "💥${CYA} ------ // PermMaster //${NC}"
     echo ""
-    echo -e "${GRE}1.${NC} Create Manifest       ${GRE}2.${NC} Apply Manifest"
-    echo -e "${GRE}3.${NC} Apply (Dry-Run)       ${GRE}4.${NC} Backup Permissions"
-    echo -e "${GRE}5.${NC} Pacman Audit          ${GRE}6.${NC} Pacsift Audit"
-    echo -e "${GRE}7.${NC} Reset Packages        ${GRE}8.${NC} Reset Directories"
-    echo -e "${GRE}9.${NC} Reset /etc            ${GRE}10.${NC} Reset /home"
-    echo -e "${GRE}11.${NC} Report               ${GRE}12.${NC} Email Notify"
-    echo -e "${GRE}13.${NC} Help                 ${RED}0.${NC} Exit"
+    echo -e "${CYA}1.${NC} Snapshot               ${CYA}2.${NC} Apply Snapshot"
+    echo -e "${CYA}3.${NC} Apply (Dry-Run)        ${CYA}4.${NC} Backup Permissions"
+    echo -e "${CYA}5.${NC} Pacman Audit           ${CYA}6.${NC} Reset Pkg Perms"
+    echo -e "${CYA}7.${NC} Reinstall Pkgs         ${CYA}8.${NC} Reset Directories"
+    echo -e "${CYA}9.${NC} Reset /etc             ${CYA}10.${NC} Reset /home"
+    echo -e "${CYA}11.${NC} Import Perms          ${CYA}12.${NC} Report"
+    echo -e "${CYA}13.${NC} Help"
+    echo -e "${RED}0.${NC} Exit"
     echo ""
     echo -ne "By your command: "
 }
 
+# --- Main Control Function:
+
 main() {
-    trap 'red "$FAILURE An error occurred. Exiting gracefully."; log_action "Script encountered an error and exited." "ERROR"; exit 1' ERR
-    trap 'green "Cleaning up before exit."; log_action "Script ended by user." "DEBUG"; exit 0' SIGINT SIGTERM
+    trap 'echo "${FAILURE} An error occurred. Exiting gracefully."; log_action "Script encountered an error and exited." "ERROR"; exit 1' ERR
+    trap 'echo "${INFO} Cleaning up before exit."; log_action "Script ended by user." "DEBUG"; exit 0' SIGINT SIGTERM
 
     check_dependencies
 
     if [ "$(id -u)" -ne 0 ]; then
-        sudo "$0" "$@"
-        exit $?
+        echo "This script requires root privileges. Attempting to escalate privileges..."
+        exec sudo "$0" "$@"
     fi
+
     echo "💀 WARNING: You are now operating as root..."
-    sleep 1 
+    sleep 1
 
     while true; do
         display_menu
         read -r command
         case "$command" in
-            1) create_manifest ;;
-            2) apply_manifest ;;
-            3) apply_manifest_dry_run ;;
+            1) create_snapshot ;;
+            2) apply_snapshot ;;
+            3) apply_snapshot_dry_run ;;
             4) backup_permissions ;;
             5) audit_pacman ;;
-            6) audit_pacsift ;;
-            7) reset_pkgs ;;
+            6) reset_pkg_permissions ;;
+            7) reinstall_pkgs ;;
             8) reset_directories ;;
             9) reset_etc ;;
             10) reset_home ;;
-            11) generate_report ;;
-            12) send_email_notification ;;
+            11) import_standard_permissions ;;
+            12) generate_report ;;
             13) display_help ;;
-            0) 
-                echo "Exiting..." 
+            0)
+                echo "Exiting..."
                 log_action "Script exited by user." "INFO"
                 exit 0 ;;
-            *) 
-                red "$FAILURE Invalid option. Please try again."
+            *)
+                echo "${FAILURE} Invalid option. Please try again."
                 log_action "Invalid menu option selected: $command" "WARNING" ;;
         esac
         echo ""
@@ -473,5 +694,5 @@ main() {
     done
 }
 
-# --- // Start Script:
+# --- Start Script:
 main "$@"

@@ -1,0 +1,234 @@
+#!/bin/bash
+
+# Function to display a menu
+display_menu() {
+    echo "Choose an option:"
+    echo "1) Backup System Permissions"
+    echo "2) Restore System Permissions"
+    echo "3) Change Username"
+    echo "4) Lock File"
+    echo "5) Unlock File"
+    echo "6) Exit"
+}
+
+# Function to check for root privileges and auto-escalate
+auto_escalate() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "This script requires root privileges. Attempting to escalate privileges..."
+        exec sudo "$0" "$@"
+        exit 0
+    fi
+}
+
+# Function to backup system permissions and ownerships
+backup_system_permissions() {
+    read -rp "Enter the backup directory path: " backup_dir
+    if [ -z "$backup_dir" ]; then
+        echo "Backup directory path cannot be empty."
+        return 1
+    fi
+
+    mkdir -p "$backup_dir" || { echo "Failed to create backup directory. Check your permissions."; return 1; }
+
+    echo "Backing up system permissions..."
+    getfacl -Rn --one-file-system / > "$backup_dir/system_perms.acl" || { echo "Failed to backup system permissions."; return 1; }
+
+    echo "Backing up system ownerships..."
+    find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /tmp -o -path /mnt -o -path /media -o -path /lost+found \) -prune -o -exec stat --format '%U %G %n' {} \; > "$backup_dir/system_ownerships.txt" || { echo "Failed to backup system ownerships."; return 1; }
+
+    echo "System ownerships and permissions successfully backed up in $backup_dir."
+}
+
+# Function to restore system permissions and ownerships
+restore_system_permissions() {
+    read -rp "Enter the backup directory path: " backup_dir
+    read -rp "Enter the old user name: " old_user
+    read -rp "Enter the target user name: " target_user
+
+    if [ -z "$backup_dir" ] || [ -z "$old_user" ] || [ -z "$target_user" ]; then
+        echo "Backup directory path, old user name, and target user name cannot be empty."
+        return 1
+    fi
+
+    # Ensure the backup files exist
+    if [ ! -f "$backup_dir/system_ownerships.txt" ]; then
+        echo "Ownership backup not found in $backup_dir."
+        return 1
+    fi
+    if [ ! -f "$backup_dir/system_perms.acl" ]; then
+        echo "Permissions backup not found in $backup_dir."
+        return 1
+    fi
+
+    echo "Aligning the ACL file to the target user..."
+    sed -i "s/\\b$old_user\\b/$target_user/g" "$backup_dir/system_perms.acl" || { echo "Failed to change username in ACL file."; return 1; }
+
+    echo "Restoring ACLs..."
+    setfacl --restore="$backup_dir/system_perms.acl" || { echo "Failed to restore system permissions."; return 1; }
+
+    echo "Restoring ownerships for user $old_user to $target_user..."
+    backup_file="$backup_dir/system_ownerships.txt"
+
+    while IFS= read -r line; do
+        owner=$(echo "$line" | awk '{print $1}')
+        group=$(echo "$line" | awk '{print $2}')
+        path=$(echo "$line" | awk '{for(i=3;i<=NF;++i) printf $i " "; print ""}')
+
+        # Trim whitespace from path
+        path=$(echo "$path" | xargs)
+
+        # Change ownership only if it matches the old_user
+        if [[ "$owner" == "$old_user" ]]; then
+            owner="$target_user"
+        fi
+        if [[ "$group" == "$old_user" ]]; then
+            group="$target_user"
+        fi
+
+        if [[ -e "$path" ]]; then
+            chown "$owner:$group" "$path" 2>/dev/null || echo "Failed to chown $path"
+        else
+            echo "Warning: $path does not exist, skipping."
+        fi
+    done < "$backup_file"
+
+    echo "Restoring critical system files ownership to root..."
+    # Explicitly ensure critical system files are owned by root
+    critical_paths=(
+        "/etc"
+        "/bin"
+        "/sbin"
+        "/usr"
+        "/lib"
+        "/lib64"
+        "/var"
+        "/boot"
+        "/root"
+    )
+    for critical_path in "${critical_paths[@]}"; do
+        chown -R root:root "$critical_path" || echo "Failed to set ownership for $critical_path"
+    done
+
+    echo "System ownerships and permissions successfully restored and set to $target_user."
+}
+
+# Function to change username safely
+change_username() {
+    local old_user="$1"
+    local new_user="$2"
+
+    # Validate input
+    if [ -z "$old_user" ] || [ -z "$new_user" ]; then
+        echo "Old username and new username cannot be empty."
+        return 1
+    fi
+
+    # Prevent changing 'root' username
+    if [ "$old_user" = "root" ] || [ "$new_user" = "root" ]; then
+        echo "Cannot change the username of the root user."
+        return 1
+    fi
+
+    # Check if old user exists
+    if ! id "$old_user" &>/dev/null; then
+        echo "User '$old_user' does not exist."
+        return 1
+    fi
+
+    # Check if new user already exists
+    if id "$new_user" &>/dev/null; then
+        echo "User '$new_user' already exists."
+        return 1
+    fi
+
+    echo "Changing username from '$old_user' to '$new_user'..."
+
+    # Lock the user account
+    usermod -L "$old_user" || { echo "Failed to lock user account."; return 1; }
+
+    # Change the username
+    usermod -l "$new_user" "$old_user" || { echo "Failed to change username."; return 1; }
+
+    # Rename the home directory if it exists
+    if [ -d "/home/$old_user" ]; then
+        usermod -d "/home/$new_user" -m "$new_user" || { echo "Failed to move home directory."; return 1; }
+    else
+        usermod -d "/home/$new_user" "$new_user" || { echo "Failed to set new home directory."; return 1; }
+        mkdir -p "/home/$new_user"
+        chown "$new_user":"$new_user" "/home/$new_user"
+    fi
+
+    # Update group name if it matches the old username
+    if getent group "$old_user" &>/dev/null; then
+        groupmod -n "$new_user" "$old_user" || { echo "Failed to change group name."; return 1; }
+    fi
+
+    # Unlock the user account
+    usermod -U "$new_user" || { echo "Failed to unlock user account."; return 1; }
+
+    # Update ownership of files and directories
+    echo "Updating ownership of files and directories. This may take a while..."
+    find / -xdev -user "$old_user" -exec chown -h "$new_user" {} + 2>/dev/null
+    find / -xdev -group "$old_user" -exec chgrp -h "$new_user" {} + 2>/dev/null
+
+    echo "Username changed from '$old_user' to '$new_user' successfully."
+}
+
+# Function to lock a file
+lock_file() {
+    read -rp "Enter the file path to lock: " file_path
+    if [ -e "$file_path" ]; then
+        chattr +i "$file_path" || { echo "Failed to lock $file_path"; return 1; }
+        echo "File $file_path locked successfully."
+    else
+        echo "File $file_path does not exist."
+        return 1
+    fi
+}
+
+# Function to unlock a file
+unlock_file() {
+    read -rp "Enter the file path to unlock: " file_path
+    if [ -e "$file_path" ]; then
+        chattr -i "$file_path" || { echo "Failed to unlock $file_path"; return 1; }
+        echo "File $file_path unlocked successfully."
+    else
+        echo "File $file_path does not exist."
+        return 1
+    fi
+}
+
+# Main script logic
+auto_escalate "$@"
+
+while true; do
+    display_menu
+    read -rp "Select an option (1-6): " option
+
+    case $option in
+        1)
+            backup_system_permissions
+            ;;
+        2)
+            restore_system_permissions
+            ;;
+        3)
+            read -rp "Enter the old username: " old_username
+            read -rp "Enter the new username: " new_username
+            change_username "$old_username" "$new_username"
+            ;;
+        4)
+            lock_file
+            ;;
+        5)
+            unlock_file
+            ;;
+        6)
+            echo "Exiting..."
+            exit 0
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            ;;
+    esac
+done
