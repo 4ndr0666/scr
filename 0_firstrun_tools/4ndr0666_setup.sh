@@ -160,11 +160,10 @@ restore_backup() {
 add_aliases() {
     local shell_config_files=(
         "$HOME/.bashrc"
+        "$HOME/.config/zsh/.zprofile"
         "$HOME/.zshrc"
-        "$HOME/.config/fish/config.fish"
         "/root/.bashrc"
         "/root/.zshrc"
-        "/root/.config/fish/config.fish"
     )
 
     for config_file in "${shell_config_files[@]}"; do
@@ -176,15 +175,15 @@ add_aliases() {
             if ! grep -q "alias unlock='sudo chattr -i '" "$config_file"; then
                 echo "alias unlock='sudo chattr -i '" >> "$config_file" || log_message "Failed to add unlock alias to $config_file"
             fi
-            # For fish shell, use different syntax
-            if [[ "$config_file" == *"config.fish" ]]; then
-                if ! grep -q "alias lock 'sudo chattr +i '" "$config_file"; then
-                    echo "alias lock 'sudo chattr +i '" >> "$config_file" || log_message "Failed to add lock alias to $config_file (fish shell)"
-                fi
-                if ! grep -q "alias unlock 'sudo chattr -i '" "$config_file"; then
-                    echo "alias unlock 'sudo chattr -i '" >> "$config_file" || log_message "Failed to add unlock alias to $config_file (fish shell)"
-                fi
+            if ! grep -q "source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh 2>/dev/null"; then
+                echo "source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh 2>/dev/null" >> "$config_file" || log_message "Failed to add zsh-autosuggestions to $config_file"
             fi
+            if ! grep -q "source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh 2>/dev/null"; then
+                echo "source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh 2>/dev/null" >> "$config_file" || log_message "Failed to add zsh-syntax-highlighting to $config_file"
+            fi
+            if ! grep -q "source /usr/share/autojump/autojump.zsh 2>/dev/null"; then
+                echo "source /usr/share/autojump/autojump.zsh 2>/dev/null" >> "$config_file" || log_message "Failed to add autojump to $config_file"
+            fi            
         fi
     done
 
@@ -193,14 +192,15 @@ add_aliases() {
         source "$HOME/.bashrc"
     elif [[ -f "$HOME/.zshrc" ]]; then
         source "$HOME/.zshrc"
-    elif [[ -f "$HOME/.config/fish/config.fish" ]]; then
-        source "$HOME/.config/fish/config.fish"
     fi
 }
 
 install_deps() {
-    sudo pacman -Sy && sudo pacman -S github-cli git-delta bashmount fzf git-lfs debugedit lsd eza fd xorg-xhost xclip ripgrep bat diffuse neovim micro expac  --noconfirm --needed
+    sudo pacman -Sy && sudo pacman -S zsh-syntax-highlighting autojump zsh-autosuggestions github-cli git-delta bashmount fzf git-lfs debugedit lsd eza fd xorg-xhost xclip ripgrep bat diffuse neovim micro expac  --noconfirm --needed
     yay -S lf-git --noconfirm --needed
+    touch "$HOME/.cache/zshhistory"
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
+    echo 'source ~/powerlevel10k/powerlevel10k.zsh-theme' >>! ~/.zshrc
 }
 
 # Main function to execute the backup or restore process
