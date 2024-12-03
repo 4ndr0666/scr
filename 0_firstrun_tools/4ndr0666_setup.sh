@@ -199,7 +199,7 @@ add_aliases() {
 }
 
 install_deps() {
-    sudo pacman -Sy && sudo pacman -S github-cli git-delta debugedit lsd eza fd xorg-xhost xclip ripgrep bat diffuse neovim micro expac  --noconfirm --needed
+    sudo pacman -Sy && sudo pacman -S github-cli git-delta bashmount fzf git-lfs debugedit lsd eza fd xorg-xhost xclip ripgrep bat diffuse neovim micro expac  --noconfirm --needed
     yay -S lf-git --noconfirm --needed
 }
 
