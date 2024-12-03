@@ -52,13 +52,30 @@ confirm_action() {
 # --- // Dependencies Check:
 check_dependencies() {
     local dependencies=("getfacl" "setfacl" "getfattr" "setfattr" "pacman" "chmod" "chown" "find" "rsync" "awk")
+    local missing_deps=()
     for dep in "${dependencies[@]}"; do
         if ! command -v "$dep" &>/dev/null; then
-            echo "${FAILURE} Dependency '$dep' is not installed."
-            log_action "Missing dependency: $dep" "ERROR"
-            exit 1
+            missing_deps+=("$dep")
         fi
     done
+
+    if [ "${#missing_deps[@]}" -ne 0 ]; then
+        echo "${FAILURE} Missing dependencies: ${missing_deps[*]}"
+        log_action "Missing dependencies: ${missing_deps[*]}" "ERROR"
+        if confirm_action "Do you want to install the missing dependencies now?"; then
+            sudo pacman -S --noconfirm "${missing_deps[@]}" || {
+                echo "${FAILURE} Failed to install dependencies."
+                log_action "Failed to install dependencies: ${missing_deps[*]}" "ERROR"
+                exit 1
+            }
+            echo "${SUCCESS} Missing dependencies installed successfully."
+            log_action "Missing dependencies installed successfully." "INFO"
+        else
+            echo "${FAILURE} Cannot proceed without installing missing dependencies."
+            log_action "User declined to install missing dependencies." "ERROR"
+            exit 1
+        fi
+    fi
 }
 
 # --- // Exclusions:
@@ -87,7 +104,7 @@ build_find_exclude() {
 # --- // Snapshot:
 create_snapshot() {
     log_action "Creating permissions snapshot." "INFO"
-    read -rp "Enter the full path to save the snapshot (without extension): " snapshot_file
+    read -rp "Enter the full path to save the snapshot (without extension) [permissions_snapshot]: " snapshot_file
     snapshot_file=${snapshot_file:-permissions_snapshot}
     snapshot_dir=$(dirname "$snapshot_file")
     mkdir -p "$snapshot_dir" || {
@@ -112,9 +129,9 @@ create_snapshot() {
 
     # Capture permissions and ownership
     find "${find_args[@]}" | while IFS= read -r -d '' path; do
-        perm=$(stat -c "%a" "$path")
-        user=$(stat -c "%U" "$path")
-        group=$(stat -c "%G" "$path")
+        perm=$(stat -c "%a" "$path" 2>/dev/null)
+        user=$(stat -c "%U" "$path" 2>/dev/null)
+        group=$(stat -c "%G" "$path" 2>/dev/null)
         echo "$perm $user $group $path" >> "$snapshot_file.perms"
     done
 
@@ -141,7 +158,7 @@ backup_permissions() {
         cp "$snapshot_file.acl" "$snapshot_file.acl.bak" 2>/dev/null
         cp "$snapshot_file.attrs" "$snapshot_file.attrs.bak" 2>/dev/null
         echo "${SUCCESS} Permissions snapshot backed up as $snapshot_file.*.bak"
-        log_action "Permissions snapshot backed up." "INFO"
+        log_action "Permissions snapshot backed up as $snapshot_file.*.bak" "INFO"
     else
         echo "${FAILURE} Snapshot file '$snapshot_file.perms' not found."
         log_action "Snapshot file '$snapshot_file.perms' not found for backup." "ERROR"
@@ -161,14 +178,16 @@ apply_snapshot() {
 
     if [[ -f "$snapshot_file.perms" && -f "$snapshot_file.acl" && -f "$snapshot_file.attrs" ]]; then
         echo "${INFO} Applying ACLs..."
-        find "${find_args[@]}" | xargs -0 setfacl --restore=- < "$snapshot_file.acl" || {
-            echo "${FAILURE} Failed to restore ACLs."
-            log_action "Failed to restore ACLs from $snapshot_file.acl" "ERROR"
-            # Continue even if ACLs fail
+        setfacl --restore="$snapshot_file.acl" 2>/dev/null || {
+            echo "${WARNING} Failed to restore ACLs."
+            log_action "Failed to restore ACLs from $snapshot_file.acl" "WARNING"
         }
 
         echo "${INFO} Applying Extended Attributes..."
-        find "${find_args[@]}" | xargs -0 setfattr --restore=- < "$snapshot_file.attrs" 2>/dev/null || log_action "Failed to restore extended attributes from $snapshot_file.attrs" "WARNING"
+        setfattr --restore="$snapshot_file.attrs" 2>/dev/null || {
+            echo "${WARNING} Failed to restore extended attributes."
+            log_action "Failed to restore extended attributes from $snapshot_file.attrs" "WARNING"
+        }
 
         echo "${INFO} Applying Permissions and Ownership..."
         while IFS=' ' read -r perm user group path; do
@@ -188,7 +207,7 @@ apply_snapshot() {
         done < "$snapshot_file.perms"
 
         echo "${SUCCESS} Permissions applied from $snapshot_file.*"
-        log_action "Permissions applied successfully from $snapshot_file." "INFO"
+        log_action "Permissions applied successfully from $snapshot_file.*" "INFO"
     else
         echo "${FAILURE} Snapshot files '$snapshot_file.*' not found."
         log_action "Snapshot files '$snapshot_file.*' not found." "ERROR"
@@ -323,7 +342,7 @@ audit_pacman() {
             pkg=$(pacman -Qo "$file" 2>/dev/null | awk '{print $5}')
             if [[ -n "$pkg" ]]; then
                 echo "${INFO} Restoring '$file' from package '$pkg'"
-                pacman -S "$pkg" --noconfirm --needed || {
+                sudo pacman -S "$pkg" --noconfirm --needed || {
                     echo "${FAILURE} Failed to reinstall '$pkg' for '$file'."
                     log_action "Failed to reinstall '$pkg' for '$file'." "ERROR"
                 }
@@ -350,10 +369,12 @@ reset_pkg_permissions() {
 
     for pkg in $pkg_list; do
         echo "${INFO} Resetting permissions for package '$pkg'"
+        local files
         files=$(pacman -Ql "$pkg" | awk '{print $2}')
         for file in $files; do
             if [[ -e "$file" ]]; then
                 # Retrieve expected permissions and ownership
+                local expected_perms expected_owner expected_group
                 expected_perms=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Permissions differ' | awk -F 'should be ' '{print $2}' | awk -F ',' '{print $1}')
                 expected_owner=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Ownership differs' | awk '{print $3}')
                 expected_group=$(pacman -Qkk "$pkg" 2>/dev/null | grep "$file" | grep 'Ownership differs' | awk '{print $4}')
@@ -492,7 +513,8 @@ reset_home() {
             }
 
             # Update permissions for subdirectories with progress feedback
-            local total_dirs=$(find "$dir" -type d | wc -l)
+            local total_dirs
+            total_dirs=$(find "$dir" -type d | wc -l)
             local count_dirs=0
 
             echo "${INFO} Resetting directory permissions for '$user'..."
@@ -517,7 +539,8 @@ reset_home() {
             echo
 
             # Update permissions for files with progress feedback
-            local total_files=$(find "$dir" -type f | wc -l)
+            local total_files
+            total_files=$(find "$dir" -type f | wc -l)
             local count_files=0
 
             echo "${INFO} Resetting file permissions for '$user'..."
@@ -591,39 +614,51 @@ display_help() {
     echo "Options:"
     echo "  1. Create Permissions Snapshot"
     echo "     - Generates a snapshot of current permissions, ACLs, and extended attributes."
+    echo "     - Example: Creates 'permissions_snapshot.perms', 'permissions_snapshot.acl', and 'permissions_snapshot.attrs'."
     echo ""
     echo "  2. Apply Permissions Snapshot"
     echo "     - Restores permissions from the snapshot files."
+    echo "     - Example: Uses 'permissions_snapshot.perms', 'permissions_snapshot.acl', and 'permissions_snapshot.attrs' to restore."
     echo ""
     echo "  3. Apply Permissions Snapshot (Dry-Run)"
     echo "     - Simulates applying permissions without making changes."
+    echo "     - Example: Shows what changes would be made from 'permissions_snapshot.perms' without applying them."
     echo ""
     echo "  4. Backup Current Permissions"
     echo "     - Creates a backup of the current permissions snapshot."
+    echo "     - Example: Copies 'permissions_snapshot.perms' to 'permissions_snapshot.perms.bak'."
     echo ""
     echo "  5. Audit and Fix with Pacman"
     echo "     - Uses 'pacman -Qkk' to audit and fix permissions of package-managed files."
+    echo "     - Example: Identifies files with incorrect permissions and reinstalls packages as needed."
     echo ""
     echo "  6. Reset Package Permissions"
     echo "     - Resets permissions of all installed packages."
+    echo "     - Example: Iterates through all installed packages and restores their file permissions."
     echo ""
     echo "  7. Reinstall All Packages"
     echo "     - Reinstalls all installed packages."
+    echo "     - Example: Forces a reinstall of every package to ensure correct permissions and ownership."
     echo ""
     echo "  8. Reset System Directories"
     echo "     - Resets permissions of common system directories to their defaults."
+    echo "     - Example: Sets '/etc' to 755 and ownership to 'root:root'."
     echo ""
     echo "  9. Reset /etc Permissions"
     echo "     - Resets permissions within the '/etc' directory."
+    echo "     - Example: Sets '/etc/passwd' to 644, '/etc/shadow' to 600, etc."
     echo ""
     echo " 10. Reset /home Permissions"
     echo "     - Resets permissions within the '/home' directory for all users."
+    echo "     - Example: Sets user home directories to 755 and their files to 644, preserving execute permissions."
     echo ""
     echo " 11. Import Standard Permissions"
     echo "     - Applies standard permissions as per system defaults."
+    echo "     - Example: Sets '/bin' to 755, '/root' to 750, etc."
     echo ""
     echo " 12. Generate Detailed Report"
     echo "     - Generates a JSON report of actions taken."
+    echo "     - Example: Creates a report file like 'perm_master_report_20241127012345.json' detailing all INFO logs."
     echo ""
     echo " 13. Help"
     echo "     - Displays this help message."

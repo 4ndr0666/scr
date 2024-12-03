@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# File: system_health_check.sh
+# Author: 4ndr0666
+# Edited: 12-2-24
 
-# --- System Health Check ---
-
+# =================================== // SYSTEM_HEALTH_CHECK.SH //
+# --- // Logging:
 LOG_FILE="/var/log/system_health_check.log"
-
-# Function to log messages with timestamp
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"

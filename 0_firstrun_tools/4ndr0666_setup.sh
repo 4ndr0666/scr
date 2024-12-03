@@ -1,8 +1,15 @@
 #!/bin/bash
-# File: quick_setup.sh
+# File: 4ndr0setup.sh
 # Author: 4ndr0666
+# Edited: 12-2-24
 
-# ============================== // QUICK_UTILS.SH //
+# ============================== // 4NDR0SETUP.SH //
+# --- // Auto-escalate:
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
+    exit $?
+fi
+
 # --- // Colors:
 #tput setaf 0 = black
 #tput setaf 1 = red
@@ -14,19 +21,13 @@
 #tput setaf 7 = gray
 #tput setaf 8 = light blue
 
-# --- AUTO_ESCALATE:
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
-
-# Function to log messages with timestamp
+# --- // Logging:
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a /var/log/makerecover2-etc.log
 }
 
-# Function to display help information
+# --- // Help:
 show_help() {
     cat << EOF
 Usage: ${0##*/} [OPTIONS]
@@ -37,7 +38,7 @@ Options:
   -h, --help             Display this help message and exit.
   backup                 Create a backup of critical /etc files and directories. This is the default action if no options are provided.
   restore                Restore files from a backup and compare them with the current /etc configurations using meld.
-  
+
 Example Usage:
   ${0##*/} backup        Create a backup of critical /etc files and directories.
   ${0##*/} restore       Restore and compare files from a selected backup using meld.
@@ -118,17 +119,17 @@ create_backup() {
 restore_backup() {
     local recover_dir="/var/recover"
     local restore_dir="/tmp/etc_restore"
-    
+
     # Ask the user to select a backup to restore
     local tarball_name
     tarball_name=$(whiptail --title "Select Backup" --radiolist "Choose a backup to restore:" 15 60 6 \
         $(ls "$recover_dir"/*.tar.gz | xargs -n1 basename | awk '{print $0 " " NR " OFF"}') 3>&1 1>&2 2>&3)
-    
+
     if [[ -z "$tarball_name" ]]; then
         log_message "Restore cancelled."
         return 1
     fi
-    
+
     # Ensure the restore directory exists and is empty
     rm -rf "$restore_dir"
     mkdir -p "$restore_dir" || { log_message "Failed to create restore directory."; return 1; }
@@ -197,6 +198,11 @@ add_aliases() {
     fi
 }
 
+install_deps() {
+    sudo pacman -Sy && sudo pacman -S github-cli git-delta debugedit lsd eza fd xorg-xhost xclip ripgrep bat diffuse neovim micro expac  --noconfirm --needed
+    yay -S lf-git --noconfirm --needed
+}
+
 # Main function to execute the backup or restore process
 main() {
     case "$1" in
@@ -220,23 +226,4 @@ main() {
     esac
 }
 
-# Execute the main function
 main "$@"
-
-
-
-=========================================================# --- // Install:
-sudo pacman -Sy
-sudo pacman -S github-cli --noconfirm --needed
-sudo pacman -S lf-git --noconfirm --needed || yay -S lf-git --noconfirm
-sudo pacman -S debugedit --noconfirm --needed
-sudo pacman -S lsd --noconfirm --needed
-sudo pacman -S eza --noconfirm --needed
-sudo pacman -S fd --noconfirm --needed
-sudo pacman -S xorg-xhost --noconfirm --needed
-sudo pacman -S xclip --noconfirm --needed
-sudo pacman -S ripgrep --noconfirm --needed
-sudo pacman -S diffuse --noconfirm --needed
-sudo pacman -S neovim --noconfirm --needed
-sudo pacman -S micro --noconfirm --needed
-sudo pacman -S expac --noconfirm --needed

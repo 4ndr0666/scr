@@ -36,7 +36,7 @@ for cmd in "${REQUIRED_CMDS[@]}"; do
     fi
 done
 
-# --- // Utilities:
+# --- // Utils:
 installpkg() {
     sudo pacman --noconfirm --needed -S "$1" >/dev/null 2>&1
 }
@@ -147,6 +147,7 @@ setup_zsh() {
     log_message "Setting up Zsh environment..."
     chsh -s /bin/zsh "$USER" >/dev/null 2>&1
     mkdir -p "$HOME/.cache/zsh/"
+    mkdir -p "$XDG_CONFIG_HOME/zsh"
 }
 
 # --- // Neovim Plugins Setup:

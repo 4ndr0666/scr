@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
+# File: home_manager.sh
+# Author: 4ndr0666
+# Edited: 12-2-24
 
-# --- Home Directory Manager ---
-
+# ============================= // HOME_MANAGER.SH //
+# --- // Constants:
 LOG_FILE="/var/log/home_manager.log"
 
-# Function to log messages with timestamp
+# --- // Logging:
 log_action() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"

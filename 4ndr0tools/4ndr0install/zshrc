@@ -69,6 +69,7 @@ setopt share_history          # Share history across all sessions
 setopt extended_history       # Save timestamps in history
 setopt hist_expire_dups_first
 setopt hist_ignore_space
+
 # fix zsh history behavior
 h() { if [ -z "$*" ]; then history 1; else history 1 | egrep "$@"; fi; }
 
@@ -101,6 +102,16 @@ bindkey '^e' edit-command-line
 bindkey -M vicmd '^[[P' vi-delete-char
 bindkey -M vicmd '^e' edit-command-line
 bindkey -M visual '^[[P' vi-delete
+
+# --- // LINE NAVIGATION:
+#autoload -Uz up-line-or-beginning-search
+#autoload -Uz down-line-or-beginning-search
+#zle -N up-line-or-beginning-search
+#zle -N down-line-or-beginning-search
+#bindkey '\eOA' up-line-or-beginning-search
+#bindkey '\e[A' up-line-or-beginning-search
+#bindkey '\eOB' down-line-or-beginning-search
+#bindkey '\e[B' down-line-or-beginning-search
 
 # --- // FZFCD:
 #cd_fzf() {
@@ -138,6 +149,7 @@ rehash_precmd() {
         fi
     fi
 }
+
 autoload -Uz add-zsh-hook
 add-zsh-hook -Uz precmd rehash_precmd
 
@@ -193,6 +205,7 @@ fi
 # ========================================= // PLUGINS //
 source_dir="/usr/share/zsh/plugins/"
 
+# Source all .zsh plugin files in subdirectories
 if [ -d "$source_dir" ]; then
     for plugin_dir in "$source_dir"/*/; do
         for plugin_file in "$plugin_dir"*.zsh; do
