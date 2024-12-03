@@ -65,7 +65,7 @@ sync_data() {
     whiptail --infobox "Syncing data..." 8 40
     sudo rsync -a --ignore-existing --update --progress --recursive \
         --exclude='*.mp4' --exclude='*.png' --exclude='*.jpg' --exclude='*.mov' \
-        --exclude='*.mkv' --exclude='*.gif' --exclude='*.zip' \
+        --exclude='*.mkv' --exclude='*.gif' --exclude='*.webm' --exclude='*.m4v' \
         "$mount_point/" "$new_home/" || { whiptail --msgbox "Data sync failed" 8 40; return; }
 
     sudo umount "$mount_point" || { whiptail --msgbox "Failed to unmount $mount_point" 8 40; return; }
