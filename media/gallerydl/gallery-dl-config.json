@@ -2,11 +2,11 @@
     "extractor": {
         "template": {
             "type": "url",
-            "url": "https://imgspice.com/a3tpltlx1zby/Jessica_Simpson_sexy_bikini_candids_21x_UHQ_{num:02d}.jpg",
+            "url": "https://c10.patreonusercontent.com/4/patreon-media/p/campaign/11680165/2dfc07e675e94b4c856a084f904b367f/eyJhIjoxLCJwIjoxfQ%3D%3D/{num:02d}.jpg",
             "range": {
                 "num": [
                     1,
-                    35
+                    190
                 ]
             },
             "format": "int"
@@ -14,31 +14,24 @@
         "sleep-request": [
             2.0,
             4.8
-        ]
+        ],
+        "cookies": "cookies.json"
     },
     "downloader": {
         "rate": "1M",
         "retries": 3,
         "timeout": 8.0,
-        "part-directory": "",
-        "skip": false
+        "part-directory": "/tmp/.download/",
+        "skip": true
     },
     "output": {
         "directory": ".",
         "log": {
-            "level": "info",
-            "logfile": {
-                "mode": "w",
-                "level": "debug"
-            }
-        },
-        "unsupportedfile": {
-            "mode": "a",
-            "format": "{asctime} {message}",
-            "format-date": "%Y-%m-%d-%H-%M-%S"
+            "level": "info"
         },
         "shorten": "eaw",
-        "ansi": true
+        "ansi": true,
+        "get-urls": true
     },
     "http": {
         "timeout": 8.0
