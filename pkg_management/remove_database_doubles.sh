@@ -12,12 +12,12 @@ log "Starting Pacman database cleanup..."
 
 # Step 1: Backup Pacman Database
 log "Backing up the Pacman database..."
-if cp -r /var/lib/pacman/local /var/lib/pacman/local.bak; then
-  log "Backup completed successfully."
-else
-  log "Backup failed. Exiting."
-  exit 1
-fi
+#if cp -r /var/lib/pacman/local /var/lib/pacman/local.bak; then
+#  log "Backup completed successfully."
+#else
+#  log "Backup failed. Exiting."
+#  exit 1
+#fi
 
 # Step 2: Verify and List Duplicate Packages
 log "Listing duplicated package entries..."

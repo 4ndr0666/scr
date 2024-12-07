@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
+# Author: 
+# Date:
+# Desc:
 
-# Define colors for output
+# ======================== // BROWSER_VACUUM.SH //
+# --- // Colors:
 RED="\e[01;31m"
 GRN="\e[01;32m"
 YLW="\e[01;33m"
@@ -8,7 +12,7 @@ RST="\e[00m"
 format="$(tput cr)$(tput cuf 45)"
 total=0
 
-# Spinner for indicating progress
+# --- // Spinner:  
 spinner() {
     local _format="$(tput cr)$(tput cuf 51)"
     local str="oO0o.." tmp
@@ -16,19 +20,20 @@ spinner() {
     while [[ -d /proc/$1 ]]; do
         tmp=${str#?}
         printf "\e[00;31m %c " "$str"
-        str="$tmp${str%$tmp}"
-        sleep 0.05
+            str="$tmp${str%$tmp}"
+            sleep 0.05
         printf "\b\b\b"
     done
     printf "  \b\b\e[00m"
 }
 
-# Function to clean databases by vacuuming and reindexing
+# --- // Clean:
 run_cleaner() {
+    # for each file that is a sqlite database, vacuum and reindex
     local _format="$(tput cr)$(tput cuf 46)"
     while read -r db; do
         echo -en "${GRN} Cleaning${RST}  ${db##'./'}"
-        # Record size of each file before and after vacuuming
+        # record size of each file before and after vacuuming
         s_old=$(stat -c%s "$db" 2>/dev/null) || s_old=4096
         (
             trap '' INT TERM
@@ -53,6 +58,7 @@ run_cleaner() {
     echo
 }
 
+# --- // Deps:
 dep_check() {
   for dep in bc find sqlite3 xargs; do
     if ! command -v "$dep" > /dev/null 2>&1; then
@@ -141,21 +147,21 @@ for user in $priv; do
     done
 
     # [BRAVE]
-    for b in {BraveSoftware/Brave-Browser,Brave-Browser,Brave-Browser-Beta,Brave-Browser-Nightly}; do
+    for b in {Brave-Browser-Beta,Brave-Browser}; do
         echo -en "[${YLW}$user${RST}] ${GRN}Scanning for $b${RST}"
-        if [[ -d "/home/$user/.config/$b/Default" ]]; then
-            echo "Debug: Entering Brave directory: /home/$user/.config/$b"
-            cd "/home/$user/.config/$b" || continue
+        if [[ -d "/home/$user/.config/BraveSoftware/$b/Default" ]]; then
+            echo "Debug: Entering Brave directory: /home/$user/.config/BraveSoftware/$b"
+            cd "/home/$user/.config/BraveSoftware/$b" || continue
             echo -e "$format [${GRN}found${RST}]"
             if_running "brave"
             while read -r profiledir; do
                 echo -e "[${YLW}${profiledir##'./'}${RST}]"
-                cd "/home/$user/.config/$b/$profiledir" || continue
+                cd "/home/$user/.config/BraveSoftware/$b/$profiledir" || continue
 		dep_check
                 run_cleaner
             done < <(find . -maxdepth 1 -type d -iname "Default" -o -iname "Profile*")
         else
-            echo "Debug: Brave directory not found: /home/$user/.config/$b/Default"
+            echo "Debug: Brave directory not found: /home/$user/.config/BraveSoftware/$b/Default"
             echo -e "$format [${RED}none${RST}]"
             sleep 0.1
             tput cuu 1
