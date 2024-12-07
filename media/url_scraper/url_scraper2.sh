@@ -1,7 +1,6 @@
 #!/bin/bash
-
-# file: Bash/URL_Scraper/url_scraper.sh
-# Author: Avinal Kumar (https://github.com/avinal)
+# file: url_scraper2.sh
+# Author: 4ndr0666
 # Description: Scrapes URLs from a given webpage or generates a sequence of image URLs based on a base URL with numerical enumeration. Checks their statuses with enhanced features.
 # Usage: sudo ./url_scraper.sh [OPTIONS] url
 # Options:
@@ -237,6 +236,18 @@ unknown_option() {
     usage
 }
 
+# Function to validate numerical inputs
+validate_numerical_input() {
+    local value="$1"
+    local description="$2"
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+        echo "$value"
+    else
+        echo -e "${LIGHTRED}Error: $description ($value) is not a valid non-negative integer.${NC}" >&2
+        exit 1
+    fi
+}
+
 # Main function to orchestrate the script
 main() {
     # If no arguments are provided, display usage
@@ -322,9 +333,9 @@ main() {
     # Check if the mode is sequence generation
     if [ "$mode" == "-s" ]; then
         # Validate numerical inputs
-        start_num=$(validate_numeric_input "$start_num" "Starting number")
-        end_num=$(validate_numeric_input "$end_num" "Ending number")
-        zero_padding=$(validate_numeric_input "$zero_padding" "Zero-padding size")
+        start_num=$(validate_numerical_input "$start_num" "Starting number")
+        end_num=$(validate_numerical_input "$end_num" "Ending number")
+        zero_padding=$(validate_numerical_input "$zero_padding" "Zero-padding size")
 
         if [ "$end_num" -lt "$start_num" ]; then
             echo -e "${LIGHTRED}Error: Ending number ($end_num) cannot be less than starting number ($start_num).${NC}"

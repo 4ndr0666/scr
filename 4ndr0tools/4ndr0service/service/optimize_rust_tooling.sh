@@ -171,7 +171,7 @@ cargo_install_or_update() {
             echo -e "${YELLOW}⚠️ Warning: Failed to install $tool_name.${NC}"
             log "Warning: Failed to install $tool_name."
         fi
-    }
+    fi
 }
 
 # Helper function to backup current Rust configuration
