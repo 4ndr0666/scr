@@ -180,8 +180,8 @@ optimize_db_tools_service() {
     check_directory_writable "$MYSQL_HOME"
     check_directory_writable "$SQLITE_HOME"
 
-    # Step 6: Backup configurations
-    backup_db_tools_configuration
+#    # Step 6: Backup configurations
+#    backup_db_tools_configuration
 
     # Step 7: Verify setup
     verify_db_tools_setup

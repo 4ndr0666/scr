@@ -95,8 +95,8 @@ optimize_node_service() {
     consolidate_node_directories
 
     # Step 8: Backup current Node.js and npm configuration
-    echo "🗄️ Backing up Node.js and npm configuration..."
-    backup_node_configuration
+#    echo "🗄️ Backing up Node.js and npm configuration..."
+#    backup_node_configuration
 
     # Step 9: Validate Node.js installation
     echo "✅ Validating Node.js installation..."

@@ -96,8 +96,8 @@ optimize_meson_service() {
     remove_empty_directories "$HOME/.meson"
 
     # Step 9: Backup current Meson configuration (optional)
-    echo "🗄️ Backing up Meson configuration..."
-    backup_meson_configuration
+#    echo "🗄️ Backing up Meson configuration..."
+#    backup_meson_configuration
 
     # Step 10: Final cleanup and summary
     echo "🧼 Performing final cleanup..."

@@ -132,7 +132,7 @@ optimize_electron_service() {
     fi
 
     # Step 6: Backup Electron configuration
-    backup_electron_configuration
+#    backup_electron_configuration
 
     echo "🎉 Electron environment optimization complete."
     log "Electron environment optimization completed successfully."

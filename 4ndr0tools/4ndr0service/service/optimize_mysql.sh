@@ -194,7 +194,7 @@ optimize_sql_service() {
     install_optional_sql_clis
 
     # Backup SQL configuration
-    backup_sql_configuration
+#    backup_sql_configuration
 
     # Perform cleanup if needed (no placeholders)
     # For now, we don't have temp directories to clean here, but let's just log completion
@@ -210,4 +210,3 @@ optimize_sql_service() {
 }
 
 # Now we have completed all service scripts.
-

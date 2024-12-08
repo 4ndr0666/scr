@@ -338,8 +338,8 @@ optimize_python_service() {
     manage_permissions
 
     # Step 7: Backup Python configurations
-    echo "🗄️ Backing up Python configurations..."
-    backup_python_configuration
+#    echo "🗄️ Backing up Python configurations..."
+#    backup_python_configuration
 
     # Step 8: Validate Python installation
     echo "✅ Validating Python installation..."

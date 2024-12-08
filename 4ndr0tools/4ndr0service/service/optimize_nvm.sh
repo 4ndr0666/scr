@@ -319,8 +319,8 @@ optimize_nvm_service() {
     manage_permissions
 
     # Step 8: Backup Node.js configuration
-    echo "🗄️ Backing up Node.js configuration..."
-    backup_node_configuration
+#    echo "🗄️ Backing up Node.js configuration..."
+#    backup_node_configuration
 
     # Step 9: Validate Node.js installation
     echo "✅ Validating Node.js installation..."

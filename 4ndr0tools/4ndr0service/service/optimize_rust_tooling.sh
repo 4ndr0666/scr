@@ -107,8 +107,8 @@ optimize_rust_tooling_service() {
     remove_empty_directories "$HOME/.cargo" "$HOME/.rustup"
 
     # Step 7: Backup current Rust configuration (optional)
-    echo "🗄️ Backing up Rust configuration..."
-    backup_rust_configuration
+#    echo "🗄️ Backing up Rust configuration..."
+#    backup_rust_configuration
 
     # Step 8: Testing and Verification
     echo "✅ Verifying Rust setup and tooling..."
