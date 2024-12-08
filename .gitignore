@@ -13,6 +13,14 @@
 *.ko
 *.exe
 *.pyc
+__pycache__/
+*.egg-info
+
+# Node.js modules
+node_modules/
+
+# Python test caches
+.pytest_cache/
 
 # Ignore log files
 *.log
@@ -22,10 +30,7 @@
 *.bak
 *~
 
-# Ignore user-specific files
-chatgpt.sh
-*.local
-*.cache
+# Additional directories mentioned
 grub/
 Checkthese/
 archcraft*
@@ -33,7 +38,10 @@ dmenu*
 dwm*
 run-*
 st
-stest
 st-copyout
 st-urlhandler
 permissions/PermMaster/permissions_manifest.acl
+
+# Ignore temporary/cache files
+*.local
+*.cache

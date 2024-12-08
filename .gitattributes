@@ -1,4 +1,6 @@
-# Auto detect text files and perform LF normalization
+*.sh eol=lf
+*.conf eol=lf
+*.md text=auto
+*.log diff=none
 * text=auto
-permissions/PermMaster/permissions_manifest.acl filter=lfs diff=lfs merge=lfs -text
 permissions/PermMaster/permissions_manifest.acl filter=lfs diff=lfs merge=lfs -text
