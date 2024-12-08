@@ -1,6 +1,7 @@
-*.sh eol=lf
+*.sh text eol=lf
 *.conf eol=lf
 *.md text=auto
 *.log diff=none
-* text=auto
+*.txt  text=auto
 permissions/PermMaster/permissions_manifest.acl filter=lfs diff=lfs merge=lfs -text
+
