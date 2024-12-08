@@ -1,4 +1,10 @@
-name: Shell Script Linting and Formatting
+- name: Cache shellcheck and shfmt
+  uses: actions/cache@v2
+  with:
+    path: ~/tools
+    key: ${{ runner.os }}-shell-tools
+    restore-keys: |
+      ${{ runner.os }}-shell-tools
 
 on:
   push:
@@ -14,13 +20,16 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Install shellcheck
-      run: sudo apt-get install shellcheck
-
+      run: |
+        sudo pacman -Su shellcheck --noconfirm
+        mkdir -p ~/tools && cp $(which shellcheck) ~/tools
+    
     - name: Install shfmt
       run: |
         wget https://github.com/mvdan/sh/releases/download/v3.4.1/shfmt_v3.4.1_linux_amd64 -O shfmt
         chmod +x shfmt
         sudo mv shfmt /usr/local/bin/
+        cp /usr/local/bin/shfmt ~/tools
 
     - name: Run shfmt
       run: |
