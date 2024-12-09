@@ -5,6 +5,7 @@
 ## Desc: Verifies XDG specifications for system paths, environment variables, directories, and required tools.
 ## Offers report mode and fix mode. If run with --fix, attempts to create missing directories.
 ## If run with --report, prints a summary report of checks.
+
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -166,6 +167,12 @@ check_directories() {
             fi
         fi
 
+        # Exclude GOROOT from writable checks if it's set to a system directory
+        if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
+            # Typically, /usr/lib/go should not be writable by regular users
+            continue
+        fi
+
         # Check if writable
         if [[ -d "$dir" && ! -w "$dir" ]]; then
             echo "Directory '$dir' is not writable."
@@ -222,7 +229,9 @@ print_report() {
             echo "  - $var: NOT SET, cannot check directory."
         else
             if [[ -d "$dir" ]]; then
-                if [[ -w "$dir" ]]; then
+                if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
+                    echo "  - $var: $dir [EXISTS, NOT WRITABLE - Expected]"
+                elif [[ -w "$dir" ]]; then
                     echo "  - $var: $dir [OK]"
                 else
                     echo "  - $var: $dir [NOT WRITABLE]"

@@ -1,0 +1,13 @@
+#!/bin/bash
+ww=400
+wh=200
+W=$(xrandr -q | grep -w Screen | sed 's/.*current //;s/,.*//' | awk '{print $1}')
+H=$(xrandr -q | grep -w Screen | sed 's/.*current //;s/,.*//' | awk '{print $3}')
+pointX=$(echo $((($W-$ww)/2)))
+pointY=$(echo $((($H-$wh)/2)))
+yad --width=$ww --height=$wh \
+--fixed \
+--geometry="+$pointX+$pointY" \
+--title="Calendar" \
+yad \
+           --calendar
