@@ -16,6 +16,7 @@ def clean_html(raw_html):
 def get_last_check_time():
     cache_dir = os.path.join(os.path.expanduser('~'), '.cache')
     last_check_file = os.path.join(cache_dir, 'arch_news_last_check')
+
     if os.path.exists(last_check_file):
         with open(last_check_file, 'r') as f:
             last_check_str = f.read().strip()
@@ -34,6 +35,7 @@ def upgrade_alerts():
     last_check_time, last_check_file = get_last_check_time()
 
     url = 'https://www.archlinux.org/feeds/news/'
+
     with urllib.request.urlopen(url) as response:
         data = response.read()
 
@@ -44,9 +46,12 @@ def upgrade_alerts():
 
     for news_post in arch_news['rss']['channel']['item']:
         pub_date = parse(news_post['pubDate']).replace(tzinfo=None)
+
         if last_check_time is None or pub_date > last_check_time:
+
             exit_code = 1
-            print('~' * int(os.environ.get('COLUMNS', '80')))
+
+            print('~' * int(os.environ['COLUMNS']))
             print("\nTITLE: ", news_post['title'], "\n")
             print("DATE: ", news_post['pubDate'], "\n")
             print("DESCRIPTION: ", clean_html(news_post['description']), "\n")
@@ -58,6 +63,7 @@ def upgrade_alerts():
         save_last_check_time(latest_pub_date)
 
     return exit_code
+
 
 if __name__ == '__main__':
     sys.exit(upgrade_alerts())

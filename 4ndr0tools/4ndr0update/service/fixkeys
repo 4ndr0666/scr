@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # File: /usr/local/bin/fixkeys.sh
 # Author: 4ndr0666
 # Edited: 02-07-2024
@@ -65,5 +64,4 @@ main() {
     sleep 1
     exit 0
 }
-
 main "$@"

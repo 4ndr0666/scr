@@ -49,10 +49,10 @@ fallback_editor() {
 }
 
 # Function to determine the package path dynamically
-pkg_path() {
-    if [[ -L "$0" ]]; then
-        dirname "$(readlink -f "$0")"
-    else
-        dirname "$0"
-    fi
-}
+#pkg_path() {
+#    if [[ -L "$0" ]]; then
+#        dirname "$(readlink -f "$0")"
+#    else
+#        dirname "$0"
+#    fi
+#}

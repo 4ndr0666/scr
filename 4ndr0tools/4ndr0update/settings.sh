@@ -6,6 +6,7 @@
 export USER_INTERFACE='cli'
 
 # Editor used to modify settings (vim, nano, micro)
+# NOTE: EDITOR environment variable takes precedence
 export SETTINGS_EDITOR='lite-xl'
 
 # Country to generate the mirror list for
@@ -21,25 +22,23 @@ export AUR_HELPER="trizen"
 # Directory where currently installed AUR packages are stored
 export AUR_DIR="/home/build"
 
-# Option to decide whether or not to upgrade AUR Packages while rebuilding
-export AUR_UPGRADE=true
+# Decide whether or not to upgrade AUR Packages while rebuilding
+export AUR_UPGRADE=false
 
 # Whitelist of AUR packages that should not show up as dropped packages
-export AUR_WHITELIST=("ffmpeg" "ffpmeg-full-git" "ffmpeg-git" "expressvpn")
+# NOTE: AUR packages in the AUR_DIR will automatically be whitelisted
+export AUR_WHITELIST=()
 
-# Example:
-# export AUR_WHITELIST=("yay" "paru" "spotify")
 
 #######################################################################
 ####################### Backup / Restore Options ######################
 #######################################################################
 
-# Location where system backup will be stored
-# Make sure this directory exists before backup, or provide a warning.
-export BACKUP_LOCATION="/Nas/Backups/maint/"
+# Where to store the system backup
+export BACKUP_LOCATION="/Nas/Backups/4ndr0update/"
 
-# Directories to exclude from the backup/restore process
-# You may move this list to a separate file for easier maintenance.
+
+# Directories to exclude from backup/restore process
 export BACKUP_EXCLUDE=(
     "/23.1/*" "/dev/*" "/proc/*" "/sys/*" "/tmp/*" "/run/*"
     "/mnt/*" "/media/*" "/home/andro/Videos/*" "/home/andro/Pictures/*"
@@ -61,9 +60,4 @@ export BACKUP_EXCLUDE=(
 #######################################################################
 
 # Directories in which broken symlinks should be searched for
-# Ensure that these directories are essential for cleaning and check permissions.
 export SYMLINKS_CHECK=("/etc" "/home" "/opt" "/srv" "/usr")
-
-# Example:
-# Make sure that permissions for each directory are checked
-# before running cleanup operations.

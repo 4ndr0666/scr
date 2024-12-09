@@ -13,6 +13,7 @@ fixgpg() {
 system_upgrade() {
        printf "➡️ Starting system upgrade..."
        fetch_news
+       fetch_warnings
        configure_reflector
        aur_setup
        rebuild_aur
@@ -53,19 +54,18 @@ system_upgrade() {
 #		echo "Error: System update failed."
 #		exit 1
 #	fi
-	printf "✔️ System updated!"
+#	printf "✔️ System updated!"
 	printf "\n"
 }
 
-# Function to handle system cleaning process
 system_clean() {
 	printf "➡️ Cleaning system..."
-    remove_orphaned_packages
-    clean_package_cache
-    clean_broken_symlinks
-    clean_old_config
-    printf "✔️ System cleaning complete!" 
-    printf "\n"
+        remove_orphaned_packages
+        clean_package_cache
+        clean_broken_symlinks
+        clean_old_config
+#        printf "✔️ System cleaning complete!" 
+        printf "\n"
 #	if remove_orphaned_packages; then
 #		echo "Orphaned packages removed."
 #	else
@@ -88,7 +88,12 @@ system_clean() {
 #	fi
 }
 
-# Function to backup system
+system_errors() {
+	printf "➡️ Scanning system errors..."
+	failed_services
+	journal_errors
+	printf "\n"
+}
 backup_system() {
 	printf "➡️ Starting system backup..."
 	if execute_backup; then
@@ -100,7 +105,6 @@ backup_system() {
 	printf "\n"
 }
 
-# Function to restore system
 restore_system() {
 	echo "➡️ Starting system restore..."
 	if execute_restore; then
@@ -112,7 +116,6 @@ restore_system() {
 	printf "\n"
 }
 
-# Function to update system settings
 update_settings() {
 	printf "➡️ Updating settings..."
 	modify_settings

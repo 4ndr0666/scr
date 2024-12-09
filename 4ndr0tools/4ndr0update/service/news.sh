@@ -2,7 +2,7 @@
 
 arch_news() {
     export COLUMNS
-    python3 "$(pkg_path)/service/arch_news.py" | cat
+    python3 "$(pkg_path)/service/arch_news.py" | less
 }
 
 fetch_warnings() {
