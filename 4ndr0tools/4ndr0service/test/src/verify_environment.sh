@@ -23,7 +23,7 @@ REQUIRED_ENV_VARS=(
     "MYSQL_HOME"
     "SQLITE_HOME"
     "MESON_HOME"
-    "GOPATH"
+#    "GOPATH"
     "GOMODCACHE"
     "GOROOT"
     "VENV_HOME"
