@@ -1,0 +1,43 @@
+# File: Crontab (id -u = andro)
+
+# ======================================== // CRONTAB //
+# --- // Cronjob_format:
+# * * * * *  command_to_execute
+# - - - - -
+# | | | | |
+# | | | | +- day of week (0 - 7) (where sunday is 0 and 7)
+# | | | +--- month (1 - 12)
+# | | +----- day (1 - 31)
+# | +------- hour (0 - 23)
+# +--------- minute (0 - 59)
+#
+# ============================= // EXAMPLE JOBS //
+# --- // Every 15 min:
+# */15 * * * * /home/user/command.sh
+#
+# --- // Every midnight:
+# 0 0 * * * /home/user/command.sh
+#
+# --- // Every Sat at 8:05 AM:
+# 5 8 * * 6 /home/user/command.sh
+#
+# --- // Test/Diagnostic (creates log entry every minute):
+# * * * * * echo "Cron job ran at $(date)" >> /home/andro/.local/share/logs/cron_test.log
+# 0 0 * * 0 /home/andro/go-cleanup.sh
+
+# ============================================ // CRONJOBS //
+# --- // Constants:
+SHELL=/bin/bash
+PATH=/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/bin:/sbin
+
+# --- // Backup_brave_dir:
+0 */12 * * * /bin/bash -c 'mkdir -p /Nas/Backups/brave-beta && tar -czf /Nas/Backups/brave-beta/brave-beta-$(date+\%Y\%m\%d\%H\%M).tar.gz -C ~/.config/BraveSoftware Brave-Browser-Beta && cd /Nas/Backups/brave-beta && ls -tp | grep -v '/$' | tail -n +3 | xargs -I {} rm -- {}'
+
+# --- // Execute_freecache.sh:
+0  2  *  *  *  /usr/local/bin/freecache.sh
+
+# --- // Modeprobed-db_store:
+0 */1 * * *   /usr/bin/modprobed-db store &> /dev/null
+
+# --- // Update_Aria2_trackers:
+0 2 * * * /Nas/Build/git/syncing/scr/cron/aria2/update_trackers.sh
