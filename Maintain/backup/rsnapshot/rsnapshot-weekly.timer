@@ -1,0 +1,10 @@
+[Unit]
+Description=rsnapshot weekly backup
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+Unit=rsnapshot@weekly.service
+
+[Install]
+WantedBy=timers.target
