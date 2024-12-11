@@ -1,13 +1,11 @@
 #!/bin/bash
-# Dependency Checker and Installer for Arch Linux
-# Version: 3.0
-# Date: YYYY-MM-DD
+# File: depcheck.sh
+# Author: 4ndr0666
+# Date: 11-02-2024
+# Description: Checks for pkg dependencies and installs them.
 
-################################################################################
-# Script Name: dependency-checker.sh
-# Description: Checks for missing dependencies of installed packages and installs them.
-#              Supports both official repository packages and AUR packages.
-################################################################################
+# ============================== // DEPCHECK.SH //
+
 
 # Default configurations
 LOGFILE="/var/log/dependency-checker.log"
@@ -22,47 +20,9 @@ if [ "$(id -u)" -ne 0 ]; then
       sudo "$0" "$@"
     exit $?
 fi
-
+  
 # Array to hold missing dependencies
 declare -a MISSING_DEPS
-
-# Colors and symbols
-CYAN='\033[38;2;21;255;255m'
-RED='\033[0;31m'
-NC='\033[0m' # No color
-SUCCESS="✔️"
-FAILURE="❌"
-INFO="➡️"
-
-# Enhanced logging function
-log_message() {
-    local level="$1"
-    local message="$2"
-    local timestamp
-    timestamp="$(date +"%Y-%m-%d %T")"
-
-    # Log levels: INFO=1, WARN=2, ERROR=3
-    declare -A LEVELS=(["INFO"]=1 ["WARN"]=2 ["ERROR"]=3)
-    local level_value="${LEVELS[$level]}"
-    local config_level_value="${LEVELS[$LOG_LEVEL]}"
-
-    if [ "$level_value" -ge "$config_level_value" ]; then
-        case "$level" in
-            "INFO")
-                echo -e "$timestamp [$level] - ${CYAN}$INFO $message${NC}" | tee -a "$LOGFILE"
-                ;;
-            "WARN")
-                echo -e "$timestamp [$level] - ${RED}$FAILURE $message${NC}" | tee -a "$LOGFILE"
-                ;;
-            "ERROR")
-                echo -e "$timestamp [$level] - ${RED}$FAILURE $message${NC}" | tee -a "$LOGFILE"
-                ;;
-            *)
-                echo "$timestamp [$level] - $message" | tee -a "$LOGFILE"
-                ;;
-        esac
-    fi
-}
 
 # Function to display usage instructions
 print_help() {
@@ -80,9 +40,26 @@ print_help() {
     exit 0
 }
 
+# Function to log messages with levels
+log_message() {
+    local level="$1"
+    local message="$2"
+    local timestamp
+    timestamp="$(date +"%Y-%m-%d %T")"
+
+    # Log levels: INFO=1, WARN=2, ERROR=3
+    declare -A LEVELS=(["INFO"]=1 ["WARN"]=2 ["ERROR"]=3)
+    local level_value="${LEVELS[$level]}"
+    local config_level_value="${LEVELS[$LOG_LEVEL]}"
+
+    if [ "$level_value" -ge "$config_level_value" ]; then
+        echo "$timestamp [$level] - $message" | tee -a "$LOGFILE"
+    fi
+}
+
 # Function to check for required tools
 check_requirements() {
-    local required_tools=("pacman" "pactree" "expac")
+    local required_tools=("pacman" "pactree")
     for tool in "${required_tools[@]}"; do
         if ! command -v "$tool" &>/dev/null; then
             log_message "ERROR" "Required tool '$tool' is not installed. Exiting."
@@ -91,7 +68,7 @@ check_requirements() {
     done
 }
 
-# Detect available AUR helper
+# Function to detect available AUR helper
 detect_aur_helper() {
     local helpers=("yay" "paru" "trizen")
     for helper in "${helpers[@]}"; do
@@ -104,12 +81,12 @@ detect_aur_helper() {
     log_message "WARN" "No AUR helper found. AUR packages will not be installed."
 }
 
-# Check if a package is installed
+# Function to check if a package is installed
 is_installed() {
     pacman -Q "$1" &>/dev/null
 }
 
-# Check if a package is from AUR
+# Function to check if a package is from AUR
 is_aur_package() {
     if [ -n "$AUR_HELPER" ]; then
         "$AUR_HELPER" -Qm "$1" &>/dev/null
@@ -118,12 +95,12 @@ is_aur_package() {
     fi
 }
 
-# Gather dependencies of a package
+# Function to gather dependencies of a package
 gather_dependencies() {
     pactree -u -d1 "$1" 2>/dev/null | tail -n +2
 }
 
-# Remove pacman lock file if it exists
+# Function to remove pacman lock file if it exists
 remove_pacman_lock() {
     if [ -e "$PACMAN_LOCK" ]; then
         log_message "INFO" "Removing Pacman lock file..."
@@ -131,7 +108,7 @@ remove_pacman_lock() {
     fi
 }
 
-# Handle pacman errors
+# Function to handle pacman errors
 handle_pacman_errors() {
     local stderr="$1"
     local conflicts
@@ -143,41 +120,37 @@ handle_pacman_errors() {
     fi
 }
 
-# Install a package using pacman or AUR helper with retry logic
+# Function to install a package using pacman or AUR helper
 install_package() {
     local pkg="$1"
-    local retry_count=3
-    local success=false
-
-    for ((i = 1; i <= retry_count; i++)); do
-        log_message "INFO" "Attempting to install $pkg (try $i of $retry_count)..."
-
-        if is_aur_package "$pkg"; then
-            if [ -n "$AUR_HELPER" ]; then
-                "$AUR_HELPER" -S "$pkg" --noconfirm && success=true && break
-            else
-                log_message "ERROR" "AUR helper not available to install $pkg."
-                break
-            fi
+    if is_aur_package "$pkg"; then
+        if [ -n "$AUR_HELPER" ]; then
+            log_message "INFO" "Installing AUR package: $pkg"
+            "$AUR_HELPER" -S "$pkg" --noconfirm
         else
-            if sudo pacman -S --needed "$pkg" --noconfirm; then
-                success=true
-                break
-            fi
+            log_message "ERROR" "AUR helper not available to install $pkg."
         fi
-
-        log_message "WARN" "Failed to install $pkg. Retrying in 5 seconds..."
-        sleep 5
-    done
-
-    if [ "$success" = true ]; then
-        log_message "INFO" "Successfully installed $pkg."
     else
-        log_message "ERROR" "Failed to install $pkg after $retry_count attempts."
+        log_message "INFO" "Installing official package: $pkg"
+        if ! sudo pacman -S --needed "$pkg" --noconfirm; then
+            stderr=$(sudo pacman -S --needed "$pkg" --noconfirm 2>&1 >/dev/null)
+            handle_pacman_errors "$stderr"
+            sudo pacman -S --needed "$pkg" --noconfirm
+        fi
     fi
 }
 
-# Check missing dependencies and populate MISSING_DEPS array
+# Graceful exit handling
+graceful_exit() {
+    remove_pacman_lock
+    log_message "INFO" "Script interrupted. Exiting gracefully..."
+    exit 1
+}
+
+# Trap signals for graceful exit
+trap graceful_exit SIGINT SIGTERM
+
+# Main function to check missing dependencies
 check_missing_dependencies() {
     local packages=("$@")
     for pkg in "${packages[@]}"; do
@@ -206,41 +179,39 @@ check_missing_dependencies() {
     fi
 }
 
-# Install missing dependencies in parallel using xargs
+# Function to install missing dependencies
 install_missing_dependencies() {
     if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-        log_message "INFO" "Installing missing dependencies in parallel..."
-
-        echo "${MISSING_DEPS[@]}" | xargs -n 1 -P 4 -I {} bash -c 'install_package "$@"' _ {}
-
-        log_message "INFO" "Finished installing missing dependencies."
+        log_message "INFO" "Installing missing dependencies..."
+        for dep in "${MISSING_DEPS[@]}"; do
+            ensure_package_installed "$dep"
+        done
     else
         log_message "INFO" "No missing dependencies to install."
     fi
 }
 
-# Interactive mode for installing dependencies with timeout
-prompt_with_timeout() {
-    local prompt="$1"
-    local timeout="$2"
-    local default="$3"
-    
-    read -t "$timeout" -p "$prompt" response
-    if [[ -z "$response" ]]; then
-        echo "$default"
+# Ensure package installation
+ensure_package_installed() {
+    local pkg="$1"
+    if ! is_installed "$pkg"; then
+        install_package "$pkg"
     else
-        echo "$response"
+        if [ "$VERBOSE" = true ]; then
+            log_message "INFO" "Package $pkg is already installed."
+        fi
     fi
 }
 
+# Interactive mode for installing dependencies
 interactive_install() {
     if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
         echo "The following dependencies are missing:"
         for i in "${!MISSING_DEPS[@]}"; do
             echo "$((i + 1)). ${MISSING_DEPS[$i]}"
         done
-        response=$(prompt_with_timeout "Do you want to install all missing dependencies? [y/N]: " 10 "n")
-        if [[ "$response" =~ ^[Yy]$ ]]; then
+        read -p "Do you want to install all missing dependencies? [y/N]: " choice
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
             install_missing_dependencies
         else
             log_message "INFO" "Installation aborted by user."
@@ -287,7 +258,7 @@ parse_arguments() {
     shift $((OPTIND -1))
 }
 
-# Main function execution
+# Main execution function
 main() {
     log_message "INFO" "Starting dependency checker..."
 
