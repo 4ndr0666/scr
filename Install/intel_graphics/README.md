@@ -1,27 +1,18 @@
-# Complete Building Guide For IntelGPUs 
+# IntelGPU Driver Build
 
----
-
-**All Builds In This Guide**:
-
+**Builds In This Guide**:
 1. Intel Gmmlib
-
 2. Libva
-
 3. Libva-Tools
-
 4. Intel VPL Dev Package
-
 5. Intel VPL-Tools
-    
-**Dependencies**:
 
+**Dependencies**:
 ```bash
 sudo pacman -S autoconf libtool libdrm xorg xorg-dev openbox libx11-dev libgl1-mesa-glx git cmake pkg-config meson libdrm-dev automake libtool
 ```
 
 **Firmware** (if needed):
-
 ```bash
 git clone git@github.com:intel-gpu/intel-gpu-firmware.git
 cd intel-gpu-firmware
@@ -29,19 +20,33 @@ sudo mkdir -p /lib/modules/"$(uname -r)"/updates/i915/
 sudo cp firmware/*.bin /lib/modules/"$(uname -r)"/updates/i915/
 ```
 
-## Build Phase 1:    
+**Validation**
+The following is a simple validation process that will save tons of time and effort in determining what you have on board, what is installed properly and what needs to be corrected for either a VA-API or VDPAU install.
+
+- **VA-API**: Verify VA-API settings with `vainfo` provided by the libva-utils pkg. VAEntrypointVLD represents the video card can *decode* that format. VAEntrypointEncSlice represents that the card can *encode* that format. For example, a valid install for the i915 driver will display:
+```bash
+vainfo: Driver version: Intel i965 driver for Intel(R) Ivybridge Desktop - 2.4.1
+```
+
+Where as an invalid install will display:
+```bash
+libva error: /usr/lib/dri/iHD_drv_video.so init failed
+```
+
+- **VDPAU**: Verify VDPAU settings with `vdpauinfo` provided by the vdpauinfo pkg.
+
+## Build Phase 1:
 
 ### Intel Gmmlib
 
 This is the base component for the next component in the stack, the Intel Media Driver:
-
 ```bash
 git clone https://github.com/intel/gmmlib.git
 cd gmmlib
 mkdir build && cd build
 cmake [-DCMAKE_BUILD_TYPE=Release | Debug | ReleaseInternal] ..
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j"$(nproc)" 
+make -j"$(nproc)"
 sudo make install
 ```
 
@@ -52,8 +57,8 @@ sudo make install
 ```bash
 git clone https://github.com/intel/libva.git
 cd libva
-mkdir build 
-cd build 
+mkdir build
+cd build
 meson .. -Dprefix=/usr -Dlibdir=/usr/lib/x86_64-linux-gnu
 ninja
 sudo ninja install
@@ -66,13 +71,12 @@ git clone https://github.com/intel/libva-utils.git
 cd libva-utils
 mkdir build
 cd build
-meson .. 
+meson ..
 ninja
 sudo ninja install
 ```
 
-Validate the environment with `vainfo`. The output should look similar to:  
-
+Validate the environment with `vainfo` as mentioned preivously:
 ```bash
 sys@KBL:~/github/libva-utils$ vainfo
 Trying display: drm
@@ -101,7 +105,6 @@ vainfo: Supported profile and entrypoints
 ```
 
 **Explicitly set these environment variables**:
-
 ```bash
 export LIBVA_DRIVERS_PATH=<path-contains-iHD_drv_video.so>
 export LIBVA_DRIVER_NAME=iHD
