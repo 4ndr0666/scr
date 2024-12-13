@@ -33,7 +33,17 @@ Where as an invalid install will display:
 libva error: /usr/lib/dri/iHD_drv_video.so init failed
 ```
 
-- **VDPAU**: Verify VDPAU settings with `vdpauinfo` provided by the vdpauinfo pkg.
+VA-API drivers are install in `/usr/lib/dri/` and are used as `/usr/lib/dri/${LIBVA_DRIVER_NAME}_drv_video.so`. Many are installed several times under different names for compatibility reasons. To see which ones run:
+```bash
+sha1sum /usr/lib/dri/* | sort
+```
+
+These can be specifically overriden by leveraging the environment variable LIBVA_DRIVERS_PATH, more on that later.
+
+- **VDPAU**: Verify VDPAU settings with `vdpauinfo` provided by the vdpauinfo pkg just as above. These drivers are used as `/usr/lib/vdpau/libvdpau_${VDPAU_DRIVER}.so` and are installed several times just as above. To see which ones run:
+```bash
+sha1sum /usr/lib/vdpau/*
+```
 
 ## Build Phase 1:
 
@@ -77,6 +87,7 @@ sudo ninja install
 ```
 
 Validate the environment with `vainfo` as mentioned preivously:
+
 ```bash
 sys@KBL:~/github/libva-utils$ vainfo
 Trying display: drm
@@ -104,10 +115,45 @@ vainfo: Supported profile and entrypoints
       VAProfileVP9Profile2            : VAEntrypointVLD
 ```
 
-**Explicitly set these environment variables**:
+You can explicitly set the driver you want if the system is not recognizing it properly as this is the case for Wayland by explicitly setting these environment variables:
 ```bash
-export LIBVA_DRIVERS_PATH=<path-contains-iHD_drv_video.so>
-export LIBVA_DRIVER_NAME=iHD
+export LIBVA_DRIVERS_PATH=/usr/lib/dri/<driver you want>_drv_video.so
+export LIBVA_DRIVER_NAME=<driver you want>
+```
+
+For example, in my case:
+```bash
+export LIBVA_DRIVERS_PATH=/usr/lib/dri/i965_drv_video.so
+export LIBVA_DRIVER_NAME=i965
+```
+
+However, due to the multiple drivers being used repeatedly for compatibility there is an error when reading the driver I try to
+explicitly set. As a workaround simply rename the offending driver (mv iHD_drv_video.so iHD_drv_video.so.bak) and create a
+symlink pointing to the driver you want using the offending drivers name (s ln /usr/lib/dri/i965 /usr/lib/dri/iHD_drv_video.so). Verify it with `vainfo`:
+
+```bash
+❯ sudo vainfo
+Trying display: wayland
+Trying display: x11
+vainfo: VA-API version: 1.22 (libva 2.22.0.1)
+vainfo: Driver version: Intel i965 driver for Intel(R) Ivybridge Desktop - 2.4.1
+vainfo: Supported profile and entrypoints
+      VAProfileMPEG2Simple            :	VAEntrypointVLD
+      VAProfileMPEG2Simple            :	VAEntrypointEncSlice
+      VAProfileMPEG2Main              :	VAEntrypointVLD
+      VAProfileMPEG2Main              :	VAEntrypointEncSlice
+      VAProfileH264ConstrainedBaseline:	VAEntrypointVLD
+      VAProfileH264ConstrainedBaseline:	VAEntrypointEncSlice
+      VAProfileH264Main               :	VAEntrypointVLD
+      VAProfileH264Main               :	VAEntrypointEncSlice
+      VAProfileH264High               :	VAEntrypointVLD
+      VAProfileH264High               :	VAEntrypointEncSlice
+      VAProfileH264StereoHigh         :	VAEntrypointVLD
+      VAProfileVC1Simple              :	VAEntrypointVLD
+      VAProfileVC1Main                :	VAEntrypointVLD
+      VAProfileVC1Advanced            :	VAEntrypointVLD
+      VAProfileNone                   :	VAEntrypointVideoProc
+      VAProfileJPEGBaseline           :	VAEntrypointVLD
 ```
 
 ## Build Phase 3
