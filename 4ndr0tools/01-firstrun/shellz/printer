@@ -1,0 +1,60 @@
+# File: $XDG_CONFIG_HOME/shellz/functions/functions.zsh
+# Author: 4ndr0666
+# Edited: 11-3-24
+# File to be sourced by shell that adds function to "print" anything you 
+# need to the terminal.
+
+# =========================== // PRINTER //
+# --- // UFW //
+function printufwrules() {
+    cat <<'EOF'
+sudo systemctl enable ufw
+sudo systemctl start ufw
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw enable
+EOF
+}
+
+function printzsh() {
+    cat <<'EOF'
+Zsh Globbing Features and Examples:
+File Types:
+- /    Directories
+- .    Plain files
+- @    Symbolic links
+- =    Sockets
+- p    Named pipes (FIFOs)
+- *    Executable plain files (0100 permission)
+- %    Device files (character or block special)
+- %b   Block special files
+- %c   Character special files
+Permissions:
+- r    Owner-readable files (0400 permission)
+- w    Owner-writable files (0200 permission)
+- x    Owner-executable files (0100 permission)
+- A    Group-readable files (0040 permission)
+- I    Group-writable files (0020 permission)
+- E    Group-executable files (0010 permission)
+- R    World-readable files (0004 permission)
+- W    World-writable files (0002 permission)
+- X    World-executable files (0001 permission)
+- s    Setuid files (04000 permission)
+- S    Setgid files (02000 permission)
+- t    Files with the sticky bit (01000 permission)
+Examples:
+- print *(m-1)          # Files modified up to a day ago
+- print *(a1)           # Files accessed a day ago
+- print *(@)            # Just symlinks
+- print *(Lk+50)        # Files bigger than 50 kilobytes
+- print *(Lk-50)        # Files smaller than 50 kilobytes
+- print **/*.c          # All *.c files recursively starting in $PWD
+- print **/*.c~file.c   # Same as above, but excluding 'file.c'
+- print (foo|bar).*     # Files starting with 'foo' or 'bar'
+- print *~*.*           # All files that do not contain a dot
+- chmod 644 *(.^x)      # Make all plain non-executable files publicly readable
+- print -l *(.c|.h)     # Lists *.c and *.h files
+- print **/*(g:users:)  # Recursively match all files that are owned by group 'users'
+- echo /proc/*/cwd(:h:t:s/self//) # Analogous to `ps ax | awk '{print $1}'`
+EOF
+}

@@ -9,6 +9,22 @@ alias 0f='bat ~/.config/shellz/functions/functions.zsh'
 alias 0z='bat ~/.config/zsh/.zshrc'
 alias 0p='bat ~/.config/zsh/.zprofile'
 
+# --- // Typos:
+alias gerp='grep'
+alias shudown='shutdown'
+alias pdw='pwd'
+alias cd..='cd ..'
+alias micor='micro'
+alias cpoy='copy'
+alias dc='cd'
+alias sl='ls'
+alias car='cat'
+alias nvin='nbin'
+alias cay='cat'
+
+# --- // Xorg:
+alias diffuse='xhost + && diffuse'
+
 # ===================================== // RECENT_PROGRAMS //
 # -- // pyfiglet:
 figletbanner() {
@@ -34,6 +50,18 @@ figletbanner() {
 
     # Generate and colorize the text
     pyfiglet --font=line_blocks --normalize-surrounding-newlines "$@" | lolcat -F 0.5
+}
+
+# --- // Bat:
+## Instead of `cmd --help` do `help cmd`
+alias bathelp='bat --plain --language=help'
+help() {
+    "$@" --help 2>&1 | bathelp
+}
+
+## Shows git syntax
+batdiff() {
+    git diff --name-only --relative --diff-filter=d | xargs bat --diff
 }
 
 # --- // Lf:
@@ -128,23 +156,30 @@ function ufwr() {
     sudo ufw enable
 }
 
+# ================================= // Micro:
+alias sm='sudo micro'
+alias m='micro'
+
+# --- // Bleachbit:
+alias bleachcache='sudo bleachbit --clean system.cache system.localizations system.trash ; sudo paccache -vrk 2 || return 0'
+alias bleachchrome='bleachbit --clean chromium.cache chromium.dom thumbnails.cache'
+
+# --- // Garuda-update:
+alias garuda-refreshkeys='garuda-update remote keyring'
+alias garuda-reinstallallpkgs='garuda-update remote reinstall'
+alias garuda-resetaudio='garuda-update reset-audio'
+alias garuda-ffmpegupdate='/Nas/Build/git/syncing/scr/installers/ffmpeg/custom_garuda_update.sh' # Protects /home ffmpeg binaries
+
+# --- // Dracut: 
+## Pipe to sh to execute: "dracutk | sh"
+alias dracutzen='echo "sudo dracut --force --kver=$(uname -r) /boot/initramfs-linux-zen.img --enhanced-cpio --early-microcode --fstab && sudo grub-install && sudo grub-mkconfig -o /boot/grub/grub.cfg"'
+alias dracutfallback='echo "sudo dracut --force /boot/initramfs-linux-fallback.img --enhanced-cpio --early-microcode --fstab && sudo grub-install && sudo grub-mkconfig -o /boot/grub/grub.cfg"'
+
 # =========================================== // SUDO BYPASS //
 for cmd in pacman-key ufw mount umount pacman updatedb su systemctl useradd userdel groupadd groupdel chown chmod \
 btrfs ip netstat modprobe; do
     alias $cmd="sudo $cmd"
 done
-
-
-# =========================================== // TYPOS //
-alias gerp='grep'
-alias shudown='shutdown'
-alias pdw='pwd'
-alias cd..='cd ..'
-alias micor='micro'
-alias cpoy='copy'
-alias dc='cd'
-alias sl='ls'
-alias car='cat'
 
 # =========================================== // CHEATSHEETS //
 cht() {
@@ -205,16 +240,16 @@ alias obt='goto ~/.config/openbox/themes'
 
 # --- // STORAGE:
 alias sto='goto /storage'
-alias stodl='goto /storage/Downloads'
-alias stopic='goto /storage/Pictures'
-alias stovid='goto /storage/Videos'
+alias sdl='goto /storage/Downloads'
+alias spic='goto /storage/Pictures'
+alias svid='goto /storage/Videos'
 alias streamdir='goto /storage/streamlink'
 
 # --- // STO2:
-alias sto2='goto /sto2'
-alias sto2dl='goto /sto2/Downloads'
-alias sto2pic='goto /sto2/Pictures'
-alias sto2vid='goto /sto2/Videos'
+alias s2='goto /sto2'
+alias s2dl='goto /sto2/Downloads'
+alias s2pic='goto /sto2/Pictures'
+alias s2vid='goto /sto2/Videos'
 alias gym='goto /sto2/Gym'
 alias jd='goto /sto2/JD'
 
@@ -228,17 +263,15 @@ alias cloud='goto /23.1/Thecloud'
 
 # --- // Nas:
 alias nas='goto /Nas/'
-alias nbuild='goto /Nas/Build'
-alias nsan='goto /Nas/sandbox'
 alias nbin='goto /Nas/Build/git/syncing/scr'
+alias 5cr='goto /Nas/Build/git/syncing/5cr'
 alias nnas='goto /Nas/Build/git/syncing/nas'
 alias ngpt='goto /Nas/Build/git/syncing/gpt'
-alias ngit='goto /Nas/Build/git/'
+alias ng='goto /Nas/Build/git/'
 alias ngc='goto /Nas/Build/git/clone'
 alias npkg='goto /Nas/Build/pkgs'
 alias npro='goto /Nas/Build/projects'
 alias ndot='goto /Nas/Build/git/clone/dotfiles'
-alias distroskels='goto /Nas/Distro_skels'
 
 # --- // System:
 alias et='goto /etc'
@@ -284,9 +317,6 @@ fzscr() {
     fi
 }
 
-# ================================= // Micro:
-alias sm='sudo micro'
-
 # ======================================================= // Oh_my_zsh:
 #alias oz="svim ~/.zshrc"
 #alias oc="cd ~/.oh-my-zsh/custom/"
@@ -306,18 +336,8 @@ alias mv='mv -iv'
 alias rm='trash-put'          # Aliases for trash-cli
 #alias rm='rm -vI'
 alias rmf='sudo -S /usr/bin/rm -vI -rf'
-#alias rg='batgrep'            # Aliased for bat-extras ripgrep
+alias rg='batgrep'            # Aliased for bat-extras ripgrep
 #alias rg="rg --sort path"
-
-findit() {
-  # find file names matching first token and list them by date
-  if [[ -n "$1" ]]; then
-    find . -type f -printf "%TY%Tm%Td\t%p\n" | sort | grep -i "$1"
-  else
-    return 1
-  fi
-}
-
 alias diff='diff --color=auto'
 alias rmdir='rm -vI --preserve root'
 alias ln='ln -iv'
@@ -326,10 +346,8 @@ alias mkdir='mkdir -pv'
 alias wget="wget -c"
 alias curl="curl --user-agent 'noleak'"
 alias df='df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs'
-alias cat='bat'
 alias ccat="highlight --out-format=ansi"
 alias showpath='echo $PATH | tr ":" "\n"'
-#alias path='path -l $path'
 alias rsync='rsync -avrPlU --progress'
 alias grub-mkconfig='sudo grub-mkconfig -o /boot/grub/grub.cfg'
 alias grepc='grep --color=always'
@@ -339,8 +357,8 @@ alias lessc='less -R'
 alias ip='ip -color=auto'
 alias c='clear; echo; echo; seq 1 $(tput cols) | sort -R | spark | lolcat; echo; echo'
 alias hw='sudo hwinfo --short'
-#alias lsblk='lsblk -o NAME,FSTYPE,SIZE,MOUNTPOINT'
-#alias lsblkh='lsblk.sh'
+alias lsblk='lsblk -o NAME,FSTYPE,SIZE,MOUNTPOINT'
+alias lsblkh='lsblk.sh'
 alias psa='ps auxf | less'
 alias free='free -mt'
 alias jctl='journalctl -p 3 -xb'
@@ -358,7 +376,92 @@ alias dir='dir --color=auto'
 alias vdir='vdir --color=auto'
 alias z='zathura'
 alias lf='lfub'
+alias untar='sudo -S tar -xvf '
+alias watch='watch '
+alias top10='print -l ${(o)history%% *} | uniq -c | sort -nr | head -n 10'
+alias pacdiff='sudo -H DIFFPROG=meld pacdiff'
+alias psgrep="ps aux | grep -v grep | grep -i -e VSZ -e"
+alias p='ps -f'
+alias update-grub="sudo grub-mkconfig -o /boot/grub/grub.cfg"
+alias myip='curl icanhazip.com'
+alias update-grub2='sudo grub-install && sudo grub-mkconfig -o /boot/grub/grub.cfg'
 
+# --- // Count or list files in dir:
+filecount() {
+    if [[ "$1" == "-l" ]]; then
+        echo "Files in $PWD:"
+        find $PWD -type f
+    else
+        echo "Total files in $PWD: $(find $PWD -type f | wc -l)"
+    fi
+}
+
+lsmount() {
+    if [[ -n "$1" ]]; then
+        mount | column -t | grep "$1"
+    else
+        mount | column -t
+    fi
+}
+
+# --- // Killit:
+killit() {
+    local pattern=$1
+    if [[ -z "$pattern" ]]; then
+        echo "Error: Please provide a process name or pattern."
+        return 1
+    fi
+
+    echo "Searching for processes matching '$pattern'..."
+    local pids=$(pgrep -fl "$pattern")
+
+    if [[ -z "$pids" ]]; then
+        echo "No processes found matching '$pattern'."
+        return 1
+    fi
+
+    echo "Found processes:"
+    echo "$pids"
+
+    echo "Please enter the PIDs to kill (separate multiple PIDs with spaces):"
+    read -r pid_list
+
+    if [[ -z "$pid_list" ]]; then
+        echo "No PIDs provided, no action taken."
+        return 1
+    fi
+
+    for pid in $pid_list; do
+        if echo "$pids" | grep -q -w "$pid"; then
+            sudo kill -9 "$pid" && echo "Process $pid killed." || echo "Failed to kill process $pid."
+        else
+            echo "PID $pid does not match any of the listed processes. Skipping."
+        fi
+    done
+}
+
+# --- // List dependencies of pkg:
+whatdependson()  {
+    search="$1"
+    sudo pacman -Sii $search | grep "Required" | sed -e "s/Required By     : //g" | sed -e "s/  /\n/g"
+    }
+
+#alias whatsnew='read -p "Do you want to find files based on modification time (m) or access time (a)? " choice; if [ "$choice" == "m" ]; then find "$PWD" -type f -mtime -7 -print0 | xargs -0 ls -lt | head; elif [ "$choice" == "a" ]; then find "$PWD" -type f -atime -7 -print0 | xargs -0 ls -lt | head; else echo "Invalid choice. Please select 'm' for modification time or 'a' for access time."; fi'
+
+#alias cleanls='echo "pacman -Q | grep -E 'pipewire|pulseaudio|alsa|jack' > audio_packages.txt && sed -i 's/ .*$//' audio_packages.txt"'
+
+#alias findit='read -p "Do you want to find a file (f) or a directory (d)? " choice; if [ "$choice" == "f" ]; then read -p "Enter the filename to search for: " filename; sudo find / -type f -name "$filename" 2>/dev/null; elif [ "$choice" == "d" ]; then read -p "Enter the directory name to search for: " dirname; sudo find / -type d -name "$dirname" 2>/dev/null; else echo "Invalid choice. Please select 'f' for file or 'd' for directory."; fi'
+
+findit() {
+  # find file names matching first token and list them by date
+  if [[ -n "$1" ]]; then
+    find . -type f -printf "%TY%Tm%Td\t%p\n" | sort | grep -i "$1"
+  else
+    return 1
+  fi
+}
+
+# --- // Go_back_dir:
 function back() {
     local steps=${1:-1}  # Number of steps back in the directory stack, default is 1
     for ((i = 0; i < steps; i++)); do
@@ -371,6 +474,53 @@ function back() {
     done
 }
 
+# --- // Move_up_dir:
+up() { 
+    for _ in $(seq "${1:-1}"); do
+    cd ..; done;
+}
+
+# --- // Create_tarball: 
+archive() {
+    local target="$1"
+    local backup_dir="${2:-.}"  # Optional second argument to specify backup directory, defaults to current directory
+
+    if [[ -z "$target" ]]; then
+        echo "Error: Please provide a file or directory to back up."
+        return 1
+    fi
+
+    if [[ ! -e "$target" ]]; then
+        echo "Error: The target '$target' does not exist."
+        return 1
+    fi
+
+    local target_name=$(basename "$target")
+    local timestamp=$(date -u "+%h-%d-%Y_%H.%M%p")
+    local backup_file="${backup_dir}/${target_name}_${timestamp}_backup.tar.gz"
+
+    echo "Creating backup for '$target'..."
+
+    # Check if we have write access to the backup directory and read access to the target
+    if [[ ! -w "$backup_dir" || ! -r "$target" ]]; then
+        echo "Insufficient permissions, attempting with sudo..."
+        if sudo tar -czvf "$backup_file" "$target"; then
+            echo "Backup successful with sudo: $backup_file"
+        else
+            echo "Error: Failed to create backup with sudo."
+            return 1
+        fi
+    else
+        if tar -czvf "$backup_file" "$target"; then
+            echo "Backup successful: $backup_file"
+        else
+            echo "Error: Failed to create backup."
+            return 1
+        fi
+    fi
+}
+
+# --- // Alt_create_tarball:
 tarnow(){
     local target="$1"
     local backup_dir="${2:-.}"  # Optional second argument to specify backup directory, defaults to current directory
@@ -410,21 +560,30 @@ tarnow(){
     fi
 }
 
-#alias tarnow='sudo -S tar -czvf archive.tar.gz '
-alias untar='sudo -S tar -xvf '
-alias watch='watch '
-alias psgrep="ps aux | grep -v grep | grep -i -e VSZ -e"
-
-mem() {
+psmem() {
     local count=${1:-5}
     echo "Top $count memory-consuming processes:"
     ps aux --sort=-%mem | awk 'NR==1; NR>1 {print $0}' | head -n $(($count + 1))
 }
 
-cpu() {
+pscpu() {
     local count=${1:-5}
     echo "Top $count CPU-consuming processes:"
     ps aux --sort=-%cpu | awk 'NR==1; NR>1 {print $0}' | head -n $(($count + 1))
+}
+
+# --- // Delete 0byte files:
+function d0() {
+    local target_dir="${1:-.}"
+    find "$target_dir" -type f -size 0 -print0 | while IFS= read -r -d '' file; do
+        read -r -p "Delete '$file'? [y/N] " response
+        if [[ $response =~ ^[Yy]$ ]]; then
+            rm -rf "$file"
+            echo "Deleted: $file"
+        else
+            echo "Skipped: $file"
+        fi
+    done
 }
 
 # --- // MEM, POWER, TOP 5:
@@ -445,8 +604,7 @@ cpu() {
 #    ps aux --sort=-%cpu | awk '{print $11}' | head -n 11
 #}
 
-# ======================================================================= // LS_CONFIGS //
-
+# ======================================================================= // LS_FILE_LISTING //
 # --- // Config 1:
 alias mkplaylist="ls -d */ > mpv_playlist.txt"
 alias lb='ls | bat'
@@ -456,8 +614,9 @@ alias ls='exa -hlx --no-filesize --no-time --no-permissions --color=always --gro
 alias la="lsd -aFlL --permission=rwx --color=always --group-dirs=first --icon=always"
 alias ll='exa -xXDa --color=always  --icons=always'
 alias l.='exa -ax --sort=modified --color-scale-mode=gradient --color=always --group-directories-first --icons | grep "^\."'
-alias lt='exa -aT -s new --color=always --group-directories-first --icons'
-alias lss='ls -lhatr'
+alias lt='tree -L 2 scr'
+#exa -aT -s new --color=always --group-directories-first --icons'
+alias lta='ls -ltrha'
 
 # --- // Config 2:
 #alias l='ls'
@@ -497,6 +656,7 @@ alias chgpg='sudo chown -R $USER:$USER ~/.gnupg && sudo chmod 700 ~/.gnupg && su
 alias lock='sudo chattr +i '
 alias unlock='sudo chattr -i '
 alias chlocal='sudo chown -R $USER:$USER ~/.config ~/.local && echo "Ownership of ~/.config and ~/.local changed to $USER."'
+alias chnpm='sudo chown -R 1000:1000 /home/andro/.npm'
 
 chpython() {
     local python_version
@@ -520,44 +680,9 @@ chboot() {
     echo "Boot directory permissions reset appropriately."
 }
 
-chdefault() {
+chdirs() {
     if [[ -z "$1" ]]; then
-        echo "Usage: chdefault <directory>"
-        return 1
-    elif [[ ! -d "$1" ]]; then
-        echo "Error: '$1' is not a valid directory."
-        return 1
-    fi
-
-    echo "Setting directory permissions to 755 for: $1"
-    sudo find "$1" -type d -exec chmod 755 {} +
-    echo "Permissions reset successfully for $1."
-}
-
-# --- // TEST:
-fixo() {
-  [[ -d "$1" ]] &&
-    find "$1" -type d -print0 | xargs -0 chmod 755 && find "$1" -type f -print0 | xargs -0 chmod 644 ||
-    echo "$1 is not a directory."
-}
-
-fix() {
-  [[ -d "$1" ]] &&
-    find "$1" -type d -print0 | xargs -0 chmod 750 && find "$1" -type f -print0 | xargs -0 chmod 640 ||
-    echo "$1 is not a directory."
-}
-
-fixp() {
-  [[ -d "$1" ]] &&
-    find "$1" -type d -print0 | xargs -0 chmod 700 && find "$1" -type f -print0 | xargs -0 chmod 600 ||
-    echo "$1 is not a directory."
-}
-
-alias chnpm='sudo chown -R 1000:1000 /home/andro/.npm'
-
-ch775dirs() {
-    if [[ -z "$1" ]]; then
-        echo "Usage: ch755dirs <directory_path>"
+        echo "Usage: chdirs <directory_path>"
         return 1
     elif [[ ! -d "$1" ]]; then
         echo "Error: '$1' is not a valid directory."
@@ -568,27 +693,27 @@ ch775dirs() {
     echo "Setting permissions: U+rwx | G+rwx | O+rx for all directories in '$target_dir'..."
 
     # Apply permissions to directories
-    sudo find "$target_dir" -type d -exec chmod 775 {} +
+    sudo find "$target_dir" -type d -exec chmod 755 {} +
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to set permissions for directories in '$target_dir'."
         return 1
     fi
 
-    echo "✔️ All dirs in '$target_dir' set to 775."
+    echo "✔️ All dirs in '$target_dir' set to 755."
 }
 
-chfiles() {
+chfd() {
     if [[ -z "$1" ]]; then
-        echo "Usage: chfiles <file_or_dir_path>"
+        echo "Usage: chfdirs <file_or_dir_path>"
         return 1
     fi
 
     local target="$1"
 
     if [[ -f "$target" ]]; then
-        # If it's a file, apply chmod 755
+        # If it's a file, apply chmod 644
         echo "Setting permissions: U+rwx | G+rx | O+rx for file '$target'..."
-        chmod 755 "$target"
+        chmod 644 "$target"
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to set permissions for file '$target'."
             return 1
@@ -645,7 +770,7 @@ chandro() {
             return 1
         fi
 
-        sudo chmod -R 775 "$target"
+        sudo chmod -R 755 "$target"
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to set permissions for '$target'."
             return 1
@@ -658,7 +783,7 @@ chandro() {
             return 1
         fi
 
-        sudo chmod 775 "$target"
+        sudo chmod 755 "$target"
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to set permissions for '$target'."
             return 1
@@ -705,13 +830,13 @@ chrootuser() {
         fi
 
         # Set permissions: 775 for directories and 600 for files
-        sudo find "$target" -type d -exec chmod 775 {} +
+        sudo find "$target" -type d -exec chmod 755 {} +
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to set directory permissions for '$target'."
             return 1
         fi
 
-        sudo find "$target" -type f -exec chmod 600 {} +
+        sudo find "$target" -type f -exec chmod 644 {} +
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to set file permissions for '$target'."
             return 1
@@ -726,9 +851,9 @@ chrootuser() {
 
         # Set permissions based on type
         if [[ -d "$target" ]]; then
-            sudo chmod 775 "$target"
+            sudo chmod 755 "$target"
         elif [[ -f "$target" ]]; then
-            sudo chmod 600 "$target"
+            sudo chmod 644 "$target"
         fi
 
         if [[ $? -ne 0 ]]; then
@@ -740,61 +865,73 @@ chrootuser() {
     echo "✔️ Successfully set ownership and permissions for '$target'."
 }
 
-# ======================================================================== // SPECIFIC_ALIASES //
-# --- // Retries cmd until executes:
-alias retry='until !!; do :; done'
-# --- // Backup & restore skel from recover dir:
-alias bupskel='sudo cp -Rf /etc/skel /var/recover/skel-backup-$(date +"%Y.%m.%d-%H.%M.%S") && echo "Backup of skel made."'
-alias restoreskel='sudo cp -Rf /var/recover/skel-backup-*/. $HOME/ && echo "Restored from latest backup."'
-# --- // Network utils:
-alias restartnetwork='sudo systemctl restart NetworkManager'
-alias restartnetwork2='sudo ip link set down enp2s0 && sudo ip link set up enp2s0'
-alias ssha='eval $(ssh-agent) && ssh-add'
-alias sshid='xclip -sel clip < ~/.ssh/id_ed25519.pub'
-alias update-grub="sudo grub-mkconfig -o /boot/grub/grub.cfg"
-alias myip='curl icanhazip.com'
-alias fixbootloader='sudo grub-install && sudo grub-mkconfig -o /boot/grub/grub.cfg'
-alias dracutcurrentk='echo "sudo dracut --add-confdir no-network /boot/initramfs-linux.img"'
-alias dracutkver='echo "sudo dracut --force --kver=$(uname -r) /boot/initramfs-linux.img"'
-alias dracutallk='echo "sudo dracut --regenerate-all --fstab --early-microcode --enhanced-cpio --lz4 --force"'
-alias dracutfallback='echo "sudo dracut /boot/initramfs-linux-fallback.img"'
-alias top10='print -l ${(o)history%% *} | uniq -c | sort -nr | head -n 10'
-alias pacdiff='sudo -H DIFFPROG=meld pacdiff'
-alias restartntp='sudo systemctl stop ntpd.service && sudo pacman -Syu ntp'
-alias fixntp='sudo ntpd -qg && sleep 10 && sudo hwclock -w'
+# --- // TEST:
+#fixo() {
+#  [[ -d "$1" ]] &&
+#    find "$1" -type d -print0 | xargs -0 chmod 755 && find "$1" -type f -print0 | xargs -0 chmod 644 ||
+#    echo "$1 is not a directory."
+#}
+#
+#fix() {
+#  [[ -d "$1" ]] &&
+#    find "$1" -type d -print0 | xargs -0 chmod 750 && find "$1" -type f -print0 | xargs -0 chmod 640 ||
+#    echo "$1 is not a directory."
+#}
+#
+#fixp() {
+#  [[ -d "$1" ]] &&
+#    find "$1" -type d -print0 | xargs -0 chmod 700 && find "$1" -type f -print0 | xargs -0 chmod 600 ||
+#    echo "$1 is not a directory."
+#}
+
+# ==================================================================== // MAINTAINENCE_ALIASES //
+# --- // Sys_maintenace:
 alias fixkeyboard='sudo localectl set-x11-keymap us'
 alias listusers='cut -d: -f1 /etc/passwd | sort'
 alias setlocales='sudo localectl set-locale LANG=en_US.UTF-8'
 alias microcode='grep . /sys/devices/system/cpu/vulnerabilities/*'
 alias audio="pactl info | grep 'Server Name'"
-#alias mcut='cat /home/$USER/.config/mpv/scripts/cutter.lua | grep key'
-#alias findit='read -p "Do you want to find a file (f) or a directory (d)? " choice; if [ "$choice" == "f" ]; then read -p "Enter the filename to search for: " filename; sudo find / -type f -name "$filename" 2>/dev/null; elif [ "$choice" == "d" ]; then read -p "Enter the directory name to search for: " dirname; sudo find / -type d -name "$dirname" 2>/dev/null; else echo "Invalid choice. Please select 'f' for file or 'd' for directory."; fi'
-#alias whatsnew='read -p "Do you want to find files based on modification time (m) or access time (a)? " choice; if [ "$choice" == "m" ]; then find "$PWD" -type f -mtime -7 -print0 | xargs -0 ls -lt | head; elif [ "$choice" == "a" ]; then find "$PWD" -type f -atime -7 -print0 | xargs -0 ls -lt | head; else echo "Invalid choice. Please select 'm' for modification time or 'a' for access time."; fi'
-#alias cleanls='echo "pacman -Q | grep -E 'pipewire|pulseaudio|alsa|jack' > audio_packages.txt && sed -i 's/ .*$//' audio_packages.txt"'
 
-# ----------------------------- // CLIPBOARDS //
-# --- // wl-copy and wl-paste:
-#copy_cmd() {
-#    "$@" | wl-copy
-#}
+# --- // Retries cmd until executes:
+alias retry='until !!; do :; done'
+
+# --- // Backup & restore skel from recover dir:
+alias bupskel='sudo cp -Rf /etc/skel /var/recover/skel-backup-$(date +"%Y.%m.%d-%H.%M.%S") && echo "Backup of skel made."'
+alias restoreskel='sudo cp -Rf /var/recover/skel-backup-*/. $HOME/ && echo "Restored from latest backup."'
+
+# --- // Network:
+alias restartnetwork='sudo systemctl restart NetworkManager'
+alias restartnetwork2='sudo ip link set down enp2s0 && sudo ip link set up enp2s0'
+
+# --- // Ssh:
+alias ssha='eval $(ssh-agent) && ssh-add'
+alias sshid='xclip -sel clip < ~/.ssh/id_ed25519.pub'
+
+# --- // NTP:
+alias restartntp='sudo systemctl stop ntpd.service && sudo pacman -Syu ntp'
+alias fixntp='sudo ntpd -qg && sleep 10 && sudo hwclock -w'
+
+# --- // Clipboard:
 paste_cmd() {
     wl-paste | "$@"
 }
-#alias copy='wl-copy'
 alias paste='wl-paste'
+
+#copy_cmd() {
+#    "$@" | wl-copy
+#}
+#alias copy='wl-copy'
 #alias list="xclip -o | tr '\n' ' ' | sed 's/ $/\n/' | xclip -selection c"
 #alias splitlist="xclip -o | tr ',' '\n'"
 #alias copy='xclip -selection clipboard'
 #alias copy='wl-copy <'
 #alias cleanssh="sed -i 18d .ssh/known_hosts"
 
-
-# --- // restore shell configs from /etc/skel:
+# --- // Shells: 
+# restore shell configs from /etc/skel:
 #alias cb='cp /etc/skel/.bashrc ~/.bashrc && exec bash'
 #alias cz='cp /etc/skel/.zshrc ~/.zshrc && echo "Copied."'
 #alias cf='cp /etc/skel/.config/fish/config.fish ~/.config/fish/config.fish && echo "Copied."'
-#alias swap="sudo swapoff -a; sudo swapon -a"
-#alias mpvplaylist='mpv --input-ipc-server=/tmp/mpvsocket --playlist=/home/andro/mpv_playlist.txt'
 
 # --- // Change_shell:
 alias tobash="sudo chsh $USER -s /bin/bash && echo 'Now log out.'"
@@ -828,118 +965,6 @@ alias snapli="sudo snapper list"
 alias snapcr="sudo snapper -c root create"
 alias snapch="sudo snapper -c home create"
 
-# --- // Count or list files in dir:
-filecount() {
-    if [[ "$1" == "-l" ]]; then
-        echo "Files in $PWD:"
-        find $PWD -type f
-    else
-        echo "Total files in $PWD: $(find $PWD -type f | wc -l)"
-    fi
-}
-
-lsmount() {
-    if [[ -n "$1" ]]; then
-        mount | column -t | grep "$1"
-    else
-        mount | column -t
-    fi
-}
-
-# --- // Killit:
-killit() {
-    local pattern=$1
-    if [[ -z "$pattern" ]]; then
-        echo "Error: Please provide a process name or pattern."
-        return 1
-    fi
-
-    echo "Searching for processes matching '$pattern'..."
-    local pids=$(pgrep -fl "$pattern")
-
-    if [[ -z "$pids" ]]; then
-        echo "No processes found matching '$pattern'."
-        return 1
-    fi
-
-    echo "Found processes:"
-    echo "$pids"
-
-    echo "Please enter the PIDs to kill (separate multiple PIDs with spaces):"
-    read -r pid_list
-
-    if [[ -z "$pid_list" ]]; then
-        echo "No PIDs provided, no action taken."
-        return 1
-    fi
-
-    for pid in $pid_list; do
-        if echo "$pids" | grep -q -w "$pid"; then
-            sudo kill -9 "$pid" && echo "Process $pid killed." || echo "Failed to kill process $pid."
-        else
-            echo "PID $pid does not match any of the listed processes. Skipping."
-        fi
-    done
-}
-
-# --- // Sets up zram:
-generate-zramconf() {
-  echo '[zram0]
-  zram-size = ram / 2' | sudo tee /etc/systemd/zram-generator.conf
-  sudo systemctl daemon-reload
-  sudo systemctl start /dev/zram0
-
-}
-
-# --- // List dependencies of pkg:
-whatdependson()  {
-    search="$1"
-    sudo pacman -Sii $search | grep "Required" | sed -e "s/Required By     : //g" | sed -e "s/  /\n/g"
-    }
-
-# --- // Backsup archive of pkg typed after:
-archive() {
-    local target="$1"
-    local backup_dir="${2:-.}"  # Optional second argument to specify backup directory, defaults to current directory
-
-    if [[ -z "$target" ]]; then
-        echo "Error: Please provide a file or directory to back up."
-        return 1
-    fi
-
-    if [[ ! -e "$target" ]]; then
-        echo "Error: The target '$target' does not exist."
-        return 1
-    fi
-
-    local target_name=$(basename "$target")
-    local timestamp=$(date -u "+%h-%d-%Y_%H.%M%p")
-    local backup_file="${backup_dir}/${target_name}_${timestamp}_backup.tar.gz"
-
-    echo "Creating backup for '$target'..."
-
-    # Check if we have write access to the backup directory and read access to the target
-    if [[ ! -w "$backup_dir" || ! -r "$target" ]]; then
-        echo "Insufficient permissions, attempting with sudo..."
-        if sudo tar -czvf "$backup_file" "$target"; then
-            echo "Backup successful with sudo: $backup_file"
-        else
-            echo "Error: Failed to create backup with sudo."
-            return 1
-        fi
-    else
-        if tar -czvf "$backup_file" "$target"; then
-            echo "Backup successful: $backup_file"
-        else
-            echo "Error: Failed to create backup."
-            return 1
-        fi
-    fi
-}
-
-# --- // Move_up_1_directory:
-up() { for _ in $(seq "${1:-1}"); do cd ..; done; }
-
 # --- // All_port80_connections:
 function con80() {
   {
@@ -967,29 +992,7 @@ function consume100() {
   # awk '{print $7}' "$(retlog)" | sort -n | uniq -c | sort -nr | head -n 100
 }
 
-# =================================================== // Cleanup //
-# --- // Delete 0byte files:
-function d0() {
-    local target_dir="${1:-.}"
-    find "$target_dir" -type f -size 0 -print0 | while IFS= read -r -d '' file; do
-        read -r -p "Delete '$file'? [y/N] " response
-        if [[ $response =~ ^[Yy]$ ]]; then
-            rm -rf "$file"
-            echo "Deleted: $file"
-        else
-            echo "Skipped: $file"
-        fi
-    done
-}
-
-# --- // Bleachbit:
-alias bleachcache='sudo bleachbit --clean system.cache system.localizations system.trash ; sudo paccache -vrk 2 || return 0'
-alias bleachchrome='bleachbit --clean chromium.cache chromium.dom thumbnails.cache'
-# ================================================================================ // PYTHON:
-
-alias pvenv='source $XDG_DATA_HOME/virtualenv/bin/activate --prompt 💀'
-#$XDG_DATA_HOME/virtualenv/bin/activate
-
+# =========================================================================== // PYTHON //
 # --- Python with no venv:
 syspip() {
     PIP_REQUIRE_VIRTUALENV="" pip "$@"
@@ -1000,9 +1003,10 @@ syspip2() {
 syspip3() {
     PIP_REQUIRE_VIRTUALENV="" pip3 "$@"
 }
+alias pyvenv='source $XDG_DATA_HOME/virtualenv/bin/activate --prompt 💀'
+alias pyvenvcd='source $XDG_DATA_HOME/virtualenv/bin/activate --prompt 💀 && cd $XDG_DATA_HOME/virtualenv'
 
 # ==================================================================================== // MEDIA:
-
 alias trem='transmission-remote'
 alias unhblock='hblock -S none -D none'
 alias imgscrape='wget -r -l1 --no-parent -nH -nd -P/tmp -A".gif,.jpg,.png"' http://example.com/images
@@ -1010,6 +1014,8 @@ alias mirrorsite='wget -m -k -K -E -e robots=off'
 alias ytt='yt --skip-download --write-thumbnail'
 alias YT='youtube-viewer'
 alias yta='yt -x -f bestaudio/best'
+#alias swap="sudo swapoff -a; sudo swapon -a"
+#alias mpvplaylist='mpv --input-ipc-server=/tmp/mpvsocket --playlist=/home/andro/mpv_playlist.txt'
 
 ytdl() {
   yt-dlp --add-metadata \
@@ -1097,12 +1103,6 @@ alias gitpkg="pacman -Q | grep -i '\-git' | wc -l"
 alias pkgbysize="expac -Q '%m - %n %v' | sort -n -r"
 alias mkpkglist='bat /tmp/pacui-ls'
 
-# --- // Garuda-update:
-alias garuda-refreshkeys='garuda-update remote keyring'
-alias garuda-reinstallallpkgs='garuda-update remote reinstall'
-alias garuda-resetaudio='garuda-update reset-audio'
-alias garuda-ffmpegupdate='/Nas/Build/git/syncing/scr/installers/ffmpeg/custom_garuda_update.sh' # Protects /home ffmpeg binaries
-
 # --- // Package Manger Customization Flags:
 yaysearch() {
     read -p "Choose a search parameter (1-5): " search_param
@@ -1115,6 +1115,7 @@ yaysearch() {
         *) echo "Invalid choice. Please choose a number between 1 and 5." ;;
     esac
 }
+
 #alias yay='yay --builddir "/home/build" --sortby votes'
 #alias yay='yay --answerdiff no --builddir "/home/build" --cleanafter --cleanmenu --sortby votes'
 alias yaydeps='yay --sudoloop --refresh --singlelineresults --sysupgrade --timeupdate --verbose'
@@ -1124,7 +1125,7 @@ alias trizenskip='trizen -S --skipinteg'
 alias update='sudo pacman -Sy && sudo powerpill -Su && paru -Su'
 
 # --- // Unsafe Install (security bypass):
-alias fninstall="yay -S --needed --cleanafter --cleanmenu --devel --noconfirm --rebuild --refresh --sudoloop --sysupgrade --overwrite='*' --disable-download-timeout --pgpfetch=false --noupgrademenu --removemake --redownload --batchinstall=false --answerclean=yes --answerdiff=no --answeredit=no"
+alias fninstall="yay -S --needed --cleanafter --cleanmenu --devel --noconfirm --rebuild --refresh --sudoloop --sysupgrade --overwrite='*' --disable-download-timeout --pgpfetch=false --removemake --redownload --batchinstall=false --answerclean=yes --answerdiff=no --answeredit=no"
 
 # --- // Unsafe Update (security bypass):
 alias fnupdate='yay -Syyu --noconfirm --disable-download-timeout --removemake --rebuild --pgpfetch=false --bottomup --overwrite="*"'
@@ -1157,7 +1158,6 @@ else \
 fi"
 
 # ===================================================================================== // GPG //
-
 alias fixdirmngr='sudo dirmngr </dev/null'
 #alias chgpg='sudo chown -R $(whoami):$(whoami) ~/.gnupg && chmod 700 ~/.gnupg && chmod 600 ~/.gnupg/*'
 alias rmgpg='sudo rm -r /etc/pacman.d/gnupg'
@@ -1171,13 +1171,13 @@ alias generate-keyserver='gpg --full-generate-key && gpg --import /usr/share/pac
 #alias initkeyring='sudo pacman-key --init && sudo pacman-key --populate $(pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)' | sed 's/-keyring//' | paste -sd " " )'
 
 # ==================================================================================== // GIT //
-
 alias g='git'
 alias gstat='git status'
 alias gstash='git stash --all'
 alias gclear='git stash clear'
-alias grh="git reset --hard"
+alias greset="git reset --hard"
 alias gfs='git-lfs'
+alias grc="git rm -f --cached . && git commit -m 'Removed cached and commited'"
 
 # ---- // Git_clone VERSION 2.0:
 gclone() {
@@ -1240,38 +1240,12 @@ gclone() {
     fi
 }
 
-
-# ####################################################### // VERSION 1.0 //
-#gclone() { #    # Check if a repository URL is provided
-#    if [[ -z "$1" ]]; then
-#        echo "Error: No repository URL provided."
-#        echo "Usage: gclone <repository-url>"
-#        return 1
-#    fi
-#
-#    # Extract the directory name from the repository URL
-#    repo_name=$(basename "$1" .git)
-#
-#    # Check if the directory already exists
-#    if [[ -d "$repo_name" ]]; then
-#        echo "Error: Directory '$repo_name' already exists."
-#        return 1
-#    fi
-#
-#    # Clone the repository with depth 1
-#    if git clone --depth 1 "$@"; then
-#        # Change into the newly cloned directory
-#        cd "$repo_name" || {
-#            echo "Error: Failed to change into directory '$repo_name'."
-#            return 1
-#        }
-#        echo "Successfully cloned and switched to '$repo_name'."
-#    else
-#        echo "Error: Failed to clone the repository."
-#        return 1
-#    fi
-#}
-##############################################################################
+gpush() {
+    git add .
+    git commit -m "$*"
+    git pull 
+    git push
+}
 
 # --- // Auto Git add all,commit all, comment, push (version 2.0:
 gcomp() {
@@ -1312,49 +1286,6 @@ gcomp() {
         echo "No changes detected. Nothing to commit."
     fi
 }
-
-# ############################################### // VERSION 1.0 //
-# --- // Git_add_all/commit_all/comment/pull/push:
-#gcomp() {
-#    # Check if there are any changes to commit
-#    if ! git diff-index --quiet HEAD --; then
-#        # Gather information about the changes
-#        added=$(git status --porcelain | grep "^A" | wc -l)
-#        modified=$(git status --porcelain | grep "^ M" | wc -l)
-#        deleted=$(git status --porcelain | grep "^D" | wc -l)
-#
-#        # Generate a commit message based on changes
-#        commit_message="Auto-commit: ${added} added, ${modified} modified, ${deleted} deleted"
-#
-#        # Add all changed files to staging
-#        git add --all
-#
-#        # Commit the changes with the generated commit message
-#        if ! git commit -m "$commit_message"; then
-#            echo "Error: Commit failed. Aborting."
-#            return 1
-#        fi
-#
-#        # Pull the latest changes from the remote repository
-#        if ! git pull --rebase; then
-#            echo "Error: Pull failed. Aborting."
-#            return 1
-#        fi
-#
-#        # Push the changes to the remote repository
-#        if ! git push; then
-#            echo "Error: Push failed. Aborting."
-#            return 1
-#        fi
-#
-#        echo "Changes committed, pulled, and pushed successfully."
-#        echo "Commit message: $commit_message"
-#    else
-#        echo "No changes detected. Nothing to commit."
-#    fi
-#}
-#########################################################
-
 
 # --- // Add_ssh_id:
 gaddssh() {
@@ -1481,12 +1412,7 @@ ginit() {
     git push -u origin "$branch_name"
 }
 
-
-# ================================== // POWER // ====================================================
-
-alias magic='sudo /usr/local/bin/magic.sh'
-
-# Function to check, log, and clean up session processes
+# ======================================================== // POWER // 
 cleanup_session() {
     echo "Starting session cleanup..."
     log_file="/var/log/session_cleanup.log"
@@ -1523,10 +1449,8 @@ cleanup_session() {
     echo "Session cleanup complete." | tee -a "$log_file"
 }
 
-# Shutdown Alias with session cleanup and logging
 alias sdn="cleanup_session && echo 'Shutting down...' | sudo tee -a /var/log/user_commands.log && sudo shutdown -h now"
 
-# Reboot Alias with session cleanup and logging
 alias ssr="cleanup_session && echo 'Rebooting...' | sudo tee -a /var/log/user_commands.log && sudo reboot -h now"
 
-
+alias magic='sudo /usr/local/bin/magic.sh'

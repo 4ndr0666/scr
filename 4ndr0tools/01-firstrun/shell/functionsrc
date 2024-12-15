@@ -1,0 +1,972 @@
+# File: $USER/.config/shell/functions/functionsrc
+# Author: 4ndr0666
+# Edited: 11-3-2024
+
+# ============================================== // FUNCTIONSRC //
+# --- // Reset permissions:
+function reset_permissions() {
+    # Check if running as root
+    if [[ "$(id -u)" -ne 0 ]]; then
+        echo "This function must be run with root privileges. Please run using sudo."
+        return 1
+    fi
+
+    # Define a mapping of directories to their correct "factory" permissions
+    declare -A dir_permissions=(
+        ["/boot"]=755
+        ["/dev"]=755
+        ["/etc"]=755
+        ["/home"]=755
+        ["/media"]=755
+        ["/mnt"]=755
+        ["/opt"]=755
+        ["/proc"]=555
+        ["/root"]=700
+        ["/run"]=755
+        ["/srv"]=755
+        ["/sys"]=555
+        ["/tmp"]=1777
+        ["/usr"]=755
+        ["/var"]=755
+        ["/boot/efi"]=755  # Specifically handle /boot/efi
+    )
+
+    # Function to back up current permissions
+    backup_permissions() {
+        local backup_file="/tmp/permissions_backup_$(date +%Y%m%d%H%M%S).txt"
+        echo "Backing up current permissions to $backup_file..."
+        local dir_count=0
+        for dir in "${!dir_permissions[@]}"; do
+            if [[ -d $dir ]]; then
+                find "$dir" -exec stat -c "%a %n" {} \; >> "$backup_file"
+                ((dir_count++))
+            fi
+        done
+        echo "Backup completed for $dir_count directories."
+    }
+
+    # Function to reset directory permissions
+    reset_dir_permissions() {
+        local dry_run=$1
+        for dir in "${!dir_permissions[@]}"; do
+            if [[ -d $dir ]]; then
+                local current_perm
+                current_perm=$(stat -c "%a" "$dir")
+                if [[ "$current_perm" -ne "${dir_permissions[$dir]}" ]]; then
+                    if [[ "$dry_run" == true ]]; then
+                        echo "Dry Run: chmod ${dir_permissions[$dir]} $dir"
+                    else
+                        if chmod "${dir_permissions[$dir]}" "$dir"; then
+                            echo "Permissions set for $dir to ${dir_permissions[$dir]}."
+                        else
+                            echo "Failed to set permissions for $dir." >&2
+                        fi
+                    fi
+                else
+                    echo "Permissions for $dir are already correct; skipping."
+                fi
+            else
+                echo "Directory $dir does not exist; skipping."
+            fi
+        done
+    }
+
+    # Function to reset file permissions within directories
+    reset_file_permissions() {
+        local dry_run=$1
+        local dir=$2
+
+        if [[ -d "$dir" ]]; then
+            if [[ "$dry_run" == true ]]; then
+                echo "Dry Run: find $dir -type d -exec chmod 755 {} \\;"
+                echo "Dry Run: find $dir -type f -exec chmod 644 {} \\;"
+                echo "Dry Run: find $dir -type f -perm /u+x -exec chmod 755 {} \\;"
+            else
+                find "$dir" -type d -exec chmod 755 {} \;
+                find "$dir" -type f -exec chmod 644 {} \;
+                find "$dir" -type f -perm /u+x -exec chmod 755 {} \;
+                echo "Permissions reset for $dir."
+            fi
+        fi
+    }
+
+    # Confirm before proceeding
+    echo "This will reset permissions on critical system directories to their defaults."
+    read -r -p "Are you sure you want to continue? (y/N) " REPLY
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        echo "Operation canceled."
+        return 0
+    fi
+
+    # Prompt for dry run
+    read -r -p "Would you like to perform a dry run first? (y/N) " DRY_RUN
+    echo
+    if [[ "$DRY_RUN" =~ ^[Yy]$ ]]; then
+        dry_run=true
+        echo "Performing a dry run..."
+    else
+        dry_run=false
+        # Backup current permissions
+        backup_permissions
+    fi
+
+    # Reset permissions for main directories
+    echo "Setting default permissions for main directories..."
+    reset_dir_permissions "$dry_run"
+
+    # Special handling for files within certain directories
+    echo "Setting appropriate permissions for files and subdirectories..."
+
+    reset_file_permissions "$dry_run" "/etc"
+    reset_file_permissions "$dry_run" "/var"
+
+    # Example: /boot/efi - ensure it's handled carefully
+    if [[ -d "/boot/efi" ]]; then
+        if [[ "$dry_run" == true ]]; then
+            echo "Dry Run: chmod 755 /boot/efi"
+        else
+            if chmod 755 /boot/efi; then
+                echo "Permissions reset for /boot/efi."
+            else
+                echo "Failed to set permissions for /boot/efi. Please check manually." >&2
+            fi
+        fi
+    fi
+
+    echo "Permissions reset process completed."
+}
+alias reset-perms=reset_permissions
+
+# ----------------------------------------------------- // BOOST_SYSTEM_RESOURCES:
+function sysboost() {
+    # Ensure the script exits on any error
+    set -e
+
+    # Function to log messages with an optional delay
+    log_and_wait() {
+        local message=$1
+        local delay=${2:-2}  # Default delay is 2 seconds
+        echo "$message"
+        sleep "$delay"
+    }
+
+    log_and_wait "Optimizing resources in 3 seconds."
+    log_and_wait "3..."
+    log_and_wait "2.."
+    log_and_wait "1"
+
+    # Check and reset failed systemd units
+    if command -v systemctl &> /dev/null; then
+        log_and_wait "Resetting all failed SystemD units..."
+        systemctl reset-failed || true
+    else
+        log_and_wait "systemctl not found, skipping reset of failed units."
+    fi
+
+    # Clear unnecessary Dbus sockets if the command is available
+    if command -v dbus-cleanup-sockets &> /dev/null; then
+        log_and_wait "Clearing unnecessary Dbus sockets..."
+        sudo dbus-cleanup-sockets
+    else
+        log_and_wait "Dbus-cleanup-sockets not found, skipping cleanup."
+    fi
+
+    # Remove broken SystemD links
+    log_and_wait "Removing broken SystemD links..."
+    if ! sudo find -L /etc/systemd/ -type l -delete; then
+        log_and_wait "Unable to search SystemD for broken links."
+    fi
+
+    # Kill zombie processes if the zps command is available
+    if command -v zps &> /dev/null; then
+        log_and_wait "Killing all zombies..."
+        sudo zps -r --quiet
+    else
+        log_and_wait "To kill zombies, zps is required 'sudo pacman -S zps --noconfirm'. Skipping"
+    fi
+
+    # Reload the system daemon if systemctl is available
+    if command -v systemctl &> /dev/null; then
+        log_and_wait "Reloading system daemon..."
+        sudo systemctl daemon-reload
+    else
+        log_and_wait "systemctl not found, skipping daemon reload."
+    fi
+
+    # Remove old logs using journalctl if available
+    if command -v journalctl &> /dev/null; then
+        log_and_wait "Removing logs older than 2 days..."
+        sudo journalctl --vacuum-time=2d
+    else
+        log_and_wait "journalctl not found, skipping log cleanup."
+    fi
+
+    # Clear /tmp files using tmpwatch or tmpreaper if available
+    if command -v tmpwatch &> /dev/null; then
+        log_and_wait "Clearing /tmp files older than 2 hours..."
+        sudo tmpwatch 2h /tmp
+    elif command -v tmpreaper &> /dev/null; then
+        log_and_wait "Clearing /tmp files older than 2 hours..."
+        sudo tmpreaper 2h /tmp
+    else
+        log_and_wait "Neither tmpwatch nor tmpreaper found, skipping /tmp cleanup."
+    fi
+
+    log_and_wait "Resources optimized."
+
+    # Disable exit on error
+    set +e
+}
+
+# ---------------------------------------------------------- // SWAP_BOOST:
+# taken from $LINUX-KERNELSOURCE/Documentation/power/swsusp.txt
+function swapboost() {
+    # Initialize log file
+    log_file="/tmp/swapboost_log.txt"
+    echo "Logging to $log_file"
+    echo "Starting swapboost process..." > "$log_file"
+
+    echo "Scanning accessible file mappings..."
+    sleep 2
+    local file_count=0
+    local cmd_prefix=""
+    [[ $EUID -ne 0 ]] && cmd_prefix="sudo"
+
+    # Touch only accessible memory-mapped files
+    if command -v parallel &> /dev/null; then
+        sed -ne 's:.* /:/:p' /proc/[0-9]*/maps 2>/dev/null | sort -u | grep -v '^/dev/' | grep -v '(deleted)' | \
+        parallel "$cmd_prefix cat {} > /dev/null 2>/dev/null && echo 'Accessed {}' >> \"$log_file\""
+    else
+        for file in $(sed -ne 's:.* /:/:p' /proc/[0-9]*/maps 2>/dev/null | sort -u | grep -v '^/dev/' | grep -v '(deleted)'); do
+            if $cmd_prefix cat "$file" > /dev/null 2>/dev/null; then
+                ((file_count++))
+                echo "Accessed $file" >> "$log_file"
+            fi
+        done
+    fi
+
+    echo "Accessed $file_count files from mappings..."
+    sleep 2
+
+    echo 'Refreshing swap spaces...'
+    sleep 2
+
+    # Refresh swap spaces
+    if $cmd_prefix swapoff -a && $cmd_prefix swapon -a; then
+        echo "Swap spaces refreshed!"
+    else
+        echo "Failed to refresh swap spaces" >> "$log_file"
+    fi
+
+    # Final message
+    echo "Swapboost process completed." >> "$log_file"
+    echo "Swapboost process completed."
+}
+
+# ---------------------------------------------------------------------// FULL_BOOST:
+function fullboost() {
+    # Run sysboost for general optimization
+    echo "Running sysboost..."
+    sysboost
+
+    # Run swapboost to refresh swap spaces and access memory-mapped files
+    echo "Running swapboost..."
+    swapboost
+
+    echo "Full system boost completed."
+}
+
+# --------------------------------------------------------- // DOWNSCALE_TO_1080P:
+function downscale() {
+    local input_file="$1"
+    local output_file="${2:-downscaled_1080p.mp4}"
+    local quality="${3:-15}"  # Default CRF value for quality, lower is better
+
+    # Validate input file presence
+    if [[ -z "$input_file" ]]; then
+        echo "Usage: downscale <path/to/media> [output_file_path] [quality]"
+        return 1
+    fi
+
+    # Validate input file existence
+    if [[ ! -f "$input_file" ]]; then
+        echo "Error: Input file '$input_file' does not exist."
+        return 1
+    fi
+
+    # Validate quality parameter
+    if ! [[ "$quality" =~ ^[0-9]+$ ]]; then
+        echo "Error: Quality parameter should be an integer."
+        return 1
+    fi
+
+    # Ensure output file name is unique
+    local base_name="${output_file%.*}"
+    local extension="${output_file##*.}"
+    local counter=1
+
+    while [[ -f "$output_file" ]]; do
+        output_file="${base_name}_${counter}.${extension}"
+        ((counter++))
+    done
+
+    # Start downscale process using FFmpeg
+    echo "Starting downscale process to 1080p..."
+    ffmpeg -i "$input_file" \
+           -vf "scale=1920x1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" \
+           -c:v libx264 -crf "$quality" -preset slower -c:a copy "$output_file"
+
+    # Check if FFmpeg command was successful
+    if [[ $? -eq 0 ]]; then
+        echo "Downscale complete. Output saved to '$output_file'."
+    else
+	echo "Error: Downscale process failed."
+    return 1
+    fi
+}
+
+# ------------------------------------------------------------------- // Extract:
+extract() {
+    clear
+    tput cup $(($(tput lines)/3))
+    tput bold
+    printf "%s\n\t" "$fx"
+    printf "\033[0;36mExtract? [y/N]: \033[0m"
+    read ans
+    [ "$ans" = "y" ] && {
+    case $fx in
+      *.tar.bz2)   tar xjf $fx    ;;
+      *.tar.gz)    tar xzf $fx    ;;
+      *.bz2)       bunzip2 $fx    ;;
+      *.rar)       unrar x $fx    ;;
+      *.gz)        gunzip $fx     ;;
+      *.tar)       tar xf $fx     ;;
+      *.tbz2)      tar xjf $fx    ;;
+      *.tgz)       tar xzf $fx    ;;
+      *.zip)       unzip $fx      ;;
+      *.Z)         uncompress $fx ;;
+      *.7z)        7z x $fx       ;;
+      *.deb)       ar x $fx       ;;
+      *.tar.xz)    tar xf $fx     ;;
+      *.tar.zst)   tar xf $fx     ;;
+      *)           echo "'$fx' cannot be extracted via ex()" ;;
+    esac
+}}
+
+# -------------------------------------------------------------------------- // Cd and ls:
+cl() {
+    # Default to HOME directory if no argument is provided
+    local dir="${1:-$HOME}"
+
+    # Check if the argument is a directory or a symbolic link to a directory
+    if [[ -d "$dir" || -L "$dir" ]]; then
+        cd "$dir" && lsd
+    else
+        # Standardized error message
+        echo "zsh: cl: '$dir': No such file or directory"
+    fi
+}
+
+# ------------------------------------------------------------------------ // Github menu:
+
+# Helper Functions
+check_and_setup_ssh() {
+  local ssh_key="${HOME}/.ssh/id_ed25519"
+
+  if [ -f "$ssh_key" ]; then
+    echo "SSH key exists."
+  else
+    echo "SSH key not found. Creating one now..."
+    ssh-keygen -t ed25519 -C "your_email@example.com" -f "$ssh_key"
+    eval "$(ssh-agent -s)"
+    ssh-add "$ssh_key"
+
+    echo "Uploading the SSH key to GitHub..."
+    # Assuming GitHub CLI is installed and configured
+    gh auth login
+    gh ssh-key add "$ssh_key.pub"
+  fi
+}
+
+list_and_manage_remotes() {
+  echo "Current Git remotes:"
+  git remote -v
+
+  # List remotes and ask the user if they want to remove any
+  echo "Would you like to remove any remotes? (yes/no):"
+  read -r response
+
+  if [[ "$response" =~ ^[Yy](es)?$ ]]; then
+    echo "Enter the name of the remote to remove (leave blank to cancel):"
+    read -r remote_to_remove
+
+    if [[ -n "$remote_to_remove" ]]; then
+      if git remote | grep -q "^$remote_to_remove$"; then
+        git remote remove "$remote_to_remove"
+        echo "Remote '$remote_to_remove' has been removed."
+      else
+        echo "Remote '$remote_to_remove' not found."
+      fi
+    else
+      echo "No remotes removed."
+    fi
+  else
+    echo "No changes made to remotes."
+  fi
+}
+
+switch_to_ssh() {
+  local old_url new_url
+
+  # Get a list of all remotes and use fzf to select one
+  local remote_name=$(git remote | fzf --height=10 --prompt="Select a remote: ")
+
+  # Check if a remote was selected
+  if [[ -z "$remote_name" ]]; then
+    echo "No remote selected."
+    return
+  fi
+
+  old_url=$(git remote get-url "$remote_name")
+
+  # Check if the current URL is already using SSH
+  if [[ "$old_url" == git@github.com:* ]]; then
+    echo "The remote '$remote_name' is already using SSH."
+    return
+  fi
+
+  # Extract the username and repository from the old URL
+  local user_repo=${old_url#*github.com/}
+
+  # Remove any trailing ".git"
+  user_repo=${user_repo%.git}
+
+  new_url="git@github.com:$user_repo.git"
+
+  git remote set-url "$remote_name" "$new_url"
+
+  echo "Switched '$remote_name' to use SSH: $new_url"
+}
+
+update_remote_url() {
+  local repo_base="https://www.github.com/4ndr0666/"
+  local repos=$(gh repo list 4ndr0666 -L 100 --json name -q '.[].name')
+
+  echo "Enter the repository name:"
+  local repo_name
+  repo_name=$(echo "$repos" | fzf --height=10 --prompt="Select a repository: ")
+
+  local new_url="${repo_base}${repo_name}.git"
+  git remote set-url origin "$new_url"
+  echo "Remote URL updated to $new_url"
+}
+
+fetch_from_remote() {
+  echo "Fetching updates from remote..."
+  git fetch origin
+  echo "Fetch complete."
+}
+
+pull_from_remote() {
+  local current_branch=$(git branch --show-current)
+  echo "Pulling updates from remote for branch '$current_branch'..."
+  git pull origin "$current_branch"
+  echo "Pull complete."
+}
+
+push_to_remote() {
+  local current_branch=$(git branch --show-current)
+  echo "Pushing local branch '$current_branch' to remote..."
+  git push -u origin "$current_branch"
+  echo "Push complete."
+}
+
+list_branches() {
+  echo "Available branches:"
+  git branch
+}
+
+switch_branch() {
+  echo "Enter branch name to switch to:"
+  read -r branch_name
+
+  if git branch --list "$branch_name" > /dev/null; then
+    git checkout "$branch_name"
+    echo "Switched to branch '$branch_name'."
+  else
+    echo "Branch '$branch_name' does not exist."
+  fi
+}
+
+create_new_branch() {
+  echo "Enter new branch name:"
+  read -r new_branch
+  git checkout -b "$new_branch"
+  echo "Branch '$new_branch' created and checked out."
+}
+
+delete_branch() {
+  echo "Enter branch name to delete:"
+  read -r del_branch
+
+  if git branch --list "$del_branch" > /dev/null; then
+    git branch -d "$del_branch"
+    echo "Branch '$del_branch' deleted."
+  else
+    echo "Branch '$del_branch' does not exist."
+  fi
+}
+
+reconnect_old_repo() {
+  echo "Do you know the remote URL or name? (URL/Name):"
+  read -r reconnect_type
+  if [ "$reconnect_type" == "URL" ]; then
+    echo "Enter the remote URL:"
+    read -r reconnect_url
+    git remote add origin "$reconnect_url"
+  elif [ "$reconnect_type" == "Name" ]; then
+    echo "Enter the remote name:"
+    read -r reconnect_name
+    git remote add origin "git@github.com:$reconnect_name.git"
+  else
+    echo "Invalid option. Exiting..."
+    return 1
+  fi
+}
+
+manage_stashes() {
+  echo "1. Stash Changes"
+  echo "2. List Stashes"
+  echo "3. Apply Latest Stash"
+  echo "4. Pop Latest Stash"
+  echo "5. Clear All Stashes"
+  echo "6. Show Stash Contents"
+  echo "7. Apply Specific Stash"
+  echo "8. Drop Specific Stash"
+  echo "Enter your choice (1-8):"
+  read -r stash_choice
+
+  # Reusing your color and echo functions
+  GREEN='\033[0;32m'
+  BOLD='\033[1m'
+  RED='\033[0;31m'
+  NC='\033[0m' # No Color
+  SUCCESS="✔️"
+  FAILURE="❌"
+  INFO="➡️"
+  EXPLOSION="💥"
+  
+  prominent() {
+      echo -e "${BOLD}${GREEN}$1${NC}"
+  }
+  
+  bug() {
+      echo -e "${BOLD}${RED}$1${NC}"
+  }
+
+  case "$stash_choice" in
+    1)
+      echo "Enter a message for the stash (optional):"
+      read -r message
+      git stash push -m "$message"
+      prominent "Changes stashed. ${SUCCESS}"
+      ;;
+    2)
+      git stash list | while IFS= read -r line; do prominent "$line"; done
+      ;;
+    3)
+      git stash apply
+      prominent "Stash applied. ${SUCCESS}"
+      ;;
+    4)
+      git stash pop
+      prominent "Stash popped and removed. ${SUCCESS}"
+      ;;
+    5)
+      git stash clear
+      prominent "All stashes cleared. ${SUCCESS}"
+      ;;
+    6)
+      echo "Enter stash @{number} to show contents (e.g., stash@{0}):"
+      read -r stash_number
+      git stash show -p "$stash_number" | while IFS= read -r line; do prominent "$line"; done
+      ;;
+    7)
+      echo "Enter stash @{number} to apply (e.g., stash@{0}):"
+      read -r stash_number
+      git stash apply "$stash_number"
+      prominent "Specific stash applied. ${SUCCESS}"
+      ;;
+    8)
+      echo "Enter stash @{number} to drop (e.g., stash@{0}):"
+      read -r stash_number
+      git stash drop "$stash_number"
+      prominent "Specific stash dropped. ${SUCCESS}"
+      ;;
+    *)
+      bug "Invalid choice! ${FAILURE}"
+      ;;
+  esac
+}
+
+merge_branches() {
+  # Merging is useful when you want to combine the changes from one branch into another.
+  echo "Enter the name of the branch you want to merge into the current branch:"
+  read -r branch_to_merge
+
+  # Check if the specified branch exists
+  if git branch --list "$branch_to_merge" > /dev/null; then
+    # Merge the specified branch into the current branch
+    git merge "$branch_to_merge"
+    echo "Branch '$branch_to_merge' merged into $(git branch --show-current)."
+  else
+    echo "Branch '$branch_to_merge' does not exist."
+  fi
+}
+
+view_commit_history() {
+  # Viewing the commit history can help you understand the changes made over time.
+  echo "Showing commit history for the current branch:"
+  # --oneline condenses each commit to a single line, --graph shows a text-based graph of the commits
+  git log --oneline --graph
+}
+
+rebase_branch() {
+  # Rebasing is a way to move or combine a sequence of commits to a new base commit.
+  echo "Enter the branch you want to rebase onto:"
+  read -r base_branch
+
+  # Check if the base branch exists
+  if git branch --list "$base_branch" > /dev/null; then
+    # Rebase the current branch onto the specified base branch
+    git rebase "$base_branch"
+    echo "Current branch rebased onto '$base_branch'."
+  else
+    echo "Branch '$base_branch' does not exist."
+  fi
+}
+
+resolve_merge_conflicts() {
+  # Merge conflicts happen when Git can't automatically resolve differences in code between two commits.
+  # Git will mark the conflicts in the problematic files.
+  echo "Attempting to start a merge..."
+  git merge
+
+  # Check if there are merge conflicts
+  if git ls-files -u | grep -q "^"; then
+    echo "There are merge conflicts. Manually resolve them and then run 'git merge --continue'"
+  else
+    echo "No merge conflicts detected."
+  fi
+}
+
+cherry_pick_commits() {
+  # Cherry-picking allows you to pick a specific commit from one branch and apply it onto another.
+  echo "Enter the commit hash you want to cherry-pick:"
+  read -r commit_hash
+
+  # Apply the specified commit to the current branch
+  git cherry-pick "$commit_hash"
+  echo "Commit '$commit_hash' cherry-picked onto $(git branch --show-current)."
+
+  echo "Available options:"
+  echo "1. Merge Branches - Combine changes from one branch into another."
+  echo "2. View Commit History - Show the commit history of the current branch."
+  echo "3. Rebase Branch - Move or combine commits to a new base commit."
+  echo "4. Resolve Merge Conflicts - Handle conflicts when Git can't automatically merge."
+  echo "5. Cherry-Pick Commits - Apply specific commits from one branch to another."
+  # ... other options ...
+  echo "Enter your choice:"
+  read -r choice
+
+  case "$choice" in
+    1)
+      merge_branches
+      ;;
+    2)
+      view_commit_history
+      ;;
+    3)
+      rebase_branch
+      ;;
+    4)
+      resolve_merge_conflicts
+      ;;
+    5)
+      cherry_pick_commits
+      ;;
+    # ... other cases ...
+  esac
+}
+
+# --- // RESTORE_BRANCH:
+restore_branch() {
+  # Assuming the Python script is named 'restore_branch.py' and is in the same directory
+  python3  ~/.config/shell/functions/restore_branch.py
+}
+
+revert_to_previous_version() {
+    # Display recent actions from the reflog
+    echo "Recent actions in the repository:"
+    git reflog -10
+
+    # Ask the user to input the reflog entry number
+    echo "Enter the reflog entry number you want to revert to (e.g., HEAD@{2}):"
+    read -r reflog_entry
+
+    # Confirm the choice
+    echo "Do you want to revert to this point? This action is irreversible. (yes/no):"
+    read -r confirmation
+
+    if [[ "$confirmation" == "yes" ]]; then
+        # Revert to the chosen reflog entry
+        if git reset --hard "$reflog_entry"; then
+            echo "Reverted to $reflog_entry."
+        else
+            echo "Failed to revert. Make sure the reflog entry number is correct."
+            return 1
+        fi
+    else
+        echo "Revert action canceled."
+        return 0
+    fi
+}
+
+# Main Function
+gui() {
+ local choice=""
+ while true; do
+  echo "1. Check and generate SSH key"
+  echo "2. List current remotes"
+  echo "3. Update remote URL"
+  echo "4. Switch from HTTPS to SSH"
+  echo "5. Fetch from remote"
+  echo "6. Pull from remote"
+  echo "7. Push to remote"
+  echo "8. List branches"
+  echo "9. Switch branch"
+  echo "10. Create new branch"
+  echo "11. Delete branch"
+  echo "12. Reconnect old repo"
+  echo "13. Manage stashes"
+  echo "14. Restore Branch from Commit History"
+  echo "15. Exit"
+  echo "Enter your choice (1-15):"
+  read -r choice
+
+  case "$choice" in
+    1)  check_and_setup_ssh ;;
+    2)  
+        list_and_manage_remotes
+        ;;
+    3)  update_remote_url ;;
+    4)  switch_to_ssh ;;
+    5)  fetch_from_remote ;;
+    6)  pull_from_remote ;;
+    7)  push_to_remote ;;
+    8)  list_branches ;;
+    9)  switch_branch ;;
+    10) create_new_branch ;;
+    11) delete_branch ;;
+    12) reconnect_old_repo ;;
+    13) manage_stashes ;;
+    14) restore_branch ;;
+    15) echo "Exiting..."
+        break
+        ;;
+    *)  echo "Invalid choice!" ;;
+ esac
+done
+}
+
+# ---------------------------------------------------------- // RUN_IN_BACKGROUND:
+function 4ever() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: 4everr <command> [arguments] [log_file]"
+        return 1
+    fi
+
+    local command="$1"
+    shift
+
+    if command -v "$command" >/dev/null 2>&1; then
+        local log_file="${@: -1}"
+        if [[ -f "$log_file" || "$log_file" == *".log" ]]; then
+            set -- "${@:1:$(($#-1))}"
+        else
+            log_file="/dev/null"
+        fi
+
+        # Generate a more descriptive log file name if not specified
+        if [[ "$log_file" == "/dev/null" ]]; then
+            log_file="/tmp/${command}_$(date +'%Y%m%d%H%M%S').log"
+        fi
+
+        # Start the command in the background with nohup and log output
+        nohup "$command" "$@" &> "$log_file" &
+        local pid=$!
+        echo "Command '$command $*' started in the background with PID $pid."
+        echo "Output is being logged to $log_file."
+
+        # Optionally: Save the PID for later use
+        echo "$pid" > "/tmp/forever_${command}_${pid}.pid"
+    else
+        echo "Command '$command' not found. Not executed."
+        return 1
+    fi
+}
+
+# -------------------------------------------------------------- // MAKE_DIR_&_CD:
+function mkcd() {
+    if (( $# != 1 )); then
+        echo 'Usage: mkcd <new-directory>'
+        return 1
+    fi
+
+    local dir="$1"
+
+    # Check if the directory is a valid path
+    if [[ -z "$dir" ]]; then
+        echo "Error: Directory name cannot be empty."
+        return 1
+    fi
+
+    # Attempt to create the directory if it doesn't exist
+    if [[ ! -d "$dir" ]]; then
+        if mkdir -p "$dir"; then
+            echo "Directory '$dir' created."
+        else
+            echo "Failed to create directory '$dir'."
+            return 1
+        fi
+    else
+        echo "Directory '$dir' already exists."
+    fi
+
+    # Change into the directory, with error checking
+    if cd "$dir"; then
+        echo "Switched to directory '$dir'."
+    else
+        echo "Failed to switch to directory '$dir'."
+        return 1
+    fi
+}
+
+# ---------------------------------------------------------- // MAKE_TMP_DIR_&_CD:
+function cdt() {
+    local tmp_dir
+
+    if tmp_dir=$(mktemp -d 2>/dev/null); then
+        echo "Created and switching to temporary directory: $tmp_dir"
+        cd "$tmp_dir"
+    else
+        echo "Failed to create a temporary directory."
+        return 1
+    fi
+
+    pwd
+}
+
+# -------------------------------------------------------------------- // NOTEPAD:
+function notepad() {
+    local file="$HOME/Documents/notes/.notes"
+    mkdir -p "$(dirname "$file")"  # Ensure the directory exists
+    [[ -f $file ]] || touch "$file"
+
+    show_help() {
+        cat << EOF
+Usage: notepad [option] [arguments]
+Options:
+  (no option)       Display all notes
+  -c                Clear all notes
+  -r [number]       Display the last 'number' notes (default 10)
+  -f <YYYY-MM-DD>   Filter notes by specific date
+  -h                Show this help message
+  <note>            Add a new note with a timestamp
+EOF
+    }
+
+    if (( $# )); then
+        case "$1" in
+            -c)
+                > "$file"
+                echo "All notes cleared."
+                ;;
+            -r)
+                if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
+                    echo "Invalid or missing argument for -r option. Defaulting to 10."
+                    local recent_count=10
+                else
+                    local recent_count="$2"
+                fi
+                tail -n "$recent_count" "$file"
+                ;;
+            -f)
+                if [[ -z "$2" || ! "$2" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                    echo "Usage: notepad -f <YYYY-MM-DD>"
+                    return 1
+                fi
+                grep "\[$2" "$file" || echo "No notes found for $2."
+                ;;
+            -h)
+                show_help
+                ;;
+            --)
+                shift
+                ;;
+            -*)
+                echo "Invalid option: $1"
+                show_help
+                return 1
+                ;;
+        esac
+    else
+        cat "$file"
+    fi
+
+    if [[ $# -gt 0 && "$1" != "-"* ]]; then
+        local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+        printf "[%s] %s\n" "$timestamp" "$*" >> "$file"
+        echo "Note added."
+    fi
+}
+
+# --------------------------------------------------------------- // DECODE_URLS:
+function urldecode() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: urldecode <encoded_string>"
+        return 1
+    fi
+
+    echo "$1" | awk '{gsub(/%([0-9A-Fa-f]{2})/, "\\x\\1"); print}' | xargs -0 echo -e
+}
+
+# ------------------------------------------------------------- // TERMBIN:
+function termbin() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: termbin <file>"
+        return 1
+    fi
+
+    if [[ ! -f "$1" ]]; then
+        echo "File not found: $1"
+        return 1
+    fi
+
+    if ! command -v nc &>/dev/null; then
+        echo "'nc' (netcat) is required but not installed."
+        return 1
+    fi
+
+    local url
+    url=$(nc termbin.com 9999 < "$1")
+
+    if [[ $? -eq 0 && -n "$url" ]]; then
+        echo "File uploaded successfully."
+        echo "URL: $url"
+    else
+        echo "Error: Failed to upload file."
+        return 1
+    fi
+}

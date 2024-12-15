@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# File: /home/$USER/.config/shell/bashrc
+# Author: 4ndr0666
+# Edited: 11-3-24
+
+# ========================================== // root/.bashrc //
+# --- // Only_respond_if_interactive:
+[ -z "$PS1" ] && return
+#[[ $- != *i* ]] && return
+
+# --- // Prompt:
+PS1='[\u@\h \W]\$💀 '
+
+# --- // PATH:
+if [ -d "$HOME/.local/bin" ] ;
+  then PATH="$HOME/.local/bin:$PATH"
+fi
+
+if [ -d "/usr/local/bin" ] ;
+then PATH="$PATH:$(find /usr/local/bin -type d | paste -sd ':' -)$PATH"
+fi
+
+if [ -d "/Nas/Build/git/syncing/scr/" ] ;
+then PATH="$PATH:$(find /Nas/Build/git/syncing/scr -type d | paste -sd ':' -)$PATH"
+fi
+
+echo $PATH | grep -Eq "(^|:)/sbin(:|)"     || PATH=$PATH:/sbin
+
+echo $PATH | grep -Eq "(^|:)/usr/sbin(:|)" || PATH=$PATH:/usr/sbin
+
+# --- // Source_Files:
+for functions_file in "/home/andro/.config/shell/functions/functionsrc" "/home/andro/.config/shell/aliasrc"; do
+	if [ -f "$functions_file" ]; then
+		source "$functions_file"
+	else
+		echo "Warning: '$functions_file' not found."
+	fi
+done
+
+# --- // Environment:
+HISTCONTROL=$HISTCONTROL${HISTCONTROL+:}ignoredups
+HISTCONTROL=ignoreboth
+HISTTIMEFORMAT="%Y-%m-%d %T "
+shopt -s histappend
+shopt -s checkwinsize
+shopt -s cdspell
+complete -cf 
+shopt -s autocd
+
+# --- // COLOR_TERM:
+if [ "$TERM" = "linux" ]; then
+	printf %b '\e]P01E1E2E' # set background color to Base
+	printf %b '\e]P8585B70' # set bright black to Surface2
+
+	printf %b '\e]P7BAC2DE' # set text color to Text
+	printf %b '\e]PFA6ADC8' # set bright white to Subtext0
+
+	printf %b '\e]P1F38BA8' # set red to Red
+	printf %b '\e]P9F38BA8' # set bright red to Red
+
+	printf %b '\e]P2A6E3A1' # set green to Green
+	printf %b '\e]PAA6E3A1' # set bright green to Green
+
+	printf %b '\e]P3F9E2AF' # set yellow to Yellow
+	printf %b '\e]PBF9E2AF' # set bright yellow to Yellow
+
+	printf %b '\e]P489B4FA' # set blue to Blue
+	printf %b '\e]PC89B4FA' # set bright blue to Blue
+
+	printf %b '\e]P5F5C2E7' # set magenta to Pink
+	printf %b '\e]PDF5C2E7' # set bright magenta to Pink
+
+	printf %b '\e]P694E2D5' # set cyan to Teal
+	printf %b '\e]PE94E2D5' # set bright cyan to Teal
+
+	clear
+fi
+
+# --- // Autoset $DISPLAY:
+#if [ -z "$DISPLAY" ]; then
+#	if which loginctl &>/dev/null; then
+#		LOGINCTL_SESSION=$(loginctl show-user $USER -p Display 2>/dev/null | cut -d= -f2)
+#		if [ -n "$LOGINCTL_SESSION" ]; then
+#			export DISPLAY=$(loginctl show-session $LOGINCTL_SESSION -p Display | cut -d= -f2)
+#		fi
+#	fi
+#	if which ck-list-sessions &>/dev/null; then
+#		eval `ck-list-sessions | awk "/^Session/{right=0} /unix-user = '$UID'/{right=1} /x11-display = '(.+)'/{ if(right == 1) printf(\"DISPLAY=%s\n\", \\\$3); }";`
+#	fi
+#fi
+
+# --- // IBUS_SETTINGS_(enter $ibus-setup in term):
+#export GTK_IM_MODULE=ibus
+#export XMODIFIERS=@im=dbus
+#export QT_IM_MODULE=ibus
+
+# --- // Pager:
+#LESS="-R -i"
+
+# --- // Auto-complete:
+if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
+    . /etc/bash_completion
+fi
+  
+# --- // LISTINGS:
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval $(dircolors -b ~/.dircolors) || eval $(dircolors -b)
+    alias ls='ls --color=auto'
+fi
+
+# --- // REPLACE_WITH_EZA:
+#alias ls='exa -al --color=always --group-directories-first --icons' # preferred listing
+#alias la='exa -a --color=always --group-directories-first --icons'  # all files and dirs
+#alias ll='exa -l --color=always --group-directories-first --icons'  # long format
+#alias lt='exa -aT --color=always --group-directories-first --icons' # tree listing
+#alias l.='exa -ald --color=always --group-directories-first --icons .*' # show only dotfiles
+
+
+
+

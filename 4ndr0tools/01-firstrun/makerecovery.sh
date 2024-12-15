@@ -1,20 +1,33 @@
 #!/bin/bash
+# File: makerecovery-etc
+# Author: 4ndr0666
+# Edited: 12-15-24
 
-# --- AUTO_ESCALATE:
+# ============================== // MAKERECOVERY-ETC //
+# --- // Auto-escalate:
 if [ "$(id -u)" -ne 0 ]; then
     sudo "$0" "$@"
     exit $?
 fi
 
-# --- FUNCTIONS:
+# --- // Colors:
+#tput setaf 0 = black
+#tput setaf 1 = red
+#tput setaf 2 = green
+#tput setaf 3 = yellow
+#tput setaf 4 = dark blue
+#tput setaf 5 = purple
+#tput setaf 6 = cyan
+#tput setaf 7 = gray
+#tput setaf 8 = light blue
 
-# Function to log messages with timestamp
+# --- // Logging:
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a /var/log/makerecover2-etc.log
 }
 
-# Function to display help information
+# --- // Help:
 show_help() {
     cat << EOF
 Usage: ${0##*/} [OPTIONS]
@@ -148,10 +161,8 @@ add_aliases() {
     local shell_config_files=(
         "$HOME/.bashrc"
         "$HOME/.zshrc"
-        "$HOME/.config/fish/config.fish"
         "/root/.bashrc"
         "/root/.zshrc"
-        "/root/.config/fish/config.fish"
     )
 
     for config_file in "${shell_config_files[@]}"; do
@@ -163,14 +174,11 @@ add_aliases() {
             if ! grep -q "alias unlock='sudo chattr -i '" "$config_file"; then
                 echo "alias unlock='sudo chattr -i '" >> "$config_file" || log_message "Failed to add unlock alias to $config_file"
             fi
-            # For fish shell, use different syntax
-            if [[ "$config_file" == *"config.fish" ]]; then
-                if ! grep -q "alias lock 'sudo chattr +i '" "$config_file"; then
-                    echo "alias lock 'sudo chattr +i '" >> "$config_file" || log_message "Failed to add lock alias to $config_file (fish shell)"
-                fi
-                if ! grep -q "alias unlock 'sudo chattr -i '" "$config_file"; then
-                    echo "alias unlock 'sudo chattr -i '" >> "$config_file" || log_message "Failed to add unlock alias to $config_file (fish shell)"
-                fi
+            if ! grep -q "source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh 2>/dev/null"; then
+                echo "source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh 2>/dev/null" >> "$config_file" || log_message "Failed to add zsh-autosuggestions to $config_file"
+            fi
+            if ! grep -q "source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh 2>/dev/null"; then
+                echo "source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh 2>/dev/null" >> "$config_file" || log_message "Failed to add zsh-syntax-highlighting to $config_file"
             fi
         fi
     done
@@ -180,9 +188,14 @@ add_aliases() {
         source "$HOME/.bashrc"
     elif [[ -f "$HOME/.zshrc" ]]; then
         source "$HOME/.zshrc"
-    elif [[ -f "$HOME/.config/fish/config.fish" ]]; then
-        source "$HOME/.config/fish/config.fish"
     fi
+}
+install_deps() {
+    sudo pacman -Sy  
+    sudo pacman -S zsh-syntax-highlighting zsh-autosuggestions --noconfirm
+    touch "$HOME/.cache/zshhistory"
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
+    echo 'source ~/powerlevel10k/powerlevel10k.zsh-theme' >>! ~/.zshrc
 }
 
 # Main function to execute the backup or restore process
@@ -208,5 +221,4 @@ main() {
     esac
 }
 
-# Execute the main function
 main "$@"

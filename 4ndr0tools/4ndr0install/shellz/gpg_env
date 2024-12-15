@@ -1,0 +1,4 @@
+export GPG_TTY=$(tty)
+gpg-connect-agent updatestartuptty /bye >/dev/null
+gpg-connect-agent reloadagent /bye >/dev/null
+#eval $(ssh-agent) && ssh-add 2&>/dev/null

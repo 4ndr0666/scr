@@ -15,6 +15,14 @@
 #tput setaf 8 = light blue
 
 # --- // Install:
-sudo pacman -Sy
-sudo pacman -S github-cli git-delta debugedit lsd eza fd xorg-xhost xclip ripgrep diffuse micro neovim expac pacdiff bashmount \
-lf-git --noconfirm --needed || yay -S lf-git --noconfirm --needed
+main() {
+	sudo pacman -Sy
+	sudo pacman -S github-cli git-delta lsd eza fd xorg-xhost xclip ripgrep diffuse neovim expac pacdiff --noconfirm
+}
+
+aur() {
+	yay -S bashmount-git debugedit lf-git micro --noconfirm
+}
+
+main
+aur
