@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
+# File: makerecovery-etc.sh
+# Date: 12-15-2024
+# Author: 4ndr0666
 
-# --- Make Recovery for /etc ---
+# --- // Make Recovery for /etc ---
 
+# --- // Logging:
 LOG_FILE="/var/log/makerecovery-etc.log"
+mkdir -p "$(dirname "$LOG_FILE")"
 
-# Function to log messages with timestamp
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
@@ -15,7 +19,8 @@ show_help() {
     cat << EOF
 Usage: ${0##*/} [OPTIONS]
 
-This script provides backup and restore functionalities for critical /etc configuration files, with added support for comparison using meld.
+This script provides backup and restore functionalities for critical /etc configuration files, with added support for
+comparison using meld.
 
 Options:
   -h, --help             Display this help message and exit.
@@ -59,16 +64,15 @@ create_backup() {
     local total_items=${#target_list[@]}
     local current_item=0
 
-    # Copy each file and directory to the temporary backup directory
+    # Create a progress bar using whiptail
     {
     for item in "${target_list[@]}"; do
         current_item=$((current_item + 1))
         if [[ -e "/etc/$item" ]]; then
-            rsync -a --ignore-existing --ignore-times --update --progress --recursive \
-            "/etc/$item" "$backup_dir" || log_message "Failed to copy /etc/$item"
+            rsync -a --ignore-existing --ignore-times --update --recursive "/etc/$item" "$backup_dir" || log_message "Failed to copy /etc/$item"
         fi
-            local progress=$((current_item * 100 / total_items))
-            echo $progress
+        local progress=$((current_item * 100 / total_items))
+        echo $progress
     done
     } | whiptail --gauge "Backing up files..." 6 50 0
 
@@ -94,8 +98,11 @@ create_backup() {
     # Lock the recovery tarball
     chattr +i "$recover_dir/$tarball_name" || { log_message "Failed to lock the tarball."; exit 1; }
 
+    # Add lock and unlock aliases to shell configuration files
+    add_aliases
+
     # Notify the user
-    local notification="Acquired and secured.\\n\\nUsage:\\n  lock <path>   # Lock a file or directory\\n  unlock <path> # Unlock a file or directory\\n\\nLocation: $recover_dir"
+    local notification="Acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
     whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
     log_message "Backup created and secured at $recover_dir/$tarball_name"
 }
@@ -107,14 +114,14 @@ restore_backup() {
 
     if [ ! -d "$recover_dir" ]; then
         log_message "Recovery directory $recover_dir does not exist."
-        return 1
+        exit 1
     fi
 
     # List available backups
     local backups=("$recover_dir"/*.tar.gz)
     if [ ${#backups[@]} -eq 0 ]; then
         log_message "No backups found in $recover_dir."
-        return 1
+        exit 1
     fi
 
     # Prompt user to select a backup
@@ -156,10 +163,8 @@ restore_backup() {
 # Function to add lock and unlock aliases to shell configuration files
 add_aliases() {
     local shell_config_files=(
-        "$HOME/.bashrc"
-        "$HOME/.zshrc"
-        "/root/.bashrc"
-        "/root/.zshrc"
+        "$USER_HOME/.bashrc"
+        "$USER_HOME/.zshrc"
     )
 
     for config_file in "${shell_config_files[@]}"; do
@@ -173,14 +178,15 @@ add_aliases() {
                 echo "alias unlock='sudo chattr -i '" >> "$config_file"
                 log_message "Added unlock alias to $config_file"
             fi
+        else
+            log_message "Shell configuration file $config_file not found."
         fi
     done
     # Source the shell configuration for the current user
-    if [[ -f "$HOME/.bashrc" ]]; then
-        source "$HOME/.bashrc"
-    elif [[ -f "$HOME/.zshrc" ]]; then
-        source "$HOME/.zshrc"
-
+    if [[ -f "$USER_HOME/.bashrc" ]]; then
+        sudo -u "$INVOKING_USER" bash -c "source '$USER_HOME/.bashrc'"
+    elif [[ -f "$USER_HOME/.zshrc" ]]; then
+        sudo -u "$INVOKING_USER" zsh -c "source '$USER_HOME/.zshrc'"
     fi
 }
 
@@ -190,7 +196,6 @@ main() {
         backup|"") # Default action is to create a backup if no option is provided
             log_message "Starting the backup process..."
             create_backup
-            add_aliases
             log_message "Backup process completed."
             ;;
         restore)

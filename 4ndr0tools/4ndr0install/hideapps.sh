@@ -1,90 +1,43 @@
 #!/usr/bin/env bash
+# File: hideapps.sh
+# Date: 12-15-2024
+# Author: 4ndr0666
 
-# --- Hide Unnecessary Apps ---
+LOG_DIR="${XDG_DATA_HOME}/logs/"
+LOG_FILE="$LOG_DIR/hideapps.log"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
-LOG_FILE="/var/log/hideapps.log"
-APP_DIR="/usr/share/applications"
-
-# Function to log messages
 log_message() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
-# Check if running as root
-if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root."
-    exit 1
-fi
+hide_application() {
+    local app_name="$1"
+    local desktop_file="/usr/share/applications/${app_name}.desktop"
 
-apps=(
-    avahi-discover.desktop
-    bssh.desktop
-    bvnc.desktop
-    echomixer.desktop
-    envy24control.desktop
-    exo-preferred-applications.desktop
-    hdajackretask.desktop
-    hdspconf.desktop
-    hdspmixer.desktop
-    hwmixvolume.desktop
-    lftp.desktop
-    libfm-pref-apps.desktop
-    lxshortcut.desktop
-    lstopo.desktop
-    networkmanager_dmenu.desktop
-    nm-connection-editor.desktop
-    pcmanfm-desktop-pref.desktop
-    qv4l2.desktop
-    qvidcap.desktop
-    stoken-gui.desktop
-    stoken-gui-small.desktop
-    thunar-bulk-rename.desktop
-    thunar-settings.desktop
-    thunar-volman-settings.desktop
-    yad-icon-browser.desktop
-    arandr.desktop
-    qt5ct.desktop
-    qt6ct.desktop
-    polkit-gnome-authentication-agent-1.desktop
-    jshell-java-openjdk.desktop
-    jshell-java11-openjdk.desktop
-    xarchiver.desktop
-    solaar.desktop
-    nsxiv.desktop
-    sxiv.desktop
-    ranger.desktop
-    modem-manager-gui.desktop
-    xfce4-about.desktop
-    cmake-gui.desktop
-    ca.desrt.dconf-editor.desktop
-    xdvi.desktop
-    xsensors.desktop
-    xcolor.desktop
-    wihotspot.desktop
-    network.cycles.wdisplays.desktop
-    io.github.celluloid_player.Celluloid.desktop
-    jshell-java11-openjdk.desktop
-    jconsole-java11-openjdk.desktop
-    gephi.desktop
-    electron29.desktop
-    about-archcraft.desktop
-    atril.desktop
-    OpenJDK-java-22-console.desktop
-    electron23.desktop
+    if [ -f "$desktop_file" ]; then
+        chmod -x "$desktop_file" || {
+            log_message "Failed to hide application: $app_name"
+            return 1
+        }
+        log_message "Application hidden: $app_name"
+    else
+        log_message "Application not found: $app_name"
+    fi
+}
+
+# List of applications to hide
+applications_to_hide=(
+    "example-app1"
+    "example-app2"
+    "example-app3"
 )
 
-for app in "${apps[@]}"; do
-    if [[ -e "$APP_DIR/$app" ]]; then
-        if ! grep -q "^NoDisplay=true" "$APP_DIR/$app"; then
-            echo "NoDisplay=true" >> "$APP_DIR/$app"
-            log_message "Hid $app"
-        else
-            log_message "$app is already hidden"
-        fi
-    else
-        log_message "Application $app not found in $APP_DIR"
-    fi
+for app in "${applications_to_hide[@]}"; do
+    hide_application "$app"
 done
 
-log_message "Application hiding process completed."
+log_message "Hideapps script execution completed."
+whiptail --title "Hideapps" --msgbox "Specified applications have been hidden successfully." 8 60

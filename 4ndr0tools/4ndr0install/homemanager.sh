@@ -1,187 +1,228 @@
 #!/usr/bin/env bash
-# File: home_manager.sh
+# File: homemanager.sh
+# Date: 12-15-2024
 # Author: 4ndr0666
-# Edited: 12-2-24
 
-# ============================= // HOME_MANAGER.SH //
-# --- // Constants:
-LOG_FILE="/var/log/home_manager.log"
+# --- // HOME_MANAGER.SH ---
 
 # --- // Logging:
+LOG_FILE="${XDG_DATA_HOME}/logs/home_manager.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
 log_action() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
 }
 
-# Function to validate user input
-validate_input() {
-    local input="$1"
-    if [[ -z "$input" ]]; then
-        whiptail --msgbox "Invalid input. Please try again." 8 40
-        return 1
-    fi
-    return 0
-}
-
-# Function to confirm action
-confirm_action() {
-    if ! whiptail --yesno "Are you sure you want to proceed?" 8 40; then
-        whiptail --msgbox "Operation canceled." 8 40
-        return 1
-    fi
-    return 0
-}
+# Ensure the script is run with root privileges
+if [ "$(id -u)" -ne 0 ]; then
+    log_action "This script must be run as root."
+    exit 1
+fi
 
 # Function to display help
 show_help() {
-    whiptail --msgbox "Home Directory Manager
+    cat << EOF
+Usage: ${0##*/} [OPTIONS]
 
-Usage:
-  - Sync data from old home partition to new home directory.
-  - Move large media files to backup directory.
-  - Delete old partition.
-  - Expand current home partition.
-  - Convert ext4 partition to Btrfs.
+This script provides backup and restore functionalities for critical /etc configuration files, with added support for
+comparison using meld.
 
-Run the script without arguments to display the interactive menu." 15 60
+Options:
+  -h, --help             Display this help message and exit.
+  backup                 Create a backup of critical /etc files and directories. This is the default action if no options are provided.
+  restore                Restore files from a backup and compare them with the current /etc configurations using meld.
+
+Example Usage:
+  ${0##*/} backup        Create a backup of critical /etc files and directories.
+  ${0##*/} restore       Restore and compare files from a selected backup using meld.
+EOF
 }
 
-# Module: Sync Data
-sync_data() {
-    local old_partition mount_point new_home
-    old_partition=$(whiptail --inputbox "Enter the old home partition (e.g., /dev/sdXY):" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$old_partition" || return
-    mount_point=$(whiptail --inputbox "Enter the mount point for the old partition (e.g., /mnt/old_home):" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$mount_point" || return
-    new_home=$(whiptail --inputbox "Enter the path to the new home directory:" 8 60 "$HOME" 3>&1 1>&2 2>&3)
-    validate_input "$new_home" || return
+# Function to create a backup tarball of specified files and directories
+create_backup() {
+    local backup_dir="/tmp/etc_backup"
+    local recover_dir="/var/recover"
+    local timestamp
+    timestamp="$(date -u "+%Y-%m-%d_%H.%M%p")"
+    local tarball_name="etc_backup_$timestamp.tar.gz"
+    local target_list=(
+        "arch-release" "audit" "avahi" "borgmatic" "binfmt.d" "conf.d" "cron.d" "cron.daily"
+        "cron.deny" "cron.hourly" "cron.monthly" "cron.weekly" "crontab" "default" "depmod.d"
+        "dhcpd.conf" "dnsmasq.conf" "drbl" "environment" "fstab" "group" "grub.d" "gshadow"
+        "gss" "gssproxy" "gtk-2.0" "gtk-3.0" "host.conf" "hostname" "hosts" "ipsec.conf"
+        "ipsec.d" "iptables" "iscsi" "ld.so.conf" "ld.so.conf.d" "libaudit" "locale.conf"
+        "locale.gen" "makepkg.conf" "mkepkg.config.d" "mkinitcpio.conf" "mkinitcpio.conf.d"
+        "modprobe.d" "modules-load.d" "nanorc" "netconfig" "NetworkManager" "nfs.conf"
+        "nfsmount.conf" "nftables" "nsswitch.conf" "nvme" "openvpn" "pacman.conf" "pacman.d"
+        "pam.d" "paru.conf" "passwd" "pinentry" "pipewire" "plymouth" "polkit-1" "powerpill"
+        "profile" "profile.d" "pulse" "reflector-simple-tool.conf" "reflector-simple.conf"
+        "resolv.conf" "resolv.conf.expressvpn-orig" "screenrc" "sddm.conf" "sddm.conf.d"
+        "security" "services" "skel" "ssh" "sudo.conf" "sudoers" "sysctl.d" "systemd"
+        "timeshift" "timeshift-autosnap.conf" "tmpfiles.d" "udev" "udisks2" "ufw"
+        "vconsole.conf" "wpa_supplicant" "X11" "xdg" "zsh"
+    )
 
-    if mount | grep -q "$mount_point"; then
-        whiptail --msgbox "Mount point $mount_point is already in use." 8 40
-    else
-        sudo mount "$old_partition" "$mount_point" || { whiptail --msgbox "Failed to mount $old_partition" 8 40; return; }
+    # Create the temporary backup directory if it doesn't exist
+    [ ! -d "$backup_dir" ] && mkdir -p "$backup_dir"
+
+    # Total number of items to backup
+    local total_items=${#target_list[@]}
+    local current_item=0
+
+    # Create a progress bar using whiptail
+    {
+    for item in "${target_list[@]}"; do
+        current_item=$((current_item + 1))
+        if [[ -e "/etc/$item" ]]; then
+            rsync -a --ignore-existing --ignore-times --update --recursive "/etc/$item" "$backup_dir" || log_action "Failed to copy /etc/$item"
+        fi
+        local progress=$((current_item * 100 / total_items))
+        echo $progress
+    done
+    } | whiptail --gauge "Backing up files..." 6 50 0
+
+    # Ensure the recovery directory exists
+    [ ! -d "$recover_dir" ] && mkdir -p "$recover_dir"
+
+    # Check if a tarball with the same name already exists and version it
+    if [[ -f "$recover_dir/$tarball_name" ]]; then
+        local counter=1
+        while [[ -f "$recover_dir/${tarball_name%.tar.gz}_v$counter.tar.gz" ]]; do
+            counter=$((counter + 1))
+        done
+        tarball_name="${tarball_name%.tar.gz}_v$counter.tar.gz"
+        log_message "Existing tarball found. Creating versioned tarball: $tarball_name"
     fi
 
-    whiptail --infobox "Syncing data..." 8 40
-    sudo rsync -a --ignore-existing --update --progress --recursive \
-        --exclude='*.mp4' --exclude='*.png' --exclude='*.jpg' --exclude='*.mov' \
-        --exclude='*.mkv' --exclude='*.gif' --exclude='*.webm' --exclude='*.m4v' \
-        "$mount_point/" "$new_home/" || { whiptail --msgbox "Data sync failed" 8 40; return; }
+    # Create a tarball of the backup directory
+    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . || { log_message "Failed to create tarball."; exit 1; }
 
-    sudo umount "$mount_point" || { whiptail --msgbox "Failed to unmount $mount_point" 8 40; return; }
-    sudo chown -R "$USER:$USER" "$new_home" || { whiptail --msgbox "Failed to set ownership" 8 40; return; }
+    # Clean up the temporary directory
+    rm -rf "$backup_dir" || log_message "Failed to clean up temporary backup directory."
 
-    whiptail --msgbox "Data sync completed." 8 40
-    log_action "Data synced from $old_partition to $new_home."
+    # Lock the recovery tarball
+    chattr +i "$recover_dir/$tarball_name" || { log_message "Failed to lock the tarball."; exit 1; }
+
+    # Add lock and unlock aliases to shell configuration files
+    add_aliases
+
+    # Notify the user
+    local notification="Acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
+    whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
+    log_message "Backup created and secured at $recover_dir/$tarball_name"
 }
 
-# Module: Move Media
-move_media() {
-    local new_home media_backup
-    new_home=$(whiptail --inputbox "Enter the path to the new home directory:" 8 60 "$HOME" 3>&1 1>&2 2>&3)
-    validate_input "$new_home" || return
-    media_backup=$(whiptail --inputbox "Enter the path to the media backup directory:" 8 60 "$HOME/media_backup" 3>&1 1>&2 2>&3)
-    validate_input "$media_backup" || return
+# Function to restore from a backup and compare using meld
+restore_backup() {
+    local recover_dir="/var/recover"
+    local restore_dir="/tmp/etc_restore"
 
-    mkdir -p "$media_backup" || { whiptail --msgbox "Failed to create backup directory" 8 40; return; }
-
-    whiptail --infobox "Moving media files..." 8 40
-    find "$new_home" -type f \( -iname "*.mp4" -o -iname "*.png" -o -iname "*.jpg" -o -iname "*.mov" -o -iname "*.mkv" -o -iname "*.gif" -o -iname "*.zip" \) -exec mv {} "$media_backup/" \; || { whiptail --msgbox "No media files found to move" 8 40; }
-
-    whiptail --msgbox "Media files moved to backup directory." 8 40
-    log_action "Media files moved from $new_home to $media_backup."
-}
-
-# Module: Delete Old Partition
-delete_partition() {
-    local old_partition
-    old_partition=$(whiptail --inputbox "Enter the old partition (e.g., /dev/sdXY):" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$old_partition" || return
-
-    whiptail --msgbox "Warning: This will delete the old partition. Ensure you have backups." 8 60
-    confirm_action || return
-
-    whiptail --infobox "Deleting partition..." 8 40
-    sudo parted "$old_partition" rm 1 || { whiptail --msgbox "Failed to delete partition" 8 40; return; }
-
-    whiptail --msgbox "Old partition deleted." 8 40
-    log_action "Deleted partition $old_partition."
-}
-
-# Module: Expand Home Partition
-expand_home_partition() {
-    local disk partition_number
-    disk=$(whiptail --inputbox "Enter the disk (e.g., /dev/sdX):" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$disk" || return
-    partition_number=$(whiptail --inputbox "Enter the partition number of the home directory:" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$partition_number" || return
-
-    whiptail --msgbox "Warning: This will resize the partition. Ensure you have backups." 8 60
-    confirm_action || return
-
-    whiptail --infobox "Expanding home partition..." 8 40
-    sudo parted "$disk" resizepart "$partition_number" 100% || { whiptail --msgbox "Failed to resize partition" 8 40; return; }
-    sudo resize2fs "${disk}${partition_number}" || { whiptail --msgbox "Failed to resize filesystem" 8 40; return; }
-
-    whiptail --msgbox "Home partition expanded." 8 40
-    log_action "Expanded partition ${disk}${partition_number}."
-}
-
-# Module: Convert ext4 to Btrfs
-convert_to_btrfs() {
-    local ext4_partition
-    ext4_partition=$(whiptail --inputbox "Enter the ext4 partition to convert (e.g., /dev/sdXY):" 8 60 3>&1 1>&2 2>&3)
-    validate_input "$ext4_partition" || return
-
-    whiptail --msgbox "Warning: This will convert the ext4 partition to Btrfs. Ensure you have backups." 8 60
-    confirm_action || return
-
-    sudo umount "$ext4_partition" || { whiptail --msgbox "Failed to unmount partition" 8 40; return; }
-    sudo btrfs-convert "$ext4_partition" || { whiptail --msgbox "Conversion to Btrfs failed" 8 40; return; }
-
-    whiptail --msgbox "Conversion to Btrfs completed." 8 40
-    log_action "Converted $ext4_partition to Btrfs."
-}
-
-# Module: Display Menu
-display_menu() {
-    while true; do
-        local choice
-        choice=$(whiptail --title "Home Directory Manager" --menu "Choose an option:" 15 60 6 \
-            "1" "Sync Data from Old Home Partition" \
-            "2" "Move Large Media Files to Backup" \
-            "3" "Delete Old Partition" \
-            "4" "Expand Current Home Partition" \
-            "5" "Convert ext4 to Btrfs" \
-            "6" "Exit" 3>&1 1>&2 2>&3)
-
-        case $choice in
-            1) sync_data ;;
-            2) move_media ;;
-            3) delete_partition ;;
-            4) expand_home_partition ;;
-            5) convert_to_btrfs ;;
-            6) exit 0 ;;
-            *) whiptail --msgbox "Invalid choice, please try again." 8 40 ;;
-        esac
-    done
-}
-
-# Main logic
-main() {
-    if [ "$(id -u)" -ne 0 ]; then
-        whiptail --msgbox "This script must be run as root." 8 40
+    if [ ! -d "$recover_dir" ]; then
+        log_message "Recovery directory $recover_dir does not exist."
         exit 1
     fi
 
+    # List available backups
+    local backups=("$recover_dir"/*.tar.gz)
+    if [ ${#backups[@]} -eq 0 ]; then
+        log_message "No backups found in $recover_dir."
+        exit 1
+    fi
+
+    # Select the latest backup
+    local latest_backup
+    latest_backup=$(ls -t "$recover_dir"/*.tar.gz 2>/dev/null | head -n1)
+
+    if [ -z "$latest_backup" ]; then
+        log_message "No valid backups found in $recover_dir."
+        exit 1
+    fi
+
+    log_message "Selected backup: $latest_backup"
+
+    # Ensure the restore directory exists and is empty
+    rm -rf "$restore_dir"
+    mkdir -p "$restore_dir" || {
+        log_message "Failed to create restore directory: $restore_dir"
+        exit 1
+    }
+
+    # Extract the selected tarball to the restore directory
+    tar -xzf "$latest_backup" -C "$restore_dir" || {
+        log_message "Failed to extract tarball: $latest_backup"
+        exit 1
+    }
+
+    # Compare the files in the restore directory with the current /etc using meld
+    for item in "$restore_dir"/*; do
+        local item_name
+        item_name=$(basename "$item")
+        if [[ -e "/etc/$item_name" ]]; then
+            meld "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to compare /etc/$item_name with backup."
+        else
+            log_message "No current /etc/$item_name found. Restoring from backup."
+            cp -r "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to restore /etc/$item_name."
+        fi
+    done
+
+    # Clean up the restore directory
+    rm -rf "$restore_dir" || log_message "Failed to clean up restore directory."
+
+    log_message "Restore and comparison completed."
+    whiptail --title "Restore Complete" --msgbox "Restore and comparison completed successfully." 8 60
+}
+
+# Function to add lock and unlock aliases to shell configuration files
+add_aliases() {
+    local shell_config_files=(
+        "$USER_HOME/.bashrc"
+        "$USER_HOME/.zshrc"
+    )
+
+    for config_file in "${shell_config_files[@]}"; do
+        if [[ -f "$config_file" ]]; then
+            # Add alias if not already present
+            if ! grep -q "alias lock=" "$config_file"; then
+                echo "alias lock='sudo chattr +i '" >> "$config_file"
+                log_action "Added lock alias to $config_file"
+            fi
+            if ! grep -q "alias unlock=" "$config_file"; then
+                echo "alias unlock='sudo chattr -i '" >> "$config_file"
+                log_action "Added unlock alias to $config_file"
+            fi
+        else
+            log_action "Shell configuration file $config_file not found."
+        fi
+    done
+    # Source the shell configuration for the current user
+    if [[ -f "$USER_HOME/.bashrc" ]]; then
+        sudo -u "$INVOKING_USER" bash -c "source '$USER_HOME/.bashrc'"
+    elif [[ -f "$USER_HOME/.zshrc" ]]; then
+        sudo -u "$INVOKING_USER" zsh -c "source '$USER_HOME/.zshrc'"
+    fi
+}
+
+# Main function to execute the backup or restore process
+main() {
     case "$1" in
-        sync) sync_data ;;
-        move) move_media ;;
-        delete) delete_partition ;;
-        expand) expand_home_partition ;;
-        convert) convert_to_btrfs ;;
-        -h|--help) show_help ;;
-        *) display_menu ;;
+        backup|"") # Default action is to create a backup if no option is provided
+            log_action "Starting the backup process..."
+            create_backup
+            log_action "Backup process completed."
+            ;;
+        restore)
+            log_action "Starting the restore process..."
+            restore_backup
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        *)
+            log_action "Unrecognized option: $1"
+            show_help
+            exit 1
+            ;;
     esac
 }
 

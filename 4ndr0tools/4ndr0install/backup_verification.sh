@@ -1,47 +1,69 @@
 #!/usr/bin/env bash
+# File: backup_verification.sh
+# Date: 12-15-2024
+# Author: 4ndr0666
 
-# --- Backup Verification ---
+# --- // Backup Verification Script ---
 
-LOG_FILE="/var/log/backup_verification.log"
+LOG_DIR="${XDG_DATA_HOME}/logs/"
+LOG_FILE="$LOG_DIR/backup_verification.log"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
-# Function to log messages with timestamp
 log_message() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
-# Function to verify backup integrity
 verify_backup() {
-    log_message "Starting backup verification in /var/recover..."
-    if [ ! -d "/var/recover" ]; then
-        log_message "Directory /var/recover does not exist."
-        return 1
+    local recovery_dir="/var/recover"
+    log_message "Starting backup verification in $recovery_dir..."
+
+    if [ ! -d "$recovery_dir" ]; then
+        log_message "Recovery directory $recovery_dir does not exist."
+        whiptail --title "Verification Error" --msgbox "Recovery directory $recovery_dir does not exist." 8 60
+        exit 1
     fi
 
-    local found_files=0
-    for file in /var/recover/*.tar.gz; do
-        if [ -f "$file" ]; then
-            found_files=1
-            if tar -tzf "$file" >/dev/null 2>&1; then
-                log_message "$file is valid."
-            else
-                log_message "Error: $file is corrupted!"
+    local backups=("$recovery_dir"/*.tar.gz)
+    if [ ${#backups[@]} -eq 0 ]; then
+        log_message "No backup files found in $recovery_dir."
+        whiptail --title "Verification Error" --msgbox "No backup files found in $recovery_dir." 8 60
+        exit 1
+    fi
+
+    local missing_dirs=()
+    declare -A expected_backups=(
+        ["etc_backup"]="/etc"
+        ["home_backup"]="/home"
+        ["var_backup"]="/var"
+        ["usr_backup"]="/usr"
+    )
+
+    for backup in "${backups[@]}"; do
+        for key in "${!expected_backups[@]}"; do
+            if [[ "$backup" == *"${key}_backup_"* ]]; then
+                expected_backups["$key"]=""
             fi
+        done
+    done
+
+    for key in "${!expected_backups[@]}"; do
+        if [ -n "${expected_backups[$key]}" ]; then
+            missing_dirs+=("${expected_backups[$key]}")
         fi
     done
 
-    if [ $found_files -eq 0 ]; then
-        log_message "No backup tarballs found in /var/recover."
-        return 1
+    if [ ${#missing_dirs[@]} -gt 0 ]; then
+        log_message "Missing backups for the following directories:"
+        for dir in "${missing_dirs[@]}"; do
+            log_message " - $dir"
+        done
+        whiptail --title "Verification Warning" --msgbox "Missing backups for the following directories:\n$(printf '%s\n' "${missing_dirs[@]}")" 10 60
+    else
+        log_message "All critical directories have been backed up successfully."
+        whiptail --title "Verification Success" --msgbox "All critical directories have been backed up successfully." 8 60
     fi
-
-    log_message "Backup verification completed."
 }
 
-# Main function to execute backup verification
-main() {
-    verify_backup
-}
-
-# Execute the main function
-main
+verify_backup

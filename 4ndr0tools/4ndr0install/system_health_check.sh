@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # File: system_health_check.sh
+# Date: 12-15-2024
 # Author: 4ndr0666
 # Edited: 12-2-24
 
-# =================================== // SYSTEM_HEALTH_CHECK.SH //
+# --- // System Health Check Script ---
+
 # --- // Logging:
-LOG_FILE="/var/log/system_health_check.log"
+LOG_FILE="${XDG_DATA_HOME}/logs/system_health_check.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
 log_message() {
     local message="$1"
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
@@ -14,7 +18,9 @@ log_message() {
 # Function to check the filesystem for errors
 check_filesystem() {
     log_message "Checking filesystem integrity..."
-    sudo fsck -Af -M >/dev/null 2>&1
+    sudo fsck -Af -M >/dev/null 2>&1 || {
+        log_message "Failed to check filesystem integrity."
+    }
     log_message "Filesystem check completed."
 }
 
@@ -51,10 +57,14 @@ display_summary() {
 
 # Main function to run all checks
 main() {
+    log_message "Starting system health check..."
+
     check_filesystem
     check_systemd_services
     check_logs
     display_summary
+
+    log_message "System health check completed."
 }
 
 # Execute the main function

@@ -1,3 +1,49 @@
+# 4ndr0666install.sh - Automated Arch Linux Setup Script
+
+## Overview
+
+`4ndr0666install.sh` is a comprehensive installation and configuration script designed to automate the setup of a personalized Arch Linux environment. It streamlines the installation of essential packages, configuration of the Zsh shell, deployment of dotfiles, and execution of various system management tasks through modular external scripts.
+
+## Features
+
+- **Automated Environment Setup**: Configures essential directories, environment variables, and shell settings.
+- **Package Management**: Installs packages from official repositories, AUR, Git repositories, and Python packages based on a structured `progs.csv`.
+- **Dotfiles Deployment**: Clones and deploys dotfiles from a specified Git repository.
+- **Modular Scripts**: Executes external scripts for GRUB configuration, application hiding, home directory management, system cleanup, backup verification, and system health checks.
+- **Centralized Logging**: All operations are logged to centralized log files within `$XDG_DATA_HOME/logs/`.
+- **User-Friendly Interface**: Utilizes `whiptail` for interactive dialogs and progress indicators.
+- **Security Measures**: Ensures scripts are executed with appropriate permissions and includes safeguards against potential vulnerabilities.
+
+## Prerequisites
+
+- **Arch Linux**: The script is tailored for Arch Linux distributions.
+- **Root Privileges**: Must be run as root or with `sudo`.
+- **Internet Connection**: Required for package installations and Git operations.
+
+## Dependencies
+
+Ensure the following commands are available before running the script:
+
+- `whiptail`
+- `git`
+- `pacman`
+- `rsync`
+- `curl`
+- `nvim` (Neovim)
+- `bat`
+- `meld`
+
+The script will check for these dependencies and prompt errors if any are missing.
+
+## Installation
+
+1. **Clone the Repository**
+
+   ```bash
+   git clone https://github.com/4ndr0666/dotfiles.git
+   cd dotfiles
+   ```
+
 ### 1. **Install the Zen Kernel**
 
 The Zen kernel is optimized for desktop performance and responsiveness. You can install it directly from the official repositories.

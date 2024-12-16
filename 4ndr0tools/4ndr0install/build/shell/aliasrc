@@ -23,7 +23,7 @@ alias nvin='nbin'
 alias cay='cat'
 
 # --- // Xorg:
-alias diffuse='xhost + && diffuse'
+#alias diffuse='xhost + && diffuse'
 
 # ===================================== // RECENT_PROGRAMS //
 # -- // pyfiglet:
@@ -158,7 +158,6 @@ function ufwr() {
 
 # ================================= // Micro:
 alias sm='sudo micro'
-alias m='micro'
 
 # --- // Bleachbit:
 alias bleachcache='sudo bleachbit --clean system.cache system.localizations system.trash ; sudo paccache -vrk 2 || return 0'
@@ -176,10 +175,10 @@ alias dracutzen='echo "sudo dracut --force --kver=$(uname -r) /boot/initramfs-li
 alias dracutfallback='echo "sudo dracut --force /boot/initramfs-linux-fallback.img --enhanced-cpio --early-microcode --fstab && sudo grub-install && sudo grub-mkconfig -o /boot/grub/grub.cfg"'
 
 # =========================================== // SUDO BYPASS //
-for cmd in pacman-key ufw mount umount pacman updatedb su systemctl useradd userdel groupadd groupdel chown chmod \
-btrfs ip netstat modprobe; do
-    alias $cmd="sudo $cmd"
-done
+#for cmd in pacman-key ufw mount umount pacman updatedb su systemctl useradd userdel groupadd groupdel chown chmod \
+#btrfs ip netstat modprobe; do
+#    alias $cmd="sudo $cmd"
+#done
 
 # =========================================== // CHEATSHEETS //
 cht() {
