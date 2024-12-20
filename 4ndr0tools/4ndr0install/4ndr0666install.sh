@@ -6,9 +6,10 @@
 # ============================ // 4NDR0INSTALL //
 # --- // Constants:
 DOTFILES_REPO="https://github.com/4ndr0666/dotfiles.git" # Confirmed and aligned
-PROGS_CSV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/progs.csv" # Confirmed
+PROGS_CSV="https://raw.githubusercontent.com/4ndr0666/4ndr0site/refs/heads/main/static/progs.csv"
+#PROGS_CSV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/progs.csv" # Confirmed
 AUR_HELPER="yay"                                        # Confirmed
-REPO_BRANCH="master"                                    # Confirmed
+REPO_BRANCH="main"                                    # Confirmed
 export TERM=ansi
 
 # --- // Script Directory:
@@ -122,9 +123,11 @@ installpkg() {
 }
 
 error() {
-    printf "%s\n" "$1" >&2
-    exit 1
+	# Log to stderr and exit with failure.
+	printf "%s\n" "$1" >&2
+	exit 1
 }
+
 
 refresh_keys() {
     log_message "Refreshing Arch Keyring..."

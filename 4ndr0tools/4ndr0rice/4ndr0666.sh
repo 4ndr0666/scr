@@ -12,25 +12,36 @@ aurhelper="yay"
 repobranch="master"
 export TERM=ansi
 
+rssurls="https://lukesmith.xyz/rss.xml
+https://videos.lukesmith.xyz/feeds/videos.xml?videoChannelId=2 \"~Luke Smith (Videos)\"
+https://www.youtube.com/feeds/videos.xml?channel_id=UC2eYFnH61tmytImy1mTYvhA \"~Luke Smith (YouTube)\"
+https://lindypress.net/rss
+https://notrelated.xyz/rss
+https://landchad.net/rss.xml
+https://based.cooking/index.xml
+https://artixlinux.org/feed.php \"tech\"
+https://www.archlinux.org/feeds/news/ \"tech\"
+https://github.com/LukeSmithxyz/voidrice/commits/master.atom \"~LARBS dotfiles\""
+
 # --- // UTILITY_FUNCTIONS:
 
 installpkg() {
-    pacman --noconfirm --needed -S "$1" >/dev/null 2>&1 || error "Failed to install package: $1"
+	pacman --noconfirm --needed -S "$1" >/dev/null 2>&1
 }
 
 error() {
-    # Log to stderr and exit with failure.
-    printf "%s\n" "$1" >&2
-    exit 1
+	# Log to stderr and exit with failure.
+	printf "%s\n" "$1" >&2
+	exit 1
 }
 
 welcomemsg() {
-    whiptail --title "4ndr0666s Ricer" \
-        --msgbox "This is my personal ricing script for a quick setup on a new machine.\\n\\n-4ndr0666" 10 60
+    whiptail --title "4ndr0666.sh" \
+        --msgbox "This will rice your machine to the 4ndr0666.sh specs.\\n\\n-4ndr0666" 10 60
 
-    whiptail --title "!WARNING!" --yes-button "CONTINUE" \
-        --no-button "ABORT & UPDATE" \
-        --yesno "Don't forget to get the latest updates and refreshed Arch keyrings.\\n\\n" 8 70
+    whiptail --title "!WARNING!" --yes-button "Continue" \
+		--no-button "Return..." \
+        --yesno "Ensure latest updates and refreshed Arch keyrings.\\n\\n" 8 70
 }
 
 getuserandpass() {
@@ -50,15 +61,15 @@ getuserandpass() {
 
 usercheck() {
     ! { id -u "$name" >/dev/null 2>&1; } ||
-        whiptail --title "!WARNING!" --yes-button "CONTINUE" \
-            --no-button "ABORT" \
-            --yesno "The user \`$name\` already exists on this system. Ricer can install for a user already existing, but it will OVERWRITE any conflicting settings/dotfiles on the user account.\\n\\nRicer will NOT overwrite your user files, documents, videos, etc., but only click <CONTINUE> if you don't mind your settings being overwritten.\\n\\nNote also that ricer will change $name's password to the one you just gave." 14 70
+        whiptail --title "WARNING" --yes-button "CONTINUE" \
+            --no-button "Abort" \
+            --yesno "The user \`$name\` already exists on this system. The script can install for a user already existing, but it will OVERWRITE any conflicting settings/dotfiles on the user account.\\n\\nRicer will NOT overwrite your user files, documents, videos, etc., but only click <CONTINUE> if you don't mind your settings being overwritten.\\n\\nNote also that the script will change $name's password to the one you just gave." 14 70
 }
 
 preinstallmsg() {
-    whiptail --title "Begin ricing!" --yes-button "INITIATE" \
-        --no-button "ABORT" \
-        --yesno "The rest of the installation will now be totally automated.\\n\\nPress <INITIATE> and the ricing will begin!" 13 60 || {
+    whiptail --title "Environment is Ready" --yes-button "RICE" \
+        --no-button "Abort" \
+        --yesno "System now primed for automated installation\\n\\nClick RICE to intiate!" 13 60 || {
         clear
         exit 1
     }
@@ -81,20 +92,17 @@ refreshkeys() {
     *systemd*)
         whiptail --infobox "Refreshing Arch Keyring..." 7 40
         pacman --noconfirm -S archlinux-keyring >/dev/null 2>&1
-        # Importing Chaotic AUR Key
-        whiptail --infobox "Importing Chaotic AUR Key..." 7 40
-        sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
-        sudo pacman-key --lsign-key 3056513887B78AEB
-        # Installing Chaotic AUR Keyring and Mirrorlist
-        whiptail --infobox "Installing Chaotic AUR Keyring and Mirrorlist..." 7 40
-        sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
         ;;
     *)
-        whiptail --infobox "Enabling Arch Repositories" 7 40
+        whiptail --infobox "Enabling Chaotic AUR" 7 40
         pacman --noconfirm --needed -S \
-            artix-keyring artix-archlinux-support >/dev/null 2>&1
-        grep -q "^\[extra\]" /etc/pacman.conf ||
-            echo "[extra]
+        sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com >/dev/null 2>&1
+        sudo pacman-key --lsign-key 3056513887B78AEB >/dev/null 2>&1
+        whiptail --infobox "Installing Chaotic AUR Keyring and Mirrorlist..." 7 40
+        sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' >/dev/null 2>&1
+
+        grep -q "^\[chaotic-aur\]" /etc/pacman.conf ||
+            echo "[chaotic-aur]
 Include = /etc/pacman.d/mirrorlist-arch" >>/etc/pacman.conf
         pacman -Sy --noconfirm >/dev/null 2>&1
         pacman-key --populate archlinux >/dev/null 2>&1
@@ -115,7 +123,7 @@ manualinstall() {
             sudo -u "$name" git pull --force origin master
         }
     cd "$repodir/$1" || exit 1
-    sudo -u "$name" -D "$repodir/$1" \
+    sudo -u "$name" \
         makepkg --noconfirm -si >/dev/null 2>&1 || return 1
 }
 
@@ -129,7 +137,7 @@ gitmakeinstall() {
     progname="${1##*/}"
     progname="${progname%.git}"
     dir="$repodir/$progname"
-    whiptail --title "4ndr0666.sh Installation" \
+    whiptail --title "4ndr0666 Installation" \
         --infobox "Installing \`$progname\` ($n of $total) via \`git\` and \`make\`. $(basename "$1") $2" 8 70
     sudo -u "$name" git -C "$repodir" clone --depth 1 --single-branch \
         --no-tags -q "$1" "$dir" ||
@@ -144,14 +152,14 @@ gitmakeinstall() {
 }
 
 aurinstall() {
-    whiptail --title "4ndr0666.sh Installation" \
+    whiptail --title "4ndr0666 Installation" \
         --infobox "Installing \`$1\` ($n of $total) from the AUR. $1 $2" 9 70
     echo "$aurinstalled" | grep -q "^$1$" && return 1
     sudo -u "$name" $aurhelper -S --noconfirm "$1" >/dev/null 2>&1
 }
 
 pipinstall() {
-    whiptail --title "4ndr0666.sh Installation" \
+    whiptail --title "4ndr0666 Installation" \
         --infobox "Installing the Python package \`$1\` ($n of $total). $1 $2" 9 70
     [ -x "$(command -v "pip")" ] || installpkg python-pip >/dev/null 2>&1
     yes | pip install "$1"
@@ -225,7 +233,7 @@ Depends=arkenfox-user.js
 Exec=/usr/local/lib/arkenfox-auto-update" > /etc/pacman.d/hooks/arkenfox.hook
 }
 
-installffaddons() {
+installffaddons(){
     addonlist="ublock-origin decentraleyes istilldontcareaboutcookies vim-vixen"
     addontmp="$(mktemp -d)"
     trap "rm -fr $addontmp" HUP INT QUIT TERM PWR EXIT
@@ -252,8 +260,9 @@ installffaddons() {
 }
 
 finalize() {
-    whiptail --title "Complete!" \
-        --msgbox "To run the new graphical environment, log out and log back in as your new user, then run the command \"startx\"\\n\\n.t 4ndr0666" 13 80
+    whiptail --title "Ricing Complete!" \
+      
+        --msgbox "Graphical environment is ready launch at tty1, log out and log back in as your new user, then type \"startx\"\\n\\n.t 4ndr0666" 13 80 
 }
 
 # --------------------------------------------------------- // SCRIPT_STARTS_HERE //
@@ -276,13 +285,13 @@ preinstallmsg || error "User exited."
 refreshkeys ||
     error "Error automatically refreshing Arch keyring. Consider doing so manually."
 
-for x in curl ca-certificates base-devel git ntp zsh; do
-    whiptail --title "4ndr0666.sh Installation" \
+for x in curl ca-certificates base-devel git ntp zsh dash; do
+    whiptail --title "4ndr0666 Installation" \
         --infobox "Installing \`$x\` which is required to install and configure other programs." 8 70
     installpkg "$x"
 done
 
-whiptail --title "4ndr0666.sh Installation" \
+whiptail --title "4ndr0666 Installation" \
     --infobox "Synchronizing system time..." 8 70
 ntpd -q -g >/dev/null 2>&1
 
@@ -304,22 +313,21 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
 # --- // INSTALL_YAY_OR_FALLBACK:
-manualinstall $aurhelper || echo 'Initial yay installation attempt failed. Trying fallback mechanism.' "Failed to install AUR helper."
+manualinstall $aurhelper || echo "AUR helper installation failed executing fallback."
 
 if ! command -v yay &> /dev/null; then
-    echo "Yay not found. Installing it..."
-    installpkg git
-    installpkg base-devel
-    git clone https://aur.archlinux.org/yay.git /tmp/yay
-    pushd /tmp/yay
-    makepkg -si || error "Failed to install yay."
-    popd
+    installpkg git >/dev/null 2>&1
+    installpkg base-devel >/dev/null 2>&1
+    git clone https://aur.archlinux.org/yay.git /tmp/yay >/dev/null 2>&1
+    pushd /tmp/yay >/dev/null 2>&1
+    makepkg -si || error "Failed to make package."
+    popd >/dev/null 2>&1
 else
-    echo "Yay is already installed."
+    echo "Yay seems to be installed after all..."
 fi
 
 if ! yay -Syu --noconfirm; then
-    error "Yay installation seems to have failed or yay isn't working properly."
+    error "Fallback mechanism failed. Aborting..."
 fi
 
 # --- // AUTOUPDATE_.*-git_AUR_PKGS:
@@ -332,6 +340,10 @@ installationloop
 putgitrepo "$dotfilesrepo" "/home/$name" "$repobranch"
 rm -rf "/home/$name/.git/" "/home/$name/README.md" "/home/$name/LICENSE" "/home/$name/FUNDING.yml"
 
+# Write urls for newsboat if it doesn't already exist
+[ -s "/home/$name/.config/newsboat/urls" ] ||
+	sudo -u "$name" echo "$rssurls" > "/home/$name/.config/newsboat/urls"
+
 # --- // NVIM_PLUG_INSTALLATION:
 [ ! -f "/home/$name/.config/nvim/autoload/plug.vim" ] && vimplugininstall
 
@@ -341,6 +353,8 @@ sudo -u "$name" mkdir -p "/home/$name/.cache/zsh/"
 sudo -u "$name" mkdir -p "/home/$name/.config/abook/"
 sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 
+# Make dash the default #!/bin/sh symlink.
+ln -sfT /bin/dash /bin/sh >/dev/null 2>&1
 # --- // DBUS_UUID_FOR_RUNIT_INIT_SYSTEMS:
 dbus-uuidgen >/var/lib/dbus/machine-id
 

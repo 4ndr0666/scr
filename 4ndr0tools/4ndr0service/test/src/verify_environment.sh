@@ -1,98 +1,13 @@
 #!/bin/bash
 # File: verify_environment.sh
-# Author: 4ndr0666
-# Date: 2024-12-06
-## Desc: Verifies XDG specifications for system paths, environment variables, directories, and required tools.
-## Offers report mode and fix mode. If run with --fix, attempts to create missing directories.
-## If run with --report, prints a summary report of checks.
+# Description: Offers --report and --fix modes to verify and fix environment setup.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# ================================== // VERIFY_ENVIRONMENT.SH //
-# --- // Constants:
-REQUIRED_ENV_VARS=(
-    "XDG_DATA_HOME"
-    "XDG_CONFIG_HOME"
-    "XDG_CACHE_HOME"
-    "LOG_FILE"
-    "CARGO_HOME"
-    "RUSTUP_HOME"
-    "NVM_DIR"
-    "PSQL_HOME"
-    "MYSQL_HOME"
-    "SQLITE_HOME"
-    "MESON_HOME"
-#    "GOPATH"
-    "GOMODCACHE"
-    "GOROOT"
-    "VENV_HOME"
-    "PIPX_HOME"
-    "ELECTRON_CACHE"
-    "NODE_DATA_HOME"
-    "NODE_CONFIG_HOME"
-    "SQL_DATA_HOME"
-    "SQL_CONFIG_HOME"
-    "SQL_CACHE_HOME"
-)
+source "$PKG_PATH/common.sh"
+CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
 
-# --- // Deps:
-REQUIRED_TOOLS=(
-    "cargo"
-    "npm"
-    "pipx"
-    "rustup"
-    "psql"
-    "mysql"
-    "sqlite3"
-    "electron"
-    "meson"
-    "ninja"
-    "python3"
-    "go"
-    "node"
-)
-
-# --- // Logging:
-LOG_FILE="${LOG_FILE:-$HOME/.local/share/logs/4ndr0service/logs/service_optimization.log}"
-log() {
-    local message="$1"
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
-}
-
-handle_error() {
-    local error_message="$1"
-    echo -e "\033[0;31m❌ Error: $error_message\033[0m" >&2
-    log "ERROR: $error_message"
-    exit 1
-}
-
-# --- // Dirs:
-DIRECTORY_VARS=(
-    "XDG_DATA_HOME"
-    "XDG_CONFIG_HOME"
-    "XDG_CACHE_HOME"
-    "CARGO_HOME"
-    "RUSTUP_HOME"
-    "NVM_DIR"
-    "PSQL_HOME"
-    "MYSQL_HOME"
-    "SQLITE_HOME"
-    "MESON_HOME"
-    "GOPATH"
-    "GOMODCACHE"
-    "GOROOT"
-    "VENV_HOME"
-    "PIPX_HOME"
-    "ELECTRON_CACHE"
-    "NODE_DATA_HOME"
-    "NODE_CONFIG_HOME"
-    "SQL_DATA_HOME"
-    "SQL_CONFIG_HOME"
-    "SQL_CACHE_HOME"
-)
-
-# --- // CLI:
 REPORT_MODE="false"
 FIX_MODE="false"
 
@@ -100,9 +15,6 @@ for arg in "$@"; do
     case "$arg" in
         --help)
             echo "Usage: $0 [--help] [--report] [--fix]"
-            echo "  --help    Show this help message."
-            echo "  --report  Print a summary report of checks."
-            echo "  --fix     Attempt to fix issues (e.g., create missing directories)."
             exit 0
             ;;
         --report)
@@ -118,98 +30,93 @@ for arg in "$@"; do
     esac
 done
 
-# --- // Check_env:
+REQUIRED_ENV_VARS=($(jq -r '.required_env[]' "$CONFIG_FILE"))
+DIRECTORY_VARS=($(jq -r '.directory_vars[]' "$CONFIG_FILE"))
+REQUIRED_TOOLS=($(jq -r '.tools[]' "$CONFIG_FILE"))
+
 check_env_vars() {
+    local fix_mode="$1"
     local missing_vars=()
     for var in "${REQUIRED_ENV_VARS[@]}"; do
         if [[ -z "${!var:-}" ]]; then
             missing_vars+=("$var")
         fi
     done
-
     if (( ${#missing_vars[@]} > 0 )); then
-        echo "The following required environment variables are not set:"
         for mv in "${missing_vars[@]}"; do
-            echo "  - $mv"
-            log "Missing environment variable: $mv"
+            log_warn "Missing environment variable: $mv"
+            echo "Missing environment variable: $mv"
         done
-        # Not necessarily fatal; user might want to fix them or rely on defaults.
     else
-        echo "All required environment variables are set."
-        log "All required environment variables are set."
+        log_info "All required environment variables are set."
     fi
 }
 
-# --- // Check_dirs:
 check_directories() {
-    local issues_found="false"
+    local fix_mode="$1"
+    local any_issue=false
     for var in "${DIRECTORY_VARS[@]}"; do
         local dir="${!var:-}"
         if [[ -z "$dir" ]]; then
-            # If var not set, skip directory check
             continue
         fi
         if [[ ! -d "$dir" ]]; then
+            log_warn "Directory '$dir' for '$var' does not exist."
             echo "Directory for $var: '$dir' does not exist."
-            log "Directory '$dir' for '$var' does not exist."
-            if [[ "$FIX_MODE" == "true" ]]; then
-                echo "Attempting to create directory '$dir'..."
+            if [[ "$fix_mode" == "true" ]]; then
                 if mkdir -p "$dir"; then
+                    log_info "Created directory: $dir"
                     echo "Created directory: $dir"
-                    log "Created directory '$dir'."
                 else
-                    echo "Warning: Failed to create directory '$dir'."
-                    log "Warning: Failed to create directory '$dir'."
-                    issues_found="true"
+                    log_warn "Failed to create directory: $dir"
+                    any_issue=true
                 fi
             else
-                issues_found="true"
+                any_issue=true
             fi
         fi
-
-        # Exclude GOROOT from writable checks if it's set to a system directory
         if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
-            # Typically, /usr/lib/go should not be writable by regular users
             continue
         fi
-
-        # Check if writable
         if [[ -d "$dir" && ! -w "$dir" ]]; then
-            echo "Directory '$dir' is not writable."
-            log "Directory '$dir' is not writable."
-            issues_found="true"
+            if [[ "$fix_mode" == "true" ]]; then
+                if chmod u+w "$dir"; then
+                    log_info "Set write permission for $dir"
+                    echo "Set write permission for $dir"
+                else
+                    log_warn "Could not set write permission for $dir"
+                    any_issue=true
+                fi
+            else
+                log_warn "Directory '$dir' is not writable."
+                any_issue=true
+            fi
         fi
     done
-
-    if [[ "$issues_found" == "false" ]]; then
-        echo "All required directories exist and are writable (or not applicable)."
-        log "All required directories are OK."
+    if ! $any_issue; then
+        log_info "All required directories are OK."
     fi
 }
 
-# --- // Check_tools:
 check_tools() {
+    local fix_mode="$1"
     local missing_tools=()
     for tool in "${REQUIRED_TOOLS[@]}"; do
         if ! command -v "$tool" &>/dev/null; then
             missing_tools+=("$tool")
         fi
     done
-
     if (( ${#missing_tools[@]} > 0 )); then
-        echo "The following required tools are missing from PATH:"
         for mt in "${missing_tools[@]}"; do
-            echo "  - $mt"
-            log "Missing tool: $mt"
+            log_warn "Missing tool: $mt"
+            echo "Missing tool: $mt"
+            attempt_tool_install "$mt" "$fix_mode"
         done
-        # Not necessarily fatal, user might want to install them.
     else
-        echo "All required tools are present in PATH."
-        log "All required tools are present."
+        log_info "All required tools are present."
     fi
 }
 
-# --- // Report:
 print_report() {
     echo "========== ENVIRONMENT REPORT =========="
     echo "Environment Variables:"
@@ -254,17 +161,16 @@ print_report() {
     echo "========================================"
 }
 
-# --- // Main_entry_point:
 main() {
     echo "Verifying environment alignment..."
-    log "Starting environment verification..."
+    log_info "Starting verification..."
 
-    check_env_vars
-    check_directories
-    check_tools
+    check_env_vars "$FIX_MODE"
+    check_directories "$FIX_MODE"
+    check_tools "$FIX_MODE"
 
     echo "Verification complete."
-    log "Environment verification complete."
+    log_info "Verification complete."
 
     if [[ "$REPORT_MODE" == "true" ]]; then
         print_report
@@ -272,4 +178,5 @@ main() {
 
     echo "Done."
 }
+
 main

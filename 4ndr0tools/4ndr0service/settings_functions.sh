@@ -1,85 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: settings_functions.sh
-# Author: 4ndr0666
-# Date: 10-20-24
-# This file contains functions to manage and modify settings for the Service Optimization Suite.
+# Description: Functions to modify and manage settings.
 
-# ==================================== // SETTINGS_FUNCTIONS.SH //
+set -euo pipefail
+IFS=$'\n\t'
+
 modify_settings() {
-    
-    log "Modifying settings..."
-
-    if [[ -z "$EDITOR" && -n "$SUDO_USER" ]]; then
-        EDITOR="$(sudo -i -u $SUDO_USER env | awk '/^EDITOR=/{ print substr($0, 8) }')"
+    local editor
+    editor=$(jq -r '.settings_editor' "$CONFIG_FILE" || echo "nano")
+    if [[ -z "$editor" || ! $(command -v "$editor") ]]; then
+        editor="nano"
     fi
-
-    if [[ -n "$EDITOR" ]]; then
-        execute_editor "$EDITOR" "\nEDITOR environment variable of $EDITOR is not valid"
-    elif [[ "$SETTINGS_EDITOR" =~ (vim|neovim|nano|emacs|micro|lite-xl) && $(command -v "$SETTINGS_EDITOR") ]]; then
-        execute_editor "$SETTINGS_EDITOR"
-    else
-        fallback_editor
-    fi
-
-    log "Settings modified successfully."     
- }
-
-
-
-# Function to execute the chosen editor on the settings file
-#execute_editor() {
-#    local editor="$1"
-#    if [[ -x "$(command -v "$editor")" ]]; then
-#        "$editor" "$(pkg_path)/settings.sh"
-#        if [[ $? -eq 0 ]]; then
-#            echo "Settings successfully modified."
-#        else
-#            echo "Error: Failed to modify settings with $editor."
-#        fi
-#    else
-#        echo "Error: $editor is not installed."
-#        fallback_editor
-#    fi
-#}
-
-execute_editor() {
-    local editor="$1"
-
-    if [[ -x "$(command -v "$editor")" ]]; then
-        "$editor" "$PKG_PATH/settings.sh"    
-        check_optdepends "$editor"
-        if [[ $? -eq 0 ]]; then
-            echo "Settings successfully modified."
-        else
-            echo "Error: Failed to modify settings with $editor."
-        fi
-    else
-        echo "Error: $editor is not installed."
-        fallback_editor
-    fi
+    "$editor" "$CONFIG_FILE"
+    log_info "Settings modified with $editor."
 }
 
 fallback_editor() {
-    printf "\nNo valid editor found. Please select an editor to use\n" 1>&2
-    select editor in "vim" "neovim" "nano" "emacs" "micro" "lite-xl" "Exit"; do
+    select editor in "vim" "nano" "emacs" "micro" "lite-xl" "Exit"; do
         case $REPLY in
-            1) vim "$PKG_PATH/settings.sh"; break;;
-            2) neovimn "$PKG_PATH/settings.sh"; break;;
-            3) nano "$PKG_PATH/settings.sh"; break;;
-            4) emacs "$PKG_PATH/settings.sh"; break;;
-            5) micro "$PKG_PATH/settings.sh"; break;;
-            6) lite-xl "$PKG_PATH/settings.sh"; break;;
-            7) echo "Exiting without modifying settings."; exit 0;;
-            *) echo "Invalid selection. Please choose again.";;
+            1) vim "$CONFIG_FILE" && break ;;
+            2) nano "$CONFIG_FILE" && break ;;
+            3) emacs "$CONFIG_FILE" && break ;;
+            4) micro "$CONFIG_FILE" && break ;;
+            5) lite-xl "$CONFIG_FILE" && break ;;
+            6) break ;;
+            *) echo "Invalid selection." ;;
         esac
     done
-}
-
-# Function to determine the package path dynamically
-pkg_path() {
-    if [[ -L "$0" ]]; then
-        dirname "$(readlink -f "$0")"
-    else
-        dirname "$0"
-    fi
 }

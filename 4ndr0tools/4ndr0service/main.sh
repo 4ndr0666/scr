@@ -1,33 +1,71 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: main.sh
-# Author: 4ndr0666
-# Date: 2024-11-24
 # Description: Entry point for the 4ndr0service Suite. Initializes environment and starts the controller.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# Function to determine the absolute path of the current script
-get_script_path() {
-    local script_path
-    script_path="$(realpath "${BASH_SOURCE[0]}")"
-    echo "$(dirname "$script_path")"
+PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+export PKG_PATH
+
+source "$PKG_PATH/common.sh"
+source "$PKG_PATH/controller.sh"
+source "$PKG_PATH/manage_files.sh"
+
+show_help() {
+cat <<EOF
+4ndr0service Suite - Manage and Optimize Your Environment
+
+Usage: $0 [--help] [--report] [--fix] [--parallel] [--test]
+
+Options:
+  --help       Show this help message.
+  --report     Print a summary report after checks.
+  --fix        Attempt to automatically fix detected issues.
+  --parallel   Run independent checks in parallel.
+  --test       Run all checks and print structured logs for testing.
+
+Examples:
+  $0 --report
+  $0 --fix
+  $0 --parallel --fix
+EOF
 }
 
-# Define the package path
-PKG_PATH="$(get_script_path)"
+report_mode="false"
+fix_mode="false"
+parallel="false"
+test_mode="false"
 
-# Define the controller script path
-CONTROLLER_SCRIPT="$PKG_PATH/controller.sh"
+for arg in "$@"; do
+    case "$arg" in
+        --help)
+            show_help
+            exit 0
+            ;;
+        --report)
+            report_mode="true"
+            ;;
+        --fix)
+            fix_mode="true"
+            ;;
+        --parallel)
+            parallel="true"
+            ;;
+        --test)
+            test_mode="true"
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            exit 1
+            ;;
+    esac
+done
 
-# Check if controller.sh exists
-if [[ ! -f "$CONTROLLER_SCRIPT" ]]; then
-    echo "Error: Controller script not found at '$CONTROLLER_SCRIPT'. Exiting."
-    exit 1
+if [[ "$test_mode" == "true" ]]; then
+    run_core_checks "$report_mode" "$fix_mode" "$parallel"
+    cat "$LOG_FILE"
+    exit 0
 fi
 
-# Source the controller script
-source "$CONTROLLER_SCRIPT"
-
-# Execute the main controller function
-main_controller
+run_core_checks "$report_mode" "$fix_mode" "$parallel"

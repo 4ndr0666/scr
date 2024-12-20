@@ -21,7 +21,7 @@ function optimize_venv_service() {
     echo "Setting up virtual environment..."
     if [ ! -d "$VENV_HOME/.venv" ]; then
         echo "Creating new virtual environment..."
-        python3 -m venv "$VENV_HOME/.venv" || handle_error "Failed to create virtual environment."
+        python3 -m venv "$VENV_HOME/.venv" || handle_error "VENV directory missing. Use --fix to create."
     else
         echo "Virtual environment already exists."
     fi
