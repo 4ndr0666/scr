@@ -1,0 +1,17 @@
+#!/bin/bash
+# Interactive search using ag (silver searcher)
+
+[[ -n $1 ]] && cd $1 # go to provided folder or noop
+typeset AG_DEFAULT_COMMAND="ag -i -l --hidden"
+typeset IFS=$'\n'
+typeset selected=($(
+      fzf \
+      -m \
+      -e \
+      --ansi \
+      --disabled \
+      --reverse \
+      --print-query \
+      --bind "change:reload:$AG_DEFAULT_COMMAND {q} || true" \
+      --preview "ag -i --color --context=2 {q} {}"))
+[ -n "$selected" ] && ${EDITOR} -c "/\\c${selected[0]}" ${selected[1]}
