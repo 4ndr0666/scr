@@ -1,14 +1,10 @@
 #!/bin/bash
-
-# ufw2.sh - System Hardening Script with UFW, Sysctl, and Service Configurations
-# Author: [Your Name]
-# Description: Configures UFW firewall rules, sysctl settings, disables IPv6 on specific services, and ensures system configurations are aligned for system hardening.
+# Author: 4ndr0666
+# Date: 12-21-24
+# Desc: System Hardening Script with UFW, Sysctl, and Service Configurations
 # Usage: sudo ./ufw2.sh [--vpn PORT] [--jdownloader]
 
-# Exit immediately if a command exits with a non-zero status
-#set -e
-
-# Function to display usage information
+# ====================================== // UFW.SH //
 usage() {
     echo "Usage: sudo ./ufw2.sh [--vpn PORT] [--jdownloader]"
     echo ""
@@ -172,6 +168,7 @@ configure_ufw() {
     sudo ufw --force enable
 
     # Set default policies
+    sudo ufw limit 22/tcp
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
 
@@ -195,7 +192,6 @@ configure_ufw() {
         ["443/tcp"]="HTTPS Traffic"
         ["7531/tcp"]="PlayWithMPV"
         ["6800/tcp"]="Aria2c"
-        ["40735/udp"]="Lightway UDP"
     )
 
     # Apply rules for services on enp2s0
@@ -244,23 +240,16 @@ configure_ufw() {
         done
     fi
 
-    # Allow SSH with rate limiting
-    if ! sudo ufw status numbered | grep -qw "22/tcp"; then
-        echo "Adding rate-limited SSH access"
-        sudo ufw limit ssh/tcp comment "Rate-limited SSH"
-    else
-        echo "SSH rule already exists"
-    fi
 
-    # Allow incoming Lightway UDP port on enp2s0 if VPN is not active
-    if [[ "$VPN_FLAG" != "true" ]]; then
-        if ! sudo ufw status numbered | grep -qw "40735/udp on enp2s0"; then
-            echo "Allowing Lightway UDP on enp2s0"
-            sudo ufw allow in on enp2s0 to any port 40735 proto udp comment "Lightway UDP"
-        else
-            echo "Lightway UDP rule already exists on enp2s0"
-        fi
-    fi
+#    # Allow incoming Lightway UDP port on enp2s0 if VPN is not active
+#    if [[ "$VPN_FLAG" != "true" ]]; then
+#        if ! sudo ufw status numbered | grep -qw "40735/udp on enp2s0"; then
+#            echo "Allowing Lightway UDP on enp2s0"
+#            sudo ufw allow in on enp2s0 to any port 40735 proto udp comment "Lightway UDP"
+#        else
+#            echo "Lightway UDP rule already exists on enp2s0"
+#        fi
+#   fi
 
     # Allow incoming Lightway UDP port on tun0 if VPN is active
     if [[ "$VPN_FLAG" == "true" && -n "$VPN_PORT" ]]; then
@@ -281,8 +270,9 @@ configure_ufw() {
     fi
 
     # Reload UFW to apply changes
-    echo "Reloading UFW to apply changes..."
+#    echo "Reloading UFW to apply changes..."
     sudo ufw reload
+#    sudo ufw enable
     echo "UFW firewall rules configured successfully."
 }
 
