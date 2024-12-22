@@ -129,7 +129,7 @@ if_running() {
 
 # --------------[ Optional Brave-Specific Cleanup ]-------------
 perform_brave_cleanup() {
-  local brave_dir="$HOME/config/BraveSoftware/Brave-Browser-Beta"
+  local brave_dir="$HOME/.config/BraveSoftware/Brave-Browser-Beta"
   [[ ! -d "$brave_dir" ]] && {
     echo "Brave directory not found. Skipping additional Brave cleanup."
     return

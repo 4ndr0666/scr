@@ -17,11 +17,16 @@
 # --- // Install:
 main() {
 	sudo pacman -Sy
-	sudo pacman -S github-cli git-delta lsd eza fd xorg-xhost xclip ripgrep diffuse neovim expac pacdiff --noconfirm
+	yes | sudo pacman -S github-cli git-delta \
+	lsd eza fd \
+	xorg-xhost xclip \
+	ripgrep diffuse micro \
+	neovim expac pacdiff --noconfirm
 }
 
 aur() {
-	yay -S bashmount-git debugedit lf-git micro --noconfirm
+	yay -Sy
+	yay -S  bashmount-git debugedit lf-git --noconfirm
 }
 
 main
