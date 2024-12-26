@@ -1,13 +1,12 @@
 #!/bin/bash
 
 # --- // Trigger-OOM-Killer //
-trigger() {
-    if echo "f" > /proc/sysrq-trigger; then
-#    if sudo sh -c 'echo "f" > /proc/sysrq-trigger'; then
-        notify-send "OOM Killer Executed!"
-    else
-        notify-send "OOM Killer Failed!"
-        return 1
+trigger_oom_killer() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$0" "$@"
+        exit $?
     fi
+    echo "f" > /proc/sysrq-trigger && notify-send "OOM Killer Executed!" || echo "Failed to trigger OOM Killer."
 }
-trigger
+
+trigger_oom_killer

@@ -1,36 +1,19 @@
-#!/bin/sh -e 
+#!/bin/sh -e
 # File: 4ndr0base.sh
 # Author: 4ndr0666
 ## Description: Quick setup script for basic requirements on a new machine.
 
 # ============================== // 4NDR0BASEINSTALL.SH //
-# --- // Colors:
 RC='\033[0m'
 RED='\033[31m'
 YELLOW='\033[33m'
 CYAN='\033[36m'
 GREEN='\033[32m'
 
-## --- // File creation from DL: 
-#populate_configs() {
-#    printf "%b\n" "${YELLOW}Copying configuration files...${RC}"
-#    if [ -d "${HOME}/.config/EXAMPLE" ] && [ ! -d "${HOME}/.config/EXAMPLE-bak" ]; then
-#        cp -r "${HOME}/.config/EXAMPLE" "${HOME}/.config/EXAMPLE-bak"
-#    fi
-#    mkdir -p "${HOME}/.config/EXAMPLE/"
-#    curl -sSLo "${HOME}/.config/EXAMPLE/EXAMPLE.conf" https://github.com/4ndr0666/dotfiles/raw/main/config/EXAMPLE/EXAMPLE.conf 
-#    curl -sSLo "${HOME}/.config/EXAMPLE/EXAMPLE.conf" https://github.com/4ndr0666/dotfiles/raw/main/config/EXAMPLE/EXAMPLE.conf
-#}
-
-## --- // Check, make and append to file:
-## Ensure /etc/zsh/zshenv sets ZDOTDIR to the user's config directory
-#[ ! -f /etc/zsh/zshenv ] && "$ESCALATION_TOOL" mkdir -p /etc/zsh && "$ESCALATION_TOOL" touch /etc/zsh/zshenv
-#echo "export ZDOTDIR=\"$HOME/.config/zsh\"" | "$ESCALATION_TOOL" tee -a /etc/zsh/zshenv
-
 # --- // Base Pkgs:
-setup_base() { 
+setup_base() {
 	sudo pacman -Sy --noconfirm --needed base-devel unzip archlinux-keyring github-cli git-delta lsd eza fd micro expac \
-	bat bash-completion pacdiff xorg-xhost xclip ripgrep diffuse neovim 
+	bat bash-completion pacdiff xorg-xhost xclip ripgrep diffuse neovim
 	yay -Sy --noconfirm zsh-syntax-highlighting zsh-autosuggestions bashmount-git debugedit lf-git
 }
 
@@ -91,7 +74,7 @@ setup_zsh() {
     ZSHRC_FILE="$CONFIG_DIR/.zshrc"
 
     if [ ! -d "$CONFIG_DIR" ]; then
-        mkdir -p "$CONIFIG_DIR"
+        mkdir -p "$CONFIG_DIR"
     fi
 
     cat <<EOL >"$ZSHRC_FILE"
@@ -101,15 +84,15 @@ HISTFILE="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/history"
 HISTSIZE=10000000
 SAVEHIST=10000000
 setopt extended_glob
-setopt autocd 
+setopt autocd
 setopt interactive_comments
 
 # --- // Soloarized prompt:
 PROMPT='%F{32}%n%f%F{166}@%f%F{64}%m:%F{166}%~%f%F{15}$%f '
 RPROMPT='%F{15}(%F{166}%D{%H:%M}%F{15})%f'
 
-# --- // Aliased 'h' for cmd history: 
-h() { if [ -z "$*" ]; then history 1; else history 1 | egrep "$@"; fi; }     
+# --- // Aliased 'h' for cmd history:
+h() { if [ -z "$*" ]; then history 1; else history 1 | egrep "$@"; fi; }
 
 # --- // Source the files:
 [ -f "$HOME/.config/zsh/aliasrc" ] && source "$HOME/.config/zsh/aliasrc"
@@ -126,3 +109,19 @@ EOL
         exit 1
     }
 }
+
+
+# ==================== // ToDo //
+### File creation from DL:
+#populate_configs() {
+#    printf "%b\n" "${YELLOW}Copying configuration files...${RC}"
+#    if [ -d "${HOME}/.config/EXAMPLE" ] && [ ! -d "${HOME}/.config/EXAMPLE-bak" ]; then
+#        cp -r "${HOME}/.config/EXAMPLE" "${HOME}/.config/EXAMPLE-bak"
+#    fi
+#    mkdir -p "${HOME}/.config/EXAMPLE/"
+#    curl -sSLo "${HOME}/.config/EXAMPLE/EXAMPLE.conf" https://github.com/4ndr0666/dotfiles/raw/main/config/EXAMPLE/EXAMPLE.conf
+#    curl -sSLo "${HOME}/.config/EXAMPLE/EXAMPLE.conf" https://github.com/4ndr0666/dotfiles/raw/main/config/EXAMPLE/EXAMPLE.conf
+#}
+### Check, make and append to file:
+#[ ! -f /etc/zsh/zshenv ] && "$ESCALATION_TOOL" mkdir -p /etc/zsh && "$ESCALATION_TOOL" touch /etc/zsh/zshenv
+#echo "export ZDOTDIR=\"$HOME/.config/zsh\"" | "$ESCALATION_TOOL" tee -a /etc/zsh/zshenv
