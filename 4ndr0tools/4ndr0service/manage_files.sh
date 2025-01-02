@@ -5,7 +5,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-source "$(dirname "$0")/common.sh"
+source "$PKG_PATH/common.sh"
 
 batch_execute_all() {
     echo "Batch executing all services..."

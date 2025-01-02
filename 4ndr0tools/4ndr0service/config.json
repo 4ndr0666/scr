@@ -84,9 +84,9 @@
     "SQL_CONFIG_HOME",
     "SQL_CACHE_HOME"
   ],
-  "backup_dir": "/home/andro/.local/state/backups",
+  "backup_dir": "/Nas/Build/4ndr0service/backups",
   "package_manager": "pacman",
-  "settings_editor": "nano",
+  "settings_editor": "micro",
   "user_interface": "cli",
   "plugins_dir": "/home/andro/.local/share/4ndr0service/plugins",
   "logging": {

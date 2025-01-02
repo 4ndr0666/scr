@@ -5,10 +5,14 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-source "$(dirname "$0")/common.sh"
-source "$(dirname "$0")/settings_functions.sh"
-source "$(dirname "$0")/manage_files.sh"
-source "$(dirname "$0")/test/src/verify_environment.sh"
+PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+export PKG_PATH
+
+source "$PKG_PATH"/common.sh
+source "$PKG_PATH"/settings_functions.sh
+source "$PKG_PATH"/manage_files.sh
+source "$PKG_PATH"/test/src/verify_environment.sh
+#"$(dirname "$0")/test/src/verify_environment.sh"
 
 load_plugins() {
     if [[ ! -d "$PLUGINS_DIR" ]]; then

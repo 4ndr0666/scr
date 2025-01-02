@@ -1,0 +1,72 @@
+#!/bin/bash
+# TODO
+# - keep quality when not using copy? (has been nice so far but I notice size
+#   goes way down when not using copy)
+
+# If I recall correctly, the order in which you give the -ss and -t flags change the behaviour subtly. If you declare them before -i, it seeks in the input file and starts decoding from there (which is not always accurate). If you declare it after, it decodes the file as if it was playing and then discards the content outside the boundaries.
+
+function print_help() {
+	echo "
+$ ffcut [options] /path/to/video_file
+
+Creates a cut video and optionally creates a gif from it.
+Meant for use with MPV.
+
+-a <time>  specify start time (default: contents of /tmp/ffcut/start)
+           (see the Time duration section of the ffmpeg-utils manpage for
+           formatting information)
+-b <time>  specify end time (default: contents of /tmp/ffcut/end)
+-c         copy the video section; fast but starts at key frame (start time
+           will be innacurate) (default: false)
+-o <name>  choose an output name for the cut video
+           (default: cut_<date>.<extension>)
+-m         make a gif of the cut video
+-h         print help and exit
+"
+
+	if [[ $1 == illegal_opt ]]; then
+		exit 1
+	else
+		exit 0
+	fi
+}
+
+filepath="${!#}"
+extension="${filepath##*.}"
+output_name="cut_$(date +%Y.%m.%d_%H:%M:%S).$extension"
+# in case not given full path
+full_path=$(readlink -f "$filepath")
+
+mkdir -p ~/move/gif
+cd ~/move/gif || exit 1
+
+start_time=$(< /tmp/ffcut/start)
+end_time=$(< /tmp/ffcut/end)
+make_gif=false
+copy=false
+while getopts :a:b:c:o:mh opt
+do
+	case $opt in
+	a) start_time=$OPTARG;;
+	b) end_time=$OPTARG;;
+	c) copy=true;;
+	o) output_name=$OPTARG;;
+	m) make_gif=true;;
+	h) print_help;;
+	*) print_help illegal_opt;;
+    esac
+done
+
+# create new video cut from original
+# copy is faster but must start at a key frame (so time won't be accurate)
+if $copy; then
+	ffmpeg -i "$full_path" -ss "$start_time" -to "$end_time" -c copy "$output_name"
+else
+	# can take a while
+	ffmpeg -i "$full_path" -strict -2 -ss "$start_time" -to "$end_time" "$output_name"
+fi
+
+# to go ahead and make a gif with default settings
+if $make_gif; then
+	makegif ~/move/gif/"$output_name"
+fi
