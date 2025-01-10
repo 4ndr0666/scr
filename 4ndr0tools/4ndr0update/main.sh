@@ -1,15 +1,15 @@
 #!/bin/bash
 
 pkg_path() {
-    if [[ -L "$0" ]]; then
-        dirname "$(readlink -f "$0")"
-    else
-        dirname "$0"
-    fi
+	if [[ -L "$0" ]]; then
+		dirname "$(readlink $0)"
+	else
+		dirname "$0"
+	fi
 }
 
 check_optdepends() {
-	if [[ -n "$(command -v "$1")" ]]; then
+	if [[ -n "$(command -v $1)" ]]; then
 		return 0
 	else
 		return 1
@@ -17,9 +17,9 @@ check_optdepends() {
 }
 
 fallback_view() {
-    printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
-    read -r
-    source "$(pkg_path)"/view/dialog.sh
+	printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
+	read
+	source $(pkg_path)/view/dialog.sh
 }
 
 repair_settings() {
@@ -30,7 +30,7 @@ repair_settings() {
 }
 
 source_settings() {
-    source "$(pkg_path)"/settings.sh
+	source $(pkg_path)/settings.sh
 }
 
 source_service() {
@@ -40,7 +40,7 @@ source_service() {
 }
 
 source_controller() {
-    source "$(pkg_path)"/controller.sh
+	source $(pkg_path)/controller.sh
 }
 
 execute_main() {
@@ -49,29 +49,24 @@ execute_main() {
 }
 
 if [[ "$EUID" -ne 0 ]]; then
-	printf "This script must be run as root\n" 1>&2
-	exit 1
+        printf "💀WARNING💀 - you are now a superuser...\n" 1>&2
+	sudo "$0" "$@"
+	exit $?
 fi
 
 if [[ "$EUID" -eq 0 ]]; then
-# Ensure that we are root
-#if [ "$(id -u)" -eq 0 ]; then
-#    # Debug statements to check variables
-#    echo "Original User: $ORIG_USER"
-#    echo "Current User: $(id -un)"
-printf "Welcome to 💀4ndr0update💀!...\n"
-source_settings
-source_service
-source_controller
+	source_settings
+	source_service
+	source_controller
 
 	case "$USER_INTERFACE" in
 		'cli')
-			source "$(pkg_path)/view/cli.sh";;
+			source $(pkg_path)/view/cli.sh;;
 		'dialog')
-		        source "$(pkg_path)/view/dialog.sh";;
+			source $(pkg_path)/view/dialog.sh;;
 		*)
-		        fallback_view;;
+			fallback_view;;	
 	esac
+
 	execute_main
 fi
-
