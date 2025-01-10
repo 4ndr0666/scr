@@ -1,11 +1,16 @@
 #!/bin/bash
+# Author: 4ndr0666
+# Date: 12-21-24
+# Desc: System Hardening Script with UFW, Sysctl, and Service Configurations
+# Usage: sudo ./ufw.sh [--vpn] [--jdownloader] [--backup] [--help]
 
 # ====================================== // UFW.SH //
 
-# Self-elevation to root if not already
+# Automatically re-run the script with sudo if not run as root
 if [[ "$EUID" -ne 0 ]]; then
     echo "Re-running the script with sudo privileges..."
     exec sudo "$0" "$@"
+    exit $?
 fi
 
 # Function to display usage information
@@ -453,6 +458,7 @@ setup_backups() {
 
     BACKUP_SCRIPT="/usr/local/bin/ufw_backup.sh"
     CRON_JOB="/etc/cron.d/ufw_backup"
+    BACKUP_DIR="/var/backups/ufw.sh"
 
     # Define the backup script content
     cat << 'EOF' > "$BACKUP_SCRIPT"
@@ -464,12 +470,7 @@ setup_backups() {
 BACKUP_DIR="/var/backups/ufw.sh"
 
 # Create backup directory if it doesn't exist
-if mkdir -p "$BACKUP_DIR"; then
-    echo "Backup directory ensured at $BACKUP_DIR."
-else
-    echo "Error: Failed to create backup directory at $BACKUP_DIR."
-    exit 1
-fi
+mkdir -p "$BACKUP_DIR"
 
 # List of files to backup
 FILES=(
@@ -489,13 +490,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 for FILE in "${FILES[@]}"; do
     if [[ -f "$FILE" ]]; then
         BASENAME=$(basename "$FILE")
-        cp "$FILE" "$BACKUP_DIR/${BASENAME}.backup_${TIMESTAMP}" || {
-            echo "Error: Failed to backup $FILE."
-            continue
-        }
-        echo "Backed up $FILE to $BACKUP_DIR/${BASENAME}.backup_${TIMESTAMP}."
-    else
-        echo "Warning: $FILE does not exist and was skipped."
+        cp "$FILE" "$BACKUP_DIR/${BASENAME}.backup_${TIMESTAMP}"
     fi
 done
 
@@ -506,7 +501,7 @@ for FILE in "${FILES[@]}"; do
     if [[ ${#BACKUPS[@]} -gt 1 ]]; then
         # Keep only the first (latest) backup
         for OLD_BACKUP in "${BACKUPS[@]:1}"; do
-            rm -f "$OLD_BACKUP" && echo "Removed old backup: $OLD_BACKUP"
+            rm -f "$OLD_BACKUP"
         done
     fi
 done
@@ -515,7 +510,11 @@ EOF
     # Make the backup script executable
     chmod +x "$BACKUP_SCRIPT"
 
-    # Define the cron job (daily at 2 AM)
+    # Ensure the backup directory exists and is owned by root
+    mkdir -p "$BACKUP_DIR"
+    chown root:root "$BACKUP_DIR"
+
+    # Define the cron job (daily at 2am)
     CRON_CONTENT="0 2 * * * root $BACKUP_SCRIPT"
 
     # Check if the cron job already exists
@@ -526,6 +525,10 @@ EOF
         echo "$CRON_CONTENT" > "$CRON_JOB"
         echo "Cron job created successfully."
     fi
+
+    # Execute the backup script immediately to create the backup directory and perform an initial backup
+    echo "Executing backup script immediately to create backup directory and perform initial backup..."
+    "$BACKUP_SCRIPT"
 
     echo "Automatic backups setup completed."
 }
