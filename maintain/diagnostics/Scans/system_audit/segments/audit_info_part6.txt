@@ -1,0 +1,596 @@
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── transg-tui-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── ttf-microns
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── tuir
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-adjust-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-awarpsharp2-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-bm3d-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-nnedi3-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-nnedi3_weights_bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-removegrain-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-svpflow1
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-svpflow2-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-vivtc-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-vsexprtools-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vapoursynth-plugin-vstools-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vdx
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vidmerger-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── vvenc
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── waf-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── wayfire-plugins-extra-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── wcm-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── wf-kill-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── wf-shell-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── x265-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── xdg-ninja
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── yaycache
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── yaycache-hook
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── yoku-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── youtube-tui-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── youtube-viewer-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── zsh-autocomplete
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── zsh-autosuggestions-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── zsh-extract-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── zsh-fast-syntax-highlighting
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes

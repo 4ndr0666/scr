@@ -1,0 +1,596 @@
+│   │   │   │   │           │       │   ├── _re.py
+│   │   │   │   │           │       │   └── _types.py
+│   │   │   │   │           │       ├── truststore
+│   │   │   │   │           │       │   ├── _api.py
+│   │   │   │   │           │       │   ├── __init__.py
+│   │   │   │   │           │       │   ├── _macos.py
+│   │   │   │   │           │       │   ├── _openssl.py
+│   │   │   │   │           │       │   ├── __pycache__
+│   │   │   │   │           │       │   │   ├── _api.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── _macos.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── _openssl.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── _ssl_constants.cpython-312.pyc
+│   │   │   │   │           │       │   │   └── _windows.cpython-312.pyc
+│   │   │   │   │           │       │   ├── py.typed
+│   │   │   │   │           │       │   ├── _ssl_constants.py
+│   │   │   │   │           │       │   └── _windows.py
+│   │   │   │   │           │       ├── typing_extensions.py
+│   │   │   │   │           │       ├── urllib3
+│   │   │   │   │           │       │   ├── _collections.py
+│   │   │   │   │           │       │   ├── connectionpool.py
+│   │   │   │   │           │       │   ├── connection.py
+│   │   │   │   │           │       │   ├── contrib
+│   │   │   │   │           │       │   │   ├── _appengine_environ.py
+│   │   │   │   │           │       │   │   ├── appengine.py
+│   │   │   │   │           │       │   │   ├── __init__.py
+│   │   │   │   │           │       │   │   ├── ntlmpool.py
+│   │   │   │   │           │       │   │   ├── __pycache__
+│   │   │   │   │           │       │   │   │   ├── appengine.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── _appengine_environ.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── ntlmpool.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── pyopenssl.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── securetransport.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   └── socks.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── pyopenssl.py
+│   │   │   │   │           │       │   │   ├── _securetransport
+│   │   │   │   │           │       │   │   │   ├── bindings.py
+│   │   │   │   │           │       │   │   │   ├── __init__.py
+│   │   │   │   │           │       │   │   │   ├── low_level.py
+│   │   │   │   │           │       │   │   │   └── __pycache__
+│   │   │   │   │           │       │   │   │       ├── bindings.cpython-312.pyc
+│   │   │   │   │           │       │   │   │       ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   │       └── low_level.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── securetransport.py
+│   │   │   │   │           │       │   │   └── socks.py
+│   │   │   │   │           │       │   ├── exceptions.py
+│   │   │   │   │           │       │   ├── fields.py
+│   │   │   │   │           │       │   ├── filepost.py
+│   │   │   │   │           │       │   ├── __init__.py
+│   │   │   │   │           │       │   ├── packages
+│   │   │   │   │           │       │   │   ├── backports
+│   │   │   │   │           │       │   │   │   ├── __init__.py
+│   │   │   │   │           │       │   │   │   ├── makefile.py
+│   │   │   │   │           │       │   │   │   ├── __pycache__
+│   │   │   │   │           │       │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   │   ├── makefile.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   │   └── weakref_finalize.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   └── weakref_finalize.py
+│   │   │   │   │           │       │   │   ├── __init__.py
+│   │   │   │   │           │       │   │   ├── __pycache__
+│   │   │   │   │           │       │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   └── six.cpython-312.pyc
+│   │   │   │   │           │       │   │   └── six.py
+│   │   │   │   │           │       │   ├── poolmanager.py
+│   │   │   │   │           │       │   ├── __pycache__
+│   │   │   │   │           │       │   │   ├── _collections.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── connection.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── connectionpool.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── exceptions.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── fields.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── filepost.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── poolmanager.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── request.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── response.cpython-312.pyc
+│   │   │   │   │           │       │   │   └── _version.cpython-312.pyc
+│   │   │   │   │           │       │   ├── request.py
+│   │   │   │   │           │       │   ├── response.py
+│   │   │   │   │           │       │   ├── util
+│   │   │   │   │           │       │   │   ├── connection.py
+│   │   │   │   │           │       │   │   ├── __init__.py
+│   │   │   │   │           │       │   │   ├── proxy.py
+│   │   │   │   │           │       │   │   ├── __pycache__
+│   │   │   │   │           │       │   │   │   ├── connection.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── proxy.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── queue.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── request.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── response.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── retry.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── ssl_.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── ssl_match_hostname.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── ssltransport.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── timeout.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   ├── url.cpython-312.pyc
+│   │   │   │   │           │       │   │   │   └── wait.cpython-312.pyc
+│   │   │   │   │           │       │   │   ├── queue.py
+│   │   │   │   │           │       │   │   ├── request.py
+│   │   │   │   │           │       │   │   ├── response.py
+│   │   │   │   │           │       │   │   ├── retry.py
+│   │   │   │   │           │       │   │   ├── ssl_match_hostname.py
+│   │   │   │   │           │       │   │   ├── ssl_.py
+│   │   │   │   │           │       │   │   ├── ssltransport.py
+│   │   │   │   │           │       │   │   ├── timeout.py
+│   │   │   │   │           │       │   │   ├── url.py
+│   │   │   │   │           │       │   │   └── wait.py
+│   │   │   │   │           │       │   └── _version.py
+│   │   │   │   │           │       └── vendor.txt
+│   │   │   │   │           └── pip-24.2.dist-info
+│   │   │   │   │               ├── AUTHORS.txt
+│   │   │   │   │               ├── entry_points.txt
+│   │   │   │   │               ├── INSTALLER
+│   │   │   │   │               ├── LICENSE.txt
+│   │   │   │   │               ├── METADATA
+│   │   │   │   │               ├── RECORD
+│   │   │   │   │               ├── REQUESTED
+│   │   │   │   │               ├── top_level.txt
+│   │   │   │   │               └── WHEEL
+│   │   │   │   ├── lib64 -> lib
+│   │   │   │   └── pyvenv.cfg
+│   │   │   └── venvs
+│   │   ├── poetry
+│   │   │   └── venvs
+│   │   │       └── poetry
+│   │   │           ├── bin
+│   │   │           │   ├── activate
+│   │   │           │   ├── activate.csh
+│   │   │           │   ├── activate.fish
+│   │   │           │   ├── Activate.ps1
+│   │   │           │   ├── doesitcache
+│   │   │           │   ├── dul-receive-pack
+│   │   │           │   ├── dul-upload-pack
+│   │   │           │   ├── dulwich
+│   │   │           │   ├── keyring
+│   │   │           │   ├── normalizer
+│   │   │           │   ├── pip
+│   │   │           │   ├── pip3
+│   │   │           │   ├── pip3.12
+│   │   │           │   ├── pkginfo
+│   │   │           │   ├── poetry
+│   │   │           │   ├── pyproject-build
+│   │   │           │   ├── python -> /usr/bin/python
+│   │   │           │   ├── python3 -> python
+│   │   │           │   ├── python3.12 -> python
+│   │   │           │   └── virtualenv
+│   │   │           ├── include
+│   │   │           │   └── python3.12
+│   │   │           ├── lib
+│   │   │           │   └── python3.12
+│   │   │           │       └── site-packages
+│   │   │           │           ├── build
+│   │   │           │           │   ├── _builder.py
+│   │   │           │           │   ├── _compat
+│   │   │           │           │   │   ├── importlib.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── importlib.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── tarfile.cpython-312.pyc
+│   │   │           │           │   │   │   └── tomllib.cpython-312.pyc
+│   │   │           │           │   │   ├── tarfile.py
+│   │   │           │           │   │   └── tomllib.py
+│   │   │           │           │   ├── _ctx.py
+│   │   │           │           │   ├── env.py
+│   │   │           │           │   ├── _exceptions.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── __main__.py
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   ├── _types.py
+│   │   │           │           │   ├── _util.py
+│   │   │           │           │   └── util.py
+│   │   │           │           ├── build-1.2.1.dist-info
+│   │   │           │           │   ├── entry_points.txt
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── cachecontrol
+│   │   │           │           │   ├── adapter.py
+│   │   │           │           │   ├── cache.py
+│   │   │           │           │   ├── caches
+│   │   │           │           │   │   ├── file_cache.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── file_cache.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── redis_cache.cpython-312.pyc
+│   │   │           │           │   │   └── redis_cache.py
+│   │   │           │           │   ├── _cmd.py
+│   │   │           │           │   ├── controller.py
+│   │   │           │           │   ├── filewrapper.py
+│   │   │           │           │   ├── heuristics.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   ├── serialize.py
+│   │   │           │           │   └── wrapper.py
+│   │   │           │           ├── cachecontrol-0.14.0.dist-info
+│   │   │           │           │   ├── entry_points.txt
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE.txt
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── certifi
+│   │   │           │           │   ├── cacert.pem
+│   │   │           │           │   ├── core.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── __main__.py
+│   │   │           │           │   └── py.typed
+│   │   │           │           ├── certifi-2024.7.4.dist-info
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   ├── top_level.txt
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── cffi
+│   │   │           │           │   ├── api.py
+│   │   │           │           │   ├── backend_ctypes.py
+│   │   │           │           │   ├── _cffi_errors.h
+│   │   │           │           │   ├── _cffi_include.h
+│   │   │           │           │   ├── cffi_opcode.py
+│   │   │           │           │   ├── commontypes.py
+│   │   │           │           │   ├── cparser.py
+│   │   │           │           │   ├── _embedding.h
+│   │   │           │           │   ├── error.py
+│   │   │           │           │   ├── ffiplatform.py
+│   │   │           │           │   ├── _imp_emulation.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── lock.py
+│   │   │           │           │   ├── model.py
+│   │   │           │           │   ├── parse_c_type.h
+│   │   │           │           │   ├── pkgconfig.py
+│   │   │           │           │   ├── recompiler.py
+│   │   │           │           │   ├── setuptools_ext.py
+│   │   │           │           │   ├── _shimmed_dist_utils.py
+│   │   │           │           │   ├── vengine_cpy.py
+│   │   │           │           │   ├── vengine_gen.py
+│   │   │           │           │   └── verifier.py
+│   │   │           │           ├── cffi-1.17.0.dist-info
+│   │   │           │           │   ├── entry_points.txt
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   ├── top_level.txt
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── _cffi_backend.cpython-312-x86_64-linux-gnu.so
+│   │   │           │           ├── charset_normalizer
+│   │   │           │           │   ├── api.py
+│   │   │           │           │   ├── cd.py
+│   │   │           │           │   ├── cli
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __main__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       └── __main__.cpython-312.pyc
+│   │   │           │           │   ├── constant.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── legacy.py
+│   │   │           │           │   ├── __main__.py
+│   │   │           │           │   ├── md.cpython-312-x86_64-linux-gnu.so
+│   │   │           │           │   ├── md__mypyc.cpython-312-x86_64-linux-gnu.so
+│   │   │           │           │   ├── md.py
+│   │   │           │           │   ├── models.py
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   ├── utils.py
+│   │   │           │           │   └── version.py
+│   │   │           │           ├── charset_normalizer-3.3.2.dist-info
+│   │   │           │           │   ├── entry_points.txt
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   ├── top_level.txt
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── cleo
+│   │   │           │           │   ├── application.py
+│   │   │           │           │   ├── color.py
+│   │   │           │           │   ├── commands
+│   │   │           │           │   │   ├── base_command.py
+│   │   │           │           │   │   ├── command.py
+│   │   │           │           │   │   ├── completions
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── templates.cpython-312.pyc
+│   │   │           │           │   │   │   └── templates.py
+│   │   │           │           │   │   ├── completions_command.py
+│   │   │           │           │   │   ├── help_command.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── list_command.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── base_command.cpython-312.pyc
+│   │   │           │           │   │       ├── command.cpython-312.pyc
+│   │   │           │           │   │       ├── completions_command.cpython-312.pyc
+│   │   │           │           │   │       ├── help_command.cpython-312.pyc
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       └── list_command.cpython-312.pyc
+│   │   │           │           │   ├── _compat.py
+│   │   │           │           │   ├── cursor.py
+│   │   │           │           │   ├── descriptors
+│   │   │           │           │   │   ├── application_description.py
+│   │   │           │           │   │   ├── descriptor.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── application_description.cpython-312.pyc
+│   │   │           │           │   │   │   ├── descriptor.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── text_descriptor.cpython-312.pyc
+│   │   │           │           │   │   └── text_descriptor.py
+│   │   │           │           │   ├── events
+│   │   │           │           │   │   ├── console_command_event.py
+│   │   │           │           │   │   ├── console_error_event.py
+│   │   │           │           │   │   ├── console_event.py
+│   │   │           │           │   │   ├── console_events.py
+│   │   │           │           │   │   ├── console_signal_event.py
+│   │   │           │           │   │   ├── console_terminate_event.py
+│   │   │           │           │   │   ├── event_dispatcher.py
+│   │   │           │           │   │   ├── event.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── console_command_event.cpython-312.pyc
+│   │   │           │           │   │       ├── console_error_event.cpython-312.pyc
+│   │   │           │           │   │       ├── console_event.cpython-312.pyc
+│   │   │           │           │   │       ├── console_events.cpython-312.pyc
+│   │   │           │           │   │       ├── console_signal_event.cpython-312.pyc
+│   │   │           │           │   │       ├── console_terminate_event.cpython-312.pyc
+│   │   │           │           │   │       ├── event.cpython-312.pyc
+│   │   │           │           │   │       ├── event_dispatcher.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── exceptions
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── formatters
+│   │   │           │           │   │   ├── formatter.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── formatter.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── style.cpython-312.pyc
+│   │   │           │           │   │   │   └── style_stack.cpython-312.pyc
+│   │   │           │           │   │   ├── style.py
+│   │   │           │           │   │   └── style_stack.py
+│   │   │           │           │   ├── helpers.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── io
+│   │   │           │           │   │   ├── buffered_io.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── inputs
+│   │   │           │           │   │   │   ├── argument.py
+│   │   │           │           │   │   │   ├── argv_input.py
+│   │   │           │           │   │   │   ├── definition.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── input.py
+│   │   │           │           │   │   │   ├── option.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── argument.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── argv_input.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── definition.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── input.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── option.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── string_input.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── token_parser.cpython-312.pyc
+│   │   │           │           │   │   │   ├── string_input.py
+│   │   │           │           │   │   │   └── token_parser.py
+│   │   │           │           │   │   ├── io.py
+│   │   │           │           │   │   ├── null_io.py
+│   │   │           │           │   │   ├── outputs
+│   │   │           │           │   │   │   ├── buffered_output.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── null_output.py
+│   │   │           │           │   │   │   ├── output.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── buffered_output.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── null_output.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── output.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── section_output.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── stream_output.cpython-312.pyc
+│   │   │           │           │   │   │   ├── section_output.py
+│   │   │           │           │   │   │   └── stream_output.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── buffered_io.cpython-312.pyc
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       ├── io.cpython-312.pyc
+│   │   │           │           │   │       └── null_io.cpython-312.pyc
+│   │   │           │           │   ├── loaders
+│   │   │           │           │   │   ├── command_loader.py
+│   │   │           │           │   │   ├── factory_command_loader.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── command_loader.cpython-312.pyc
+│   │   │           │           │   │       ├── factory_command_loader.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   ├── terminal.py
+│   │   │           │           │   ├── testers
+│   │   │           │           │   │   ├── application_tester.py
+│   │   │           │           │   │   ├── command_tester.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── application_tester.cpython-312.pyc
+│   │   │           │           │   │       ├── command_tester.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── ui
+│   │   │           │           │   │   ├── choice_question.py
+│   │   │           │           │   │   ├── component.py
+│   │   │           │           │   │   ├── confirmation_question.py
+│   │   │           │           │   │   ├── exception_trace.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── progress_bar.py
+│   │   │           │           │   │   ├── progress_indicator.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── choice_question.cpython-312.pyc
+│   │   │           │           │   │   │   ├── component.cpython-312.pyc
+│   │   │           │           │   │   │   ├── confirmation_question.cpython-312.pyc
+│   │   │           │           │   │   │   ├── exception_trace.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── progress_bar.cpython-312.pyc
+│   │   │           │           │   │   │   ├── progress_indicator.cpython-312.pyc
+│   │   │           │           │   │   │   ├── question.cpython-312.pyc
+│   │   │           │           │   │   │   ├── table_cell.cpython-312.pyc
+│   │   │           │           │   │   │   ├── table_cell_style.cpython-312.pyc
+│   │   │           │           │   │   │   ├── table.cpython-312.pyc
+│   │   │           │           │   │   │   ├── table_separator.cpython-312.pyc
+│   │   │           │           │   │   │   ├── table_style.cpython-312.pyc
+│   │   │           │           │   │   │   └── ui.cpython-312.pyc
+│   │   │           │           │   │   ├── question.py
+│   │   │           │           │   │   ├── table_cell.py
+│   │   │           │           │   │   ├── table_cell_style.py
+│   │   │           │           │   │   ├── table.py
+│   │   │           │           │   │   ├── table_separator.py
+│   │   │           │           │   │   ├── table_style.py
+│   │   │           │           │   │   └── ui.py
+│   │   │           │           │   └── _utils.py
+│   │   │           │           ├── cleo-2.1.0.dist-info
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── crashtest
+│   │   │           │           │   ├── contracts
+│   │   │           │           │   │   ├── base_solution.py
+│   │   │           │           │   │   ├── has_solutions_for_exception.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── provides_solution.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── base_solution.cpython-312.pyc
+│   │   │           │           │   │   │   ├── has_solutions_for_exception.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── provides_solution.cpython-312.pyc
+│   │   │           │           │   │   │   ├── solution.cpython-312.pyc
+│   │   │           │           │   │   │   └── solution_provider_repository.cpython-312.pyc
+│   │   │           │           │   │   ├── solution_provider_repository.py
+│   │   │           │           │   │   └── solution.py
+│   │   │           │           │   ├── frame_collection.py
+│   │   │           │           │   ├── frame.py
+│   │   │           │           │   ├── __init__.py
+│   │   │           │           │   ├── inspector.py
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   └── solution_providers
+│   │   │           │           │       ├── __init__.py
+│   │   │           │           │       ├── __pycache__
+│   │   │           │           │       │   ├── __init__.cpython-312.pyc
+│   │   │           │           │       │   └── solution_provider_repository.cpython-312.pyc
+│   │   │           │           │       └── solution_provider_repository.py
+│   │   │           │           ├── crashtest-0.4.1.dist-info
+│   │   │           │           │   ├── INSTALLER
+│   │   │           │           │   ├── LICENSE
+│   │   │           │           │   ├── METADATA
+│   │   │           │           │   ├── RECORD
+│   │   │           │           │   └── WHEEL
+│   │   │           │           ├── cryptography
+│   │   │           │           │   ├── __about__.py
+│   │   │           │           │   ├── exceptions.py
+│   │   │           │           │   ├── fernet.py
+│   │   │           │           │   ├── hazmat
+│   │   │           │           │   │   ├── backends
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── openssl
+│   │   │           │           │   │   │   │   ├── backend.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   └── __pycache__
+│   │   │           │           │   │   │   │       ├── backend.cpython-312.pyc
+│   │   │           │           │   │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   ├── bindings
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── openssl
+│   │   │           │           │   │   │   │   ├── binding.py
+│   │   │           │           │   │   │   │   ├── _conditional.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   └── __pycache__
+│   │   │           │           │   │   │   │       ├── binding.cpython-312.pyc
+│   │   │           │           │   │   │   │       ├── _conditional.cpython-312.pyc
+│   │   │           │           │   │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── _rust
+│   │   │           │           │   │   │   │   ├── asn1.pyi
+│   │   │           │           │   │   │   │   ├── exceptions.pyi
+│   │   │           │           │   │   │   │   ├── __init__.pyi
+│   │   │           │           │   │   │   │   ├── ocsp.pyi
+│   │   │           │           │   │   │   │   ├── openssl
+│   │   │           │           │   │   │   │   │   ├── aead.pyi
+│   │   │           │           │   │   │   │   │   ├── ciphers.pyi
+│   │   │           │           │   │   │   │   │   ├── cmac.pyi
+│   │   │           │           │   │   │   │   │   ├── dh.pyi
+│   │   │           │           │   │   │   │   │   ├── dsa.pyi
+│   │   │           │           │   │   │   │   │   ├── ec.pyi
+│   │   │           │           │   │   │   │   │   ├── ed25519.pyi
+│   │   │           │           │   │   │   │   │   ├── ed448.pyi
+│   │   │           │           │   │   │   │   │   ├── hashes.pyi
+│   │   │           │           │   │   │   │   │   ├── hmac.pyi
+│   │   │           │           │   │   │   │   │   ├── __init__.pyi
+│   │   │           │           │   │   │   │   │   ├── kdf.pyi
+│   │   │           │           │   │   │   │   │   ├── keys.pyi
+│   │   │           │           │   │   │   │   │   ├── poly1305.pyi
+│   │   │           │           │   │   │   │   │   ├── rsa.pyi
+│   │   │           │           │   │   │   │   │   ├── x25519.pyi
+│   │   │           │           │   │   │   │   │   └── x448.pyi
+│   │   │           │           │   │   │   │   ├── _openssl.pyi
+│   │   │           │           │   │   │   │   ├── pkcs12.pyi
+│   │   │           │           │   │   │   │   ├── pkcs7.pyi
+│   │   │           │           │   │   │   │   ├── test_support.pyi
+│   │   │           │           │   │   │   │   └── x509.pyi
+│   │   │           │           │   │   │   └── _rust.abi3.so
+│   │   │           │           │   │   ├── decrepit
+│   │   │           │           │   │   │   ├── ciphers
+│   │   │           │           │   │   │   │   ├── algorithms.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   └── __pycache__
+│   │   │           │           │   │   │   │       ├── algorithms.cpython-312.pyc
+│   │   │           │           │   │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── _oid.py
+│   │   │           │           │   │   ├── primitives
+│   │   │           │           │   │   │   ├── asymmetric
+│   │   │           │           │   │   │   │   ├── dh.py
+│   │   │           │           │   │   │   │   ├── dsa.py
+│   │   │           │           │   │   │   │   ├── ec.py
+│   │   │           │           │   │   │   │   ├── ed25519.py
+│   │   │           │           │   │   │   │   ├── ed448.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── padding.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── dh.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── dsa.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── ec.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── ed25519.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── ed448.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── padding.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── rsa.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── types.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── utils.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── x25519.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── x448.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── rsa.py
+│   │   │           │           │   │   │   │   ├── types.py
+│   │   │           │           │   │   │   │   ├── utils.py
+│   │   │           │           │   │   │   │   ├── x25519.py
+│   │   │           │           │   │   │   │   └── x448.py
+│   │   │           │           │   │   │   ├── _asymmetric.py
+│   │   │           │           │   │   │   ├── _cipheralgorithm.py
+│   │   │           │           │   │   │   ├── ciphers
+│   │   │           │           │   │   │   │   ├── aead.py
+│   │   │           │           │   │   │   │   ├── algorithms.py
+│   │   │           │           │   │   │   │   ├── base.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── modes.py
+│   │   │           │           │   │   │   │   └── __pycache__
+│   │   │           │           │   │   │   │       ├── aead.cpython-312.pyc
+│   │   │           │           │   │   │   │       ├── algorithms.cpython-312.pyc
+│   │   │           │           │   │   │   │       ├── base.cpython-312.pyc
+│   │   │           │           │   │   │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │       └── modes.cpython-312.pyc
+│   │   │           │           │   │   │   ├── cmac.py
+│   │   │           │           │   │   │   ├── constant_time.py
+│   │   │           │           │   │   │   ├── hashes.py
+│   │   │           │           │   │   │   ├── hmac.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── kdf
+│   │   │           │           │   │   │   │   ├── concatkdf.py
+│   │   │           │           │   │   │   │   ├── hkdf.py
+│   │   │           │           │   │   │   │   ├── __init__.py

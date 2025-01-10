@@ -1,0 +1,596 @@
+│   │   │           │           │   │       ├── command_loader.cpython-312.pyc
+│   │   │           │           │   │       ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── core
+│   │   │           │           │   │   ├── constraints
+│   │   │           │           │   │   │   ├── generic
+│   │   │           │           │   │   │   │   ├── any_constraint.py
+│   │   │           │           │   │   │   │   ├── base_constraint.py
+│   │   │           │           │   │   │   │   ├── constraint.py
+│   │   │           │           │   │   │   │   ├── empty_constraint.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── multi_constraint.py
+│   │   │           │           │   │   │   │   ├── parser.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── any_constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── base_constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── empty_constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── multi_constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── union_constraint.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── union_constraint.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── version
+│   │   │           │           │   │   │       ├── empty_constraint.py
+│   │   │           │           │   │   │       ├── exceptions.py
+│   │   │           │           │   │   │       ├── __init__.py
+│   │   │           │           │   │   │       ├── parser.py
+│   │   │           │           │   │   │       ├── patterns.py
+│   │   │           │           │   │   │       ├── __pycache__
+│   │   │           │           │   │   │       │   ├── empty_constraint.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── parser.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── patterns.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── util.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── version_constraint.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── version.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── version_range_constraint.cpython-312.pyc
+│   │   │           │           │   │   │       │   ├── version_range.cpython-312.pyc
+│   │   │           │           │   │   │       │   └── version_union.cpython-312.pyc
+│   │   │           │           │   │   │       ├── util.py
+│   │   │           │           │   │   │       ├── version_constraint.py
+│   │   │           │           │   │   │       ├── version.py
+│   │   │           │           │   │   │       ├── version_range_constraint.py
+│   │   │           │           │   │   │       ├── version_range.py
+│   │   │           │           │   │   │       └── version_union.py
+│   │   │           │           │   │   ├── exceptions
+│   │   │           │           │   │   │   ├── base.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       ├── base.cpython-312.pyc
+│   │   │           │           │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   ├── factory.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── json
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── schemas
+│   │   │           │           │   │   │       └── poetry-schema.json
+│   │   │           │           │   │   ├── masonry
+│   │   │           │           │   │   │   ├── api.py
+│   │   │           │           │   │   │   ├── builder.py
+│   │   │           │           │   │   │   ├── builders
+│   │   │           │           │   │   │   │   ├── builder.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── builder.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── sdist.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── wheel.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── sdist.py
+│   │   │           │           │   │   │   │   └── wheel.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── metadata.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── api.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── builder.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── metadata.cpython-312.pyc
+│   │   │           │           │   │   │   └── utils
+│   │   │           │           │   │   │       ├── helpers.py
+│   │   │           │           │   │   │       ├── include.py
+│   │   │           │           │   │   │       ├── __init__.py
+│   │   │           │           │   │   │       ├── module.py
+│   │   │           │           │   │   │       ├── package_include.py
+│   │   │           │           │   │   │       └── __pycache__
+│   │   │           │           │   │   │           ├── helpers.cpython-312.pyc
+│   │   │           │           │   │   │           ├── include.cpython-312.pyc
+│   │   │           │           │   │   │           ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │           ├── module.cpython-312.pyc
+│   │   │           │           │   │   │           └── package_include.cpython-312.pyc
+│   │   │           │           │   │   ├── packages
+│   │   │           │           │   │   │   ├── dependency_group.py
+│   │   │           │           │   │   │   ├── dependency.py
+│   │   │           │           │   │   │   ├── directory_dependency.py
+│   │   │           │           │   │   │   ├── file_dependency.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── package.py
+│   │   │           │           │   │   │   ├── path_dependency.py
+│   │   │           │           │   │   │   ├── project_package.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── dependency.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── dependency_group.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── directory_dependency.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── file_dependency.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── package.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── path_dependency.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── project_package.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── specification.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── url_dependency.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── vcs_dependency.cpython-312.pyc
+│   │   │           │           │   │   │   ├── specification.py
+│   │   │           │           │   │   │   ├── url_dependency.py
+│   │   │           │           │   │   │   ├── utils
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── link.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── link.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── utils.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── utils.py
+│   │   │           │           │   │   │   └── vcs_dependency.py
+│   │   │           │           │   │   ├── poetry.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── factory.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── poetry.cpython-312.pyc
+│   │   │           │           │   │   ├── pyproject
+│   │   │           │           │   │   │   ├── exceptions.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── tables.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── toml.cpython-312.pyc
+│   │   │           │           │   │   │   ├── tables.py
+│   │   │           │           │   │   │   └── toml.py
+│   │   │           │           │   │   ├── py.typed
+│   │   │           │           │   │   ├── spdx
+│   │   │           │           │   │   │   ├── data
+│   │   │           │           │   │   │   │   └── licenses.json
+│   │   │           │           │   │   │   ├── helpers.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── license.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── helpers.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── license.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── updater.cpython-312.pyc
+│   │   │           │           │   │   │   └── updater.py
+│   │   │           │           │   │   ├── utils
+│   │   │           │           │   │   │   ├── _compat.py
+│   │   │           │           │   │   │   ├── helpers.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── patterns.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       ├── _compat.cpython-312.pyc
+│   │   │           │           │   │   │       ├── helpers.cpython-312.pyc
+│   │   │           │           │   │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │       └── patterns.cpython-312.pyc
+│   │   │           │           │   │   ├── vcs
+│   │   │           │           │   │   │   ├── git.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       ├── git.cpython-312.pyc
+│   │   │           │           │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   ├── _vendor
+│   │   │           │           │   │   │   ├── fastjsonschema
+│   │   │           │           │   │   │   │   ├── draft04.py
+│   │   │           │           │   │   │   │   ├── draft06.py
+│   │   │           │           │   │   │   │   ├── draft07.py
+│   │   │           │           │   │   │   │   ├── exceptions.py
+│   │   │           │           │   │   │   │   ├── generator.py
+│   │   │           │           │   │   │   │   ├── indent.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── LICENSE
+│   │   │           │           │   │   │   │   ├── __main__.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── draft04.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── draft06.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── draft07.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── generator.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── indent.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __main__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── ref_resolver.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── version.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── ref_resolver.py
+│   │   │           │           │   │   │   │   └── version.py
+│   │   │           │           │   │   │   ├── lark
+│   │   │           │           │   │   │   │   ├── ast_utils.py
+│   │   │           │           │   │   │   │   ├── common.py
+│   │   │           │           │   │   │   │   ├── exceptions.py
+│   │   │           │           │   │   │   │   ├── grammar.py
+│   │   │           │           │   │   │   │   ├── grammars
+│   │   │           │           │   │   │   │   │   ├── common.lark
+│   │   │           │           │   │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   │   ├── lark.lark
+│   │   │           │           │   │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── python.lark
+│   │   │           │           │   │   │   │   │   └── unicode.lark
+│   │   │           │           │   │   │   │   ├── indenter.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── lark.py
+│   │   │           │           │   │   │   │   ├── lexer.py
+│   │   │           │           │   │   │   │   ├── LICENSE
+│   │   │           │           │   │   │   │   ├── load_grammar.py
+│   │   │           │           │   │   │   │   ├── parser_frontends.py
+│   │   │           │           │   │   │   │   ├── parsers
+│   │   │           │           │   │   │   │   │   ├── cyk.py
+│   │   │           │           │   │   │   │   │   ├── earley_common.py
+│   │   │           │           │   │   │   │   │   ├── earley_forest.py
+│   │   │           │           │   │   │   │   │   ├── earley.py
+│   │   │           │           │   │   │   │   │   ├── grammar_analysis.py
+│   │   │           │           │   │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   │   ├── lalr_analysis.py
+│   │   │           │           │   │   │   │   │   ├── lalr_interactive_parser.py
+│   │   │           │           │   │   │   │   │   ├── lalr_parser.py
+│   │   │           │           │   │   │   │   │   ├── lalr_parser_state.py
+│   │   │           │           │   │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   │   ├── cyk.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── earley_common.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── earley.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── earley_forest.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── grammar_analysis.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── lalr_analysis.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── lalr_interactive_parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── lalr_parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── lalr_parser_state.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   └── xearley.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── xearley.py
+│   │   │           │           │   │   │   │   ├── parse_tree_builder.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── ast_utils.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── common.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── grammar.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── indenter.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── lark.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── lexer.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── load_grammar.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── parser_frontends.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── parse_tree_builder.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── reconstruct.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── tree.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── tree_matcher.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── tree_templates.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── utils.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── visitors.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __pyinstaller
+│   │   │           │           │   │   │   │   │   ├── hook-lark.py
+│   │   │           │           │   │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   │   └── __pycache__
+│   │   │           │           │   │   │   │   │       ├── hook-lark.cpython-312.pyc
+│   │   │           │           │   │   │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── py.typed
+│   │   │           │           │   │   │   │   ├── reconstruct.py
+│   │   │           │           │   │   │   │   ├── tools
+│   │   │           │           │   │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   │   ├── nearley.py
+│   │   │           │           │   │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── nearley.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   ├── serialize.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   │   └── standalone.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── serialize.py
+│   │   │           │           │   │   │   │   │   └── standalone.py
+│   │   │           │           │   │   │   │   ├── tree_matcher.py
+│   │   │           │           │   │   │   │   ├── tree.py
+│   │   │           │           │   │   │   │   ├── tree_templates.py
+│   │   │           │           │   │   │   │   ├── utils.py
+│   │   │           │           │   │   │   │   └── visitors.py
+│   │   │           │           │   │   │   ├── packaging
+│   │   │           │           │   │   │   │   ├── _elffile.py
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── LICENSE
+│   │   │           │           │   │   │   │   ├── LICENSE.APACHE
+│   │   │           │           │   │   │   │   ├── LICENSE.BSD
+│   │   │           │           │   │   │   │   ├── _manylinux.py
+│   │   │           │           │   │   │   │   ├── markers.py
+│   │   │           │           │   │   │   │   ├── metadata.py
+│   │   │           │           │   │   │   │   ├── _musllinux.py
+│   │   │           │           │   │   │   │   ├── _parser.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── _elffile.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _manylinux.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── markers.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── metadata.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _musllinux.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── requirements.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── specifiers.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _structures.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── tags.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _tokenizer.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── utils.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── version.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── py.typed
+│   │   │           │           │   │   │   │   ├── requirements.py
+│   │   │           │           │   │   │   │   ├── specifiers.py
+│   │   │           │           │   │   │   │   ├── _structures.py
+│   │   │           │           │   │   │   │   ├── tags.py
+│   │   │           │           │   │   │   │   ├── _tokenizer.py
+│   │   │           │           │   │   │   │   ├── utils.py
+│   │   │           │           │   │   │   │   └── version.py
+│   │   │           │           │   │   │   ├── tomli
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── LICENSE
+│   │   │           │           │   │   │   │   ├── _parser.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   ├── _re.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── _types.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── py.typed
+│   │   │           │           │   │   │   │   ├── _re.py
+│   │   │           │           │   │   │   │   └── _types.py
+│   │   │           │           │   │   │   └── vendor.txt
+│   │   │           │           │   │   └── version
+│   │   │           │           │   │       ├── exceptions.py
+│   │   │           │           │   │       ├── grammars
+│   │   │           │           │   │       │   ├── __init__.py
+│   │   │           │           │   │       │   ├── markers.lark
+│   │   │           │           │   │       │   ├── pep508.lark
+│   │   │           │           │   │       │   └── __pycache__
+│   │   │           │           │   │       │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │       ├── helpers.py
+│   │   │           │           │   │       ├── __init__.py
+│   │   │           │           │   │       ├── markers.py
+│   │   │           │           │   │       ├── parser.py
+│   │   │           │           │   │       ├── pep440
+│   │   │           │           │   │       │   ├── __init__.py
+│   │   │           │           │   │       │   ├── parser.py
+│   │   │           │           │   │       │   ├── __pycache__
+│   │   │           │           │   │       │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       │   │   ├── parser.cpython-312.pyc
+│   │   │           │           │   │       │   │   ├── segments.cpython-312.pyc
+│   │   │           │           │   │       │   │   └── version.cpython-312.pyc
+│   │   │           │           │   │       │   ├── segments.py
+│   │   │           │           │   │       │   └── version.py
+│   │   │           │           │   │       ├── __pycache__
+│   │   │           │           │   │       │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │       │   ├── helpers.cpython-312.pyc
+│   │   │           │           │   │       │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       │   ├── markers.cpython-312.pyc
+│   │   │           │           │   │       │   ├── parser.cpython-312.pyc
+│   │   │           │           │   │       │   └── requirements.cpython-312.pyc
+│   │   │           │           │   │       └── requirements.py
+│   │   │           │           │   ├── exceptions.py
+│   │   │           │           │   ├── factory.py
+│   │   │           │           │   ├── inspection
+│   │   │           │           │   │   ├── info.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── lazy_wheel.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── info.cpython-312.pyc
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       └── lazy_wheel.cpython-312.pyc
+│   │   │           │           │   ├── installation
+│   │   │           │           │   │   ├── chef.py
+│   │   │           │           │   │   ├── chooser.py
+│   │   │           │           │   │   ├── executor.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── installer.py
+│   │   │           │           │   │   ├── operations
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── install.py
+│   │   │           │           │   │   │   ├── operation.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── install.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── operation.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── uninstall.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── update.cpython-312.pyc
+│   │   │           │           │   │   │   ├── uninstall.py
+│   │   │           │           │   │   │   └── update.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── chef.cpython-312.pyc
+│   │   │           │           │   │   │   ├── chooser.cpython-312.pyc
+│   │   │           │           │   │   │   ├── executor.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── installer.cpython-312.pyc
+│   │   │           │           │   │   │   └── wheel_installer.cpython-312.pyc
+│   │   │           │           │   │   └── wheel_installer.py
+│   │   │           │           │   ├── json
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   └── schemas
+│   │   │           │           │   │       └── poetry.json
+│   │   │           │           │   ├── layouts
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── layout.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── layout.cpython-312.pyc
+│   │   │           │           │   │   │   ├── src.cpython-312.pyc
+│   │   │           │           │   │   │   └── standard.cpython-312.pyc
+│   │   │           │           │   │   ├── src.py
+│   │   │           │           │   │   └── standard.py
+│   │   │           │           │   ├── locations.py
+│   │   │           │           │   ├── __main__.py
+│   │   │           │           │   ├── masonry
+│   │   │           │           │   │   ├── api.py
+│   │   │           │           │   │   ├── builders
+│   │   │           │           │   │   │   ├── editable.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       ├── editable.cpython-312.pyc
+│   │   │           │           │   │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── api.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── mixology
+│   │   │           │           │   │   ├── assignment.py
+│   │   │           │           │   │   ├── failure.py
+│   │   │           │           │   │   ├── incompatibility_cause.py
+│   │   │           │           │   │   ├── incompatibility.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── partial_solution.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── assignment.cpython-312.pyc
+│   │   │           │           │   │   │   ├── failure.cpython-312.pyc
+│   │   │           │           │   │   │   ├── incompatibility_cause.cpython-312.pyc
+│   │   │           │           │   │   │   ├── incompatibility.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── partial_solution.cpython-312.pyc
+│   │   │           │           │   │   │   ├── result.cpython-312.pyc
+│   │   │           │           │   │   │   ├── set_relation.cpython-312.pyc
+│   │   │           │           │   │   │   ├── term.cpython-312.pyc
+│   │   │           │           │   │   │   └── version_solver.cpython-312.pyc
+│   │   │           │           │   │   ├── result.py
+│   │   │           │           │   │   ├── set_relation.py
+│   │   │           │           │   │   ├── solutions
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── providers
+│   │   │           │           │   │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   │   └── python_requirement_solution_provider.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── python_requirement_solution_provider.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   └── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── solutions
+│   │   │           │           │   │   │       ├── __init__.py
+│   │   │           │           │   │   │       ├── __pycache__
+│   │   │           │           │   │   │       │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │       │   └── python_requirement_solution.cpython-312.pyc
+│   │   │           │           │   │   │       └── python_requirement_solution.py
+│   │   │           │           │   │   ├── term.py
+│   │   │           │           │   │   └── version_solver.py
+│   │   │           │           │   ├── packages
+│   │   │           │           │   │   ├── dependency_package.py
+│   │   │           │           │   │   ├── direct_origin.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── locker.py
+│   │   │           │           │   │   ├── package_collection.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── dependency_package.cpython-312.pyc
+│   │   │           │           │   │       ├── direct_origin.cpython-312.pyc
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       ├── locker.cpython-312.pyc
+│   │   │           │           │   │       └── package_collection.cpython-312.pyc
+│   │   │           │           │   ├── plugins
+│   │   │           │           │   │   ├── application_plugin.py
+│   │   │           │           │   │   ├── base_plugin.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── plugin_manager.py
+│   │   │           │           │   │   ├── plugin.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── application_plugin.cpython-312.pyc
+│   │   │           │           │   │       ├── base_plugin.cpython-312.pyc
+│   │   │           │           │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │       ├── plugin.cpython-312.pyc
+│   │   │           │           │   │       └── plugin_manager.cpython-312.pyc
+│   │   │           │           │   ├── poetry.py
+│   │   │           │           │   ├── publishing
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── publisher.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── publisher.cpython-312.pyc
+│   │   │           │           │   │   │   └── uploader.cpython-312.pyc
+│   │   │           │           │   │   └── uploader.py
+│   │   │           │           │   ├── puzzle
+│   │   │           │           │   │   ├── exceptions.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── provider.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── provider.cpython-312.pyc
+│   │   │           │           │   │   │   ├── solver.cpython-312.pyc
+│   │   │           │           │   │   │   └── transaction.cpython-312.pyc
+│   │   │           │           │   │   ├── solver.py
+│   │   │           │           │   │   └── transaction.py
+│   │   │           │           │   ├── pyproject
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   └── toml.cpython-312.pyc
+│   │   │           │           │   │   └── toml.py
+│   │   │           │           │   ├── py.typed
+│   │   │           │           │   ├── repositories
+│   │   │           │           │   │   ├── abstract_repository.py
+│   │   │           │           │   │   ├── cached_repository.py
+│   │   │           │           │   │   ├── exceptions.py
+│   │   │           │           │   │   ├── http_repository.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   ├── installed_repository.py
+│   │   │           │           │   │   ├── legacy_repository.py
+│   │   │           │           │   │   ├── link_sources
+│   │   │           │           │   │   │   ├── base.py
+│   │   │           │           │   │   │   ├── html.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── json.py
+│   │   │           │           │   │   │   └── __pycache__
+│   │   │           │           │   │   │       ├── base.cpython-312.pyc
+│   │   │           │           │   │   │       ├── html.cpython-312.pyc
+│   │   │           │           │   │   │       ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │       └── json.cpython-312.pyc
+│   │   │           │           │   │   ├── lockfile_repository.py
+│   │   │           │           │   │   ├── parsers
+│   │   │           │           │   │   │   ├── html_page_parser.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── html_page_parser.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── pypi_search_parser.cpython-312.pyc
+│   │   │           │           │   │   │   └── pypi_search_parser.py
+│   │   │           │           │   │   ├── __pycache__
+│   │   │           │           │   │   │   ├── abstract_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── cached_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   ├── http_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   ├── installed_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── legacy_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── lockfile_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── pypi_repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── repository.cpython-312.pyc
+│   │   │           │           │   │   │   ├── repository_pool.cpython-312.pyc
+│   │   │           │           │   │   │   └── single_page_repository.cpython-312.pyc
+│   │   │           │           │   │   ├── pypi_repository.py
+│   │   │           │           │   │   ├── repository_pool.py
+│   │   │           │           │   │   ├── repository.py
+│   │   │           │           │   │   └── single_page_repository.py
+│   │   │           │           │   ├── toml
+│   │   │           │           │   │   ├── exceptions.py
+│   │   │           │           │   │   ├── file.py
+│   │   │           │           │   │   ├── __init__.py
+│   │   │           │           │   │   └── __pycache__
+│   │   │           │           │   │       ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │       ├── file.cpython-312.pyc
+│   │   │           │           │   │       └── __init__.cpython-312.pyc
+│   │   │           │           │   ├── utils
+│   │   │           │           │   │   ├── authenticator.py
+│   │   │           │           │   │   ├── cache.py
+│   │   │           │           │   │   ├── _compat.py
+│   │   │           │           │   │   ├── constants.py
+│   │   │           │           │   │   ├── dependency_specification.py
+│   │   │           │           │   │   ├── env
+│   │   │           │           │   │   │   ├── base_env.py
+│   │   │           │           │   │   │   ├── env_manager.py
+│   │   │           │           │   │   │   ├── exceptions.py
+│   │   │           │           │   │   │   ├── generic_env.py
+│   │   │           │           │   │   │   ├── __init__.py
+│   │   │           │           │   │   │   ├── mock_env.py
+│   │   │           │           │   │   │   ├── null_env.py
+│   │   │           │           │   │   │   ├── __pycache__
+│   │   │           │           │   │   │   │   ├── base_env.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── env_manager.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── generic_env.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── mock_env.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── null_env.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── script_strings.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── site_packages.cpython-312.pyc
+│   │   │           │           │   │   │   │   ├── system_env.cpython-312.pyc
+│   │   │           │           │   │   │   │   └── virtual_env.cpython-312.pyc
+│   │   │           │           │   │   │   ├── script_strings.py
+│   │   │           │           │   │   │   ├── site_packages.py
+│   │   │           │           │   │   │   ├── system_env.py

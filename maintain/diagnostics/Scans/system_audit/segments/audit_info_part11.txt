@@ -1,0 +1,596 @@
+│   │   │   │       │           │   │   └── timestamp-i.ri
+│   │   │   │       │           │   ├── FileList
+│   │   │   │       │           │   │   ├── %2a-i.ri
+│   │   │   │       │           │   │   ├── %3c%3c-i.ri
+│   │   │   │       │           │   │   ├── %3d%3d-i.ri
+│   │   │   │       │           │   │   ├── %5b%5d-c.ri
+│   │   │   │       │           │   │   ├── add-i.ri
+│   │   │   │       │           │   │   ├── add_matching-i.ri
+│   │   │   │       │           │   │   ├── cdesc-FileList.ri
+│   │   │   │       │           │   │   ├── clear_exclude-i.ri
+│   │   │   │       │           │   │   ├── egrep-i.ri
+│   │   │   │       │           │   │   ├── excluded_from_list%3f-i.ri
+│   │   │   │       │           │   │   ├── exclude-i.ri
+│   │   │   │       │           │   │   ├── existing%21-i.ri
+│   │   │   │       │           │   │   ├── existing-i.ri
+│   │   │   │       │           │   │   ├── ext-i.ri
+│   │   │   │       │           │   │   ├── glob-c.ri
+│   │   │   │       │           │   │   ├── gsub%21-i.ri
+│   │   │   │       │           │   │   ├── gsub-i.ri
+│   │   │   │       │           │   │   ├── include-i.ri
+│   │   │   │       │           │   │   ├── is_a%3f-i.ri
+│   │   │   │       │           │   │   ├── kind_of%3f-i.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── pathmap-i.ri
+│   │   │   │       │           │   │   ├── resolve-i.ri
+│   │   │   │       │           │   │   ├── sub%21-i.ri
+│   │   │   │       │           │   │   ├── sub-i.ri
+│   │   │   │       │           │   │   ├── to_a-i.ri
+│   │   │   │       │           │   │   ├── to_ary-i.ri
+│   │   │   │       │           │   │   └── to_s-i.ri
+│   │   │   │       │           │   ├── FileTask
+│   │   │   │       │           │   │   ├── cdesc-FileTask.ri
+│   │   │   │       │           │   │   ├── needed%3f-i.ri
+│   │   │   │       │           │   │   ├── out_of_date%3f-i.ri
+│   │   │   │       │           │   │   ├── scope_name-c.ri
+│   │   │   │       │           │   │   └── timestamp-i.ri
+│   │   │   │       │           │   ├── FileUtilsExt
+│   │   │   │       │           │   │   ├── cdesc-FileUtilsExt.ri
+│   │   │   │       │           │   │   ├── nowrite_flag-c.ri
+│   │   │   │       │           │   │   ├── nowrite-i.ri
+│   │   │   │       │           │   │   ├── rake_check_options-i.ri
+│   │   │   │       │           │   │   ├── rake_output_message-i.ri
+│   │   │   │       │           │   │   ├── verbose_flag-c.ri
+│   │   │   │       │           │   │   ├── verbose-i.ri
+│   │   │   │       │           │   │   └── when_writing-i.ri
+│   │   │   │       │           │   ├── InvocationChain
+│   │   │   │       │           │   │   ├── append-c.ri
+│   │   │   │       │           │   │   ├── append-i.ri
+│   │   │   │       │           │   │   ├── cdesc-InvocationChain.ri
+│   │   │   │       │           │   │   ├── EmptyInvocationChain
+│   │   │   │       │           │   │   │   ├── append-i.ri
+│   │   │   │       │           │   │   │   ├── cdesc-EmptyInvocationChain.ri
+│   │   │   │       │           │   │   │   ├── member%3f-i.ri
+│   │   │   │       │           │   │   │   └── to_s-i.ri
+│   │   │   │       │           │   │   ├── member%3f-i.ri
+│   │   │   │       │           │   │   ├── prefix-i.ri
+│   │   │   │       │           │   │   └── to_s-i.ri
+│   │   │   │       │           │   ├── InvocationExceptionMixin
+│   │   │   │       │           │   │   ├── cdesc-InvocationExceptionMixin.ri
+│   │   │   │       │           │   │   ├── chain%3d-i.ri
+│   │   │   │       │           │   │   └── chain-i.ri
+│   │   │   │       │           │   ├── LateTime
+│   │   │   │       │           │   │   ├── %3c%3d%3e-i.ri
+│   │   │   │       │           │   │   ├── cdesc-LateTime.ri
+│   │   │   │       │           │   │   └── to_s-i.ri
+│   │   │   │       │           │   ├── LinkedList
+│   │   │   │       │           │   │   ├── %3d%3d-i.ri
+│   │   │   │       │           │   │   ├── cdesc-LinkedList.ri
+│   │   │   │       │           │   │   ├── conj-i.ri
+│   │   │   │       │           │   │   ├── cons-c.ri
+│   │   │   │       │           │   │   ├── each-i.ri
+│   │   │   │       │           │   │   ├── empty%3f-i.ri
+│   │   │   │       │           │   │   ├── empty-c.ri
+│   │   │   │       │           │   │   ├── EmptyLinkedList
+│   │   │   │       │           │   │   │   ├── cdesc-EmptyLinkedList.ri
+│   │   │   │       │           │   │   │   ├── cons-c.ri
+│   │   │   │       │           │   │   │   ├── empty%3f-i.ri
+│   │   │   │       │           │   │   │   └── new-c.ri
+│   │   │   │       │           │   │   ├── head-i.ri
+│   │   │   │       │           │   │   ├── inspect-i.ri
+│   │   │   │       │           │   │   ├── make-c.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── tail-i.ri
+│   │   │   │       │           │   │   └── to_s-i.ri
+│   │   │   │       │           │   ├── load_rakefile-c.ri
+│   │   │   │       │           │   ├── MakefileLoader
+│   │   │   │       │           │   │   └── cdesc-MakefileLoader.ri
+│   │   │   │       │           │   ├── MultiTask
+│   │   │   │       │           │   │   └── cdesc-MultiTask.ri
+│   │   │   │       │           │   ├── NameSpace
+│   │   │   │       │           │   │   ├── %5b%5d-i.ri
+│   │   │   │       │           │   │   ├── cdesc-NameSpace.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── scope-i.ri
+│   │   │   │       │           │   │   └── tasks-i.ri
+│   │   │   │       │           │   ├── original_dir-c.ri
+│   │   │   │       │           │   ├── PackageTask
+│   │   │   │       │           │   │   ├── cdesc-PackageTask.ri
+│   │   │   │       │           │   │   ├── define-i.ri
+│   │   │   │       │           │   │   ├── init-i.ri
+│   │   │   │       │           │   │   ├── name-i.ri
+│   │   │   │       │           │   │   ├── need_tar_bz2-i.ri
+│   │   │   │       │           │   │   ├── need_tar_gz-i.ri
+│   │   │   │       │           │   │   ├── need_tar-i.ri
+│   │   │   │       │           │   │   ├── need_tar_xz-i.ri
+│   │   │   │       │           │   │   ├── need_zip-i.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── package_dir-i.ri
+│   │   │   │       │           │   │   ├── package_dir_path-i.ri
+│   │   │   │       │           │   │   ├── package_files-i.ri
+│   │   │   │       │           │   │   ├── package_name-i.ri
+│   │   │   │       │           │   │   ├── tar_bz2_file-i.ri
+│   │   │   │       │           │   │   ├── tar_command-i.ri
+│   │   │   │       │           │   │   ├── target_dir-i.ri
+│   │   │   │       │           │   │   ├── tar_gz_file-i.ri
+│   │   │   │       │           │   │   ├── tar_xz_file-i.ri
+│   │   │   │       │           │   │   ├── tgz_file-i.ri
+│   │   │   │       │           │   │   ├── version-i.ri
+│   │   │   │       │           │   │   ├── without_parent_dir-i.ri
+│   │   │   │       │           │   │   ├── working_dir-i.ri
+│   │   │   │       │           │   │   ├── zip_command-i.ri
+│   │   │   │       │           │   │   └── zip_file-i.ri
+│   │   │   │       │           │   ├── PrivateReader
+│   │   │   │       │           │   │   ├── cdesc-PrivateReader.ri
+│   │   │   │       │           │   │   └── ClassMethods
+│   │   │   │       │           │   │       └── cdesc-ClassMethods.ri
+│   │   │   │       │           │   ├── Promise
+│   │   │   │       │           │   │   └── cdesc-Promise.ri
+│   │   │   │       │           │   ├── PseudoStatus
+│   │   │   │       │           │   │   └── cdesc-PseudoStatus.ri
+│   │   │   │       │           │   ├── RakeFileUtils
+│   │   │   │       │           │   │   ├── cdesc-RakeFileUtils.ri
+│   │   │   │       │           │   │   ├── nowrite_flag-c.ri
+│   │   │   │       │           │   │   ├── nowrite-i.ri
+│   │   │   │       │           │   │   ├── rake_check_options-i.ri
+│   │   │   │       │           │   │   ├── rake_output_message-i.ri
+│   │   │   │       │           │   │   ├── verbose_flag-c.ri
+│   │   │   │       │           │   │   ├── verbose-i.ri
+│   │   │   │       │           │   │   └── when_writing-i.ri
+│   │   │   │       │           │   ├── RuleRecursionOverflowError
+│   │   │   │       │           │   │   ├── add_target-i.ri
+│   │   │   │       │           │   │   ├── cdesc-RuleRecursionOverflowError.ri
+│   │   │   │       │           │   │   ├── message-i.ri
+│   │   │   │       │           │   │   └── new-c.ri
+│   │   │   │       │           │   ├── Scope
+│   │   │   │       │           │   │   ├── cdesc-Scope.ri
+│   │   │   │       │           │   │   └── EmptyScope
+│   │   │   │       │           │   │       └── cdesc-EmptyScope.ri
+│   │   │   │       │           │   ├── Task
+│   │   │   │       │           │   │   ├── %5b%5d-c.ri
+│   │   │   │       │           │   │   ├── %7c-i.ri
+│   │   │   │       │           │   │   ├── actions-i.ri
+│   │   │   │       │           │   │   ├── add_description-i.ri
+│   │   │   │       │           │   │   ├── all_prerequisite_tasks-i.ri
+│   │   │   │       │           │   │   ├── already_invoked-i.ri
+│   │   │   │       │           │   │   ├── application-i.ri
+│   │   │   │       │           │   │   ├── arg_names-i.ri
+│   │   │   │       │           │   │   ├── cdesc-Task.ri
+│   │   │   │       │           │   │   ├── clear_actions-i.ri
+│   │   │   │       │           │   │   ├── clear_args-i.ri
+│   │   │   │       │           │   │   ├── clear_comments-i.ri
+│   │   │   │       │           │   │   ├── clear-c.ri
+│   │   │   │       │           │   │   ├── clear-i.ri
+│   │   │   │       │           │   │   ├── clear_prerequisites-i.ri
+│   │   │   │       │           │   │   ├── comment-i.ri
+│   │   │   │       │           │   │   ├── create_rule-c.ri
+│   │   │   │       │           │   │   ├── define_task-c.ri
+│   │   │   │       │           │   │   ├── enhance-i.ri
+│   │   │   │       │           │   │   ├── execute-i.ri
+│   │   │   │       │           │   │   ├── first_sentence-i.ri
+│   │   │   │       │           │   │   ├── format_deps-c.ri
+│   │   │   │       │           │   │   ├── format_trace_flags-i.ri
+│   │   │   │       │           │   │   ├── full_comment-i.ri
+│   │   │   │       │           │   │   ├── investigation-i.ri
+│   │   │   │       │           │   │   ├── invoke-i.ri
+│   │   │   │       │           │   │   ├── invoke_with_call_chain-i.ri
+│   │   │   │       │           │   │   ├── locations-i.ri
+│   │   │   │       │           │   │   ├── name-i.ri
+│   │   │   │       │           │   │   ├── needed%3f-i.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── order_only_prerequisites-i.ri
+│   │   │   │       │           │   │   ├── prereqs-i.ri
+│   │   │   │       │           │   │   ├── prerequisites-i.ri
+│   │   │   │       │           │   │   ├── prerequisite_tasks-i.ri
+│   │   │   │       │           │   │   ├── reenable-i.ri
+│   │   │   │       │           │   │   ├── scope-i.ri
+│   │   │   │       │           │   │   ├── scope_name-c.ri
+│   │   │   │       │           │   │   ├── set_arg_names-i.ri
+│   │   │   │       │           │   │   ├── source-i.ri
+│   │   │   │       │           │   │   ├── sources-i.ri
+│   │   │   │       │           │   │   ├── task_defined%3f-c.ri
+│   │   │   │       │           │   │   ├── tasks-c.ri
+│   │   │   │       │           │   │   ├── timestamp-i.ri
+│   │   │   │       │           │   │   ├── to_s-i.ri
+│   │   │   │       │           │   │   └── transform_comments-i.ri
+│   │   │   │       │           │   ├── TaskArgumentError
+│   │   │   │       │           │   │   └── cdesc-TaskArgumentError.ri
+│   │   │   │       │           │   ├── TaskArguments
+│   │   │   │       │           │   │   ├── %5b%5d-i.ri
+│   │   │   │       │           │   │   ├── cdesc-TaskArguments.ri
+│   │   │   │       │           │   │   ├── each-i.ri
+│   │   │   │       │           │   │   ├── extras-i.ri
+│   │   │   │       │           │   │   ├── fetch-i.ri
+│   │   │   │       │           │   │   ├── has_key%3f-i.ri
+│   │   │   │       │           │   │   ├── key%3f-i.ri
+│   │   │   │       │           │   │   ├── method_missing-i.ri
+│   │   │   │       │           │   │   ├── names-i.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── new_scope-i.ri
+│   │   │   │       │           │   │   ├── to_a-i.ri
+│   │   │   │       │           │   │   ├── to_hash-i.ri
+│   │   │   │       │           │   │   ├── values_at-i.ri
+│   │   │   │       │           │   │   └── with_defaults-i.ri
+│   │   │   │       │           │   ├── TaskLib
+│   │   │   │       │           │   │   └── cdesc-TaskLib.ri
+│   │   │   │       │           │   ├── TaskManager
+│   │   │   │       │           │   │   ├── %5b%5d-i.ri
+│   │   │   │       │           │   │   ├── add_location-i.ri
+│   │   │   │       │           │   │   ├── attempt_rule-i.ri
+│   │   │   │       │           │   │   ├── cdesc-TaskManager.ri
+│   │   │   │       │           │   │   ├── clear-i.ri
+│   │   │   │       │           │   │   ├── current_scope-i.ri
+│   │   │   │       │           │   │   ├── enhance_with_matching_rule-i.ri
+│   │   │   │       │           │   │   ├── find_location-i.ri
+│   │   │   │       │           │   │   ├── generate_did_you_mean_suggestions-i.ri
+│   │   │   │       │           │   │   ├── generate_message_for_undefined_task-i.ri
+│   │   │   │       │           │   │   ├── generate_name-i.ri
+│   │   │   │       │           │   │   ├── get_description-i.ri
+│   │   │   │       │           │   │   ├── in_namespace-i.ri
+│   │   │   │       │           │   │   ├── intern-i.ri
+│   │   │   │       │           │   │   ├── last_description-i.ri
+│   │   │   │       │           │   │   ├── lookup_in_scope-i.ri
+│   │   │   │       │           │   │   ├── lookup-i.ri
+│   │   │   │       │           │   │   ├── make_sources-i.ri
+│   │   │   │       │           │   │   ├── resolve_args-i.ri
+│   │   │   │       │           │   │   ├── resolve_args_without_dependencies-i.ri
+│   │   │   │       │           │   │   ├── tasks_in_scope-i.ri
+│   │   │   │       │           │   │   └── tasks-i.ri
+│   │   │   │       │           │   ├── TestTask
+│   │   │   │       │           │   │   ├── cdesc-TestTask.ri
+│   │   │   │       │           │   │   ├── define-i.ri
+│   │   │   │       │           │   │   ├── deps-i.ri
+│   │   │   │       │           │   │   ├── description-i.ri
+│   │   │   │       │           │   │   ├── libs-i.ri
+│   │   │   │       │           │   │   ├── loader-i.ri
+│   │   │   │       │           │   │   ├── name-i.ri
+│   │   │   │       │           │   │   ├── new-c.ri
+│   │   │   │       │           │   │   ├── options-i.ri
+│   │   │   │       │           │   │   ├── pattern-i.ri
+│   │   │   │       │           │   │   ├── ruby_opts-i.ri
+│   │   │   │       │           │   │   ├── test_files%3d-i.ri
+│   │   │   │       │           │   │   ├── verbose-i.ri
+│   │   │   │       │           │   │   └── warning-i.ri
+│   │   │   │       │           │   ├── ThreadHistoryDisplay
+│   │   │   │       │           │   │   └── cdesc-ThreadHistoryDisplay.ri
+│   │   │   │       │           │   ├── ThreadPool
+│   │   │   │       │           │   │   └── cdesc-ThreadPool.ri
+│   │   │   │       │           │   ├── TraceOutput
+│   │   │   │       │           │   │   └── cdesc-TraceOutput.ri
+│   │   │   │       │           │   ├── Version
+│   │   │   │       │           │   │   └── cdesc-Version.ri
+│   │   │   │       │           │   ├── Win32
+│   │   │   │       │           │   │   ├── cdesc-Win32.ri
+│   │   │   │       │           │   │   └── Win32HomeError
+│   │   │   │       │           │   │       └── cdesc-Win32HomeError.ri
+│   │   │   │       │           │   └── with_application-c.ri
+│   │   │   │       │           └── String
+│   │   │   │       │               ├── cdesc-String.ri
+│   │   │   │       │               ├── ext-i.ri
+│   │   │   │       │               ├── pathmap_explode-i.ri
+│   │   │   │       │               ├── pathmap-i.ri
+│   │   │   │       │               ├── pathmap_partial-i.ri
+│   │   │   │       │               └── pathmap_replace-i.ri
+│   │   │   │       ├── extensions
+│   │   │   │       │   └── x86_64-linux
+│   │   │   │       │       └── 3.2.0
+│   │   │   │       │           └── racc-1.8.1
+│   │   │   │       │               └── gem_make.out
+│   │   │   │       ├── gems
+│   │   │   │       │   ├── bundler-2.5.18
+│   │   │   │       │   │   ├── bundler.gemspec
+│   │   │   │       │   │   ├── CHANGELOG.md
+│   │   │   │       │   │   ├── exe
+│   │   │   │       │   │   │   ├── bundle
+│   │   │   │       │   │   │   └── bundler
+│   │   │   │       │   │   ├── lib
+│   │   │   │       │   │   │   ├── bundler
+│   │   │   │       │   │   │   │   ├── build_metadata.rb
+│   │   │   │       │   │   │   │   ├── capistrano.rb
+│   │   │   │       │   │   │   │   ├── checksum.rb
+│   │   │   │       │   │   │   │   ├── ci_detector.rb
+│   │   │   │       │   │   │   │   ├── cli
+│   │   │   │       │   │   │   │   │   ├── add.rb
+│   │   │   │       │   │   │   │   │   ├── binstubs.rb
+│   │   │   │       │   │   │   │   │   ├── cache.rb
+│   │   │   │       │   │   │   │   │   ├── check.rb
+│   │   │   │       │   │   │   │   │   ├── clean.rb
+│   │   │   │       │   │   │   │   │   ├── common.rb
+│   │   │   │       │   │   │   │   │   ├── config.rb
+│   │   │   │       │   │   │   │   │   ├── console.rb
+│   │   │   │       │   │   │   │   │   ├── doctor.rb
+│   │   │   │       │   │   │   │   │   ├── exec.rb
+│   │   │   │       │   │   │   │   │   ├── fund.rb
+│   │   │   │       │   │   │   │   │   ├── gem.rb
+│   │   │   │       │   │   │   │   │   ├── info.rb
+│   │   │   │       │   │   │   │   │   ├── init.rb
+│   │   │   │       │   │   │   │   │   ├── inject.rb
+│   │   │   │       │   │   │   │   │   ├── install.rb
+│   │   │   │       │   │   │   │   │   ├── issue.rb
+│   │   │   │       │   │   │   │   │   ├── list.rb
+│   │   │   │       │   │   │   │   │   ├── lock.rb
+│   │   │   │       │   │   │   │   │   ├── open.rb
+│   │   │   │       │   │   │   │   │   ├── outdated.rb
+│   │   │   │       │   │   │   │   │   ├── platform.rb
+│   │   │   │       │   │   │   │   │   ├── plugin.rb
+│   │   │   │       │   │   │   │   │   ├── pristine.rb
+│   │   │   │       │   │   │   │   │   ├── remove.rb
+│   │   │   │       │   │   │   │   │   ├── show.rb
+│   │   │   │       │   │   │   │   │   ├── update.rb
+│   │   │   │       │   │   │   │   │   └── viz.rb
+│   │   │   │       │   │   │   │   ├── cli.rb
+│   │   │   │       │   │   │   │   ├── compact_index_client
+│   │   │   │       │   │   │   │   │   ├── cache_file.rb
+│   │   │   │       │   │   │   │   │   ├── cache.rb
+│   │   │   │       │   │   │   │   │   ├── gem_parser.rb
+│   │   │   │       │   │   │   │   │   ├── parser.rb
+│   │   │   │       │   │   │   │   │   └── updater.rb
+│   │   │   │       │   │   │   │   ├── compact_index_client.rb
+│   │   │   │       │   │   │   │   ├── constants.rb
+│   │   │   │       │   │   │   │   ├── current_ruby.rb
+│   │   │   │       │   │   │   │   ├── definition.rb
+│   │   │   │       │   │   │   │   ├── dependency.rb
+│   │   │   │       │   │   │   │   ├── deployment.rb
+│   │   │   │       │   │   │   │   ├── deprecate.rb
+│   │   │   │       │   │   │   │   ├── digest.rb
+│   │   │   │       │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   ├── dsl.rb
+│   │   │   │       │   │   │   │   ├── endpoint_specification.rb
+│   │   │   │       │   │   │   │   ├── environment_preserver.rb
+│   │   │   │       │   │   │   │   ├── env.rb
+│   │   │   │       │   │   │   │   ├── errors.rb
+│   │   │   │       │   │   │   │   ├── feature_flag.rb
+│   │   │   │       │   │   │   │   ├── fetcher
+│   │   │   │       │   │   │   │   │   ├── base.rb
+│   │   │   │       │   │   │   │   │   ├── compact_index.rb
+│   │   │   │       │   │   │   │   │   ├── dependency.rb
+│   │   │   │       │   │   │   │   │   ├── downloader.rb
+│   │   │   │       │   │   │   │   │   ├── gem_remote_fetcher.rb
+│   │   │   │       │   │   │   │   │   └── index.rb
+│   │   │   │       │   │   │   │   ├── fetcher.rb
+│   │   │   │       │   │   │   │   ├── force_platform.rb
+│   │   │   │       │   │   │   │   ├── friendly_errors.rb
+│   │   │   │       │   │   │   │   ├── gem_helper.rb
+│   │   │   │       │   │   │   │   ├── gem_helpers.rb
+│   │   │   │       │   │   │   │   ├── gem_tasks.rb
+│   │   │   │       │   │   │   │   ├── gem_version_promoter.rb
+│   │   │   │       │   │   │   │   ├── graph.rb
+│   │   │   │       │   │   │   │   ├── index.rb
+│   │   │   │       │   │   │   │   ├── injector.rb
+│   │   │   │       │   │   │   │   ├── inline.rb
+│   │   │   │       │   │   │   │   ├── installer
+│   │   │   │       │   │   │   │   │   ├── gem_installer.rb
+│   │   │   │       │   │   │   │   │   ├── parallel_installer.rb
+│   │   │   │       │   │   │   │   │   └── standalone.rb
+│   │   │   │       │   │   │   │   ├── installer.rb
+│   │   │   │       │   │   │   │   ├── lazy_specification.rb
+│   │   │   │       │   │   │   │   ├── lockfile_generator.rb
+│   │   │   │       │   │   │   │   ├── lockfile_parser.rb
+│   │   │   │       │   │   │   │   ├── man
+│   │   │   │       │   │   │   │   │   ├── bundle.1
+│   │   │   │       │   │   │   │   │   ├── bundle.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-add.1
+│   │   │   │       │   │   │   │   │   ├── bundle-add.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-binstubs.1
+│   │   │   │       │   │   │   │   │   ├── bundle-binstubs.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-cache.1
+│   │   │   │       │   │   │   │   │   ├── bundle-cache.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-check.1
+│   │   │   │       │   │   │   │   │   ├── bundle-check.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-clean.1
+│   │   │   │       │   │   │   │   │   ├── bundle-clean.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-config.1
+│   │   │   │       │   │   │   │   │   ├── bundle-config.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-console.1
+│   │   │   │       │   │   │   │   │   ├── bundle-console.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-doctor.1
+│   │   │   │       │   │   │   │   │   ├── bundle-doctor.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-exec.1
+│   │   │   │       │   │   │   │   │   ├── bundle-exec.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-gem.1
+│   │   │   │       │   │   │   │   │   ├── bundle-gem.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-help.1
+│   │   │   │       │   │   │   │   │   ├── bundle-help.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-info.1
+│   │   │   │       │   │   │   │   │   ├── bundle-info.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-init.1
+│   │   │   │       │   │   │   │   │   ├── bundle-init.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-inject.1
+│   │   │   │       │   │   │   │   │   ├── bundle-inject.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-install.1
+│   │   │   │       │   │   │   │   │   ├── bundle-install.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-list.1
+│   │   │   │       │   │   │   │   │   ├── bundle-list.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-lock.1
+│   │   │   │       │   │   │   │   │   ├── bundle-lock.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-open.1
+│   │   │   │       │   │   │   │   │   ├── bundle-open.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-outdated.1
+│   │   │   │       │   │   │   │   │   ├── bundle-outdated.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-platform.1
+│   │   │   │       │   │   │   │   │   ├── bundle-platform.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-plugin.1
+│   │   │   │       │   │   │   │   │   ├── bundle-plugin.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-pristine.1
+│   │   │   │       │   │   │   │   │   ├── bundle-pristine.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-remove.1
+│   │   │   │       │   │   │   │   │   ├── bundle-remove.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-show.1
+│   │   │   │       │   │   │   │   │   ├── bundle-show.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-update.1
+│   │   │   │       │   │   │   │   │   ├── bundle-update.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-version.1
+│   │   │   │       │   │   │   │   │   ├── bundle-version.1.ronn
+│   │   │   │       │   │   │   │   │   ├── bundle-viz.1
+│   │   │   │       │   │   │   │   │   ├── bundle-viz.1.ronn
+│   │   │   │       │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   ├── gemfile.5
+│   │   │   │       │   │   │   │   │   ├── gemfile.5.ronn
+│   │   │   │       │   │   │   │   │   └── index.txt
+│   │   │   │       │   │   │   │   ├── match_metadata.rb
+│   │   │   │       │   │   │   │   ├── match_platform.rb
+│   │   │   │       │   │   │   │   ├── match_remote_metadata.rb
+│   │   │   │       │   │   │   │   ├── mirror.rb
+│   │   │   │       │   │   │   │   ├── plugin
+│   │   │   │       │   │   │   │   │   ├── api
+│   │   │   │       │   │   │   │   │   │   └── source.rb
+│   │   │   │       │   │   │   │   │   ├── api.rb
+│   │   │   │       │   │   │   │   │   ├── dsl.rb
+│   │   │   │       │   │   │   │   │   ├── events.rb
+│   │   │   │       │   │   │   │   │   ├── index.rb
+│   │   │   │       │   │   │   │   │   ├── installer
+│   │   │   │       │   │   │   │   │   │   ├── git.rb
+│   │   │   │       │   │   │   │   │   │   ├── path.rb
+│   │   │   │       │   │   │   │   │   │   └── rubygems.rb
+│   │   │   │       │   │   │   │   │   ├── installer.rb
+│   │   │   │       │   │   │   │   │   └── source_list.rb
+│   │   │   │       │   │   │   │   ├── plugin.rb
+│   │   │   │       │   │   │   │   ├── process_lock.rb
+│   │   │   │       │   │   │   │   ├── remote_specification.rb
+│   │   │   │       │   │   │   │   ├── resolver
+│   │   │   │       │   │   │   │   │   ├── base.rb
+│   │   │   │       │   │   │   │   │   ├── candidate.rb
+│   │   │   │       │   │   │   │   │   ├── incompatibility.rb
+│   │   │   │       │   │   │   │   │   ├── package.rb
+│   │   │   │       │   │   │   │   │   ├── root.rb
+│   │   │   │       │   │   │   │   │   └── spec_group.rb
+│   │   │   │       │   │   │   │   ├── resolver.rb
+│   │   │   │       │   │   │   │   ├── retry.rb
+│   │   │   │       │   │   │   │   ├── ruby_dsl.rb
+│   │   │   │       │   │   │   │   ├── rubygems_ext.rb
+│   │   │   │       │   │   │   │   ├── rubygems_gem_installer.rb
+│   │   │   │       │   │   │   │   ├── rubygems_integration.rb
+│   │   │   │       │   │   │   │   ├── ruby_version.rb
+│   │   │   │       │   │   │   │   ├── runtime.rb
+│   │   │   │       │   │   │   │   ├── safe_marshal.rb
+│   │   │   │       │   │   │   │   ├── self_manager.rb
+│   │   │   │       │   │   │   │   ├── settings
+│   │   │   │       │   │   │   │   │   └── validator.rb
+│   │   │   │       │   │   │   │   ├── settings.rb
+│   │   │   │       │   │   │   │   ├── setup.rb
+│   │   │   │       │   │   │   │   ├── shared_helpers.rb
+│   │   │   │       │   │   │   │   ├── similarity_detector.rb
+│   │   │   │       │   │   │   │   ├── source
+│   │   │   │       │   │   │   │   │   ├── gemspec.rb
+│   │   │   │       │   │   │   │   │   ├── git
+│   │   │   │       │   │   │   │   │   │   └── git_proxy.rb
+│   │   │   │       │   │   │   │   │   ├── git.rb
+│   │   │   │       │   │   │   │   │   ├── metadata.rb
+│   │   │   │       │   │   │   │   │   ├── path
+│   │   │   │       │   │   │   │   │   │   └── installer.rb
+│   │   │   │       │   │   │   │   │   ├── path.rb
+│   │   │   │       │   │   │   │   │   ├── rubygems
+│   │   │   │       │   │   │   │   │   │   └── remote.rb
+│   │   │   │       │   │   │   │   │   ├── rubygems_aggregate.rb
+│   │   │   │       │   │   │   │   │   └── rubygems.rb
+│   │   │   │       │   │   │   │   ├── source_list.rb
+│   │   │   │       │   │   │   │   ├── source_map.rb
+│   │   │   │       │   │   │   │   ├── source.rb
+│   │   │   │       │   │   │   │   ├── spec_set.rb
+│   │   │   │       │   │   │   │   ├── stub_specification.rb
+│   │   │   │       │   │   │   │   ├── templates
+│   │   │   │       │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   ├── Executable
+│   │   │   │       │   │   │   │   │   ├── Executable.bundler
+│   │   │   │       │   │   │   │   │   ├── Executable.standalone
+│   │   │   │       │   │   │   │   │   ├── Gemfile
+│   │   │   │       │   │   │   │   │   └── newgem
+│   │   │   │       │   │   │   │   │       ├── bin
+│   │   │   │       │   │   │   │   │       │   ├── console.tt
+│   │   │   │       │   │   │   │   │       │   └── setup.tt
+│   │   │   │       │   │   │   │   │       ├── Cargo.toml.tt
+│   │   │   │       │   │   │   │   │       ├── CHANGELOG.md.tt
+│   │   │   │       │   │   │   │   │       ├── circleci
+│   │   │   │       │   │   │   │   │       │   └── config.yml.tt
+│   │   │   │       │   │   │   │   │       ├── CODE_OF_CONDUCT.md.tt
+│   │   │   │       │   │   │   │   │       ├── exe
+│   │   │   │       │   │   │   │   │       │   └── newgem.tt
+│   │   │   │       │   │   │   │   │       ├── ext
+│   │   │   │       │   │   │   │   │       │   └── newgem
+│   │   │   │       │   │   │   │   │       │       ├── Cargo.toml.tt
+│   │   │   │       │   │   │   │   │       │       ├── extconf-c.rb.tt
+│   │   │   │       │   │   │   │   │       │       ├── extconf-rust.rb.tt
+│   │   │   │       │   │   │   │   │       │       ├── newgem.c.tt
+│   │   │   │       │   │   │   │   │       │       ├── newgem.h.tt
+│   │   │   │       │   │   │   │   │       │       └── src
+│   │   │   │       │   │   │   │   │       │           └── lib.rs.tt
+│   │   │   │       │   │   │   │   │       ├── Gemfile.tt
+│   │   │   │       │   │   │   │   │       ├── github
+│   │   │   │       │   │   │   │   │       │   └── workflows
+│   │   │   │       │   │   │   │   │       │       └── main.yml.tt
+│   │   │   │       │   │   │   │   │       ├── gitignore.tt
+│   │   │   │       │   │   │   │   │       ├── gitlab-ci.yml.tt
+│   │   │   │       │   │   │   │   │       ├── lib
+│   │   │   │       │   │   │   │   │       │   ├── newgem
+│   │   │   │       │   │   │   │   │       │   │   └── version.rb.tt
+│   │   │   │       │   │   │   │   │       │   └── newgem.rb.tt
+│   │   │   │       │   │   │   │   │       ├── LICENSE.txt.tt
+│   │   │   │       │   │   │   │   │       ├── newgem.gemspec.tt
+│   │   │   │       │   │   │   │   │       ├── Rakefile.tt
+│   │   │   │       │   │   │   │   │       ├── README.md.tt
+│   │   │   │       │   │   │   │   │       ├── rspec.tt
+│   │   │   │       │   │   │   │   │       ├── rubocop.yml.tt
+│   │   │   │       │   │   │   │   │       ├── sig
+│   │   │   │       │   │   │   │   │       │   └── newgem.rbs.tt
+│   │   │   │       │   │   │   │   │       ├── spec
+│   │   │   │       │   │   │   │   │       │   ├── newgem_spec.rb.tt
+│   │   │   │       │   │   │   │   │       │   └── spec_helper.rb.tt
+│   │   │   │       │   │   │   │   │       ├── standard.yml.tt
+│   │   │   │       │   │   │   │   │       └── test
+│   │   │   │       │   │   │   │   │           ├── minitest
+│   │   │   │       │   │   │   │   │           │   ├── test_helper.rb.tt
+│   │   │   │       │   │   │   │   │           │   └── test_newgem.rb.tt
+│   │   │   │       │   │   │   │   │           └── test-unit
+│   │   │   │       │   │   │   │   │               ├── newgem_test.rb.tt
+│   │   │   │       │   │   │   │   │               └── test_helper.rb.tt
+│   │   │   │       │   │   │   │   ├── ui
+│   │   │   │       │   │   │   │   │   ├── rg_proxy.rb
+│   │   │   │       │   │   │   │   │   ├── shell.rb
+│   │   │   │       │   │   │   │   │   └── silent.rb
+│   │   │   │       │   │   │   │   ├── ui.rb
+│   │   │   │       │   │   │   │   ├── uri_credentials_filter.rb
+│   │   │   │       │   │   │   │   ├── uri_normalizer.rb
+│   │   │   │       │   │   │   │   ├── vendor
+│   │   │   │       │   │   │   │   │   ├── connection_pool
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   ├── connection_pool
+│   │   │   │       │   │   │   │   │   │   │   │   ├── timed_stack.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── version.rb
+│   │   │   │       │   │   │   │   │   │   │   │   └── wrapper.rb
+│   │   │   │       │   │   │   │   │   │   │   └── connection_pool.rb
+│   │   │   │       │   │   │   │   │   │   └── LICENSE
+│   │   │   │       │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   ├── fileutils
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   └── fileutils.rb
+│   │   │   │       │   │   │   │   │   │   └── LICENSE.txt
+│   │   │   │       │   │   │   │   │   ├── net-http-persistent
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   └── net
+│   │   │   │       │   │   │   │   │   │   │       └── http
+│   │   │   │       │   │   │   │   │   │   │           ├── persistent
+│   │   │   │       │   │   │   │   │   │   │           │   ├── connection.rb
+│   │   │   │       │   │   │   │   │   │   │           │   ├── pool.rb
+│   │   │   │       │   │   │   │   │   │   │           │   └── timed_stack_multi.rb
+│   │   │   │       │   │   │   │   │   │   │           └── persistent.rb
+│   │   │   │       │   │   │   │   │   │   └── README.rdoc
+│   │   │   │       │   │   │   │   │   ├── pub_grub
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   ├── pub_grub
+│   │   │   │       │   │   │   │   │   │   │   │   ├── assignment.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── basic_package_source.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── failure_writer.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── incompatibility.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── package.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── partial_solution.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── rubygems.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── solve_failure.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── static_package_source.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── term.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── version_constraint.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── version_range.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── version.rb

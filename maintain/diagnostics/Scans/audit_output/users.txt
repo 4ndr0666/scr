@@ -1,0 +1,56 @@
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1::/:/usr/bin/nologin
+daemon:x:2:2::/:/usr/bin/nologin
+mail:x:8:12::/var/spool/mail:/usr/bin/nologin
+ftp:x:14:11::/srv/ftp:/usr/bin/nologin
+http:x:33:33::/srv/http:/usr/bin/nologin
+nobody:x:65534:65534:Kernel Overflow User:/:/usr/bin/nologin
+dbus:x:81:81:System Message Bus:/:/usr/bin/nologin
+systemd-coredump:x:979:979:systemd Core Dumper:/:/usr/bin/nologin
+systemd-network:x:978:978:systemd Network Management:/:/usr/bin/nologin
+systemd-oom:x:977:977:systemd Userspace OOM Killer:/:/usr/bin/nologin
+systemd-journal-remote:x:976:976:systemd Journal Remote:/:/usr/bin/nologin
+systemd-resolve:x:975:975:systemd Resolver:/:/usr/bin/nologin
+systemd-timesync:x:974:974:systemd Time Synchronization:/:/usr/bin/nologin
+tss:x:973:973:tss user for tpm2:/:/usr/bin/nologin
+uuidd:x:68:68::/:/usr/bin/nologin
+avahi:x:970:970:Avahi mDNS/DNS-SD daemon:/:/usr/bin/nologin
+named:x:40:40:BIND DNS Server:/:/usr/bin/nologin
+brltty:x:969:969:Braille Device Daemon:/var/lib/brltty:/usr/bin/nologin
+cups:x:209:209:cups helper user:/:/usr/bin/nologin
+dhcpcd:x:968:968:dhcpcd privilege separation:/:/usr/bin/nologin
+dnsmasq:x:965:965:dnsmasq daemon:/:/usr/bin/nologin
+git:x:964:964:git daemon user:/:/usr/bin/git-shell
+_talkd:x:963:963:User for legacy talkd server:/:/usr/bin/nologin
+mpd:x:45:45::/var/lib/mpd:/usr/bin/nologin
+nbd:x:962:962:Network Block Device:/var/empty:/usr/bin/nologin
+nm-openconnect:x:961:961:NetworkManager OpenConnect:/:/usr/bin/nologin
+nm-openvpn:x:960:960:NetworkManager OpenVPN:/:/usr/bin/nologin
+nvidia-persistenced:x:143:143:NVIDIA Persistence Daemon:/:/usr/bin/nologin
+openvpn:x:959:959:OpenVPN:/:/usr/bin/nologin
+partimag:x:110:110:Partimage user:/:/usr/bin/nologin
+polkitd:x:102:102:PolicyKit daemon:/:/usr/bin/nologin
+rpc:x:32:32:Rpcbind Daemon:/var/lib/rpcbind:/usr/bin/nologin
+rpcuser:x:34:34:RPC Service User:/var/lib/nfs:/usr/bin/nologin
+sddm:x:958:958:Simple Desktop Display Manager:/var/lib/sddm:/usr/bin/nologin
+usbmux:x:140:140:usbmux user:/:/usr/bin/nologin
+andro:x:1000:1000:andro:/home/andro:/bin/zsh
+jdownloader:x:957:957:jdownloader:/opt/JDownloader/:/bin/false
+colord:x:956:956:Color management daemon:/var/lib/colord:/usr/bin/nologin
+deluge:x:955:955:Deluge BitTorrent daemon:/srv/deluge:/usr/bin/nologin
+geoclue:x:954:954:Geoinformation service:/var/lib/geoclue:/usr/bin/nologin
+ntp:x:87:87:Network Time Protocol:/var/lib/ntp:/bin/false
+rtkit:x:133:133:RealtimeKit:/proc:/usr/bin/nologin
+gerrit:x:953:953:Gerrit system user:/:/usr/bin/nologin
+ldap:x:439:439:LDAP Server:/var/lib/openldap:/usr/bin/nologin
+nagios:x:30:30::/dev/null:/bin/false
+qemu:x:951:951:QEMU user:/:/usr/bin/nologin
+greeter:x:950:950:greetd greeter user:/:/bin/bash
+alpm:x:949:949:Arch Linux Package Management:/:/usr/bin/nologin
+transmission:x:169:169:Transmission BitTorrent Daemon:/var/lib/transmission:/usr/bin/nologin
+flatpak:x:948:948:Flatpak system helper:/:/usr/bin/nologin
+mysql:x:952:952:MariaDB:/var/lib/mysql:/usr/bin/nologin
+postgres:x:946:946:PostgreSQL user:/var/lib/postgres:/usr/bin/bash
+mysqlrouter:x:88:88:MySQL:/var/lib/mysqlrouter:/usr/bin/nologin
+redis:x:945:945:Redis in-memory data structure store:/var/lib/redis:/usr/bin/nologin
+uksmd:x:63361:63361:Dynamic User:/:/usr/bin/nologin

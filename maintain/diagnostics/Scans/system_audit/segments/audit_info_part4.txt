@@ -1,0 +1,596 @@
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── flawless-cut-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── foosynth-plugin-neo_f3kdb-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gallery-dl-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gcron-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── glib
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gospider-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gotorrent-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gtk
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── gtk-theme-arc-gruvbox-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── iio-sensor-proxy-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── intel-opencl
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── intel-opencl-runtime
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── jet-edit
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── kvantum-theme-catppuccin-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── kvantum-theme-fluent-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── lcevcdec
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── lib32-libnuma
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── lib32-l-smash
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── lib32-x265
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── libpamac-aur
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── libpng-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── libsaasound
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── libvpx-full-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── llvm10
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── maint
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── min-browser-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── moonscript
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── nagios
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── needrestart-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── n-m3u8dl-re-git
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── nyaa-bin
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── pacaur
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info
+│   │   │   │       ├── logs
+│   │   │   │       │   └── refs
+│   │   │   │       │       ├── heads
+│   │   │   │       │       └── remotes
+│   │   │   │       │           └── origin
+│   │   │   │       ├── objects
+│   │   │   │       │   ├── info
+│   │   │   │       │   └── pack
+│   │   │   │       └── refs
+│   │   │   │           ├── heads
+│   │   │   │           ├── remotes
+│   │   │   │           │   └── origin
+│   │   │   │           └── tags
+│   │   │   ├── paccache-hook
+│   │   │   │   └── .git
+│   │   │   │       ├── branches
+│   │   │   │       ├── hooks
+│   │   │   │       ├── info

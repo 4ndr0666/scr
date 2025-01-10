@@ -1,0 +1,596 @@
+│   │       │   ├── BrowserMetrics-677DFC12-660CC.pma
+│   │       │   ├── BrowserMetrics-677DFC28-6618C.pma
+│   │       │   ├── BrowserMetrics-677DFCE7-669CA.pma
+│   │       │   ├── BrowserMetrics-677DFD5F-66F84.pma
+│   │       │   ├── BrowserMetrics-677DFE20-675BD.pma
+│   │       │   ├── BrowserMetrics-677DFE61-679C9.pma
+│   │       │   ├── BrowserMetrics-677DFF83-686BD.pma
+│   │       │   └── BrowserMetrics-677E00BF-6913C.pma
+│   │       ├── Crash Reports
+│   │       │   ├── attachments
+│   │       │   ├── completed
+│   │       │   ├── new
+│   │       │   ├── pending
+│   │       │   └── settings.dat
+│   │       └── NativeMessagingHosts
+│   ├── chroot.md
+│   ├── diffuse
+│   │   └── prefs
+│   ├── expressvpn
+│   │   ├── advanced_protection
+│   │   ├── expressvpn-agent.pid
+│   │   ├── extension_message
+│   │   └── network_lock_message
+│   ├── garuda
+│   │   └── garuda-settings-manager.conf
+│   ├── geany
+│   │   ├── colorschemes
+│   │   │   ├── adapta.conf
+│   │   │   ├── arc.conf
+│   │   │   ├── beach.conf
+│   │   │   ├── bespin.conf
+│   │   │   ├── black.conf
+│   │   │   ├── bouquet.conf
+│   │   │   ├── catppuccin-frappe.conf
+│   │   │   ├── catppuccin-latte.conf
+│   │   │   ├── catppuccin-macchiato.conf
+│   │   │   ├── catppuccin-mocha.conf
+│   │   │   ├── darcula.conf
+│   │   │   ├── dark-colors.conf
+│   │   │   ├── dark.conf
+│   │   │   ├── dark-fruit-salad.conf
+│   │   │   ├── delt-dark.conf
+│   │   │   ├── dracula.conf
+│   │   │   ├── eleven.conf
+│   │   │   ├── eleven-dark.conf
+│   │   │   ├── epsilon.conf
+│   │   │   ├── fluffy.conf
+│   │   │   ├── gedit.conf
+│   │   │   ├── github.conf
+│   │   │   ├── gruvbox.conf
+│   │   │   ├── hack.conf
+│   │   │   ├── himbeere.conf
+│   │   │   ├── inkpot.conf
+│   │   │   ├── keyboards.conf
+│   │   │   ├── kugel.conf
+│   │   │   ├── manhattan.conf
+│   │   │   ├── mc.conf
+│   │   │   ├── metallic-bottle.conf
+│   │   │   ├── monokai.conf
+│   │   │   ├── mountain.conf
+│   │   │   ├── nordic.conf
+│   │   │   ├── notepad-plus-plus.conf
+│   │   │   ├── oblivion2.conf
+│   │   │   ├── pygments.conf
+│   │   │   ├── railcasts2.conf
+│   │   │   ├── retro.conf
+│   │   │   ├── sleepy-pastel.conf
+│   │   │   ├── slime.conf
+│   │   │   ├── slushpoppies.conf
+│   │   │   ├── solarized-dark.conf
+│   │   │   ├── solarized-light.conf
+│   │   │   ├── spark.conf
+│   │   │   ├── spyder-dark.conf
+│   │   │   ├── steampunk.conf
+│   │   │   ├── tango-dark.conf
+│   │   │   ├── tango-light.conf
+│   │   │   ├── tealize.conf
+│   │   │   ├── tinge.conf
+│   │   │   ├── ubuntu.conf
+│   │   │   ├── vibrant-ink.conf
+│   │   │   ├── wave.conf
+│   │   │   └── zenburn.conf
+│   │   ├── filedefs
+│   │   │   └── filetypes.README
+│   │   ├── geany.conf
+│   │   ├── keybindings.conf
+│   │   ├── plugins
+│   │   │   └── geanygendoc
+│   │   │       └── ggd.conf
+│   │   ├── session.conf
+│   │   ├── tags
+│   │   └── templates
+│   │       ├── files
+│   │       └── templates.README
+│   ├── gtk-3.0
+│   │   ├── bookmarks
+│   │   ├── bookmarks.325HU2
+│   │   ├── gtk.css
+│   │   └── settings.ini
+│   ├── gtk-4.0
+│   │   └── settings.ini
+│   ├── gum_implementation
+│   │   └── gum_files
+│   │       ├── brain
+│   │       │   ├── brain.sh
+│   │       │   ├── config
+│   │       │   │   ├── background
+│   │       │   │   │   ├── animated.conf
+│   │       │   │   │   ├── scripts
+│   │       │   │   │   │   ├── slideshow_custom.conf
+│   │       │   │   │   │   └── slideshow_garuda.conf
+│   │       │   │   │   ├── slideshow.conf
+│   │       │   │   │   ├── static_custom.conf
+│   │       │   │   │   └── static_garuda.conf
+│   │       │   │   ├── blur_system
+│   │       │   │   │   ├── default.conf
+│   │       │   │   │   ├── more_blur.conf
+│   │       │   │   │   └── no_blur.conf
+│   │       │   │   ├── corners
+│   │       │   │   │   ├── more_rounded.conf
+│   │       │   │   │   ├── rounded.conf
+│   │       │   │   │   └── simple.conf
+│   │       │   │   ├── eye_protection
+│   │       │   │   │   ├── high_protection.conf
+│   │       │   │   │   ├── low_protection.conf
+│   │       │   │   │   └── medium_protection.conf
+│   │       │   │   ├── monitor
+│   │       │   │   │   ├── 1920x1080.conf
+│   │       │   │   │   ├── 2560x1440.conf
+│   │       │   │   │   ├── 3440x1440.conf
+│   │       │   │   │   ├── 3840x2160.conf
+│   │       │   │   │   ├── default.conf
+│   │       │   │   │   └── HiDPI.conf
+│   │       │   │   ├── status_bar
+│   │       │   │   │   ├── blur.conf
+│   │       │   │   │   ├── blur_whispaces_also.conf
+│   │       │   │   │   └── no_blur.conf
+│   │       │   │   ├── waybar_themes
+│   │       │   │   │   ├── blue_sapphire
+│   │       │   │   │   │   ├── config
+│   │       │   │   │   │   ├── scripts
+│   │       │   │   │   │   │   ├── backlight-hint.sh
+│   │       │   │   │   │   │   ├── date
+│   │       │   │   │   │   │   ├── network_traffic.sh
+│   │       │   │   │   │   │   └── OCV
+│   │       │   │   │   │   └── style.css
+│   │       │   │   │   ├── crimsom_black
+│   │       │   │   │   │   ├── config
+│   │       │   │   │   │   ├── scripts
+│   │       │   │   │   │   │   ├── backlight-hint.sh
+│   │       │   │   │   │   │   ├── date
+│   │       │   │   │   │   │   ├── network_traffic.sh
+│   │       │   │   │   │   │   └── OCV
+│   │       │   │   │   │   └── style.css
+│   │       │   │   │   ├── cyanohydrin
+│   │       │   │   │   │   ├── config
+│   │       │   │   │   │   ├── scripts
+│   │       │   │   │   │   │   ├── backlight-hint.sh
+│   │       │   │   │   │   │   ├── date
+│   │       │   │   │   │   │   ├── network_traffic.sh
+│   │       │   │   │   │   │   └── OCV
+│   │       │   │   │   │   └── style.css
+│   │       │   │   │   ├── default
+│   │       │   │   │   │   ├── config
+│   │       │   │   │   │   ├── scripts
+│   │       │   │   │   │   │   ├── backlight-hint.sh
+│   │       │   │   │   │   │   ├── check_updates.sh
+│   │       │   │   │   │   │   ├── cleanup_after_start.sh
+│   │       │   │   │   │   │   ├── date
+│   │       │   │   │   │   │   ├── network_traffic.sh
+│   │       │   │   │   │   │   └── OCV
+│   │       │   │   │   │   └── style.css
+│   │       │   │   │   └── default_bottom
+│   │       │   │   │       ├── config
+│   │       │   │   │       ├── scripts
+│   │       │   │   │       │   ├── backlight-hint.sh
+│   │       │   │   │       │   ├── check_updates.sh
+│   │       │   │   │       │   ├── cleanup_after_start.sh
+│   │       │   │   │       │   ├── network_traffic.sh
+│   │       │   │   │       │   └── OCV
+│   │       │   │   │       └── style.css
+│   │       │   │   └── window_gaps
+│   │       │   │       ├── more_both_gaps.conf
+│   │       │   │       ├── more_inside_gaps.conf
+│   │       │   │       ├── more_outside_gaps.conf
+│   │       │   │       ├── no_gaps_both.conf
+│   │       │   │       ├── no_gaps_inside.conf
+│   │       │   │       ├── no_gaps_outside.conf
+│   │       │   │       └── normal.conf
+│   │       │   └── scripts
+│   │       │       ├── animated_wallpaper.sh
+│   │       │       ├── static_wall_custom.sh
+│   │       │       ├── static_wall_garuda.sh
+│   │       │       ├── wall_condition.txt
+│   │       │       ├── waybar_restart.sh
+│   │       │       └── waybar_width.sh
+│   │       ├── hyprland.conf
+│   │       ├── hyprstart
+│   │       ├── scripts
+│   │       │   ├── lock.sh
+│   │       │   ├── screenshot_display.sh
+│   │       │   ├── screenshot_window.sh
+│   │       │   └── sleep.sh
+│   │       └── settings
+│   │           ├── background.conf
+│   │           ├── blur_system.conf
+│   │           ├── corners.conf
+│   │           ├── eye_protection.conf
+│   │           ├── manual_settings.conf
+│   │           ├── monitor.conf
+│   │           ├── status_bar.conf
+│   │           └── window_gaps.conf
+│   ├── Hardcoded Software
+│   │   └── dupeGuru.conf
+│   ├── htop
+│   │   └── htoprc
+│   ├── inkscape
+│   │   ├── extension-errors.log
+│   │   ├── extensions
+│   │   ├── fontcollections
+│   │   ├── fonts
+│   │   ├── icons
+│   │   ├── keys
+│   │   ├── paint
+│   │   ├── palettes
+│   │   ├── preferences.xml
+│   │   ├── symbols
+│   │   ├── templates
+│   │   ├── themes
+│   │   └── ui
+│   ├── Kvantum
+│   │   ├── ArcDark#
+│   │   │   └── ArcDark#.kvconfig
+│   │   ├── ArcoLinux-Sweet-Mars
+│   │   │   └── ArcoLinux-Sweet-Mars.kvconfig
+│   │   ├── Default#
+│   │   │   └── Default#.kvconfig
+│   │   ├── Desert-Kvantum
+│   │   │   ├── Desert-Kvantum.kvconfig
+│   │   │   └── Desert-Kvantum.svg
+│   │   ├── Fluent-Dark
+│   │   │   ├── Fluent-Dark.kvconfig
+│   │   │   └── Fluent-Dark.svg
+│   │   ├── KvAdaptaBreath
+│   │   │   ├── KvAdaptaBreath.kvconfig
+│   │   │   └── KvAdaptaBreath.svg
+│   │   ├── KvAdaptaBreathBlack
+│   │   │   ├── KvAdaptaBreathBlack.kvconfig
+│   │   │   └── KvAdaptaBreathBlack.svg
+│   │   ├── KvAdaptaBreathDark
+│   │   │   ├── KvAdaptaBreathDark.kvconfig
+│   │   │   └── KvAdaptaBreathDark.svg
+│   │   ├── KvAdaptaDark#
+│   │   │   └── KvAdaptaDark#.kvconfig
+│   │   ├── KvAdaptaMaiaDark
+│   │   │   ├── KvAdaptaMaiaDark.kvconfig
+│   │   │   └── KvAdaptaMaiaDark.svg
+│   │   ├── Kvantum
+│   │   │   ├── Arc
+│   │   │   │   ├── Arc.kvconfig
+│   │   │   │   ├── Arc.svg
+│   │   │   │   ├── AUTHORS
+│   │   │   │   └── LICENSE
+│   │   │   ├── ArcDark
+│   │   │   │   ├── ArcDark.kvconfig
+│   │   │   │   ├── ArcDark.svg
+│   │   │   │   ├── AUTHORS
+│   │   │   │   └── LICENSE
+│   │   │   ├── ArcDarker
+│   │   │   │   ├── ArcDarker.kvconfig
+│   │   │   │   ├── ArcDarker.svg
+│   │   │   │   ├── AUTHORS
+│   │   │   │   └── LICENSE
+│   │   │   ├── ArcoLinux-Sweet-Mars
+│   │   │   │   ├── ArcoLinux-Sweet-Mars.kvconfig
+│   │   │   │   └── Sweet-Mars.svg
+│   │   │   ├── ArcoLinux-Sweet-Mars-transparent-toolbar
+│   │   │   │   ├── Sweet-Mars-transparent-toolbar.kvconfig
+│   │   │   │   └── Sweet-Mars-transparent-toolbar.svg
+│   │   │   ├── KvAdapta
+│   │   │   │   ├── KvAdapta.kvconfig
+│   │   │   │   └── KvAdapta.svg
+│   │   │   ├── KvAdaptaBreath
+│   │   │   │   ├── KvAdaptaBreath.kvconfig
+│   │   │   │   └── KvAdaptaBreath.svg
+│   │   │   ├── KvAdaptaBreathBlack
+│   │   │   │   ├── KvAdaptaBreathBlack.kvconfig
+│   │   │   │   └── KvAdaptaBreathBlack.svg
+│   │   │   ├── KvAdaptaBreathDark
+│   │   │   │   ├── KvAdaptaBreathDark.kvconfig
+│   │   │   │   └── KvAdaptaBreathDark.svg
+│   │   │   ├── KvAdaptaDark
+│   │   │   │   ├── KvAdaptaDark.kvconfig
+│   │   │   │   └── KvAdaptaDark.svg
+│   │   │   ├── KvAdaptaMaia
+│   │   │   │   ├── KvAdaptaMaia.kvconfig
+│   │   │   │   └── KvAdaptaMaia.svg
+│   │   │   ├── KvAdaptaMaiaBlack
+│   │   │   │   ├── KvAdaptaMaiaBlack.kvconfig
+│   │   │   │   └── KvAdaptaMaiaBlack.svg
+│   │   │   ├── KvAdaptaMaiaDark
+│   │   │   │   ├── KvAdaptaMaiaDark.kvconfig
+│   │   │   │   └── KvAdaptaMaiaDark.svg
+│   │   │   ├── KvAmbiance
+│   │   │   │   ├── KvAmbiance.kvconfig
+│   │   │   │   └── KvAmbiance.svg
+│   │   │   ├── KvAmbience
+│   │   │   │   ├── KvAmbience.kvconfig
+│   │   │   │   └── KvAmbience.svg
+│   │   │   ├── KvantumAlt
+│   │   │   │   ├── KvantumAlt.kvconfig
+│   │   │   │   └── KvantumAlt.svg
+│   │   │   ├── KvArc
+│   │   │   │   ├── KvArc.kvconfig
+│   │   │   │   └── KvArc.svg
+│   │   │   ├── KvArcBreath
+│   │   │   │   ├── KvArcBreath.kvconfig
+│   │   │   │   └── KvArcBreath.svg
+│   │   │   ├── KvArcDark
+│   │   │   │   ├── KvArcDark.kvconfig
+│   │   │   │   └── KvArcDark.svg
+│   │   │   ├── KvArcDarkBreath
+│   │   │   │   ├── KvArcDarkBreath.kvconfig
+│   │   │   │   └── KvArcDarkBreath.svg
+│   │   │   ├── KvArcDarkerBreath
+│   │   │   │   ├── KvArcDarkerBreath.kvconfig
+│   │   │   │   └── KvArcDarkerBreath.svg
+│   │   │   ├── KvArcDarkerMaia
+│   │   │   │   ├── KvArcDarkerMaia.kvconfig
+│   │   │   │   └── KvArcDarkerMaia.svg
+│   │   │   ├── KvArcDarkMaia
+│   │   │   │   ├── KvArcDarkMaia.kvconfig
+│   │   │   │   └── KvArcDarkMaia.svg
+│   │   │   ├── KvArcMaia
+│   │   │   │   ├── KvArcMaia.kvconfig
+│   │   │   │   └── KvArcMaia.svg
+│   │   │   ├── KvBeige
+│   │   │   │   ├── KvBeige.kvconfig
+│   │   │   │   └── KvBeige.svg
+│   │   │   ├── KvBlender
+│   │   │   │   ├── KvBlender.kvconfig
+│   │   │   │   └── KvBlender.svg
+│   │   │   ├── KvBrown
+│   │   │   │   ├── KvBrown.kvconfig
+│   │   │   │   └── KvBrown.svg
+│   │   │   ├── KvCurves
+│   │   │   │   ├── KvCurves.kvconfig
+│   │   │   │   └── KvCurves.svg
+│   │   │   ├── KvCurves3d
+│   │   │   │   ├── KvCurves3d.kvconfig
+│   │   │   │   └── KvCurves3d.svg
+│   │   │   ├── KvCurves3d1
+│   │   │   │   ├── KvCurves3d1.kvconfig
+│   │   │   │   └── KvCurves3d1.svg
+│   │   │   ├── KvCurvesLight
+│   │   │   │   ├── KvCurvesLight.kvconfig
+│   │   │   │   └── KvCurvesLight.svg
+│   │   │   ├── KvCurvesLight1
+│   │   │   │   ├── KvCurvesLight1.kvconfig
+│   │   │   │   └── KvCurvesLight1.svg
+│   │   │   ├── KvCyan
+│   │   │   │   ├── KvCyan.kvconfig
+│   │   │   │   └── KvCyan.svg
+│   │   │   ├── KvDark
+│   │   │   │   ├── KvDark.kvconfig
+│   │   │   │   └── KvDark.svg
+│   │   │   ├── KvDarkRed
+│   │   │   │   ├── KvDarkRed.kvconfig
+│   │   │   │   └── KvDarkRed.svg
+│   │   │   ├── KvFlat
+│   │   │   │   ├── KvFlat.kvconfig
+│   │   │   │   └── KvFlat.svg
+│   │   │   ├── KvFlatLight
+│   │   │   │   ├── KvFlatLight.kvconfig
+│   │   │   │   └── KvFlatLight.svg
+│   │   │   ├── KvFlatRed
+│   │   │   │   ├── KvFlatRed.kvconfig
+│   │   │   │   └── KvFlatRed.svg
+│   │   │   ├── KvFlatTeal
+│   │   │   │   ├── KvFlatTeal.kvconfig
+│   │   │   │   └── KvFlatTeal.svg
+│   │   │   ├── KvGnome
+│   │   │   │   ├── KvGnome.kvconfig
+│   │   │   │   └── KvGnome.svg
+│   │   │   ├── KvGnomeAlt
+│   │   │   │   ├── KvGnomeAlt.kvconfig
+│   │   │   │   └── KvGnomeAlt.svg
+│   │   │   ├── KvGnomeDark
+│   │   │   │   ├── KvGnomeDark.kvconfig
+│   │   │   │   └── KvGnomeDark.svg
+│   │   │   ├── KvGnomish
+│   │   │   │   ├── KvGnomish.kvconfig
+│   │   │   │   └── KvGnomish.svg
+│   │   │   ├── KvGray
+│   │   │   │   ├── KvGray.kvconfig
+│   │   │   │   └── KvGray.svg
+│   │   │   ├── KvLibadwaitaMaia
+│   │   │   │   ├── KvLibadwaitaMaiaDark.kvconfig
+│   │   │   │   ├── KvLibadwaitaMaiaDark.svg
+│   │   │   │   ├── KvLibadwaitaMaia.kvconfig
+│   │   │   │   ├── KvLibadwaitaMaia.svg
+│   │   │   │   └── maia.sh
+│   │   │   ├── KvMatchaAliz
+│   │   │   │   ├── KvMatchaAliz.kvconfig
+│   │   │   │   └── KvMatchaAliz.svg
+│   │   │   ├── KvMatchaAzul
+│   │   │   │   ├── KvMatchaAzul.kvconfig
+│   │   │   │   └── KvMatchaAzul.svg
+│   │   │   ├── KvMatchaDarkAliz
+│   │   │   │   ├── KvMatchaDarkAliz.kvconfig
+│   │   │   │   └── KvMatchaDarkAliz.svg
+│   │   │   ├── KvMatchaDarkAzul
+│   │   │   │   ├── KvMatchaDarkAzul.kvconfig
+│   │   │   │   └── KvMatchaDarkAzul.svg
+│   │   │   ├── KvMatchaDarkSea
+│   │   │   │   ├── KvMatchaDarkSea.kvconfig
+│   │   │   │   └── KvMatchaDarkSea.svg
+│   │   │   ├── KvMatchaSea
+│   │   │   │   ├── KvMatchaSea.kvconfig
+│   │   │   │   └── KvMatchaSea.svg
+│   │   │   ├── KvMojave
+│   │   │   │   ├── KvMojave.kvconfig
+│   │   │   │   └── KvMojave.svg
+│   │   │   ├── KvMojaveLight
+│   │   │   │   ├── KvMojaveLight.kvconfig
+│   │   │   │   └── KvMojaveLight.svg
+│   │   │   ├── KvMojaveMixed
+│   │   │   │   ├── KvMojaveMixed.kvconfig
+│   │   │   │   └── KvMojaveMixed.svg
+│   │   │   ├── KvMojaveMixed1
+│   │   │   │   ├── KvMojaveMixed1.kvconfig
+│   │   │   │   └── KvMojaveMixed1.svg
+│   │   │   ├── KvOxygen
+│   │   │   │   ├── KvOxygen.kvconfig
+│   │   │   │   └── KvOxygen.svg
+│   │   │   ├── KvRoughGlass
+│   │   │   │   ├── KvRoughGlass.kvconfig
+│   │   │   │   └── KvRoughGlass.svg
+│   │   │   ├── KvSimplicity
+│   │   │   │   ├── KvSimplicity.kvconfig
+│   │   │   │   └── KvSimplicity.svg
+│   │   │   ├── KvSimplicityDark
+│   │   │   │   ├── KvSimplicityDark.kvconfig
+│   │   │   │   └── KvSimplicityDark.svg
+│   │   │   ├── KvSimplicityDarkLight
+│   │   │   │   ├── KvSimplicityDarkLight.kvconfig
+│   │   │   │   └── KvSimplicityDarkLight.svg
+│   │   │   ├── KvSimplicityTurquoise
+│   │   │   │   ├── KvSimplicityTurquoise.kvconfig
+│   │   │   │   └── KvSimplicityTurquoise.svg
+│   │   │   ├── KvYaru
+│   │   │   │   ├── KvYaru.kvconfig
+│   │   │   │   └── KvYaru.svg
+│   │   │   ├── Materia
+│   │   │   │   ├── AUTHORS
+│   │   │   │   ├── LICENSE
+│   │   │   │   ├── Materia.kvconfig
+│   │   │   │   └── Materia.svg
+│   │   │   ├── MateriaDark
+│   │   │   │   ├── AUTHORS
+│   │   │   │   ├── LICENSE
+│   │   │   │   ├── MateriaDark.kvconfig
+│   │   │   │   └── MateriaDark.svg
+│   │   │   ├── MateriaLight
+│   │   │   │   ├── AUTHORS
+│   │   │   │   ├── LICENSE
+│   │   │   │   ├── MateriaLight.kvconfig
+│   │   │   │   └── MateriaLight.svg
+│   │   │   ├── Qogir
+│   │   │   │   ├── Qogir.kvconfig
+│   │   │   │   └── Qogir.svg
+│   │   │   ├── Qogir-dark
+│   │   │   │   ├── Qogir-dark.kvconfig
+│   │   │   │   └── Qogir-dark.svg
+│   │   │   ├── Qogir-dark-solid
+│   │   │   │   └── Qogir-dark-solid.kvconfig
+│   │   │   ├── Qogir-light
+│   │   │   │   ├── Qogir-light.kvconfig
+│   │   │   │   └── Qogir-light.svg
+│   │   │   ├── Qogir-light-solid
+│   │   │   │   └── Qogir-light-solid.kvconfig
+│   │   │   ├── Qogir-solid
+│   │   │   │   └── Qogir-solid.kvconfig
+│   │   │   ├── Sweet
+│   │   │   │   ├── Sweet.kvconfig
+│   │   │   │   └── Sweet.svg
+│   │   │   └── Sweet-transparent-toolbar
+│   │   │       ├── Sweet-transparent-toolbar.kvconfig
+│   │   │       └── Sweet-transparent-toolbar.svg
+│   │   ├── kvantum.kvconfig
+│   │   ├── Kvantum.tar.gz
+│   │   ├── KvAqua
+│   │   │   ├── KvAqua.kvconfig
+│   │   │   └── KvAqua.svg
+│   │   ├── KvAquaBlueDark
+│   │   │   ├── KvAquaBlueDark.kvconfig
+│   │   │   └── KvAquaBlueDark.svg
+│   │   ├── KvAquaDark
+│   │   │   ├── KvAquaDark.kvconfig
+│   │   │   └── KvAquaDark.svg
+│   │   ├── KvAquaGreen
+│   │   │   ├── KvAquaGreen.kvconfig
+│   │   │   └── KvAquaGreen.svg
+│   │   ├── KvAquaGreenDark
+│   │   │   ├── KvAquaGreenDark.kvconfig
+│   │   │   └── KvAquaGreenDark.svg
+│   │   ├── KvAquaPink
+│   │   │   ├── KvAquaPink.kvconfig
+│   │   │   └── KvAquaPink.svg
+│   │   ├── KvGlass
+│   │   │   ├── KvGlass.kvconfig
+│   │   │   └── KvGlass.svg
+│   │   ├── KvGlassManjaro
+│   │   │   ├── KvGlassManjaro.kvconfig
+│   │   │   └── KvGlassManjaro.svg
+│   │   ├── KvGlowDark
+│   │   │   ├── KvGlowDark.kvconfig
+│   │   │   └── KvGlowDark.svg
+│   │   ├── KvGnomeDark#
+│   │   │   └── KvGnomeDark#.kvconfig
+│   │   ├── KvLibadwaitaMaia
+│   │   │   ├── KvLibadwaitaMaiaDark.kvconfig
+│   │   │   ├── KvLibadwaitaMaiaDark.svg
+│   │   │   ├── KvLibadwaitaMaia.kvconfig
+│   │   │   └── KvLibadwaitaMaia.svg
+│   │   ├── KvMojave#
+│   │   │   └── KvMojave#.kvconfig
+│   │   ├── Layan
+│   │   │   ├── Layan.kvconfig
+│   │   │   └── Layan.svg
+│   │   ├── Nordic-Darker#
+│   │   │   └── Nordic-Darker#.kvconfig
+│   │   ├── Sweet
+│   │   │   ├── Sweet.kvconfig
+│   │   │   └── Sweet.svg
+│   │   ├── Sweet-Ambar-Blue
+│   │   │   ├── Sweet-Ambar-Blue.kvconfig
+│   │   │   └── Sweet-Ambar-Blue.svg
+│   │   ├── Sweet-Mars-transparent-toolbar
+│   │   │   ├── Sweet-Mars-transparent-toolbar.kvconfig
+│   │   │   └── Sweet-Mars-transparent-toolbar.svg
+│   │   └── Sweet-transparent-toolbar#
+│   │       └── Sweet-transparent-toolbar#.kvconfig
+│   ├── lf
+│   │   ├── cleaner
+│   │   ├── icons
+│   │   ├── lfrc
+│   │   └── scope
+│   ├── lite-xl
+│   │   ├── colors
+│   │   │   └── nord.lua
+│   │   ├── error.txt
+│   │   ├── font_cache.lua
+│   │   ├── init.lua
+│   │   ├── ipc
+│   │   ├── libraries
+│   │   │   └── widget
+│   │   │       └── lite-xl-widget
+│   │   ├── plugins
+│   │   │   ├── autowrap.lua
+│   │   │   ├── bracketmatch.lua
+│   │   │   ├── colorpreview.lua
+│   │   │   ├── ipc.lua
+│   │   │   ├── language_conf.lua
+│   │   │   ├── language_corn.lua
+│   │   │   ├── language_ini.lua
+│   │   │   ├── language_toml.lua
+│   │   │   ├── language_yaml.lua
+│   │   │   ├── linewrapping.lua
+│   │   │   ├── minimap.lua
+│   │   │   └── settings.lua
+│   │   ├── session.lua
+│   │   ├── user_settings.lua
+│   │   └── ws
+│   │       ├── andro-1
+│   │       └── pacman_fix_permissions-1
+│   ├── meson
+│   ├── micro
+│   │   ├── backups
+│   │   │   ├── %home%andro%.config%Min%userscripts%TensorpixDarkmode.js
+│   │   │   └── %home%andro%playlist.json
+│   │   ├── bindings.json
+│   │   ├── buffers
+│   │   │   └── history
+│   │   ├── colorschemes
+│   │   │   └── catppuccin-mocha.micro
+│   │   ├── micro.prof
+│   │   ├── plug
+│   │   │   ├── aspell
+│   │   │   │   ├── aspell.lua
+│   │   │   │   ├── help
+│   │   │   │   │   └── aspell.md
+│   │   │   │   ├── LICENSE
+│   │   │   │   ├── README.md
+│   │   │   │   └── repo.json
+│   │   │   ├── cheat

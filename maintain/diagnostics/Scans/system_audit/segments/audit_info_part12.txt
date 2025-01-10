@@ -1,0 +1,596 @@
+│   │   │   │       │   │   │   │   │   │   │   │   ├── version_solver.rb
+│   │   │   │       │   │   │   │   │   │   │   │   └── version_union.rb
+│   │   │   │       │   │   │   │   │   │   │   └── pub_grub.rb
+│   │   │   │       │   │   │   │   │   │   └── LICENSE.txt
+│   │   │   │       │   │   │   │   │   ├── thor
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   ├── thor
+│   │   │   │       │   │   │   │   │   │   │   │   ├── actions
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── create_file.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── create_link.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── directory.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── empty_directory.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── file_manipulation.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   └── inject_into_file.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── actions.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── base.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── command.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── core_ext
+│   │   │   │       │   │   │   │   │   │   │   │   │   └── hash_with_indifferent_access.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── error.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── group.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── invocation.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── line_editor
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── basic.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   └── readline.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── line_editor.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── nested_context.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── parser
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── argument.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── arguments.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── option.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   └── options.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── parser.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── rake_compat.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── runner.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── shell
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── basic.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── color.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── column_printer.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── html.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── table_printer.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   ├── terminal.rb
+│   │   │   │       │   │   │   │   │   │   │   │   │   └── wrapped_printer.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── shell.rb
+│   │   │   │       │   │   │   │   │   │   │   │   ├── util.rb
+│   │   │   │       │   │   │   │   │   │   │   │   └── version.rb
+│   │   │   │       │   │   │   │   │   │   │   └── thor.rb
+│   │   │   │       │   │   │   │   │   │   └── LICENSE.md
+│   │   │   │       │   │   │   │   │   ├── tsort
+│   │   │   │       │   │   │   │   │   │   ├── .document
+│   │   │   │       │   │   │   │   │   │   ├── lib
+│   │   │   │       │   │   │   │   │   │   │   └── tsort.rb
+│   │   │   │       │   │   │   │   │   │   └── LICENSE.txt
+│   │   │   │       │   │   │   │   │   └── uri
+│   │   │   │       │   │   │   │   │       ├── .document
+│   │   │   │       │   │   │   │   │       ├── lib
+│   │   │   │       │   │   │   │   │       │   ├── uri
+│   │   │   │       │   │   │   │   │       │   │   ├── common.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── file.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── ftp.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── generic.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── http.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── https.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── ldap.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── ldaps.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── mailto.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── rfc2396_parser.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── rfc3986_parser.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── version.rb
+│   │   │   │       │   │   │   │   │       │   │   ├── ws.rb
+│   │   │   │       │   │   │   │   │       │   │   └── wss.rb
+│   │   │   │       │   │   │   │   │       │   └── uri.rb
+│   │   │   │       │   │   │   │   │       └── LICENSE.txt
+│   │   │   │       │   │   │   │   ├── vendored_fileutils.rb
+│   │   │   │       │   │   │   │   ├── vendored_net_http.rb
+│   │   │   │       │   │   │   │   ├── vendored_persistent.rb
+│   │   │   │       │   │   │   │   ├── vendored_pub_grub.rb
+│   │   │   │       │   │   │   │   ├── vendored_thor.rb
+│   │   │   │       │   │   │   │   ├── vendored_timeout.rb
+│   │   │   │       │   │   │   │   ├── vendored_tsort.rb
+│   │   │   │       │   │   │   │   ├── vendored_uri.rb
+│   │   │   │       │   │   │   │   ├── version.rb
+│   │   │   │       │   │   │   │   ├── vlad.rb
+│   │   │   │       │   │   │   │   ├── worker.rb
+│   │   │   │       │   │   │   │   └── yaml_serializer.rb
+│   │   │   │       │   │   │   └── bundler.rb
+│   │   │   │       │   │   ├── LICENSE.md
+│   │   │   │       │   │   └── README.md
+│   │   │   │       │   ├── racc-1.8.1
+│   │   │   │       │   │   ├── bin
+│   │   │   │       │   │   │   └── racc
+│   │   │   │       │   │   ├── BSDL
+│   │   │   │       │   │   ├── ChangeLog
+│   │   │   │       │   │   ├── COPYING
+│   │   │   │       │   │   ├── doc
+│   │   │   │       │   │   │   ├── en
+│   │   │   │       │   │   │   │   ├── grammar2.en.rdoc
+│   │   │   │       │   │   │   │   └── grammar.en.rdoc
+│   │   │   │       │   │   │   └── ja
+│   │   │   │       │   │   │       ├── command.ja.html
+│   │   │   │       │   │   │       ├── debug.ja.rdoc
+│   │   │   │       │   │   │       ├── grammar.ja.rdoc
+│   │   │   │       │   │   │       ├── index.ja.html
+│   │   │   │       │   │   │       ├── parser.ja.rdoc
+│   │   │   │       │   │   │       └── usage.ja.html
+│   │   │   │       │   │   ├── ext
+│   │   │   │       │   │   │   └── racc
+│   │   │   │       │   │   │       └── cparse
+│   │   │   │       │   │   │           ├── cparse.c
+│   │   │   │       │   │   │           ├── extconf.rb
+│   │   │   │       │   │   │           └── Makefile
+│   │   │   │       │   │   ├── lib
+│   │   │   │       │   │   │   ├── racc
+│   │   │   │       │   │   │   │   ├── compat.rb
+│   │   │   │       │   │   │   │   ├── debugflags.rb
+│   │   │   │       │   │   │   │   ├── exception.rb
+│   │   │   │       │   │   │   │   ├── grammarfileparser.rb
+│   │   │   │       │   │   │   │   ├── grammar.rb
+│   │   │   │       │   │   │   │   ├── info.rb
+│   │   │   │       │   │   │   │   ├── iset.rb
+│   │   │   │       │   │   │   │   ├── logfilegenerator.rb
+│   │   │   │       │   │   │   │   ├── parserfilegenerator.rb
+│   │   │   │       │   │   │   │   ├── parser.rb
+│   │   │   │       │   │   │   │   ├── parser-text.rb
+│   │   │   │       │   │   │   │   ├── sourcetext.rb
+│   │   │   │       │   │   │   │   ├── state.rb
+│   │   │   │       │   │   │   │   ├── statetransitiontable.rb
+│   │   │   │       │   │   │   │   └── static.rb
+│   │   │   │       │   │   │   └── racc.rb
+│   │   │   │       │   │   ├── README.ja.rdoc
+│   │   │   │       │   │   ├── README.rdoc
+│   │   │   │       │   │   └── TODO
+│   │   │   │       │   ├── rake-13.2.1
+│   │   │   │       │   │   ├── doc
+│   │   │   │       │   │   │   ├── command_line_usage.rdoc
+│   │   │   │       │   │   │   ├── example
+│   │   │   │       │   │   │   │   ├── a.c
+│   │   │   │       │   │   │   │   ├── b.c
+│   │   │   │       │   │   │   │   ├── main.c
+│   │   │   │       │   │   │   │   ├── Rakefile1
+│   │   │   │       │   │   │   │   └── Rakefile2
+│   │   │   │       │   │   │   ├── glossary.rdoc
+│   │   │   │       │   │   │   ├── jamis.rb
+│   │   │   │       │   │   │   ├── proto_rake.rdoc
+│   │   │   │       │   │   │   ├── rake.1
+│   │   │   │       │   │   │   ├── rakefile.rdoc
+│   │   │   │       │   │   │   └── rational.rdoc
+│   │   │   │       │   │   ├── exe
+│   │   │   │       │   │   │   └── rake
+│   │   │   │       │   │   ├── History.rdoc
+│   │   │   │       │   │   ├── lib
+│   │   │   │       │   │   │   ├── rake
+│   │   │   │       │   │   │   │   ├── application.rb
+│   │   │   │       │   │   │   │   ├── backtrace.rb
+│   │   │   │       │   │   │   │   ├── clean.rb
+│   │   │   │       │   │   │   │   ├── cloneable.rb
+│   │   │   │       │   │   │   │   ├── cpu_counter.rb
+│   │   │   │       │   │   │   │   ├── default_loader.rb
+│   │   │   │       │   │   │   │   ├── dsl_definition.rb
+│   │   │   │       │   │   │   │   ├── early_time.rb
+│   │   │   │       │   │   │   │   ├── ext
+│   │   │   │       │   │   │   │   │   ├── core.rb
+│   │   │   │       │   │   │   │   │   └── string.rb
+│   │   │   │       │   │   │   │   ├── file_creation_task.rb
+│   │   │   │       │   │   │   │   ├── file_list.rb
+│   │   │   │       │   │   │   │   ├── file_task.rb
+│   │   │   │       │   │   │   │   ├── file_utils_ext.rb
+│   │   │   │       │   │   │   │   ├── file_utils.rb
+│   │   │   │       │   │   │   │   ├── invocation_chain.rb
+│   │   │   │       │   │   │   │   ├── invocation_exception_mixin.rb
+│   │   │   │       │   │   │   │   ├── late_time.rb
+│   │   │   │       │   │   │   │   ├── linked_list.rb
+│   │   │   │       │   │   │   │   ├── loaders
+│   │   │   │       │   │   │   │   │   └── makefile.rb
+│   │   │   │       │   │   │   │   ├── multi_task.rb
+│   │   │   │       │   │   │   │   ├── name_space.rb
+│   │   │   │       │   │   │   │   ├── packagetask.rb
+│   │   │   │       │   │   │   │   ├── phony.rb
+│   │   │   │       │   │   │   │   ├── private_reader.rb
+│   │   │   │       │   │   │   │   ├── promise.rb
+│   │   │   │       │   │   │   │   ├── pseudo_status.rb
+│   │   │   │       │   │   │   │   ├── rake_module.rb
+│   │   │   │       │   │   │   │   ├── rake_test_loader.rb
+│   │   │   │       │   │   │   │   ├── rule_recursion_overflow_error.rb
+│   │   │   │       │   │   │   │   ├── scope.rb
+│   │   │   │       │   │   │   │   ├── task_argument_error.rb
+│   │   │   │       │   │   │   │   ├── task_arguments.rb
+│   │   │   │       │   │   │   │   ├── tasklib.rb
+│   │   │   │       │   │   │   │   ├── task_manager.rb
+│   │   │   │       │   │   │   │   ├── task.rb
+│   │   │   │       │   │   │   │   ├── testtask.rb
+│   │   │   │       │   │   │   │   ├── thread_history_display.rb
+│   │   │   │       │   │   │   │   ├── thread_pool.rb
+│   │   │   │       │   │   │   │   ├── trace_output.rb
+│   │   │   │       │   │   │   │   ├── version.rb
+│   │   │   │       │   │   │   │   └── win32.rb
+│   │   │   │       │   │   │   └── rake.rb
+│   │   │   │       │   │   ├── MIT-LICENSE
+│   │   │   │       │   │   ├── rake.gemspec
+│   │   │   │       │   │   └── README.rdoc
+│   │   │   │       │   ├── ruby-progressbar-1.13.0
+│   │   │   │       │   │   ├── lib
+│   │   │   │       │   │   │   ├── ruby-progressbar
+│   │   │   │       │   │   │   │   ├── base.rb
+│   │   │   │       │   │   │   │   ├── calculators
+│   │   │   │       │   │   │   │   │   └── length.rb
+│   │   │   │       │   │   │   │   ├── components
+│   │   │   │       │   │   │   │   │   ├── bar.rb
+│   │   │   │       │   │   │   │   │   ├── percentage.rb
+│   │   │   │       │   │   │   │   │   ├── rate.rb
+│   │   │   │       │   │   │   │   │   ├── time.rb
+│   │   │   │       │   │   │   │   │   └── title.rb
+│   │   │   │       │   │   │   │   ├── errors
+│   │   │   │       │   │   │   │   │   └── invalid_progress_error.rb
+│   │   │   │       │   │   │   │   ├── format
+│   │   │   │       │   │   │   │   │   ├── formatter.rb
+│   │   │   │       │   │   │   │   │   ├── molecule.rb
+│   │   │   │       │   │   │   │   │   └── string.rb
+│   │   │   │       │   │   │   │   ├── output.rb
+│   │   │   │       │   │   │   │   ├── outputs
+│   │   │   │       │   │   │   │   │   ├── non_tty.rb
+│   │   │   │       │   │   │   │   │   ├── null.rb
+│   │   │   │       │   │   │   │   │   └── tty.rb
+│   │   │   │       │   │   │   │   ├── progress.rb
+│   │   │   │       │   │   │   │   ├── projector.rb
+│   │   │   │       │   │   │   │   ├── projectors
+│   │   │   │       │   │   │   │   │   └── smoothed_average.rb
+│   │   │   │       │   │   │   │   ├── refinements
+│   │   │   │       │   │   │   │   │   └── progress_enumerator.rb
+│   │   │   │       │   │   │   │   ├── refinements.rb
+│   │   │   │       │   │   │   │   ├── throttle.rb
+│   │   │   │       │   │   │   │   ├── time.rb
+│   │   │   │       │   │   │   │   ├── timer.rb
+│   │   │   │       │   │   │   │   └── version.rb
+│   │   │   │       │   │   │   └── ruby-progressbar.rb
+│   │   │   │       │   │   ├── LICENSE.txt
+│   │   │   │       │   │   ├── Rakefile
+│   │   │   │       │   │   └── README.md
+│   │   │   │       │   └── unicode-display_width-2.5.0
+│   │   │   │       │       ├── CHANGELOG.md
+│   │   │   │       │       ├── data
+│   │   │   │       │       │   └── display_width.marshal.gz
+│   │   │   │       │       ├── lib
+│   │   │   │       │       │   └── unicode
+│   │   │   │       │       │       ├── display_width
+│   │   │   │       │       │       │   ├── constants.rb
+│   │   │   │       │       │       │   ├── index.rb
+│   │   │   │       │       │       │   ├── no_string_ext.rb
+│   │   │   │       │       │       │   └── string_ext.rb
+│   │   │   │       │       │       └── display_width.rb
+│   │   │   │       │       ├── MIT-LICENSE.txt
+│   │   │   │       │       └── README.md
+│   │   │   │       ├── plugins
+│   │   │   │       └── specifications
+│   │   │   │           ├── bundler-2.5.18.gemspec
+│   │   │   │           ├── rake-13.2.1.gemspec
+│   │   │   │           ├── ruby-progressbar-1.13.0.gemspec
+│   │   │   │           └── unicode-display_width-2.5.0.gemspec
+│   │   │   └── specs
+│   │   │       ├── index.rubygems.org%443
+│   │   │       │   └── quick
+│   │   │       │       └── Marshal.4.8
+│   │   │       │           ├── ast-2.4.2.gemspec
+│   │   │       │           ├── bundler-2.5.18.gemspec
+│   │   │       │           ├── language_server-protocol-3.17.0.3.gemspec
+│   │   │       │           ├── parallel-1.26.3.gemspec
+│   │   │       │           ├── parser-3.3.5.0.gemspec
+│   │   │       │           ├── racc-1.8.1.gemspec
+│   │   │       │           ├── rainbow-3.1.1.gemspec
+│   │   │       │           ├── rake-13.2.1.gemspec
+│   │   │       │           ├── regexp_parser-2.9.2.gemspec
+│   │   │       │           ├── rubocop-1.66.1.gemspec
+│   │   │       │           ├── rubocop-ast-1.32.3.gemspec
+│   │   │       │           ├── ruby-progressbar-1.13.0.gemspec
+│   │   │       │           └── unicode-display_width-2.5.0.gemspec
+│   │   │       └── rubygems.org%443
+│   │   │           ├── latest_specs.4.8
+│   │   │           ├── quick
+│   │   │           │   └── Marshal.4.8
+│   │   │           │       └── rubygems-update-3.5.18.gemspec
+│   │   │           └── specs.4.8
+│   │   ├── gnupg
+│   │   ├── go
+│   │   │   └── bin
+│   │   ├── gvfs-metadata
+│   │   │   ├── root
+│   │   │   ├── root-bd9bc09f.log
+│   │   │   ├── uuid-656f1c92-4f80-4257-a037-4216a32c05da
+│   │   │   └── uuid-656f1c92-4f80-4257-a037-4216a32c05da-bfa726a5.log
+│   │   ├── Hardcoded Software
+│   │   │   └── dupeGuru
+│   │   │       ├── debug.log
+│   │   │       ├── exclude_list.xml
+│   │   │       ├── hash_cache.db
+│   │   │       ├── ignore_list.xml
+│   │   │       └── last_directories.xml
+│   │   ├── inxi
+│   │   ├── keyrings
+│   │   ├── lf
+│   │   │   ├── files
+│   │   │   ├── history
+│   │   │   └── marks
+│   │   ├── lib
+│   │   ├── logs
+│   │   │   ├── 20241214_001314_system_maintenance.log
+│   │   │   ├── 20241214_003636_system_maintenance.log
+│   │   │   ├── 20241214_004811_system_maintenance.log
+│   │   │   ├── 20241214_004823_system_maintenance.log
+│   │   │   ├── 20241221_094536_system_maintenance.log
+│   │   │   ├── 20241221_094637_system_maintenance.log
+│   │   │   ├── 20241221_140724_system_maintenance.log
+│   │   │   ├── 20241227_063008_system_maintenance.log
+│   │   │   ├── 20241228_032445_system_maintenance.log
+│   │   │   ├── 20241228_040621_system_maintenance.log
+│   │   │   ├── 20241228_040815_system_maintenance.log
+│   │   │   ├── 20241230_165149_system_maintenance.log
+│   │   │   ├── 20241230_222134_system_maintenance.log
+│   │   │   ├── 20250106_155414_system_maintenance.log
+│   │   │   ├── 4ndr0666_setup.log
+│   │   │   ├── 4ndr0service
+│   │   │   │   └── logs
+│   │   │   │       └── service_optimization.log
+│   │   │   ├── dependency-checker.log
+│   │   │   ├── missing_dependency_pkglist.txt
+│   │   │   ├── perm_master.log
+│   │   │   ├── services_backup_20241214_004456.txt
+│   │   │   ├── services_backup_20241221_094900.txt
+│   │   │   ├── services_backup_20241228_040715.txt
+│   │   │   ├── services_backup_20241228_040819.txt
+│   │   │   ├── services_backup_20241230_165259.txt
+│   │   │   ├── services_backup_20250106_180421.txt
+│   │   │   └── system_report.json
+│   │   ├── man
+│   │   ├── meld
+│   │   │   ├── recent-430xftit.meldcmp
+│   │   │   ├── recent-6rvhuoa6.meldcmp
+│   │   │   ├── recent-7nea03nt.meldcmp
+│   │   │   ├── recent-8z7d1gnz.meldcmp
+│   │   │   ├── recent-fjiqotlv.meldcmp
+│   │   │   ├── recent-ke00k3cm.meldcmp
+│   │   │   └── recent-l8k8tbfd.meldcmp
+│   │   ├── mysql
+│   │   ├── node
+│   │   │   └── npm-global
+│   │   ├── nvim
+│   │   │   └── .netrwhist
+│   │   ├── pipx
+│   │   │   ├── py
+│   │   │   │   └── CACHEDIR.TAG
+│   │   │   ├── shared
+│   │   │   │   ├── bin
+│   │   │   │   │   ├── activate
+│   │   │   │   │   ├── activate.csh
+│   │   │   │   │   ├── activate.fish
+│   │   │   │   │   ├── Activate.ps1
+│   │   │   │   │   ├── pip
+│   │   │   │   │   ├── pip3
+│   │   │   │   │   └── pip3.12
+│   │   │   │   ├── include
+│   │   │   │   │   └── python3.12
+│   │   │   │   ├── lib
+│   │   │   │   │   └── python3.12
+│   │   │   │   │       └── site-packages
+│   │   │   │   │           ├── pip
+│   │   │   │   │           │   ├── __init__.py
+│   │   │   │   │           │   ├── _internal
+│   │   │   │   │           │   │   ├── build_env.py
+│   │   │   │   │           │   │   ├── cache.py
+│   │   │   │   │           │   │   ├── cli
+│   │   │   │   │           │   │   │   ├── autocompletion.py
+│   │   │   │   │           │   │   │   ├── base_command.py
+│   │   │   │   │           │   │   │   ├── cmdoptions.py
+│   │   │   │   │           │   │   │   ├── command_context.py
+│   │   │   │   │           │   │   │   ├── index_command.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── main_parser.py
+│   │   │   │   │           │   │   │   ├── main.py
+│   │   │   │   │           │   │   │   ├── parser.py
+│   │   │   │   │           │   │   │   ├── progress_bars.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── autocompletion.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── base_command.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── cmdoptions.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── command_context.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── index_command.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── main.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── main_parser.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── parser.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── progress_bars.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── req_command.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── spinners.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── status_codes.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── req_command.py
+│   │   │   │   │           │   │   │   ├── spinners.py
+│   │   │   │   │           │   │   │   └── status_codes.py
+│   │   │   │   │           │   │   ├── commands
+│   │   │   │   │           │   │   │   ├── cache.py
+│   │   │   │   │           │   │   │   ├── check.py
+│   │   │   │   │           │   │   │   ├── completion.py
+│   │   │   │   │           │   │   │   ├── configuration.py
+│   │   │   │   │           │   │   │   ├── debug.py
+│   │   │   │   │           │   │   │   ├── download.py
+│   │   │   │   │           │   │   │   ├── freeze.py
+│   │   │   │   │           │   │   │   ├── hash.py
+│   │   │   │   │           │   │   │   ├── help.py
+│   │   │   │   │           │   │   │   ├── index.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── inspect.py
+│   │   │   │   │           │   │   │   ├── install.py
+│   │   │   │   │           │   │   │   ├── list.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── cache.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── check.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── completion.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── configuration.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── debug.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── download.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── freeze.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── hash.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── help.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── index.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── inspect.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── install.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── list.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── search.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── show.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── uninstall.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── search.py
+│   │   │   │   │           │   │   │   ├── show.py
+│   │   │   │   │           │   │   │   ├── uninstall.py
+│   │   │   │   │           │   │   │   └── wheel.py
+│   │   │   │   │           │   │   ├── configuration.py
+│   │   │   │   │           │   │   ├── distributions
+│   │   │   │   │           │   │   │   ├── base.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── installed.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── base.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── installed.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── sdist.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── sdist.py
+│   │   │   │   │           │   │   │   └── wheel.py
+│   │   │   │   │           │   │   ├── exceptions.py
+│   │   │   │   │           │   │   ├── index
+│   │   │   │   │           │   │   │   ├── collector.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── package_finder.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── collector.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── package_finder.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── sources.cpython-312.pyc
+│   │   │   │   │           │   │   │   └── sources.py
+│   │   │   │   │           │   │   ├── __init__.py
+│   │   │   │   │           │   │   ├── locations
+│   │   │   │   │           │   │   │   ├── base.py
+│   │   │   │   │           │   │   │   ├── _distutils.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── base.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── _distutils.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── _sysconfig.cpython-312.pyc
+│   │   │   │   │           │   │   │   └── _sysconfig.py
+│   │   │   │   │           │   │   ├── main.py
+│   │   │   │   │           │   │   ├── metadata
+│   │   │   │   │           │   │   │   ├── base.py
+│   │   │   │   │           │   │   │   ├── importlib
+│   │   │   │   │           │   │   │   │   ├── _compat.py
+│   │   │   │   │           │   │   │   │   ├── _dists.py
+│   │   │   │   │           │   │   │   │   ├── _envs.py
+│   │   │   │   │           │   │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   │   └── __pycache__
+│   │   │   │   │           │   │   │   │       ├── _compat.cpython-312.pyc
+│   │   │   │   │           │   │   │   │       ├── _dists.cpython-312.pyc
+│   │   │   │   │           │   │   │   │       ├── _envs.cpython-312.pyc
+│   │   │   │   │           │   │   │   │       └── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── _json.py
+│   │   │   │   │           │   │   │   ├── pkg_resources.py
+│   │   │   │   │           │   │   │   └── __pycache__
+│   │   │   │   │           │   │   │       ├── base.cpython-312.pyc
+│   │   │   │   │           │   │   │       ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │       ├── _json.cpython-312.pyc
+│   │   │   │   │           │   │   │       └── pkg_resources.cpython-312.pyc
+│   │   │   │   │           │   │   ├── models
+│   │   │   │   │           │   │   │   ├── candidate.py
+│   │   │   │   │           │   │   │   ├── direct_url.py
+│   │   │   │   │           │   │   │   ├── format_control.py
+│   │   │   │   │           │   │   │   ├── index.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── installation_report.py
+│   │   │   │   │           │   │   │   ├── link.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── candidate.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── direct_url.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── format_control.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── index.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── installation_report.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── link.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── scheme.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── search_scope.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── selection_prefs.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── target_python.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── scheme.py
+│   │   │   │   │           │   │   │   ├── search_scope.py
+│   │   │   │   │           │   │   │   ├── selection_prefs.py
+│   │   │   │   │           │   │   │   ├── target_python.py
+│   │   │   │   │           │   │   │   └── wheel.py
+│   │   │   │   │           │   │   ├── network
+│   │   │   │   │           │   │   │   ├── auth.py
+│   │   │   │   │           │   │   │   ├── cache.py
+│   │   │   │   │           │   │   │   ├── download.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── lazy_wheel.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── auth.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── cache.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── download.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── lazy_wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── session.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── utils.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── xmlrpc.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── session.py
+│   │   │   │   │           │   │   │   ├── utils.py
+│   │   │   │   │           │   │   │   └── xmlrpc.py
+│   │   │   │   │           │   │   ├── operations
+│   │   │   │   │           │   │   │   ├── build
+│   │   │   │   │           │   │   │   │   ├── build_tracker.py
+│   │   │   │   │           │   │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   │   ├── metadata_editable.py
+│   │   │   │   │           │   │   │   │   ├── metadata_legacy.py
+│   │   │   │   │           │   │   │   │   ├── metadata.py
+│   │   │   │   │           │   │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   │   ├── build_tracker.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── metadata.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── metadata_editable.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── metadata_legacy.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── wheel_editable.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   └── wheel_legacy.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── wheel_editable.py
+│   │   │   │   │           │   │   │   │   ├── wheel_legacy.py
+│   │   │   │   │           │   │   │   │   └── wheel.py
+│   │   │   │   │           │   │   │   ├── check.py
+│   │   │   │   │           │   │   │   ├── freeze.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── install
+│   │   │   │   │           │   │   │   │   ├── editable_legacy.py
+│   │   │   │   │           │   │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   │   ├── editable_legacy.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   │   └── wheel.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── wheel.py
+│   │   │   │   │           │   │   │   ├── prepare.py
+│   │   │   │   │           │   │   │   └── __pycache__
+│   │   │   │   │           │   │   │       ├── check.cpython-312.pyc
+│   │   │   │   │           │   │   │       ├── freeze.cpython-312.pyc
+│   │   │   │   │           │   │   │       ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │       └── prepare.cpython-312.pyc
+│   │   │   │   │           │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   ├── build_env.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── cache.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── configuration.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── exceptions.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── main.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── pyproject.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── self_outdated_check.cpython-312.pyc
+│   │   │   │   │           │   │   │   └── wheel_builder.cpython-312.pyc
+│   │   │   │   │           │   │   ├── pyproject.py
+│   │   │   │   │           │   │   ├── req
+│   │   │   │   │           │   │   │   ├── constructors.py
+│   │   │   │   │           │   │   │   ├── __init__.py
+│   │   │   │   │           │   │   │   ├── __pycache__
+│   │   │   │   │           │   │   │   │   ├── constructors.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── __init__.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── req_file.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── req_install.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   ├── req_set.cpython-312.pyc
+│   │   │   │   │           │   │   │   │   └── req_uninstall.cpython-312.pyc
+│   │   │   │   │           │   │   │   ├── req_file.py
+│   │   │   │   │           │   │   │   ├── req_install.py
+│   │   │   │   │           │   │   │   ├── req_set.py
+│   │   │   │   │           │   │   │   └── req_uninstall.py

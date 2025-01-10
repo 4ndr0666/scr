@@ -1,0 +1,171 @@
+Module                  Size  Used by
+xt_LOG                 16384  0
+xfs                  3964928  0
+ufs                   110592  0
+udp_diag               12288  0
+tun                    69632  0
+tcp_diag               12288  0
+st                     77824  0
+sr_mod                 28672  0
+sg                     53248  0
+nls_utf8               12288  0
+nf_log_syslog          24576  0
+msdos                  16384  0
+minix                  53248  0
+kvm                  1470464  0
+jfs                   278528  0
+nls_ucs2_utils          8192  1 jfs
+iTCO_wdt               16384  0
+iTCO_vendor_support    12288  1 iTCO_wdt
+intel_pmc_bxt          16384  1 iTCO_wdt
+inet_diag              32768  2 tcp_diag,udp_diag
+hfsplus               176128  0
+hfs                   102400  0
+cdrom                  86016  3 hfsplus,hfs,sr_mod
+bluetooth            1150976  0
+algif_hash             12288  0
+af_alg                 32768  1 algif_hash
+qrtr                   57344  2
+zram                   57344  1
+842_decompress         16384  1 zram
+842_compress           24576  1 zram
+lz4hc_compress         20480  1 zram
+lz4_compress           24576  1 zram
+snd_hda_codec_realtek   233472  1
+snd_hda_codec_generic   131072  1 snd_hda_codec_realtek
+snd_hda_scodec_component    20480  1 snd_hda_codec_realtek
+snd_hda_intel          69632  1
+snd_intel_dspcfg       45056  1 snd_hda_intel
+snd_intel_sdw_acpi     16384  1 snd_intel_dspcfg
+snd_hda_codec         229376  3 snd_hda_codec_generic,snd_hda_intel,snd_hda_codec_realtek
+snd_hda_core          151552  4 snd_hda_codec_generic,snd_hda_intel,snd_hda_codec,snd_hda_codec_realtek
+snd_hwdep              20480  1 snd_hda_codec
+snd_pcm               221184  3 snd_hda_intel,snd_hda_codec,snd_hda_core
+snd_timer              57344  1 snd_pcm
+intel_rapl_msr         20480  0
+intel_rapl_common      57344  1 intel_rapl_msr
+joydev                 24576  0
+snd                   163840  9 snd_hda_codec_generic,snd_hwdep,snd_hda_intel,snd_hda_codec,snd_hda_codec_realtek,snd_timer,snd_pcm
+x86_pkg_temp_thermal    16384  0
+intel_powerclamp       20480  0
+mousedev               24576  0
+cfg80211             1429504  0
+at24                   28672  0
+ses                    20480  0
+enclosure              20480  1 ses
+scsi_transport_sas     61440  1 ses
+coretemp               20480  0
+soundcore              16384  1 snd
+i2c_i801               40960  0
+mei_pxp                20480  0
+mei_hdcp               28672  0
+rapl                   20480  0
+think_lmi              36864  0
+intel_cstate           20480  0
+intel_uncore          274432  0
+rfkill                 40960  4 bluetooth,cfg80211
+i2c_smbus              20480  1 i2c_i801
+firmware_attributes_class    12288  1 think_lmi
+wmi_bmof               12288  0
+mei_me                 57344  2
+i2c_mux                16384  1 i2c_i801
+lpc_ich                28672  0
+mei                   208896  5 mei_hdcp,mei_pxp,mei_me
+mac_hid                12288  0
+ipt_REJECT             12288  1
+nf_reject_ipv4         16384  1 ipt_REJECT
+xt_recent              24576  2
+xt_limit               12288  1
+xt_addrtype            12288  4
+xt_tcpudp              20480  22
+xt_conntrack           12288  11
+nf_conntrack          212992  1 xt_conntrack
+nf_defrag_ipv6         24576  1 nf_conntrack
+nf_defrag_ipv4         12288  1 nf_conntrack
+ip6table_filter        12288  1
+ip6_tables             36864  1 ip6table_filter
+iptable_filter         12288  1
+tcp_bbr                28672  23
+sch_cake               49152  2
+loop                   40960  0
+nfnetlink              20480  2
+ip_tables              36864  1 iptable_filter
+x_tables               65536  11 ip6table_filter,xt_conntrack,iptable_filter,xt_LOG,xt_tcpudp,xt_addrtype,xt_recent,ip6_tables,ipt_REJECT,ip_tables,xt_limit
+vfat                   24576  1
+fat                   110592  2 msdos,vfat
+ext4                 1196032  5
+mbcache                16384  1 ext4
+jbd2                  208896  1 ext4
+amdgpu              16453632  0
+amdxcp                 12288  1 amdgpu
+drm_exec               12288  1 amdgpu
+gpu_sched              65536  1 amdgpu
+crc16                  12288  3 bluetooth,amdgpu,ext4
+hid_logitech_hidpp     73728  0
+hid_logitech_dj        40960  0
+crct10dif_pclmul       12288  1
+crc32_pclmul           12288  0
+polyval_clmulni        12288  0
+polyval_generic        12288  1 polyval_clmulni
+gf128mul               20480  1 polyval_generic
+hid_generic            12288  0
+ghash_clmulni_intel    16384  0
+radeon               2215936  15
+cryptd                 32768  1 ghash_clmulni_intel
+sha512_ssse3           53248  0
+sha256_ssse3           40960  0
+nvme_tcp               61440  0
+sha1_ssse3             32768  0
+uas                    32768  3
+drm_suballoc_helper    16384  2 amdgpu,radeon
+nvme_fabrics           45056  1 nvme_tcp
+usbhid                 90112  2 hid_logitech_dj,hid_logitech_hidpp
+usb_storage            94208  1 uas
+nvme_keyring           20480  2 nvme_tcp,nvme_fabrics
+r8168                 716800  0
+drm_ttm_helper         16384  2 amdgpu,radeon
+nvme_core             262144  2 nvme_tcp,nvme_fabrics
+nvme_auth              24576  1 nvme_core
+i915                 4894720  0
+intel_gtt              28672  1 i915
+drm_buddy              24576  2 amdgpu,i915
+video                  81920  3 amdgpu,radeon,i915
+wmi                    32768  3 video,wmi_bmof,think_lmi
+i2c_algo_bit           24576  3 amdgpu,radeon,i915
+drm_display_helper    290816  3 amdgpu,radeon,i915
+cec                   106496  2 drm_display_helper,i915
+ttm                   114688  4 amdgpu,radeon,drm_ttm_helper,i915
+btrfs                2273280  1
+blake2b_generic        24576  0
+libcrc32c              12288  3 nf_conntrack,btrfs,xfs
+crc32c_generic         12288  0
+crc32c_intel           16384  12
+xor                    20480  1 btrfs
+raid6_pq              122880  1 btrfs
+sunrpc                888832  1
+dm_mirror              28672  0
+dm_region_hash         24576  1 dm_mirror
+dm_log                 24576  2 dm_region_hash,dm_mirror
+dm_mod                229376  2 dm_log,dm_mirror
+be2iscsi              200704  0
+bnx2i                  86016  0
+cnic                   86016  1 bnx2i
+uio                    32768  1 cnic
+cxgb4i                 73728  0
+cxgb4                 761856  1 cxgb4i
+tls                   159744  1 cxgb4
+ptp                    45056  1 cxgb4
+pps_core               32768  1 ptp
+cxgb3i                 49152  0
+cxgb3                 249856  1 cxgb3i
+mdio                   12288  1 cxgb3
+libcxgbi              114688  2 cxgb4i,cxgb3i
+libcxgb                28672  2 libcxgbi,cxgb3i
+qla4xxx               512000  0
+iscsi_boot_sysfs       20480  2 be2iscsi,qla4xxx
+iscsi_tcp              28672  0
+libiscsi_tcp           40960  4 libcxgbi,iscsi_tcp,cxgb4i,cxgb3i
+libiscsi               94208  8 be2iscsi,libiscsi_tcp,bnx2i,libcxgbi,iscsi_tcp,qla4xxx,cxgb4i,cxgb3i
+scsi_transport_iscsi   196608  7 be2iscsi,libiscsi_tcp,bnx2i,libcxgbi,iscsi_tcp,qla4xxx,libiscsi
+pkcs8_key_parser       12288  0
+crypto_user            16384  0

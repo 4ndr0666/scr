@@ -1,0 +1,19 @@
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdd2       276G  259G  5.1G  99% /
+devtmpfs        4.0M     0  4.0M   0% /dev
+tmpfs           3.9G  232M  3.7G   6% /dev/shm
+efivarfs        128K  114K   10K  92% /sys/firmware/efi/efivars
+tmpfs           1.6G   19M  1.6G   2% /run
+tmpfs           1.0M     0  1.0M   0% /run/credentials/systemd-resolved.service
+tmpfs           1.0M     0  1.0M   0% /run/credentials/systemd-journald.service
+tmpfs           3.9G  2.7M  3.9G   1% /etc/pacman.d/gnupg
+tmpfs           3.9G   65M  3.8G   2% /tmp
+tmpfs           1.0M     0  1.0M   0% /run/credentials/systemd-networkd.service
+/dev/sda1       458G  302G  133G  70% /4ndr0
+/dev/sdb1       1.4T  1.3T   71G  95% /23.1
+/dev/sdb5       419G  214G  204G  52% /Nas
+/dev/sdc4       243G  193G   38G  84% /storage
+/dev/sdd5       636G  511G   93G  85% /sto2
+/dev/sdd1       4.8G   18M  4.8G   1% /boot/efi
+tmpfs           790M   48K  790M   1% /run/user/1000
+tmpfs           790M   32K  790M   1% /run/user/0

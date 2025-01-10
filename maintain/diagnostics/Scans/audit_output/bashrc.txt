@@ -1,0 +1,319 @@
+#!/bin/sh
+# File: /home/$USER/.bashrc
+# Author: 4ndr0666
+# Edited: 04-19-2024
+
+# =================================// 4NDR0666_USER_BASHRC //
+# --- // KILL_IF_NONINTERACTIVE:
+if [ "$-" != "${-#*i}" ]; then
+    return
+fi
+PS1='[\u@\h \W]\$'
+
+# --- // PATH Validation:
+if command -v find > /dev/null; then
+  while IFS= read -r dir; do
+    [ -d "$dir" ] && export PATH="$PATH:$dir"
+  done < <(find ~/.local/bin /Nas/Build/git/syncing/scr -type d 2>/dev/null)
+fi
+
+# --- // Safe Sourcing:
+XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-"$HOME/.config"}
+if [ -f "$XDG_CONFIG_HOME/shellz/aliasrc" ]; then
+    . "$XDG_CONFIG_HOME/shellz/aliasrc"
+fi
+if [ -f "$XDG_CONFIG_HOME/shellz/functionsrc" ]; then
+    . "$XDG_CONFIG_HOME/shellz/functionsrc"
+fi
+
+# --- // ENV:
+export HISTCONTROL=ignoreboth:erasedups
+bind "set completion-ignore-case on"
+
+# --- // Ls Aliases:
+alias ls='ls -hN --color=auto --group-directories-first'
+alias la='ls -a'
+alias ll='ls -alFh'
+alias l.="ls -A | grep '^\.'"
+
+# --- // FORCE_NEOVIM:
+if command -v nvim > /dev/null; then
+    alias vim="nvim"
+    alias vimdiff="nvim -d"
+fi
+
+# --- // Remove sudo requirement for specific commands:
+for cmd in mount umount sv pacman updatedb su shutdown poweroff reboot; do
+    alias "$cmd"="sudo $cmd"
+done
+unset cmd
+
+# --- // Cheat-sheets:
+cht() {
+    local cheats=("$HOME/.cheater/"*.md)
+    local choice
+    choice=$(printf "%s\n" "${cheats[@]}" | fzf --prompt="Select a cheat sheet: ")
+    if [ -n "$choice" ]; then
+        bat --language=mdown "$choice"
+    else
+        echo "No cheat sheet selected."
+    fi
+}
+
+# --- // EDIT_CONFIG_FILES:
+alias valias='sudo nvim "$XDG_CONFIG_HOME/shellz/aliasrc"'
+alias vfunc='sudo nvim "$XDG_CONFIG_HOME/shellz/functionsrc"'
+alias vpac='sudo nvim /etc/pacman.conf'
+alias vgrub='sudo nvim /etc/default/grub'
+alias vgrubc='sudo nvim /boot/grub/grub.cfg'
+alias vmkinit='sudo nvim /etc/mkinitcpio.conf'
+alias vmirror='sudo nvim /etc/pacman.d/mirrorlist'
+alias vchaotic='sudo nvim /etc/pacman.d/chaotic-mirrorlist'
+alias vfstab='sudo nvim /etc/fstab'
+alias vnsswitch='sudo nvim /etc/nsswitch.conf'
+alias vsmb='sudo nvim /etc/samba/smb.conf'
+alias vgpg='sudo nvim /etc/pacman.d/gnupg/gpg.conf'
+alias vhosts='sudo nvim /etc/hosts'
+alias vhostname='sudo nvim /etc/hostname'
+alias vb='sudo nvim ~/.bashrc'
+alias vz='sudo nvim ~/.zshrc'
+alias vmvp='nvim "$HOME/.config/mpv/mpv.conf"'
+alias vfire='sudo nvim "$XDG_CONFIG_HOME/wayfire.ini"'
+
+# --- // DIRECTORY_SHORTCUTS:
+goto() {
+    local dir="$1"
+    if [ -z "$dir" ]; then
+        echo "Error: No directory specified."
+        return 1
+    elif [ -d "$dir" ]; then
+        cd "$dir" || return 1
+    else
+        echo "Error: Directory not found: $dir"
+        return 1
+    fi
+}
+
+# --- // User Shortcuts:
+alias dc='goto ~/Documents'
+alias dl='goto ~/Downloads'
+alias vid='goto ~/Videos'
+alias pic='goto ~/Pictures'
+alias conf='goto ~/.config'
+alias confw='goto ~/.config/wayfire'
+alias confm='goto ~/.config/mpv'
+alias ob='goto ~/.config/openbox'
+alias obt='goto ~/.config/openbox/themes'
+
+# --- // Storage Shortcuts:
+alias sto='goto /storage'
+alias sdl='goto /storage/Downloads'
+alias spic='goto /storage/Pictures'
+alias svid='goto /storage/Videos'
+alias streamdir='goto /storage/streamlink'
+
+# --- // STO2:
+alias s2='goto /sto2'
+alias s2dl='goto /sto2/Downloads'
+alias s2pic='goto /sto2/Pictures'
+alias s2vid='goto /sto2/Videos'
+alias gym='goto /sto2/Gym'
+alias jd='goto /sto2/JD'
+
+# --- // 23.1:
+alias 23='goto /23.1'
+alias 23dl='goto /23.1/Downloads'
+alias 23pic='goto /23.1/Pictures'
+alias 23vid='goto /23.1/Videos'
+alias 23e='goto /23.1/Edits'
+alias cloud='goto /23.1/Thecloud'
+
+# --- // Nas Shortcuts:
+alias nas='goto /Nas/'
+alias nbin='goto /Nas/Build/git/syncing/scr'
+alias 5cr='goto /Nas/Build/git/syncing/5cr'
+alias nnas='goto /Nas/Build/git/syncing/nas'
+alias ngpt='goto /Nas/Build/git/syncing/gpt'
+alias ng='goto /Nas/Build/git/'
+alias ngc='goto /Nas/Build/git/clone'
+alias npkg='goto /Nas/Build/pkgs'
+alias npro='goto /Nas/Build/projects'
+alias ndot='goto /Nas/Build/git/clone/dotfiles'
+
+# --- // System Shortcuts:
+alias et='goto /etc'
+alias ske='goto /etc/skel'
+alias bin='goto /usr/local/bin'
+alias loc='goto ~/.local'
+alias lbin='goto ~/.local/bin'
+alias lshare='goto ~/.local/share/'
+alias lsrc='goto ~/.local/src/'
+alias shellzsh='goto ~/.config/shellz'
+alias shellbash='goto ~/.config/shell'
+
+# --- // Basic Aliases:
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+alias ......='cd ../../../../..'
+alias s='sudo'
+alias e='$EDITOR'
+alias v='$EDITOR'
+alias p='pacman'
+alias ka='killall'
+alias cp='cp -iv'
+alias mv='mv -iv'
+alias mkd='mkdir -pv'
+alias rm='trash-put'
+alias rmf='sudo /usr/bin/rm -vI -rf'
+alias rg='batgrep'
+alias man='batman'
+alias diff='diff --color=auto'
+alias rmdir='rm -vI --preserve-root'
+alias ln='ln -iv'
+alias bc='bc -ql'
+alias wget='wget -c'
+alias curl='curl --user-agent "noleak"'
+alias df='df -h --exclude-type=squashfs --exclude-type=tmpfs --exclude-type=devtmpfs'
+alias rsync='rsync -avrPlU --progress'
+alias chown='chown --preserve-root'
+alias chmod='chmod --preserve-root'
+alias chgrp='chgrp --preserve-root'
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias ccat='highlight --out-format=ansi'
+alias ip='ip -color=auto'
+alias c='clear; echo; seq 1 $(tput cols) | sort -R | spark | lolcat'
+
+# --- // Git Shortcuts:
+alias g='git'
+alias gstash='git stash --all'
+alias gclear='git stash clear'
+alias gstat='git status'
+alias greset='git reset --hard'
+alias gfs='git-lfs '
+alias grmcache='git rm -f --cached . && git commit -m "Removed cached and committed"'
+
+gpush() {
+    git add .
+    git commit -m "$*"
+    git pull
+    git push
+}
+
+# --- // Auto Git Add, Commit, Push:
+gcomp() {
+    if ! git diff-index --quiet HEAD --; then
+        local added modified deleted commit_message
+        added=$(git status --porcelain | grep "^A" | wc -l)
+        modified=$(git status --porcelain | grep "^ M" | wc -l)
+        deleted=$(git status --porcelain | grep "^D" | wc -l)
+        commit_message="Auto-commit: ${added} added, ${modified} modified, ${deleted} deleted"
+        git add --all
+        if ! git commit -m "$commit_message"; then
+            echo "Error: Commit failed."
+            return 1
+        fi
+        if ! git pull --rebase; then
+            echo "Error: Pull failed."
+            return 1
+        fi
+        if ! git push; then
+            echo "Error: Push failed."
+            return 1
+        fi
+        echo "Changes committed, pulled, and pushed successfully."
+    else
+        echo "No changes detected. Nothing to commit."
+    fi
+}
+
+# --- // Login Manager Commands:
+alias toboot="sudo /usr/local/bin/arcolinux-toboot"
+alias togrub="sudo /usr/local/bin/arcolinux-togrub"
+alias tolightdm="sudo pacman -S lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings --noconfirm --needed && sudo systemctl enable lightdm.service -f && echo 'LightDM is active - reboot now'"
+alias tosddm="sudo pacman -S sddm --noconfirm --needed && sudo systemctl enable sddm.service -f && echo 'SDDM is active - reboot now'"
+alias toly="sudo pacman -S ly --noconfirm --needed && sudo systemctl enable ly.service -f && echo 'LY is active - reboot now'"
+alias togdm="sudo pacman -S gdm --noconfirm --needed && sudo systemctl enable gdm.service -f && echo 'GDM is active - reboot now'"
+alias tolxdm="sudo pacman -S lxdm --noconfirm --needed && sudo systemctl enable lxdm.service -f && echo 'LXDM is active - reboot now'"
+
+# --- // Mirrors:
+alias mirror1="sudo reflector -f 30 -l 30 --number 10 --verbose --save /etc/pacman.d/mirrorlist"
+alias mirror2="sudo reflector --latest 30 --number 10 --sort delay --save /etc/pacman.d/mirrorlist"
+alias mirror3="sudo reflector --latest 30 --number 10 --sort score --save /etc/pacman.d/mirrorlist"
+alias mirror4="sudo reflector --latest 30 --number 10 --sort age --save /etc/pacman.d/mirrorlist"
+alias mirror5="sudo reflector --age 6 --latest 20 --fastest 20 --threads 5 --sort rate --protocol https --save /etc/pacman.d/mirrorlist"
+alias mirror6="sudo reflector --age 6 --latest 20 --fastest 20 --threads 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist"
+
+# --- // VPN Shortcuts:
+alias vpnc='sudo expressvpn connect'
+alias vpnd='sudo expressvpn disconnect'
+alias vpns='sudo expressvpn status'
+alias vpnr='sudo expressvpn refresh'
+alias vpnauto='expressvpn autoconnect true'
+alias vpnset='sudo expressvpn preferences set'
+
+# --- // YouTube Download Helper:
+ytdl() {
+    yt-dlp --add-metadata \
+           --embed-metadata \
+           --external-downloader aria2c \
+           --external-downloader-args "-c -j 3 -x 3 -s 3 -k 1M" \
+           -f "315/313/308/303/302/247/244/137+bestaudio/best" \
+           --merge-output-format webm \
+           --no-playlist \
+           --no-mtime \
+           "$@"
+}
+
+ytf() {
+    local url="$1"
+    yt-dlp --list-formats "$url"
+}
+
+alias ytt='yt-dlp --skip-download --write-thumbnail'
+alias YT='youtube-viewer'
+alias yta='yt-dlp -x -f bestaudio/best'
+
+# --- // Cleanup Session and Shutdown:
+cleanup_session() {
+    echo "Starting session cleanup..."
+    log_file="/var/log/session_cleanup.log"
+
+    if [ ! -e "$log_file" ]; then
+        sudo touch "$log_file"
+        sudo chmod 666 "$log_file"
+    fi
+
+    processes=("polkit-gnome-authentication-agent-1" "xdg-desktop-portal")
+    for process in "${processes[@]}"; do
+        if pgrep -x "$process" > /dev/null; then
+            pkill -f "$process" && echo "$process terminated successfully." || echo "Failed to terminate $process."
+        else
+            echo "$process not running."
+        fi
+    done
+
+    sudo rm -rf /tmp/* /var/tmp/*
+    echo "Temporary files cleared."
+    sudo rm -f /run/user/$(id -u)/lock/*
+    echo "Session cleanup complete."
+}
+
+alias sdn="cleanup_session && echo 'Shutting down...' && sudo shutdown -h now"
+alias ssr="cleanup_session && echo 'Rebooting...' && sudo reboot -h now"
+
+# --- // Custom:
+alias magic="echo o > /proc/sysrq-trigger"
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+export WORKON_HOME='/home/andro/.local/share/python/virtualenvs'
+source /usr/bin/virtualenvwrapper.sh
