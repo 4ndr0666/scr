@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
+###############################################################################
 # File: main.sh
-# Description: Entry point for the 4ndr0service Suite. Initializes environment and starts the controller.
-
+# Description: Entry point for the 4ndr0service Suite.
+###############################################################################
+#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 

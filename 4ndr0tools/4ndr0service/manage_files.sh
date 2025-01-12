@@ -1,22 +1,33 @@
-#!/bin/bash
+###############################################################################
 # File: manage_files.sh
-# Description: Provides batch execution of all services and optional backup steps.
-
+# Description: Provides batch execution of services and optional backup steps.
+###############################################################################
+#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 
 source "$PKG_PATH/common.sh"
 
 batch_execute_all() {
-    echo "Batch executing all services..."
-    log_info "Batch executing all services..."
-    services=("optimize_go_service" "optimize_ruby_service" "optimize_cargo_service" "optimize_node_service" "optimize_nvm_service" "optimize_meson_service" "optimize_python_service" "optimize_electron_service" "optimize_venv_service")
+    echo "Batch executing all services in sequence..."
+    log_info "Batch executing all services in sequence..."
+
+    local services=(
+      "optimize_go_service"
+      "optimize_ruby_service"
+      "optimize_cargo_service"
+      "optimize_node_service"
+      "optimize_meson_service"
+      "optimize_python_service"
+      "optimize_electron_service"
+      "optimize_venv_service"
+    )
 
     for svc in "${services[@]}"; do
         if command -v "$svc" &>/dev/null; then
             echo "Running $svc..."
             log_info "Running $svc..."
-            if ! $svc; then
+            if ! "$svc"; then
                 echo "Warning: $svc encountered an issue."
                 log_warn "$svc encountered an issue."
             else
@@ -33,22 +44,36 @@ batch_execute_all() {
     log_info "Batch execution completed."
 }
 
+batch_execute_all_parallel() {
+    echo "Batch executing some services in parallel..."
+    log_info "Batch executing some services in parallel..."
+
+    run_parallel_checks \
+        "optimize_go_service" \
+        "optimize_ruby_service" \
+        "optimize_cargo_service"
+
+    echo "Parallel batch execution completed."
+    log_info "Parallel batch execution completed."
+}
+
 optional_backup() {
     read -rp "Perform backups to $backup_dir? (y/n): " backup_choice
     if [[ "$backup_choice" =~ ^[Yy]$ ]]; then
         echo "Performing backups..."
         log_info "Performing backups..."
         ensure_dir "$backup_dir"
-        timestamp=$(date +%Y%m%d_%H%M%S)
+        local timestamp
+        timestamp="$(date +%Y%m%d_%H%M%S)"
 
-        # Example backup: Python venv
+        # Example: backup python venv
         if [[ -d "$VENV_HOME" ]]; then
-            tar --exclude='__pycache__' --exclude-vcs -czf "$backup_dir/venv_backup_$timestamp.tar.gz" -C "$VENV_HOME" . || log_warn "Could not backup venv."
+            tar --exclude='__pycache__' --exclude-vcs \
+                -czf "$backup_dir/venv_backup_$timestamp.tar.gz" \
+                -C "$VENV_HOME" . || log_warn "Could not backup venv."
             echo "Venv data backed up."
             log_info "Venv data backed up."
         fi
-
-        # Add more backups as needed
 
         echo "Backups completed."
         log_info "Backups completed."
@@ -71,16 +96,23 @@ run_verification() {
 
 manage_files_main() {
     PS3="Manage Files: "
-    options=("Batch Execute All Services" "Optional Backups" "Run Verification" "Return")
+    options=(
+      "Batch Execute All Services"
+      "Batch Execute All in Parallel (Example)"
+      "Optional Backups"
+      "Run Verification"
+      "Return"
+    )
     select opt in "${options[@]}"; do
-        case $REPLY in
+        case "$REPLY" in
             1) batch_execute_all ;;
-            2) optional_backup ;;
-            3) run_verification ;;
-            4) break ;;
+            2) batch_execute_all_parallel ;;
+            3) optional_backup ;;
+            4) run_verification ;;
+            5) break ;;
             *) echo "Invalid option." ;;
         esac
     done
 }
 
-export -f batch_execute_all optional_backup run_verification manage_files_main
+export -f batch_execute_all batch_execute_all_parallel optional_backup run_verification manage_files_main

@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: verify_environment.sh
-# Description: Offers --report and --fix modes to verify and fix environment setup.
+# Description: Verifies/fixes environment for 4ndr0service Suite. 
+# Usage: verify_environment.sh [--report] [--fix]
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -46,6 +47,8 @@ check_env_vars() {
         for mv in "${missing_vars[@]}"; do
             log_warn "Missing environment variable: $mv"
             echo "Missing environment variable: $mv"
+            # Typically environment variables can be set in config or shell
+            # We'll only warn here, as forcibly setting them might not be correct
         done
     else
         log_info "All required environment variables are set."
@@ -75,6 +78,7 @@ check_directories() {
                 any_issue=true
             fi
         fi
+        # skip GOROOT checks
         if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
             continue
         fi
@@ -163,7 +167,7 @@ print_report() {
 
 main() {
     echo "Verifying environment alignment..."
-    log_info "Starting verification..."
+    log_info "Starting environment verification..."
 
     check_env_vars "$FIX_MODE"
     check_directories "$FIX_MODE"
@@ -175,7 +179,6 @@ main() {
     if [[ "$REPORT_MODE" == "true" ]]; then
         print_report
     fi
-
     echo "Done."
 }
 

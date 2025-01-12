@@ -62,10 +62,11 @@ configure_auditd() {
 
 finalize_setup() {
     ensure_dir "$PKG_PATH/test/src"
-    if [[ ! -x "$PKG_PATH/test/srcverify_environment.sh" ]]; then
-        handle_error "$PKG_PATH/test/srcverify_environment.sh not found or not executable."
+    if [[ ! -x "$PKG_PATH/test/src/verify_environment.sh" ]]; then
+        handle_error "$PKG_PATH/test/src/verify_environment.sh not found or not executable."
     fi
-    "$PKG_PATH/test/src/verify_environment.sh" || log_warn "Initial verification issues."
+
+    "$PKG_PATH/test/src/verify_environment.sh" || log_warn "Initial verification encountered issues."
     log_info "Env maintenance setup complete."
     echo "Maintenance setup complete."
 }

@@ -1,8 +1,9 @@
 #!/bin/bash
+# -------------------------------------------------------------------
 # File: optimize_cargo.sh
-# Author: 4ndr0666
 # Date: 2024-11-24
-# Description: Optimizes Cargo environment in alignment with XDG Base Directory Specifications.
+# Description: Optimizes Cargo environment in alignment with XDG Base Directory Specs.
+# -------------------------------------------------------------------
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -30,16 +31,16 @@ handle_error() {
 
 check_directory_writable() {
     local dir_path="$1"
-    if [[ -w "$dir_path" ]]; then
+    if [[ ! -w "$dir_path" ]]; then
+        handle_error "Directory $dir_path is not writable."
+    else
         echo "✅ Directory $dir_path is writable."
         log "Directory '$dir_path' is writable."
-    else
-        handle_error "Directory $dir_path is not writable."
     fi
 }
 
-export CARGO_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/cargo"
-export RUSTUP_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/rustup"
+export CARGO_HOME="${CARGO_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/rustup}"
 
 install_rustup() {
     echo "📦 Installing rustup..."
@@ -49,7 +50,6 @@ install_rustup() {
     else
         handle_error "Failed to install rustup."
     fi
-
     [ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed to source Rustup environment."
 }
 
@@ -63,8 +63,8 @@ update_rustup_and_cargo() {
             log "Warning: Failed to update Cargo."
         fi
     else
-        echo "⚠️ rustup self-update is disabled for this build. Use system package manager to update rustup."
-        log "rustup self-update disabled. Instructed user to use system package manager."
+        echo "⚠️ rustup self-update disabled for this system. Use system package manager to update rustup."
+        log "rustup self-update not available."
     fi
 }
 
@@ -93,18 +93,16 @@ cargo_install_or_update() {
 
 consolidate_cargo_directories() {
     echo "🧹 Ensuring Cargo directories exist..."
-    mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" || handle_error "Failed to create Cargo directories."
+    mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" || handle_error "Failed creating Cargo dirs."
 
     if [[ -d "$HOME/.cargo" && "$HOME/.cargo" != "$CARGO_HOME" ]]; then
-        echo "🧹 Moving existing .cargo directory to $CARGO_HOME..."
-        mv "$HOME/.cargo" "$CARGO_HOME" || handle_error "Failed to move .cargo to $CARGO_HOME."
+        echo "🧹 Moving existing .cargo => $CARGO_HOME..."
+        mv "$HOME/.cargo" "$CARGO_HOME" || handle_error "Failed to move .cargo => $CARGO_HOME."
     fi
-
     if [[ -d "$HOME/.rustup" && "$HOME/.rustup" != "$RUSTUP_HOME" ]]; then
-        echo "🧹 Moving existing .rustup directory to $RUSTUP_HOME..."
-        mv "$HOME/.rustup" "$RUSTUP_HOME" || handle_error "Failed to move .rustup to $RUSTUP_HOME."
+        echo "🧹 Moving existing .rustup => $RUSTUP_HOME..."
+        mv "$HOME/.rustup" "$RUSTUP_HOME" || handle_error "Failed to move .rustup => $RUSTUP_HOME."
     fi
-
     log "Cargo directories consolidated."
 }
 
@@ -118,68 +116,67 @@ manage_permissions() {
     echo "🔐 Verifying permissions for Cargo directories..."
     check_directory_writable "$CARGO_HOME"
     check_directory_writable "$RUSTUP_HOME"
-    log "Permissions for Cargo directories are verified."
+    log "Permissions verified for Cargo directories."
 }
 
 validate_cargo_installation() {
     echo "✅ Validating Cargo installation..."
     if ! cargo --version &> /dev/null; then
-        handle_error "Cargo missing. Use --fix to attemp installation."
+        handle_error "Cargo missing. Use --fix to attempt installation."
     fi
     if ! rustup --version &> /dev/null; then
-        handle_error "rustup is not installed correctly."
+        handle_error "rustup not installed correctly."
     fi
-    echo "✅ Cargo and rustup are installed and configured correctly."
-    log "Cargo installation validated successfully."
+    echo "✅ Cargo and rustup are installed + configured."
+    log "Cargo validated."
 }
 
 perform_final_cleanup() {
     echo "🧼 Performing final cleanup tasks..."
     if [[ -d "$CARGO_HOME/tmp" ]]; then
-        echo "🗑️ Cleaning up $CARGO_HOME/tmp..."
-        rm -rf "${CARGO_HOME:?}/tmp" || log "⚠️ Warning: Failed to remove temporary files from '$CARGO_HOME/tmp'."
-        log "Removed temporary files in '$CARGO_HOME/tmp'."
+        echo "🗑️ Cleaning $CARGO_HOME/tmp..."
+        rm -rf "${CARGO_HOME:?}/tmp" || log "Warning: Failed removing $CARGO_HOME/tmp."
+        log "Removed $CARGO_HOME/tmp."
     fi
-
     if [[ -d "$RUSTUP_HOME/tmp" ]]; then
-        echo "🗑️ Cleaning up $RUSTUP_HOME/tmp..."
-        rm -rf "${RUSTUP_HOME:?}/tmp" || log "⚠️ Warning: Failed to remove temporary files from '$RUSTUP_HOME/tmp'."
-        log "Removed temporary files in '$RUSTUP_HOME/tmp'."
+        echo "🗑️ Cleaning $RUSTUP_HOME/tmp..."
+        rm -rf "${RUSTUP_HOME:?}/tmp" || log "Warning: Failed removing $RUSTUP_HOME/tmp."
+        log "Removed $RUSTUP_HOME/tmp."
     fi
     echo "🧼 Final cleanup completed."
-    log "Final cleanup tasks completed."
+    log "Cargo final cleanup done."
 }
 
 optimize_cargo_service() {
     echo "🔧 Starting Cargo environment optimization..."
 
     if ! command -v rustup &> /dev/null; then
-        echo "📦 rustup is not installed. Installing rustup..."
+        echo "📦 rustup not installed. Installing..."
         install_rustup
     else
-        echo "✅ rustup is already installed."
-        log "rustup is already installed."
+        echo "✅ rustup already installed."
+        log "rustup installed."
     fi
 
-    echo "🔄 Updating rustup and Cargo..."
+    echo "🔄 Updating rustup + Cargo..."
     update_rustup_and_cargo
 
-    echo "🛠️ Setting up environment variables for Cargo and rustup..."
+    echo "🛠️ Setting PATH for Cargo..."
     export PATH="$CARGO_HOME/bin:$PATH"
 
     echo "🧹 Consolidating Cargo directories..."
     consolidate_cargo_directories
 
-    echo "🔧 Installing or updating essential Cargo tools..."
+    echo "🔧 Installing essential Cargo tools..."
     install_cargo_tools
 
-    echo "🔐 Managing permissions for Cargo directories..."
+    echo "🔐 Managing permissions..."
     manage_permissions
 
     echo "✅ Validating Cargo installation..."
     validate_cargo_installation
 
-    echo "🧼 Performing final cleanup..."
+    echo "🧼 Final cleanup..."
     perform_final_cleanup
 
     echo "🎉 Cargo environment optimization complete."

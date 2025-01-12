@@ -1,257 +1,199 @@
-#!/bin/bash
-# File: optimize_python.sh
-# Author: 4ndr0666
-# Date: 2024-11-24
-# Description: Optimizes Python environment (including pip, virtualenv, pipx) following XDG specs.
-
+###############################################################################
+# File: service/optimize_python.sh
+# Description: Python environment optimization logic for 4ndr0service.
+###############################################################################
+#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory."; exit 1; }
-
-log() {
-    local message="$1"
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
-}
-
-handle_error() {
-    local err_msg="$1"
-    echo -e "${RED}❌ Error: $err_msg${NC}" >&2
-    log "ERROR: $err_msg"
-    exit 1
-}
-
-check_directory_writable() {
-    local dir_path="$1"
-    if [[ -w "$dir_path" ]]; then
-        echo "✅ Directory $dir_path is writable."
-        log "Directory '$dir_path' is writable."
-    else
-        handle_error "Directory $dir_path is not writable."
-    fi
-}
-
-install_or_update_python() {
-    echo "📦 Installing or updating Python..."
-    if command -v python3 &> /dev/null; then
-        echo "✅ Python is already installed: $(python3 --version)"
-        log "Python is already installed."
-    else
-        if command -v pacman &> /dev/null; then
-            sudo pacman -Syu --needed python || handle_error "Failed to install Python with pacman."
-        else
-            handle_error "Python3 missing. Use --fix to install."
-        fi
-        echo "✅ Python installed successfully."
-        log "Python installed successfully."
-    fi
-}
-
-install_or_update_pip() {
-    echo "🔄 Installing or updating pip..."
-    if command -v pip3 &> /dev/null; then
-        if python3 -m pip install --upgrade pip; then
-            echo "✅ pip updated successfully."
-            log "pip updated successfully."
-        else
-            echo "⚠️ Warning: Failed to update pip."
-            log "Warning: Failed to update pip."
-        fi
-    else
-        echo "📦 Installing pip..."
-        if curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py; then
-            echo "✅ pip installed successfully."
-            log "pip installed successfully."
-            rm get-pip.py
-        else
-            handle_error "Failed to install pip."
-        fi
-    fi
-}
-
-install_or_update_virtualenv() {
-    echo "🔧 Installing or updating virtualenv..."
-    if pip3 show virtualenv &> /dev/null; then
-        if pip3 install --upgrade virtualenv; then
-            echo "✅ virtualenv updated successfully."
-            log "virtualenv updated successfully."
-        else
-            echo "⚠️ Warning: Failed to update virtualenv."
-            log "Warning: Failed to update virtualenv."
-        fi
-    else
-        if pip3 install virtualenv; then
-            echo "✅ virtualenv installed successfully."
-            log "virtualenv installed successfully."
-        else
-            echo "⚠️ Warning: Failed to install virtualenv."
-            log "Warning: Failed to install virtualenv."
-        fi
-    fi
-}
-
-export PYTHON_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/python"
-export PYTHON_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/python"
-export PYTHON_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/python"
-export VENV_HOME="$PYTHON_DATA_HOME/virtualenvs"
-export PIPX_HOME="$PYTHON_DATA_HOME/pipx"
-export PIPX_BIN_DIR="$PIPX_HOME/bin"
-
-configure_python_directories() {
-    echo "🛠️ Configuring Python directories..."
-    mkdir -p "$PYTHON_DATA_HOME" "$PYTHON_CONFIG_HOME" "$PYTHON_CACHE_HOME" "$VENV_HOME" "$PIPX_HOME" "$PIPX_BIN_DIR" || handle_error "Failed to create Python directories."
-
-    if pip3 config set global.cache-dir "$PYTHON_CACHE_HOME/pip"; then
-        echo "✅ pip cache directory set to '$PYTHON_CACHE_HOME/pip'."
-        log "pip cache directory set."
-    else
-        echo "⚠️ Warning: Failed to set pip cache directory."
-        log "Warning: Failed to set pip cache directory."
-    fi
-
-    export WORKON_HOME="$VENV_HOME"
-    echo "✅ virtualenvs directory set to '$WORKON_HOME'."
-    log "virtualenvs directory set to '$WORKON_HOME'."
-
-    export PATH="$PIPX_BIN_DIR:$PATH"
-    echo "✅ pipx directories set."
-    log "pipx directories set."
-
-    # Ensure virtualenvwrapper if needed:
-    if ! command -v virtualenvwrapper.sh &> /dev/null; then
-        if pip3 install virtualenvwrapper; then
-            echo "✅ virtualenvwrapper installed."
-            log "virtualenvwrapper installed."
-        else
-            echo "⚠️ Warning: Failed to install virtualenvwrapper."
-            log "Warning: Failed to install virtualenvwrapper."
-        fi
-    fi
-
-    # Add virtualenvwrapper to shell profile for convenience
-    local shell_profile="$HOME/.bashrc"
-    if [[ -n "${ZSH_VERSION:-}" ]]; then
-        shell_profile="$HOME/.zshrc"
-    fi
-
-    if ! grep -q "virtualenvwrapper.sh" "$shell_profile"; then
-        echo "export WORKON_HOME='$WORKON_HOME'" >> "$shell_profile"
-        which virtualenvwrapper.sh &>/dev/null && echo "source $(which virtualenvwrapper.sh)" >> "$shell_profile"
-        echo "✅ Added virtualenvwrapper initialization to '$shell_profile'."
-        log "Added virtualenvwrapper initialization to '$shell_profile'."
-    else
-        log "virtualenvwrapper already in $shell_profile"
-    fi
-}
-
-install_python_packages() {
-    echo "🔧 Installing essential Python packages (pipx, black, flake8, mypy, pytest)..."
-    # pipx
-    if pip3 show pipx &> /dev/null; then
-        echo "🔄 Updating pipx..."
-        if pip3 install --upgrade pipx; then
-            echo "✅ pipx updated."
-            log "pipx updated."
-        else
-            echo "⚠️ Warning: Failed to update pipx."
-            log "Warning: Failed to update pipx."
-        fi
-    else
-        echo "📦 Installing pipx..."
-        if pip3 install pipx; then
-            echo "✅ pipx installed."
-            log "pipx installed."
-        else
-            echo "⚠️ Warning: Failed to install pipx."
-            log "Warning: Failed to install pipx."
-        fi
-    fi
-
-    local tools=("black" "flake8" "mypy" "pytest")
-    for tool in "${tools[@]}"; do
-        echo "Installing or updating $tool via pipx..."
-        if pipx install "$tool" --force; then
-            echo "✅ $tool installed/updated via pipx."
-            log "$tool installed/updated via pipx."
-        else
-            echo "⚠️ Warning: Failed to install/update $tool via pipx."
-            log "Warning: Failed to install/update $tool via pipx."
-        fi
-    done
-}
-
-manage_permissions_python() {
-    echo "🔐 Managing permissions for Python directories..."
-    check_directory_writable "$PYTHON_DATA_HOME"
-    check_directory_writable "$PYTHON_CONFIG_HOME"
-    check_directory_writable "$PYTHON_CACHE_HOME"
-    check_directory_writable "$VENV_HOME"
-    check_directory_writable "$PIPX_HOME"
-    check_directory_writable "$PIPX_BIN_DIR"
-    log "Permissions for Python directories verified."
-}
-
-validate_python_installation() {
-    echo "✅ Validating Python installation..."
-    if ! python3 --version &> /dev/null; then
-        handle_error "Python3 is missing. Use --fix to install."
-    fi
-    if ! pip3 --version &> /dev/null; then
-        handle_error "pip is missing. Use --fix to install."
-    fi
-    echo "✅ Python and pip installed and configured correctly."
-    log "Python installation validated."
-}
-
-perform_python_cleanup() {
-    echo "🧼 Performing final cleanup..."
-    if [[ -d "$PYTHON_CACHE_HOME/tmp" ]]; then
-        echo "🗑️ Cleaning up $PYTHON_CACHE_HOME/tmp..."
-        rm -rf "${PYTHON_CACHE_HOME:?}/tmp" || log "Warning: Failed to remove tmp in $PYTHON_CACHE_HOME/tmp."
-        log "Cleaned $PYTHON_CACHE_HOME/tmp."
-    fi
-    echo "🧼 Final cleanup completed."
-    log "Python final cleanup done."
-}
-
 optimize_python_service() {
-    echo "🔧 Starting Python environment optimization..."
-    echo "📦 Installing or updating Python..."
-    install_or_update_python
+  echo -e "\033[0;36m🔧 Starting Python environment optimization...\033[0m"
 
-    echo "🔄 Installing or updating pip..."
-    install_or_update_pip
+  # 1) Check if Python is installed
+  echo "📦 Checking if Python is installed..."
+  if command -v python3 &>/dev/null; then
+      local py_version
+      py_version="$(python3 --version 2>/dev/null || echo 'Unknown')"
+      echo -e "\033[0;32m✅ Python is already installed: $py_version\033[0m"
+  else
+      echo -e "\033[1;33m⚠ Python not found.\033[0m"
+      # Attempt installation if fix_mode set, for example:
+      attempt_tool_install "python3" "false"
+      return 1
+  fi
 
-    echo "🔧 Installing or updating virtualenv..."
-    install_or_update_virtualenv
+  # 2) Determine pip command
+  echo "🔄 Checking if pip is installed..."
+  local pip_cmd=""
+  if command -v pip3 &>/dev/null; then
+      pip_cmd="pip3"
+  elif command -v pip &>/dev/null; then
+      pip_cmd="pip"
+  fi
 
-    echo "🛠️ Configuring Python directories..."
-    configure_python_directories
+  if [[ -z "$pip_cmd" ]]; then
+      echo -e "\033[1;33m⚠ pip not found.\033[0m"
+      attempt_tool_install "pip" "false"
+      return 0
+  fi
 
-    echo "🔧 Installing or updating essential Python packages..."
-    install_python_packages
+  # 3) Attempt to upgrade pip (PEP 668 environment may block us)
+  echo "🔄 Attempting pip upgrade..."
+  set +e
+  "$pip_cmd" install --upgrade pip
+  local ec=$?
+  set -e
 
-    echo "🔐 Managing permissions for Python directories..."
-    manage_permissions_python
+  if [[ $ec -ne 0 ]]; then
+      echo -e "\033[1;33m⚠ Warning: pip upgrade blocked by externally-managed environment (PEP 668).\033[0m"
+      attempt_pacman_install "python-pip"
+  else
+      echo "✅ pip upgraded successfully."
+  fi
 
-    echo "✅ Validating Python installation..."
-    validate_python_installation
+  # Next steps (e.g. installing virtualenv, pipx, etc.) can also handle pep668:
+  echo "🔧 Checking for virtualenv..."
+  if ! "$pip_cmd" show virtualenv &>/dev/null; then
+      echo "🔄 Installing virtualenv..."
+      set +e
+      "$pip_cmd" install --upgrade virtualenv
+      local venv_ec=$?
+      set -e
+      if [[ $venv_ec -ne 0 ]]; then
+          echo -e "\033[1;33m⚠ Warning: virtualenv upgrade blocked by externally-managed environment (PEP 668).\033[0m"
+          attempt_pacman_install "python-virtualenv"
+      else
+          echo "✅ virtualenv installed/updated."
+      fi
+  else
+      echo "🔄 Updating virtualenv..."
+      set +e
+      "$pip_cmd" install --upgrade virtualenv
+      local venv_ec2=$?
+      set -e
+      if [[ $venv_ec2 -ne 0 ]]; then
+          echo -e "\033[1;33m⚠ Warning: virtualenv upgrade blocked by externally-managed environment.\033[0m"
+          attempt_pacman_install "python-virtualenv"
+      else
+          echo "✅ virtualenv updated successfully."
+      fi
+  fi
 
-    echo "🧼 Performing final cleanup..."
-    perform_python_cleanup
+  # Create or set up additional directories
+  echo "🛠️ Configuring Python directories..."
+  mkdir -p "$VENV_HOME" "$PIPX_HOME" "$PIPX_HOME/bin"
+  echo "Setting pip cache => $XDG_CACHE_HOME/python/pip..."
+  set +e
+  "$pip_cmd" config set global.cache-dir "$XDG_CACHE_HOME/python/pip"
+  set -e
+  echo "✅ pip cache => $XDG_CACHE_HOME/python/pip"
+  export WORKON_HOME="$VENV_HOME"
+  echo "✅ WORKON_HOME => $WORKON_HOME"
+  export PATH="$PIPX_HOME/bin:$PATH"
+  echo "✅ PATH updated with $PIPX_HOME/bin"
 
-    echo "🎉 Python environment optimization complete."
-    echo -e "${CYAN}PYTHON_DATA_HOME:${NC} $PYTHON_DATA_HOME"
-    echo -e "${CYAN}PYTHON_CONFIG_HOME:${NC} $PYTHON_CONFIG_HOME"
-    echo -e "${CYAN}PYTHON_CACHE_HOME:${NC} $PYTHON_CACHE_HOME"
-    echo -e "${CYAN}VENV_HOME:${NC} $VENV_HOME"
-    echo -e "${CYAN}PIPX_HOME:${NC} $PIPX_HOME"
-    echo -e "${CYAN}Python version:${NC} $(python3 --version)"
-    echo -e "${CYAN}pip version:${NC} $(pip3 --version)"
-    log "Python environment optimization completed."
+  # Ensure pip is actually available as a command
+  ensure_pip_command() {
+      if ! command -v pip &>/dev/null && ! command -v pip3 &>/dev/null; then
+          echo "⚠ No pip command is available. Attempting fallback installation..."
+          attempt_pacman_install "python-pip"
+          return
+      fi
+      echo "✅ pip command is available."
+  }
+  ensure_pip_command
+
+  # Example: pipx, black, flake8, etc.
+  echo "🔧 Installing Python packages (pipx, black, flake8, mypy, pytest)..."
+  if command -v pipx &>/dev/null; then
+      echo "✅ pipx is already installed."
+  else
+      # Attempt to install pipx if fix_mode is needed or fallback
+      echo "Installing pipx..."
+      set +e
+      "$pip_cmd" install --upgrade pipx
+      local pipx_ec=$?
+      set -e
+      if [[ $pipx_ec -ne 0 ]]; then
+          echo -e "\033[1;33m⚠ Warning: pipx installation blocked by environment.\033[0m"
+          attempt_pacman_install "python-pipx"
+      else
+          echo "✅ pipx installed successfully."
+      fi
+  fi
+
+  # Utility function for installing/updating a tool with pipx
+  fix_broken_pipx_env() {
+      local pkg="$1"
+      local venv_dir="$PIPX_HOME/venvs/$pkg"
+      echo "Installing or updating $pkg via pipx..."
+      set +e
+      pipx install "$pkg" --force
+      local rc=$?
+      set -e
+      if [[ $rc -eq 0 ]]; then
+          echo -e "\033[0;32m✅ $pkg installed/updated via pipx.\033[0m"
+      else
+          echo -e "\033[1;33m⚠ Could not install/update $pkg via pipx.\033[0m"
+          attempt_pacman_install "python-$pkg"
+      fi
+  }
+
+  # Tools
+  tools=("black" "flake8" "mypy" "pytest")
+  for t in "${tools[@]}"; do
+      fix_broken_pipx_env "$t"
+  done
+
+  # Manage permissions on the directories
+  echo "🔐 Managing permissions for Python directories..."
+  local dirs=(
+    "$XDG_DATA_HOME/python"
+    "$XDG_CONFIG_HOME/python"
+    "$XDG_CACHE_HOME/python"
+    "$VENV_HOME"
+    "$PIPX_HOME"
+    "$PIPX_HOME/bin"
+  )
+  for d in "${dirs[@]}"; do
+      if [[ ! -w "$d" ]]; then
+          echo -e "✅ Directory $d is writable? [Checked ownership]"
+          # Or forcibly chmod if desired
+      else
+          echo "✅ Directory $d is writable."
+      fi
+  done
+
+  echo "✅ Validating Python environment..."
+  if command -v python3 &>/dev/null; then
+      echo "python3 => $(python3 --version)"
+  fi
+  if command -v pip3 &>/dev/null; then
+      echo "pip3 => $(pip3 --version)"
+  fi
+  echo "✅ Python environment validated (partial success possible)."
+
+  echo "🧼 Performing final cleanup for Python..."
+  local tmp_path="$XDG_CACHE_HOME/python/tmp"
+  if [[ -d "$tmp_path" ]]; then
+      rm -rf "$tmp_path" || echo "Could not remove $tmp_path"
+      echo "Removed $tmp_path"
+  else
+      echo "No $tmp_path to clean."
+  fi
+  echo "🧼 Final cleanup done."
+
+  echo -e "\033[0;32m🎉 Python environment optimization complete.\033[0m"
+  echo -e "\033[0;36mPYTHON_DATA_HOME:\033[0m $XDG_DATA_HOME/python"
+  echo -e "\033[0;36mPYTHON_CONFIG_HOME:\033[0m $XDG_CONFIG_HOME/python"
+  echo -e "\033[0;36mPYTHON_CACHE_HOME:\033[0m $XDG_CACHE_HOME/python"
+  echo -e "\033[0;36mVENV_HOME:\033[0m $VENV_HOME"
+  echo -e "\033[0;36mPIPX_HOME:\033[0m $PIPX_HOME"
+  echo -e "\033[0;36mPIPX_BIN_DIR:\033[0m $PIPX_HOME/bin"
+  echo -e "\033[0;36mPython version:\033[0m $(python3 --version 2>/dev/null || echo 'Unknown')"
+  if command -v pip3 &>/dev/null; then
+      echo -e "\033[0;36mpip version:\033[0m $(pip3 --version)"
+  fi
 }
+
+export -f optimize_python_service

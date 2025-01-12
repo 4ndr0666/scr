@@ -1,18 +1,18 @@
-#!/usr/bin/env bash
+###############################################################################
 # File: controller.sh
 # Description: Central controller for the 4ndr0service Suite.
-
+###############################################################################
+#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 
 PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 export PKG_PATH
 
-source "$PKG_PATH"/common.sh
-source "$PKG_PATH"/settings_functions.sh
-source "$PKG_PATH"/manage_files.sh
-source "$PKG_PATH"/test/src/verify_environment.sh
-#"$(dirname "$0")/test/src/verify_environment.sh"
+source "$PKG_PATH/common.sh"
+source "$PKG_PATH/settings_functions.sh"
+source "$PKG_PATH/manage_files.sh"
+source "$PKG_PATH/test/src/verify_environment.sh"
 
 load_plugins() {
     if [[ ! -d "$PLUGINS_DIR" ]]; then
@@ -32,10 +32,9 @@ source_all_services() {
     if [[ ! -d "$services_dir" ]]; then
         handle_error "Services directory '$services_dir' does not exist."
     fi
-
     for script in "$services_dir"/optimize_*.sh; do
         if [[ -f "$script" ]]; then
-            source "$script" || { log_warn "Failed to source '$script'."; }
+            source "$script" || log_warn "Failed to source '$script'."
             log_info "Sourced service script: '$script'."
         fi
     done
@@ -69,25 +68,34 @@ source_views() {
     esac
 }
 
+run_all_services() {
+    log_info "Running all services in sequence..."
+    optimize_go_service        || log_warn "Go setup failed."
+    optimize_ruby_service      || log_warn "Ruby setup failed."
+    optimize_cargo_service     || log_warn "Cargo setup failed."
+    optimize_node_service      || log_warn "Node.js + NVM setup failed."
+    optimize_meson_service     || log_warn "Meson setup failed."
+    optimize_python_service    || log_warn "Python setup failed."
+    optimize_electron_service  || log_warn "Electron setup failed."
+    optimize_venv_service      || log_warn "Venv setup failed."
+    log_info "All services have been attempted in sequence."
+}
+
+run_parallel_services() {
+    log_info "Running selected services in parallel..."
+    run_parallel_checks \
+        "optimize_go_service" \
+        "optimize_ruby_service" \
+        "optimize_cargo_service"
+    log_info "Parallel services completed."
+}
+
 export_functions() {
     export -f log_info log_warn handle_error attempt_tool_install ensure_dir
     export -f prompt_config_value create_config_if_missing load_config
     export -f modify_settings fallback_editor
     export -f load_plugins source_all_services source_views
-}
-
-run_all_services() {
-    log_info "Running all services..."
-    optimize_go_service || log_warn "Go setup failed."
-    optimize_ruby_service || log_warn "Ruby setup failed."
-    optimize_cargo_service || log_warn "Cargo setup failed."
-    optimize_node_service || log_warn "Node.js setup failed."
-    optimize_nvm_service || log_warn "NVM setup failed."
-    optimize_meson_service || log_warn "Meson setup failed."
-    optimize_python_service || log_warn "Python setup failed."
-    optimize_electron_service || log_warn "Electron setup failed."
-    optimize_venv_service || log_warn "Venv setup failed."
-    log_info "All services attempted."
+    export -f run_all_services run_parallel_services run_verification
 }
 
 main_controller() {

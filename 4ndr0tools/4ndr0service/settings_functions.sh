@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # File: settings_functions.sh
-# Description: Functions to modify and manage settings.
+# Description: Functions to modify/manage settings for 4ndr0service Suite.
 
 set -euo pipefail
 IFS=$'\n\t'

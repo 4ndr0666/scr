@@ -2,7 +2,7 @@
 # File: optimize_electron.sh
 # Author: 4ndr0666
 # Date: 2024-11-24
-# Description: Optimizes Electron environment in alignment with XDG Base Directory Specifications.
+# Description: Automates Electron environment optimization
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -38,10 +38,12 @@ check_directory_writable() {
     fi
 }
 
+export ELECTRON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/electron"
+
 npm_global_install_or_update() {
     local package_name="$1"
     if npm ls -g "$package_name" --depth=0 &> /dev/null; then
-        echo "🔄 Updating $package_name..."
+        echo "🔄 Updating $package_name globally..."
         if npm update -g "$package_name"; then
             echo "✅ $package_name updated successfully."
             log "$package_name updated successfully."
@@ -61,57 +63,52 @@ npm_global_install_or_update() {
     fi
 }
 
-export ELECTRON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/electron"
-
 optimize_electron_service() {
     echo "🔧 Optimizing Electron environment..."
 
     if ! command -v npm &> /dev/null; then
-        handle_error "npm is not installed. Install Node.js and npm first."
+        handle_error "npm not found. Install Node.js first."
     fi
 
+    # Install or update Electron
     if npm ls -g electron --depth=0 &> /dev/null; then
-        echo "✅ Electron is already installed."
-        log "Electron is already installed."
+        echo "✅ Electron is already installed globally."
+        log "Electron globally installed."
     else
-        echo "Electron not installed. Installing globally..."
+        echo "Electron not found, installing globally..."
         if npm install -g electron; then
-            echo "✅ Electron installed successfully."
-            log "Electron installed successfully."
+            echo "✅ Electron installed globally."
+            log "Electron installed globally."
         else
-            handle_error "Electron not found. Use --fix to install."
+            handle_error "Failed to install electron globally."
         fi
     fi
 
-    echo "Ensuring electron-builder is installed..."
+    # Optionally ensure electron-builder
     npm_global_install_or_update "electron-builder"
 
-    echo "🛠️ Setting environment variables for Electron..."
+    echo "🛠️ Setting environment variable for Wayland + Electron..."
     export ELECTRON_OZONE_PLATFORM_HINT="wayland-egl"
 
-    if [[ ! -d "$ELECTRON_CACHE" ]]; then
-        mkdir -p "$ELECTRON_CACHE" || handle_error "Failed to create Electron cache directory '$ELECTRON_CACHE'."
-        log "Created Electron cache directory: '$ELECTRON_CACHE'."
-    fi
+    mkdir -p "$ELECTRON_CACHE" || handle_error "Failed to create Electron cache dir => $ELECTRON_CACHE"
     check_directory_writable "$ELECTRON_CACHE"
 
-    echo "🗑️ Cleaning up Electron cache if needed..."
+    echo "🗑️ Optionally cleaning old Electron cache..."
     if [[ -d "$ELECTRON_CACHE" && -w "$ELECTRON_CACHE" ]]; then
         rm -rf "${ELECTRON_CACHE:?}/"*
         log "Cleaned up old Electron cache."
     else
-        echo "No cleanup needed or cache directory not writable."
-        log "No Electron cache cleanup needed."
+        log "Skipped Electron cache cleanup (not needed or not writable)."
     fi
 
     echo "✅ Verifying Electron installation..."
     if command -v electron &> /dev/null; then
-        echo "Electron is installed: $(electron --version)"
-        log "Electron verification successful."
+        echo "Electron => $(electron --version)"
+        log "Electron verified."
     else
         handle_error "Electron verification failed."
     fi
 
-    echo "🎉 Electron environment optimization complete."
+    echo -e "${GREEN}🎉 Electron environment optimization complete.${NC}"
     log "Electron environment optimization completed."
 }

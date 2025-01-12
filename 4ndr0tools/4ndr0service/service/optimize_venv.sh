@@ -1,158 +1,117 @@
 #!/bin/bash
-
 # File: optimize_venv.sh
 # Author: 4ndr0666
-# Edited: 10-20-24
-# Description: Optimizes Python environment using venv and pipx in alignment with XDG Base Directory Specifications.
+# Description: Additional venv + pipx oriented environment optimization steps
 
-# Function to optimize Python environment using venv and pipx
-function optimize_venv_service() {
-    echo "Optimizing Python environment using venv and pipx..."
+set -euo pipefail
+IFS=$'\n\t'
 
-    # Step 1: Check if Python3 is installed
-    if command -v python3 &> /dev/null; then
-        echo "Python3 is already installed: $(python3 --version)"
-    else
-        echo "Python3 is not installed. Please install Python3 manually."
-        exit 1
-    fi
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-    # Step 2: Set up a new virtual environment if not already present
-    echo "Setting up virtual environment..."
-    if [ ! -d "$VENV_HOME/.venv" ]; then
-        echo "Creating new virtual environment..."
-        python3 -m venv "$VENV_HOME/.venv" || handle_error "VENV directory missing. Use --fix to create."
-    else
-        echo "Virtual environment already exists."
-    fi
-
-    # Step 3: Activate the virtual environment
-    echo "Activating the virtual environment..."
-    source "$VENV_HOME/.venv/bin/activate" --prompt '💀 ' || handle_error "Failed to activate virtual environment."
-
-    # Step 4: Install project dependencies if requirements.txt exists
-    if [ -f "requirements.txt" ]; then
-        echo "Installing project dependencies from requirements.txt..."
-        pip install -r requirements.txt || handle_error "Failed to install project dependencies."
-    else
-        echo "No requirements.txt found. Skipping dependency installation."
-    fi
-
-    # Step 5: Install development dependencies if requirements-dev.txt exists
-    if [ -f "requirements-dev.txt" ]; then
-        echo "Installing development dependencies from requirements-dev.txt..."
-        pip install -r requirements-dev.txt || handle_error "Failed to install development dependencies."
-    else
-        echo "No requirements-dev.txt found. Skipping development dependency installation."
-    fi
-
-    # Step 6: Ensure pipx is installed and install global Python tools
-    echo "Ensuring pipx is installed..."
-    if command -v pipx &> /dev/null; then
-        echo "pipx is already installed."
-    else
-        echo "pipx is not installed. Installing pipx..."
-        python3 -m pip install --user pipx || handle_error "Failed to install pipx."
-        python3 -m pipx ensurepath || handle_error "Failed to ensure pipx path."
-        export PATH="$PIPX_HOME/bin:$PATH"
-    fi
-
-    # Step 7: Install or update global Python tools via pipx
-    echo "Installing/updating global Python tools using pipx..."
-    pipx_install_or_update "black"
-    pipx_install_or_update "flake8"
-    pipx_install_or_update "mypy"
-    pipx_install_or_update "pytest"
-
-    # Step 8: Set up environment variables
-    echo "Setting up environment variables for venv and pipx..."
-    export VENV_HOME="$XDG_DATA_HOME/virtualenv"
-    export PIPX_HOME="$XDG_DATA_HOME/pipx"
-    export PATH="$VENV_HOME/.venv/bin:$PIPX_HOME/bin:$PATH"
-
-    # Environment variables are already set in .zprofile, so no need to modify them here.
-    echo "VENV_HOME: $VENV_HOME"
-    echo "PIPX_HOME: $PIPX_HOME"
-
-    # Step 9: Check permissions for directories
-    check_directory_writable "$VENV_HOME/.venv"
-    check_directory_writable "$PIPX_HOME"
-
-    # Step 10: Final cleanup and summary
-    echo "Performing final cleanup..."
-    echo "Python environment optimization complete."
-    echo "Virtual environment located at: $VENV_HOME/.venv"
-    echo "Global tools managed by pipx are installed in: $PIPX_HOME/bin"
-}
-
-# Helper function to install or update pipx packages
-pipx_install_or_update() {
-    local tool_name=$1
-
-    if pipx list | grep "$tool_name" &> /dev/null; then
-        echo "Updating $tool_name..."
-        pipx upgrade "$tool_name" || echo "Warning: Failed to update $tool_name."
-    else
-        echo "Installing $tool_name via pipx..."
-        pipx install "$tool_name" || echo "Warning: Failed to install $tool_name."
-    fi
-}
-
-# Helper function to backup current Python configuration
-backup_python_configuration() {
-    echo "Backing up Python virtual environments and pipx configurations..."
-
-    local backup_dir
-    backup_dir="$XDG_STATE_HOME/backups/python_backup_$(date +%Y%m%d)"
-    mkdir -p "$backup_dir"
-
-    if [[ -d "$VENV_HOME/.venv" ]]; then
-        cp -r "$VENV_HOME/.venv" "$backup_dir/venv/" || echo "Warning: Could not copy virtual environment."
-    fi
-
-    if [[ -d "$PIPX_HOME" ]]; then
-        cp -r "$PIPX_HOME" "$backup_dir/pipx/" || echo "Warning: Could not copy pipx directory."
-    fi
-
-    echo "Backup completed: $backup_dir"
-}
-
-# Helper function: Handle errors
-handle_error() {
-    echo "Error: $1" >&2
+LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
+mkdir -p "$(dirname "$LOG_FILE")" || {
+    echo "Failed to create log directory for venv optimization."
     exit 1
 }
 
-# Helper function: Check if a directory is writable
+log() {
+    local msg="$1"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $msg" >> "$LOG_FILE"
+}
+
+handle_error() {
+    local err="$1"
+    echo -e "${RED}❌ Error: $err${NC}" >&2
+    log "ERROR: $err"
+    exit 1
+}
+
 check_directory_writable() {
-    local dir_path=$1
-
-    if [ -w "$dir_path" ]; then
-        echo "Directory $dir_path is writable."
+    local dir_path="$1"
+    if [[ ! -w "$dir_path" ]]; then
+        handle_error "Directory $dir_path is not writable."
     else
-        echo "Error: Directory $dir_path is not writable."
-        exit 1
+        echo "✅ Directory $dir_path is writable."
+        log "Directory $dir_path is writable."
     fi
 }
 
-# Helper function: Consolidate contents from source to target directory
-consolidate_directories() {
-    local source_dir=$1
-    local target_dir=$2
-
-    if [ -d "$source_dir" ]; then
-        rsync -av "$source_dir/" "$target_dir/" || echo "Warning: Failed to consolidate $source_dir to $target_dir."
-        echo "Consolidated directories from $source_dir to $target_dir."
+pipx_install_or_update() {
+    local tool_name="$1"
+    if pipx list | grep -q "$tool_name"; then
+        echo "Updating $tool_name with pipx..."
+        if pipx upgrade "$tool_name"; then
+            echo "✅ $tool_name upgraded."
+            log "$tool_name upgraded via pipx."
+        else
+            echo "⚠️ Warning: Failed to update $tool_name."
+            log "Warning: pipx failed to update $tool_name."
+        fi
     else
-        echo "Source directory $source_dir does not exist. Skipping consolidation."
+        echo "Installing $tool_name with pipx..."
+        if pipx install "$tool_name"; then
+            echo "✅ $tool_name installed."
+            log "$tool_name installed via pipx."
+        else
+            echo "⚠️ Warning: Failed to install $tool_name."
+            log "Warning: pipx failed to install $tool_name."
+        fi
     fi
 }
 
-# Helper function: Remove empty directories
-remove_empty_directories() {
-    local dirs=("$@")
-    for dir in "${dirs[@]}"; do
-        find "$dir" -type d -empty -delete
-        echo "Removed empty directories in $dir."
-    done
+optimize_venv_service() {
+    echo "🔧 Optimizing Python environment specifically for venv & pipx usage..."
+
+    if ! command -v python3 &>/dev/null; then
+        handle_error "Python3 not found. Please install Python before venv usage."
+    fi
+
+    echo "🛠 Checking if main venv directory ($VENV_HOME/.venv) exists..."
+    if [[ ! -d "$VENV_HOME/.venv" ]]; then
+        echo "Creating a new venv => $VENV_HOME/.venv"
+        python3 -m venv "$VENV_HOME/.venv" || handle_error "Could not create venv at $VENV_HOME/.venv"
+    else
+        echo "Venv already exists => $VENV_HOME/.venv"
+    fi
+
+    echo "Activating the venv => $VENV_HOME/.venv..."
+    source "$VENV_HOME/.venv/bin/activate" || handle_error "Failed to activate venv => $VENV_HOME/.venv"
+
+    echo "Installing pipx if missing..."
+    if ! command -v pipx &>/dev/null; then
+        echo "Installing pipx within system or user scope..."
+        if ! python3 -m pip install --user pipx; then
+            echo "⚠️ Warning: Could not install pipx via pip. Attempting fallback..."
+            # Possibly fallback to pacman
+        fi
+        command -v pipx &>/dev/null || echo "Still missing pipx; user must install manually."
+    else
+        echo "pipx is already available => $(pipx --version 2>/dev/null || echo 'Unknown')"
+    fi
+
+    echo "Installing or updating base Python dev tools via pipx => black, flake8, mypy, pytest..."
+    pipx_install_or_update black
+    pipx_install_or_update flake8
+    pipx_install_or_update mypy
+    pipx_install_or_update pytest
+
+    # Example: user might want a local requirements file
+    if [[ -f "requirements.txt" ]]; then
+        echo "Installing from local requirements.txt..."
+        pip install -r requirements.txt || log "Warning: could not install from requirements.txt"
+    fi
+
+    echo "🔐 Checking venv directory permissions..."
+    check_directory_writable "$VENV_HOME/.venv"
+
+    echo "🧼 Checking for empty or stale directories within $VENV_HOME..."
+    find "$VENV_HOME" -type d -empty -delete 2>/dev/null || true
+
+    echo -e "${GREEN}🎉 Venv environment optimization complete.${NC}"
+    echo -e "${CYAN}Venv path:${NC} $VENV_HOME/.venv"
+    log "Venv environment optimization completed."
 }

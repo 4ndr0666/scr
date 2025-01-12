@@ -3,17 +3,17 @@
 # Date: 12-21-24
 # Desc: System Hardening Script with UFW, Sysctl, and Service Configurations
 # Usage: sudo ./ufw.sh [--vpn] [--jdownloader] [--backup] [--help]
-set -euo pipefail
 
 # ====================================== // UFW.SH //
-### Auto-escalate
+
+# Automate sudo execution if not run as root
 if [[ "$EUID" -ne 0 ]]; then
-    echo "💀WARNING💀 - you are now operating as root...""
+    echo "Re-running the script with sudo privileges..."
     exec sudo "$0" "$@"
     exit $?
 fi
 
-### Help 
+# Function to display usage information
 usage() {
     echo "Usage: sudo ./ufw.sh [OPTIONS]"
     echo ""
@@ -25,7 +25,7 @@ usage() {
     exit 1
 }
 
-### Parse command-line arguments
+# Parse command-line arguments
 VPN_FLAG=false
 JD_FLAG=false
 BACKUP_FLAG=false
@@ -54,20 +54,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Function to check dependencies
-check_dependencies() {
-    local dependencies=("rsync" "ufw" "chattr" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp")
-    for cmd in "${dependencies[@]}"; do
-        if ! command -v "$cmd" &>/dev/null; then
-            echo "Error: Required command '$cmd' is not installed. Please install it and retry."
-            exit 1
-        fi
-    done
-}
-
-# Call the dependency check
-check_dependencies
 
 # Function to set sysctl configurations
 sysctl_config() {
@@ -99,7 +85,7 @@ net.core.netdev_max_backlog = 5000
 "
 
     # Handle immutable attribute
-    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
+    SYSCTL_IPV4_FILE="/Nas/Backups/ufw.sh/99-IPv4.conf"
     if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
         IMMUTABLE_FLAG=$(lsattr "$SYSCTL_IPV4_FILE" | awk '{print $1}')
         if [[ $IMMUTABLE_FLAG == *i* ]]; then
@@ -109,7 +95,10 @@ net.core.netdev_max_backlog = 5000
         fi
     fi
 
-    # Ensure /etc/sysctl.d/99-IPv4.conf has the correct content
+    # Create the file if it doesn't exist
+    touch "$SYSCTL_IPV4_FILE" || { echo "Error: Cannot create $SYSCTL_IPV4_FILE"; exit 1; }
+
+    # Ensure the file is correctly configured
     if [[ ! -f "$SYSCTL_IPV4_FILE" ]] || ! grep -qF "net.core.rmem_max = 16777216" "$SYSCTL_IPV4_FILE"; then
         echo "Creating or updating $SYSCTL_IPV4_FILE..."
         echo -e "$SYSCTL_IPV4_CONTENT" >> "$SYSCTL_IPV4_FILE"
@@ -118,7 +107,7 @@ net.core.netdev_max_backlog = 5000
     fi
 
     # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+    if [[ $IMMUTABLE_REMOVED == true ]]; then
         echo "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
         chattr +i "$SYSCTL_IPV4_FILE"
     fi
@@ -153,7 +142,7 @@ net.ipv6.conf.tun0.disable_ipv6 = 1 # ExpressVPN
     fi
 
     # Restore immutable flag for IPv6 if it was removed
-    if [[ "${IMMUTABLE_REMOVED_IPV6:-false}" == true ]]; then
+    if [[ $IMMUTABLE_REMOVED_IPV6 == true ]]; then
         echo "Re-applying immutable flag to $SYSCTL_IPV6_FILE..."
         chattr +i "$SYSCTL_IPV6_FILE"
     fi
@@ -188,14 +177,14 @@ multi on"
         echo -e "$HOST_CONF_CONTENT" > "$HOST_CONF_FILE"
     else
         # Ensure each line exists
-        while IFS= read -r line; do
+        while read -r line; do
             grep -qF -- "$line" "$HOST_CONF_FILE" || echo "$line" >> "$HOST_CONF_FILE"
         done <<< "$HOST_CONF_CONTENT"
         echo "$HOST_CONF_FILE is already correctly configured."
     fi
 
     # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED_HOST:-false}" == true ]]; then
+    if [[ $IMMUTABLE_REMOVED_HOST == true ]]; then
         echo "Re-applying immutable flag to $HOST_CONF_FILE..."
         chattr +i "$HOST_CONF_FILE"
     fi
@@ -225,7 +214,7 @@ disable_ipv6_services() {
         echo "IPv6 disabled for SSH."
 
         # Restore immutable flag
-        if [[ "${IMMUTABLE_REMOVED_SSH:-false}" == true ]]; then
+        if [[ $IMMUTABLE_REMOVED_SSH == true ]]; then
             echo "Re-applying immutable flag to $SSH_CONFIG..."
             chattr +i "$SSH_CONFIG"
         fi
@@ -254,7 +243,7 @@ disable_ipv6_services() {
     echo "IPv6 disabled for systemd-resolved."
 
     # Restore immutable flag
-    if [[ "${IMMUTABLE_REMOVED_RESOLVED:-false}" == true ]]; then
+    if [[ $IMMUTABLE_REMOVED_RESOLVED == true ]]; then
         echo "Re-applying immutable flag to $RESOLVED_CONF..."
         chattr +i "$RESOLVED_CONF"
     fi
@@ -281,7 +270,7 @@ disable_ipv6_services() {
         echo "IPv6 disabled for Avahi-daemon."
 
         # Restore immutable flag
-        if [[ "${IMMUTABLE_REMOVED_AVAHI:-false}" == true ]]; then
+        if [[ $IMMUTABLE_REMOVED_AVAHI == true ]]; then
             echo "Re-applying immutable flag to $AVAHI_CONF..."
             chattr +i "$AVAHI_CONF"
         fi
@@ -430,8 +419,8 @@ enhance_network_performance() {
         "net.core.netdev_max_backlog = 5000"
     )
 
-    # Ensure /etc/sysctl.d/99-IPv4.conf exists
-    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
+    # Ensure /Nas/Backups/ufw.sh/99-IPv4.conf exists
+    SYSCTL_IPV4_FILE="/Nas/Backups/ufw.sh/99-IPv4.conf"
 
     # Handle immutable attribute
     if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
@@ -457,7 +446,7 @@ enhance_network_performance() {
     done
 
     # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+    if [[ $IMMUTABLE_REMOVED == true ]]; then
         echo "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
         chattr +i "$SYSCTL_IPV4_FILE"
     fi
@@ -475,10 +464,6 @@ setup_backups() {
     BACKUP_SCRIPT="/usr/local/bin/ufw_backup.sh"
     CRON_JOB="/etc/cron.d/ufw_backup"
     BACKUP_DIR="/Nas/Backups/ufw.sh"
-
-    # Ensure the backup directory exists
-    mkdir -p "$BACKUP_DIR"
-    chown root:root "$BACKUP_DIR"
 
     # Define the backup script content
     cat << 'EOF' > "$BACKUP_SCRIPT"
@@ -529,6 +514,10 @@ EOF
 
     # Make the backup script executable
     chmod +x "$BACKUP_SCRIPT"
+
+    # Ensure the backup directory exists and is owned by root
+    mkdir -p "$BACKUP_DIR"
+    chown root:root "$BACKUP_DIR"
 
     # Define the cron job (daily at 2am)
     CRON_CONTENT="0 2 * * * root $BACKUP_SCRIPT"

@@ -1,19 +1,22 @@
 #!/bin/bash
 # File: optimize_nvm.sh
 # Author: 4ndr0666
-# Date: 2024-11-24
-# Description: Optimizes NVM environment in alignment with XDG Base Directory Specifications.
-# Primarily ensures NVM is installed and Node versions can be managed via NVM.
+# Description: Standalone NVM environment optimization, potentially duplicative of "optimize_node.sh" logic.
 
 set -euo pipefail
 IFS=$'\n\t'
 
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
 LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory."; exit 1; }
+mkdir -p "$(dirname "$LOG_FILE")" || {
+    echo "Failed to create log directory for optimize_nvm."
+    exit 1
+}
 
 log() {
     local msg="$1"
@@ -27,76 +30,95 @@ handle_error() {
     exit 1
 }
 
+remove_npmrc_prefix_conflict() {
+    local npmrcfile="$HOME/.npmrc"
+    if [[ -f "$npmrcfile" ]] && grep -Eq '^(prefix|globalconfig)=' "$npmrcfile"; then
+        echo -e "${YELLOW}Detected prefix/globalconfig in ~/.npmrc => removing for NVM compatibility.${NC}"
+        sed -i '/^\(prefix\|globalconfig\)=/d' "$npmrcfile" || handle_error "Failed removing prefix/globalconfig from ~/.npmrc."
+        log "Removed prefix/globalconfig from ~/.npmrc for NVM compatibility."
+    fi
+}
+
 install_nvm_for_nvm_service() {
     echo "📦 Installing NVM..."
-    if command -v curl &> /dev/null; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash || handle_error "Failed to install NVM."
-    elif command -v wget &> /dev/null; then
-        wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash || handle_error "Failed to install NVM with wget."
+    if command -v curl &>/dev/null; then
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash \
+            || handle_error "Failed to install NVM (curl)."
+    elif command -v wget &>/dev/null; then
+        wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash \
+            || handle_error "Failed to install NVM (wget)."
     else
-        handle_error "Neither curl nor wget installed. Cannot install NVM."
+        handle_error "No curl or wget => cannot install NVM."
     fi
 
     export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"
     mkdir -p "$NVM_DIR" || handle_error "Failed to create NVM directory."
 
     if [[ -d "$HOME/.nvm" && "$HOME/.nvm" != "$NVM_DIR" ]]; then
-        mv "$HOME/.nvm" "$NVM_DIR" || handle_error "Failed to move .nvm to $NVM_DIR."
+        mv "$HOME/.nvm" "$NVM_DIR" || handle_error "Failed moving ~/.nvm => $NVM_DIR."
     fi
 
+    export PROVIDED_VERSION=""  # Fix unbound variable in older nvm
+
     set +u
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || handle_error "Failed to source NVM script."
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed to source nvm.sh post-install."
+    [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" || handle_error "Failed to source nvm bash_completion."
     set -u
 
-    if command -v nvm &> /dev/null; then
-        echo "✅ NVM installed successfully."
+    if command -v nvm &>/dev/null; then
+        echo -e "${GREEN}✅ NVM installed successfully.${NC}"
         log "NVM installed successfully."
     else
-        handle_error "NVM missing. Use --fix to install."
+        handle_error "NVM missing after installation attempt."
     fi
 }
 
 optimize_nvm_service() {
     echo "🔧 Optimizing NVM environment..."
-    if command -v nvm &> /dev/null; then
-        echo "✅ NVM is already installed."
+
+    remove_npmrc_prefix_conflict
+
+    if command -v nvm &>/dev/null; then
+        echo -e "${GREEN}✅ NVM is already installed.${NC}"
         log "NVM is already installed."
     else
         echo "NVM not installed. Installing..."
         install_nvm_for_nvm_service
     fi
 
-    # Load NVM in current shell
-    set +u
     export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || handle_error "Failed to source NVM script for usage."
+    export PROVIDED_VERSION=""
+
+    set +u
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed to source NVM script for usage."
     set -u
 
     echo "🔄 Installing latest LTS Node.js via NVM..."
+    echo "Installing latest LTS version..."
     if nvm install --lts; then
-        echo "✅ Latest LTS Node installed."
+        echo -e "${GREEN}✅ Latest LTS Node installed.${NC}"
         log "Latest LTS Node installed via NVM."
     else
-        echo "⚠️ Warning: Failed to install latest LTS Node with NVM."
-        log "Warning: Failed to install LTS Node with NVM."
+        echo -e "${YELLOW}⚠ Warning: nvm install --lts failed.${NC}"
+        log "nvm install --lts failed."
     fi
 
     if nvm use --lts; then
-        echo "✅ Using latest LTS Node."
-        log "Using latest LTS Node via NVM."
+        echo -e "${GREEN}✅ Using latest LTS Node.${NC}"
+        log "Using latest LTS Node."
     else
-        echo "⚠️ Warning: Failed to use LTS Node via NVM."
-        log "Warning: Failed to use LTS Node via NVM."
+        echo -e "${YELLOW}⚠ Warning: nvm use --lts failed.${NC}"
+        log "Failed nvm use --lts."
     fi
 
     if nvm alias default 'lts/*'; then
-        echo "✅ LTS Node set as default."
-        log "LTS Node set as default via NVM."
+        echo -e "${GREEN}✅ LTS Node set as default alias in NVM.${NC}"
+        log "Set default => lts/* in NVM."
     else
-        echo "⚠️ Warning: Failed to set default Node via NVM."
-        log "Warning: Failed to set default Node via NVM."
+        echo -e "${YELLOW}⚠ Warning: Could not set default alias => lts/*.${NC}"
+        log "Failed setting default => lts/*."
     fi
 
-    echo "🎉 NVM environment optimization complete."
+    echo -e "${GREEN}🎉 NVM environment optimization complete.${NC}"
     log "NVM environment optimization completed."
 }

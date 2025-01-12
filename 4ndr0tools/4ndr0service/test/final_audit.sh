@@ -1,23 +1,52 @@
 #!/usr/bin/env bash
 # File: final_audit.sh
-# Description: Final audit script utilizing common functions and JSON logs.
+# Description: Performs a comprehensive audit (systemd timers, auditd, pacman logs, etc).
 
 set -euo pipefail
 IFS=$'\n\t'
-source "$PKG_PATH/common.sh"
 
-VERIFY_SCRIPT="$PKG_PATH/test/src/verify_environment.sh"
+VERIFY_SCRIPT="$HOME/.local/bin/verify_environment.sh"
 SYSTEMD_TIMER="env_maintenance.timer"
 AUDIT_KEYWORDS=("config_watch" "data_watch" "cache_watch")
 PACMAN_LOG="/var/log/pacman.log"
+
+REPORT_MODE="false"
+FIX_MODE="false"
+
+for arg in "$@"; do
+    case "$arg" in
+        --report) REPORT_MODE="true" ;;
+        --fix)    FIX_MODE="true" ;;
+        *) ;;
+    esac
+done
+
+json_log() {
+    local lvl="$1"
+    local msg="$2"
+    local ts
+    ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
+    echo "{\"timestamp\":\"$ts\",\"level\":\"$lvl\",\"message\":\"$msg\"}" >> "/tmp/final_audit.log"
+}
+
+handle_error() {
+    local emsg="$1"
+    echo -e "\033[0;31m❌ Error: $emsg\033[0m" >&2
+    json_log "ERROR" "$emsg"
+    exit 1
+}
 
 check_verify_script() {
     if [[ ! -x "$VERIFY_SCRIPT" ]]; then
         handle_error "verify_environment.sh not found or not executable at $VERIFY_SCRIPT"
     fi
+
     echo "Running verify_environment.sh..."
-    "$VERIFY_SCRIPT" --report > /tmp/verify_report.txt || true
-    if grep -qE "NOT WRITABLE|not writable|NOT FOUND|Missing tool|Missing environment variable" /tmp/verify_report.txt; then
+    if ! "$VERIFY_SCRIPT" --report > /tmp/verify_report.txt 2>/dev/null; then
+        echo "Warning: verify_environment.sh returned non-zero. Check /tmp/verify_report.txt"
+    fi
+
+    if grep -Eq "NOT WRITABLE|not writable|NOT FOUND|Missing tool|Missing environment variable|MISSING" /tmp/verify_report.txt; then
         echo "Verification encountered issues. Check /tmp/verify_report.txt"
     else
         echo "All environment variables, directories, and tools are correctly set up."
@@ -40,11 +69,33 @@ check_systemd_timer() {
     else
         echo "$SYSTEMD_TIMER is not active."
     fi
-
     if systemctl --user is-enabled --quiet "$SYSTEMD_TIMER"; then
         echo "$SYSTEMD_TIMER is enabled."
     else
         echo "$SYSTEMD_TIMER is not enabled."
+    fi
+}
+
+get_dir_for_keyword() {
+    local kw="$1"
+    case "$kw" in
+        config_watch) echo "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+        data_watch)   echo "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+        cache_watch)  echo "${XDG_CACHE_HOME:-$HOME/.cache}" ;;
+        *) echo "" ;;
+    esac
+}
+
+add_missing_audit_rule() {
+    local key="$1"
+    local path="$2"
+    echo "Adding audit rule for $key -> $path..."
+    if sudo auditctl -w "$path" -p war -k "$key"; then
+        echo "✅ auditd rule added for $key"
+        json_log "INFO" "auditd rule added: $key -> $path"
+    else
+        echo "⚠️ Warning: Could not add audit rule for $key => $path"
+        json_log "WARN" "Failed adding rule for $key => $path"
     fi
 }
 
@@ -54,14 +105,23 @@ check_auditd_rules() {
         return
     fi
     echo "Checking auditd rules..."
-    local missing_rules=()
+    local missing=()
     for key in "${AUDIT_KEYWORDS[@]}"; do
         if ! sudo auditctl -l | grep -qw "$key"; then
-            missing_rules+=("$key")
+            missing+=("$key")
         fi
     done
-    if (( ${#missing_rules[@]} > 0 )); then
-        echo "Missing auditd rules for keys: ${missing_rules[*]}"
+    if ((${#missing[@]} > 0)); then
+        echo "Missing auditd rules for keys: ${missing[*]}"
+        for mkey in "${missing[@]}"; do
+            local dpath
+            dpath="$(get_dir_for_keyword "$mkey")"
+            if [[ -n "$dpath" ]]; then
+                add_missing_audit_rule "$mkey" "$dpath"
+            else
+                echo "No known directory for key $mkey. Skipping."
+            fi
+        done
     else
         echo "All auditd rules are correctly set."
     fi
@@ -81,11 +141,11 @@ check_pacman_dupes() {
 
 check_systemctl_aliases() {
     echo "Checking for shell aliases affecting 'systemctl' commands..."
-    local aliases_found
-    aliases_found=$(alias | grep 'systemctl' || true)
-    if [[ -n "$aliases_found" ]]; then
+    local found
+    found=$(alias | grep 'systemctl' || true)
+    if [[ -n "$found" ]]; then
         echo "Found aliases for 'systemctl':"
-        echo "$aliases_found"
+        echo "$found"
     else
         echo "No aliases found for 'systemctl'."
     fi
@@ -93,30 +153,17 @@ check_systemctl_aliases() {
 
 provide_recommendations() {
     echo "--- Recommendations ---"
-    if grep -qE "NOT WRITABLE|MISSING|NOT FOUND|Missing tool|Missing environment variable" /tmp/verify_report.txt; then
-        echo "- Review and fix environment variables, directories, or missing tools. Use '--fix' with verify_environment.sh."
+    if grep -Eq "NOT WRITABLE|MISSING|NOT FOUND|Missing tool|Missing environment variable" /tmp/verify_report.txt; then
+        echo "- Review/fix environment or missing tools. Possibly run 'verify_environment.sh --fix'."
     fi
-
     if ! systemctl --user is-active --quiet "$SYSTEMD_TIMER"; then
-        echo "- Enable/start the systemd user timer: systemctl --user enable $SYSTEMD_TIMER && systemctl --user start $SYSTEMD_TIMER"
+        echo "- Consider enabling systemd user timer: systemctl --user enable $SYSTEMD_TIMER && systemctl --user start $SYSTEMD_TIMER"
     fi
-
-    for key in "${AUDIT_KEYWORDS[@]}"; do
-        if command -v auditctl &>/dev/null && ! sudo auditctl -l | grep -qw "$key"; then
-            case "$key" in
-                config_watch) echo "- Add audit rule: sudo auditctl -w $XDG_CONFIG_HOME -p war -k config_watch" ;;
-                data_watch) echo "- Add audit rule: sudo auditctl -w $XDG_DATA_HOME -p war -k data_watch" ;;
-                cache_watch) echo "- Add audit rule: sudo auditctl -w $XDG_CACHE_HOME -p war -k cache_watch" ;;
-            esac
-        fi
-    done
-
     if grep -E 'duplicated database entry' "$PACMAN_LOG" &>/dev/null; then
-        echo "- Resolve duplicated pacman database entries."
+        echo "- Resolve duplicated pacman DB entries manually or with a fix script."
     fi
-
     if alias | grep -q 'systemctl'; then
-        echo "- Remove shell aliases overriding 'systemctl'."
+        echo "- Remove shell aliases overriding 'systemctl' for correct systemd functionality."
     fi
 }
 
@@ -140,4 +187,13 @@ run_audit() {
     echo "===== Audit Complete ====="
 }
 
+echo "Running final_audit.sh..."
 run_audit
+
+if [[ "$FIX_MODE" == "true" ]]; then
+    echo "Performing additional fix steps from final_audit.sh if needed..."
+fi
+
+if [[ "$REPORT_MODE" == "true" ]]; then
+    echo "Report mode invoked in final_audit.sh."
+fi
