@@ -20,7 +20,7 @@ check_dependencies() {
   for cmd in "${dependencies[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
       log "Dependency '$cmd' is not installed. Installing..."
-      sudo pacman -Sy --noconfirm "$cmd"
+      pacman -Sy --noconfirm "$cmd"
       if ! command -v "$cmd" &>/dev/null; then
         log "Failed to install '$cmd'. Exiting."
         exit 1
@@ -30,28 +30,36 @@ check_dependencies() {
   done
 }
 
-# Function to select drive
+# Function to select drive with timeout
 select_drive() {
   local prompt="$1"
   lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
   echo "Enter the device name for $prompt (e.g., sda): "
-  read -r DRIVE
-  if [[ ! -b "/dev/$DRIVE" ]]; then
-    log "Device /dev/$DRIVE does not exist. Exiting."
+  if read -r -t 60 DRIVE; then
+    if [[ ! -b "/dev/$DRIVE" ]]; then
+      log "Device /dev/$DRIVE does not exist. Exiting."
+      exit 1
+    fi
+    echo "/dev/$DRIVE"
+  else
+    log "No input received for $prompt. Exiting."
     exit 1
   fi
-  echo "/dev/$DRIVE"
 }
 
-# Function to confirm selection
+# Function to confirm selection with timeout
 confirm_selection() {
   echo "Source: $1"
   echo "Target: $2"
   echo "Are you sure you want to proceed? (yes/no): "
-  read -r CONFIRM
-  if [[ "$CONFIRM" != "yes" ]]; then
-    log "Operation aborted by user."
-    exit 0
+  if read -r -t 30 CONFIRM; then
+    if [[ "$CONFIRM" != "yes" ]]; then
+      log "Operation aborted by user."
+      exit 0
+    fi
+  else
+    log "No confirmation received. Exiting."
+    exit 1
   fi
 }
 
@@ -71,32 +79,35 @@ SOURCE=$(select_drive "SOURCE drive (failing)")
 TARGET=$(select_drive "TARGET drive (new)")
 
 # Confirm selections
-confirm_selection "/dev/$SOURCE" "/dev/$TARGET"
+confirm_selection "$SOURCE" "$TARGET"
 
 # Unmount drives if mounted
 for DRIVE in "$SOURCE" "$TARGET"; do
-  mountpoints=$(lsblk -no MOUNTPOINT "/dev/$DRIVE")
+  mountpoints=$(lsblk -no MOUNTPOINT "$DRIVE")
   if [[ -n "$mountpoints" ]]; then
-    log "Unmounting /dev/$DRIVE..."
-    umount "/dev/$DRIVE" || { log "Failed to unmount /dev/$DRIVE. Exiting."; exit 1; }
+    log "Unmounting $DRIVE..."
+    umount "$DRIVE" || { log "Failed to unmount $DRIVE. Exiting."; exit 1; }
   fi
 done
 
 # Start cloning with ddrescue
-log "Starting initial ddrescue cloning from /dev/$SOURCE to /dev/$TARGET."
-ddrescue -f -n "/dev/$SOURCE" "/dev/$TARGET" "$LOG" || { log "ddrescue initial pass failed. Exiting."; exit 1; }
+log "Starting initial ddrescue cloning from $SOURCE to $TARGET."
+ddrescue -f -n "$SOURCE" "$TARGET" "$LOG" || { log "ddrescue initial pass failed. Exiting."; exit 1; }
 
 # Retry bad sectors
 log "Retrying bad sectors with ddrescue."
-ddrescue -d -f -r3 "/dev/$SOURCE" "/dev/$TARGET" "$LOG" || { log "ddrescue retry failed. Exiting."; exit 1; }
+ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG" || { log "ddrescue retry failed. Exiting."; exit 1; }
 
 # Verify the cloned drive
-PARTITION="${TARGET}1"
-if [[ -b "/dev/$PARTITION" ]]; then
-  log "Running fsck on /dev/$PARTITION."
-  fsck -f "/dev/$PARTITION" || { log "fsck failed on /dev/$PARTITION. Exiting."; exit 1; }
+PARTITIONS=($(lsblk -ln -o NAME "$TARGET" | grep -E "^$TARGET[0-9]+$"))
+if [[ ${#PARTITIONS[@]} -gt 0 ]]; then
+  for PART in "${PARTITIONS[@]}"; do
+    PARTITION="/dev/$PART"
+    log "Running fsck on $PARTITION."
+    fsck -f "$PARTITION" || { log "fsck failed on $PARTITION. Exiting."; exit 1; }
+  done
 else
-  log "Partition /dev/$PARTITION does not exist. Skipping fsck."
+  log "No partitions found on $TARGET. Skipping fsck."
 fi
 
 log "Drive cloning completed successfully."
