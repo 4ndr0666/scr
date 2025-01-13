@@ -70,7 +70,7 @@ find "$TARGET_DIR" -type f | while read -r FILE; do
   
   # Match files with pattern 'name.ext', 'name 1.ext', 'name 2.ext', etc.
   if [[ "$BASENAME" =~ ^(.+)\ ([0-9]+)\.(.+)$ ]]; then
-    ORIGINAL="${BASH_REMATCH[1]}.${BASH_REMATCH[3]}"
+    ORIGINAL="${match[1]}.${match[3]}"
     DUPLICATE="$FILE"
     
     # Check if original exists
