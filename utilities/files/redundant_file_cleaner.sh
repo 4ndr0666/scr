@@ -1,32 +1,69 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Script: remove_duplicates.sh
-# Purpose: Remove duplicate files with patterns like 'file.ext', 'file 1.ext', 'file 2.ext', etc.
-# Usage: ./remove_duplicates.sh /path/to/directory
+# Purpose: Automatically identify and delete duplicate files with intelligent safeguards.
+# Usage: sudo ./remove_duplicates.sh /path/to/directory [--dry-run]
+# Options:
+#   --dry-run : Perform a trial run without deleting any files.
 
-# Check if directory is provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 /path/to/directory"
+set -euo pipefail
+
+# Variables
+LOG_FILE="$HOME/remove_duplicates.log"
+TRASH_DIR="$HOME/.local/share/Trash/files"
+
+# Function to log messages
+log() {
+  echo "$(date +"%Y-%m-%d %H:%M:%S") : $1" | tee -a "$LOG_FILE"
+}
+
+# Function to display usage
+usage() {
+  echo "Usage: $0 /path/to/directory [--dry-run]"
   exit 1
+}
+
+# Parse arguments
+DRY_RUN=false
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  usage
 fi
 
 TARGET_DIR="$1"
-LOG_FILE="/var/log/remove_duplicates.log"
 
-# Ensure the target directory exists
-if [ ! -d "$TARGET_DIR" ]; then
-  echo "Error: Directory '$TARGET_DIR' does not exist."
+if [[ $# -eq 2 ]]; then
+  if [[ "$2" == "--dry-run" ]]; then
+    DRY_RUN=true
+  else
+    usage
+  fi
+fi
+
+# Check if script is run as root for writing to log
+if [[ $EUID -ne 0 ]]; then
+  echo "This script must be run with sudo or as root for logging purposes."
+  exit 1
+fi
+
+log "Starting remove_duplicates.sh script."
+
+# Check if TARGET_DIR exists
+if [[ ! -d "$TARGET_DIR" ]]; then
+  log "Error: Directory '$TARGET_DIR' does not exist."
   exit 1
 fi
 
 # Create log file if it doesn't exist
-sudo touch "$LOG_FILE"
-sudo chmod 644 "$LOG_FILE"
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
 
-echo "Starting duplicate removal in '$TARGET_DIR'..."
-echo "Log file: $LOG_FILE"
+log "Scanning directory: $TARGET_DIR"
+log "Dry-run mode: $DRY_RUN"
 
-# Find all files and process them
+# Ensure Trash directory exists
+mkdir -p "$TRASH_DIR"
+
+# Find and process duplicates
 find "$TARGET_DIR" -type f | while read -r FILE; do
   DIR=$(dirname "$FILE")
   BASENAME=$(basename "$FILE")
@@ -37,18 +74,26 @@ find "$TARGET_DIR" -type f | while read -r FILE; do
     DUPLICATE="$FILE"
     
     # Check if original exists
-    if [ -f "$DIR/$ORIGINAL" ]; then
-      echo "Removing duplicate: $DUPLICATE (Original: $DIR/$ORIGINAL)"
-      
-      # Move duplicate to Trash instead of deleting
-      mv "$DUPLICATE" "$HOME/.local/share/Trash/files/" 2>/dev/null
-      if [ $? -eq 0 ]; then
-        echo "$(date): Moved '$DUPLICATE' to Trash." | sudo tee -a "$LOG_FILE"
+    if [[ -f "$DIR/$ORIGINAL" ]]; then
+      if [[ "$DRY_RUN" == true ]]; then
+        log "DRY RUN: Would move '$DUPLICATE' to Trash."
       else
-        echo "Error: Failed to move '$DUPLICATE' to Trash." | sudo tee -a "$LOG_FILE"
+        mv "$DUPLICATE" "$TRASH_DIR/" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+          log "Moved '$DUPLICATE' to Trash."
+        else
+          log "Error: Failed to move '$DUPLICATE' to Trash."
+        fi
       fi
     fi
   fi
 done
 
-echo "Duplicate removal completed."
+log "Duplicate removal process completed."
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry-run completed. No files were moved."
+else
+  echo "Duplicate files have been moved to Trash."
+fi
+
+exit 0
