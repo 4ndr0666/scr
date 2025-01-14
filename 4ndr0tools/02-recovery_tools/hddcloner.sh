@@ -4,22 +4,35 @@
 # Purpose: Clone a failing hard drive to a new one using ddrescue with enhanced safety and automation.
 # Usage: sudo ./clone_drive.sh
 
-set -euo pipefail
+# NOTE:
+# We intentionally do NOT use `set -e` to allow ddrescue to return non-zero exit codes
+# (which can happen if there are bad sectors). Instead, we handle errors manually.
+
+set -u  # Treat unset variables as an error
+set -o pipefail  # Catch errors in pipelines
 
 # Variables
 LOG="/var/log/ddrescue_clone_drive.log"
 
-# Function to log messages
+###############################################################################
+# Function: log
+# Description: Logs messages with timestamps.
+###############################################################################
 log() {
-  echo "$(date +"%Y-%m-%d %H:%M:%S") : $1" | tee -a "$LOG"
+  local TIMESTAMP
+  TIMESTAMP="$(date +"%Y-%m-%d %H:%M:%S")"
+  echo "${TIMESTAMP} : $1" | tee -a "$LOG"
 }
 
-# Function to check dependencies
+###############################################################################
+# Function: check_dependencies
+# Description: Ensures ddrescue, lsblk, and fsck are installed.
+###############################################################################
 check_dependencies() {
   local dependencies=(ddrescue lsblk fsck)
   for cmd in "${dependencies[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
-      log "Dependency '$cmd' is not installed. Installing..."
+      log "Dependency '$cmd' is not installed. Attempting install..."
       pacman -Sy --noconfirm "$cmd"
       if ! command -v "$cmd" &>/dev/null; then
         log "Failed to install '$cmd'. Exiting."
@@ -30,32 +43,38 @@ check_dependencies() {
   done
 }
 
-# Function to prompt for resume or start anew
+###############################################################################
+# Function: prompt_resume
+# Description: Checks if we should resume from an existing ddrescue log or start fresh.
+# Returns 0 for resume, 1 for fresh start.
+###############################################################################
 prompt_resume() {
   echo "A previous ddrescue log file was detected."
   echo "Do you want to resume the cloning process? (yes/no): "
   read -r RESUME
-  # Convert user input to lowercase for comparison
-  local RESUME_LOWER=$(echo "$RESUME" | tr '[:upper:]' '[:lower:]')
+  local resume_lower
+  resume_lower="$(echo "$RESUME" | tr '[:upper:]' '[:lower:]')"
 
-  if [[ "$RESUME_LOWER" == "yes" ]]; then
-    echo "Resuming cloning..."
+  if [[ "$resume_lower" == "yes" ]]; then
     log "User opted to resume cloning."
     return 0
   else
-    echo "Starting a fresh cloning process..."
     log "User opted to start a fresh cloning process."
-    # Remove existing log to start fresh
     rm -f "$LOG"
     return 1
   fi
 }
 
-# Function to select drive
+###############################################################################
+# Function: select_drive
+# Description: Lists all block devices, prompts user to choose one.
+###############################################################################
 select_drive() {
   local prompt="$1"
+  echo "Available block devices:"
   lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
-  echo "Enter the device name for $prompt (e.g., sda): "
+  echo
+  echo "Enter the device name for $prompt (e.g., sda):"
   read -r DRIVE
   if [[ ! -b "/dev/$DRIVE" ]]; then
     log "Device /dev/$DRIVE does not exist. Exiting."
@@ -64,101 +83,136 @@ select_drive() {
   echo "/dev/$DRIVE"
 }
 
-# Function to confirm selection
+###############################################################################
+# Function: confirm_selection
+# Description: Asks user for final confirmation before proceeding.
+###############################################################################
 confirm_selection() {
-  echo "Source: $1"
-  echo "Target: $2"
-  echo "Are you sure you want to proceed? (yes/no): "
+  echo "Source drive: $1"
+  echo "Target drive: $2"
+  echo "Are you sure you want to proceed? (yes/no):"
   read -r CONFIRM
-  local CONFIRM_LOWER=$(echo "$CONFIRM" | tr '[:upper:]' '[:lower:]')
-  if [[ "$CONFIRM_LOWER" != "yes" ]]; then
+  local confirm_lower
+  confirm_lower="$(echo "$CONFIRM" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$confirm_lower" != "yes" ]]; then
     log "Operation aborted by user."
     exit 0
   fi
 }
 
-# Function to display ddrescue progress
-show_progress() {
-  echo "Cloning in progress. Press Ctrl+C to abort if needed."
-  echo "Monitoring ddrescue log at: $LOG"
-  echo
+###############################################################################
+# Function: run_ddrescue
+# Description: Runs ddrescue in the background and tails the log in the foreground.
+#              If 'resume' is 0, we run ddrescue with -d -f -r3 in one shot.
+#              If 'resume' is 1, we do the initial pass + bad sector retries.
+###############################################################################
+run_ddrescue() {
+  local resume_choice="$1"   # 0 => resume, 1 => fresh
+  local source_dev="$2"
+  local target_dev="$3"
+
+  if [[ "$resume_choice" -eq 0 ]]; then
+    # Resume
+    log "Resuming ddrescue cloning from $source_dev to $target_dev using existing log."
+    ddrescue -d -f -r3 "$source_dev" "$target_dev" "$LOG" &
+  else
+    # Fresh
+    log "Starting ddrescue initial pass from $source_dev to $target_dev."
+    ddrescue -n "$source_dev" "$target_dev" "$LOG" &
+    local ddrescue_initial_pid=$!
+    wait $ddrescue_initial_pid  # Wait for the initial pass to finish
+
+    log "Retrying bad sectors with ddrescue."
+    ddrescue -d -f -r3 "$source_dev" "$target_dev" "$LOG" &
+  fi
+
+  # The ddrescue command is now running in the background. We capture its PID:
+  DDRESCUE_PID=$!
+
+  # Show progress by tailing the log in the foreground:
   tail -f "$LOG" &
   TAIL_PID=$!
-  # Wait for ddrescue to finish. If ddrescue completes,
-  # tail -f won't automatically exit, so the script continues below:
-  wait
+
+  # Wait for ddrescue to finish
+  wait "$DDRESCUE_PID"
+
+  # ddrescue done, kill tail
+  if ps -p "$TAIL_PID" &>/dev/null; then
+    kill "$TAIL_PID"
+  fi
 }
 
-# Check if script is run as root
+###############################################################################
+# Function: verify_cloned_drive
+# Description: Runs fsck on each detected partition on the target drive.
+###############################################################################
+verify_cloned_drive() {
+  local target_dev="$1"
+  # Gather partitions for $target_dev, e.g. sdb1, sdb2, etc.:
+  local partitions
+  partitions=($(lsblk -ln -o NAME "$target_dev" | grep -E "^$(basename "$target_dev")[0-9]+$"))
+
+  if [[ ${#partitions[@]} -gt 0 ]]; then
+    for PART in "${partitions[@]}"; do
+      local PARTITION="/dev/$PART"
+      log "Running fsck on $PARTITION."
+      fsck -f "$PARTITION" || {
+        log "fsck failed on $PARTITION. Exiting."
+        exit 1
+      }
+    done
+  else
+    log "No partitions found on $target_dev. Skipping fsck."
+  fi
+}
+
+###############################################################################
+# Main Script Execution
+###############################################################################
+
+# Ensure root
 if [[ $EUID -ne 0 ]]; then
-  echo "This script must be run with sudo or as root."
+  echo "This script must be run as root (sudo)."
   exit 1
 fi
 
-log "Starting clone_drive.sh script."
+log "Starting clone_drive.sh script..."
 
-# 1. Check and install dependencies
+# 1. Dependencies
 check_dependencies
 
-# 2. Determine if ddrescue log file is actually valid for resuming:
-#    - File must exist AND have at least 1 line or more.
-#    - If it doesn't, we won't prompt for resume.
+# 2. If log file exists AND non-empty, allow user to resume
 RESUME_CHOICE=1
 if [[ -f "$LOG" && -s "$LOG" ]]; then
   prompt_resume
   RESUME_CHOICE=$?
 fi
 
-# 3. Select source and target drives
+# 3. Select Source / Target
 SOURCE=$(select_drive "SOURCE drive (failing)")
 TARGET=$(select_drive "TARGET drive (new)")
 
-# 4. Confirm selections
+# 4. Confirm
 confirm_selection "$SOURCE" "$TARGET"
 
 # 5. Unmount drives if mounted
-for DRIVE in "$SOURCE" "$TARGET"; do
-  mountpoints=$(lsblk -no MOUNTPOINT "$DRIVE")
+for dev in "$SOURCE" "$TARGET"; do
+  mountpoints=$(lsblk -no MOUNTPOINT "$dev")
   if [[ -n "$mountpoints" ]]; then
-    log "Unmounting $DRIVE..."
-    umount "$DRIVE" || { log "Failed to unmount $DRIVE. Exiting."; exit 1; }
+    log "Unmounting $dev..."
+    umount "$dev" || {
+      log "Failed to unmount $dev. Exiting."
+      exit 1
+    }
   fi
 done
 
-# 6. Start or resume cloning with ddrescue
-if [[ $RESUME_CHOICE -eq 0 ]]; then
-  # Resume
-  log "Resuming ddrescue cloning from $SOURCE to $TARGET (using existing log)."
-  ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG"
-else
-  # Fresh
-  log "Starting initial ddrescue cloning from $SOURCE to $TARGET."
-  ddrescue -n "$SOURCE" "$TARGET" "$LOG"
-  log "Retrying bad sectors with ddrescue."
-  ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG"
-fi
+# 6. Run ddrescue (in background), show progress, wait
+run_ddrescue "$RESUME_CHOICE" "$SOURCE" "$TARGET"
 
-# 7. Display progress (tail the log)
-show_progress
+# 7. Verify cloned drive
+verify_cloned_drive "$TARGET"
 
-# 8. Verify the cloned drive
-PARTITIONS=($(lsblk -ln -o NAME "$TARGET" | grep -E "^$(basename "$TARGET")[0-9]+$"))
-if [[ ${#PARTITIONS[@]} -gt 0 ]]; then
-  for PART in "${PARTITIONS[@]}"; do
-    PARTITION="/dev/$PART"
-    log "Running fsck on $PARTITION."
-    fsck -f "$PARTITION" || { log "fsck failed on $PARTITION. Exiting."; exit 1; }
-  done
-else
-  log "No partitions found on $TARGET. Skipping fsck."
-fi
-
-# 9. Finish Up
 log "Drive cloning completed successfully."
-
-# Kill the tail process if still running
-if ps -p $TAIL_PID > /dev/null 2>&1; then
-  kill $TAIL_PID
-fi
 
 exit 0
