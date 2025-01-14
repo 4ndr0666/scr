@@ -30,37 +30,55 @@ check_dependencies() {
   done
 }
 
-# Function to select drive with timeout
+# Function to prompt for resume or start anew
+prompt_resume() {
+  echo "A previous cloning operation was detected."
+  echo "Do you want to resume the cloning process? (yes/no): "
+  read -r RESUME
+  if [[ "$RESUME" == "yes" ]]; then
+    echo "Resuming cloning..."
+    log "User opted to resume cloning."
+    return 0
+  else
+    echo "Starting a fresh cloning process."
+    log "User opted to start a fresh cloning process."
+    # Remove existing log to start fresh
+    rm -f "$LOG"
+    return 1
+  fi
+}
+
+# Function to select drive
 select_drive() {
   local prompt="$1"
   lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
   echo "Enter the device name for $prompt (e.g., sda): "
-  if read -r -t 60 DRIVE; then
-    if [[ ! -b "/dev/$DRIVE" ]]; then
-      log "Device /dev/$DRIVE does not exist. Exiting."
-      exit 1
-    fi
-    echo "/dev/$DRIVE"
-  else
-    log "No input received for $prompt. Exiting."
+  read -r DRIVE
+  if [[ ! -b "/dev/$DRIVE" ]]; then
+    log "Device /dev/$DRIVE does not exist. Exiting."
     exit 1
   fi
+  echo "/dev/$DRIVE"
 }
 
-# Function to confirm selection with timeout
+# Function to confirm selection
 confirm_selection() {
   echo "Source: $1"
   echo "Target: $2"
   echo "Are you sure you want to proceed? (yes/no): "
-  if read -r -t 30 CONFIRM; then
-    if [[ "$CONFIRM" != "yes" ]]; then
-      log "Operation aborted by user."
-      exit 0
-    fi
-  else
-    log "No confirmation received. Exiting."
-    exit 1
+  read -r CONFIRM
+  if [[ "$CONFIRM" != "yes" ]]; then
+    log "Operation aborted by user."
+    exit 0
   fi
+}
+
+# Function to display ddrescue progress
+show_progress() {
+  echo "Cloning in progress. Press Ctrl+C to abort."
+  tail -f "$LOG" &
+  TAIL_PID=$!
+  wait
 }
 
 # Check if script is run as root
@@ -73,6 +91,14 @@ log "Starting clone_drive.sh script."
 
 # Check and install dependencies
 check_dependencies
+
+# Check if log file exists
+if [[ -f "$LOG" ]]; then
+  prompt_resume
+  RESUME_CHOICE=$?
+else
+  RESUME_CHOICE=1
+fi
 
 # Select source and target drives
 SOURCE=$(select_drive "SOURCE drive (failing)")
@@ -91,15 +117,21 @@ for DRIVE in "$SOURCE" "$TARGET"; do
 done
 
 # Start cloning with ddrescue
-log "Starting initial ddrescue cloning from $SOURCE to $TARGET."
-ddrescue -f -n "$SOURCE" "$TARGET" "$LOG" || { log "ddrescue initial pass failed. Exiting."; exit 1; }
+if [[ $RESUME_CHOICE -eq 0 ]]; then
+  log "Resuming ddrescue cloning from $SOURCE to $TARGET."
+  ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG"
+else
+  log "Starting initial ddrescue cloning from $SOURCE to $TARGET."
+  ddrescue -n "$SOURCE" "$TARGET" "$LOG"
+  log "Retrying bad sectors with ddrescue."
+  ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG"
+fi
 
-# Retry bad sectors
-log "Retrying bad sectors with ddrescue."
-ddrescue -d -f -r3 "$SOURCE" "$TARGET" "$LOG" || { log "ddrescue retry failed. Exiting."; exit 1; }
+# Display progress
+show_progress
 
 # Verify the cloned drive
-PARTITIONS=($(lsblk -ln -o NAME "$TARGET" | grep -E "^$TARGET[0-9]+$"))
+PARTITIONS=($(lsblk -ln -o NAME "$TARGET" | grep -E "^$(basename "$TARGET")[0-9]+$"))
 if [[ ${#PARTITIONS[@]} -gt 0 ]]; then
   for PART in "${PARTITIONS[@]}"; do
     PARTITION="/dev/$PART"
@@ -111,5 +143,10 @@ else
 fi
 
 log "Drive cloning completed successfully."
+
+# Kill the tail process if it's still running
+if ps -p $TAIL_PID > /dev/null 2>&1; then
+  kill $TAIL_PID
+fi
 
 exit 0
