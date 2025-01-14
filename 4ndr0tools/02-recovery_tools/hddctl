@@ -1,0 +1,233 @@
+#!/bin/zsh
+
+###############################################################################
+# Script: drive_ops.sh
+# Purpose:
+#   - Provide a menu-based approach to either clone a disk (block-level) 
+#     or transfer/sync files (file-level) using rsync.
+# Usage:
+#   1) chmod +x drive_ops.sh
+#   2) sudo ./drive_ops.sh
+# Dependencies: ddrescue, rsync, fsck, lsblk (installed via pacman if missing)
+###############################################################################
+
+set -u
+set -o pipefail
+
+# Log file for all operations
+LOG_FILE="/var/log/drive_ops.log"
+
+###############################################################################
+# Function: log
+# Description: Logs messages to LOG_FILE with a timestamp.
+###############################################################################
+log() {
+  local ts
+  ts="$(date +"%Y-%m-%d %H:%M:%S")"
+  echo "${ts} : $1" | tee -a "$LOG_FILE"
+}
+
+###############################################################################
+# Function: check_dependencies
+# Description: Ensures ddrescue, rsync, fsck, and lsblk are installed.
+###############################################################################
+check_dependencies() {
+  local deps=(ddrescue rsync fsck lsblk)
+  for cmd in "${deps[@]}"; do
+    if ! command -v "$cmd" &>/dev/null; then
+      log "Dependency '$cmd' not found. Installing..."
+      pacman -Sy --noconfirm "$cmd"
+      if ! command -v "$cmd" &>/dev/null; then
+        log "Failed to install '$cmd'. Exiting."
+        exit 1
+      fi
+      log "Installed '$cmd' successfully."
+    fi
+  done
+}
+
+###############################################################################
+# Function: menu
+# Description: Presents user with a menu to choose cloning or file sync.
+# Returns:
+#   1 = ddrescue clone
+#   2 = rsync sync
+###############################################################################
+menu() {
+  echo "Select an operation:"
+  echo "1) Clone a disk (ddrescue)"
+  echo "2) File-level sync (rsync)"
+  read -r CHOICE
+  echo "$CHOICE"
+}
+
+###############################################################################
+# Function: select_drive
+# Description: Lists block devices and prompts for drive input.
+###############################################################################
+select_drive() {
+  local prompt="$1"
+  echo "Available block devices:"
+  lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+  echo
+  echo "Enter the device name for $prompt (e.g., sda):"
+  read -r DRIVE
+  if [[ ! -b "/dev/$DRIVE" ]]; then
+    log "Device /dev/$DRIVE does not exist. Exiting."
+    exit 1
+  fi
+  echo "/dev/$DRIVE"
+}
+
+###############################################################################
+# Function: confirm_operation
+# Description: Asks user for a final yes/no confirmation before proceeding.
+###############################################################################
+confirm_operation() {
+  echo "Are you sure you want to proceed? (yes/no):"
+  read -r CONFIRM
+  local lower
+  lower="$(echo "$CONFIRM" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$lower" != "yes" ]]; then
+    log "User aborted operation."
+    exit 0
+  fi
+}
+
+###############################################################################
+# Function: ddrescue_clone
+# Description: Performs block-level clone from SOURCE to TARGET using ddrescue.
+###############################################################################
+ddrescue_clone() {
+  local source_dev="$1"
+  local target_dev="$2"
+
+  # Prompt for ddrescue log file location
+  local ddresc_log="/var/log/ddrescue_clone.log"
+
+  # Confirm unmount
+  for dev in "$source_dev" "$target_dev"; do
+    local mpts
+    mpts="$(lsblk -no MOUNTPOINT "$dev")"
+    if [[ -n "$mpts" ]]; then
+      log "Unmounting $dev..."
+      umount "$dev" || {
+        log "Failed to unmount $dev. Exiting."
+        exit 1
+      }
+    fi
+  done
+
+  # Start ddrescue
+  log "Starting ddrescue initial pass: $source_dev -> $target_dev"
+  ddrescue -n "$source_dev" "$target_dev" "$ddresc_log"
+  local pass1_exit=$?
+
+  # If pass1_exit != 0, continue anyway because ddrescue can return errors with bad sectors
+  log "Retrying bad sectors with ddrescue..."
+  ddrescue -d -f -r3 "$source_dev" "$target_dev" "$ddresc_log"
+  local pass2_exit=$?
+
+  log "ddrescue passes completed. pass1=$pass1_exit, pass2=$pass2_exit"
+
+  # Attempt fsck on all partitions of $target_dev
+  local parts
+  parts=($(lsblk -ln -o NAME "$target_dev" | grep -E "^$(basename "$target_dev")[0-9]+$"))
+  if [[ ${#parts[@]} -gt 0 ]]; then
+    for p in "${parts[@]}"; do
+      local partition="/dev/$p"
+      log "Running fsck on $partition..."
+      fsck -f "$partition" || log "fsck encountered errors on $partition."
+    done
+  else
+    log "No partitions found on $target_dev. Skipping fsck."
+  fi
+
+  log "Block-level clone operation completed."
+}
+
+###############################################################################
+# Function: rsync_sync
+# Description: Transfers/syncs files from SOURCE_PATH to TARGET_PATH using rsync.
+###############################################################################
+rsync_sync() {
+  echo "Enter the SOURCE path (directory):"
+  read -r SRC_PATH
+  if [[ ! -d "$SRC_PATH" ]]; then
+    log "Source path '$SRC_PATH' does not exist or is not a directory."
+    exit 1
+  fi
+
+  echo "Enter the TARGET path (directory):"
+  read -r TGT_PATH
+  # If target directory doesn't exist, let's create it
+  if [[ ! -d "$TGT_PATH" ]]; then
+    log "Target path '$TGT_PATH' does not exist. Creating..."
+    mkdir -p "$TGT_PATH" || {
+      log "Failed to create target path '$TGT_PATH'. Exiting."
+      exit 1
+    }
+  fi
+
+  # Confirm operation
+  echo "Will sync from '$SRC_PATH' to '$TGT_PATH'. Are you sure? (yes/no)"
+  read -r ANS
+  local ans_lower
+  ans_lower="$(echo "$ANS" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$ans_lower" != "yes" ]]; then
+    log "User aborted file sync."
+    exit 0
+  fi
+
+  log "Starting rsync transfer from '$SRC_PATH' to '$TGT_PATH'."
+  # Resume-friendly flags: -a (archive), -v (verbose), -P (partial + progress), --append-verify
+  rsync -avP --append-verify "$SRC_PATH" "$TGT_PATH" 2>&1 | tee -a "$LOG_FILE"
+  local rsync_exit="${PIPESTATUS[0]}"
+
+  if [[ "$rsync_exit" -ne 0 ]]; then
+    log "rsync encountered an error (exit code $rsync_exit)."
+    exit "$rsync_exit"
+  fi
+
+  log "rsync file transfer completed successfully."
+}
+
+###############################################################################
+# Main Execution
+###############################################################################
+
+# Clear or create the log file
+> "$LOG_FILE"
+log "Starting drive_ops.sh script..."
+
+# Check for required commands
+check_dependencies
+
+# Display menu
+CHOICE="$(menu)"
+
+case "$CHOICE" in
+  1)
+    log "User selected ddrescue (block-level clone)."
+    # Prompt for source/target drives
+    SRC_DEV="$(select_drive "SOURCE drive")"
+    TGT_DEV="$(select_drive "TARGET drive")"
+
+    # Confirm
+    log "Source: $SRC_DEV | Target: $TGT_DEV"
+    confirm_operation
+
+    ddrescue_clone "$SRC_DEV" "$TGT_DEV"
+    ;;
+  2)
+    log "User selected rsync (file-level sync)."
+    rsync_sync
+    ;;
+  *)
+    log "Invalid choice. Exiting."
+    exit 1
+    ;;
+esac
+
+log "All operations completed. Exiting script."
+exit 0
