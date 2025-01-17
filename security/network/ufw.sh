@@ -7,13 +7,12 @@ set -euo pipefail
 
 # ====================================== // UFW.SH //
 ### Auto-escalate
-if [[ "$EUID" -ne 0 ]]; then
-    echo "💀WARNING💀 - you are now operating as root...""
-    exec sudo "$0" "$@"
+if [ "$(id -u)" -ne 0 ]; then
+    sudo "$0" "$@"
     exit $?
 fi
 
-### Help 
+### Help
 usage() {
     echo "Usage: sudo ./ufw.sh [OPTIONS]"
     echo ""
@@ -55,13 +54,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Function to install missing dependencies
+install_dependencies() {
+    local package="$1"
+    echo "Attempting to install missing package: $package"
+    # Try official repos first
+    if ! pacman -S --noconfirm --needed "$package"; then
+        # If still missing, attempt yay
+        if command -v yay &>/dev/null; then
+            echo "Package $package not in official repo or pacman failed, attempting yay..."
+            yay -S --noconfirm --needed "$package"
+        else
+            echo "Error: Could not install $package. 'yay' not found. Install it manually and re-run."
+            exit 1
+        fi
+    fi
+}
+
 # Function to check dependencies
 check_dependencies() {
     local dependencies=("rsync" "ufw" "chattr" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp")
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
-            echo "Error: Required command '$cmd' is not installed. Please install it and retry."
-            exit 1
+            install_dependencies "$cmd"
         fi
     done
 }
@@ -292,26 +307,44 @@ disable_ipv6_services() {
 
 # Function to automatically detect Lightway UDP port used by ExpressVPN
 detect_vpn_port() {
-    echo "Detecting Lightway UDP port used by ExpressVPN..."
+    # Print logs to stderr; numeric port to stdout
+    echo "Detecting Lightway UDP port used by ExpressVPN..." 1>&2
 
-    # Ensure tun0 interface exists and is up
+    # Ensure tun0 interface exists
     if ! ip link show tun0 &>/dev/null; then
-        echo "Error: tun0 interface not found. Ensure ExpressVPN is connected."
+        echo "Error: tun0 interface not found. Ensure ExpressVPN is connected." 1>&2
         return 1
     fi
 
-    # Extract UDP ports used by tun0 associated with ExpressVPN's Lightway
-    # Since Lightway typically uses UDP and connects to remote servers, we look for established UDP connections on tun0
-    VPN_PORT=$(ss -u -a state established '( dport = :443 or sport = :443 )' | grep tun0 | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1)
+    # First attempt
+    VPN_PORT="$(ss -u -a state established 2>/dev/null | awk '/tun0/ && /:443/ {
+        split($5, arr, /:/);
+        candidate = arr[length(arr)];
+        if(candidate ~ /^[0-9]+$/) {
+            print candidate;
+        }
+    }' | head -n1)"
 
-    # If no port detected, default to 443
-    if [[ -z "$VPN_PORT" ]]; then
-        echo "Warning: Unable to detect Lightway UDP port on tun0. Defaulting to port 443."
-        VPN_PORT=443
-    else
-        echo "Detected Lightway UDP port: $VPN_PORT"
+    if [[ -z "$VPN_PORT" || ! "$VPN_PORT" =~ ^[0-9]+$ ]]; then
+        echo "Warning: Unable to detect Lightway UDP port on tun0. Retrying..." 1>&2
+        sleep 1
+        VPN_PORT="$(ss -u -a state established 2>/dev/null | awk '/tun0/ && /:443/ {
+            split($5, arr, /:/);
+            candidate = arr[length(arr)];
+            if(candidate ~ /^[0-9]+$/) {
+                print candidate;
+            }
+        }' | head -n1)"
     fi
 
+    if [[ -z "$VPN_PORT" || ! "$VPN_PORT" =~ ^[0-9]+$ ]]; then
+        echo "Warning: Unable to detect a numeric Lightway UDP port. Defaulting to 443." 1>&2
+        VPN_PORT=443
+    else
+        echo "Detected Lightway UDP port: $VPN_PORT" 1>&2
+    fi
+
+    # Only numeric port to stdout
     echo "$VPN_PORT"
     return 0
 }
@@ -336,9 +369,8 @@ configure_ufw() {
     if [[ "$VPN_FLAG" == "true" ]]; then
         echo "VPN flag is set. Configuring VPN-specific rules..."
         VPN_PORT=$(detect_vpn_port)
-        if [[ $? -eq 0 ]]; then
+        if [[ $? -eq 0 && "$VPN_PORT" =~ ^[0-9]+$ ]]; then
             echo "Applying VPN-specific UFW rules for port $VPN_PORT..."
-            # Allow UDP traffic on the detected VPN port on tun0
             ufw allow in on tun0 to any port "$VPN_PORT" proto udp comment "Lightway UDP on tun0"
             ufw allow out on tun0 to any port "$VPN_PORT" proto udp comment "Lightway UDP on tun0"
         else
@@ -348,7 +380,7 @@ configure_ufw() {
         echo "VPN is not active. Applying non-VPN UFW rules..."
     fi
 
-    # Define specific services to allow on enp2s0
+    # Define specific services on enp2s0
     declare -A SERVICES_ENP2S0=(
         ["80/tcp"]="HTTP Traffic"
         ["443/tcp"]="HTTPS Traffic"
@@ -356,13 +388,11 @@ configure_ufw() {
         ["6800/tcp"]="Aria2c"
     )
 
-    # Apply rules for services on enp2s0
     for port_protocol in "${!SERVICES_ENP2S0[@]}"; do
         port=$(echo "$port_protocol" | cut -d'/' -f1)
         proto=$(echo "$port_protocol" | cut -d'/' -f2)
         desc=${SERVICES_ENP2S0[$port_protocol]}
 
-        # Check if the rule already exists
         if ! ufw status numbered | grep -qw "$port_protocol on enp2s0"; then
             echo "Adding rule: Allow $desc on enp2s0 port $port/$proto"
             ufw allow in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
@@ -371,7 +401,7 @@ configure_ufw() {
         fi
     done
 
-    # Configure JDownloader2-specific UFW rules if flag is set
+    # Configure JDownloader2-specific rules if flag is set
     if [[ "$JD_FLAG" == "true" ]]; then
         echo "JDownloader flag is set. Applying JDownloader2-specific UFW rules..."
         declare -A JDOWNLOADER_PORTS=(
@@ -384,7 +414,6 @@ configure_ufw() {
             proto=$(echo "$port_protocol" | cut -d'/' -f2)
             desc=${JDOWNLOADER_PORTS[$port_protocol]}
 
-            # Allow on tun0
             if ! ufw status numbered | grep -qw "$port_protocol on tun0"; then
                 echo "Allowing $desc on tun0"
                 ufw allow in on tun0 to any port "$port" proto "$proto" comment "$desc"
@@ -392,7 +421,6 @@ configure_ufw() {
                 echo "Rule already exists: Allow $desc on tun0 port $port/$proto"
             fi
 
-            # Deny on enp2s0
             DENY_RULE="$port_protocol on enp2s0"
             if ! ufw status numbered | grep -qw "Deny $DENY_RULE"; then
                 echo "Denying $desc on enp2s0"
@@ -411,7 +439,12 @@ configure_ufw() {
         echo "IPv6 is already disabled in UFW default settings."
     fi
 
-    # Reload UFW to apply changes
+    # Optional: explicitly allow ephemeral outbound if needed
+    # echo "Ensuring ephemeral ports are allowed for outgoing traffic..."
+    # ufw allow out on enp2s0 to any port 32768:65535 proto tcp comment "Ephemeral Ports on enp2s0"
+    # ufw allow out on tun0 to any port 32768:65535 proto tcp comment "Ephemeral Ports on tun0"
+
+    # Reload UFW
     ufw reload
     echo "UFW firewall rules configured successfully."
 }
