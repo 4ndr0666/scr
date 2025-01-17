@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Enable strict error handling
+set -euo pipefail
+
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
     echo "This script requires root privileges. Please enter your password to continue."
@@ -11,7 +14,12 @@ echo "💀WARNING💀 - you are now operating as root..."
 sleep 1
 echo
 
-set -euo pipefail  # Fail fast on errors and undefined variables
+# -----------------------------------------------------------------------------
+# PARAMETRIC BACKUP PATH
+# By default, /4ndr0/backups/ is used; override via BACKUP_PATH env variable.
+# e.g.: BACKUP_PATH="/some/dir/backups" ./memorymonitor_installer.sh
+# -----------------------------------------------------------------------------
+BACKUP_PATH="${BACKUP_PATH:-/4ndr0/backups}"
 
 # Paths and files
 BASE_DIR="/usr/local/bin"
@@ -20,26 +28,33 @@ MEMORY_MONITOR_SERVICE="/etc/systemd/system/memory_monitor.service"
 OOMD_SERVICE="/etc/systemd/system/systemd-oomd.service"
 EARLYOOM_SERVICE="/etc/systemd/system/earlyoom.service"
 OOMD_CONF="/etc/systemd/oomd.conf"
-LOG_DIR="/home/andro/.local/share/logs/"
-LOG_FILE="/home/andro/.local/share/logs/freecache.log"
 
 # Initialize EARLYOOM_BIN as empty
 EARLYOOM_BIN=""
 
-# Function to check and install dependencies
+# -----------------------------------------------------------------------------
+# Enhanced package list for dependencies (including pkill, ps, systemd-analyze)
+# -----------------------------------------------------------------------------
 installDependencies() {
-    local packages=("earlyoom" "procps-ng" "preload" "irqbalance" "zswap-utils" "uksd")
+    local packages=("earlyoom" "procps-ng" "preload" "irqbalance" "zswap-utils" "uksd" "systemd-oomd")
+    echo "Checking and installing any missing packages..."
+
     for pkg in "${packages[@]}"; do
         if ! pacman -Qi "$pkg" &> /dev/null; then
             echo "Installing package $pkg..."
-            pacman -S --needed --noconfirm "$pkg" || { echo "Error: Failed to install $pkg"; exit 1; }
+            pacman -S --needed --noconfirm "$pkg" || {
+                echo "Error: Failed to install $pkg"
+                exit 1
+            }
         else
             echo "Package $pkg is already installed."
         fi
     done
 }
 
-# Function to dynamically resolve paths
+# -----------------------------------------------------------------------------
+# Function to dynamically resolve paths (e.g., earlyoom)
+# -----------------------------------------------------------------------------
 resolvePaths() {
     EARLYOOM_BIN=$(command -v earlyoom || true)
     if [[ -z "$EARLYOOM_BIN" ]]; then
@@ -54,22 +69,50 @@ resolvePaths() {
     echo "Found earlyoom binary at: $EARLYOOM_BIN"
 }
 
-# Function to check command dependencies
+# -----------------------------------------------------------------------------
+# Broaden command checks: includes pkill, ps, systemd-analyze, journalctl
+# -----------------------------------------------------------------------------
 checkCommandDependencies() {
-    local commands=("systemctl" "mkdir" "chmod" "tee" "sysctl" "free" "awk" "date" "irqbalance" "preload")
+    local commands=("systemctl" "mkdir" "chmod" "tee" "sysctl" "free" "awk" "date" "irqbalance" "preload" "pkill" "ps" "systemd-analyze" "journalctl" "systemd-cat")
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
-            echo "Error: $cmd is not installed. Please install it to proceed." >&2
+            echo "Error: $cmd is not installed or not in PATH."
+            echo "Please install it to proceed."
             exit 1
         fi
     done
 }
 
-# Function to create necessary directories and check permissions
+# -----------------------------------------------------------------------------
+# Validate Backup Path Exists and is Writable
+# -----------------------------------------------------------------------------
+validateBackupPath() {
+    if [[ ! -d "$BACKUP_PATH" ]]; then
+        echo "Backup directory $BACKUP_PATH does not exist. Attempting to create it..."
+        mkdir -p "$BACKUP_PATH" || {
+            echo "Error: Failed to create backup directory at $BACKUP_PATH."
+            exit 1
+        }
+        echo "Backup directory $BACKUP_PATH created successfully."
+    fi
+
+    if [[ ! -w "$BACKUP_PATH" ]]; then
+        echo "Error: Backup directory $BACKUP_PATH is not writable."
+        exit 1
+    fi
+    echo "Backup directory $BACKUP_PATH is valid and writable."
+}
+
+# -----------------------------------------------------------------------------
+# Create needed directories (excluding LOG_DIR as we're using journald)
+# -----------------------------------------------------------------------------
 createDirectories() {
     # Create BASE_DIR if it doesn't exist
     if [[ ! -d "$BASE_DIR" ]]; then
-        mkdir -p "$BASE_DIR" || { echo "Error: Failed to create directory $BASE_DIR"; exit 1; }
+        mkdir -p "$BASE_DIR" || {
+            echo "Error: Failed to create directory $BASE_DIR"
+            exit 1
+        }
         echo "Created directory: $BASE_DIR"
     elif [[ ! -w "$BASE_DIR" ]]; then
         echo "Error: Directory $BASE_DIR is not writable."
@@ -77,23 +120,24 @@ createDirectories() {
     else
         echo "Directory $BASE_DIR already exists and is writable."
     fi
-
-    # Create LOG_DIR if it doesn't exist
-    if [[ ! -d "$LOG_DIR" ]]; then
-        mkdir -p "$LOG_DIR" || { echo "Error: Failed to create log directory $LOG_DIR"; exit 1; }
-        echo "Created log directory: $LOG_DIR"
-    fi
 }
 
-# Function to remove conflicting or old service files dynamically
+# -----------------------------------------------------------------------------
+# Remove conflicting or old service files dynamically
+# -----------------------------------------------------------------------------
 removeConflictingServices() {
     echo "Checking for conflicting services..."
-    # Define a list of known conflicting services
-    local conflicting_services=("cgroup2ctl.service")
+    # Example of known conflicting service
+    local conflicting_services=("cgroup2ctl.service" "dbus-org.freedesktop.oom1.service")
 
-    # Dynamically detect services related to memory management that are not part of the current setup
+    # Dynamically detect services related to memory mgmt that aren't in our set
     local detected_services
-    detected_services=$(systemctl list-unit-files --type=service | awk '{print $1}' | grep -E 'oom|earlyoom|memory_monitor|freecache' | grep -vE 'systemd-oomd.service|earlyoom.service|memory_monitor.service|freecache.service')
+    detected_services=$(systemctl list-unit-files --type=service \
+      | awk '{print $1}' \
+      | grep -E 'oom|earlyoom|memory_monitor|freecache' \
+      | grep -vE 'systemd-oomd.service|earlyoom.service|memory_monitor.service|freecache.service' || true)
+
+    echo "Detected conflicting services: $detected_services"
 
     for service in "${conflicting_services[@]}"; do
         if systemctl list-unit-files | grep -q "^${service}"; then
@@ -113,27 +157,43 @@ removeConflictingServices() {
     done
 }
 
-# Function to create a backup of existing service files
+# -----------------------------------------------------------------------------
+# Backup service files to parametric $BACKUP_PATH
+# -----------------------------------------------------------------------------
 backupServiceFile() {
     local service_file="$1"
-    local backup_dir="/Nas/Backups/$(basename "$service_file")"
-    mkdir -p "$(dirname "$backup_dir")" || { echo "Error: Failed to create backup directory for $service_file"; exit 1; }
+    local backup_dir="$BACKUP_PATH/$(basename "$service_file")"
+
+    mkdir -p "$(dirname "$backup_dir")" || {
+        echo "Error: Failed to create backup directory for $service_file"
+        exit 1
+    }
+
     if [[ -f "$service_file" ]]; then
-        local backup_file="${backup_dir}.bak.$(date +'%Y%m%d%H%M%S')"
-        cp "$service_file" "$backup_file" || { echo "Error: Failed to create backup of $service_file"; exit 1; }
+        local backup_file
+        backup_file="${backup_dir}.bak.$(date +'%Y%m%d%H%M%S')"
+        cp "$service_file" "$backup_file" || {
+            echo "Error: Failed to create backup of $service_file"
+            exit 1
+        }
         echo "Backup of $service_file created at $backup_file."
     fi
 }
 
-# Function to restore service files from backups
+# -----------------------------------------------------------------------------
+# Restore service files from the newest backup (unchanged from original)
+# -----------------------------------------------------------------------------
 restoreServiceFile() {
     local service_file="$1"
-    local backup_dir="/Nas/Backups/$(basename "$service_file")"
+    local backup_dir="$BACKUP_PATH/$(basename "$service_file")"
     local latest_backup
-    latest_backup=$(ls -t "${backup_dir}.bak."* 2>/dev/null | head -n1)
+    latest_backup=$(find "$(dirname "$backup_dir")" -type f -name "$(basename "$backup_dir").bak.*" -printf '%T@ %p\n' | sort -n -r | head -n1 | cut -d' ' -f2)
 
     if [[ -n "$latest_backup" && -f "$latest_backup" ]]; then
-        cp "$latest_backup" "$service_file" || { echo "Error: Failed to restore $service_file from $latest_backup"; exit 1; }
+        cp "$latest_backup" "$service_file" || {
+            echo "Error: Failed to restore $service_file from $latest_backup"
+            exit 1
+        }
         echo "Restored $service_file from $latest_backup."
         systemctl daemon-reload
         systemctl restart "$(basename "$service_file")"
@@ -142,7 +202,9 @@ restoreServiceFile() {
     fi
 }
 
-# Function to define and write file contents if they differ from existing ones
+# -----------------------------------------------------------------------------
+# Define and write file contents if they differ from existing ones
+# -----------------------------------------------------------------------------
 defineWriteFiles() {
     local content="$1"
     local path="$2"
@@ -167,7 +229,9 @@ defineWriteFiles() {
     echo "File $path has been written successfully."
 }
 
-# Function to make scripts executable if not already
+# -----------------------------------------------------------------------------
+# Make scripts executable if not already
+# -----------------------------------------------------------------------------
 makeExecutable() {
     local script="$1"
     if [[ -x "$script" ]]; then
@@ -178,7 +242,9 @@ makeExecutable() {
     fi
 }
 
-# Function to reload systemd and enable/start services
+# -----------------------------------------------------------------------------
+# Reload systemd and enable/start services
+# -----------------------------------------------------------------------------
 reloadEnableStartServices() {
     systemctl daemon-reload
     local services=("memory_monitor.service" "freecache.service" "systemd-oomd.service" "earlyoom.service")
@@ -186,31 +252,44 @@ reloadEnableStartServices() {
         if systemctl is-enabled --quiet "$service"; then
             echo "Service $service is already enabled."
         else
-            systemctl enable "$service" || { echo "Failed to enable $service"; return 1; }
+            systemctl enable "$service" || {
+                echo "Failed to enable $service"
+                return 1
+            }
             echo "Service $service has been enabled."
         fi
 
         if systemctl is-active --quiet "$service"; then
             echo "Service $service is already running."
         else
-            systemctl start "$service" || { echo "Failed to start $service"; return 1; }
+            systemctl start "$service" || {
+                echo "Failed to start $service"
+                return 1
+            }
             echo "Service $service has been started."
         fi
     done
 }
 
-# Function to enable a service safely
+# -----------------------------------------------------------------------------
+# Enable a service safely
+# -----------------------------------------------------------------------------
 enableServiceSafely() {
     local service="$1"
     if systemctl is-enabled --quiet "$service"; then
         echo "Service $service is already enabled."
     else
-        systemctl enable "$service" || { echo "Failed to enable $service"; return 1; }
+        systemctl enable "$service" || {
+            echo "Failed to enable $service"
+            return 1
+        }
         echo "Service $service has been enabled."
     fi
 }
 
-# Function to validate systemd service files
+# -----------------------------------------------------------------------------
+# Validate systemd service files
+# -----------------------------------------------------------------------------
 validateServiceFile() {
     local file="$1"
     if systemd-analyze verify "$file"; then
@@ -220,29 +299,49 @@ validateServiceFile() {
     fi
 }
 
+# -----------------------------------------------------------------------------
+# Logging function - now utilizes journald via systemd-cat
+# -----------------------------------------------------------------------------
+log_action() {
+    local message="$1"
+    echo "$message" | systemd-cat -t freecache
+}
+
+# -----------------------------------------------------------------------------
 # Adjust swappiness based on free memory
+# -----------------------------------------------------------------------------
 adjust_swappiness() {
-    local target_swappiness=20
+    local target_swappiness=10  # Changed from 20 to 10 as per requirement
     local free_ram_mb
     free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
     free_ram_mb=${free_ram_mb:-0}  # Default to 0 if undefined
-    sysctl -w vm.swappiness="$target_swappiness" || { echo "Error: Failed to set swappiness."; exit 1; }
+    sysctl -w vm.swappiness="$target_swappiness" || {
+        echo "Error: Failed to set swappiness."
+        exit 1
+    }
     log_action "Swappiness adjusted to $target_swappiness. Free memory: ${free_ram_mb}MB"
 }
 
+# -----------------------------------------------------------------------------
 # Clear RAM cache if free memory is low
+# -----------------------------------------------------------------------------
 clear_ram_cache() {
     local free_ram_mb
     free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
     free_ram_mb=${free_ram_mb:-0}  # Default to 0 if undefined
 
     if [ "$free_ram_mb" -lt 300 ]; then
-        echo 3 > /proc/sys/vm/drop_caches || { echo "Error: Failed to drop caches."; exit 1; }
+        echo 3 > /proc/sys/vm/drop_caches || {
+            echo "Error: Failed to drop caches."
+            exit 1
+        }
         log_action "RAM cache cleared due to low free memory (${free_ram_mb}MB)."
     fi
 }
 
+# -----------------------------------------------------------------------------
 # Clear swap if usage exceeds threshold
+# -----------------------------------------------------------------------------
 clear_swap() {
     local swap_total swap_used swap_usage_percent
 
@@ -256,12 +355,21 @@ clear_swap() {
     fi
 
     if [ "$swap_usage_percent" -gt 80 ]; then
-        swapoff -a && swapon -a || { echo "Error: Failed to clear swap."; exit 1; }
+        if ! swapoff -a; then
+            echo "Error: Failed to swapoff."
+            exit 1
+        fi
+        if ! swapon -a; then
+            echo "Error: Failed to swapon."
+            exit 1
+        fi
         log_action "Swap cleared due to high swap usage (${swap_usage_percent}%)."
     fi
 }
 
+# -----------------------------------------------------------------------------
 # Kill processes that consume excessive memory
+# -----------------------------------------------------------------------------
 kill_memory_hogs() {
     local mem_threshold=80
     local current_mem_usage
@@ -271,39 +379,41 @@ kill_memory_hogs() {
         log_action "Memory usage over $mem_threshold%. Initiating process termination..."
         # Prioritize terminating Brave and Chromium first
         for process in brave chromium; do
-            pkill -f "$process" && log_action "Terminated $process to free up memory."
+            if pkill -f "$process"; then
+                log_action "Terminated $process to free up memory."
+            fi
         done
         # If memory usage still high, terminate other high-memory processes
         ps aux --sort=-%mem | awk 'NR>1{print $2, $4, $11}' | while read -r pid mem cmd; do
             mem_int=$(echo "$mem" | cut -d. -f1)
             if [ "$mem_int" -gt 10 ]; then
-                kill "$pid" && log_action "Sent SIGTERM to process $cmd (PID $pid) using $mem% memory."
-                sleep 5
-                if ps -p "$pid" > /dev/null 2>&1; then
-                    kill -9 "$pid" && log_action "Sent SIGKILL to process $cmd (PID $pid) using $mem% memory."
+                if kill "$pid"; then
+                    log_action "Sent SIGTERM to process $cmd (PID $pid) using $mem% memory."
+                    sleep 5
+                    if ps -p "$pid" > /dev/null 2>&1; then
+                        if kill -9 "$pid"; then
+                            log_action "Sent SIGKILL to process $cmd (PID $pid) using $mem% memory."
+                        fi
+                    fi
                 fi
             fi
         done
     fi
 }
 
-# Logging function
-log_action() {
-    local message="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
-}
-
+# -----------------------------------------------------------------------------
 # Define service and script contents
+# -----------------------------------------------------------------------------
 
 # Define freecache.service content
-FREECACHE_SERVICE_CONTENT=$(cat <<EOF
+FREECACHE_SERVICE_CONTENT=$(cat <<'EOF'
 [Unit]
 Description=Free Cache when Memory is Low
 After=memory_monitor.service systemd-oomd.service
 
 [Service]
 Type=oneshot
-ExecStart=$BASE_DIR/freecache.sh
+ExecStart=/usr/local/bin/freecache.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -311,14 +421,14 @@ EOF
 )
 
 # Define memory_monitor.service content
-MEMORY_MONITOR_SERVICE_CONTENT=$(cat <<EOF
+MEMORY_MONITOR_SERVICE_CONTENT=$(cat <<'EOF'
 [Unit]
 Description=Monitor Memory Usage
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$BASE_DIR/memory_monitor.sh
+ExecStart=/usr/local/bin/memory_monitor.sh
 Restart=on-failure
 RestartSec=5s
 
@@ -328,7 +438,7 @@ EOF
 )
 
 # Define systemd-oomd.service content
-OOMD_SERVICE_CONTENT=$(cat <<EOF
+OOMD_SERVICE_CONTENT=$(cat <<'EOF'
 [Unit]
 Description=Out Of Memory Daemon
 ConditionControlGroupController=v2
@@ -378,7 +488,7 @@ Alias=dbus-org.freedesktop.oom1.service
 EOF
 )
 
-# Define earlyoom.service content
+# Define earlyoom.service content with proper variable expansion
 EARLYOOM_SERVICE_CONTENT=$(cat <<EOF
 [Unit]
 Description=Early OOM Daemon
@@ -395,7 +505,7 @@ EOF
 )
 
 # Define oomd.conf content
-OOMD_CONF_CONTENT=$(cat <<EOF
+OOMD_CONF_CONTENT=$(cat <<'EOF'
 # /etc/systemd/oomd.conf
 # oomd Configuration File
 
@@ -412,17 +522,13 @@ FREECACHE_SCRIPT_CONTENT=$(cat <<'EOF'
 
 set -euo pipefail
 
-LOG_FILE="/home/andro/.local/share/logs/freecache.log"
-
 log_action() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+    local message="$1"
+    echo "$message" | systemd-cat -t freecache
 }
 
-mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory"; exit 1; }
-touch "$LOG_FILE" || { echo "Failed to create log file"; exit 1; }
-
 adjust_swappiness() {
-    local target_swappiness=20
+    local target_swappiness=10  # Set to 10 as per requirement
     local free_ram_mb
     free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
     free_ram_mb=${free_ram_mb:-0}  # Default to 0 if undefined
@@ -454,7 +560,14 @@ clear_swap() {
     fi
 
     if [ "$swap_usage_percent" -gt 80 ]; then
-        swapoff -a && swapon -a || { echo "Error: Failed to clear swap."; exit 1; }
+        if ! swapoff -a; then
+            echo "Error: Failed to swapoff."
+            exit 1
+        fi
+        if ! swapon -a; then
+            echo "Error: Failed to swapon."
+            exit 1
+        fi
         log_action "Swap cleared due to high swap usage (${swap_usage_percent}%)."
     fi
 }
@@ -468,33 +581,33 @@ kill_memory_hogs() {
         log_action "Memory usage over $mem_threshold%. Initiating process termination..."
         # Prioritize terminating Brave and Chromium first
         for process in brave chromium; do
-            pkill -f "$process" && log_action "Terminated $process to free up memory."
+            if pkill -f "$process"; then
+                log_action "Terminated $process to free up memory."
+            fi
         done
         # If memory usage still high, terminate other high-memory processes
         ps aux --sort=-%mem | awk 'NR>1{print $2, $4, $11}' | while read -r pid mem cmd; do
             mem_int=$(echo "$mem" | cut -d. -f1)
             if [ "$mem_int" -gt 10 ]; then
-                kill "$pid" && log_action "Sent SIGTERM to process $cmd (PID $pid) using $mem% memory."
-                sleep 5
-                if ps -p "$pid" > /dev/null 2>&1; then
-                    kill -9 "$pid" && log_action "Sent SIGKILL to process $cmd (PID $pid) using $mem% memory."
+                if kill "$pid"; then
+                    log_action "Sent SIGTERM to process $cmd (PID $pid) using $mem% memory."
+                    sleep 5
+                    if ps -p "$pid" > /dev/null 2>&1; then
+                        if kill -9 "$pid"; then
+                            log_action "Sent SIGKILL to process $cmd (PID $pid) using $mem% memory."
+                        fi
+                    fi
                 fi
             fi
         done
     fi
 }
-
-adjust_swappiness
-clear_ram_cache
-clear_swap
-kill_memory_hogs
-
-log_action "Memory and Swap Usage After Operations:"
-free -h | tee -a "$LOG_FILE"
 EOF
 )
 
+# -----------------------------------------------------------------------------
 # Define memory_monitor.sh script content
+# -----------------------------------------------------------------------------
 MEMORY_MONITOR_SCRIPT_CONTENT=$(cat <<'EOF'
 #!/bin/bash
 
@@ -511,10 +624,13 @@ done
 EOF
 )
 
+# -----------------------------------------------------------------------------
 # Main function to orchestrate the script logic
+# -----------------------------------------------------------------------------
 main() {
     checkCommandDependencies
     resolvePaths
+    validateBackupPath
     createDirectories
     removeConflictingServices
 
