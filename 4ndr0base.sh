@@ -4,27 +4,110 @@
 # Quick setup script for basic requirements on a new machine.
 
 # ============================== // 4NDR0BASEINSTALL.SH //
-# --- // Colors:
+## Constants:
+DOTFILES_REPO="https://github.com/4ndr0666/dotfiles.git" 
+PKGLIST="https://raw.githubusercontent.com/4ndr0666/refs/heads/main/dotfiles/4ndr0pkglist.txt"
+REPO_BRANCH="main"
+AUR_HELPER="yay"
+BACKUP_DIR="$HOME/backups"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export TERM=ansi
+
+## XDG 
+export XDG_CONFIG_HOME="$USER/.config"
+export XDG_DATA_HOME="$USER/.local/share"
+export XDG_CACHE_HOME="$USER/.cache"
+export XDG_STATE_HOME="$USER/.local/state"
+export GNUPGHOME="$XDG_DATA_HOME/gnupg"
+
+## Colors:
 RC='\033[0m'
 RED='\033[31m'
 YELLOW='\033[33m'
 CYAN='\033[36m'
 GREEN='\033[32m'
-printf "%b\n" "${CYAN}Welcome 4ndr0!${RC}"
+
+## Error handling
+error() {
+        printf "%s\n" "${RED}$1${RC}" >&2
+        exit 1
+}
+
+installpkg() {
+        yay --noconfirm --needed -S "$1" >/dev/null 2>&1
+}
+
+## Welcome
+printf "%b\n" "Welcome ${CYAN}4ndr0666!${RC}"
+sleep 2
+printf "%b\n" "Getting things ready for you..."
 sleep 1
 
-# --- // Base Pkgs:
-setupbase() {
-    printf "%b\n" "${CYAN}Acquiring the 4ndr0666 dotfiles...${RC}"
-    if [ ! -d "${HOME}/dotfiles" ]; then
-        cd ~ && git clone https://github.com/4ndr0666/dotfiles
-    fi
-    
-    if [ -f "${HOME}/dotfiles/4ndr0basepkgs.txt" ]; then
-        yay -S --needed --noconfim - < "$HOME/dotfiles/4ndr0basepkgs.txt"
+## AUR Helper
+install_aur_helper() {
+    if ! command -v "$AUR_HELPER" &>/dev/null; then
+        printf "%b\n" "Detected AUR helper: ${CYAN}($AUR_HELPER)${RC}"
+        sleep 1
+        installpkg base-devel
+        git clone "https://aur.archlinux.org/$AUR_HELPER.git" "/tmp/$AUR_HELPER" || {
+            error "Failed to clone $AUR_HELPER repository."
+        }
+        pushd "/tmp/$AUR_HELPER" || exit 1
+        sudo -u "$USER" makepkg --noconfirm -si >/dev/null 2>&1 || {
+            printf "%b\n" "${RED}Failed to build and install $AUR_HELPER.${RC}"
+            popd || exit 1
+            exit 1
+        }
+        popd || exit 1
+        printf "%b\n" "${CYAN}$AUR_HELPER${RC} installed successfully."
     else
-        yay -S --needed --noconfirm base-devel debugedit unzip archlinux-keyring github-cli git-delta exa fd micro expac bat bash-completion pacdiff neovim xorg-xhost bat xclip ripgrep diffuse neovim fzf sysz brave-beta-bin zsh-syntax-highlighting zsh-history-substring-search zsh-autosuggestions bashmount-git  lsd lf-git
+        printf "%b\n" "${GREEN}($AUR_HELPER) is already installed.${RC}"
     fi
+}
+
+## Base Pkgs:
+setup_repos() {
+    ### Refresh Keyrings
+    sudo pacman --noconfirm -Sy archlinux-keyring >/dev/null 2>&1 
+    sudo pacman --noconfirm --needed -S \
+    sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com >/dev/null 2>&1
+    sudo pacman-key --lsign-key 3056513887B78AEB >/dev/null 2>&1
+
+    ### Install Chaotic-AUR
+    printf "%b\n" "Installing ${CYAN}Chaotic AUR${RC} Keyring..."    
+    sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' >/dev/null 2>&1
+
+    ### Add Repo To pacman.conf
+    printf "%b\n" "Installing ${CYAN}Chaotic AUR${RC} Mirrorlist..."    
+    sudo -u "$USER" grep -q "^\[chaotic-aur\]" /etc/pacman.conf ||
+        sudo -u "$USER" echo "[chaotic-aur]
+Include = /etc/pacman.d/mirrorlist-arch" >>/etc/pacman.conf
+    sudo pacman -Sy --noconfirm >/dev/null 2>&1
+    sudo pacman-key --populate archlinux >/dev/null 2>&1            
+}
+
+## Clone dotfiles
+setup_dotfiles() {
+    git clone --depth 1 --branch "$REPO_BRANCH" "$DOTFILES_REPO" "$HOME/dotfiles" 2>/dev/null || {
+        printf "%b\n" "${GREEN}Dotfiles repository already exists. Pulling latest changes...${RC}"
+        sudo -u "$USER" git -C "$HOME/dotfiles" pull origin "$REPO_BRANCH" || {
+            error "Failed to update dotfiles repository."
+        }
+    }
+    sudo -u "$USER" rsync -a --exclude=".git/" "$HOME/dotfiles/home/andro/" "$HOME/" || {
+        error "Failed to rsync dotfiles to $HOME."
+    }
+    printf "%b\n" "${GREEN}Dotfiles cloned and deployed successfully.${RC}"
+}
+
+install_pkgs() {
+    installpkg - < "$PKGLIST" || {
+    	printf "%b\n" "${RED}ERROR:${RC} Could not download 4ndr0pkglist.txt. Check the internet connection."
+    }
+    printf "%b\n" "Manually installing base packages..."
+    installpkg base-devel debugedit unzip archlinux-keyring github-cli git-delta exa lsd fd micro expac bat bash-completion pacdiff pkgfile neovim xorg-xhost bat xclip ripgrep diffuse neovim fzf sysz brave-beta-bin zsh-syntax-highlighting zsh-history-substring-search zsh-autosuggestions bashmount-git lsd lf-git || {
+    	error "Failed to download and manually install base packages"
+    }
 }
 
 # --- // Nerd Font:
@@ -75,38 +158,37 @@ setupfont() {
         return 1
     }
 
-    printf "%b\n" "${GREEN}Meslo Nerd-fonts installed.${RC}"
+    printf "%b\n" "${GREEN}Meslo Nerd-fonts are installed.${RC}"
 }
 
 setupconfig() {    
-    printf "%b\n" "${YELLOW}Backing up current system state just in case...${RC}"
-    sleep 1
+    printf "%b\n" "Backing up existing config files"
+    mkdir -p "$BACKUP_DIR"
     
-    if [ -d "${HOME}/.config/wayfire/" ] && [ ! -d "${HOME}/.config/wayfire-bak" ]; then
-        cp -r "${HOME}/.config/wayfire" "${HOME}/.config/wayfire-bak"
-        sleep 1
+    if [ -d "$HOME/.config" ] && [ ! -d "$BACKUP_DIR/.config-bak" ]; then
+        cp -r "$HOME/.config" "$BACKUP_DIR/.config-bak"
     fi
+    mkdir -p "$HOME/.config"
     
-    if [ -d "${HOME}/.config/zsh/" ] && [ ! -d "${HOME}/.config/zsh-bak" ]; then
-        cp -r "${HOME}/.config/zsh" "${HOME}/.config/zsh-bak"
-    fi
-    mkdir -p "${HOME}/.config/zsh/"
+#    if [ -d "$HOME/.config/wayfire/" ] && [ ! -d "$BACKUP_DIR/.config/wayfire-bak" ]; then
+#        cp -r "$HOME/.config/wayfire" "$BACKUP_DIR/.config/wayfire-bak"
+#    fi
+#    mkdir -p "$HOME/.config/wayfire"
+    
+#    if [ -d "$HOME/.config/zsh/" ] && [ ! -d "$BACKUP_DIR/.config/zsh-bak" ]; then
+#        cp -r "$HOME/.config/zsh" "$HOME/.config/zsh-bak"
+#    fi
+#    mkdir -p "$HOME/.config/zsh/"
 
-    if [ -d "${HOME}/.config/lf/" ] && [ ! -d "${HOME}/.config/lf-bak" ]; then
-        cp -r "${HOME}/.config/lf" "${HOME}/.config/lf-bak"
-    fi
-    mkdir -p "${HOME}/.config/lf/"
-
-    printf "%b\n" "${GREEN}Let the ricing begin in...${RC}"
-    printf "%b\n" "${GREEN}3...${RC}"
-    printf "%b\n" "${GREEN}2..${RC}"
-    printf "%b\n" "${GREEN}1💥${RC}"
+#    if [ -d "$HOME/.config/Thunar/" ] && [ ! -d "$BACKUP_DIR/.config/Thunar-bak" ]; then
+#        cp -r "$HOME/.config/Thunar" "$BACKUP_DIR/.config/Thunar-bak"
+#    fi
+#    mkdir -p "$HOME/.config/Thunar/"
     
-    ## todo: remove yay dir in .config
-    yes | cp -r ~/dotfiles/home/andro/.config ~/
-    cd ~ && git clone https://github.com/4ndr0666/Wayfire_4ndr0666
-    yes | cp -r "${HOME}/Wayfire_4ndr0666/config/wayfire" "${HOME}/.config"
-    curl -sSLo "${HOME}/.config/wayfire.ini" https://raw.githubusercontent.com/4ndr0666/Wayfire_4ndr0666/refs/heads/main/config/wayfire.ini
+    yes | cp -r "$HOME/dotfiles/home/andro/.config" "$HOME"
+    cd "$HOME" && git clone https://github.com/4ndr0666/Wayfire_4ndr0666
+    yes | cp -r "$HOME/Wayfire_4ndr0666/config/wayfire" "$HOME/.config"
+#    curl -sSLo "$HOME/.config/wayfire.ini" https://raw.githubusercontent.com/4ndr0666/Wayfire_4ndr0666/refs/heads/main/config/wayfire.ini
 #    curl -sSLo "${HOME}/.config/zsh/aliasrc" https://raw.githubusercontent.com/4ndr0666/dotfiles/refs/heads/main/home/andro/.config/zsh/aliasrc  
 #    curl -sSLo "${HOME}/.config/zsh/functions.zsh" https://raw.githubusercontent.com/4ndr0666/dotfiles/refs/heads/main/home/andro/.config/zsh/functions.zsh
 #    curl -sSLo "${HOME}/.config/zsh/gpg_env" https://raw.githubusercontent.com/4ndr0666/dotfiles/refs/heads/main/home/andro/.config/zsh/gpg_env      
@@ -118,13 +200,17 @@ setupconfig() {
 #    curl -sSLo "${HOME}/.config/lf/scope" https://raw.githubusercontent.com/4ndr0666/dotfiles/refs/heads/main/home/andro/.config/lf/scope
 }
 
+## TODO
+#setupp10k() {
+#}
+
 ## Zshrc:
 setupzsh() {
-    printf "%b\n" "${YELLOW}Setting up ZSH...${RC}"
+    printf "%b\n" "Setting up ZSH"
     CONFIG_DIR="$HOME/.config/zsh"
     ZSHRC_FILE="$CONFIG_DIR/.zshrc"
 
-    if [ ! -f "$ZSHRC_FILE" ]; then  
+    if [ ! -f "${ZSHRC_FILE" ]; then  
     cat <<EOL >"$ZSHRC_FILE"
 # ===================== // 4NDR0666_ZSHRC //
 ## Powerlevel10k:
@@ -344,15 +430,14 @@ source /usr/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.
 EOL
     fi
     ### Create the symlink:
-    ln -svf "$ZSHRC_FILE" ~/.zshrc || {
-        printf "%b\n" "${RED}Failed to create symlink for .zshrc${RC}"
-        exit 1
+    ln -sv "$ZSHRC_FILE" "$HOME/.zshrc" || {
+        error "Failed to create symlink for .zshrc"
     }
 }
 
 ## Zprofile:
 setupzprofile() {
-    printf "%b\n" "${YELLOW}Setting up the Zprofile...${RC}"
+    printf "%b\n" "Setting up the Zprofile..."
     CONFIG_DIR="$HOME/.config/zsh"
     ZPROFILE="$CONFIG_DIR/.zprofile"
 
@@ -640,27 +725,28 @@ export LESSOPEN="| /usr/bin/highlight -O ansi %s 2>/dev/null"
 EOL
     fi
     ### Create the symlink:
-    ln -sf "$ZPROFILE" ~/.zprofile || {
-        printf "%b\n" "${RED}Failed to create symlink for .zprofile${RC}"
-        exit 1
+    ln -sf "$ZPROFILE" "$HOME/.zprofile" || {
+        error "Failed to create symlink for .zprofile"
     }
 }
 
-tweaks() {
-    printf "%b\n" "${CYANY}Making some system tweaks...${RC}"
+cleanup() {
+    printf "%b\n" "Cleaning up..."
     sleep 1
     rm "$HOME/.config/yay" -rf
-    bat cache --build
-    printf "%b\n" "${GREEN}Ricing complete!${RC}"    
+    bat cache --build >/dev/null/ 2>&1
+    printf "%b\n" "${CYAN}4ndr0basepkgs${RC} installation completed."    
 }
 
-setupbase
-setupaur
+## Main Entry Point
+install_aur_helper
 setupfont
+setup_repos
+setup_dotfiles
 setupconfig
 setupzsh
 setupzprofile
-tweaks
+cleanup
 
 # ==================== // ToDo //
 ### File creation from DL:
