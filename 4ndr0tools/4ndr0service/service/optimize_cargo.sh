@@ -54,7 +54,7 @@ install_rustup() {
 }
 
 update_rustup_and_cargo() {
-    if rustup self update &> /dev/null; then
+    if rustup self update &>/dev/null; then
         if rustup update; then
             echo "✅ rustup and Cargo updated successfully."
             log "rustup and Cargo updated successfully."
@@ -95,14 +95,32 @@ consolidate_cargo_directories() {
     echo "🧹 Ensuring Cargo directories exist..."
     mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" || handle_error "Failed creating Cargo dirs."
 
+    # Merge .cargo into $CARGO_HOME if they differ
     if [[ -d "$HOME/.cargo" && "$HOME/.cargo" != "$CARGO_HOME" ]]; then
-        echo "🧹 Moving existing .cargo => $CARGO_HOME..."
-        mv "$HOME/.cargo" "$CARGO_HOME" || handle_error "Failed to move .cargo => $CARGO_HOME."
+        echo "🧹 Merging existing .cargo => $CARGO_HOME..."
+        if command -v rsync &>/dev/null; then
+            rsync -a --remove-source-files --progress "$HOME/.cargo/" "$CARGO_HOME/" \
+                || handle_error "Failed to merge .cargo => $CARGO_HOME."
+            rmdir "$HOME/.cargo" 2>/dev/null || true
+        else
+            mv "$HOME/.cargo"/* "$CARGO_HOME" || handle_error "Failed to move .cargo => $CARGO_HOME."
+            rmdir "$HOME/.cargo" 2>/dev/null || true
+        fi
     fi
+
+    # Merge .rustup into $RUSTUP_HOME if they differ
     if [[ -d "$HOME/.rustup" && "$HOME/.rustup" != "$RUSTUP_HOME" ]]; then
-        echo "🧹 Moving existing .rustup => $RUSTUP_HOME..."
-        mv "$HOME/.rustup" "$RUSTUP_HOME" || handle_error "Failed to move .rustup => $RUSTUP_HOME."
+        echo "🧹 Merging existing .rustup => $RUSTUP_HOME..."
+        if command -v rsync &>/dev/null; then
+            rsync -a --remove-source-files --progress "$HOME/.rustup/" "$RUSTUP_HOME/" \
+                || handle_error "Failed to merge .rustup => $RUSTUP_HOME."
+            rmdir "$HOME/.rustup" 2>/dev/null || true
+        else
+            mv "$HOME/.rustup"/* "$RUSTUP_HOME" || handle_error "Failed to move .rustup => $RUSTUP_HOME."
+            rmdir "$HOME/.rustup" 2>/dev/null || true
+        fi
     fi
+
     log "Cargo directories consolidated."
 }
 
@@ -121,10 +139,10 @@ manage_permissions() {
 
 validate_cargo_installation() {
     echo "✅ Validating Cargo installation..."
-    if ! cargo --version &> /dev/null; then
+    if ! cargo --version &>/dev/null; then
         handle_error "Cargo missing. Use --fix to attempt installation."
     fi
-    if ! rustup --version &> /dev/null; then
+    if ! rustup --version &>/dev/null; then
         handle_error "rustup not installed correctly."
     fi
     echo "✅ Cargo and rustup are installed + configured."
@@ -150,7 +168,7 @@ perform_final_cleanup() {
 optimize_cargo_service() {
     echo "🔧 Starting Cargo environment optimization..."
 
-    if ! command -v rustup &> /dev/null; then
+    if ! command -v rustup &>/dev/null; then
         echo "📦 rustup not installed. Installing..."
         install_rustup
     else
@@ -186,3 +204,8 @@ optimize_cargo_service() {
     echo -e "${CYAN}rustup version:${NC} $(rustup --version)"
     log "Cargo environment optimization completed."
 }
+
+# Allow direct execution
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    optimize_cargo_service
+fi

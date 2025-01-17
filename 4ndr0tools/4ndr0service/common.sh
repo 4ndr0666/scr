@@ -12,7 +12,8 @@ fi
 export COMMON_SH_INCLUDED=true
 
 # Default config/log paths
-CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
+# Adjusted to reflect that config.json is stored under ~/.local/share/4ndr0service by default
+CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 LOG_FILE_DIR_DEFAULT="$HOME/.local/share/logs/4ndr0service/logs"
 LOG_FILE_DEFAULT="$LOG_FILE_DIR_DEFAULT/4ndr0service.log"
 
@@ -121,6 +122,21 @@ attempt_tool_install() {
     else
         log_warn "$tool missing. Use --fix to attempt installation."
     fi
+}
+
+###############################################################################
+# Helper for expanding variables like $XDG_DATA_HOME inside JSON
+###############################################################################
+expand_path() {
+    local raw="$1"
+    # Expand $XDG_DATA_HOME, $XDG_CONFIG_HOME, $XDG_CACHE_HOME, $HOME, etc.
+    local expanded
+    expanded="$(echo "$raw" \
+        | sed "s|\$XDG_DATA_HOME|$XDG_DATA_HOME|g" \
+        | sed "s|\$XDG_CONFIG_HOME|$XDG_CONFIG_HOME|g" \
+        | sed "s|\$XDG_CACHE_HOME|$XDG_CACHE_HOME|g" \
+        | sed "s|\$HOME|$HOME|g")"
+    echo "$expanded"
 }
 
 ###############################################################################
@@ -265,40 +281,77 @@ load_config() {
         handle_error "'jq' is required. Please install jq."
     fi
 
-    XDG_DATA_HOME="$(jq -r '.env.XDG_DATA_HOME' "$CONFIG_FILE")"
-    XDG_CONFIG_HOME="$(jq -r '.env.XDG_CONFIG_HOME' "$CONFIG_FILE")"
-    XDG_CACHE_HOME="$(jq -r '.env.XDG_CACHE_HOME' "$CONFIG_FILE")"
-    XDG_STATE_HOME="$(jq -r '.env.XDG_STATE_HOME' "$CONFIG_FILE")"
+    # Load raw values from config
+    local raw_XDG_DATA_HOME raw_XDG_CONFIG_HOME raw_XDG_CACHE_HOME raw_XDG_STATE_HOME
+    local raw_CARGO_HOME raw_RUSTUP_HOME raw_NVM_DIR raw_PSQL_HOME raw_MYSQL_HOME
+    local raw_SQLITE_HOME raw_MESON_HOME raw_GOPATH raw_GOMODCACHE raw_GOROOT
+    local raw_VENV_HOME raw_PIPX_HOME raw_ELECTRON_CACHE raw_NODE_DATA_HOME
+    local raw_NODE_CONFIG_HOME raw_SQL_DATA_HOME raw_SQL_CONFIG_HOME raw_SQL_CACHE_HOME
+
+    raw_XDG_DATA_HOME="$(jq -r '.env.XDG_DATA_HOME' "$CONFIG_FILE")"
+    raw_XDG_CONFIG_HOME="$(jq -r '.env.XDG_CONFIG_HOME' "$CONFIG_FILE")"
+    raw_XDG_CACHE_HOME="$(jq -r '.env.XDG_CACHE_HOME' "$CONFIG_FILE")"
+    raw_XDG_STATE_HOME="$(jq -r '.env.XDG_STATE_HOME' "$CONFIG_FILE")"
     LOG_FILE_DIR="$(jq -r '.logging.log_file_dir' "$CONFIG_FILE")"
-    LOG_FILE="$(jq -r '.logging.log_file' "$CONFIG_FILE" | sed "s|\$XDG_DATA_HOME|$XDG_DATA_HOME|g")"
-    CARGO_HOME="$(jq -r '.env.CARGO_HOME' "$CONFIG_FILE")"
-    RUSTUP_HOME="$(jq -r '.env.RUSTUP_HOME' "$CONFIG_FILE")"
-    NVM_DIR="$(jq -r '.env.NVM_DIR' "$CONFIG_FILE")"
-    PSQL_HOME="$(jq -r '.env.PSQL_HOME' "$CONFIG_FILE")"
-    MYSQL_HOME="$(jq -r '.env.MYSQL_HOME' "$CONFIG_FILE")"
-    SQLITE_HOME="$(jq -r '.env.SQLITE_HOME' "$CONFIG_FILE")"
-    MESON_HOME="$(jq -r '.env.MESON_HOME' "$CONFIG_FILE")"
-    GOPATH="$(jq -r '.env.GOPATH' "$CONFIG_FILE")"
-    GOMODCACHE="$(jq -r '.env.GOMODCACHE' "$CONFIG_FILE")"
-    GOROOT="$(jq -r '.env.GOROOT' "$CONFIG_FILE")"
-    VENV_HOME="$(jq -r '.env.VENV_HOME' "$CONFIG_FILE")"
-    PIPX_HOME="$(jq -r '.env.PIPX_HOME' "$CONFIG_FILE")"
-    ELECTRON_CACHE="$(jq -r '.env.ELECTRON_CACHE' "$CONFIG_FILE")"
-    NODE_DATA_HOME="$(jq -r '.env.NODE_DATA_HOME' "$CONFIG_FILE")"
-    NODE_CONFIG_HOME="$(jq -r '.env.NODE_CONFIG_HOME' "$CONFIG_FILE")"
-    SQL_DATA_HOME="$(jq -r '.env.SQL_DATA_HOME' "$CONFIG_FILE")"
-    SQL_CONFIG_HOME="$(jq -r '.env.SQL_CONFIG_HOME' "$CONFIG_FILE")"
-    SQL_CACHE_HOME="$(jq -r '.env.SQL_CACHE_HOME' "$CONFIG_FILE")"
+    LOG_FILE="$(jq -r '.logging.log_file' "$CONFIG_FILE")"
+
+    raw_CARGO_HOME="$(jq -r '.env.CARGO_HOME' "$CONFIG_FILE")"
+    raw_RUSTUP_HOME="$(jq -r '.env.RUSTUP_HOME' "$CONFIG_FILE")"
+    raw_NVM_DIR="$(jq -r '.env.NVM_DIR' "$CONFIG_FILE")"
+    raw_PSQL_HOME="$(jq -r '.env.PSQL_HOME' "$CONFIG_FILE")"
+    raw_MYSQL_HOME="$(jq -r '.env.MYSQL_HOME' "$CONFIG_FILE")"
+    raw_SQLITE_HOME="$(jq -r '.env.SQLITE_HOME' "$CONFIG_FILE")"
+    raw_MESON_HOME="$(jq -r '.env.MESON_HOME' "$CONFIG_FILE")"
+    raw_GOPATH="$(jq -r '.env.GOPATH' "$CONFIG_FILE")"
+    raw_GOMODCACHE="$(jq -r '.env.GOMODCACHE' "$CONFIG_FILE")"
+    raw_GOROOT="$(jq -r '.env.GOROOT' "$CONFIG_FILE")"
+    raw_VENV_HOME="$(jq -r '.env.VENV_HOME' "$CONFIG_FILE")"
+    raw_PIPX_HOME="$(jq -r '.env.PIPX_HOME' "$CONFIG_FILE")"
+    raw_ELECTRON_CACHE="$(jq -r '.env.ELECTRON_CACHE' "$CONFIG_FILE")"
+    raw_NODE_DATA_HOME="$(jq -r '.env.NODE_DATA_HOME' "$CONFIG_FILE")"
+    raw_NODE_CONFIG_HOME="$(jq -r '.env.NODE_CONFIG_HOME' "$CONFIG_FILE")"
+    raw_SQL_DATA_HOME="$(jq -r '.env.SQL_DATA_HOME' "$CONFIG_FILE")"
+    raw_SQL_CONFIG_HOME="$(jq -r '.env.SQL_CONFIG_HOME' "$CONFIG_FILE")"
+    raw_SQL_CACHE_HOME="$(jq -r '.env.SQL_CACHE_HOME' "$CONFIG_FILE")"
+
     backup_dir="$(jq -r '.backup_dir' "$CONFIG_FILE")"
     PKG_MANAGER="$(jq -r '.package_manager' "$CONFIG_FILE")"
     SETTINGS_EDITOR="$(jq -r '.settings_editor' "$CONFIG_FILE")"
     USER_INTERFACE="$(jq -r '.user_interface' "$CONFIG_FILE")"
     PLUGINS_DIR="$(jq -r '.plugins_dir' "$CONFIG_FILE")"
+
+    # Now expand them
+    XDG_DATA_HOME="$(expand_path "$raw_XDG_DATA_HOME")"
+    XDG_CONFIG_HOME="$(expand_path "$raw_XDG_CONFIG_HOME")"
+    XDG_CACHE_HOME="$(expand_path "$raw_XDG_CACHE_HOME")"
+    XDG_STATE_HOME="$(expand_path "$raw_XDG_STATE_HOME")"
+    LOG_FILE_DIR="$(expand_path "$LOG_FILE_DIR")"
+    LOG_FILE="$(expand_path "$LOG_FILE")"
+
+    CARGO_HOME="$(expand_path "$raw_CARGO_HOME")"
+    RUSTUP_HOME="$(expand_path "$raw_RUSTUP_HOME")"
+    NVM_DIR="$(expand_path "$raw_NVM_DIR")"
+    PSQL_HOME="$(expand_path "$raw_PSQL_HOME")"
+    MYSQL_HOME="$(expand_path "$raw_MYSQL_HOME")"
+    SQLITE_HOME="$(expand_path "$raw_SQLITE_HOME")"
+    MESON_HOME="$(expand_path "$raw_MESON_HOME")"
+    GOPATH="$(expand_path "$raw_GOPATH")"
+    GOMODCACHE="$(expand_path "$raw_GOMODCACHE")"
+    GOROOT="$(expand_path "$raw_GOROOT")"
+    VENV_HOME="$(expand_path "$raw_VENV_HOME")"
+    PIPX_HOME="$(expand_path "$raw_PIPX_HOME")"
+    ELECTRON_CACHE="$(expand_path "$raw_ELECTRON_CACHE")"
+    NODE_DATA_HOME="$(expand_path "$raw_NODE_DATA_HOME")"
+    NODE_CONFIG_HOME="$(expand_path "$raw_NODE_CONFIG_HOME")"
+    SQL_DATA_HOME="$(expand_path "$raw_SQL_DATA_HOME")"
+    SQL_CONFIG_HOME="$(expand_path "$raw_SQL_CONFIG_HOME")"
+    SQL_CACHE_HOME="$(expand_path "$raw_SQL_CACHE_HOME")"
 }
 
 # Immediately load config
 load_config
 
+# Ensure primary directories exist
 ensure_dir "$LOG_FILE_DIR"
 ensure_dir "$backup_dir"
 ensure_dir "$PLUGINS_DIR"

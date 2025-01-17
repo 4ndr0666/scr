@@ -108,7 +108,6 @@ npm_install_or_update() {
 }
 
 manage_ruby_versions() {
-    # Check for RVM or rbenv, optional
     if command -v rbenv &> /dev/null; then
         echo "🔄 Managing Ruby versions with rbenv..."
         if rbenv install -s "$(rbenv install -l | grep -v - | tail -1)"; then

@@ -70,14 +70,14 @@ source_views() {
 
 run_all_services() {
     log_info "Running all services in sequence..."
-    optimize_go_service        || log_warn "Go setup failed."
-    optimize_ruby_service      || log_warn "Ruby setup failed."
-    optimize_cargo_service     || log_warn "Cargo setup failed."
-    optimize_node_service      || log_warn "Node.js + NVM setup failed."
-    optimize_meson_service     || log_warn "Meson setup failed."
-    optimize_python_service    || log_warn "Python setup failed."
-    optimize_electron_service  || log_warn "Electron setup failed."
-    optimize_venv_service      || log_warn "Venv setup failed."
+    optimize_go_service       || log_warn "Go setup failed."
+    optimize_ruby_service     || log_warn "Ruby setup failed."
+    optimize_cargo_service    || log_warn "Cargo setup failed."
+    optimize_node_service     || log_warn "Node.js + NVM setup failed."
+    optimize_meson_service    || log_warn "Meson setup failed."
+    optimize_python_service   || log_warn "Python setup failed."
+    optimize_electron_service || log_warn "Electron setup failed."
+    optimize_venv_service     || log_warn "Venv setup failed."
     log_info "All services have been attempted in sequence."
 }
 

@@ -1,5 +1,5 @@
 ###############################################################################
-# File: service/optimize_python.sh
+# File: optimize_python.sh
 # Description: Python environment optimization logic for 4ndr0service.
 ###############################################################################
 #!/usr/bin/env bash
@@ -17,7 +17,6 @@ optimize_python_service() {
       echo -e "\033[0;32m✅ Python is already installed: $py_version\033[0m"
   else
       echo -e "\033[1;33m⚠ Python not found.\033[0m"
-      # Attempt installation if fix_mode set, for example:
       attempt_tool_install "python3" "false"
       return 1
   fi
@@ -37,7 +36,7 @@ optimize_python_service() {
       return 0
   fi
 
-  # 3) Attempt to upgrade pip (PEP 668 environment may block us)
+  # 3) Attempt pip upgrade (PEP 668 environment might block)
   echo "🔄 Attempting pip upgrade..."
   set +e
   "$pip_cmd" install --upgrade pip
@@ -51,7 +50,7 @@ optimize_python_service() {
       echo "✅ pip upgraded successfully."
   fi
 
-  # Next steps (e.g. installing virtualenv, pipx, etc.) can also handle pep668:
+  # virtualenv handling
   echo "🔧 Checking for virtualenv..."
   if ! "$pip_cmd" show virtualenv &>/dev/null; then
       echo "🔄 Installing virtualenv..."
@@ -79,7 +78,7 @@ optimize_python_service() {
       fi
   fi
 
-  # Create or set up additional directories
+  # Configure Python directories
   echo "🛠️ Configuring Python directories..."
   mkdir -p "$VENV_HOME" "$PIPX_HOME" "$PIPX_HOME/bin"
   echo "Setting pip cache => $XDG_CACHE_HOME/python/pip..."
@@ -87,12 +86,13 @@ optimize_python_service() {
   "$pip_cmd" config set global.cache-dir "$XDG_CACHE_HOME/python/pip"
   set -e
   echo "✅ pip cache => $XDG_CACHE_HOME/python/pip"
+
   export WORKON_HOME="$VENV_HOME"
   echo "✅ WORKON_HOME => $WORKON_HOME"
+
   export PATH="$PIPX_HOME/bin:$PATH"
   echo "✅ PATH updated with $PIPX_HOME/bin"
 
-  # Ensure pip is actually available as a command
   ensure_pip_command() {
       if ! command -v pip &>/dev/null && ! command -v pip3 &>/dev/null; then
           echo "⚠ No pip command is available. Attempting fallback installation..."
@@ -103,12 +103,11 @@ optimize_python_service() {
   }
   ensure_pip_command
 
-  # Example: pipx, black, flake8, etc.
+  # Packages: pipx, black, flake8, mypy, pytest
   echo "🔧 Installing Python packages (pipx, black, flake8, mypy, pytest)..."
   if command -v pipx &>/dev/null; then
       echo "✅ pipx is already installed."
   else
-      # Attempt to install pipx if fix_mode is needed or fallback
       echo "Installing pipx..."
       set +e
       "$pip_cmd" install --upgrade pipx
@@ -122,7 +121,6 @@ optimize_python_service() {
       fi
   fi
 
-  # Utility function for installing/updating a tool with pipx
   fix_broken_pipx_env() {
       local pkg="$1"
       local venv_dir="$PIPX_HOME/venvs/$pkg"
@@ -139,13 +137,11 @@ optimize_python_service() {
       fi
   }
 
-  # Tools
   tools=("black" "flake8" "mypy" "pytest")
   for t in "${tools[@]}"; do
       fix_broken_pipx_env "$t"
   done
 
-  # Manage permissions on the directories
   echo "🔐 Managing permissions for Python directories..."
   local dirs=(
     "$XDG_DATA_HOME/python"
@@ -157,8 +153,7 @@ optimize_python_service() {
   )
   for d in "${dirs[@]}"; do
       if [[ ! -w "$d" ]]; then
-          echo -e "✅ Directory $d is writable? [Checked ownership]"
-          # Or forcibly chmod if desired
+          echo "✅ Directory $d is writable? [Check ownership if needed]"
       else
           echo "✅ Directory $d is writable."
       fi
@@ -195,5 +190,4 @@ optimize_python_service() {
       echo -e "\033[0;36mpip version:\033[0m $(pip3 --version)"
   fi
 }
-
 export -f optimize_python_service

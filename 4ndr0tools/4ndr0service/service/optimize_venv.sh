@@ -86,7 +86,6 @@ optimize_venv_service() {
         echo "Installing pipx within system or user scope..."
         if ! python3 -m pip install --user pipx; then
             echo "⚠️ Warning: Could not install pipx via pip. Attempting fallback..."
-            # Possibly fallback to pacman
         fi
         command -v pipx &>/dev/null || echo "Still missing pipx; user must install manually."
     else
@@ -99,7 +98,6 @@ optimize_venv_service() {
     pipx_install_or_update mypy
     pipx_install_or_update pytest
 
-    # Example: user might want a local requirements file
     if [[ -f "requirements.txt" ]]; then
         echo "Installing from local requirements.txt..."
         pip install -r requirements.txt || log "Warning: could not install from requirements.txt"

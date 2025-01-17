@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # File: verify_environment.sh
-# Description: Verifies/fixes environment for 4ndr0service Suite. 
+# Description: Verifies/fixes environment for 4ndr0service Suite.
 # Usage: verify_environment.sh [--report] [--fix]
 
 set -euo pipefail
 IFS=$'\n\t'
 
 source "$PKG_PATH/common.sh"
-CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
+CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
 REPORT_MODE="false"
 FIX_MODE="false"
@@ -47,8 +47,6 @@ check_env_vars() {
         for mv in "${missing_vars[@]}"; do
             log_warn "Missing environment variable: $mv"
             echo "Missing environment variable: $mv"
-            # Typically environment variables can be set in config or shell
-            # We'll only warn here, as forcibly setting them might not be correct
         done
     else
         log_info "All required environment variables are set."

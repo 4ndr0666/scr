@@ -14,7 +14,7 @@ main_cli() {
             1) optimize_go_service ;;
             2) optimize_ruby_service ;;
             3) optimize_cargo_service ;;
-            4) optimize_node_service ;;  # Node + NVM merged
+            4) optimize_node_service ;;  # Node + NVM
             5) optimize_meson_service ;;
             6) optimize_python_service ;;
             7) optimize_electron_service ;;

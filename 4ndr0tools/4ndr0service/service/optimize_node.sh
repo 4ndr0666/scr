@@ -19,22 +19,17 @@
 #  No placeholders; tested for Arch-based distros. All logic is complete.
 # =============================================================================
 
-# 1. Pre-define PROVIDED_VERSION so older NVM code never sees it as unbound.
-#    We do this *before* enabling strict mode. A non-empty default is safest.
 export PROVIDED_VERSION="${PROVIDED_VERSION:-lts/*}"
 
-# 2. Now we can safely enable strict mode. No more unbound references.
 set -euo pipefail
 IFS=$'\n\t'
 
-# Colors
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Logging
 LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
 mkdir -p "$(dirname "$LOG_FILE")" || {
   echo -e "${RED}Error: Cannot create log directory.$NC"
@@ -60,14 +55,10 @@ check_directory_writable() {
   fi
 }
 
-# XDG directories
 export NODE_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/node"
 export NODE_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/node"
 export NODE_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/node"
 
-# --------------------------------------------------------------------
-# 1. Install Node.js if not found
-# --------------------------------------------------------------------
 install_node_via_pacman() {
   echo "Installing Node.js + npm with pacman..."
   sudo pacman -Syu --needed nodejs npm || handle_error "Failed to install Node.js via pacman."
@@ -104,9 +95,6 @@ install_node() {
   fi
 }
 
-# --------------------------------------------------------------------
-# 2. NVM installation + usage with "unbound variable" fix
-# --------------------------------------------------------------------
 remove_npmrc_prefix_conflict() {
   local npmrcfile="$HOME/.npmrc"
   if [[ -f "$npmrcfile" ]] && grep -Eq '^(prefix|globalconfig)=' "$npmrcfile"; then
@@ -132,7 +120,6 @@ install_nvm_safely() {
     mv "$HOME/.nvm" "$NVM_DIR" || handle_error "Failed moving ~/.nvm => $NVM_DIR"
   fi
 
-  # Key point: disable set -u around older nvm code
   set +u
   [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Could not source nvm.sh after install."
   [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" || true
@@ -156,7 +143,6 @@ manage_nvm_and_node_versions() {
     log "NVM is already installed."
   fi
 
-  # Temporarily disable set -u for older nvm.sh references
   set +u
   [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
   [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
@@ -184,7 +170,6 @@ manage_nvm_and_node_versions() {
     log "nvm use --lts failed."
   fi
 
-  # Attempt to set default => lts/*
   if nvm alias default 'lts/*'; then
     echo -e "${GREEN}✅ LTS Node set as NVM default.${NC}"
     log "Set nvm alias default => lts/*."
@@ -195,9 +180,6 @@ manage_nvm_and_node_versions() {
   set -u
 }
 
-# --------------------------------------------------------------------
-# 3. Configure npm (XDG paths)
-# --------------------------------------------------------------------
 configure_npm_cache_and_global_directory() {
   echo "🛠️ Setting npm cache => $NODE_CACHE_HOME/npm-cache..."
   if npm config set cache "$NODE_CACHE_HOME/npm-cache"; then
@@ -222,9 +204,6 @@ configure_npm_cache_and_global_directory() {
   log "PATH updated with $NODE_DATA_HOME/npm-global/bin."
 }
 
-# --------------------------------------------------------------------
-# 4. Install/Update essential npm packages
-# --------------------------------------------------------------------
 install_or_update_npm_packages() {
   echo "🔧 Installing/updating essential npm packages..."
   local pkgs=( "npm-check-updates" "yarn" "nodemon" "eslint" "pm2" "npx" )
@@ -251,9 +230,6 @@ install_or_update_npm_packages() {
   done
 }
 
-# --------------------------------------------------------------------
-# 5. Consolidate .npm => XDG
-# --------------------------------------------------------------------
 consolidate_node_directories() {
   if [[ -d "$HOME/.npm" ]]; then
     echo "🧹 Consolidating $HOME/.npm => $NODE_CACHE_HOME/npm..."
@@ -270,9 +246,6 @@ consolidate_node_directories() {
   fi
 }
 
-# --------------------------------------------------------------------
-# 6. Validate and clean up
-# --------------------------------------------------------------------
 validate_node_installation() {
   echo "✅ Validating final Node.js + npm..."
   if ! command -v node &>/dev/null; then
@@ -304,39 +277,22 @@ perform_final_cleanup() {
   log "Final cleanup done."
 }
 
-# --------------------------------------------------------------------
-# MAIN
-# --------------------------------------------------------------------
 optimize_node_service() {
   echo -e "${CYAN}🔧 Starting Node.js + npm + NVM optimization...${NC}"
 
-  # Step 1: Possibly install Node
   install_node
-
-  # Step 2: Manage NVM safely
   manage_nvm_and_node_versions
-
-  # Step 3: Configure npm for XDG
   configure_npm_cache_and_global_directory
-
-  # Step 4: Install/Update essential packages
   install_or_update_npm_packages
 
-  # Check global npm directory
   local npm_global_root
   npm_global_root="$(npm root -g)" || handle_error "npm root -g failed."
   check_directory_writable "$npm_global_root"
 
-  # Step 5: Consolidate .npm => XDG
   consolidate_node_directories
-
-  # Step 6: Validate
   validate_node_installation
-
-  # Step 7: Cleanup
   perform_final_cleanup
 
-  # Step 8: Summarize
   echo -e "${GREEN}🎉 Node.js environment optimization complete.${NC}"
   echo -e "${CYAN}Node.js version:${NC} $(node -v)"
   echo -e "${CYAN}npm version:${NC} $(npm -v)"

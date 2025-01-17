@@ -1,7 +1,8 @@
 #!/bin/bash
 # File: optimize_nvm.sh
 # Author: 4ndr0666
-# Description: Standalone NVM environment optimization, potentially duplicative of "optimize_node.sh" logic.
+# Description: Standalone NVM environment optimization, potentially duplicative
+# of "optimize_node.sh" logic.
 
 set -euo pipefail
 IFS=$'\n\t'
