@@ -62,11 +62,9 @@ clean_broken_symlinks() {
         printf "Checking for broken symlinks...\n"
         mapfile -t broken_symlinks < <(find "${SYMLINKS_CHECK[@]}" -xtype l -print)
         if [[ "${broken_symlinks[*]}" ]]; then
-            printf "BROKEN SYMLINKS FOUND:\n"
+            printf "BROKEN SYMLINKS TO BE DELETED:\n"
             printf '%s\n' "${broken_symlinks[@]}"
-            read -r -p "Do you want to remove the broken symlinks above? [y/N]"
-            if [[ "$REPLY" =~ [yY] ]]; then
-                rm "${broken_symlinks[@]}"
+	    rm "${broken_symlinks[@]}"
             fi
         else
             printf "...No broken symlinks found\n"
