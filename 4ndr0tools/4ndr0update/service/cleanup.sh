@@ -69,7 +69,6 @@ clean_broken_symlinks() {
         else
             printf "...No broken symlinks found\n"
         fi
-    fi
 }
 
 clean_old_config() {
