@@ -3,15 +3,18 @@
 # Date: 12-15-2024
 # Author: 4ndr0666
 
-# --- // HOME_MANAGER.SH ---
+# --- // Home Manager Script ---
 
 # --- // Logging:
-LOG_FILE="${XDG_DATA_HOME}/logs/home_manager.log"
-mkdir -p "$(dirname "$LOG_FILE")"
+LOG_DIR="${XDG_DATA_HOME}/logs/"
+LOG_FILE="$LOG_DIR/home_manager.log"
+mkdir -p "$LOG_DIR"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 log_action() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
 # Ensure the script is run with root privileges
@@ -34,8 +37,8 @@ Options:
   restore                Restore files from a backup and compare them with the current /etc configurations using meld.
 
 Example Usage:
-  ${0##*/} backup        Create a backup of critical /etc files and directories.
-  ${0##*/} restore       Restore and compare files from a selected backup using meld.
+  sudo ${0##*/} backup        Create a backup of critical /etc files and directories.
+  sudo ${0##*/} restore       Restore and compare files from a selected backup using meld.
 EOF
 }
 
@@ -92,25 +95,25 @@ create_backup() {
             counter=$((counter + 1))
         done
         tarball_name="${tarball_name%.tar.gz}_v$counter.tar.gz"
-        log_message "Existing tarball found. Creating versioned tarball: $tarball_name"
+        log_action "Existing tarball found. Creating versioned tarball: $tarball_name"
     fi
 
     # Create a tarball of the backup directory
-    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . || { log_message "Failed to create tarball."; exit 1; }
+    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . || { log_action "Failed to create tarball."; exit 1; }
 
     # Clean up the temporary directory
-    rm -rf "$backup_dir" || log_message "Failed to clean up temporary backup directory."
+    rm -rf "$backup_dir" || log_action "Failed to clean up temporary backup directory."
 
     # Lock the recovery tarball
-    chattr +i "$recover_dir/$tarball_name" || { log_message "Failed to lock the tarball."; exit 1; }
+    chattr +i "$recover_dir/$tarball_name" || { log_action "Failed to lock the tarball."; exit 1; }
 
     # Add lock and unlock aliases to shell configuration files
     add_aliases
 
     # Notify the user
-    local notification="Acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
+    local notification="Backup acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
     whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
-    log_message "Backup created and secured at $recover_dir/$tarball_name"
+    log_action "Backup created and secured at $recover_dir/$tarball_name"
 }
 
 # Function to restore from a backup and compare using meld
@@ -119,39 +122,38 @@ restore_backup() {
     local restore_dir="/tmp/etc_restore"
 
     if [ ! -d "$recover_dir" ]; then
-        log_message "Recovery directory $recover_dir does not exist."
+        log_action "Recovery directory $recover_dir does not exist."
         exit 1
     fi
 
     # List available backups
     local backups=("$recover_dir"/*.tar.gz)
     if [ ${#backups[@]} -eq 0 ]; then
-        log_message "No backups found in $recover_dir."
+        log_action "No backups found in $recover_dir."
         exit 1
     fi
 
-    # Select the latest backup
-    local latest_backup
-    latest_backup=$(ls -t "$recover_dir"/*.tar.gz 2>/dev/null | head -n1)
+    # Prompt user to select a backup
+    PS3="Select a backup to restore: "
+    echo "Available Backups:"
+    select tarball_name in "${backups[@]}"; do
+        if [ -n "$tarball_name" ]; then
+            break
+        else
+            echo "Invalid selection."
+        fi
+    done
 
-    if [ -z "$latest_backup" ]; then
-        log_message "No valid backups found in $recover_dir."
-        exit 1
-    fi
-
-    log_message "Selected backup: $latest_backup"
+    log_action "Selected backup: $tarball_name"
 
     # Ensure the restore directory exists and is empty
     rm -rf "$restore_dir"
-    mkdir -p "$restore_dir" || {
-        log_message "Failed to create restore directory: $restore_dir"
-        exit 1
-    }
+    mkdir -p "$restore_dir" || { log_action "Failed to create restore directory."; return 1; }
 
     # Extract the selected tarball to the restore directory
-    tar -xzf "$latest_backup" -C "$restore_dir" || {
-        log_message "Failed to extract tarball: $latest_backup"
-        exit 1
+    tar -xzf "$tarball_name" -C "$restore_dir" || {
+        log_action "Failed to extract tarball: $tarball_name"
+        return 1
     }
 
     # Compare the files in the restore directory with the current /etc using meld
@@ -159,10 +161,10 @@ restore_backup() {
         local item_name
         item_name=$(basename "$item")
         if [[ -e "/etc/$item_name" ]]; then
-            meld "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to compare /etc/$item_name with backup."
+            meld "$restore_dir/$item_name" "/etc/$item_name" || log_action "Failed to compare /etc/$item_name with backup."
         else
-            log_message "No current /etc/$item_name found. Restoring from backup."
-            cp -r "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to restore /etc/$item_name."
+            log_action "No current /etc/$item_name found. Restoring from backup."
+            cp -r "$restore_dir/$item_name" "/etc/$item_name" || log_action "Failed to restore /etc/$item_name."
         fi
     done
 

@@ -9,6 +9,7 @@
 LOG_DIR="${XDG_DATA_HOME}/logs/"
 LOG_FILE="$LOG_DIR/makegrub.log"
 mkdir -p "$LOG_DIR"
+
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log_message() {

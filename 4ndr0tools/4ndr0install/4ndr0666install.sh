@@ -7,9 +7,8 @@
 # --- // Constants:
 DOTFILES_REPO="https://github.com/4ndr0666/dotfiles.git" # Confirmed and aligned
 PROGS_CSV="https://raw.githubusercontent.com/4ndr0666/4ndr0site/refs/heads/main/static/progs.csv"
-#PROGS_CSV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/progs.csv" # Confirmed
 AUR_HELPER="yay"                                        # Confirmed
-REPO_BRANCH="main"                                    # Confirmed
+REPO_BRANCH="main"                                      # Confirmed
 export TERM=ansi
 
 # --- // Script Directory:
@@ -25,6 +24,8 @@ fi
 if [ -n "$SUDO_USER" ]; then
     INVOKING_USER="$SUDO_USER"
     USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    export INVOKING_USER
+    export USER_HOME
 else
     echo "Error: Unable to determine the invoking user's home directory."
     exit 1
@@ -127,7 +128,6 @@ error() {
 	printf "%s\n" "$1" >&2
 	exit 1
 }
-
 
 refresh_keys() {
     log_message "Refreshing Arch Keyring..."
@@ -462,10 +462,6 @@ setup_gpg_env() {
 export GPG_TTY=$(tty)
 gpg-connect-agent updatestartuptty /bye >/dev/null
 gpg-connect-agent reloadagent /bye >/dev/null
-EOF
-
-    # Append additional GPG variables as per user preference
-    cat << 'EOF' >> "$gpg_env_path"
 
 # Additional GPG Environment Variables
 export GPG_AGENT_INFO=/run/user/$(id -u)/gnupg/S.gpg-agent:0:1
@@ -507,14 +503,6 @@ create_recovery_dir() {
     # Archive critical directories
     declare -a dirs_to_backup=(
         "/etc"
-        "/home"
-        "/var"
-        "/usr"
-        "/boot"
-        "/opt"
-        "/srv"
-        "/root"
-        "/tmp"
     )
 
     for dir in "${dirs_to_backup[@]}"; do

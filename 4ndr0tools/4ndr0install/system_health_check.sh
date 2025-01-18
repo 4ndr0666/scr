@@ -10,9 +10,11 @@
 LOG_FILE="${XDG_DATA_HOME}/logs/system_health_check.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 log_message() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
 # Function to check the filesystem for errors
@@ -50,6 +52,27 @@ check_logs() {
     fi
 }
 
+# Function to check disk usage
+check_disk_usage() {
+    log_message "Checking disk usage..."
+    df -h | tee -a "$LOG_FILE"
+    log_message "Disk usage check completed."
+}
+
+# Function to check memory usage
+check_memory_usage() {
+    log_message "Checking memory usage..."
+    free -h | tee -a "$LOG_FILE"
+    log_message "Memory usage check completed."
+}
+
+# Function to check CPU load
+check_cpu_load() {
+    log_message "Checking CPU load..."
+    uptime | tee -a "$LOG_FILE"
+    log_message "CPU load check completed."
+}
+
 # Function to display summary to the user
 display_summary() {
     whiptail --textbox "$LOG_FILE" 20 70
@@ -62,6 +85,9 @@ main() {
     check_filesystem
     check_systemd_services
     check_logs
+    check_disk_usage
+    check_memory_usage
+    check_cpu_load
     display_summary
 
     log_message "System health check completed."

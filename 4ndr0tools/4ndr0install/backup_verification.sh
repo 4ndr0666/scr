@@ -5,9 +5,11 @@
 
 # --- // Backup Verification Script ---
 
+# --- // Logging:
 LOG_DIR="${XDG_DATA_HOME}/logs/"
 LOG_FILE="$LOG_DIR/backup_verification.log"
 mkdir -p "$LOG_DIR"
+
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log_message() {
@@ -34,10 +36,7 @@ verify_backup() {
 
     local missing_dirs=()
     declare -A expected_backups=(
-        ["etc_backup"]="/etc"
-        ["home_backup"]="/home"
-        ["var_backup"]="/var"
-        ["usr_backup"]="/usr"
+        ["etc_backup"]="etc"
     )
 
     for backup in "${backups[@]}"; do
@@ -57,13 +56,14 @@ verify_backup() {
     if [ ${#missing_dirs[@]} -gt 0 ]; then
         log_message "Missing backups for the following directories:"
         for dir in "${missing_dirs[@]}"; do
-            log_message " - $dir"
+            log_message " - /$dir"
         done
-        whiptail --title "Verification Warning" --msgbox "Missing backups for the following directories:\n$(printf '%s\n' "${missing_dirs[@]}")" 10 60
+        whiptail --title "Verification Warning" --msgbox "Missing backups for the following directories:\n$(printf '/%s\n' "${missing_dirs[@]}")" 10 60
     else
         log_message "All critical directories have been backed up successfully."
         whiptail --title "Verification Success" --msgbox "All critical directories have been backed up successfully." 8 60
     fi
 }
 
+# --- // Main Execution:
 verify_backup

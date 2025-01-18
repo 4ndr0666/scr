@@ -9,9 +9,11 @@
 LOG_FILE="${XDG_DATA_HOME}/logs/system_cleanup.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 log_message() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
 # Ensure the script is run with root privileges
@@ -56,6 +58,33 @@ remove_orphans() {
     log_message "Orphaned packages removed."
 }
 
+# Function to remove unused dependencies
+remove_unused_dependencies() {
+    log_message "Removing unused dependencies..."
+    pacman -Qtdq | pacman -Rns --noconfirm - || {
+        log_message "Failed to remove unused dependencies or no unused dependencies found."
+    }
+    log_message "Unused dependencies removed."
+}
+
+# Function to clean the thumbnail cache
+clean_thumbnail_cache() {
+    log_message "Cleaning thumbnail cache..."
+    rm -rf "$XDG_CACHE_HOME/thumbnails/"* || {
+        log_message "Failed to clean thumbnail cache."
+    }
+    log_message "Thumbnail cache cleaned."
+}
+
+# Function to clear user caches
+clear_user_caches() {
+    log_message "Clearing user caches..."
+    rm -rf "$XDG_CACHE_HOME/"* || {
+        log_message "Failed to clear user caches."
+    }
+    log_message "User caches cleared."
+}
+
 # Main function to run all cleanup tasks
 main() {
     log_message "Starting system cleanup..."
@@ -64,6 +93,9 @@ main() {
     vacuum_logs
     cleanup_temp_files
     remove_orphans
+    remove_unused_dependencies
+    clean_thumbnail_cache
+    clear_user_caches
 
     log_message "System cleanup completed successfully."
     whiptail --title "System Cleanup" --msgbox "System cleanup completed successfully." 8 60

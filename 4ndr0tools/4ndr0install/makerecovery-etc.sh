@@ -9,9 +9,11 @@
 LOG_FILE="/var/log/makerecovery-etc.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 log_message() {
     local message="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $message"
 }
 
 # Function to display help information
@@ -28,8 +30,8 @@ Options:
   restore                Restore files from a backup and compare them with the current /etc configurations using meld.
 
 Example Usage:
-  ${0##*/} backup        Create a backup of critical /etc files and directories.
-  ${0##*/} restore       Restore and compare files from a selected backup using meld.
+  sudo ${0##*/} backup        Create a backup of critical /etc files and directories.
+  sudo ${0##*/} restore       Restore and compare files from a selected backup using meld.
 EOF
 }
 
@@ -74,7 +76,7 @@ create_backup() {
         local progress=$((current_item * 100 / total_items))
         echo $progress
     done
-    } | whiptail --gauge "Backing up files..." 6 50 0
+    } | whiptail --gauge "Backing up /etc files..." 6 50 0
 
     # Ensure the recovery directory exists
     [ ! -d "$recover_dir" ] && mkdir -p "$recover_dir"
@@ -102,7 +104,7 @@ create_backup() {
     add_aliases
 
     # Notify the user
-    local notification="Acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
+    local notification="Backup acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
     whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
     log_message "Backup created and secured at $recover_dir/$tarball_name"
 }
@@ -126,6 +128,7 @@ restore_backup() {
 
     # Prompt user to select a backup
     PS3="Select a backup to restore: "
+    echo "Available Backups:"
     select tarball_name in "${backups[@]}"; do
         if [ -n "$tarball_name" ]; then
             break
@@ -134,12 +137,17 @@ restore_backup() {
         fi
     done
 
+    log_message "Selected backup: $tarball_name"
+
     # Ensure the restore directory exists and is empty
     rm -rf "$restore_dir"
     mkdir -p "$restore_dir" || { log_message "Failed to create restore directory."; return 1; }
 
     # Extract the selected tarball to the restore directory
-    tar -xzf "$tarball_name" -C "$restore_dir" || { log_message "Failed to extract tarball."; return 1; }
+    tar -xzf "$tarball_name" -C "$restore_dir" || {
+        log_message "Failed to extract tarball: $tarball_name"
+        return 1
+    }
 
     # Compare the files in the restore directory with the current /etc using meld
     for item in "$restore_dir"/*; do
@@ -172,14 +180,14 @@ add_aliases() {
             # Add alias if not already present
             if ! grep -q "alias lock=" "$config_file"; then
                 echo "alias lock='sudo chattr +i '" >> "$config_file"
-                log_message "Added lock alias to $config_file"
+                log_action "Added lock alias to $config_file"
             fi
             if ! grep -q "alias unlock=" "$config_file"; then
                 echo "alias unlock='sudo chattr -i '" >> "$config_file"
-                log_message "Added unlock alias to $config_file"
+                log_action "Added unlock alias to $config_file"
             fi
         else
-            log_message "Shell configuration file $config_file not found."
+            log_action "Shell configuration file $config_file not found."
         fi
     done
     # Source the shell configuration for the current user
