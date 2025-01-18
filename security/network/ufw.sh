@@ -380,24 +380,24 @@ configure_ufw() {
         echo "VPN is not active. Applying non-VPN UFW rules..."
     fi
 
-    # Define specific services on enp2s0
-    declare -A SERVICES_ENP2S0=(
+    # Define specific services on enp3s0
+    declare -A SERVICES_ENP3S0=(
         ["80/tcp"]="HTTP Traffic"
         ["443/tcp"]="HTTPS Traffic"
         ["7531/tcp"]="PlayWithMPV"
         ["6800/tcp"]="Aria2c"
     )
 
-    for port_protocol in "${!SERVICES_ENP2S0[@]}"; do
+    for port_protocol in "${!SERVICES_ENP3S0[@]}"; do
         port=$(echo "$port_protocol" | cut -d'/' -f1)
         proto=$(echo "$port_protocol" | cut -d'/' -f2)
-        desc=${SERVICES_ENP2S0[$port_protocol]}
+        desc=${SERVICES_ENP3S0[$port_protocol]}
 
-        if ! ufw status numbered | grep -qw "$port_protocol on enp2s0"; then
-            echo "Adding rule: Allow $desc on enp2s0 port $port/$proto"
-            ufw allow in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
+        if ! ufw status numbered | grep -qw "$port_protocol on ENP3S0"; then
+            echo "Adding rule: Allow $desc on enp3s0 port $port/$proto"
+            ufw allow in on ENP3S0 to any port "$port" proto "$proto" comment "$desc"
         else
-            echo "Rule already exists: Allow $desc on enp2s0 port $port/$proto"
+            echo "Rule already exists: Allow $desc on enp3s0 port $port/$proto"
         fi
     done
 
@@ -421,12 +421,12 @@ configure_ufw() {
                 echo "Rule already exists: Allow $desc on tun0 port $port/$proto"
             fi
 
-            DENY_RULE="$port_protocol on enp2s0"
+            DENY_RULE="$port_protocol on enp3s0"
             if ! ufw status numbered | grep -qw "Deny $DENY_RULE"; then
-                echo "Denying $desc on enp2s0"
-                ufw deny in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
+                echo "Denying $desc on enp3s0"
+                ufw deny in on enp3s0 to any port "$port" proto "$proto" comment "$desc"
             else
-                echo "Rule already exists: Deny $desc on enp2s0 port $port/$proto"
+                echo "Rule already exists: Deny $desc on enp3s0 port $port/$proto"
             fi
         done
     fi
@@ -441,7 +441,7 @@ configure_ufw() {
 
     # Optional: explicitly allow ephemeral outbound if needed
     # echo "Ensuring ephemeral ports are allowed for outgoing traffic..."
-    # ufw allow out on enp2s0 to any port 32768:65535 proto tcp comment "Ephemeral Ports on enp2s0"
+    # ufw allow out on enp3s0 to any port 32768:65535 proto tcp comment "Ephemeral Ports on enp3s0"
     # ufw allow out on tun0 to any port 32768:65535 proto tcp comment "Ephemeral Ports on tun0"
 
     # Reload UFW

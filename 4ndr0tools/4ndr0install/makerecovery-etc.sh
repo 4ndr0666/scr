@@ -5,6 +5,21 @@
 
 # --- // Make Recovery for /etc ---
 
+# --- // Environment Variables:
+if [ -n "$SUDO_USER" ]; then
+    INVOKING_USER="$SUDO_USER"
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    echo "Error: Unable to determine the invoking user's home directory."
+    exit 1
+fi
+
+export XDG_CONFIG_HOME="$USER_HOME/.config"
+export XDG_DATA_HOME="$USER_HOME/.local/share"
+export XDG_CACHE_HOME="$USER_HOME/.cache"
+export XDG_STATE_HOME="$USER_HOME/.local/state"
+export GNUPGHOME="$XDG_DATA_HOME/gnupg"
+
 # --- // Logging:
 LOG_FILE="/var/log/makerecovery-etc.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -76,7 +91,7 @@ create_backup() {
         local progress=$((current_item * 100 / total_items))
         echo $progress
     done
-    } | whiptail --gauge "Backing up /etc files..." 6 50 0
+    } | whiptail --gauge "Backing up files..." 6 50 0
 
     # Ensure the recovery directory exists
     [ ! -d "$recover_dir" ] && mkdir -p "$recover_dir"
@@ -92,10 +107,13 @@ create_backup() {
     fi
 
     # Create a tarball of the backup directory
+    log_message "Creating tarball $tarball_name..."
     tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . || { log_message "Failed to create tarball."; exit 1; }
 
-    # Clean up the temporary directory
-    rm -rf "$backup_dir" || log_message "Failed to clean up temporary backup directory."
+    log_message "Tarball $tarball_name created successfully."
+
+    # Clean up the backup directory
+    rm -rf "$backup_dir" || log_message "Failed to clean up $backup_dir."
 
     # Lock the recovery tarball
     chattr +i "$recover_dir/$tarball_name" || { log_message "Failed to lock the tarball."; exit 1; }
@@ -105,8 +123,8 @@ create_backup() {
 
     # Notify the user
     local notification="Backup acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
-    whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
-    log_message "Backup created and secured at $recover_dir/$tarball_name"
+    whiptail --title "Recovery Directory" --msgbox "$notification" 12 70
+    log_action "Backup created and secured at $recover_dir/$tarball_name."
 }
 
 # Function to restore from a backup and compare using meld
@@ -115,14 +133,16 @@ restore_backup() {
     local restore_dir="/tmp/etc_restore"
 
     if [ ! -d "$recover_dir" ]; then
-        log_message "Recovery directory $recover_dir does not exist."
+        log_action "Recovery directory $recover_dir does not exist."
         exit 1
     fi
 
+    shopt -s nullglob
     # List available backups
     local backups=("$recover_dir"/*.tar.gz)
+    shopt -u nullglob
     if [ ${#backups[@]} -eq 0 ]; then
-        log_message "No backups found in $recover_dir."
+        log_action "No backups found in $recover_dir."
         exit 1
     fi
 
@@ -137,15 +157,15 @@ restore_backup() {
         fi
     done
 
-    log_message "Selected backup: $tarball_name"
+    log_action "Selected backup: $tarball_name"
 
     # Ensure the restore directory exists and is empty
     rm -rf "$restore_dir"
-    mkdir -p "$restore_dir" || { log_message "Failed to create restore directory."; return 1; }
+    mkdir -p "$restore_dir" || { log_action "Failed to create restore directory."; return 1; }
 
     # Extract the selected tarball to the restore directory
     tar -xzf "$tarball_name" -C "$restore_dir" || {
-        log_message "Failed to extract tarball: $tarball_name"
+        log_action "Failed to extract tarball: $tarball_name"
         return 1
     }
 
@@ -154,10 +174,10 @@ restore_backup() {
         local item_name
         item_name=$(basename "$item")
         if [[ -e "/etc/$item_name" ]]; then
-            meld "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to compare /etc/$item_name with backup."
+            meld "$restore_dir/$item_name" "/etc/$item_name" || log_action "Failed to compare /etc/$item_name with backup."
         else
-            log_message "No current /etc/$item_name found. Restoring from backup."
-            cp -r "$restore_dir/$item_name" "/etc/$item_name" || log_message "Failed to restore /etc/$item_name."
+            log_action "No current /etc/$item_name found. Restoring from backup."
+            cp -r "$restore_dir/$item_name" "/etc/$item_name" || log_action "Failed to restore /etc/$item_name."
         fi
     done
 
@@ -202,12 +222,12 @@ add_aliases() {
 main() {
     case "$1" in
         backup|"") # Default action is to create a backup if no option is provided
-            log_message "Starting the backup process..."
+            log_action "Starting the backup process..."
             create_backup
-            log_message "Backup process completed."
+            log_action "Backup process completed."
             ;;
         restore)
-            log_message "Starting the restore process..."
+            log_action "Starting the restore process..."
             restore_backup
             ;;
         -h|--help)
@@ -221,5 +241,5 @@ main() {
     esac
 }
 
-# Execute the main function
+# Execute main function
 main "$@"

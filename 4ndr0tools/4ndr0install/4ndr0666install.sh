@@ -24,8 +24,6 @@ fi
 if [ -n "$SUDO_USER" ]; then
     INVOKING_USER="$SUDO_USER"
     USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-    export INVOKING_USER
-    export USER_HOME
 else
     echo "Error: Unable to determine the invoking user's home directory."
     exit 1
@@ -60,7 +58,7 @@ declare -A REQUIRED_DEPENDENCIES=(
     ["nvim"]="neovim,official"
     ["bat"]="bat,official"
     ["meld"]="meld,official"
-    ["gh"]="github-cli,official"
+    ["gh"]="gh,official"
     ["delta"]="git-delta,AUR"
     ["lsd"]="lsd,AUR"
     ["eza"]="eza,AUR"
@@ -573,11 +571,14 @@ run_external_script() {
     local script_name="$1"
     local script_path="$SCRIPT_DIR/$script_name"
     if [[ -x "$script_path" ]]; then
-        sudo -u "$INVOKING_USER" "$script_path" || {
-            log_message "Error executing $script_name."
-            whiptail --msgbox "Error executing $script_name." 8 45
-            return 1
-        }
+        sudo -u "$INVOKING_USER" env "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" \
+            "XDG_DATA_HOME=$XDG_DATA_HOME" "XDG_CACHE_HOME=$XDG_CACHE_HOME" \
+            "XDG_STATE_HOME=$XDG_STATE_HOME" "GNUPGHOME=$GNUPGHOME" \
+            "$script_path" || {
+                log_message "Error executing $script_name."
+                whiptail --msgbox "Error executing $script_name." 8 45
+                return 1
+            }
         log_message "$script_name executed successfully."
         whiptail --msgbox "$script_name executed successfully!" 8 45
     else

@@ -5,6 +5,21 @@
 
 # --- // System Cleanup Script ---
 
+# --- // Environment Variables:
+if [ -n "$SUDO_USER" ]; then
+    INVOKING_USER="$SUDO_USER"
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    echo "Error: Unable to determine the invoking user's home directory."
+    exit 1
+fi
+
+export XDG_CONFIG_HOME="$USER_HOME/.config"
+export XDG_DATA_HOME="$USER_HOME/.local/share"
+export XDG_CACHE_HOME="$USER_HOME/.cache"
+export XDG_STATE_HOME="$USER_HOME/.local/state"
+export GNUPGHOME="$XDG_DATA_HOME/gnupg"
+
 # --- // Logging:
 LOG_FILE="${XDG_DATA_HOME}/logs/system_cleanup.log"
 mkdir -p "$(dirname "$LOG_FILE")"

@@ -5,6 +5,21 @@
 
 # --- // Home Manager Script ---
 
+# --- // Environment Variables:
+if [ -n "$SUDO_USER" ]; then
+    INVOKING_USER="$SUDO_USER"
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    echo "Error: Unable to determine the invoking user's home directory."
+    exit 1
+fi
+
+export XDG_CONFIG_HOME="$USER_HOME/.config"
+export XDG_DATA_HOME="$USER_HOME/.local/share"
+export XDG_CACHE_HOME="$USER_HOME/.cache"
+export XDG_STATE_HOME="$USER_HOME/.local/state"
+export GNUPGHOME="$XDG_DATA_HOME/gnupg"
+
 # --- // Logging:
 LOG_DIR="${XDG_DATA_HOME}/logs/"
 LOG_FILE="$LOG_DIR/home_manager.log"
@@ -49,71 +64,43 @@ create_backup() {
     local timestamp
     timestamp="$(date -u "+%Y-%m-%d_%H.%M%p")"
     local tarball_name="etc_backup_$timestamp.tar.gz"
-    local target_list=(
-        "arch-release" "audit" "avahi" "borgmatic" "binfmt.d" "conf.d" "cron.d" "cron.daily"
-        "cron.deny" "cron.hourly" "cron.monthly" "cron.weekly" "crontab" "default" "depmod.d"
-        "dhcpd.conf" "dnsmasq.conf" "drbl" "environment" "fstab" "group" "grub.d" "gshadow"
-        "gss" "gssproxy" "gtk-2.0" "gtk-3.0" "host.conf" "hostname" "hosts" "ipsec.conf"
-        "ipsec.d" "iptables" "iscsi" "ld.so.conf" "ld.so.conf.d" "libaudit" "locale.conf"
-        "locale.gen" "makepkg.conf" "mkepkg.config.d" "mkinitcpio.conf" "mkinitcpio.conf.d"
-        "modprobe.d" "modules-load.d" "nanorc" "netconfig" "NetworkManager" "nfs.conf"
-        "nfsmount.conf" "nftables" "nsswitch.conf" "nvme" "openvpn" "pacman.conf" "pacman.d"
-        "pam.d" "paru.conf" "passwd" "pinentry" "pipewire" "plymouth" "polkit-1" "powerpill"
-        "profile" "profile.d" "pulse" "reflector-simple-tool.conf" "reflector-simple.conf"
-        "resolv.conf" "resolv.conf.expressvpn-orig" "screenrc" "sddm.conf" "sddm.conf.d"
-        "security" "services" "skel" "ssh" "sudo.conf" "sudoers" "sysctl.d" "systemd"
-        "timeshift" "timeshift-autosnap.conf" "tmpfiles.d" "udev" "udisks2" "ufw"
-        "vconsole.conf" "wpa_supplicant" "X11" "xdg" "zsh"
-    )
 
-    # Create the temporary backup directory if it doesn't exist
-    [ ! -d "$backup_dir" ] && mkdir -p "$backup_dir"
+    # Create the backup directory
+    mkdir -p "$backup_dir"
 
-    # Total number of items to backup
-    local total_items=${#target_list[@]}
-    local current_item=0
+    # Rsync the /etc directory to the backup directory
+    log_action "Starting rsync of /etc to $backup_dir..."
+    rsync -a --delete /etc/ "$backup_dir/etc/" || {
+        log_action "Failed to rsync /etc to $backup_dir."
+        exit 1
+    }
+    log_action "/etc successfully rsynced to $backup_dir/etc/."
 
-    # Create a progress bar using whiptail
-    {
-    for item in "${target_list[@]}"; do
-        current_item=$((current_item + 1))
-        if [[ -e "/etc/$item" ]]; then
-            rsync -a --ignore-existing --ignore-times --update --recursive "/etc/$item" "$backup_dir" || log_action "Failed to copy /etc/$item"
-        fi
-        local progress=$((current_item * 100 / total_items))
-        echo $progress
-    done
-    } | whiptail --gauge "Backing up files..." 6 50 0
+    # Create the tarball
+    log_action "Creating tarball $tarball_name..."
+    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" etc || {
+        log_action "Failed to create tarball $tarball_name."
+        exit 1
+    }
+    log_action "Tarball $tarball_name created successfully."
 
-    # Ensure the recovery directory exists
-    [ ! -d "$recover_dir" ] && mkdir -p "$recover_dir"
+    # Clean up the backup directory
+    rm -rf "$backup_dir" || log_action "Failed to clean up $backup_dir."
 
-    # Check if a tarball with the same name already exists and version it
-    if [[ -f "$recover_dir/$tarball_name" ]]; then
-        local counter=1
-        while [[ -f "$recover_dir/${tarball_name%.tar.gz}_v$counter.tar.gz" ]]; do
-            counter=$((counter + 1))
-        done
-        tarball_name="${tarball_name%.tar.gz}_v$counter.tar.gz"
-        log_action "Existing tarball found. Creating versioned tarball: $tarball_name"
-    fi
+    # Lock the tarball
+    chattr +i "$recover_dir/$tarball_name" || {
+        log_action "Failed to lock the tarball $tarball_name."
+        exit 1
+    }
+    log_action "Tarball $tarball_name locked successfully."
 
-    # Create a tarball of the backup directory
-    tar -czf "$recover_dir/$tarball_name" -C "$backup_dir" . || { log_action "Failed to create tarball."; exit 1; }
-
-    # Clean up the temporary directory
-    rm -rf "$backup_dir" || log_action "Failed to clean up temporary backup directory."
-
-    # Lock the recovery tarball
-    chattr +i "$recover_dir/$tarball_name" || { log_action "Failed to lock the tarball."; exit 1; }
-
-    # Add lock and unlock aliases to shell configuration files
+    # Add lock and unlock aliases
     add_aliases
 
     # Notify the user
     local notification="Backup acquired and secured.\n\nUsage:\n  lock <path>   # Lock a file or directory\n  unlock <path> # Unlock a file or directory\n\nLocation: $recover_dir"
-    whiptail --title "Asset: /etc" --msgbox "$notification" 12 70
-    log_action "Backup created and secured at $recover_dir/$tarball_name"
+    whiptail --title "Recovery Directory" --msgbox "$notification" 12 70
+    log_action "Backup created and secured at $recover_dir/$tarball_name."
 }
 
 # Function to restore from a backup and compare using meld
@@ -126,8 +113,10 @@ restore_backup() {
         exit 1
     fi
 
+    shopt -s nullglob
     # List available backups
     local backups=("$recover_dir"/*.tar.gz)
+    shopt -u nullglob
     if [ ${#backups[@]} -eq 0 ]; then
         log_action "No backups found in $recover_dir."
         exit 1
@@ -221,7 +210,7 @@ main() {
             show_help
             ;;
         *)
-            log_action "Unrecognized option: $1"
+            echo "Error: Unrecognized command '$1'"
             show_help
             exit 1
             ;;

@@ -5,6 +5,21 @@
 
 # --- // Backup Verification Script ---
 
+# --- // Environment Variables:
+if [ -n "$SUDO_USER" ]; then
+    INVOKING_USER="$SUDO_USER"
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    echo "Error: Unable to determine the invoking user's home directory."
+    exit 1
+fi
+
+export XDG_CONFIG_HOME="$USER_HOME/.config"
+export XDG_DATA_HOME="$USER_HOME/.local/share"
+export XDG_CACHE_HOME="$USER_HOME/.cache"
+export XDG_STATE_HOME="$USER_HOME/.local/state"
+export GNUPGHOME="$XDG_DATA_HOME/gnupg"
+
 # --- // Logging:
 LOG_DIR="${XDG_DATA_HOME}/logs/"
 LOG_FILE="$LOG_DIR/backup_verification.log"
@@ -27,7 +42,10 @@ verify_backup() {
         exit 1
     fi
 
+    shopt -s nullglob
     local backups=("$recovery_dir"/*.tar.gz)
+    shopt -u nullglob
+
     if [ ${#backups[@]} -eq 0 ]; then
         log_message "No backup files found in $recovery_dir."
         whiptail --title "Verification Error" --msgbox "No backup files found in $recovery_dir." 8 60
@@ -41,7 +59,7 @@ verify_backup() {
 
     for backup in "${backups[@]}"; do
         for key in "${!expected_backups[@]}"; do
-            if [[ "$backup" == *"${key}_backup_"* ]]; then
+            if [[ "$(basename "$backup")" == "${key}_backup_"*".tar.gz" ]]; then
                 expected_backups["$key"]=""
             fi
         done
