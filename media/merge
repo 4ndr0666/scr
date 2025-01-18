@@ -1,0 +1,165 @@
+#!/bin/sh -e
+
+# http://github.com/mitchweaver
+# concatenate selected video files into one using fzf
+
+usage() {
+    >&2 printf 'Usage: %s\n' "${0##*/}"
+    >&2 printf 'Select files interactively with fzf.\n'
+    exit 1
+}
+
+# Ensure dependencies are installed
+check_dependencies() {
+    for cmd in fzf ffmpeg; do
+        if ! command -v "$cmd" > /dev/null 2>&1; then
+            >&2 echo "Error: '$cmd' is required but not installed. Please install it and try again."
+            exit 1
+        fi
+    done
+}
+
+# Notify user about corrupt files and offer to fix them
+notify_and_fix_corrupt_files() {
+    local file="$1"
+    local fixed_file="$file.fixed.mp4"
+
+    # Check if the file is valid
+    if ffmpeg -v error -i "$file" -f null - 2>&1 | grep -q 'Invalid'; then
+        echo "Warning: File '$file' appears to be corrupt."
+        read -rp "Would you like to attempt to fix it? (y/N): " response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                echo "Attempting to fix file: $file"
+                if ffmpeg -y -i "$file" -c copy "$fixed_file" 2>/dev/null; then
+                    echo "Fixed file: $file -> $fixed_file"
+                    echo "$fixed_file"
+                else
+                    echo "Error: Failed to fix file: $file" >&2
+                    return 1
+                fi
+                ;;
+            *)
+                echo "Skipping fix for file: $file"
+                echo "$file"
+                ;;
+        esac
+    else
+        echo "$file"
+    fi
+}
+
+# Notify user about incompatible codecs and offer re-encoding
+notify_and_fix_codecs() {
+    local file="$1"
+    local codec_info
+
+    # Extract codec information
+    codec_info=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$file" 2>/dev/null)
+    echo "$codec_info"
+}
+
+# Notify user and offer to use re-encoding via concat demuxer
+notify_and_use_concat_demuxer() {
+    local input_list="$1"
+    local output="$2"
+
+    echo "Warning: The selected files may be incompatible for direct concatenation."
+    read -rp "Would you like to re-encode the files using the concat demuxer? (y/N): " response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            echo "Using concat demuxer to re-encode files."
+            ffmpeg -y -f concat -safe 0 -i "$input_list" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 192k "$output" || {
+                echo "Error: Failed to concatenate files with re-encoding." >&2
+                exit 1
+            }
+            ;;
+        *)
+            echo "Skipping re-encoding. Exiting process."
+            exit 1
+            ;;
+    esac
+}
+
+# Handle help flags
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+fi
+
+# Check for required dependencies
+check_dependencies
+
+# Use fzf to select files
+echo "Select video files to concatenate (use TAB to select multiple files, ENTER to confirm):"
+selected_files=$(fzf --multi --prompt="Select files: " --preview="file {}" --preview-window=right:70% --bind=tab:toggle+down)
+
+# Ensure at least one file is selected
+if [ -z "$selected_files" ]; then
+    echo "Error: No files selected." >&2
+    exit 1
+fi
+
+# Process selected files
+tmp=$(mktemp)
+trap 'rm "$tmp" 2>/dev/null ||:' EXIT INT TERM
+codec_list=""
+valid_files=""
+
+while IFS= read -r file; do
+    if [ ! -f "$file" ]; then
+        echo "Error: File '$file' does not exist." >&2
+        continue
+    fi
+
+    # Notify and fix corrupt files
+    fixed_file=$(notify_and_fix_corrupt_files "$file") || continue
+
+    # Notify and check codec compatibility
+    codec=$(notify_and_fix_codecs "$fixed_file")
+    if [ -z "$codec_list" ]; then
+        codec_list="$codec"
+    elif [ "$codec_list" != "$codec" ]; then
+        echo "Warning: File '$fixed_file' has a different codec ('$codec')."
+        read -rp "Would you like to re-encode incompatible files? (y/N): " codec_response
+        case "$codec_response" in
+            [yY][eE][sS]|[yY])
+                use_demuxer=true
+                ;;
+            *)
+                echo "Skipping re-encoding."
+                ;;
+        esac
+    fi
+
+    # Add file to valid list
+    valid_files="$valid_files$fixed_file"$'\n'
+    printf "file '%s'\n" "$(realpath "$fixed_file")" >> "$tmp"
+done <<EOF
+$selected_files
+EOF
+
+# Determine output filename
+first_file=$(echo "$valid_files" | head -n 1)
+extension="${first_file##*.}"
+output_base="output"
+output="$output_base.$extension"
+
+# Generate a unique output filename
+counter=1
+while [ -f "$output" ]; do
+    output="${output_base}_$counter.$extension"
+    counter=$((counter + 1))
+done
+
+# Perform concatenation
+if [ "$use_demuxer" = true ]; then
+    notify_and_use_concat_demuxer "$tmp" "$output"
+else
+    echo "Using concat protocol for direct concatenation."
+    ffmpeg -safe 0 -f concat -i "$tmp" -c copy "$output" || {
+        echo "Error: Failed to concatenate files directly. Attempting re-encoding."
+        notify_and_use_concat_demuxer "$tmp" "$output"
+    }
+fi
+
+echo "Videos have been successfully concatenated into '$output'."
