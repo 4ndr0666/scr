@@ -381,23 +381,23 @@ configure_ufw() {
     fi
 
     # Define specific services on enp3s0
-    declare -A SERVICES_ENP3S0=(
+    declare -A SERVICES_ENP2S0=(
         ["80/tcp"]="HTTP Traffic"
         ["443/tcp"]="HTTPS Traffic"
         ["7531/tcp"]="PlayWithMPV"
         ["6800/tcp"]="Aria2c"
     )
 
-    for port_protocol in "${!SERVICES_ENP3S0[@]}"; do
+    for port_protocol in "${!SERVICES_ENP2S0[@]}"; do
         port=$(echo "$port_protocol" | cut -d'/' -f1)
         proto=$(echo "$port_protocol" | cut -d'/' -f2)
-        desc=${SERVICES_ENP3S0[$port_protocol]}
+        desc=${SERVICES_ENP2S0[$port_protocol]}
 
-        if ! ufw status numbered | grep -qw "$port_protocol on ENP3S0"; then
-            echo "Adding rule: Allow $desc on enp3s0 port $port/$proto"
-            ufw allow in on ENP3S0 to any port "$port" proto "$proto" comment "$desc"
+        if ! ufw status numbered | grep -qw "$port_protocol on enp2s0"; then
+            echo "Adding rule: Allow $desc on enp2s0 port $port/$proto"
+            ufw allow in on enp2s0 to any port "$port" proto "$proto" comment "$desc"
         else
-            echo "Rule already exists: Allow $desc on enp3s0 port $port/$proto"
+            echo "Rule already exists: Allow $desc on enp2s0 port $port/$proto"
         fi
     done
 
@@ -421,12 +421,12 @@ configure_ufw() {
                 echo "Rule already exists: Allow $desc on tun0 port $port/$proto"
             fi
 
-            DENY_RULE="$port_protocol on enp3s0"
+            DENY_RULE="$port_protocol on enp2s0"
             if ! ufw status numbered | grep -qw "Deny $DENY_RULE"; then
-                echo "Denying $desc on enp3s0"
+                echo "Denying $desc on enp2s0"
                 ufw deny in on enp3s0 to any port "$port" proto "$proto" comment "$desc"
             else
-                echo "Rule already exists: Deny $desc on enp3s0 port $port/$proto"
+                echo "Rule already exists: Deny $desc on enp2s0 port $port/$proto"
             fi
         done
     fi
