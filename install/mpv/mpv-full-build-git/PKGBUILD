@@ -1,7 +1,7 @@
 # Maintainer: Inochi Amaoto <libraryindexsky@gmail.com>
 
 pkgname=mpv-full-build-git
-pkgver=0.39.0.r557.g1dd0e49f83
+pkgver=0.39.0.r619.gc438732b23
 pkgrel=1
 pkgdesc="Video player based on MPlayer/mplayer2 with all possible libs (uses statically linked ffmpeg with all possible libs). (GIT version )"
 arch=('x86_64')
@@ -457,7 +457,6 @@ prepare() {
     '-Dcuda-hwaccel=enabled'
     '-Dcuda-interop=enabled'
 
-    '-Dhtml-build=enabled'
     '-Dandroid-media-ndk=disabled'
     '-Dd3d-hwaccel=disabled'
     '-Dd3d9-hwaccel=disabled'
@@ -480,6 +479,7 @@ prepare() {
     '-Dwin32-smtc=disabled'
 
     # manpages
+    '-Dhtml-build=disabled'
     '-Dmanpage-build=disabled'
     '-Dpdf-build=disabled'
   )
