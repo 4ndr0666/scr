@@ -441,6 +441,7 @@ prepare() {
     '-Dsdl2-video=enabled'
     '-Dshaderc=disabled'
     '-Dsixel=enabled'
+    '-Dspirv-cross=disabled'
     '-Dplain-gl=enabled'
     '-Dvdpau=enabled'
     '-Dvdpau-gl-x11=enabled'
