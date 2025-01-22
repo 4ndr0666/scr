@@ -1,16 +1,20 @@
 #!/bin/bash
 # Author: 4ndr0666
 # Date: 12-21-24
-# Desc: System Hardening Script with UFW, Sysctl, and Service Configurations
+# Desc: Comprehensive System Hardening Script with UFW, Sysctl, and Service Configurations
 # Usage: sudo ./ufw.sh [--vpn] [--jdownloader] [--backup] [--help]
 set -euo pipefail
 
 # ==================== // UFW.TEST //
 ## Logging:
 LOG_DIR="/home/andro/.local/share/logs"
-LOG_FILE="ufw.log"
+LOG_FILE="$LOG_DIR/ufw.log"
+
+# Ensure log directory exists
+mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
+
 log() {
     local MESSAGE="$1"
     echo "$(date +"%Y-%m-%d %H:%M:%S") : $MESSAGE" | tee -a "$LOG_FILE"
@@ -24,7 +28,7 @@ Usage: sudo ./ufw.sh [OPTIONS]
 Options:
   --vpn              Enable VPN-specific UFW rules with automatic Lightway UDP port detection.
   --jdownloader      Enable JDownloader2-specific UFW rules.
-  --backup           Set up automatic backups of critical configuration files via cron.
+  --backup           Set up automatic periodic backups of critical configuration files via cron.
   --help, -h         Display this help message.
 EOF
     exit 1
@@ -95,7 +99,7 @@ install_dependencies() {
 # Function to check dependencies
 check_dependencies() {
     log "Checking required dependencies..."
-    local dependencies=("rsync" "ufw" "chattr" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp" "date" "tee" "lsattr" "cpio")
+    local dependencies=("rsync" "ufw" "chattr" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp" "date" "tee" "lsattr" "ip" "sysctl" "iptables")
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             install_dependencies "$cmd"
@@ -111,7 +115,7 @@ check_dependencies
 
 # Detect primary network interface dynamically
 detect_primary_interface() {
-    PRIMARY_IF=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
+    PRIMARY_IF=$(ip -o link show up | awk -F': ' '{print $2}' | grep -v lo | head -n1)
     if [[ -z "$PRIMARY_IF" ]]; then
         log "Error: Unable to detect the primary network interface."
         exit 1
@@ -220,13 +224,6 @@ net.ipv4.tcp_congestion_control = bbr
         log "$SYSCTL_IPV4_FILE is already correctly configured."
     fi
 
-    # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
-        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
-        chattr +i "$SYSCTL_IPV4_FILE"
-        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
-    fi
-
     # Define desired content for /etc/sysctl.d/99-IPv6.conf
     SYSCTL_IPV6_CONTENT="
 # /etc/sysctl.d/99-IPv6.conf - IPv6 Configurations
@@ -268,6 +265,29 @@ net.ipv6.conf.tun0.disable_ipv6 = 1 # ExpressVPN
         log "Re-applying immutable flag to $SYSCTL_IPV6_FILE..."
         chattr +i "$SYSCTL_IPV6_FILE"
         log "Immutable flag re-applied to $SYSCTL_IPV6_FILE."
+    fi
+
+    # Detect VPN interfaces for IPv6 disablement
+    detect_vpn_interfaces=$(ip -o link show | awk -F': ' '/tun/ {print $2}')
+    if [[ -n "$detect_vpn_interfaces" ]]; then
+        for VPN_IF in $detect_vpn_interfaces; do
+            # Add disable IPv6 line for each VPN interface if not already present
+            if ! grep -q "net.ipv6.conf.$VPN_IF.disable_ipv6" "$SYSCTL_IPV4_FILE"; then
+                echo "net.ipv6.conf.$VPN_IF.disable_ipv6 = 1 # ExpressVPN" >> "$SYSCTL_IPV4_FILE"
+                log "Added IPv6 disable for $VPN_IF in $SYSCTL_IPV4_FILE."
+            else
+                log "IPv6 disable for $VPN_IF already present in $SYSCTL_IPV4_FILE."
+            fi
+        done
+    else
+        log "No VPN interfaces detected. Skipping IPv6 disable for VPN interfaces."
+    fi
+
+    # Restore immutable flag if it was removed
+    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
+        chattr +i "$SYSCTL_IPV4_FILE"
+        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
     fi
 
     # Reload sysctl settings to apply changes
@@ -509,19 +529,172 @@ disable_ipv6_services() {
     fi
 }
 
-# Function to automatically detect Lightway UDP port used by ExpressVPN
+# Function to manage and configure additional critical files
+manage_additional_critical_files() {
+    log "Managing additional critical configuration files..."
+
+    # List of additional critical files to manage
+    ADDITIONAL_FILES=(
+        "/etc/dhcpcd.conf"
+        "/etc/strongswan.conf"
+        "/etc/nsswitch.conf"
+        "/etc/nfs.conf"
+        "/etc/ipsec.conf"
+        "/etc/hosts"
+    )
+
+    for FILE in "${ADDITIONAL_FILES[@]}"; do
+        log "Configuring $FILE..."
+
+        # Handle immutable attribute
+        if lsattr "$FILE" &>/dev/null; then
+            IMMUTABLE_FLAG=$(lsattr "$FILE" | awk '{print $1}')
+            if [[ $IMMUTABLE_FLAG == *i* ]]; then
+                log "Removing immutable flag from $FILE..."
+                chattr -i "$FILE"
+                IMMUTABLE_REMOVED=true
+            fi
+        fi
+
+        # Backup before modification
+        if [[ -f "$FILE" ]]; then
+            cp "$FILE" "${FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
+            log "Backup created for $FILE."
+        fi
+
+        case "$FILE" in
+            "/etc/dhcpcd.conf")
+                # Example: Disable IPv6 autoconfiguration
+                if grep -q "^noipv6" "$FILE"; then
+                    log "IPv6 already disabled in $FILE."
+                else
+                    echo "noipv6" >> "$FILE"
+                    log "Added 'noipv6' to $FILE to disable IPv6."
+                fi
+                ;;
+            "/etc/strongswan.conf")
+                # Example: Enable strict CRL policy
+                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
+                    log "Strict CRL policy already enabled in $FILE."
+                else
+                    echo "strictcrlpolicy=yes" >> "$FILE"
+                    log "Added 'strictcrlpolicy=yes' to $FILE."
+                fi
+                ;;
+            "/etc/nsswitch.conf")
+                # Example: Secure name resolution by limiting sources
+                if grep -q "^hosts: files dns" "$FILE"; then
+                    log "Hosts already configured to 'files dns' in $FILE."
+                else
+                    sed -i 's/^hosts: .*/hosts: files dns/' "$FILE"
+                    log "Updated 'hosts' line to 'files dns' in $FILE."
+                fi
+                ;;
+            "/etc/nfs.conf")
+                # Example: Secure NFS settings
+                # Here you can add specific NFS configurations as needed
+                log "No specific NFS configurations applied. Modify as necessary."
+                ;;
+            "/etc/ipsec.conf")
+                # Example: Enable logging for IPsec
+                if grep -q "^charondebug=.*" "$FILE"; then
+                    sed -i 's/^charondebug=.*/charondebug="ike 2, knl 2, cfg 2"/' "$FILE"
+                    log "Updated 'charondebug' in $FILE."
+                else
+                    echo 'charondebug="ike 2, knl 2, cfg 2"' >> "$FILE"
+                    log "Added 'charondebug' to $FILE."
+                fi
+                ;;
+            "/etc/hosts")
+                # Example: Set immutable attribute after ensuring correct entries
+                if ! grep -q "127.0.0.1\s\+localhost" "$FILE"; then
+                    echo "127.0.0.1       localhost" >> "$FILE"
+                    log "Added '127.0.0.1 localhost' to $FILE."
+                else
+                    log "'localhost' entry already present in $FILE."
+                fi
+                ;;
+        esac
+
+        # Restore immutable flag if it was removed
+        if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+            log "Re-applying immutable flag to $FILE..."
+            chattr +i "$FILE"
+            log "Immutable flag re-applied to $FILE."
+        fi
+
+        # Configuration Validation
+        case "$FILE" in
+            "/etc/dhcpcd.conf")
+                if grep -q "^noipv6" "$FILE"; then
+                    log "Validation passed: IPv6 disabled in $FILE."
+                else
+                    log "Validation failed: IPv6 not disabled in $FILE."
+                    exit 1
+                fi
+                ;;
+            "/etc/strongswan.conf")
+                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
+                    log "Validation passed: Strict CRL policy enabled in $FILE."
+                else
+                    log "Validation failed: Strict CRL policy not enabled in $FILE."
+                    exit 1
+                fi
+                ;;
+            "/etc/nsswitch.conf")
+                if grep -q "^hosts: files dns" "$FILE"; then
+                    log "Validation passed: Hosts configured to 'files dns' in $FILE."
+                else
+                    log "Validation failed: Hosts not correctly configured in $FILE."
+                    exit 1
+                fi
+                ;;
+            "/etc/ipsec.conf")
+                if grep -q '^charondebug="ike 2, knl 2, cfg 2"' "$FILE"; then
+                    log "Validation passed: 'charondebug' correctly set in $FILE."
+                else
+                    log "Validation failed: 'charondebug' not correctly set in $FILE."
+                    exit 1
+                fi
+                ;;
+            "/etc/hosts")
+                if grep -q "127.0.0.1\s\+localhost" "$FILE"; then
+                    log "Validation passed: 'localhost' entry exists in $FILE."
+                else
+                    log "Validation failed: 'localhost' entry missing in $FILE."
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+}
+
+# Function to disable IPv6 on specific services (Duplicate Function Removed)
+
+# Function to detect active VPN interfaces
+detect_vpn_interfaces() {
+    # Detect all VPN interfaces (e.g., tun0, tun1, etc.)
+    VPN_IFACES=$(ip -o link show type tun | awk -F': ' '{print $2}')
+    if [[ -z "$VPN_IFACES" ]]; then
+        log "Warning: No VPN interfaces detected."
+    else
+        log "Detected VPN interfaces: $VPN_IFACES"
+    fi
+}
+
+# Function to detect Lightway UDP port used by ExpressVPN
 detect_vpn_port() {
     log "Detecting Lightway UDP port used by ExpressVPN..."
 
-    # Detect all VPN interfaces (e.g., tun0, tun1, etc.)
-    VPN_INTERFACES=$(ip -o link show | awk -F': ' '/tun/ {print $2}')
-    if [[ -z "$VPN_INTERFACES" ]]; then
+    # Detect VPN interfaces
+    detect_vpn_interfaces
+    if [[ -z "$VPN_IFACES" ]]; then
         log "Error: No VPN interfaces found. Ensure ExpressVPN is connected."
         return 1
     fi
 
     # Iterate over each VPN interface to detect UDP ports
-    for VPN_IF in $VPN_INTERFACES; do
+    for VPN_IF in $VPN_IFACES; do
         # Extract UDP ports associated with VPN interface on port 443
         VPN_PORT=$(ss -u -a state established "( dport = :443 or sport = :443 )" | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1)
 
@@ -578,10 +751,14 @@ configure_ufw() {
         if [[ $? -eq 0 && "$VPN_PORT" =~ ^[0-9]+$ ]]; then
             log "Applying VPN-specific UFW rules for port $VPN_PORT..."
             # Allow UDP traffic on the detected VPN port on all VPN interfaces
-            for VPN_IF in $VPN_INTERFACES; do
-                ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
-                ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
-                log "Rule added: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+            for VPN_IF in $VPN_IFACES; do
+                if ! ufw status numbered | grep -qw "$VPN_PORT/udp on $VPN_IF"; then
+                    ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
+                    ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
+                    log "Rule added: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                else
+                    log "Rule already exists: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                fi
             done
         else
             log "Skipping VPN-specific UFW rules due to port detection failure."
@@ -627,22 +804,32 @@ configure_ufw() {
             port=$(echo "$port_protocol" | cut -d'/' -f1)
             proto=$(echo "$port_protocol" | cut -d'/' -f2)
 
-            # Allow on all VPN interfaces
-            for VPN_IF in $VPN_INTERFACES; do
-                if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
-                    ufw allow in on "$VPN_IF" to any port "$port" proto "$proto" comment "$desc"
-                    log "Rule added: Allow $desc on $VPN_IF port $port/$proto."
-                else
-                    log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
-                fi
-            done
+            if [[ "$VPN_FLAG" == "true" ]]; then
+                # Allow on all VPN interfaces
+                for VPN_IF in $VPN_IFACES; do
+                    if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
+                        ufw allow in on "$VPN_IF" to any port "$port" proto "$proto" comment "$desc"
+                        log "Rule added: Allow $desc on $VPN_IF port $port/$proto."
+                    else
+                        log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
+                    fi
+                done
 
-            # Deny on primary interface
-            if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
-                ufw deny in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
-                log "Rule added: Deny $desc on $PRIMARY_IF port $port/$proto."
+                # Deny on primary interface
+                if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
+                    ufw deny in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
+                    log "Rule added: Deny $desc on $PRIMARY_IF port $port/$proto."
+                else
+                    log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
+                fi
             else
-                log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
+                # If VPN is not active, apply rules directly on the primary interface
+                if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
+                    ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
+                    log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
+                else
+                    log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+                fi
             fi
         done
     fi
@@ -679,7 +866,7 @@ configure_ufw() {
     if [[ "$JD_FLAG" == "true" ]]; then
         for i in "${!jd_ports[@]}"; do
             port_protocol="${jd_ports[$i]}"
-            VPN_IFS=$(echo "$VPN_INTERFACES")
+            VPN_IFS=$(echo "$VPN_IFACES")
             for VPN_IF in $VPN_IFS; do
                 if ufw status | grep -qw "$port_protocol on $VPN_IF"; then
                     log "Validation passed: JDownloader2 rule exists on $VPN_IF."
@@ -787,11 +974,11 @@ enhance_network_performance() {
 
 # Function to set up automatic backups via cron
 setup_backups() {
-    log "Setting up automatic backups of critical configuration files via cron..."
+    log "Setting up automatic periodic backups of critical configuration files via cron..."
 
     BACKUP_SCRIPT="/usr/local/bin/ufw_backup.sh"
     CRON_JOB="/etc/cron.d/ufw_backup"
-    BACKUP_DIR="/Nas/Backups/ufw.sh"
+    BACKUP_DIR="/etc/ufw/backups"
 
     # Ensure the backup directory exists
     if mkdir -p "$BACKUP_DIR"; then
@@ -803,19 +990,19 @@ setup_backups() {
     chown root:root "$BACKUP_DIR"
     log "Ownership of backup directory set to root."
 
-    # Define the backup script content
+    # Define the backup script content with pruning mechanism
     cat << 'EOF' > "$BACKUP_SCRIPT"
 #!/bin/bash
 # Backup Script for ufw.sh
 # This script backs up critical configuration files, keeping only the latest backup.
 
 # Directory to store backups
-BACKUP_DIR="/Nas/Backups/ufw.sh"
+BACKUP_DIR="/etc/ufw/backups"
 
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
 
-# List of files to backup
+# List of critical files to backup
 FILES=(
     "/etc/sysctl.conf"
     "/etc/sysctl.d/99-IPv4.conf"
@@ -824,6 +1011,17 @@ FILES=(
     "/etc/ssh/sshd_config"
     "/etc/systemd/resolved.conf"
     "/etc/avahi/avahi-daemon.conf"
+    "/etc/ufw/sysctl.conf"
+    "/etc/ufw/ufw.conf"
+    "/etc/dhcpcd.conf"
+    "/etc/strongswan.conf"
+    "/etc/resolv.conf"
+    "/etc/nsswitch.conf"
+    "/etc/nfs.conf"
+    "/etc/netconfig"
+    "/etc/ipsec.conf"
+    "/etc/iptables/ip6tables.rules"
+    "/etc/iptables/iptables.rules"
 )
 
 # Current timestamp
@@ -845,7 +1043,7 @@ for FILE in "${FILES[@]}"; do
     fi
 done
 
-# Remove older backups, keeping only the latest one for each file
+# Pruning mechanism: Keep only the latest backup for each file
 for FILE in "${FILES[@]}"; do
     BASENAME=$(basename "$FILE")
     # Find all backups for the current file, sorted by modification time (newest first)
@@ -893,7 +1091,7 @@ EOF
 
     # Backup Verification
     log "Verifying backups..."
-    for FILE in "/etc/sysctl.conf" "/etc/sysctl.d/99-IPv4.conf" "/etc/sysctl.d/99-IPv6.conf" "/etc/host.conf" "/etc/ssh/sshd_config" "/etc/systemd/resolved.conf" "/etc/avahi/avahi-daemon.conf"; do
+    for FILE in "/etc/sysctl.conf" "/etc/sysctl.d/99-IPv4.conf" "/etc/sysctl.d/99-IPv6.conf" "/etc/host.conf" "/etc/ssh/sshd_config" "/etc/systemd/resolved.conf" "/etc/avahi/avahi-daemon.conf" "/etc/ufw/sysctl.conf" "/etc/ufw/ufw.conf" "/etc/dhcpcd.conf" "/etc/strongswan.conf" "/etc/resolv.conf" "/etc/nsswitch.conf" "/etc/nfs.conf" "/etc/netconfig" "/etc/ipsec.conf" "/etc/iptables/ip6tables.rules" "/etc/iptables/iptables.rules"; do
         BASENAME=$(basename "$FILE")
         LATEST_BACKUP=$(ls -t "$BACKUP_DIR/${BASENAME}.backup_"* 2>/dev/null | head -n1 || true)
         if [[ -f "$LATEST_BACKUP" && -s "$LATEST_BACKUP" ]]; then
@@ -911,6 +1109,7 @@ apply_configurations() {
     sysctl_config
     host_conf_config
     disable_ipv6_services
+    manage_additional_critical_files
     configure_ufw
     enhance_network_performance
 
@@ -936,4 +1135,3 @@ final_verification
 
 echo ""
 log "System hardening completed successfully."
-
