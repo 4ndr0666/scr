@@ -126,797 +126,550 @@ detect_primary_interface() {
 detect_primary_interface
 
 # Function to set sysctl configurations
-configure_sysctl() {
+sysctl_config() {
     log "Configuring sysctl settings..."
 
-    SYSCTL_CONF_FILE="/etc/ufw/sysctl.conf"
-    SYSCTL_CONF_CONTENT=$(cat <<'EOF'
-#
-# Configuration file for setting network variables. Please note these settings
-# override /etc/sysctl.conf. If you prefer to use /etc/sysctl.conf, please
-# adjust IPT_SYSCTL in /etc/default/ufw.
-#
+    # Define desired content for /etc/sysctl.conf
+    SYSCTL_CONF_CONTENT="
+# /etc/sysctl.conf - Custom sysctl settings
+# This file is managed by ufw.sh. Do not edit manually.
+"
 
-# Turn off IPv6 autoconfiguration
-net/ipv6/conf/default/autoconf=0
-net/ipv6/conf/all/autoconf=0
+    # Backup /etc/sysctl.conf before modification
+    if [[ -f /etc/sysctl.conf ]]; then
+        cp /etc/sysctl.conf /etc/sysctl.conf.bak_$(date +"%Y%m%d_%H%M%S")
+        log "Backup created for /etc/sysctl.conf."
+    fi
 
-# Enable IPv6 privacy addressing (currently commented out)
-#net/ipv6/conf/default/use_tempaddr=2
-#net/ipv6/conf/all/use_tempaddr=2
+    # Ensure /etc/sysctl.conf has the correct content
+    if [[ ! -f /etc/sysctl.conf ]] || ! grep -qF "# This file is managed by ufw.sh. Do not edit manually." /etc/sysctl.conf; then
+        log "Creating or updating /etc/sysctl.conf..."
+        echo -e "$SYSCTL_CONF_CONTENT" > /etc/sysctl.conf
+        log "/etc/sysctl.conf updated."
+    else
+        log "/etc/sysctl.conf is already correctly configured."
+    fi
 
-# VPN forwarding:
+    # Define desired content for /etc/sysctl.d/99-IPv4.conf
+    SYSCTL_IPV4_CONTENT="
+# /etc/sysctl.d/99-IPv4.conf - Network Performance Enhancements
+
+## Ipv4 Tweaks
 net.ipv4.ip_forward=1
-
-# IPv4 Security Settings
 net.ipv4.conf.all.accept_redirects=0
+net.ipv4.conf.default.accept_redirects=0
 net.ipv4.conf.all.rp_filter=1
+net.ipv4.conf.default.rp_filter=1
 net.ipv4.conf.default.accept_source_route=0
+net.ipv4.conf.all.accept_source_route=0
 net.ipv4.icmp_ignore_bogus_error_responses=1
 net.ipv4.conf.default.log_martians=0
+net.ipv4.conf.all.log_martians=0
 net.ipv4.icmp_echo_ignore_broadcasts=1
 net.ipv4.icmp_echo_ignore_all=0
 net.ipv4.tcp_sack=1
 
-# IPv6 Security Settings
-net.ipv6.conf.all.rp_filter=1
-net.ipv6.conf.default.rp_filter=1
-net.ipv6.conf.all.accept_source_route=0
-net.ipv6.conf.default.accept_source_route=0
-net.ipv6.conf.default.accept_redirects=0
-net.ipv6.conf.all.accept_redirects=0
-
-# TCP Settings
-net.ipv4.tcp_window_scaling=1
-
-# Disable IPv6 on VPN interface
-net/ipv6/conf/tun0/disable_ipv6=1 # ExpressVPN
-
-# Speed Tweaks
+## Swappiness
 vm.swappiness=10
-net.core.wmem_max=16777216
-net.core.rmem_max=16777216
 
-# Network Performance Enhancements
-net.core.rmem_max=16777216
-net.core.wmem_max=16777216
-net.ipv4.tcp_rmem=4096 87380 16777216
-net.ipv4.tcp_wmem=4096 65536 16777216
-net.core.netdev_max_backlog=5000
-EOF
-)
+## Confirmed Tweaks
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.optmem_max = 65536
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.core.somaxconn = 8192 
+net.ipv4.tcp_window_scaling = 1
+net.core.netdev_max_backlog = 5000
 
-    # Backup existing sysctl.conf
-    if [[ -f "$SYSCTL_CONF_FILE" ]]; then
-        cp "$SYSCTL_CONF_FILE" "${SYSCTL_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $SYSCTL_CONF_FILE."
+## Testing from https://wiki.archlinux.org/title/Sysctl
+net.ipv4.udp_rmem_min = 8192
+net.ipv4.udp_wmem_min = 8192
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 10
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 10
+net.ipv4.tcp_keepalive_probes = 6
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_timestamps = 0
+net.core.default_qdisc = cake
+net.ipv4.tcp_congestion_control = bbr
+"
+
+    # Handle immutable attribute
+    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
+    if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
+        IMMUTABLE_FLAG=$(lsattr "$SYSCTL_IPV4_FILE" | awk '{print $1}')
+        if [[ $IMMUTABLE_FLAG == *i* ]]; then
+            log "Removing immutable flag from $SYSCTL_IPV4_FILE..."
+            chattr -i "$SYSCTL_IPV4_FILE"
+            IMMUTABLE_REMOVED=true
+        fi
     fi
 
-    # Apply new sysctl configurations
-    chattr -i "$SYSCTL_CONF_FILE"
-    echo "$SYSCTL_CONF_CONTENT" > "$SYSCTL_CONF_FILE"
-    log "Sysctl configurations applied to $SYSCTL_CONF_FILE."
-
-    # Reload sysctl settings
-    sysctl --system
-    log "Sysctl settings reloaded successfully."
-
-    # Set immutable flag
-    chattr +i "$SYSCTL_CONF_FILE"
-    log "Immutable flag set on $SYSCTL_CONF_FILE."
-}
-
-# Function to configure /etc/ufw/ufw.conf
-configure_ufw_conf() {
-    log "Configuring /etc/ufw/ufw.conf..."
-
-    UFW_CONF_FILE="/etc/ufw/ufw.conf"
-    UFW_CONF_CONTENT=$(cat <<'EOF'
-# /etc/ufw/ufw.conf
-#
-
-# Set to yes to start on boot. If setting this remotely, be sure to add a rule
-# to allow your remote connection before starting ufw. Eg: 'ufw allow 22/tcp'
-ENABLED=yes
-
-# Set UFW loglevel to medium for balanced logging
-LOGLEVEL=medium
-EOF
-)
-
-    # Backup existing ufw.conf
-    if [[ -f "$UFW_CONF_FILE" ]]; then
-        cp "$UFW_CONF_FILE" "${UFW_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $UFW_CONF_FILE."
+    # Backup /etc/sysctl.d/99-IPv4.conf before modification
+    if [[ -f "$SYSCTL_IPV4_FILE" ]]; then
+        cp "$SYSCTL_IPV4_FILE" "${SYSCTL_IPV4_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
+        log "Backup created for $SYSCTL_IPV4_FILE."
     fi
 
-    # Apply new ufw.conf configurations
-    echo "$UFW_CONF_CONTENT" > "$UFW_CONF_FILE"
-    log "UFW configurations applied to $UFW_CONF_FILE."
-
-    # Set immutable flag
-#    chattr +i "$UFW_CONF_FILE"
-#    log "Immutable flag set on $UFW_CONF_FILE."
-}
-
-# Function to configure /etc/dhcpcd.conf
-configure_dhcpcd_conf() {
-    log "Configuring /etc/dhcpcd.conf..."
-
-    DHCPCD_CONF_FILE="/etc/dhcpcd.conf"
-    chattr -i "$DHCPCD_CONF_FILE"
-    DHCPCD_CONF_CONTENT=$(cat <<'EOF'
-# A sample configuration for dhcpcd.
-# See dhcpcd.conf(5) for details.
-
-# Allow users of this group to interact with dhcpcd via the control socket.
-#controlgroup wheel
-
-# Inform the DHCP server of our hostname for DDNS.
-#hostname
-
-# Use the hardware address of the interface for the Client ID.
-#clientid
-# or
-# Use the same DUID + IAID as set in DHCPv6 for DHCPv4 ClientID as per RFC4361.
-# Some non-RFC compliant DHCP servers do not reply with this set.
-# In this case, comment out duid and enable clientid above.
-duid
-
-# Persist interface configuration when dhcpcd exits.
-persistent
-
-# vendorclassid is set to blank to avoid sending the default of
-# dhcpcd-<version>:<os>:<machine>:<platform>
-vendorclassid
-
-# A list of options to request from the DHCP server.
-option domain_name_servers, domain_name, domain_search
-option classless_static_routes
-# Respect the network MTU. This is applied to DHCP routes.
-option interface_mtu
-
-# Request a hostname from the network
-option host_name
-
-# Most distributions have NTP support.
-#option ntp_servers
-
-# Rapid commit support.
-# Safe to enable by default because it requires the equivalent option set
-# on the server to actually work.
-option rapid_commit
-
-# A ServerID is required by RFC2131.
-require dhcp_server_identifier
-
-# Generate SLAAC address using the Hardware Address of the interface
-#slaac hwaddr
-# OR generate Stable Private IPv6 Addresses based from the DUID
-slaac private
-# Do not attempt to obtain an IPv4LL address if we failed to get one via DHCP. See RFC 3927.
-noipv4ll
-noipv6
-EOF
-)
-
-    # Backup existing dhcpcd.conf
-    if [[ -f "$DHCPCD_CONF_FILE" ]]; then
-        cp "$DHCPCD_CONF_FILE" "${DHCPCD_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $DHCPCD_CONF_FILE."
-    fi
-
-    # Apply new dhcpcd.conf configurations
-    echo "$DHCPCD_CONF_CONTENT" > "$DHCPCD_CONF_FILE"
-    log "dhcpcd configurations applied to $DHCPCD_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$DHCPCD_CONF_FILE"
-    log "Immutable flag set on $DHCPCD_CONF_FILE."
-}
-
-# Function to configure /etc/strongswan.conf
-configure_strongswan_conf() {
-    log "Configuring /etc/strongswan.conf..."
-
-    STRONGSWAN_CONF_FILE="/etc/strongswan.conf"
-    chattr -i "$STRONGSWAN_CONF_FILE"
-    STRONGSWAN_CONF_CONTENT=$(cat <<'EOF'
-# strongswan.conf - strongSwan configuration file
-#
-# Refer to the strongswan.conf(5) manpage for details
-#
-# Configuration changes should be made in the included files
-
-charon {
-    load_modular = yes
-    plugins {
-        include strongswan.d/charon/*.conf
-    }
-}
-
-include strongswan.d/*.conf
-strictcrlpolicy=yes
-
-# Enable detailed logging for better troubleshooting
-charondebug="ike 2, knl 2, cfg 2"
-EOF
-)
-
-    # Backup existing strongswan.conf
-    if [[ -f "$STRONGSWAN_CONF_FILE" ]]; then
-        cp "$STRONGSWAN_CONF_FILE" "${STRONGSWAN_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $STRONGSWAN_CONF_FILE."
-    fi
-
-    # Apply new strongswan.conf configurations
-    echo "$STRONGSWAN_CONF_CONTENT" > "$STRONGSWAN_CONF_FILE"
-    log "StrongSwan configurations applied to $STRONGSWAN_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$STRONGSWAN_CONF_FILE"
-    log "Immutable flag set on $STRONGSWAN_CONF_FILE."
-}
-
-# Function to configure /etc/resolv.conf dynamically based on ExpressVPN
-configure_resolv_conf() {
-    log "Configuring /etc/resolv.conf based on ExpressVPN status..."
-
-    RESOLV_CONF_FILE="/etc/resolv.conf"
-    LOCAL_NAMESERVER="192.168.1.1"
-    VPN_NAMESERVER="10.8.0.1" # Replace with actual VPN DNS server
-
-    # Function to update resolv.conf
-    update_resolv_conf() {
-        local nameserver="$1"
-        echo "# /etc/resolv.conf - DNS Resolution Configuration" > "$RESOLV_CONF_FILE"
-        echo "# Managed by ufw.sh. Do not edit manually." >> "$RESOLV_CONF_FILE"
-        echo "" >> "$RESOLV_CONF_FILE"
-        echo "search lan" >> "$RESOLV_CONF_FILE"
-        echo "nameserver $nameserver" >> "$RESOLV_CONF_FILE"
-        log "resolv.conf updated with nameserver: $nameserver"
-    }
-
-    # Detect if ExpressVPN is active
-    if systemctl is-active --quiet expressvpn; then
-        log "ExpressVPN is active. Setting DNS to VPN's nameserver."
-        update_resolv_conf "$VPN_NAMESERVER"
+    # Ensure /etc/sysctl.d/99-IPv4.conf has the correct content
+    if [[ ! -f "$SYSCTL_IPV4_FILE" ]] || ! grep -qF "net.core.rmem_max = 16777216" "$SYSCTL_IPV4_FILE"; then
+        log "Creating or updating $SYSCTL_IPV4_FILE..."
+        echo -e "$SYSCTL_IPV4_CONTENT" > "$SYSCTL_IPV4_FILE"
+        log "$SYSCTL_IPV4_FILE updated."
     else
-        log "ExpressVPN is not active. Setting DNS to local nameserver."
-        update_resolv_conf "$LOCAL_NAMESERVER"
+        log "$SYSCTL_IPV4_FILE is already correctly configured."
     fi
 
-    # Set immutable flag
-    chattr +i "$RESOLV_CONF_FILE"
-    log "Immutable flag set on $RESOLV_CONF_FILE."
-}
+    # Define desired content for /etc/sysctl.d/99-IPv6.conf
+    SYSCTL_IPV6_CONTENT="
+# /etc/sysctl.d/99-IPv6.conf - IPv6 Configurations
+net.ipv6.conf.default.autoconf = 0
+net.ipv6.conf.all.autoconf = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+net.ipv6.conf.tun0.disable_ipv6 = 1 # ExpressVPN
+"
 
-# Function to configure /etc/nsswitch.conf
-configure_nsswitch_conf() {
-    log "Configuring /etc/nsswitch.conf..."
-
-    NSSWITCH_CONF_FILE="/etc/nsswitch.conf"
-    NSSWITCH_CONF_CONTENT=$(cat <<'EOF'
-# /etc/nsswitch.conf - Name Service Switch Configuration
-# Managed by ufw.sh. Do not edit manually.
-
-passwd: files systemd
-group: files [SUCCESS=merge] systemd
-shadow: files systemd
-
-publickey: files
-
-hosts: files dns
-networks: files
-
-protocols: files
-services: files
-ethers: files
-rpc: files
-
-netgroup: files
-EOF
-)
-
-    # Backup existing nsswitch.conf
-    if [[ -f "$NSSWITCH_CONF_FILE" ]]; then
-        cp "$NSSWITCH_CONF_FILE" "${NSSWITCH_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $NSSWITCH_CONF_FILE."
+    # Handle immutable attribute for IPv6
+    SYSCTL_IPV6_FILE="/etc/sysctl.d/99-IPv6.conf"
+    if lsattr "$SYSCTL_IPV6_FILE" &>/dev/null; then
+        IMMUTABLE_FLAG_IPV6=$(lsattr "$SYSCTL_IPV6_FILE" | awk '{print $1}')
+        if [[ $IMMUTABLE_FLAG_IPV6 == *i* ]]; then
+            log "Removing immutable flag from $SYSCTL_IPV6_FILE..."
+            chattr -i "$SYSCTL_IPV6_FILE"
+            IMMUTABLE_REMOVED_IPV6=true
+        fi
     fi
 
-    # Apply new nsswitch.conf configurations
-    echo "$NSSWITCH_CONF_CONTENT" > "$NSSWITCH_CONF_FILE"
-    log "nsswitch.conf configurations applied to $NSSWITCH_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$NSSWITCH_CONF_FILE"
-    log "Immutable flag set on $NSSWITCH_CONF_FILE."
-}
-
-# Function to configure /etc/nfs.conf
-configure_nfs_conf() {
-    log "Configuring /etc/nfs.conf..."
-
-    NFS_CONF_FILE="/etc/nfs.conf"
-    NFS_CONF_CONTENT=$(cat <<'EOF'
-#
-# /etc/nfs.conf - NFS Configuration
-# Managed by ufw.sh. Do not edit manually.
-#
-
-[general]
-# pipefs-directory=/var/lib/nfs/rpc_pipefs
-debug=0
-
-[nfsrahead]
-# nfs=15000
-# nfs4=16000
-
-[exports]
-# rootdir=/export
-
-[exportfs]
-# debug=0
-
-[gssd]
-# verbosity=0
-# rpc-verbosity=0
-# use-memcache=0
-# use-machine-creds=1
-# use-gss-proxy=0
-# avoid-dns=1
-# limit-to-legacy-enctypes=0
-# allowed-enctypes=aes256-cts-hmac-sha384-192,aes128-cts-hmac-sha256-128,camellia256-cts-cmac,camellia128-cts-cmac,aes256-cts-hmac-sha1-96,aes128-cts-hmac-sha1-96
-# context-timeout=0
-# rpc-timeout=5
-# keytab-file=/etc/krb5.keytab
-# cred-cache-directory=
-# preferred-realm=
-# set-home=1
-# upcall-timeout=30
-# cancel-timed-out-upcalls=0
-
-[lockd]
-# port=0
-# udp-port=0
-
-[exportd]
-# debug="all|auth|call|general|parse"
-# manage-gids=n
-# state-directory-path=/var/lib/nfs
-# threads=1
-# cache-use-ipaddr=n
-# ttl=1800
-
-[mountd]
-# debug="all|auth|call|general|parse"
-# manage-gids=n
-# descriptors=0
-# port=0
-# threads=1
-# reverse-lookup=n
-# state-directory-path=/var/lib/nfs
-# ha-callout=
-# cache-use-ipaddr=n
-# ttl=1800
-
-[nfsdcld]
-# debug=0
-# storagedir=/var/lib/nfs/nfsdcld
-
-[nfsdcltrack]
-# debug=0
-# storagedir=/var/lib/nfs/nfsdcltrack
-
-[nfsd]
-debug=0
-# threads=16
-# host=
-# port=0
-# grace-time=90
-# lease-time=90
-# udp=n
-# tcp=y
-# vers3=y
-# vers4=y
-# vers4.0=y
-# vers4.1=y
-# vers4.2=y
-rdma=n
-#rdma-port=20049
-
-[statd]
-# debug=0
-# port=0
-# outgoing-port=0
-# name=
-# state-directory-path=/var/lib/nfs/statd
-# ha-callout=
-# no-notify=0
-
-[sm-notify]
-# debug=0
-# force=0
-# retry-time=900
-# outgoing-port=
-# outgoing-addr=
-# lift-grace=y
-
-[svcgssd]
-# principal=
-EOF
-)
-
-    # Backup existing nfs.conf
-    if [[ -f "$NFS_CONF_FILE" ]]; then
-        cp "$NFS_CONF_FILE" "${NFS_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $NFS_CONF_FILE."
+    # Backup /etc/sysctl.d/99-IPv6.conf before modification
+    if [[ -f "$SYSCTL_IPV6_FILE" ]]; then
+        cp "$SYSCTL_IPV6_FILE" "${SYSCTL_IPV6_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
+        log "Backup created for $SYSCTL_IPV6_FILE."
     fi
 
-    # Apply new nfs.conf configurations
-    echo "$NFS_CONF_CONTENT" > "$NFS_CONF_FILE"
-    log "nfs.conf configurations applied to $NFS_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$NFS_CONF_FILE"
-    log "Immutable flag set on $NFS_CONF_FILE."
-}
-
-# Function to configure /etc/netconfig
-configure_netconfig() {
-    log "Configuring /etc/netconfig..."
-
-    NETCONFIG_FILE="/etc/netconfig"
-    NETCONFIG_CONTENT=$(cat <<'EOF'
-#
-# /etc/netconfig - Network Configuration File
-# Managed by ufw.sh. Do not edit manually.
-#
-# The network configuration file. This file is currently only used in
-# conjunction with the TI-RPC code in the libtirpc library.
-#
-# Entries consist of:
-#
-#       <network_id> <semantics> <flags> <protofamily> <protoname> \
-#               <device> <nametoaddr_libs>
-#
-# The <device> and <nametoaddr_libs> fields are always empty in this
-# implementation.
-#
-udp        tpi_clts      v     inet     udp     -       -
-tcp        tpi_cots_ord  v     inet     tcp     -       -
-udp6       tpi_clts      v     inet6    udp     -       -
-tcp6       tpi_cots_ord  v     inet6    tcp     -       -
-rawip      tpi_raw       -     inet      -      -       -
-local      tpi_cots_ord  -     loopback  -      -       -
-unix       tpi_cots_ord  -     loopback  -      -       -
-EOF
-)
-
-    # Backup existing netconfig
-    if [[ -f "$NETCONFIG_FILE" ]]; then
-        cp "$NETCONFIG_FILE" "${NETCONFIG_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $NETCONFIG_FILE."
+    # Ensure /etc/sysctl.d/99-IPv6.conf has the correct content
+    if [[ ! -f "$SYSCTL_IPV6_FILE" ]] || ! grep -qF "net.ipv6.conf.default.autoconf = 0" "$SYSCTL_IPV6_FILE"; then
+        log "Creating or updating $SYSCTL_IPV6_FILE..."
+        echo -e "$SYSCTL_IPV6_CONTENT" > "$SYSCTL_IPV6_FILE"
+        log "$SYSCTL_IPV6_FILE updated."
+    else
+        log "$SYSCTL_IPV6_FILE is already correctly configured."
     fi
 
-    # Apply new netconfig configurations
-    echo "$NETCONFIG_CONTENT" > "$NETCONFIG_FILE"
-    log "netconfig configurations applied to $NETCONFIG_FILE."
-
-    # Set immutable flag
-    chattr +i "$NETCONFIG_FILE"
-    log "Immutable flag set on $NETCONFIG_FILE."
-}
-
-# Function to configure /etc/ipsec.conf
-configure_ipsec_conf() {
-    log "Configuring /etc/ipsec.conf..."
-
-    IPSEC_CONF_FILE="/etc/ipsec.conf"
-    IPSEC_CONF_CONTENT=$(cat <<'EOF'
-# ipsec.conf - strongSwan IPsec configuration file
-# Managed by ufw.sh. Do not edit manually.
-
-# Basic configuration
-
-#config setup
-    # strictcrlpolicy=yes
-    # uniqueids = no
-
-# Add connections here.
-
-# Sample VPN connections
-
-#conn sample-self-signed
-#      leftsubnet=10.1.0.0/16
-#      leftcert=selfCert.der
-#      leftsendcert=never
-#      right=192.168.0.2
-#      rightsubnet=10.2.0.0/16
-#      rightcert=peerCert.der
-#      auto=start
-
-#conn sample-with-ca-cert
-#      leftsubnet=10.1.0.0/16
-#      leftcert=myCert.pem
-#      right=192.168.0.2
-#      rightsubnet=10.2.0.0/16
-#      rightid="C=CH, O=strongSwan Project CN=peer name"
-#      auto=start
-
-
-#config setup
-#    charondebug="ike 2, knl 2, cfg 2"
-
-#conn myvpn
-#    keyexchange=ikev2
-#    leftauth=pubkey
-#    left=%defaultroute
-#    leftsourceip=%config
-#    right=vpn.example.com
-#    rightsubnet=0.0.0.0/0
-#    rightauth=pubkey
-#    rightid=%any
-#    type=tunnel
-#    auto=start
-
-# Enable detailed logging for IPsec
-charondebug="ike 2, knl 2, cfg 2"
-EOF
-)
-
-    # Backup existing ipsec.conf
-    if [[ -f "$IPSEC_CONF_FILE" ]]; then
-        cp "$IPSEC_CONF_FILE" "${IPSEC_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $IPSEC_CONF_FILE."
+    # Restore immutable flag for IPv6 if it was removed
+    if [[ "${IMMUTABLE_REMOVED_IPV6:-false}" == true ]]; then
+        log "Re-applying immutable flag to $SYSCTL_IPV6_FILE..."
+        chattr +i "$SYSCTL_IPV6_FILE"
+        log "Immutable flag re-applied to $SYSCTL_IPV6_FILE."
     fi
 
-    # Apply new ipsec.conf configurations
-    echo "$IPSEC_CONF_CONTENT" > "$IPSEC_CONF_FILE"
-    log "ipsec.conf configurations applied to $IPSEC_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$IPSEC_CONF_FILE"
-    log "Immutable flag set on $IPSEC_CONF_FILE."
-}
-
-# Function to configure /etc/hosts
-configure_hosts() {
-    log "Configuring /etc/hosts..."
-
-    HOSTS_FILE="/etc/hosts"
-    HOSTS_CONTENT=$(cat <<'EOF'
-# /etc/hosts - Configuration file for hostnames
-# Managed by ufw.sh. Do not edit manually.
-
-# BEGIN HEADER
-127.0.0.1       localhost theworkpc
-EOF
-)
-
-    # Backup existing hosts
-    if [[ -f "$HOSTS_FILE" ]]; then
-        cp "$HOSTS_FILE" "${HOSTS_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $HOSTS_FILE."
+    # Detect VPN interfaces for IPv6 disablement
+    detect_vpn_interfaces=$(ip -o link show | awk -F': ' '/tun/ {print $2}')
+    if [[ -n "$detect_vpn_interfaces" ]]; then
+        for VPN_IF in $detect_vpn_interfaces; do
+            # Add disable IPv6 line for each VPN interface if not already present
+            if ! grep -q "net.ipv6.conf.$VPN_IF.disable_ipv6" "$SYSCTL_IPV4_FILE"; then
+                echo "net.ipv6.conf.$VPN_IF.disable_ipv6 = 1 # ExpressVPN" >> "$SYSCTL_IPV4_FILE"
+                log "Added IPv6 disable for $VPN_IF in $SYSCTL_IPV4_FILE."
+            else
+                log "IPv6 disable for $VPN_IF already present in $SYSCTL_IPV4_FILE."
+            fi
+        done
+    else
+        log "No VPN interfaces detected. Skipping IPv6 disable for VPN interfaces."
     fi
 
-    # Apply new hosts configurations
-    echo "$HOSTS_CONTENT" > "$HOSTS_FILE"
-    log "hosts configurations applied to $HOSTS_FILE."
+    # Restore immutable flag if it was removed
+    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
+        chattr +i "$SYSCTL_IPV4_FILE"
+        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
+    fi
 
-    # Set immutable flag
-    chattr +i "$HOSTS_FILE"
-    log "Immutable flag set on $HOSTS_FILE."
+    # Reload sysctl settings to apply changes
+    log "Applying sysctl settings..."
+    if sysctl --system; then
+        log "Sysctl settings applied successfully."
+    else
+        log "Error: Failed to apply sysctl settings."
+        exit 1
+    fi
+
+    # Define network settings for validation
+    NETWORK_SETTINGS=(
+        "net.core.rmem_max = 16777216"
+        "net.core.wmem_max = 16777216"
+        "net.ipv4.tcp_rmem = 4096 87380 16777216"
+        "net.ipv4.tcp_wmem = 4096 65536 16777216"
+        "net.ipv4.tcp_window_scaling = 1"
+        "net.core.netdev_max_backlog = 5000"
+    )
+
+    # Configuration Validation
+    log "Validating sysctl configurations..."
+    for setting in "${NETWORK_SETTINGS[@]}"; do
+        key=$(echo "$setting" | cut -d'=' -f1 | xargs)
+        expected_value=$(echo "$setting" | cut -d'=' -f2 | xargs)
+        # Normalize whitespace
+        expected_value_normalized=$(echo "$expected_value" | tr -s ' ')
+        actual_value=$(sysctl -n "$key" | tr '\t' ' ')
+        if [[ "$actual_value" == "$expected_value_normalized" ]]; then
+            log "Validation passed: $key = $actual_value"
+        else
+            log "Validation failed: $key expected '$expected_value_normalized' but got '$actual_value'"
+            log "Please verify the configuration in $SYSCTL_IPV4_FILE and re-run the script."
+            exit 1
+        fi
+    done
 }
 
-# Function to configure /etc/host.conf
-configure_host_conf() {
-    log "Configuring /etc/host.conf..."
+# Function to update /etc/host.conf to prevent IP spoofing
+host_conf_config() {
+    log "Configuring /etc/host.conf to prevent IP spoofing..."
+
+    HOST_CONF_CONTENT=(
+        "order bind,hosts"
+        "multi on"
+    )
 
     HOST_CONF_FILE="/etc/host.conf"
-    HOST_CONF_CONTENT=$(cat <<'EOF'
-# /etc/host.conf - Resolver Configuration File
-# Managed by ufw.sh. Do not edit manually.
 
-# Resolver configuration file.
-# See host.conf(5) for details.
+    # Handle immutable attribute
+    if lsattr "$HOST_CONF_FILE" &>/dev/null; then
+        IMMUTABLE_FLAG_HOST=$(lsattr "$HOST_CONF_FILE" | awk '{print $1}')
+        if [[ $IMMUTABLE_FLAG_HOST == *i* ]]; then
+            log "Removing immutable flag from $HOST_CONF_FILE..."
+            chattr -i "$HOST_CONF_FILE"
+            IMMUTABLE_REMOVED_HOST=true
+        fi
+    fi
 
-multi on
-order bind,hosts
-EOF
-)
-
-    # Backup existing host.conf
+    # Backup /etc/host.conf before modification
     if [[ -f "$HOST_CONF_FILE" ]]; then
         cp "$HOST_CONF_FILE" "${HOST_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
         log "Backup created for $HOST_CONF_FILE."
     fi
 
-    # Apply new host.conf configurations
-    echo "$HOST_CONF_CONTENT" > "$HOST_CONF_FILE"
-    log "host.conf configurations applied to $HOST_CONF_FILE."
-
-    # Set immutable flag
-    chattr +i "$HOST_CONF_FILE"
-    log "Immutable flag set on $HOST_CONF_FILE."
-}
-
-# Function to configure /etc/iptables/ip6tables.rules
-configure_ip6tables_rules() {
-    log "Configuring /etc/iptables/ip6tables.rules..."
-
-    IPT6_RULES_FILE="/etc/iptables/ip6tables.rules"
-    IPT6_RULES_CONTENT=$(cat <<'EOF'
-# /etc/iptables/ip6tables.rules - IPv6 iptables Rules
-# Managed by ufw.sh. Do not edit manually.
-
-*filter
-:INPUT DROP [0:0]
-:FORWARD DROP [0:0]
-:OUTPUT ACCEPT [0:0]
-
-# Allow established and related connections
--A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-# Allow loopback traffic
--A INPUT -i lo -j ACCEPT
-
-# Allow SSH over IPv6
--A INPUT -p tcp --dport 22 -j ACCEPT
-
-# Allow HTTP and HTTPS over IPv6
--A INPUT -p tcp --dport 80 -j ACCEPT
--A INPUT -p tcp --dport 443 -j ACCEPT
-
-# Allow specific application ports over IPv6
--A INPUT -p tcp --dport 7531 -j ACCEPT
--A INPUT -p tcp --dport 6800 -j ACCEPT
-
-# Allow JDownloader2 ports over IPv6
--A INPUT -p tcp --dport 9665 -j ACCEPT
--A INPUT -p tcp --dport 9666 -j ACCEPT
-
-# Allow ICMPv6 (ping) traffic
--A INPUT -p icmpv6 -j ACCEPT
-
-# Deny all other incoming IPv6 traffic
--A INPUT -j DROP
-
-COMMIT
-EOF
-)
-
-    # Backup existing ip6tables.rules
-    if [[ -f "$IPT6_RULES_FILE" ]]; then
-        cp "$IPT6_RULES_FILE" "${IPT6_RULES_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $IPT6_RULES_FILE."
+    # Check if /etc/host.conf exists; if not, create it
+    if [[ ! -f "$HOST_CONF_FILE" ]]; then
+        log "Creating $HOST_CONF_FILE..."
+        printf "%s\n" "${HOST_CONF_CONTENT[@]}" > "$HOST_CONF_FILE"
+        log "$HOST_CONF_FILE created."
+    else
+        # Ensure each line exists
+        for line in "${HOST_CONF_CONTENT[@]}"; do
+            if ! grep -qF -- "$line" "$HOST_CONF_FILE"; then
+                echo "$line" >> "$HOST_CONF_FILE"
+                log "Added line to $HOST_CONF_FILE: $line"
+            fi
+        done
+        log "$HOST_CONF_FILE is already correctly configured."
     fi
 
-    # Apply new ip6tables.rules configurations
-    echo "$IPT6_RULES_CONTENT" > "$IPT6_RULES_FILE"
-    log "ip6tables.rules configurations applied to $IPT6_RULES_FILE."
-
-    # Set immutable flag
-    chattr +i "$IPT6_RULES_FILE"
-    log "Immutable flag set on $IPT6_RULES_FILE."
-
-    # Apply ip6tables rules
-    ip6tables-restore < "$IPT6_RULES_FILE"
-    log "ip6tables rules applied successfully."
-}
-
-# Function to configure /etc/iptables/iptables.rules
-configure_iptables_rules() {
-    log "Configuring /etc/iptables/iptables.rules..."
-
-    IPT_RULES_FILE="/etc/iptables/iptables.rules"
-    IPT_RULES_CONTENT=$(cat <<'EOF'
-# /etc/iptables/iptables.rules - IPv4 iptables Rules
-# Managed by ufw.sh. Do not edit manually.
-
-*filter
-:INPUT DROP [0:0]
-:FORWARD DROP [0:0]
-:OUTPUT ACCEPT [0:0]
-
-# Allow established and related connections
--A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-# Allow loopback traffic
--A INPUT -i lo -j ACCEPT
-
-# Allow SSH
--A INPUT -p tcp --dport 22 -j ACCEPT
-
-# Allow HTTP and HTTPS
--A INPUT -p tcp --dport 80 -j ACCEPT
--A INPUT -p tcp --dport 443 -j ACCEPT
-
-# Allow specific application ports
--A INPUT -p tcp --dport 7531 -j ACCEPT
--A INPUT -p tcp --dport 6800 -j ACCEPT
-
-# Allow JDownloader2 ports
--A INPUT -p tcp --dport 9665 -j ACCEPT
--A INPUT -p tcp --dport 9666 -j ACCEPT
-
-# Allow ICMP (ping) traffic
--A INPUT -p icmp -j ACCEPT
-
-# Deny all other incoming IPv4 traffic
--A INPUT -j DROP
-
-COMMIT
-EOF
-)
-
-    # Backup existing iptables.rules
-    if [[ -f "$IPT_RULES_FILE" ]]; then
-        cp "$IPT_RULES_FILE" "${IPT_RULES_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $IPT_RULES_FILE."
+    # Restore immutable flag if it was removed
+    if [[ "${IMMUTABLE_REMOVED_HOST:-false}" == true ]]; then
+        log "Re-applying immutable flag to $HOST_CONF_FILE..."
+        chattr +i "$HOST_CONF_FILE"
+        log "Immutable flag re-applied to $HOST_CONF_FILE."
     fi
 
-    # Apply new iptables.rules configurations
-    echo "$IPT_RULES_CONTENT" > "$IPT_RULES_FILE"
-    log "iptables.rules configurations applied to $IPT_RULES_FILE."
-
-    # Set immutable flag
-    chattr +i "$IPT_RULES_FILE"
-    log "Immutable flag set on $IPT_RULES_FILE."
-
-    # Apply iptables rules
-    iptables-restore < "$IPT_RULES_FILE"
-    log "iptables rules applied successfully."
+    # Configuration Validation
+    log "Validating /etc/host.conf configurations..."
+    for line in "${HOST_CONF_CONTENT[@]}"; do
+        if grep -qF -- "$line" "$HOST_CONF_FILE"; then
+            log "Validation passed: '$line' exists in $HOST_CONF_FILE"
+        else
+            log "Validation failed: '$line' not found in $HOST_CONF_FILE"
+            exit 1
+        fi
+    done
 }
 
-# Function to configure all other files (7-17)
-configure_additional_files() {
-    log "Configuring additional critical configuration files..."
+# Function to disable IPv6 on specific services
+disable_ipv6_services() {
+    log "Disabling IPv6 for SSH..."
+    SSH_CONFIG="/etc/ssh/sshd_config"
+    if systemctl is-enabled --quiet sshd.service 2>/dev/null; then
+        # Handle immutable attribute
+        if lsattr "$SSH_CONFIG" &>/dev/null; then
+            IMMUTABLE_FLAG_SSH=$(lsattr "$SSH_CONFIG" | awk '{print $1}')
+            if [[ $IMMUTABLE_FLAG_SSH == *i* ]]; then
+                log "Removing immutable flag from $SSH_CONFIG..."
+                chattr -i "$SSH_CONFIG"
+                IMMUTABLE_REMOVED_SSH=true
+            fi
+        fi
+
+        # Backup before modification
+        cp "$SSH_CONFIG" "${SSH_CONFIG}.bak_$(date +"%Y%m%d_%H%M%S")"
+        log "Backup created for $SSH_CONFIG."
+
+        if grep -q "^AddressFamily" "$SSH_CONFIG"; then
+            sed -i 's/^AddressFamily.*/AddressFamily inet/' "$SSH_CONFIG"
+            log "Updated AddressFamily to inet in $SSH_CONFIG."
+        else
+            echo "AddressFamily inet" >> "$SSH_CONFIG"
+            log "Added AddressFamily inet to $SSH_CONFIG."
+        fi
+        systemctl restart sshd
+        log "IPv6 disabled for SSH."
+
+        # Restore immutable flag
+        if [[ "${IMMUTABLE_REMOVED_SSH:-false}" == true ]]; then
+            log "Re-applying immutable flag to $SSH_CONFIG..."
+            chattr +i "$SSH_CONFIG"
+            log "Immutable flag re-applied to $SSH_CONFIG."
+        fi
+    else
+        log "sshd.service is masked or disabled, skipping SSH IPv6 configuration."
+    fi
+
+    log "Disabling IPv6 for systemd-resolved..."
+    RESOLVED_CONF="/etc/systemd/resolved.conf"
+    # Handle immutable attribute
+    if lsattr "$RESOLVED_CONF" &>/dev/null; then
+        IMMUTABLE_FLAG_RESOLVED=$(lsattr "$RESOLVED_CONF" | awk '{print $1}')
+        if [[ $IMMUTABLE_FLAG_RESOLVED == *i* ]]; then
+            log "Removing immutable flag from $RESOLVED_CONF..."
+            chattr -i "$RESOLVED_CONF"
+            IMMUTABLE_REMOVED_RESOLVED=true
+        fi
+    fi
+
+    # Backup before modification
+    cp "$RESOLVED_CONF" "${RESOLVED_CONF}.bak_$(date +"%Y%m%d_%H%M%S")"
+    log "Backup created for $RESOLVED_CONF."
+
+    if grep -q "^DNSStubListener" "$RESOLVED_CONF"; then
+        sed -i 's/^DNSStubListener=.*/DNSStubListener=no/' "$RESOLVED_CONF"
+        log "Updated DNSStubListener to no in $RESOLVED_CONF."
+    else
+        echo "DNSStubListener=no" >> "$RESOLVED_CONF"
+        log "Added DNSStubListener=no to $RESOLVED_CONF."
+    fi
+    systemctl restart systemd-resolved
+    log "IPv6 disabled for systemd-resolved."
+
+    # Restore immutable flag
+    if [[ "${IMMUTABLE_REMOVED_RESOLVED:-false}" == true ]]; then
+        log "Re-applying immutable flag to $RESOLVED_CONF..."
+        chattr +i "$RESOLVED_CONF"
+        log "Immutable flag re-applied to $RESOLVED_CONF."
+    fi
+
+    log "Disabling IPv6 for Avahi-daemon..."
+    AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
+    if systemctl is-enabled --quiet avahi-daemon.service 2>/dev/null; then
+        # Handle immutable attribute
+        if lsattr "$AVAHI_CONF" &>/dev/null; then
+            IMMUTABLE_FLAG_AVAHI=$(lsattr "$AVAHI_CONF" | awk '{print $1}')
+            if [[ $IMMUTABLE_FLAG_AVAHI == *i* ]]; then
+                log "Removing immutable flag from $AVAHI_CONF..."
+                chattr -i "$AVAHI_CONF"
+                IMMUTABLE_REMOVED_AVAHI=true
+            fi
+        fi
+
+        # Backup before modification
+        cp "$AVAHI_CONF" "${AVAHI_CONF}.bak_$(date +"%Y%m%d_%H%M%S")"
+        log "Backup created for $AVAHI_CONF."
+
+        if grep -q "^use-ipv6" "$AVAHI_CONF"; then
+            sed -i 's/^use-ipv6=.*/use-ipv6=no/' "$AVAHI_CONF"
+            log "Updated use-ipv6 to no in $AVAHI_CONF."
+        else
+            echo "use-ipv6=no" >> "$AVAHI_CONF"
+            log "Added use-ipv6=no to $AVAHI_CONF."
+        fi
+        systemctl restart avahi-daemon
+        log "IPv6 disabled for Avahi-daemon."
+
+        # Restore immutable flag
+        if [[ "${IMMUTABLE_REMOVED_AVAHI:-false}" == true ]]; then
+            log "Re-applying immutable flag to $AVAHI_CONF..."
+            chattr +i "$AVAHI_CONF"
+            log "Immutable flag re-applied to $AVAHI_CONF."
+        fi
+    else
+        log "Avahi-daemon is masked or disabled, skipping..."
+    fi
+
+    # Configuration Validation
+    log "Validating IPv6 configurations for services..."
+    if systemctl is-enabled --quiet sshd.service 2>/dev/null; then
+        ADDRESS_FAMILY=$(grep "^AddressFamily" "$SSH_CONFIG" | awk -F'=' '{print $2}' | xargs)
+        if [[ "$ADDRESS_FAMILY" == "inet" ]]; then
+            log "Validation passed: IPv6 disabled for SSH."
+        else
+            log "Validation failed: IPv6 not disabled for SSH."
+            exit 1
+        fi
+    fi
+
+    DNS_STUB_LISTENER=$(grep "^DNSStubListener" "$RESOLVED_CONF" | awk -F'=' '{print $2}' | xargs)
+    if [[ "$DNS_STUB_LISTENER" == "no" ]]; then
+        log "Validation passed: DNSStubListener is set to no in systemd-resolved."
+    else
+        log "Validation failed: DNSStubListener is not set to no in systemd-resolved."
+        exit 1
+    fi
+
+    if systemctl is-enabled --quiet avahi-daemon.service 2>/dev/null; then
+        USE_IPV6=$(grep "^use-ipv6" "$AVAHI_CONF" | awk -F'=' '{print $2}' | xargs)
+        if [[ "$USE_IPV6" == "no" ]]; then
+            log "Validation passed: IPv6 disabled for Avahi-daemon."
+        else
+            log "Validation failed: IPv6 not disabled for Avahi-daemon."
+            exit 1
+        fi
+    fi
+}
+
+# Function to manage and configure additional critical files
+manage_additional_critical_files() {
+    log "Managing additional critical configuration files..."
 
     # List of additional critical files to manage
     ADDITIONAL_FILES=(
+        "/etc/dhcpcd.conf"
+        "/etc/strongswan.conf"
         "/etc/nsswitch.conf"
         "/etc/nfs.conf"
-        "/etc/netconfig"
         "/etc/ipsec.conf"
         "/etc/hosts"
-        "/etc/host.conf"
-        "/etc/iptables/ip6tables.rules"
-        "/etc/iptables/iptables.rules"
     )
 
     for FILE in "${ADDITIONAL_FILES[@]}"; do
+        log "Configuring $FILE..."
+
+        # Handle immutable attribute
+        if lsattr "$FILE" &>/dev/null; then
+            IMMUTABLE_FLAG=$(lsattr "$FILE" | awk '{print $1}')
+            if [[ $IMMUTABLE_FLAG == *i* ]]; then
+                log "Removing immutable flag from $FILE..."
+                chattr -i "$FILE"
+                IMMUTABLE_REMOVED=true
+            fi
+        fi
+
+        # Backup before modification
+        if [[ -f "$FILE" ]]; then
+            cp "$FILE" "${FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
+            log "Backup created for $FILE."
+        fi
+
         case "$FILE" in
+            "/etc/dhcpcd.conf")
+                # Example: Disable IPv6 autoconfiguration
+                if grep -q "^noipv6" "$FILE"; then
+                    log "IPv6 already disabled in $FILE."
+                else
+                    echo "noipv6" >> "$FILE"
+                    log "Added 'noipv6' to $FILE to disable IPv6."
+                fi
+                ;;
+            "/etc/strongswan.conf")
+                # Example: Enable strict CRL policy
+                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
+                    log "Strict CRL policy already enabled in $FILE."
+                else
+                    echo "strictcrlpolicy=yes" >> "$FILE"
+                    log "Added 'strictcrlpolicy=yes' to $FILE."
+                fi
+                ;;
             "/etc/nsswitch.conf")
-                configure_nsswitch_conf
+                # Example: Secure name resolution by limiting sources
+                if grep -q "^hosts: files dns" "$FILE"; then
+                    log "Hosts already configured to 'files dns' in $FILE."
+                else
+                    sed -i 's/^hosts: .*/hosts: files dns/' "$FILE"
+                    log "Updated 'hosts' line to 'files dns' in $FILE."
+                fi
                 ;;
             "/etc/nfs.conf")
-                configure_nfs_conf
-                ;;
-            "/etc/netconfig")
-                configure_netconfig
+                # Example: Secure NFS settings
+                # Here you can add specific NFS configurations as needed
+                log "No specific NFS configurations applied. Modify as necessary."
                 ;;
             "/etc/ipsec.conf")
-                configure_ipsec_conf
+                # Example: Enable logging for IPsec
+                if grep -q "^charondebug=.*" "$FILE"; then
+                    sed -i 's/^charondebug=.*/charondebug="ike 2, knl 2, cfg 2"/' "$FILE"
+                    log "Updated 'charondebug' in $FILE."
+                else
+                    echo 'charondebug="ike 2, knl 2, cfg 2"' >> "$FILE"
+                    log "Added 'charondebug' to $FILE."
+                fi
                 ;;
             "/etc/hosts")
-                configure_hosts
+                # Example: Set immutable attribute after ensuring correct entries
+                if ! grep -q "127.0.0.1\s\+localhost" "$FILE"; then
+                    echo "127.0.0.1       localhost" >> "$FILE"
+                    log "Added '127.0.0.1 localhost' to $FILE."
+                else
+                    log "'localhost' entry already present in $FILE."
+                fi
                 ;;
-            "/etc/host.conf")
-                configure_host_conf
+        esac
+
+        # Restore immutable flag if it was removed
+        if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+            log "Re-applying immutable flag to $FILE..."
+            chattr +i "$FILE"
+            log "Immutable flag re-applied to $FILE."
+        fi
+
+        # Configuration Validation
+        case "$FILE" in
+            "/etc/dhcpcd.conf")
+                if grep -q "^noipv6" "$FILE"; then
+                    log "Validation passed: IPv6 disabled in $FILE."
+                else
+                    log "Validation failed: IPv6 not disabled in $FILE."
+                    exit 1
+                fi
                 ;;
-            "/etc/iptables/ip6tables.rules")
-                configure_ip6tables_rules
+            "/etc/strongswan.conf")
+                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
+                    log "Validation passed: Strict CRL policy enabled in $FILE."
+                else
+                    log "Validation failed: Strict CRL policy not enabled in $FILE."
+                    exit 1
+                fi
                 ;;
-            "/etc/iptables/iptables.rules")
-                configure_iptables_rules
+            "/etc/nsswitch.conf")
+                if grep -q "^hosts: files dns" "$FILE"; then
+                    log "Validation passed: Hosts configured to 'files dns' in $FILE."
+                else
+                    log "Validation failed: Hosts not correctly configured in $FILE."
+                    exit 1
+                fi
                 ;;
-            *)
-                log "Warning: No configuration function defined for $FILE"
+            "/etc/ipsec.conf")
+                if grep -q '^charondebug="ike 2, knl 2, cfg 2"' "$FILE"; then
+                    log "Validation passed: 'charondebug' correctly set in $FILE."
+                else
+                    log "Validation failed: 'charondebug' not correctly set in $FILE."
+                    exit 1
+                fi
+                ;;
+            "/etc/hosts")
+                if grep -q "127.0.0.1\s\+localhost" "$FILE"; then
+                    log "Validation passed: 'localhost' entry exists in $FILE."
+                else
+                    log "Validation failed: 'localhost' entry missing in $FILE."
+                    exit 1
+                fi
                 ;;
         esac
     done
 }
+
+# Function to disable IPv6 on specific services (Duplicate Function Removed)
 
 # Function to detect active VPN interfaces
 detect_vpn_interfaces() {
@@ -1081,6 +834,14 @@ configure_ufw() {
         done
     fi
 
+    # Disable IPv6 in UFW default settings
+    if grep -q "^IPV6=yes" /etc/default/ufw; then
+        sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
+        log "Disabled IPv6 in UFW default settings."
+    else
+        log "IPv6 is already disabled in UFW default settings."
+    fi
+
     # Reload UFW to apply changes
     if ufw reload; then
         log "UFW reloaded successfully."
@@ -1105,7 +866,8 @@ configure_ufw() {
     if [[ "$JD_FLAG" == "true" ]]; then
         for i in "${!jd_ports[@]}"; do
             port_protocol="${jd_ports[$i]}"
-            for VPN_IF in $VPN_IFACES; do
+            VPN_IFS=$(echo "$VPN_IFACES")
+            for VPN_IF in $VPN_IFS; do
                 if ufw status | grep -qw "$port_protocol on $VPN_IF"; then
                     log "Validation passed: JDownloader2 rule exists on $VPN_IF."
                 else
@@ -1125,9 +887,89 @@ configure_ufw() {
     log "All UFW firewall rules validated successfully."
 }
 
-# Function to enhance network performance settings (Already handled in sysctl)
+# Function to enhance network performance settings
 enhance_network_performance() {
-    log "Network performance enhancements are handled within sysctl configurations."
+    log "Enhancing network performance settings..."
+
+    # Define network performance settings
+    NETWORK_SETTINGS=(
+        "net.core.rmem_max = 16777216"
+        "net.core.wmem_max = 16777216"
+        "net.ipv4.tcp_rmem = 4096 87380 16777216"
+        "net.ipv4.tcp_wmem = 4096 65536 16777216"
+        "net.ipv4.tcp_window_scaling = 1"
+        "net.core.netdev_max_backlog = 5000"
+    )
+
+    # Ensure /etc/sysctl.d/99-IPv4.conf exists
+    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
+
+    # Handle immutable attribute
+    if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
+        IMMUTABLE_FLAG=$(lsattr "$SYSCTL_IPV4_FILE" | awk '{print $1}')
+        if [[ $IMMUTABLE_FLAG == *i* ]]; then
+            log "Removing immutable flag from $SYSCTL_IPV4_FILE..."
+            chattr -i "$SYSCTL_IPV4_FILE"
+            IMMUTABLE_REMOVED=true
+        fi
+    fi
+
+    # Backup before modification
+    if [[ -f "$SYSCTL_IPV4_FILE" ]]; then
+        cp "$SYSCTL_IPV4_FILE" "${SYSCTL_IPV4_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
+        log "Backup created for $SYSCTL_IPV4_FILE."
+    fi
+
+    # Create the file if it doesn't exist
+    if touch "$SYSCTL_IPV4_FILE"; then
+        log "Ensured $SYSCTL_IPV4_FILE exists."
+    else
+        log "Error: Cannot create $SYSCTL_IPV4_FILE."
+        exit 1
+    fi
+
+    # Append settings only if they don't exist
+    for setting in "${NETWORK_SETTINGS[@]}"; do
+        if ! grep -qF "$setting" "$SYSCTL_IPV4_FILE"; then
+            echo "$setting" >> "$SYSCTL_IPV4_FILE"
+            log "Added: $setting"
+        else
+            log "Already set: $setting"
+        fi
+    done
+
+    # Restore immutable flag if it was removed
+    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
+        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
+        chattr +i "$SYSCTL_IPV4_FILE"
+        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
+    fi
+
+    # Reload sysctl settings to apply changes
+    log "Applying network performance settings..."
+    if sysctl --system; then
+        log "Network performance settings applied successfully."
+    else
+        log "Error: Failed to apply network performance settings."
+        exit 1
+    fi
+
+    # Configuration Validation
+    log "Validating network performance configurations..."
+    for setting in "${NETWORK_SETTINGS[@]}"; do
+        key=$(echo "$setting" | cut -d'=' -f1 | xargs)
+        expected_value=$(echo "$setting" | cut -d'=' -f2 | xargs)
+        # Normalize whitespace
+        expected_value_normalized=$(echo "$expected_value" | tr -s ' ')
+        actual_value=$(sysctl -n "$key" | tr '\t' ' ')
+        if [[ "$actual_value" == "$expected_value_normalized" ]]; then
+            log "Validation passed: $key = $actual_value"
+        else
+            log "Validation failed: $key expected '$expected_value_normalized' but got '$actual_value'"
+            log "Please verify the configuration in $SYSCTL_IPV4_FILE and re-run the script."
+            exit 1
+        fi
+    done
 }
 
 # Function to set up automatic backups via cron
@@ -1162,6 +1004,13 @@ mkdir -p "$BACKUP_DIR"
 
 # List of critical files to backup
 FILES=(
+    "/etc/sysctl.conf"
+    "/etc/sysctl.d/99-IPv4.conf"
+    "/etc/sysctl.d/99-IPv6.conf"
+    "/etc/host.conf"
+    "/etc/ssh/sshd_config"
+    "/etc/systemd/resolved.conf"
+    "/etc/avahi/avahi-daemon.conf"
     "/etc/ufw/sysctl.conf"
     "/etc/ufw/ufw.conf"
     "/etc/dhcpcd.conf"
@@ -1171,8 +1020,6 @@ FILES=(
     "/etc/nfs.conf"
     "/etc/netconfig"
     "/etc/ipsec.conf"
-    "/etc/hosts"
-    "/etc/host.conf"
     "/etc/iptables/ip6tables.rules"
     "/etc/iptables/iptables.rules"
 )
@@ -1244,7 +1091,7 @@ EOF
 
     # Backup Verification
     log "Verifying backups..."
-    for FILE in "/etc/ufw/sysctl.conf" "/etc/ufw/ufw.conf" "/etc/dhcpcd.conf" "/etc/strongswan.conf" "/etc/resolv.conf" "/etc/nsswitch.conf" "/etc/nfs.conf" "/etc/netconfig" "/etc/ipsec.conf" "/etc/hosts" "/etc/host.conf" "/etc/iptables/ip6tables.rules" "/etc/iptables/iptables.rules"; do
+    for FILE in "/etc/sysctl.conf" "/etc/sysctl.d/99-IPv4.conf" "/etc/sysctl.d/99-IPv6.conf" "/etc/host.conf" "/etc/ssh/sshd_config" "/etc/systemd/resolved.conf" "/etc/avahi/avahi-daemon.conf" "/etc/ufw/sysctl.conf" "/etc/ufw/ufw.conf" "/etc/dhcpcd.conf" "/etc/strongswan.conf" "/etc/resolv.conf" "/etc/nsswitch.conf" "/etc/nfs.conf" "/etc/netconfig" "/etc/ipsec.conf" "/etc/iptables/ip6tables.rules" "/etc/iptables/iptables.rules"; do
         BASENAME=$(basename "$FILE")
         LATEST_BACKUP=$(ls -t "$BACKUP_DIR/${BASENAME}.backup_"* 2>/dev/null | head -n1 || true)
         if [[ -f "$LATEST_BACKUP" && -s "$LATEST_BACKUP" ]]; then
@@ -1257,6 +1104,20 @@ EOF
     log "All backups verified successfully."
 }
 
+# Function to apply all configurations
+apply_configurations() {
+    sysctl_config
+    host_conf_config
+    disable_ipv6_services
+    manage_additional_critical_files
+    configure_ufw
+    enhance_network_performance
+
+    if [[ "$BACKUP_FLAG" == "true" ]]; then
+        setup_backups
+    fi
+}
+
 # Function to display final status
 final_verification() {
     echo ""
@@ -1266,58 +1127,6 @@ final_verification() {
     echo ""
     log "### Listening Ports ###"
     ss -tunlp | tee -a "$LOG_FILE"
-}
-
-# Function to validate all configurations
-validate_configurations() {
-    log "Validating all configurations..."
-
-    # List of configuration files and expected content snippets
-    declare -A expected_contents=(
-        ["/etc/ufw/sysctl.conf"]="net.ipv4.ip_forward=1"
-        ["/etc/ufw/ufw.conf"]="ENABLED=yes"
-        ["/etc/dhcpcd.conf"]="noipv6"
-        ["/etc/strongswan.conf"]="strictcrlpolicy=yes"
-        ["/etc/resolv.conf"]="nameserver"
-        ["/etc/nsswitch.conf"]="hosts: files dns"
-        ["/etc/nfs.conf"]="rdma=n"
-        ["/etc/netconfig"]="udp6       tpi_clts"
-        ["/etc/ipsec.conf"]="charondebug=\"ike 2, knl 2, cfg 2\""
-        ["/etc/hosts"]="localhost"
-        ["/etc/host.conf"]="multi on"
-        ["/etc/iptables/ip6tables.rules"]="-A INPUT -p tcp --dport 22 -j ACCEPT"
-        ["/etc/iptables/iptables.rules"]="-A INPUT -p tcp --dport 22 -j ACCEPT"
-    )
-
-    for FILE in "${!expected_contents[@]}"; do
-        snippet="${expected_contents[$FILE]}"
-        if grep -qF "$snippet" "$FILE"; then
-            log "Validation passed: '$snippet' found in $FILE."
-        else
-            log "Validation failed: '$snippet' not found in $FILE."
-            exit 1
-        fi
-    done
-
-    log "All configurations validated successfully."
-}
-
-# Function to apply all configurations
-apply_configurations() {
-    configure_sysctl
-    configure_ufw_conf
-    configure_dhcpcd_conf
-    configure_strongswan_conf
-#    configure_resolv_conf
-#    configure_additional_files
-    configure_ufw
-    enhance_network_performance
-
-    if [[ "$BACKUP_FLAG" == "true" ]]; then
-        setup_backups
-    fi
-
-#    validate_configurations
 }
 
 # Main execution
