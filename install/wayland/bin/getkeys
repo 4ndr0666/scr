@@ -1,6 +1,10 @@
 #!/bin/sh
+# File: $HOME/.local/bin/getkeys.sh
+# Author: 4ndr0666
+# Desc: Pulls txt files detailing keybinds and shortcuts for specfic programs
 
-# Define the directory containing keybinding files
+# ====================================== // GETKEYS.SH //
+# --- // Constants:
 KEYS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/4ndr0666/getkeys"
 
 # Function to display usage information
@@ -42,7 +46,7 @@ for program in "$@"; do
         echo "Keybindings for: $program"
         echo "=============================="
         if command -v bat >/dev/null 2>&1; then
-            bat --language=markdown "$FILE"
+            bat --language=sh "$FILE"
         elif command -v cat >/dev/null 2>&1; then
             cat "$FILE"
         else

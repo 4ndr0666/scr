@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Enable strict error handling
 set -euo pipefail
 
 LOG_FILE="/home/andro/.local/share/logs/freecache.log"
@@ -17,7 +16,6 @@ fi
 mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory"; exit 1; }
 touch "$LOG_FILE" || { echo "Failed to create log file"; exit 1; }
 
-# Adjust the system's swappiness value
 adjust_swappiness() {
     local target_swappiness=10
     local free_ram_mb

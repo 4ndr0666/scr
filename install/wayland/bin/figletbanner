@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# figletbanner: Generate stylized, colored text banners using pyfiglet and lolcat.
+
+# Default configurations
+DEFAULT_FONT="line_blocks"
+FONT="$DEFAULT_FONT"
+LIST_FONTS=0
+COLOR_FLOW_RATE=0.5
+CONFIG_FILE="$HOME/.figletbannerrc"
+
+# Load configuration if available
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+# Function to display usage information
+usage() {
+    cat <<EOF
+Usage: figletbanner [options] "your text here"
+
+Generates stylized, colored text using pyfiglet.
+
+Options:
+  -l, --list-fonts        List all available pyfiglet fonts.
+  -f, --font <font>       Specify a font for this invocation (default: $FONT).
+  -c, --color-flow <rate> Set color flow rate for lolcat (default: $COLOR_FLOW_RATE).
+  -h, --help              Show this help message and exit.
+
+Examples:
+  figletbanner "Hello, World!"
+  figletbanner -f slant "Hello, World!"
+  figletbanner --list-fonts
+  figletbanner -f slant -c 1.0 "Fast Flow"
+
+EOF
+}
+
+# Function to check dependencies
+check_dependencies() {
+    local dependencies=("pyfiglet" "lolcat")
+    local missing=()
+
+    for cmd in "${dependencies[@]}"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing[@]} -ne 0 ]; then
+        echo "Error: Missing dependencies: ${missing[*]}" >&2
+        echo "Please install them before using figletbanner." >&2
+        exit 1
+    fi
+}
+
+# Function to list available fonts
+list_fonts() {
+    echo "Available pyfiglet fonts:"
+    pyfiglet --list-fonts | sort | column
+}
+
+# Parse command-line options using getopt
+PARSED_OPTIONS=$(getopt -n figletbanner -o lf:ch --long list-fonts,font:,color-flow:,help -- "$@")
+if [ $? -ne 0 ]; then
+    usage
+    exit 1
+fi
+
+eval set -- "$PARSED_OPTIONS"
+
+while true; do
+    case "$1" in
+        -l|--list-fonts)
+            LIST_FONTS=1
+            shift
+            ;;
+        -f|--font)
+            FONT="$2"
+            shift 2
+            ;;
+        -c|--color-flow)
+            COLOR_FLOW_RATE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unexpected option: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Check for dependencies
+check_dependencies
+
+# If -l flag is set, list fonts and exit
+if [ "$LIST_FONTS" -eq 1 ]; then
+    list_fonts
+    exit 0
+fi
+
+# Check if text is provided
+if [ $# -lt 1 ]; then
+    echo "Error: No text provided." >&2
+    usage
+    exit 1
+fi
+
+# Verify if the specified font exists
+if [ "$FONT" != "$DEFAULT_FONT" ]; then
+    if ! pyfiglet --list-fonts | grep -qw "$FONT"; then
+        echo "Error: Font '$FONT' not found." >&2
+        echo "Use -l or --list-fonts to see available fonts." >&2
+        exit 1
+    fi
+fi
+
+# Generate and colorize the text
+pyfiglet --font="$FONT" --normalize-surrounding-newlines "$*" | lolcat -F "$COLOR_FLOW_RATE"
+

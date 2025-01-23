@@ -1,1 +1,0 @@
-Linux theworkpc 6.12.8-zen1-1-zen #1 ZEN SMP PREEMPT_DYNAMIC Thu, 02 Jan 2025 22:52:21 +0000 x86_64 GNU/Linux
