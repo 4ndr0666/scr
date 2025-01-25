@@ -11,8 +11,8 @@ if [ -z "$1" ] || [ "$1" = "%u" ]; then
     exit 1
 fi
 
-# Remove ytdl:// prefix
-feed=$(echo "$1" | sed 's|^ytdl://||')
+# Remove the `ytdl://` prefix and decode the URL
+feed=$(echo "$1" | sed 's|^ytdl://||' | python3 -c "import sys, urllib.parse as ul; print(ul.unquote(sys.stdin.read().strip()))")
 echo "Final feed processed: $feed" >> "$LOGFILE"
 
 # Call dmenuhandler with the processed URL

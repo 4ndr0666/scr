@@ -1,0 +1,122 @@
+#!/bin/sh -e
+
+# Enhanced Video Concatenation Script
+# POSIX-Compliant, Modular, and Robust
+
+usage() {
+    printf '%s\n' "Usage: mergebeta [OPTIONS] [files]"
+    printf '%s\n' "This script normalizes and merges video files using FFmpeg."
+    printf '%s\n\n' "Options:"
+    printf '%s\n' "  -o <dir>      Specify output directory for normalized videos (default: ./normalized_videos)."
+    printf '%s\n' "  -r <res>      Target resolution for normalization (default: 1920:1080)."
+    printf '%s\n' "  -f <fps>      Target frames per second (default: 60)."
+    printf '%s\n' "  -c <codec>    Codec for encoding (default: libx264)."
+    printf '%s\n' "  -crf <value>  CRF value for video quality (default: 18)."
+    printf '%s\n' "  -a <bool>     Remove audio from videos (true/false, default: true)."
+    printf '%s\n' "  -h, --help    Display this help message and exit."
+    printf '\n%s\n' "Examples:"
+    printf '%s\n' "  mergebeta -o ./output -r 1280:720 -f 30 -c libx265 -crf 23 -a false"
+    printf '%s\n' "  mergebeta"
+}
+
+# Default settings
+output_dir="./normalized_videos"
+target_res="1920:1080"
+fps="60"
+codec="libx264"
+crf="18"
+remove_audio=true
+
+# Parse arguments
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) shift; output_dir="$1" ;;
+        -r) shift; target_res="$1" ;;
+        -f) shift; fps="$1" ;;
+        -c) shift; codec="$1" ;;
+        -crf) shift; crf="$1" ;;
+        -a) shift; remove_audio="$1" ;;
+        -h|--help) usage; exit 0 ;;
+        -*) printf '%s\n' "Unknown option: $1"; usage; exit 1 ;;
+        *) break ;;  # Files passed after options
+    esac
+    shift
+done
+
+# File selection fallback
+select_files() {
+    if command -v fzf >/dev/null 2>&1; then
+        printf '%s\n' "Please select video files using fzf:"
+        fzf_output=$(fzf --multi --preview 'ffprobe {}' --preview-window=right:60% --bind='ctrl-a:select-all+accept' --height=40%)
+        if [ -z "$fzf_output" ]; then
+            printf '%s\n' "No files selected. Exiting."
+            exit 1
+        fi
+        echo "$fzf_output"
+    else
+        printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
+        read -r files
+        if [ -z "$files" ]; then
+            printf '%s\n' "No files entered. Exiting."
+            exit 1
+        fi
+        echo "$files"
+    fi
+}
+
+# If no files provided, launch selection
+if [ "$#" -eq 0 ]; then
+    printf '%s\n' "No files provided. Launching file selection..."
+    set -- $(select_files)
+fi
+
+# Validate file existence and generate input list
+tmp_list=input.txt
+trap 'rm -f "$tmp_list" 2>/dev/null' EXIT INT TERM
+: > "$tmp_list"
+valid_files=0
+
+for file in "$@"; do
+    if [ -f "$file" ]; then
+        printf 'file %s\n' "$file" >> "$tmp_list"
+        valid_files=$((valid_files + 1))
+    else
+        printf '%s\n' "Warning: Skipping invalid file - $file"
+    fi
+done
+
+if [ "$valid_files" -eq 0 ]; then
+    printf '%s\n' "Error: No valid input files. Exiting."
+    exit 1
+fi
+
+# Create output directory
+mkdir -p "$output_dir"
+output_file="${output_dir%/}/output.mp4"
+
+# Attempt direct concatenation
+if ffmpeg -safe 0 -f concat -i "$tmp_list" -c copy "$output_file"; then
+    printf '%s\n' "Concatenation successful: $output_file"
+    exit 0
+else
+    printf '%s\n' "Direct concatenation failed. Proceeding with normalization..."
+fi
+
+# Normalize files as fallback
+normalized_list=input_normalized.txt
+: > "$normalized_list"
+
+for file in "$@"; do
+    if [ -f "$file" ]; then
+        base_name=$(basename "$file")
+        normalized_file="${output_dir%/}/${base_name%.*}_normalized.mp4"
+        ffmpeg -i "$file" -vf "scale=$target_res" -r "$fps" -c:v "$codec" -crf "$crf" \
+            $( [ "$remove_audio" = true ] && printf '%s' "-an" ) "$normalized_file"
+        printf 'file %s\n' "$normalized_file" >> "$normalized_list"
+    fi
+done
+
+ffmpeg -safe 0 -f concat -i "$normalized_list" -c:v "$codec" -crf "$crf" "$output_file"
+
+printf '%s\n' "Normalization and concatenation successful: $output_file"
+exit 0

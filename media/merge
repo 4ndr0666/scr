@@ -1,6 +1,7 @@
 #!/bin/sh -e
+set -x
 
-# Enhanced Video Concatenation Script
+# Enhanced Video Concatenation Script (Production-Ready)
 # POSIX-Compliant, Modular, and Robust
 
 usage() {
@@ -13,9 +14,10 @@ usage() {
     printf '%s\n' "  -c <codec>    Codec for encoding (default: libx264)."
     printf '%s\n' "  -crf <value>  CRF value for video quality (default: 18)."
     printf '%s\n' "  -a <bool>     Remove audio from videos (true/false, default: true)."
+    printf '%s\n' "  -p <preset>   Encoding preset for quality and compression efficiency (default: slow)."
     printf '%s\n' "  -h, --help    Display this help message and exit."
     printf '\n%s\n' "Examples:"
-    printf '%s\n' "  mergebeta -o ./output -r 1280:720 -f 30 -c libx265 -crf 23 -a false"
+    printf '%s\n' "  mergebeta -o ./output -r 1280:720 -f 30 -c libx265 -crf 23 -a false -p veryslow"
     printf '%s\n' "  mergebeta"
 }
 
@@ -26,6 +28,7 @@ fps="60"
 codec="libx264"
 crf="18"
 remove_audio=true
+preset="slow"
 
 # Parse arguments
 while [ "$#" -gt 0 ]; do
@@ -36,65 +39,87 @@ while [ "$#" -gt 0 ]; do
         -c) shift; codec="$1" ;;
         -crf) shift; crf="$1" ;;
         -a) shift; remove_audio="$1" ;;
+        -p) shift; preset="$1" ;;
         -h|--help) usage; exit 0 ;;
         -*) printf '%s\n' "Unknown option: $1"; usage; exit 1 ;;
-        *) break ;;  # Files passed after options
+         *) break ;;  # Any non-option arguments (files) break out
     esac
     shift
 done
 
-# File selection fallback
+# Function to select files if none provided
 select_files() {
     if command -v fzf >/dev/null 2>&1; then
-        printf '%s\n' "Please select video files using fzf:"
-        fzf_output=$(fzf --multi --preview 'ffprobe {}' --preview-window=right:60% --bind='ctrl-a:select-all+accept' --height=40%)
-        if [ -z "$fzf_output" ]; then
+        # Print prompt to stderr so it does NOT mix with stdout (which we capture)
+        >&2 printf '%s\n' "Please select video files using fzf:"
+        selected="$(fzf --multi \
+                        --preview 'ffprobe {}' \
+                        --preview-window=right:60% \
+                        --bind='ctrl-a:select-all+accept' \
+                        --height=40%)"
+        if [ -z "$selected" ]; then
             printf '%s\n' "No files selected. Exiting."
             exit 1
         fi
-        echo "$fzf_output"
+        # Output only the selected lines to stdout
+        printf '%s\n' "$selected"
     else
-        printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
-        read -r files
-        if [ -z "$files" ]; then
+        >&2 printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
+        read -r manual_files
+        if [ -z "$manual_files" ]; then
             printf '%s\n' "No files entered. Exiting."
             exit 1
         fi
-        echo "$files"
+        # Output exactly what was typed
+        printf '%s\n' "$manual_files"
     fi
 }
 
-# If no files provided, launch selection
+# Gather the files from either arguments or selection
 if [ "$#" -eq 0 ]; then
     printf '%s\n' "No files provided. Launching file selection..."
-    set -- $(select_files)
+    files="$(select_files)"
+else
+    # Place each argument on its own line to preserve spacing
+    files="$(printf '%s\n' "$@")"
+fi
+
+# Verify we actually have something
+if [ -z "$files" ]; then
+    printf '%s\n' "No files specified or selected. Exiting."
+    exit 1
 fi
 
 # Validate file existence and generate input list
-tmp_list=input.txt
+tmp_list="input.txt"
 trap 'rm -f "$tmp_list" 2>/dev/null' EXIT INT TERM
 : > "$tmp_list"
-valid_files=0
 
-for file in "$@"; do
+valid_files_count=0
+while IFS= read -r file; do
     if [ -f "$file" ]; then
-        printf 'file %s\n' "$file" >> "$tmp_list"
-        valid_files=$((valid_files + 1))
+        # Quote the file name for FFmpeg's concat demuxer
+        printf "file '%s'\n" "$file" >> "$tmp_list"
+        valid_files_count=$((valid_files_count + 1))
     else
         printf '%s\n' "Warning: Skipping invalid file - $file"
     fi
-done
+done <<EOF
+$files
+EOF
 
-if [ "$valid_files" -eq 0 ]; then
+# Ensure we have at least 1 valid file
+if [ "$valid_files_count" -eq 0 ]; then
     printf '%s\n' "Error: No valid input files. Exiting."
     exit 1
 fi
 
-# Create output directory
+# Create the output directory
 mkdir -p "$output_dir"
 output_file="${output_dir%/}/output.mp4"
 
-# Attempt direct concatenation
+# 1) Attempt direct concatenation
+# '-safe 0' allows for absolute/relative paths with spaces in concat list
 if ffmpeg -safe 0 -f concat -i "$tmp_list" -c copy "$output_file"; then
     printf '%s\n' "Concatenation successful: $output_file"
     exit 0
@@ -102,21 +127,37 @@ else
     printf '%s\n' "Direct concatenation failed. Proceeding with normalization..."
 fi
 
-# Normalize files as fallback
-normalized_list=input_normalized.txt
+# 2) Normalize each file then re-concatenate
+normalized_list="input_normalized.txt"
+trap 'rm -f "$tmp_list" "$normalized_list" 2>/dev/null' EXIT INT TERM
 : > "$normalized_list"
 
-for file in "$@"; do
+while IFS= read -r file; do
     if [ -f "$file" ]; then
-        base_name=$(basename "$file")
+        base_name="$(basename "$file")"
+        # e.g. normalized.mp4
         normalized_file="${output_dir%/}/${base_name%.*}_normalized.mp4"
-        ffmpeg -i "$file" -vf "scale=$target_res" -r "$fps" -c:v "$codec" -crf "$crf" \
-            $( [ "$remove_audio" = true ] && printf '%s' "-an" ) "$normalized_file"
-        printf 'file %s\n' "$normalized_file" >> "$normalized_list"
-    fi
-done
 
-ffmpeg -safe 0 -f concat -i "$normalized_list" -c:v "$codec" -crf "$crf" "$output_file"
+        ffmpeg -i "$file" \
+               -vf "scale=$target_res" \
+               -r "$fps" \
+               -c:v "$codec" \
+               -crf "$crf" \
+               $( [ "$remove_audio" = true ] && printf '%s' "-an" ) \
+               -preset "$preset" \
+               "$normalized_file"
+
+        printf "file '%s'\n" "$normalized_file" >> "$normalized_list"
+    fi
+done <<EOF
+$files
+EOF
+
+ffmpeg -safe 0 -f concat -i "$normalized_list" \
+       -c:v "$codec" \
+       -crf "$crf" \
+       -preset "$preset" \
+       "$output_file"
 
 printf '%s\n' "Normalization and concatenation successful: $output_file"
 exit 0
