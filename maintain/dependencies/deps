@@ -1,0 +1,791 @@
+#!/bin/sh
+#
+# depcheckposix.sh - A POSIX-compatible script to check and install missing dependencies on Arch-based systems.
+# Author: 4ndr0666
+# Date: 12-4-24
+#
+# Features:
+#   - Checks for required tools: pacman, pactree, etc.
+#   - Detects AUR helper (yay, paru, or trizen).
+#   - Loads IgnorePkg and IgnoreGroup from /etc/pacman.conf.
+#   - Gathers dependencies recursively using pactree.
+#   - Installs missing dependencies (repo or AUR).
+#   - Provides optional interactive and/or menu-based usage.
+
+# --------------------- Configuration ---------------------
+
+DEFAULT_LOGFILE="/home/andro/.local/share/logs/dependency-checker.log"
+PACMAN_LOCK="/var/lib/pacman/db.lck"
+AUR_DIR="/home/build"            # Directory where AUR packages are cloned
+AUR_UPGRADE=false
+LOGFILE="$DEFAULT_LOGFILE"
+
+CHECK_MISSING=false
+INSTALL_MISSING=false
+UPDATE_AUR=false
+REBUILD_AUR=false
+INTERACTIVE=false
+VERBOSE=false
+
+# Lists of ignored packages/groups loaded from /etc/pacman.conf + custom user input
+CUSTOM_IGNORE_PKGS=""
+CUSTOM_IGNORE_GROUPS=""
+IGNORE_PKGS=""
+IGNORE_GROUPS=""
+
+# Temporary files for storing missing dependencies, etc.  (POSIX doesn't support arrays)
+MISSING_TMP="/tmp/depcheck_missing.$$"
+PKGLIST_TMP="/tmp/depcheck_pkglist.$$"
+AUR_TMP="/tmp/depcheck_aur.$$"
+
+# Colors (POSIX doesn't require them, but we can store them in variables)
+CYAN='\033[38;2;21;255;255m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Ensure log directory exists
+mkdir -p "$(dirname "$DEFAULT_LOGFILE")"
+
+# --------------------- Logging ---------------------
+
+log_message() {
+    # Just echo to stdout and append to logfile
+    # No advanced bash or color expansions
+    echo "$1"
+    echo "$1" >> "$LOGFILE"
+}
+
+# --------------------- Basic Checks ---------------------
+
+check_requirements() {
+    # POSIX way: no arrays, so we store in a string and loop
+    required_tools="pacman pactree expac xargs git reflector loginctl setfacl"
+    for tool in $required_tools
+    do
+        if ! command -v "$tool" >/dev/null 2>&1
+        then
+            log_message "ERROR: Required tool '$tool' not installed."
+            exit 1
+        fi
+    done
+}
+
+detect_aur_helper() {
+    local helpers="yay paru trizen"
+    AUR_HELPER=""
+    for h in $helpers
+    do
+        if command -v "$h" >/dev/null 2>&1
+        then
+            AUR_HELPER="$h"
+            log_message "INFO: AUR helper detected: $AUR_HELPER"
+            break
+        fi
+    done
+    if [ -z "$AUR_HELPER" ]
+    then
+        log_message "WARN: No AUR helper found. AUR packages won't be managed."
+    fi
+}
+
+# --------------------- Ignore Pkgs + Groups ---------------------
+
+load_ignored_packages() {
+    if [ -f /etc/pacman.conf ]
+    then
+        while IFS= read -r line
+        do
+            case "$line" in
+                IgnorePkg*)
+                    # Remove 'IgnorePkg...' prefix
+                    pkgs="${line#IgnorePkg*= }"
+                    # Split on spaces
+                    for p in $pkgs
+                    do
+                        IGNORE_PKGS="$IGNORE_PKGS $p"
+                    done
+                    ;;
+                IgnoreGroup*)
+                    groups="${line#IgnoreGroup*= }"
+                    for g in $groups
+                    do
+                        IGNORE_GROUPS="$IGNORE_GROUPS $g"
+                    done
+                    ;;
+            esac
+        done < /etc/pacman.conf
+    fi
+
+    # Add custom
+    for p in $CUSTOM_IGNORE_PKGS
+    do
+        IGNORE_PKGS="$IGNORE_PKGS $p"
+    done
+    for g in $CUSTOM_IGNORE_GROUPS
+    do
+        IGNORE_GROUPS="$IGNORE_GROUPS $g"
+    done
+}
+
+is_ignored_package() {
+    # param1 = package
+    pkg="$1"
+    # Check if pkg is in IGNORE_PKGS
+    for ipkg in $IGNORE_PKGS
+    do
+        [ "$pkg" = "$ipkg" ] && return 0
+    done
+
+    # Check if pkg is in any IGNORE_GROUPS
+    for igroup in $IGNORE_GROUPS
+    do
+        # pacman -Sg group => lines like "group package"
+        # grep for packages
+        out="$(pacman -Sg "$igroup" 2>/dev/null | awk '{print $2}')"
+        # for each package in that group, compare
+        for grp_pkg in $out
+        do
+            if [ "$pkg" = "$grp_pkg" ]
+            then
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# --------------------- Queries + Helper Functions ---------------------
+
+is_installed() {
+    # returns 0 if installed, 1 if not
+    pacman -Qi "$1" >/dev/null 2>&1
+}
+
+is_foreign_package() {
+    pacman -Qm "$1" >/dev/null 2>&1
+}
+
+gather_dependencies() {
+    # param1 = package
+    # If fails, return empty
+    pactree -u "$1" 2>/dev/null | sed '1d'
+}
+
+wait_for_pacman_lock() {
+    local wait_time=30
+    local interval=5
+    local elapsed=0
+
+    while [ -e "$PACMAN_LOCK" ]
+    do
+        if [ "$elapsed" -ge "$wait_time" ]
+        then
+            log_message "ERROR: Pacman lock for too long."
+            exit 1
+        fi
+        log_message "WARN: Pacman locked. Wait..."
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+}
+
+handle_pacman_errors() {
+    # param1 = stderr text
+    # parse errors
+    # if we see "db.sig" => refresh with reflector
+    # if we see "exists in filesystem" => attempt pacman -Syu --overwrite
+    # else => log error + exit
+    case "$1" in
+        *'db.sig'*)
+            log_message "WARN: Signature file issue. Using reflector..."
+            select_fastest_mirrors
+            if ! sudo pacman -Sy --ignore "$IGNORE_PKGS" --noconfirm
+            then
+                log_message "ERROR: Could not fix signature issue."
+                exit 1
+            fi
+            ;;
+        *'exists in filesystem'*)
+            log_message "WARN: File conflict. Attempting overwrite..."
+            if ! sudo pacman -Syu --overwrite '*' --noconfirm
+            then
+                log_message "ERROR: Overwrite conflict resolution failed."
+                exit 1
+            fi
+            ;;
+        *)
+            log_message "ERROR: Pacman encountered an error: $1"
+            exit 1
+            ;;
+    esac
+}
+
+select_fastest_mirrors() {
+    log_message "INFO: Updating mirrorlist with reflector..."
+    if ! reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
+    then
+        log_message "WARN: reflector failed, continuing with existing mirrors..."
+    fi
+}
+
+# --------------------- Installing Packages ---------------------
+
+install_package() {
+    pkg="$1"
+    # We'll do up to 3 tries
+    i=1
+    while [ "$i" -le 3 ]
+    do
+        log_message "INFO: Installing '$pkg' attempt $i"
+        if is_foreign_package "$pkg"
+        then
+            if [ -n "$AUR_HELPER" ]
+            then
+                # We attempt to run the AUR helper as original user
+                # No arrays => we pass flags in a single string
+                # Add flags to reduce interactive prompts
+                # (not all helpers respect these, but we try)
+                if [ -n "${SUDO_USER:-}" ]
+                then
+                    user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+                    # Some extra flags to ensure non-interactivity:
+                    # --noconfirm, --removemake, --noeditmenu, --nodiffmenu
+                    # The actual effect depends on the AUR helper
+                    out="$(
+                        sudo -u "$SUDO_USER" HOME="$user_home" \
+                            "$AUR_HELPER" -S --noconfirm --removemake \
+                            --noeditmenu --nodiffmenu "$pkg" 2>&1
+                    )"
+                    ret="$?"
+                    if [ "$ret" -ne 0 ]
+                    then
+                        log_message "WARN: '$pkg' failed: $out"
+                        sleep 5
+                    else
+                        log_message "INFO: '$pkg' installed."
+                        return 0
+                    fi
+                else
+                    log_message "ERROR: Cannot detect SUDO_USER for AUR install."
+                    return 1
+                fi
+            else
+                log_message "ERROR: No AUR helper for foreign pkg '$pkg'."
+                return 1
+            fi
+        else
+            if sudo pacman -S --needed --noconfirm "$pkg"
+            then
+                log_message "INFO: '$pkg' installed from repo."
+                return 0
+            else
+                log_message "WARN: Pacman install failed for '$pkg'."
+                sleep 5
+            fi
+        fi
+        i=$((i+1))
+    done
+    log_message "ERROR: '$pkg' failed after 3 tries."
+    return 1
+}
+
+# --------------------- Check + Install Deps ---------------------
+
+check_missing_dependencies() {
+    # param: list of packages
+    # We'll store MISSING packages in $MISSING_TMP
+    > "$MISSING_TMP"
+
+    for pkg in "$@"
+    do
+        if is_ignored_package "$pkg"
+        then
+            [ "$VERBOSE" = true ] && log_message "INFO: '$pkg' ignored."
+            continue
+        fi
+
+        if is_installed "$pkg"
+        then
+            [ "$VERBOSE" = true ] && log_message "INFO: Checking deps for '$pkg'..."
+            deps="$(gather_dependencies "$pkg")"
+            if [ -n "$deps" ]
+            then
+                # shellcheck disable=SC2086
+                for dep in $deps
+                do
+                    if is_ignored_package "$dep"
+                    then
+                        [ "$VERBOSE" = true ] && log_message "DEBUG: '$dep' ignored."
+                        continue
+                    fi
+                    if ! is_installed "$dep"
+                    then
+                        log_message "INFO: Missing dependency: $dep"
+                        echo "$dep" >> "$MISSING_TMP"
+                    fi
+                done
+            fi
+        else
+            log_message "WARN: '$pkg' not installed."
+            echo "$pkg" >> "$MISSING_TMP"
+        fi
+    done
+
+    # Check how many missing
+    lines=$(wc -l < "$MISSING_TMP")
+    if [ "$lines" -eq 0 ]
+    then
+        log_message "INFO: All dependencies satisfied!"
+    else
+        log_message "INFO: Missing $(cat "$MISSING_TMP" | tr '\n' ' ')"
+    fi
+}
+
+install_missing_dependencies() {
+    # We'll do them one by one, no parallel
+    if [ ! -s "$MISSING_TMP" ]
+    then
+        log_message "INFO: No missing dependencies to install."
+        return
+    fi
+
+    log_message "INFO: Installing missing dependencies..."
+    while IFS= read -r dep
+    do
+        install_package "$dep"
+    done < "$MISSING_TMP"
+    log_message "INFO: Done installing missing dependencies."
+}
+
+interactive_install() {
+    # If $MISSING_TMP is empty, no missing
+    if [ ! -s "$MISSING_TMP" ]
+    then
+        log_message "INFO: No missing dependencies."
+        return
+    fi
+
+    echo "${YELLOW}Missing dependencies:${NC}"
+    cat "$MISSING_TMP" | nl
+
+    # Prompt
+    printf "Install all missing deps? [y/N]: "
+    read -r ans
+    case "$ans" in
+        [Yy]*)
+            install_missing_dependencies
+            ;;
+        *)
+            log_message "INFO: Installation aborted."
+            ;;
+    esac
+}
+
+ensure_idempotency() {
+    # Remove duplicates or installed pkgs from $MISSING_TMP
+    # We'll store the unique ones in a temp file
+    TMP2="/tmp/depcheck_unique.$$"
+    > "$TMP2"
+
+    while IFS= read -r dep
+    do
+        # skip if we saw it or if installed or ignored
+        # We can store a small state file, but let's do a direct approach
+        grep -qxF "$dep" "$TMP2" && continue
+
+        if is_installed "$dep"
+        then
+            continue
+        fi
+        if is_ignored_package "$dep"
+        then
+            continue
+        fi
+        echo "$dep" >> "$TMP2"
+    done < "$MISSING_TMP"
+
+    mv "$TMP2" "$MISSING_TMP"
+}
+
+# --------------------- AUR Packages + Update ---------------------
+
+identify_aur_packages() {
+    > "$AUR_TMP"
+    # pacman -Qm => foreign pkgs
+    # store to $AUR_TMP
+    pacman -Qm 2>/dev/null | awk '{print $1}' >> "$AUR_TMP"
+    local lines
+    lines=$(wc -l < "$AUR_TMP")
+    if [ "$lines" -eq 0 ]
+    then
+        log_message "INFO: No AUR packages."
+    else
+        log_message "INFO: AUR packages: $(cat "$AUR_TMP" | tr '\n' ' ')"
+    fi
+}
+
+update_aur_packages() {
+    # We read from $AUR_TMP
+    local lines
+    lines=$(wc -l < "$AUR_TMP")
+    if [ "$lines" -eq 0 ]
+    then
+        log_message "INFO: No AUR pkgs to update."
+        return
+    fi
+
+    if [ -z "$AUR_HELPER" ]
+    then
+        log_message "WARN: No AUR helper, cannot update AUR pkgs."
+        return
+    fi
+
+    log_message "INFO: Updating AUR packages..."
+    while IFS= read -r pkg
+    do
+        install_package "$pkg"
+    done < "$AUR_TMP"
+    log_message "INFO: AUR update done."
+}
+
+clone_missing_aur_packages() {
+    local build_dir="$AUR_DIR"
+    # Identify AUR pkgs again
+    > "$AUR_TMP"
+    pacman -Qm 2>/dev/null | awk '{print $1}' >> "$AUR_TMP"
+    local lines
+    lines=$(wc -l < "$AUR_TMP")
+    if [ "$lines" -eq 0 ]
+    then
+        log_message "INFO: No AUR packages on system."
+        return
+    fi
+
+    log_message "INFO: Checking for missing AUR clones in '$build_dir'..."
+    while IFS= read -r pkg
+    do
+        local aur_dir="$build_dir/$pkg"
+        if [ ! -d "$aur_dir" ]
+        then
+            log_message "INFO: Cloning '$pkg' into '$aur_dir'..."
+            git clone "https://aur.archlinux.org/${pkg}.git" "$aur_dir" 2>/dev/null || {
+                log_message "ERROR: Failed to clone '$pkg'"
+                [ -d "$aur_dir" ] && rm -rf "$aur_dir"
+            }
+        else
+            log_message "INFO: '$pkg' already cloned."
+            [ "$VERBOSE" = true ] && log_message "DEBUG: In $aur_dir"
+        fi
+    done < "$AUR_TMP"
+}
+
+rebuild_aur() {
+    # Simplified approach: we won't do partial re-check. We'll just do nothing if directory isn't writable
+    local build_dir="$AUR_DIR"
+    if [ -w "$build_dir" ]
+    then
+        # We'll ask user
+        echo
+        printf "Rebuild AUR pkgs in %s? [y/N]: " "$build_dir"
+        read -r ans
+        case "$ans" in
+            [Yy]*)
+                log_message "INFO: Rebuilding AUR..."
+                if [ -z "$(ls -A "$build_dir" 2>/dev/null)" ]
+                then
+                    log_message "WARN: No packages found in $build_dir."
+                    return
+                fi
+                local olddir
+                olddir="$(pwd)"
+                for d in "$build_dir"/*/
+                do
+                    [ -d "$d" ] || continue
+                    log_message "INFO: Building AUR pkg dir '$d'..."
+                    cd "$d" || continue
+                    if [ "$AUR_UPGRADE" = "true" ]
+                    then
+                        log_message "INFO: Pulling changes..."
+                        git pull origin master || log_message "WARN: git pull failed."
+                    fi
+                    if [ -f PKGBUILD ]
+                    then
+                        # install deps
+                        deps="$(grep -E '^depends=' PKGBUILD | sed 's/^depends=(//;s/)//;s/"//g')"
+                        makedeps="$(grep -E '^makedepends=' PKGBUILD | sed 's/^makedepends=(//;s/)//;s/"//g')"
+
+                        # parse them individually
+                        # POSIX can't do arrays easily, so we just loop
+                        for p in $deps $makedeps
+                        do
+                            sudo pacman -S --needed --asdeps --noconfirm "$p" || log_message "WARN: Dep $p fail"
+                        done
+
+                        # build
+                        sudo -u "${SUDO_USER:-nobody}" makepkg -fc --noconfirm && {
+                            pkgfile="$(find . -maxdepth 1 -type f -name '*.pkg.tar.zst' | head -n1)"
+                            if [ -n "$pkgfile" ]
+                            then
+                                if sudo pacman -U "$pkgfile" --noconfirm
+                                then
+                                    log_message "INFO: Installed $pkgfile"
+                                else
+                                    log_message "WARN: pacman -U $pkgfile failed."
+                                fi
+                            else
+                                log_message "WARN: No package file found after building."
+                            fi
+                        }
+                    else
+                        log_message "WARN: No PKGBUILD in $d"
+                    fi
+                    cd "$olddir" || exit
+                done
+                log_message "INFO: Rebuild complete."
+                ;;
+            *)
+                log_message "INFO: Rebuild not performed."
+                ;;
+        esac
+    fi
+}
+
+# --------------------- Pacman Database ---------------------
+
+refresh_pacman_databases() {
+    log_message "INFO: Refreshing pacman db..."
+    if ! pacman -Sy --noconfirm
+    then
+        # capture stderr
+        err="$(pacman -Sy --noconfirm 2>&1)"
+        handle_pacman_errors "$err"
+        if ! pacman -Sy --noconfirm
+        then
+            log_message "ERROR: Could not refresh db after handling errors."
+            exit 1
+        fi
+    else
+        log_message "INFO: Successfully refreshed pacman db."
+    fi
+}
+
+# --------------------- Menu System (Optional) ---------------------
+
+display_menu() {
+    echo "${CYAN}#${NC} --- ${CYAN}//${NC} Depcheck Alpha ${CYAN}//${NC}"
+    echo
+    echo "${CYAN}1.${NC} Check Deps"
+    echo "${CYAN}2.${NC} Install Deps"
+    echo "${CYAN}3.${NC} Check and Install Deps"
+    echo "${CYAN}4.${NC} Update AUR"
+    echo "${CYAN}5.${NC} Rebuild AUR"
+    echo "${RED}6.${NC} Exit"
+    echo
+}
+
+handle_menu_selection() {
+    sel="$1"
+    case "$sel" in
+        1)
+            check_dependencies_menu
+            ;;
+        2)
+            install_dependencies_menu
+            ;;
+        3)
+            check_dependencies_menu
+            install_dependencies_menu
+            ;;
+        4)
+            clone_missing_aur_packages
+            aur_setup
+            update_aur_packages
+            ;;
+        5)
+            rebuild_aur
+            ;;
+        6)
+            log_message "INFO: Terminated!"
+            exit 0
+            ;;
+        *)
+            echo "${RED}Invalid selection!${NC}"
+            ;;
+    esac
+}
+
+main_menu() {
+    while true
+    do
+        display_menu
+        printf "By your command: "
+        read -r user_selection
+        handle_menu_selection "$user_selection"
+        echo
+    done
+}
+
+# --------------------- Entry Points ---------------------
+
+check_dependencies_menu() {
+    # generate pkglist if empty
+    : > "$PKGLIST_TMP"
+    if [ "$#" -eq 0 ]
+    then
+        log_message "INFO: No pkglist given. Using installed pkgs..."
+        pacman -Qqe > "$PKGLIST_TMP" 2>/dev/null
+    else
+        # write the arguments to file
+        for p in "$@"
+        do
+            echo "$p" >> "$PKGLIST_TMP"
+        done
+    fi
+
+    refresh_pacman_databases
+
+    # read them back in
+    : > "$MISSING_TMP"
+    while IFS= read -r pkg
+    do
+        check_missing_dependencies "$pkg"
+    done < "$PKGLIST_TMP"
+}
+
+install_dependencies_menu() {
+    # ensure idempotency
+    ensure_idempotency
+    if [ "$INTERACTIVE" = "true" ]
+    then
+        interactive_install
+    else
+        install_missing_dependencies
+    fi
+}
+
+main() {
+    log_message "INFO: Starting dependency checker..."
+
+    check_requirements
+    detect_aur_helper
+    wait_for_pacman_lock
+    load_ignored_packages
+    aur_setup
+
+    if [ "$CHECK_MISSING" = "true" ] || [ "$INSTALL_MISSING" = "true" ] || \
+       [ "$UPDATE_AUR" = "true" ] || [ "$REBUILD_AUR" = "true" ]
+    then
+        # If no PKGLIST was provided, we do everything from installed pkgs
+        if [ "$CHECK_MISSING" = "true" ]
+        then
+            check_dependencies_menu
+        fi
+        if [ "$INSTALL_MISSING" = "true" ]
+        then
+            install_dependencies_menu
+        fi
+        if [ "$UPDATE_AUR" = "true" ]
+        then
+            identify_aur_packages
+            update_aur_packages
+        fi
+        if [ "$REBUILD_AUR" = "true" ]
+        then
+            rebuild_aur
+        fi
+    else
+        main_menu
+    fi
+
+    log_message "INFO: Dependency checker completed."
+}
+
+parse_arguments() {
+    # we parse with standard getopts
+    while getopts "icp:k:g:ul:vhIL:r" opt
+    do
+        case "$opt" in
+            i) INSTALL_MISSING=true ;;
+            c) CHECK_MISSING=true ;;
+            p) CUSTOM_PKGS="$OPTARG" ;;
+            k) CUSTOM_IGNORE_PKGS="$OPTARG" ;;
+            g) CUSTOM_IGNORE_GROUPS="$OPTARG" ;;
+            u) UPDATE_AUR=true ;;
+            r) REBUILD_AUR=true ;;
+            l) LOGFILE="$OPTARG" ;;
+            v) VERBOSE=true ;;
+            h)
+                print_help
+                exit 0
+                ;;
+            I) INTERACTIVE=true ;;
+            L)
+                # log level
+                lvl="$(echo "$OPTARG" | tr '[:lower:]' '[:upper:]')"
+                case "$lvl" in
+                    INFO|WARN|ERROR)
+                        LOG_LEVEL="$lvl"
+                        ;;
+                    *)
+                        log_message "WARN: Invalid log level $OPTARG, defaulting to INFO."
+                        LOG_LEVEL="INFO"
+                        ;;
+                esac
+                ;;
+            *)
+                print_help
+                exit 0
+                ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
+    # We can parse custom pkgs into PKGLIST_TMP if needed
+    if [ -n "${CUSTOM_PKGS:-}" ]
+    then
+        : > "$PKGLIST_TMP"
+        # split by commas
+        oldIFS="$IFS"
+        IFS=","
+        for item in $CUSTOM_PKGS
+        do
+            echo "$item" >> "$PKGLIST_TMP"
+        done
+        IFS="$oldIFS"
+    fi
+}
+
+print_help() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+  -i    Install missing dependencies
+  -c    Check missing dependencies
+  -p <packages>  Comma-separated packages to check
+  -k <packages>  Comma-separated packages to ignore
+  -g <groups>    Comma-separated groups to ignore
+  -u    Update AUR packages
+  -r    Rebuild AUR packages
+  -l <logfile>   Custom log file path (default: $DEFAULT_LOGFILE)
+  -v    Verbose mode
+  -h    Show help
+  -I    Interactive mode
+  -L <lvl>  Log level (INFO, WARN, ERROR)
+
+No args => show menu
+Example:
+  sudo $0 -c -i  # check & install
+  sudo $0 -u     # update AUR
+EOF
+}
+
+# If not root, re-run with sudo
+if [ "$(id -u)" -ne 0 ]
+then
+    exec sudo "$0" "$@"
+fi
+
+parse_arguments "$@"
+
+main
