@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set -euo pipefail
-set -x
 
 # ===========================
 # ufwsuckless.sh - UFW Configuration and System Hardening Script
@@ -52,19 +51,23 @@ remove_immutable() {
         else
             log "Dry-run mode: Would remove immutable flag from $file."
         fi
+    else
+        log "Immutable flag not set on $file."
     fi
 }
 
 # Function to set immutable flag
 set_immutable() {
     local file="$1"
-    if is_immutable "$file"; then
+    if ! is_immutable "$file"; then
         if [[ "$DRY_RUN" == "false" ]]; then
             chattr +i "$file"
             log "Set immutable flag on $file."
         else
             log "Dry-run mode: Would set immutable flag on $file."
         fi
+    else
+        log "Immutable flag already set on $file."
     fi
 }
 
@@ -202,10 +205,10 @@ detect_vpn_port() {
 
     for VPN_IF in $VPN_IFACES; do
         # Look for UDP connections on the VPN interface
-        VPN_PORT=$(ss -u -a state established sport = :443 or dport = :443 | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1)
+        # Using '|| true' to prevent 'set -e' from exiting the script if grep fails
+        VPN_PORT=$(ss -u -a state established "( sport = :443 or dport = :443 )" | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1) || true
         if [[ -n "$VPN_PORT" && "$VPN_PORT" =~ ^[0-9]+$ ]]; then
             log "Detected Lightway UDP port on $VPN_IF: $VPN_PORT"
-            echo "$VPN_PORT"
             return 0
         else
             log "Warning: Unable to detect Lightway UDP port on $VPN_IF. Continuing to next interface..."
@@ -213,8 +216,8 @@ detect_vpn_port() {
     done
 
     # Default to 443 if no port detected
+    VPN_PORT=443
     log "Warning: Unable to detect a numeric Lightway UDP port on any VPN interface. Defaulting to 443."
-    echo "443"
     return 0
 }
 
@@ -290,20 +293,13 @@ manage_additional_critical_files() {
         "/etc/nfs.conf"
         "/etc/ipsec.conf"
         "/etc/hosts"
+        "/etc/sysctl.d/99-IPv4.conf"
+        "/etc/sysctl.d/99-IPv6.conf"
+        "/etc/sysctl.conf"
     )
 
     for FILE in "${ADDITIONAL_FILES[@]}"; do
         log "Configuring $FILE..."
-
-        # Backup before modification
-        if [[ -f "$FILE" ]]; then
-            if [[ "$DRY_RUN" == "false" ]]; then
-                cp "$FILE" "${FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-                log "Backup created for $FILE."
-            else
-                log "Dry-run mode: Backup for $FILE not created."
-            fi
-        fi
 
         # Remove immutable flag if set
         remove_immutable "$FILE"
@@ -387,12 +383,30 @@ manage_additional_critical_files() {
                     log "'localhost' entry already present in $FILE."
                 fi
                 ;;
+            "/etc/sysctl.d/99-IPv4.conf" | "/etc/sysctl.d/99-IPv6.conf" | "/etc/sysctl.conf")
+                # Set immutable flag after configuration
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    set_immutable "$FILE"
+                else
+                    log "Dry-run mode: Would set immutable flag on $FILE."
+                fi
+                ;;
         esac
 
-        # Re-set immutable flag if it was originally set
-        if is_immutable "$FILE"; then
-            set_immutable "$FILE"
-        fi
+        # Set immutable flag on additional critical files if not already handled
+        case "$FILE" in
+            "/etc/sysctl.d/99-IPv4.conf" | "/etc/sysctl.d/99-IPv6.conf" | "/etc/sysctl.d/99-ufw.conf" | "/etc/sysctl.conf")
+                # These files are handled above
+                ;;
+            *)
+                # Optionally, set immutable flag on other critical files after modifications
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    set_immutable "$FILE"
+                else
+                    log "Dry-run mode: Would set immutable flag on $FILE."
+                fi
+                ;;
+        esac
     done
 }
 
@@ -448,8 +462,8 @@ configure_ufw() {
 
     # Allow local Aria2c
     if [[ "$DRY_RUN" == "false" ]]; then
-        if ! ufw status numbered | grep -qw "Local Aria2c"; then
-            ufw allow from 127.0.0.1 to any port 6800 comment "Local Aria2c"
+        if ! ufw status numbered | grep -qw "Allow Local Aria2c"; then
+            ufw allow from 127.0.0.1 to any port 6800 proto tcp comment "Allow Local Aria2c"
             log "Rule added: Allow Local Aria2c (127.0.0.1 to port 6800)."
         else
             log "Rule already exists: Allow Local Aria2c (127.0.0.1 to port 6800)."
@@ -460,8 +474,8 @@ configure_ufw() {
 
     # Allow loopback interface
     if [[ "$DRY_RUN" == "false" ]]; then
-        if ! ufw status numbered | grep -qw "Loopback"; then
-            ufw allow in on lo to any comment "Loopback"
+        if ! ufw status numbered | grep -qw "Allow Loopback"; then
+            ufw allow in on lo to any comment "Allow Loopback"
             log "Rule added: Allow Loopback (lo)."
         else
             log "Rule already exists: Allow Loopback (lo)."
@@ -477,39 +491,46 @@ configure_ufw() {
         port=$(echo "$port_protocol" | cut -d'/' -f1)
         proto=$(echo "$port_protocol" | cut -d'/' -f2)
 
-        if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
-            if [[ "$DRY_RUN" == "false" ]]; then
+        if [[ "$DRY_RUN" == "false" ]]; then
+            # Check if the rule already exists to prevent duplication
+            if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
                 ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
                 log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
             else
-                log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
+                log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
             fi
         else
-            log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+            log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
         fi
     done
 
     # Configure VPN-specific rules
     if [[ "$VPN_FLAG" == "true" ]]; then
         log "VPN flag is set. Configuring VPN-specific rules..."
-        VPN_PORT=$(detect_vpn_port)
-        if [[ "$VPN_PORT" =~ ^[0-9]+$ ]]; then
+        detect_vpn_port
+        if [[ $? -ne 0 ]]; then
+            log "Error: VPN port detection failed. Skipping VPN-specific rules."
+            exit 1
+        fi
+
+        if [[ -n "${VPN_IFACES:-}" ]]; then
             for VPN_IF in $VPN_IFACES; do
                 # Allow UDP traffic on the detected VPN port on all VPN interfaces
-                if ! ufw status numbered | grep -qw "$VPN_PORT/udp on $VPN_IF"; then
-                    if [[ "$DRY_RUN" == "false" ]]; then
-                        ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
-                        ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "Allow Lightway UDP on $VPN_IF"; then
+                        ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Allow Lightway UDP on $VPN_IF"
+                        ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Allow Lightway UDP on $VPN_IF"
                         log "Rule added: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
                     else
-                        log "Dry-run mode: Would add rule to allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                        log "Rule already exists: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
                     fi
                 else
-                    log "Rule already exists: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                    log "Dry-run mode: Would add rule to allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
                 fi
             done
         else
-            log "Skipping VPN-specific UFW rules due to port detection failure."
+            log "Error: VPN_IFACES is unset or empty."
+            exit 1
         fi
     fi
 
@@ -525,40 +546,40 @@ configure_ufw() {
             if [[ "$VPN_FLAG" == "true" ]]; then
                 # Allow on all VPN interfaces
                 for VPN_IF in $VPN_IFACES; do
-                    if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
-                        if [[ "$DRY_RUN" == "false" ]]; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
                             ufw allow in on "$VPN_IF" to any port "$port" proto "$proto" comment "$desc"
                             log "Rule added: Allow $desc on $VPN_IF port $port/$proto."
                         else
-                            log "Dry-run mode: Would add rule to allow $desc on $VPN_IF port $port/$proto."
+                            log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
                         fi
                     else
-                        log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
+                        log "Dry-run mode: Would add rule to allow $desc on $VPN_IF port $port/$proto."
                     fi
                 done
 
                 # Deny on primary interface
-                if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
-                    if [[ "$DRY_RUN" == "false" ]]; then
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
                         ufw deny in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
                         log "Rule added: Deny $desc on $PRIMARY_IF port $port/$proto."
                     else
-                        log "Dry-run mode: Would add rule to deny $desc on $PRIMARY_IF port $port/$proto."
+                        log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
                     fi
                 else
-                    log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
+                    log "Dry-run mode: Would add rule to deny $desc on $PRIMARY_IF port $port/$proto."
                 fi
             else
                 # If VPN is not active, apply rules directly on the primary interface
-                if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
-                    if [[ "$DRY_RUN" == "false" ]]; then
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
                         ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
                         log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
                     else
-                        log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
+                        log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
                     fi
                 else
-                    log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+                    log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
                 fi
             fi
         done
@@ -667,6 +688,8 @@ FILES=(
     "/etc/nsswitch.conf"
     "/etc/ipsec.conf"
     "/etc/nfs.conf"
+    "/etc/sysctl.d/99-IPv4.conf"
+    "/etc/sysctl.d/99-IPv6.conf"
 )
 
 # Perform backups
@@ -759,6 +782,8 @@ EOF
             "/etc/nsswitch.conf"
             "/etc/ipsec.conf"
             "/etc/nfs.conf"
+            "/etc/sysctl.d/99-IPv4.conf"
+            "/etc/sysctl.d/99-IPv6.conf"
         )
 
         for FILE in "${FILES[@]}"; do
@@ -790,7 +815,6 @@ validate_configurations() {
         "net.ipv4.conf.all.accept_source_route=0"
         "net.ipv4.icmp_ignore_bogus_error_responses=1"
         "net.ipv4.conf.default.log_martians=0"
-        "net.ipv4.conf.all.log_martians=0"
         "net.ipv4.icmp_echo_ignore_broadcasts=1"
         "net.ipv4.icmp_echo_ignore_all=0"
         "net.ipv4.tcp_sack=1"
