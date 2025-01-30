@@ -1,37 +1,85 @@
 #!/bin/bash
-# Author: 4ndr0666
-# Date: 12-21-24
-# Desc: Comprehensive System Hardening Script with UFW, Sysctl, and Service Configurations
-# Usage: sudo ./ufw.sh [--vpn] [--jdownloader] [--backup] [--help]
+
 set -euo pipefail
 
-# ==================== // UFW.TEST //
-## Logging:
+# ===========================
+# ufwsuckless.sh - UFW Configuration and System Hardening Script
+# ===========================
+
+# Constants
 LOG_DIR="/home/andro/.local/share/logs"
 LOG_FILE="$LOG_DIR/ufw.log"
 
-# Ensure log directory exists
-mkdir -p "$LOG_DIR"
-touch "$LOG_FILE"
-chmod 600 "$LOG_FILE"
+# Default Flags
+VERBOSE=false
+SILENT=false
+DRY_RUN=false
 
+# Logging Function
 log() {
     local MESSAGE="$1"
-    echo "$(date +"%Y-%m-%d %H:%M:%S") : $MESSAGE" | tee -a "$LOG_FILE"
+    if [[ "$SILENT" == "false" ]]; then
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$(date +"%Y-%m-%d %H:%M:%S") : $MESSAGE" | tee -a "$LOG_FILE"
+        else
+            echo "$(date +"%Y-%m-%d %H:%M:%S") : $MESSAGE" >> "$LOG_FILE"
+        fi
+    fi
 }
 
-## Help: 
+# Usage Function
 usage() {
-    cat << EOF
-Usage: sudo ./ufw.sh [OPTIONS]
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  --vpn         Configure VPN-specific firewall rules."
+    echo "  --jdownloader Configure JDownloader2-specific firewall rules."
+    echo "  --backup      Set up automatic backups."
+    echo "  --verbose     Enable verbose output."
+    echo "  --silent      Enable silent mode (no output)."
+    echo "  --dry-run     Simulate actions without making changes."
+    echo "  --help, -h    Display this help message."
+    exit 0
+}
 
-Options:
-  --vpn              Enable VPN-specific UFW rules with automatic Lightway UDP port detection.
-  --jdownloader      Enable JDownloader2-specific UFW rules.
-  --backup           Set up automatic periodic backups of critical configuration files via cron.
-  --help, -h         Display this help message.
-EOF
-    exit 1
+# Function to remove immutable flag
+remove_immutable() {
+    local file="$1"
+    if is_immutable "$file"; then
+        if [[ "$DRY_RUN" == "false" ]]; then
+            chattr -i "$file"
+            log "Removed immutable flag from $file."
+        else
+            log "Dry-run mode: Would remove immutable flag from $file."
+        fi
+    else
+        log "Immutable flag not set on $file."
+    fi
+}
+
+# Function to set immutable flag
+set_immutable() {
+    local file="$1"
+    if ! is_immutable "$file"; then
+        if [[ "$DRY_RUN" == "false" ]]; then
+            chattr +i "$file"
+            log "Set immutable flag on $file."
+        else
+            log "Dry-run mode: Would set immutable flag on $file."
+        fi
+    else
+        log "Immutable flag already set on $file."
+    fi
+}
+
+# Function to check if a file is immutable
+is_immutable() {
+    local file="$1"
+    if command -v lsattr &>/dev/null; then
+        lsattr "$file" | grep -q '^....i'
+    else
+        log "Error: 'lsattr' command not found."
+        exit 1
+    fi
 }
 
 # Automatically re-run the script with sudo if not run as root
@@ -42,64 +90,74 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 # Parse command-line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --vpn)
+                VPN_FLAG=true
+                ;;
+            --jdownloader)
+                JD_FLAG=true
+                ;;
+            --backup)
+                BACKUP_FLAG=true
+                ;;
+            --verbose)
+                VERBOSE=true
+                ;;
+            --silent)
+                SILENT=true
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                ;;
+            --help|-h)
+                usage
+                ;;
+            *)
+                log "Error: Unknown option '$1'"
+                usage
+                ;;
+        esac
+        shift
+    done
+}
+
+# Initialize flags
 VPN_FLAG=false
 JD_FLAG=false
 BACKUP_FLAG=false
 
-while [[ $# -gt 0 ]]; do
-    key="$1"
-    case $key in
-        --vpn)
-            VPN_FLAG=true
-            shift # past argument
-            ;;
-        --jdownloader)
-            JD_FLAG=true
-            shift # past argument
-            ;;
-        --backup)
-            BACKUP_FLAG=true
-            shift # past argument
-            ;;
-        --help|-h)
-            usage
-            ;;
-        *)    # unknown option
-            log "Error: Unknown option '$1'"
-            usage
-            ;;
-    esac
-done
+# Parse the arguments
+parse_args "$@"
 
 # Function to install missing dependencies
 install_dependencies() {
     local package="$1"
     log "Attempting to install missing package: $package"
 
-    # Try official repos first
-    if ! pacman -S --noconfirm --needed "$package" &>/dev/null; then
-        # If still missing, attempt yay
+    if pacman -S --noconfirm --needed "$package" &>/dev/null; then
+        log "Package '$package' installed successfully via pacman."
+    else
         if command -v yay &>/dev/null; then
-            log "Package $package not found in official repo or pacman failed, attempting yay..."
+            log "Package '$package' not found in official repo or pacman failed, attempting yay..."
             if yay -S --noconfirm --needed "$package" &>/dev/null; then
-                log "Package $package installed successfully via yay."
+                log "Package '$package' installed successfully via yay."
             else
-                log "Error: Could not install $package via yay."
+                log "Error: Could not install '$package' via yay."
                 exit 1
             fi
         else
-            log "Error: Could not install $package. 'yay' not found. Install it manually and re-run."
+            log "Error: Could not install '$package'. 'yay' not found. Install it manually and re-run."
             exit 1
         fi
-    else
-        log "Package $package installed successfully via pacman."
     fi
 }
 
 # Function to check dependencies
 check_dependencies() {
     log "Checking required dependencies..."
-    local dependencies=("rsync" "ufw" "chattr" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp" "date" "tee" "lsattr" "ip" "sysctl" "iptables")
+    local dependencies=("rsync" "ufw" "ss" "awk" "grep" "sed" "systemctl" "touch" "mkdir" "cp" "date" "tee" "ip" "sysctl" "iptables" "yq" "find" "chattr" "lsattr")
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             install_dependencies "$cmd"
@@ -125,36 +183,53 @@ detect_primary_interface() {
 
 detect_primary_interface
 
+# Function to detect active VPN interfaces
+detect_vpn_interfaces() {
+    VPN_IFACES=$(ip -o link show type tun | awk -F': ' '{print $2}')
+    if [[ -z "$VPN_IFACES" ]]; then
+        log "Warning: No VPN interfaces detected."
+    else
+        log "Detected VPN interfaces: $VPN_IFACES"
+    fi
+}
+
+# Function to detect Lightway UDP port used by ExpressVPN
+detect_vpn_port() {
+    log "Detecting Lightway UDP port used by ExpressVPN..."
+
+    detect_vpn_interfaces
+    if [[ -z "$VPN_IFACES" ]]; then
+        log "Error: No VPN interfaces found. Ensure ExpressVPN is connected."
+        return 1
+    fi
+
+    for VPN_IF in $VPN_IFACES; do
+        # Look for UDP connections on the VPN interface
+        # Using '|| true' to prevent 'set -e' from exiting the script if grep fails
+        VPN_PORT=$(ss -u -a state established "( sport = :443 or dport = :443 )" | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1) || true
+        if [[ -n "$VPN_PORT" && "$VPN_PORT" =~ ^[0-9]+$ ]]; then
+            log "Detected Lightway UDP port on $VPN_IF: $VPN_PORT"
+            return 0
+        else
+            log "Warning: Unable to detect Lightway UDP port on $VPN_IF. Continuing to next interface..."
+        fi
+    done
+
+    # Default to 443 if no port detected
+    VPN_PORT=443
+    log "Warning: Unable to detect a numeric Lightway UDP port on any VPN interface. Defaulting to 443."
+    return 0
+}
+
 # Function to set sysctl configurations
 sysctl_config() {
     log "Configuring sysctl settings..."
 
-    # Define desired content for /etc/sysctl.conf
-    SYSCTL_CONF_CONTENT="
-# /etc/sysctl.conf - Custom sysctl settings
-# This file is managed by ufw.sh. Do not edit manually.
-"
+    # Define sysctl configurations
+    cat << 'EOF' > /etc/sysctl.d/99-ufw.conf
+# /etc/sysctl.d/99-ufw.conf - Custom sysctl settings for ufw.sh
 
-    # Backup /etc/sysctl.conf before modification
-    if [[ -f /etc/sysctl.conf ]]; then
-        cp /etc/sysctl.conf /etc/sysctl.conf.bak_$(date +"%Y%m%d_%H%M%S")
-        log "Backup created for /etc/sysctl.conf."
-    fi
-
-    # Ensure /etc/sysctl.conf has the correct content
-    if [[ ! -f /etc/sysctl.conf ]] || ! grep -qF "# This file is managed by ufw.sh. Do not edit manually." /etc/sysctl.conf; then
-        log "Creating or updating /etc/sysctl.conf..."
-        echo -e "$SYSCTL_CONF_CONTENT" > /etc/sysctl.conf
-        log "/etc/sysctl.conf updated."
-    else
-        log "/etc/sysctl.conf is already correctly configured."
-    fi
-
-    # Define desired content for /etc/sysctl.d/99-IPv4.conf
-    SYSCTL_IPV4_CONTENT="
-# /etc/sysctl.d/99-IPv4.conf - Network Performance Enhancements
-
-## Ipv4 Tweaks
+# IPv4 Tweaks
 net.ipv4.ip_forward=1
 net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.default.accept_redirects=0
@@ -169,363 +244,41 @@ net.ipv4.icmp_echo_ignore_broadcasts=1
 net.ipv4.icmp_echo_ignore_all=0
 net.ipv4.tcp_sack=1
 
-## Swappiness
+# Swappiness
 vm.swappiness=10
 
-## Confirmed Tweaks
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.core.optmem_max = 65536
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 65536 16777216
-net.core.somaxconn = 8192 
-net.ipv4.tcp_window_scaling = 1
-net.core.netdev_max_backlog = 5000
+# Network Performance Enhancements
+net.core.rmem_max=16777216
+net.core.wmem_max=16777216
+net.core.optmem_max=65536
+net.ipv4.tcp_rmem=4096 87380 16777216
+net.ipv4.tcp_wmem=4096 65536 16777216
+net.core.somaxconn=8192
+net.ipv4.tcp_window_scaling=1
+net.core.netdev_max_backlog=5000
 
-## Testing from https://wiki.archlinux.org/title/Sysctl
-net.ipv4.udp_rmem_min = 8192
-net.ipv4.udp_wmem_min = 8192
-net.ipv4.tcp_fastopen = 3
-net.ipv4.tcp_tw_reuse = 1
-net.ipv4.tcp_fin_timeout = 10
-net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_keepalive_time = 60
-net.ipv4.tcp_keepalive_intvl = 10
-net.ipv4.tcp_keepalive_probes = 6
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_timestamps = 0
-net.core.default_qdisc = cake
-net.ipv4.tcp_congestion_control = bbr
-"
+# Additional Settings
+net.ipv4.udp_rmem_min=8192
+net.ipv4.udp_wmem_min=8192
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_tw_reuse=1
+net.ipv4.tcp_fin_timeout=10
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_keepalive_time=60
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=6
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_timestamps=0
+net.core.default_qdisc=cake
+net.ipv4.tcp_congestion_control=bbr
+EOF
 
-    # Handle immutable attribute
-    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
-    if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
-        IMMUTABLE_FLAG=$(lsattr "$SYSCTL_IPV4_FILE" | awk '{print $1}')
-        if [[ $IMMUTABLE_FLAG == *i* ]]; then
-            log "Removing immutable flag from $SYSCTL_IPV4_FILE..."
-            chattr -i "$SYSCTL_IPV4_FILE"
-            IMMUTABLE_REMOVED=true
-        fi
-    fi
-
-    # Backup /etc/sysctl.d/99-IPv4.conf before modification
-    if [[ -f "$SYSCTL_IPV4_FILE" ]]; then
-        cp "$SYSCTL_IPV4_FILE" "${SYSCTL_IPV4_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $SYSCTL_IPV4_FILE."
-    fi
-
-    # Ensure /etc/sysctl.d/99-IPv4.conf has the correct content
-    if [[ ! -f "$SYSCTL_IPV4_FILE" ]] || ! grep -qF "net.core.rmem_max = 16777216" "$SYSCTL_IPV4_FILE"; then
-        log "Creating or updating $SYSCTL_IPV4_FILE..."
-        echo -e "$SYSCTL_IPV4_CONTENT" > "$SYSCTL_IPV4_FILE"
-        log "$SYSCTL_IPV4_FILE updated."
-    else
-        log "$SYSCTL_IPV4_FILE is already correctly configured."
-    fi
-
-    # Define desired content for /etc/sysctl.d/99-IPv6.conf
-    SYSCTL_IPV6_CONTENT="
-# /etc/sysctl.d/99-IPv6.conf - IPv6 Configurations
-net.ipv6.conf.default.autoconf = 0
-net.ipv6.conf.all.autoconf = 0
-net.ipv6.conf.all.accept_source_route = 0
-net.ipv6.conf.default.accept_source_route = 0
-net.ipv6.conf.tun0.disable_ipv6 = 1 # ExpressVPN
-"
-
-    # Handle immutable attribute for IPv6
-    SYSCTL_IPV6_FILE="/etc/sysctl.d/99-IPv6.conf"
-    if lsattr "$SYSCTL_IPV6_FILE" &>/dev/null; then
-        IMMUTABLE_FLAG_IPV6=$(lsattr "$SYSCTL_IPV6_FILE" | awk '{print $1}')
-        if [[ $IMMUTABLE_FLAG_IPV6 == *i* ]]; then
-            log "Removing immutable flag from $SYSCTL_IPV6_FILE..."
-            chattr -i "$SYSCTL_IPV6_FILE"
-            IMMUTABLE_REMOVED_IPV6=true
-        fi
-    fi
-
-    # Backup /etc/sysctl.d/99-IPv6.conf before modification
-    if [[ -f "$SYSCTL_IPV6_FILE" ]]; then
-        cp "$SYSCTL_IPV6_FILE" "${SYSCTL_IPV6_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $SYSCTL_IPV6_FILE."
-    fi
-
-    # Ensure /etc/sysctl.d/99-IPv6.conf has the correct content
-    if [[ ! -f "$SYSCTL_IPV6_FILE" ]] || ! grep -qF "net.ipv6.conf.default.autoconf = 0" "$SYSCTL_IPV6_FILE"; then
-        log "Creating or updating $SYSCTL_IPV6_FILE..."
-        echo -e "$SYSCTL_IPV6_CONTENT" > "$SYSCTL_IPV6_FILE"
-        log "$SYSCTL_IPV6_FILE updated."
-    else
-        log "$SYSCTL_IPV6_FILE is already correctly configured."
-    fi
-
-    # Restore immutable flag for IPv6 if it was removed
-    if [[ "${IMMUTABLE_REMOVED_IPV6:-false}" == true ]]; then
-        log "Re-applying immutable flag to $SYSCTL_IPV6_FILE..."
-        chattr +i "$SYSCTL_IPV6_FILE"
-        log "Immutable flag re-applied to $SYSCTL_IPV6_FILE."
-    fi
-
-    # Detect VPN interfaces for IPv6 disablement
-    detect_vpn_interfaces=$(ip -o link show | awk -F': ' '/tun/ {print $2}')
-    if [[ -n "$detect_vpn_interfaces" ]]; then
-        for VPN_IF in $detect_vpn_interfaces; do
-            # Add disable IPv6 line for each VPN interface if not already present
-            if ! grep -q "net.ipv6.conf.$VPN_IF.disable_ipv6" "$SYSCTL_IPV4_FILE"; then
-                echo "net.ipv6.conf.$VPN_IF.disable_ipv6 = 1 # ExpressVPN" >> "$SYSCTL_IPV4_FILE"
-                log "Added IPv6 disable for $VPN_IF in $SYSCTL_IPV4_FILE."
-            else
-                log "IPv6 disable for $VPN_IF already present in $SYSCTL_IPV4_FILE."
-            fi
-        done
-    else
-        log "No VPN interfaces detected. Skipping IPv6 disable for VPN interfaces."
-    fi
-
-    # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
-        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
-        chattr +i "$SYSCTL_IPV4_FILE"
-        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
-    fi
-
-    # Reload sysctl settings to apply changes
-    log "Applying sysctl settings..."
-    if sysctl --system; then
+    # Reload sysctl settings
+    if [[ "$DRY_RUN" == "false" ]]; then
+        sysctl --system
         log "Sysctl settings applied successfully."
     else
-        log "Error: Failed to apply sysctl settings."
-        exit 1
-    fi
-
-    # Define network settings for validation
-    NETWORK_SETTINGS=(
-        "net.core.rmem_max = 16777216"
-        "net.core.wmem_max = 16777216"
-        "net.ipv4.tcp_rmem = 4096 87380 16777216"
-        "net.ipv4.tcp_wmem = 4096 65536 16777216"
-        "net.ipv4.tcp_window_scaling = 1"
-        "net.core.netdev_max_backlog = 5000"
-    )
-
-    # Configuration Validation
-    log "Validating sysctl configurations..."
-    for setting in "${NETWORK_SETTINGS[@]}"; do
-        key=$(echo "$setting" | cut -d'=' -f1 | xargs)
-        expected_value=$(echo "$setting" | cut -d'=' -f2 | xargs)
-        # Normalize whitespace
-        expected_value_normalized=$(echo "$expected_value" | tr -s ' ')
-        actual_value=$(sysctl -n "$key" | tr '\t' ' ')
-        if [[ "$actual_value" == "$expected_value_normalized" ]]; then
-            log "Validation passed: $key = $actual_value"
-        else
-            log "Validation failed: $key expected '$expected_value_normalized' but got '$actual_value'"
-            log "Please verify the configuration in $SYSCTL_IPV4_FILE and re-run the script."
-            exit 1
-        fi
-    done
-}
-
-# Function to update /etc/host.conf to prevent IP spoofing
-host_conf_config() {
-    log "Configuring /etc/host.conf to prevent IP spoofing..."
-
-    HOST_CONF_CONTENT=(
-        "order bind,hosts"
-        "multi on"
-    )
-
-    HOST_CONF_FILE="/etc/host.conf"
-
-    # Handle immutable attribute
-    if lsattr "$HOST_CONF_FILE" &>/dev/null; then
-        IMMUTABLE_FLAG_HOST=$(lsattr "$HOST_CONF_FILE" | awk '{print $1}')
-        if [[ $IMMUTABLE_FLAG_HOST == *i* ]]; then
-            log "Removing immutable flag from $HOST_CONF_FILE..."
-            chattr -i "$HOST_CONF_FILE"
-            IMMUTABLE_REMOVED_HOST=true
-        fi
-    fi
-
-    # Backup /etc/host.conf before modification
-    if [[ -f "$HOST_CONF_FILE" ]]; then
-        cp "$HOST_CONF_FILE" "${HOST_CONF_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $HOST_CONF_FILE."
-    fi
-
-    # Check if /etc/host.conf exists; if not, create it
-    if [[ ! -f "$HOST_CONF_FILE" ]]; then
-        log "Creating $HOST_CONF_FILE..."
-        printf "%s\n" "${HOST_CONF_CONTENT[@]}" > "$HOST_CONF_FILE"
-        log "$HOST_CONF_FILE created."
-    else
-        # Ensure each line exists
-        for line in "${HOST_CONF_CONTENT[@]}"; do
-            if ! grep -qF -- "$line" "$HOST_CONF_FILE"; then
-                echo "$line" >> "$HOST_CONF_FILE"
-                log "Added line to $HOST_CONF_FILE: $line"
-            fi
-        done
-        log "$HOST_CONF_FILE is already correctly configured."
-    fi
-
-    # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED_HOST:-false}" == true ]]; then
-        log "Re-applying immutable flag to $HOST_CONF_FILE..."
-        chattr +i "$HOST_CONF_FILE"
-        log "Immutable flag re-applied to $HOST_CONF_FILE."
-    fi
-
-    # Configuration Validation
-    log "Validating /etc/host.conf configurations..."
-    for line in "${HOST_CONF_CONTENT[@]}"; do
-        if grep -qF -- "$line" "$HOST_CONF_FILE"; then
-            log "Validation passed: '$line' exists in $HOST_CONF_FILE"
-        else
-            log "Validation failed: '$line' not found in $HOST_CONF_FILE"
-            exit 1
-        fi
-    done
-}
-
-# Function to disable IPv6 on specific services
-disable_ipv6_services() {
-    log "Disabling IPv6 for SSH..."
-    SSH_CONFIG="/etc/ssh/sshd_config"
-    if systemctl is-enabled --quiet sshd.service 2>/dev/null; then
-        # Handle immutable attribute
-        if lsattr "$SSH_CONFIG" &>/dev/null; then
-            IMMUTABLE_FLAG_SSH=$(lsattr "$SSH_CONFIG" | awk '{print $1}')
-            if [[ $IMMUTABLE_FLAG_SSH == *i* ]]; then
-                log "Removing immutable flag from $SSH_CONFIG..."
-                chattr -i "$SSH_CONFIG"
-                IMMUTABLE_REMOVED_SSH=true
-            fi
-        fi
-
-        # Backup before modification
-        cp "$SSH_CONFIG" "${SSH_CONFIG}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $SSH_CONFIG."
-
-        if grep -q "^AddressFamily" "$SSH_CONFIG"; then
-            sed -i 's/^AddressFamily.*/AddressFamily inet/' "$SSH_CONFIG"
-            log "Updated AddressFamily to inet in $SSH_CONFIG."
-        else
-            echo "AddressFamily inet" >> "$SSH_CONFIG"
-            log "Added AddressFamily inet to $SSH_CONFIG."
-        fi
-        systemctl restart sshd
-        log "IPv6 disabled for SSH."
-
-        # Restore immutable flag
-        if [[ "${IMMUTABLE_REMOVED_SSH:-false}" == true ]]; then
-            log "Re-applying immutable flag to $SSH_CONFIG..."
-            chattr +i "$SSH_CONFIG"
-            log "Immutable flag re-applied to $SSH_CONFIG."
-        fi
-    else
-        log "sshd.service is masked or disabled, skipping SSH IPv6 configuration."
-    fi
-
-    log "Disabling IPv6 for systemd-resolved..."
-    RESOLVED_CONF="/etc/systemd/resolved.conf"
-    # Handle immutable attribute
-    if lsattr "$RESOLVED_CONF" &>/dev/null; then
-        IMMUTABLE_FLAG_RESOLVED=$(lsattr "$RESOLVED_CONF" | awk '{print $1}')
-        if [[ $IMMUTABLE_FLAG_RESOLVED == *i* ]]; then
-            log "Removing immutable flag from $RESOLVED_CONF..."
-            chattr -i "$RESOLVED_CONF"
-            IMMUTABLE_REMOVED_RESOLVED=true
-        fi
-    fi
-
-    # Backup before modification
-    cp "$RESOLVED_CONF" "${RESOLVED_CONF}.bak_$(date +"%Y%m%d_%H%M%S")"
-    log "Backup created for $RESOLVED_CONF."
-
-    if grep -q "^DNSStubListener" "$RESOLVED_CONF"; then
-        sed -i 's/^DNSStubListener=.*/DNSStubListener=no/' "$RESOLVED_CONF"
-        log "Updated DNSStubListener to no in $RESOLVED_CONF."
-    else
-        echo "DNSStubListener=no" >> "$RESOLVED_CONF"
-        log "Added DNSStubListener=no to $RESOLVED_CONF."
-    fi
-    systemctl restart systemd-resolved
-    log "IPv6 disabled for systemd-resolved."
-
-    # Restore immutable flag
-    if [[ "${IMMUTABLE_REMOVED_RESOLVED:-false}" == true ]]; then
-        log "Re-applying immutable flag to $RESOLVED_CONF..."
-        chattr +i "$RESOLVED_CONF"
-        log "Immutable flag re-applied to $RESOLVED_CONF."
-    fi
-
-    log "Disabling IPv6 for Avahi-daemon..."
-    AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
-    if systemctl is-enabled --quiet avahi-daemon.service 2>/dev/null; then
-        # Handle immutable attribute
-        if lsattr "$AVAHI_CONF" &>/dev/null; then
-            IMMUTABLE_FLAG_AVAHI=$(lsattr "$AVAHI_CONF" | awk '{print $1}')
-            if [[ $IMMUTABLE_FLAG_AVAHI == *i* ]]; then
-                log "Removing immutable flag from $AVAHI_CONF..."
-                chattr -i "$AVAHI_CONF"
-                IMMUTABLE_REMOVED_AVAHI=true
-            fi
-        fi
-
-        # Backup before modification
-        cp "$AVAHI_CONF" "${AVAHI_CONF}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $AVAHI_CONF."
-
-        if grep -q "^use-ipv6" "$AVAHI_CONF"; then
-            sed -i 's/^use-ipv6=.*/use-ipv6=no/' "$AVAHI_CONF"
-            log "Updated use-ipv6 to no in $AVAHI_CONF."
-        else
-            echo "use-ipv6=no" >> "$AVAHI_CONF"
-            log "Added use-ipv6=no to $AVAHI_CONF."
-        fi
-        systemctl restart avahi-daemon
-        log "IPv6 disabled for Avahi-daemon."
-
-        # Restore immutable flag
-        if [[ "${IMMUTABLE_REMOVED_AVAHI:-false}" == true ]]; then
-            log "Re-applying immutable flag to $AVAHI_CONF..."
-            chattr +i "$AVAHI_CONF"
-            log "Immutable flag re-applied to $AVAHI_CONF."
-        fi
-    else
-        log "Avahi-daemon is masked or disabled, skipping..."
-    fi
-
-    # Configuration Validation
-    log "Validating IPv6 configurations for services..."
-    if systemctl is-enabled --quiet sshd.service 2>/dev/null; then
-        ADDRESS_FAMILY=$(grep "^AddressFamily" "$SSH_CONFIG" | awk -F'=' '{print $2}' | xargs)
-        if [[ "$ADDRESS_FAMILY" == "inet" ]]; then
-            log "Validation passed: IPv6 disabled for SSH."
-        else
-            log "Validation failed: IPv6 not disabled for SSH."
-            exit 1
-        fi
-    fi
-
-    DNS_STUB_LISTENER=$(grep "^DNSStubListener" "$RESOLVED_CONF" | awk -F'=' '{print $2}' | xargs)
-    if [[ "$DNS_STUB_LISTENER" == "no" ]]; then
-        log "Validation passed: DNSStubListener is set to no in systemd-resolved."
-    else
-        log "Validation failed: DNSStubListener is not set to no in systemd-resolved."
-        exit 1
-    fi
-
-    if systemctl is-enabled --quiet avahi-daemon.service 2>/dev/null; then
-        USE_IPV6=$(grep "^use-ipv6" "$AVAHI_CONF" | awk -F'=' '{print $2}' | xargs)
-        if [[ "$USE_IPV6" == "no" ]]; then
-            log "Validation passed: IPv6 disabled for Avahi-daemon."
-        else
-            log "Validation failed: IPv6 not disabled for Avahi-daemon."
-            exit 1
-        fi
+        log "Dry-run mode: Sysctl settings not applied."
     fi
 }
 
@@ -533,7 +286,6 @@ disable_ipv6_services() {
 manage_additional_critical_files() {
     log "Managing additional critical configuration files..."
 
-    # List of additional critical files to manage
     ADDITIONAL_FILES=(
         "/etc/dhcpcd.conf"
         "/etc/strongswan.conf"
@@ -541,294 +293,293 @@ manage_additional_critical_files() {
         "/etc/nfs.conf"
         "/etc/ipsec.conf"
         "/etc/hosts"
+        "/etc/sysctl.d/99-IPv4.conf"
+        "/etc/sysctl.d/99-IPv6.conf"
+        "/etc/sysctl.conf"
     )
 
     for FILE in "${ADDITIONAL_FILES[@]}"; do
         log "Configuring $FILE..."
 
-        # Handle immutable attribute
-        if lsattr "$FILE" &>/dev/null; then
-            IMMUTABLE_FLAG=$(lsattr "$FILE" | awk '{print $1}')
-            if [[ $IMMUTABLE_FLAG == *i* ]]; then
-                log "Removing immutable flag from $FILE..."
-                chattr -i "$FILE"
-                IMMUTABLE_REMOVED=true
-            fi
-        fi
-
-        # Backup before modification
-        if [[ -f "$FILE" ]]; then
-            cp "$FILE" "${FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-            log "Backup created for $FILE."
-        fi
+        # Remove immutable flag if set
+        remove_immutable "$FILE"
 
         case "$FILE" in
             "/etc/dhcpcd.conf")
-                # Example: Disable IPv6 autoconfiguration
-                if grep -q "^noipv6" "$FILE"; then
-                    log "IPv6 already disabled in $FILE."
+                # Disable IPv6
+                if ! grep -q "^noipv6" "$FILE"; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        echo "noipv6" >> "$FILE"
+                        log "Added 'noipv6' to $FILE to disable IPv6."
+                    else
+                        log "Dry-run mode: Would add 'noipv6' to $FILE to disable IPv6."
+                    fi
                 else
-                    echo "noipv6" >> "$FILE"
-                    log "Added 'noipv6' to $FILE to disable IPv6."
+                    log "IPv6 already disabled in $FILE."
                 fi
                 ;;
             "/etc/strongswan.conf")
-                # Example: Enable strict CRL policy
-                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
-                    log "Strict CRL policy already enabled in $FILE."
+                # Enable strict CRL policy
+                if ! grep -q "^strictcrlpolicy=yes" "$FILE"; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        echo "strictcrlpolicy=yes" >> "$FILE"
+                        log "Added 'strictcrlpolicy=yes' to $FILE."
+                    else
+                        log "Dry-run mode: Would add 'strictcrlpolicy=yes' to $FILE."
+                    fi
                 else
-                    echo "strictcrlpolicy=yes" >> "$FILE"
-                    log "Added 'strictcrlpolicy=yes' to $FILE."
+                    log "Strict CRL policy already enabled in $FILE."
                 fi
                 ;;
             "/etc/nsswitch.conf")
-                # Example: Secure name resolution by limiting sources
-                if grep -q "^hosts: files dns" "$FILE"; then
-                    log "Hosts already configured to 'files dns' in $FILE."
+                # Secure name resolution by limiting sources
+                if ! grep -q "^hosts: files dns" "$FILE"; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        sed -i 's/^hosts: .*/hosts: files dns/' "$FILE"
+                        log "Updated 'hosts' line to 'files dns' in $FILE."
+                    else
+                        log "Dry-run mode: Would update 'hosts' line to 'files dns' in $FILE."
+                    fi
                 else
-                    sed -i 's/^hosts: .*/hosts: files dns/' "$FILE"
-                    log "Updated 'hosts' line to 'files dns' in $FILE."
+                    log "Hosts already configured to 'files dns' in $FILE."
                 fi
                 ;;
             "/etc/nfs.conf")
-                # Example: Secure NFS settings
-                # Here you can add specific NFS configurations as needed
-                log "No specific NFS configurations applied. Modify as necessary."
+                # Secure NFS settings by disabling anonymous access
+                if ! grep -q "^RPCMOUNTDOPTS=" "$FILE"; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        echo 'RPCMOUNTDOPTS="--no-nfs-version 3"' >> "$FILE"
+                        log "Added 'RPCMOUNTDOPTS=\"--no-nfs-version 3\"' to $FILE."
+                    else
+                        log "Dry-run mode: Would add 'RPCMOUNTDOPTS=\"--no-nfs-version 3\"' to $FILE."
+                    fi
+                else
+                    log "NFS settings already configured in $FILE."
+                fi
                 ;;
             "/etc/ipsec.conf")
-                # Example: Enable logging for IPsec
-                if grep -q "^charondebug=.*" "$FILE"; then
-                    sed -i 's/^charondebug=.*/charondebug="ike 2, knl 2, cfg 2"/' "$FILE"
-                    log "Updated 'charondebug' in $FILE."
+                # Enable logging for IPsec
+                if ! grep -q '^charondebug="ike 2, knl 2, cfg 2"' "$FILE"; then
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        echo 'charondebug="ike 2, knl 2, cfg 2"' >> "$FILE"
+                        log "Added 'charondebug' to $FILE."
+                    else
+                        log "Dry-run mode: Would add 'charondebug' to $FILE."
+                    fi
                 else
-                    echo 'charondebug="ike 2, knl 2, cfg 2"' >> "$FILE"
-                    log "Added 'charondebug' to $FILE."
+                    log "'charondebug' already set in $FILE."
                 fi
                 ;;
             "/etc/hosts")
-                # Example: Set immutable attribute after ensuring correct entries
+                # Ensure localhost entry exists
                 if ! grep -q "127.0.0.1\s\+localhost" "$FILE"; then
-                    echo "127.0.0.1       localhost" >> "$FILE"
-                    log "Added '127.0.0.1 localhost' to $FILE."
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        echo "127.0.0.1       localhost" >> "$FILE"
+                        log "Added '127.0.0.1 localhost' to $FILE."
+                    else
+                        log "Dry-run mode: Would add '127.0.0.1 localhost' to $FILE."
+                    fi
                 else
                     log "'localhost' entry already present in $FILE."
                 fi
                 ;;
+            "/etc/sysctl.d/99-IPv4.conf" | "/etc/sysctl.d/99-IPv6.conf" | "/etc/sysctl.conf")
+                # Set immutable flag after configuration
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    set_immutable "$FILE"
+                else
+                    log "Dry-run mode: Would set immutable flag on $FILE."
+                fi
+                ;;
         esac
 
-        # Restore immutable flag if it was removed
-        if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
-            log "Re-applying immutable flag to $FILE..."
-            chattr +i "$FILE"
-            log "Immutable flag re-applied to $FILE."
-        fi
-
-        # Configuration Validation
+        # Set immutable flag on additional critical files if not already handled
         case "$FILE" in
-            "/etc/dhcpcd.conf")
-                if grep -q "^noipv6" "$FILE"; then
-                    log "Validation passed: IPv6 disabled in $FILE."
-                else
-                    log "Validation failed: IPv6 not disabled in $FILE."
-                    exit 1
-                fi
+            "/etc/sysctl.d/99-IPv4.conf" | "/etc/sysctl.d/99-IPv6.conf" | "/etc/sysctl.d/99-ufw.conf" | "/etc/sysctl.conf")
+                # These files are handled above
                 ;;
-            "/etc/strongswan.conf")
-                if grep -q "^strictcrlpolicy=yes" "$FILE"; then
-                    log "Validation passed: Strict CRL policy enabled in $FILE."
+            *)
+                # Optionally, set immutable flag on other critical files after modifications
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    set_immutable "$FILE"
                 else
-                    log "Validation failed: Strict CRL policy not enabled in $FILE."
-                    exit 1
-                fi
-                ;;
-            "/etc/nsswitch.conf")
-                if grep -q "^hosts: files dns" "$FILE"; then
-                    log "Validation passed: Hosts configured to 'files dns' in $FILE."
-                else
-                    log "Validation failed: Hosts not correctly configured in $FILE."
-                    exit 1
-                fi
-                ;;
-            "/etc/ipsec.conf")
-                if grep -q '^charondebug="ike 2, knl 2, cfg 2"' "$FILE"; then
-                    log "Validation passed: 'charondebug' correctly set in $FILE."
-                else
-                    log "Validation failed: 'charondebug' not correctly set in $FILE."
-                    exit 1
-                fi
-                ;;
-            "/etc/hosts")
-                if grep -q "127.0.0.1\s\+localhost" "$FILE"; then
-                    log "Validation passed: 'localhost' entry exists in $FILE."
-                else
-                    log "Validation failed: 'localhost' entry missing in $FILE."
-                    exit 1
+                    log "Dry-run mode: Would set immutable flag on $FILE."
                 fi
                 ;;
         esac
     done
-}
-
-# Function to disable IPv6 on specific services (Duplicate Function Removed)
-
-# Function to detect active VPN interfaces
-detect_vpn_interfaces() {
-    # Detect all VPN interfaces (e.g., tun0, tun1, etc.)
-    VPN_IFACES=$(ip -o link show type tun | awk -F': ' '{print $2}')
-    if [[ -z "$VPN_IFACES" ]]; then
-        log "Warning: No VPN interfaces detected."
-    else
-        log "Detected VPN interfaces: $VPN_IFACES"
-    fi
-}
-
-# Function to detect Lightway UDP port used by ExpressVPN
-detect_vpn_port() {
-    log "Detecting Lightway UDP port used by ExpressVPN..."
-
-    # Detect VPN interfaces
-    detect_vpn_interfaces
-    if [[ -z "$VPN_IFACES" ]]; then
-        log "Error: No VPN interfaces found. Ensure ExpressVPN is connected."
-        return 1
-    fi
-
-    # Iterate over each VPN interface to detect UDP ports
-    for VPN_IF in $VPN_IFACES; do
-        # Extract UDP ports associated with VPN interface on port 443
-        VPN_PORT=$(ss -u -a state established "( dport = :443 or sport = :443 )" | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1)
-
-        # If no port detected, continue to next interface
-        if [[ -z "$VPN_PORT" || ! "$VPN_PORT" =~ ^[0-9]+$ ]]; then
-            log "Warning: Unable to detect Lightway UDP port on $VPN_IF. Continuing to next interface if any..."
-            continue
-        fi
-
-        log "Detected Lightway UDP port on $VPN_IF: $VPN_PORT"
-        echo "$VPN_PORT"
-        return 0
-    done
-
-    # If no port detected across all VPN interfaces, default to 443
-    log "Warning: Unable to detect a numeric Lightway UDP port on any VPN interface. Defaulting to 443."
-    echo "443"
-    return 0
 }
 
 # Function to configure UFW rules
 configure_ufw() {
     log "Configuring UFW firewall rules..."
 
-    # Enable UFW without prompts
-    if ufw --force enable; then
+    # Define specific services on primary interface as an array
+    SERVICES_PRIMARY_PORTS=(
+        "80/tcp:HTTP Traffic"
+        "443/tcp:HTTPS Traffic"
+        "7531/tcp:PlayWithMPV"
+        "6800/tcp:Aria2c"
+    )
+
+    # Define JDownloader2-specific ports as an array
+    JDOWNLOADER_PORTS=(
+        "9665/tcp:JDownloader2 Port"
+        "9666/tcp:JDownloader2 Port"
+    )
+
+    # Enable UFW
+    if [[ "$DRY_RUN" == "false" ]]; then
+        ufw --force enable
         log "UFW enabled successfully."
     else
-        log "Error: Failed to enable UFW."
-        exit 1
+        log "Dry-run mode: Would enable UFW."
     fi
 
     # Set default policies
-    ufw default deny incoming
-    log "Default incoming policy set to 'deny'."
+    if [[ "$DRY_RUN" == "false" ]]; then
+        ufw default deny incoming
+        log "Default incoming policy set to 'deny'."
 
-    ufw default allow outgoing
-    log "Default outgoing policy set to 'allow'."
+        ufw default allow outgoing
+        log "Default outgoing policy set to 'allow'."
+    else
+        log "Dry-run mode: Would set default incoming policy to 'deny' and outgoing to 'allow'."
+    fi
 
-    ufw limit 22/tcp comment "Limit SSH"
-    log "Rule added: Limit SSH (22/tcp)."
+    # Allow SSH with rate limiting
+    if [[ "$DRY_RUN" == "false" ]]; then
+        # Check if the rule already exists to prevent duplication
+        if ! ufw status numbered | grep -qw "Limit SSH"; then
+            ufw limit 22/tcp comment "Limit SSH"
+            log "Rule added: Limit SSH (22/tcp)."
+        else
+            log "Rule already exists: Limit SSH (22/tcp)."
+        fi
+    else
+        log "Dry-run mode: Would add rule to limit SSH (22/tcp)."
+    fi
 
-    ufw allow from 127.0.0.1 to any port 6800 comment "Local Aria2c"
-    log "Rule added: Allow Local Aria2c (127.0.0.1 to port 6800)."
+    # Allow local Aria2c
+    if [[ "$DRY_RUN" == "false" ]]; then
+        if ! ufw status numbered | grep -qw "Allow Local Aria2c"; then
+            ufw allow from 127.0.0.1 to any port 6800 proto tcp comment "Allow Local Aria2c"
+            log "Rule added: Allow Local Aria2c (127.0.0.1 to port 6800)."
+        else
+            log "Rule already exists: Allow Local Aria2c (127.0.0.1 to port 6800)."
+        fi
+    else
+        log "Dry-run mode: Would add rule to allow Local Aria2c (127.0.0.1 to port 6800)."
+    fi
 
     # Allow loopback interface
-    ufw allow in on lo to any comment "Loopback"
-    log "Rule added: Allow Loopback (lo)."
+    if [[ "$DRY_RUN" == "false" ]]; then
+        if ! ufw status numbered | grep -qw "Allow Loopback"; then
+            ufw allow in on lo to any comment "Allow Loopback"
+            log "Rule added: Allow Loopback (lo)."
+        else
+            log "Rule already exists: Allow Loopback (lo)."
+        fi
+    else
+        log "Dry-run mode: Would add rule to allow Loopback (lo)."
+    fi
+
+    # Apply rules for services on primary interface
+    for service in "${SERVICES_PRIMARY_PORTS[@]}"; do
+        port_protocol=$(echo "$service" | cut -d':' -f1)
+        desc=$(echo "$service" | cut -d':' -f2-)
+        port=$(echo "$port_protocol" | cut -d'/' -f1)
+        proto=$(echo "$port_protocol" | cut -d'/' -f2)
+
+        if [[ "$DRY_RUN" == "false" ]]; then
+            # Check if the rule already exists to prevent duplication
+            if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
+                ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
+                log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
+            else
+                log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+            fi
+        else
+            log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
+        fi
+    done
 
     # Configure VPN-specific rules
     if [[ "$VPN_FLAG" == "true" ]]; then
         log "VPN flag is set. Configuring VPN-specific rules..."
-        VPN_PORT=$(detect_vpn_port)
-        if [[ $? -eq 0 && "$VPN_PORT" =~ ^[0-9]+$ ]]; then
-            log "Applying VPN-specific UFW rules for port $VPN_PORT..."
-            # Allow UDP traffic on the detected VPN port on all VPN interfaces
+        detect_vpn_port
+        if [[ $? -ne 0 ]]; then
+            log "Error: VPN port detection failed. Skipping VPN-specific rules."
+            exit 1
+        fi
+
+        if [[ -n "${VPN_IFACES:-}" ]]; then
             for VPN_IF in $VPN_IFACES; do
-                if ! ufw status numbered | grep -qw "$VPN_PORT/udp on $VPN_IF"; then
-                    ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
-                    ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Lightway UDP on $VPN_IF"
-                    log "Rule added: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                # Allow UDP traffic on the detected VPN port on all VPN interfaces
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "Allow Lightway UDP on $VPN_IF"; then
+                        ufw allow in on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Allow Lightway UDP on $VPN_IF"
+                        ufw allow out on "$VPN_IF" to any port "$VPN_PORT" proto udp comment "Allow Lightway UDP on $VPN_IF"
+                        log "Rule added: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                    else
+                        log "Rule already exists: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                    fi
                 else
-                    log "Rule already exists: Allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
+                    log "Dry-run mode: Would add rule to allow Lightway UDP on $VPN_IF (port $VPN_PORT/udp)."
                 fi
             done
         else
-            log "Skipping VPN-specific UFW rules due to port detection failure."
+            log "Error: VPN_IFACES is unset or empty."
+            exit 1
         fi
-    else
-        log "VPN is not active. Applying non-VPN UFW rules..."
     fi
-
-    # Define specific services on primary interface
-    SERVICES_PRIMARY_PORTS="80/tcp 443/tcp 7531/tcp 6800/tcp"
-    SERVICES_PRIMARY_DESCRIPTIONS="HTTP Traffic HTTPS Traffic PlayWithMPV Aria2c"
-
-    # Apply rules for services on primary interface
-    IFS=' ' read -r -a ports <<< "$SERVICES_PRIMARY_PORTS"
-    IFS=' ' read -r -a descriptions <<< "$SERVICES_PRIMARY_DESCRIPTIONS"
-
-    for i in "${!ports[@]}"; do
-        port_protocol="${ports[$i]}"
-        desc="${descriptions[$i]}"
-        port=$(echo "$port_protocol" | cut -d'/' -f1)
-        proto=$(echo "$port_protocol" | cut -d'/' -f2)
-
-        if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
-            ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
-            log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
-        else
-            log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
-        fi
-    done
 
     # Configure JDownloader2-specific rules if flag is set
     if [[ "$JD_FLAG" == "true" ]]; then
         log "JDownloader flag is set. Applying JDownloader2-specific UFW rules..."
-        JDOWNLOADER_PORTS="9665/tcp 9666/tcp"
-        JDOWNLOADER_DESCRIPTIONS="JDownloader2 Port 9665 JDownloader2 Port 9666"
-
-        IFS=' ' read -r -a jd_ports <<< "$JDOWNLOADER_PORTS"
-        IFS=' ' read -r -a jd_descs <<< "$JDOWNLOADER_DESCRIPTIONS"
-
-        for i in "${!jd_ports[@]}"; do
-            port_protocol="${jd_ports[$i]}"
-            desc="${jd_descs[$i]}"
+        for jd_rule in "${JDOWNLOADER_PORTS[@]}"; do
+            port_protocol=$(echo "$jd_rule" | cut -d':' -f1)
+            desc=$(echo "$jd_rule" | cut -d':' -f2-)
             port=$(echo "$port_protocol" | cut -d'/' -f1)
             proto=$(echo "$port_protocol" | cut -d'/' -f2)
 
             if [[ "$VPN_FLAG" == "true" ]]; then
                 # Allow on all VPN interfaces
                 for VPN_IF in $VPN_IFACES; do
-                    if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
-                        ufw allow in on "$VPN_IF" to any port "$port" proto "$proto" comment "$desc"
-                        log "Rule added: Allow $desc on $VPN_IF port $port/$proto."
+                    if [[ "$DRY_RUN" == "false" ]]; then
+                        if ! ufw status numbered | grep -qw "$port_protocol on $VPN_IF"; then
+                            ufw allow in on "$VPN_IF" to any port "$port" proto "$proto" comment "$desc"
+                            log "Rule added: Allow $desc on $VPN_IF port $port/$proto."
+                        else
+                            log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
+                        fi
                     else
-                        log "Rule already exists: Allow $desc on $VPN_IF port $port/$proto."
+                        log "Dry-run mode: Would add rule to allow $desc on $VPN_IF port $port/$proto."
                     fi
                 done
 
                 # Deny on primary interface
-                if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
-                    ufw deny in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
-                    log "Rule added: Deny $desc on $PRIMARY_IF port $port/$proto."
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
+                        ufw deny in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
+                        log "Rule added: Deny $desc on $PRIMARY_IF port $port/$proto."
+                    else
+                        log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
+                    fi
                 else
-                    log "Rule already exists: Deny $desc on $PRIMARY_IF port $port/$proto."
+                    log "Dry-run mode: Would add rule to deny $desc on $PRIMARY_IF port $port/$proto."
                 fi
             else
                 # If VPN is not active, apply rules directly on the primary interface
-                if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
-                    ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
-                    log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
+                if [[ "$DRY_RUN" == "false" ]]; then
+                    if ! ufw status numbered | grep -qw "$port_protocol on $PRIMARY_IF"; then
+                        ufw allow in on "$PRIMARY_IF" to any port "$port" proto "$proto" comment "$desc"
+                        log "Rule added: Allow $desc on $PRIMARY_IF port $port/$proto."
+                    else
+                        log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+                    fi
                 else
-                    log "Rule already exists: Allow $desc on $PRIMARY_IF port $port/$proto."
+                    log "Dry-run mode: Would add rule to allow $desc on $PRIMARY_IF port $port/$proto."
                 fi
             fi
         done
@@ -836,25 +587,34 @@ configure_ufw() {
 
     # Disable IPv6 in UFW default settings
     if grep -q "^IPV6=yes" /etc/default/ufw; then
-        sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
-        log "Disabled IPv6 in UFW default settings."
+        if [[ "$DRY_RUN" == "false" ]]; then
+            sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
+            log "Disabled IPv6 in UFW default settings."
+        else
+            log "Dry-run mode: Would disable IPv6 in UFW default settings."
+        fi
     else
         log "IPv6 is already disabled in UFW default settings."
     fi
 
     # Reload UFW to apply changes
-    if ufw reload; then
-        log "UFW reloaded successfully."
+    if [[ "$DRY_RUN" == "false" ]]; then
+        if ufw reload; then
+            log "UFW reloaded successfully."
+        else
+            log "Error: Failed to reload UFW."
+            exit 1
+        fi
     else
-        log "Error: Failed to reload UFW."
-        exit 1
+        log "Dry-run mode: Would reload UFW."
     fi
 
     log "UFW firewall rules configured successfully."
 
     # Configuration Validation
     log "Validating UFW firewall rules..."
-    for port_protocol in "${ports[@]}"; do
+    for service in "${SERVICES_PRIMARY_PORTS[@]}"; do
+        port_protocol=$(echo "$service" | cut -d':' -f1)
         if ufw status | grep -qw "$port_protocol on $PRIMARY_IF"; then
             log "Validation passed: $port_protocol rule exists on $PRIMARY_IF."
         else
@@ -864,22 +624,30 @@ configure_ufw() {
     done
 
     if [[ "$JD_FLAG" == "true" ]]; then
-        for i in "${!jd_ports[@]}"; do
-            port_protocol="${jd_ports[$i]}"
-            VPN_IFS=$(echo "$VPN_IFACES")
-            for VPN_IF in $VPN_IFS; do
-                if ufw status | grep -qw "$port_protocol on $VPN_IF"; then
-                    log "Validation passed: JDownloader2 rule exists on $VPN_IF."
+        for jd_rule in "${JDOWNLOADER_PORTS[@]}"; do
+            port_protocol=$(echo "$jd_rule" | cut -d':' -f1)
+            if [[ "$VPN_FLAG" == "true" ]]; then
+                for VPN_IF in $VPN_IFACES; do
+                    if ufw status | grep -qw "$port_protocol on $VPN_IF"; then
+                        log "Validation passed: JDownloader2 rule exists on $VPN_IF."
+                    else
+                        log "Validation failed: JDownloader2 rule missing on $VPN_IF."
+                        exit 1
+                    fi
+                done
+                if ufw status | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
+                    log "Validation passed: Deny $port_protocol rule exists on $PRIMARY_IF."
                 else
-                    log "Validation failed: JDownloader2 rule missing on $VPN_IF."
+                    log "Validation failed: Deny $port_protocol rule missing on $PRIMARY_IF."
                     exit 1
                 fi
-            done
-            if ufw status | grep -qw "Deny $port_protocol on $PRIMARY_IF"; then
-                log "Validation passed: Deny $port_protocol rule exists on $PRIMARY_IF."
             else
-                log "Validation failed: Deny $port_protocol rule missing on $PRIMARY_IF."
-                exit 1
+                if ufw status | grep -qw "$port_protocol on $PRIMARY_IF"; then
+                    log "Validation passed: JDownloader2 rule exists on $PRIMARY_IF."
+                else
+                    log "Validation failed: JDownloader2 rule missing on $PRIMARY_IF."
+                    exit 1
+                fi
             fi
         done
     fi
@@ -887,182 +655,81 @@ configure_ufw() {
     log "All UFW firewall rules validated successfully."
 }
 
-# Function to enhance network performance settings
-enhance_network_performance() {
-    log "Enhancing network performance settings..."
-
-    # Define network performance settings
-    NETWORK_SETTINGS=(
-        "net.core.rmem_max = 16777216"
-        "net.core.wmem_max = 16777216"
-        "net.ipv4.tcp_rmem = 4096 87380 16777216"
-        "net.ipv4.tcp_wmem = 4096 65536 16777216"
-        "net.ipv4.tcp_window_scaling = 1"
-        "net.core.netdev_max_backlog = 5000"
-    )
-
-    # Ensure /etc/sysctl.d/99-IPv4.conf exists
-    SYSCTL_IPV4_FILE="/etc/sysctl.d/99-IPv4.conf"
-
-    # Handle immutable attribute
-    if lsattr "$SYSCTL_IPV4_FILE" &>/dev/null; then
-        IMMUTABLE_FLAG=$(lsattr "$SYSCTL_IPV4_FILE" | awk '{print $1}')
-        if [[ $IMMUTABLE_FLAG == *i* ]]; then
-            log "Removing immutable flag from $SYSCTL_IPV4_FILE..."
-            chattr -i "$SYSCTL_IPV4_FILE"
-            IMMUTABLE_REMOVED=true
-        fi
-    fi
-
-    # Backup before modification
-    if [[ -f "$SYSCTL_IPV4_FILE" ]]; then
-        cp "$SYSCTL_IPV4_FILE" "${SYSCTL_IPV4_FILE}.bak_$(date +"%Y%m%d_%H%M%S")"
-        log "Backup created for $SYSCTL_IPV4_FILE."
-    fi
-
-    # Create the file if it doesn't exist
-    if touch "$SYSCTL_IPV4_FILE"; then
-        log "Ensured $SYSCTL_IPV4_FILE exists."
-    else
-        log "Error: Cannot create $SYSCTL_IPV4_FILE."
-        exit 1
-    fi
-
-    # Append settings only if they don't exist
-    for setting in "${NETWORK_SETTINGS[@]}"; do
-        if ! grep -qF "$setting" "$SYSCTL_IPV4_FILE"; then
-            echo "$setting" >> "$SYSCTL_IPV4_FILE"
-            log "Added: $setting"
-        else
-            log "Already set: $setting"
-        fi
-    done
-
-    # Restore immutable flag if it was removed
-    if [[ "${IMMUTABLE_REMOVED:-false}" == true ]]; then
-        log "Re-applying immutable flag to $SYSCTL_IPV4_FILE..."
-        chattr +i "$SYSCTL_IPV4_FILE"
-        log "Immutable flag re-applied to $SYSCTL_IPV4_FILE."
-    fi
-
-    # Reload sysctl settings to apply changes
-    log "Applying network performance settings..."
-    if sysctl --system; then
-        log "Network performance settings applied successfully."
-    else
-        log "Error: Failed to apply network performance settings."
-        exit 1
-    fi
-
-    # Configuration Validation
-    log "Validating network performance configurations..."
-    for setting in "${NETWORK_SETTINGS[@]}"; do
-        key=$(echo "$setting" | cut -d'=' -f1 | xargs)
-        expected_value=$(echo "$setting" | cut -d'=' -f2 | xargs)
-        # Normalize whitespace
-        expected_value_normalized=$(echo "$expected_value" | tr -s ' ')
-        actual_value=$(sysctl -n "$key" | tr '\t' ' ')
-        if [[ "$actual_value" == "$expected_value_normalized" ]]; then
-            log "Validation passed: $key = $actual_value"
-        else
-            log "Validation failed: $key expected '$expected_value_normalized' but got '$actual_value'"
-            log "Please verify the configuration in $SYSCTL_IPV4_FILE and re-run the script."
-            exit 1
-        fi
-    done
-}
-
 # Function to set up automatic backups via cron
 setup_backups() {
-    log "Setting up automatic periodic backups of critical configuration files via cron..."
+    log "Setting up automatic periodic backups via cron..."
 
     BACKUP_SCRIPT="/usr/local/bin/ufw_backup.sh"
     CRON_JOB="/etc/cron.d/ufw_backup"
     BACKUP_DIR="/etc/ufw/backups"
 
-    # Ensure the backup directory exists
-    if mkdir -p "$BACKUP_DIR"; then
-        log "Backup directory $BACKUP_DIR ensured."
+    # Create backup directory
+    if [[ "$DRY_RUN" == "false" ]]; then
+        mkdir -p "$BACKUP_DIR"
+        chown root:root "$BACKUP_DIR"
+        log "Backup directory $BACKUP_DIR ensured and ownership set to root."
     else
-        log "Error: Failed to create backup directory $BACKUP_DIR."
-        exit 1
+        log "Dry-run mode: Would create backup directory $BACKUP_DIR and set ownership to root."
     fi
-    chown root:root "$BACKUP_DIR"
-    log "Ownership of backup directory set to root."
 
     # Define the backup script content with pruning mechanism
     cat << 'EOF' > "$BACKUP_SCRIPT"
 #!/bin/bash
-# Backup Script for ufw.sh
-# This script backs up critical configuration files, keeping only the latest backup.
+# ufw_backup.sh - Automated Backup Script for ufw.sh
 
-# Directory to store backups
 BACKUP_DIR="/etc/ufw/backups"
-
-# Create backup directory if it doesn't exist
-mkdir -p "$BACKUP_DIR"
-
-# List of critical files to backup
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 FILES=(
     "/etc/sysctl.conf"
-    "/etc/sysctl.d/99-IPv4.conf"
-    "/etc/sysctl.d/99-IPv6.conf"
-    "/etc/host.conf"
-    "/etc/ssh/sshd_config"
-    "/etc/systemd/resolved.conf"
-    "/etc/avahi/avahi-daemon.conf"
-    "/etc/ufw/sysctl.conf"
-    "/etc/ufw/ufw.conf"
+    "/etc/sysctl.d/99-ufw.conf"
+    "/etc/hosts"
     "/etc/dhcpcd.conf"
     "/etc/strongswan.conf"
-    "/etc/resolv.conf"
     "/etc/nsswitch.conf"
-    "/etc/nfs.conf"
-    "/etc/netconfig"
     "/etc/ipsec.conf"
-    "/etc/iptables/ip6tables.rules"
-    "/etc/iptables/iptables.rules"
+    "/etc/nfs.conf"
+    "/etc/sysctl.d/99-IPv4.conf"
+    "/etc/sysctl.d/99-IPv6.conf"
 )
-
-# Current timestamp
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 # Perform backups
 for FILE in "${FILES[@]}"; do
     if [[ -f "$FILE" ]]; then
         BASENAME=$(basename "$FILE")
-        cp "$FILE" "$BACKUP_DIR/${BASENAME}.backup_${TIMESTAMP}"
-        if [[ $? -eq 0 ]]; then
-            echo "Backup successful for $FILE."
-        else
-            echo "Error: Backup failed for $FILE."
-            exit 1
-        fi
+        cp "$FILE" "$BACKUP_DIR/${BASENAME}.backup_$TIMESTAMP"
+        echo "Backup successful for $FILE."
     else
         echo "Warning: $FILE does not exist. Skipping backup."
     fi
 done
 
-# Pruning mechanism: Keep only the latest backup for each file
+# Pruning: Keep only the latest backup for each file
 for FILE in "${FILES[@]}"; do
     BASENAME=$(basename "$FILE")
-    # Find all backups for the current file, sorted by modification time (newest first)
-    BACKUPS=($(ls -t "$BACKUP_DIR/${BASENAME}.backup_"* 2>/dev/null || true))
-    BACKUP_COUNT=${#BACKUPS[@]}
-
-    if [[ "$BACKUP_COUNT" -gt 1 ]]; then
-        # Keep only the first (latest) backup
-        for ((i=1; i<BACKUP_COUNT; i++)); do
-            OLD_BACKUP="${BACKUPS[$i]}"
-            rm -f "$OLD_BACKUP" && echo "Removed old backup: $OLD_BACKUP."
-        done
+    LATEST_BACKUP=$(find "$BACKUP_DIR" -type f -name "${BASENAME}.backup_*" -printf '%T@ %p\n' | sort -n -r | head -n1 | cut -d' ' -f2-)
+    if [[ -f "$LATEST_BACKUP" && -s "$LATEST_BACKUP" ]]; then
+        # Keep only the latest backup
+        BACKUPS=($(find "$BACKUP_DIR" -type f -name "${BASENAME}.backup_*" -printf '%T@ %p\n' | sort -n -r | awk '{print $2}'))
+        BACKUP_COUNT=${#BACKUPS[@]}
+        if [[ "$BACKUP_COUNT" -gt 1 ]]; then
+            for ((i=1; i<BACKUP_COUNT; i++)); do
+                OLD_BACKUP="${BACKUPS[$i]}"
+                rm -f "$OLD_BACKUP" && echo "Removed old backup: $OLD_BACKUP."
+            done
+        fi
+    else
+        echo "Backup verification failed for $FILE: No valid backup found."
     fi
 done
 EOF
 
     # Make the backup script executable
-    chmod +x "$BACKUP_SCRIPT"
-    log "Backup script $BACKUP_SCRIPT created and made executable."
+    if [[ "$DRY_RUN" == "false" ]]; then
+        chmod +x "$BACKUP_SCRIPT"
+        log "Backup script $BACKUP_SCRIPT created and made executable."
+    else
+        log "Dry-run mode: Would make backup script $BACKUP_SCRIPT executable."
+    fi
 
     # Define the cron job (daily at 2am)
     CRON_CONTENT="0 2 * * * root $BACKUP_SCRIPT"
@@ -1072,43 +739,176 @@ EOF
         if grep -Fxq "$CRON_CONTENT" "$CRON_JOB"; then
             log "Cron job already exists at $CRON_JOB. Skipping creation."
         else
-            echo "$CRON_CONTENT" >> "$CRON_JOB"
-            log "Cron job updated at $CRON_JOB."
+            if [[ "$DRY_RUN" == "false" ]]; then
+                echo "$CRON_CONTENT" >> "$CRON_JOB"
+                log "Cron job updated at $CRON_JOB."
+            else
+                log "Dry-run mode: Would append cron job to $CRON_JOB."
+            fi
         fi
     else
-        echo "$CRON_CONTENT" > "$CRON_JOB"
-        log "Cron job created at $CRON_JOB."
+        if [[ "$DRY_RUN" == "false" ]]; then
+            echo "$CRON_CONTENT" > "$CRON_JOB"
+            log "Cron job created at $CRON_JOB."
+        else
+            log "Dry-run mode: Would create cron job at $CRON_JOB."
+        fi
     fi
 
     # Execute the backup script immediately to perform an initial backup
-    log "Executing backup script immediately to perform initial backup..."
-    if "$BACKUP_SCRIPT"; then
-        log "Initial backup completed successfully."
-    else
-        log "Error: Initial backup failed."
-        exit 1
+    if [[ "$BACKUP_FLAG" == "true" ]]; then
+        if [[ "$DRY_RUN" == "false" ]]; then
+            log "Executing backup script immediately to perform initial backup..."
+            if "$BACKUP_SCRIPT"; then
+                log "Initial backup completed successfully."
+            else
+                log "Error: Initial backup failed."
+                exit 1
+            fi
+        else
+            log "Dry-run mode: Would execute backup script immediately to perform initial backup."
+        fi
     fi
 
     # Backup Verification
-    log "Verifying backups..."
-    for FILE in "/etc/sysctl.conf" "/etc/sysctl.d/99-IPv4.conf" "/etc/sysctl.d/99-IPv6.conf" "/etc/host.conf" "/etc/ssh/sshd_config" "/etc/systemd/resolved.conf" "/etc/avahi/avahi-daemon.conf" "/etc/ufw/sysctl.conf" "/etc/ufw/ufw.conf" "/etc/dhcpcd.conf" "/etc/strongswan.conf" "/etc/resolv.conf" "/etc/nsswitch.conf" "/etc/nfs.conf" "/etc/netconfig" "/etc/ipsec.conf" "/etc/iptables/ip6tables.rules" "/etc/iptables/iptables.rules"; do
-        BASENAME=$(basename "$FILE")
-        LATEST_BACKUP=$(ls -t "$BACKUP_DIR/${BASENAME}.backup_"* 2>/dev/null | head -n1 || true)
-        if [[ -f "$LATEST_BACKUP" && -s "$LATEST_BACKUP" ]]; then
-            log "Backup verification passed for $FILE: $LATEST_BACKUP exists and is not empty."
+    if [[ "$BACKUP_FLAG" == "true" ]]; then
+        log "Verifying backups..."
+        FILES=(
+            "/etc/sysctl.conf"
+            "/etc/sysctl.d/99-ufw.conf"
+            "/etc/hosts"
+            "/etc/dhcpcd.conf"
+            "/etc/strongswan.conf"
+            "/etc/nsswitch.conf"
+            "/etc/ipsec.conf"
+            "/etc/nfs.conf"
+            "/etc/sysctl.d/99-IPv4.conf"
+            "/etc/sysctl.d/99-IPv6.conf"
+        )
+
+        for FILE in "${FILES[@]}"; do
+            BASENAME=$(basename "$FILE")
+            LATEST_BACKUP=$(find "$BACKUP_DIR" -type f -name "${BASENAME}.backup_*" -printf '%T@ %p\n' | sort -n -r | head -n1 | cut -d' ' -f2-)
+            if [[ -f "$LATEST_BACKUP" && -s "$LATEST_BACKUP" ]]; then
+                log "Backup verification passed for $FILE: $LATEST_BACKUP exists and is not empty."
+            else
+                log "Backup verification failed for $FILE: No valid backup found."
+                exit 1
+            fi
+        done
+        log "All backups verified successfully."
+    fi
+}
+
+# Function to validate critical configurations
+validate_configurations() {
+    log "Validating critical configurations..."
+
+    # Define required sysctl settings
+    REQUIRED_SYSCTL_SETTINGS=(
+        "net.ipv4.ip_forward=1"
+        "net.ipv4.conf.all.accept_redirects=0"
+        "net.ipv4.conf.default.accept_redirects=0"
+        "net.ipv4.conf.all.rp_filter=1"
+        "net.ipv4.conf.default.rp_filter=1"
+        "net.ipv4.conf.default.accept_source_route=0"
+        "net.ipv4.conf.all.accept_source_route=0"
+        "net.ipv4.icmp_ignore_bogus_error_responses=1"
+        "net.ipv4.conf.default.log_martians=0"
+        "net.ipv4.icmp_echo_ignore_broadcasts=1"
+        "net.ipv4.icmp_echo_ignore_all=0"
+        "net.ipv4.tcp_sack=1"
+        "vm.swappiness=10"
+        "net.core.rmem_max=16777216"
+        "net.core.wmem_max=16777216"
+        "net.core.optmem_max=65536"
+        "net.ipv4.tcp_rmem=4096 87380 16777216"
+        "net.ipv4.tcp_wmem=4096 65536 16777216"
+        "net.core.somaxconn=8192"
+        "net.ipv4.tcp_window_scaling=1"
+        "net.core.netdev_max_backlog=5000"
+        "net.ipv4.udp_rmem_min=8192"
+        "net.ipv4.udp_wmem_min=8192"
+        "net.ipv4.tcp_fastopen=3"
+        "net.ipv4.tcp_tw_reuse=1"
+        "net.ipv4.tcp_fin_timeout=10"
+        "net.ipv4.tcp_slow_start_after_idle=0"
+        "net.ipv4.tcp_keepalive_time=60"
+        "net.ipv4.tcp_keepalive_intvl=10"
+        "net.ipv4.tcp_keepalive_probes=6"
+        "net.ipv4.tcp_mtu_probing=1"
+        "net.ipv4.tcp_timestamps=0"
+        "net.core.default_qdisc=cake"
+        "net.ipv4.tcp_congestion_control=bbr"
+    )
+
+    for setting in "${REQUIRED_SYSCTL_SETTINGS[@]}"; do
+        key=$(echo "$setting" | cut -d'=' -f1)
+        expected_value=$(echo "$setting" | cut -d'=' -f2)
+        actual_value=$(sysctl -n "$key" 2>/dev/null || echo "unset")
+
+        # Normalize whitespace: replace any whitespace with a single space
+        expected_normalized=$(echo "$expected_value" | tr -s '[:space:]' ' ')
+        actual_normalized=$(echo "$actual_value" | tr -s '[:space:]' ' ')
+
+        if [[ "$actual_normalized" == "$expected_normalized" ]]; then
+            log "Validation passed: $key = $actual_value"
         else
-            log "Backup verification failed for $FILE: No valid backup found."
+            log "Validation failed: $key expected '$expected_value' but got '$actual_value'"
             exit 1
         fi
     done
-    log "All backups verified successfully."
+
+    # Validate UFW default policies using 'ufw status verbose'
+    DEFAULT_INCOMING=$(ufw status verbose | grep "Default:" | awk '{print $2}')
+    DEFAULT_OUTGOING=$(ufw status verbose | grep "Default:" | awk '{print $4}')
+
+    if [[ "$DEFAULT_INCOMING" == "deny" ]]; then
+        log "Validation passed: Default incoming policy is 'deny'."
+    else
+        log "Validation failed: Default incoming policy is not 'deny'."
+        exit 1
+    fi
+
+    if [[ "$DEFAULT_OUTGOING" == "allow" ]]; then
+        log "Validation passed: Default outgoing policy is 'allow'."
+    else
+        log "Validation failed: Default outgoing policy is not 'allow'."
+        exit 1
+    fi
+
+    log "All critical configurations validated successfully."
+}
+
+# Function to display final status
+final_verification() {
+    echo ""
+    log "### UFW Status ###"
+    if [[ "$DRY_RUN" == "false" ]]; then
+        ufw status verbose | tee -a "$LOG_FILE"
+    else
+        log "Dry-run mode: Would display UFW status."
+    fi
+
+    echo ""
+    log "### Listening Ports ###"
+    if [[ "$DRY_RUN" == "false" ]]; then
+        ss -tunlp | tee -a "$LOG_FILE"
+    else
+        log "Dry-run mode: Would display listening ports."
+    fi
+}
+
+# Function to enhance network performance settings (if any)
+enhance_network_performance() {
+    log "Enhancing network performance settings..."
+    # Currently handled in sysctl_config
+    log "Network performance settings are handled within sysctl configurations."
 }
 
 # Function to apply all configurations
 apply_configurations() {
     sysctl_config
-    host_conf_config
-    disable_ipv6_services
     manage_additional_critical_files
     configure_ufw
     enhance_network_performance
@@ -1116,17 +916,8 @@ apply_configurations() {
     if [[ "$BACKUP_FLAG" == "true" ]]; then
         setup_backups
     fi
-}
 
-# Function to display final status
-final_verification() {
-    echo ""
-    log "### UFW Status ###"
-    ufw status verbose | tee -a "$LOG_FILE"
-
-    echo ""
-    log "### Listening Ports ###"
-    ss -tunlp | tee -a "$LOG_FILE"
+    validate_configurations
 }
 
 # Main execution
