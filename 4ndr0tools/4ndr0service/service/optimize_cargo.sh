@@ -1,19 +1,20 @@
-#!/bin/bash
-# -------------------------------------------------------------------
+#!/usr/bin/env bash
 # File: optimize_cargo.sh
-# Date: 2024-11-24
-# Description: Optimizes Cargo environment in alignment with XDG Base Directory Specs.
-# -------------------------------------------------------------------
+# Optimizes Cargo environment in alignment with XDG Base Directory Specs.
 
+# ==================== // 4ndr0service optimze_cargo.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
+### Colors
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+### Loggin
 LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
 mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory."; exit 1; }
 

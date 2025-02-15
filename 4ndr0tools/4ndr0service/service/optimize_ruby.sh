@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: optimize_ruby.sh
 # Author: 4ndr0666
 # Date: 2024-11-24

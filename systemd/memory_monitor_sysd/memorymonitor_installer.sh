@@ -19,7 +19,7 @@ echo
 # By default, /4ndr0/backups/ is used; override via BACKUP_PATH env variable.
 # e.g.: BACKUP_PATH="/some/dir/backups" ./memorymonitor_installer.sh
 # -----------------------------------------------------------------------------
-BACKUP_PATH="${BACKUP_PATH:-/4ndr0/backups}"
+BACKUP_PATH="${BACKUP_PATH:-/sto2/backups}"
 
 # Paths and files
 BASE_DIR="/usr/local/bin"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usrbin/env bash
 # File: optimize_electron.sh
 # Author: 4ndr0666
 # Date: 2024-11-24

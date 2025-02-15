@@ -1,16 +1,14 @@
 # Web Apps
 
----
+The following is a collection of additional considerations, settings and tips/tricks in order to optimize the "**WebApps**" package for Arch Linux.
 
-The following is a collection of additional considerations, settings and tips/tricks in order to optimize the "WebApps" pkg in the **AUR**.
-
-**Guidelines**:
+### Guidelines:
 
    - Start browser with these flags: `--disable-extensions --start-maximized --disable-gpu --disable-infobars --kiosk`.
 
-   - Ensure that `Open link in tabs instead of new windows` is **NOT** selected.
+   - Ensure that `Open link in tabs instead` of new windowsis **NOT** selected.
 
-   - Ensure Digital Rights Management **`DRM`** is selected in settings. Search "**`DRM`**" if you cant find it.
+   - Ensure Digital Rights Management "**DRM**" is selected in settings.
 
    - Right click on the the bookmark bar and select `never show`.
 
@@ -20,6 +18,6 @@ The following is a collection of additional considerations, settings and tips/tr
 
 **Discord**:
 
-   - Launch the app (*example*:**Discord**) and go into a room you own or that no one else is in. Start the audio chat and select the mic. Check the `Remember for all microphones` option in the box and click `allow`.
+   - Launch the app and go into a room you own or that no one else is in. Start the audio chat and select the mic. Check the `Remember for all microphones` option in the box and click `allow`.
 
    - Click `screen share` and allow it.

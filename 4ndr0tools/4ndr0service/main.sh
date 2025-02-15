@@ -1,18 +1,20 @@
-###############################################################################
-# File: main.sh
-# Description: Entry point for the 4ndr0service Suite.
-###############################################################################
 #!/usr/bin/env bash
+# File: main.sh
+# Entry point for the 4ndr0service Suite.
+
+# ================ // 4ndr0service Main.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
+###Constants
 PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 export PKG_PATH
-
 source "$PKG_PATH/common.sh"
 source "$PKG_PATH/controller.sh"
 source "$PKG_PATH/manage_files.sh"
 
+### Help
 show_help() {
 cat <<EOF
 4ndr0service Suite - Manage and Optimize Your Environment

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: optimize_meson.sh
 # Author: 4ndr0666
 # Description: Meson environment optimization for Arch-based systems,

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # File: verify_environment.sh
-# Description: Verifies/fixes environment for 4ndr0service Suite.
+# Verifies/fixes environment for 4ndr0service Suite.
 # Usage: verify_environment.sh [--report] [--fix]
-
 set -euo pipefail
 IFS=$'\n\t'
 
-source "$PKG_PATH/common.sh"
+source $PKG_PATH/common.sh
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
 REPORT_MODE="false"

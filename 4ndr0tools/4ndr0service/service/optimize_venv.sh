@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # File: optimize_venv.sh
 # Author: 4ndr0666
 # Description: Additional venv + pipx oriented environment optimization steps

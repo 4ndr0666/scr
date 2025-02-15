@@ -7,9 +7,9 @@ IFS=$'\n\t'
 
 modify_settings() {
     local editor
-    editor=$(jq -r '.settings_editor' "$CONFIG_FILE" || echo "nano")
+    editor=$(jq -r '.settings_editor' "$CONFIG_FILE" || echo "vim")
     if [[ -z "$editor" || ! $(command -v "$editor") ]]; then
-        editor="nano"
+        editor="vim"
     fi
     "$editor" "$CONFIG_FILE"
     log_info "Settings modified with $editor."

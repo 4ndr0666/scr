@@ -1,25 +1,26 @@
-###############################################################################
-# File: controller.sh
-# Description: Central controller for the 4ndr0service Suite.
-###############################################################################
 #!/usr/bin/env bash
+# File: controller.sh
+# Central controller for the 4ndr0service Suite.
+
+# ================== // 4ndr0service controller.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
+### Constants
 PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 export PKG_PATH
-
 source "$PKG_PATH/common.sh"
 source "$PKG_PATH/settings_functions.sh"
 source "$PKG_PATH/manage_files.sh"
 source "$PKG_PATH/test/src/verify_environment.sh"
 
 load_plugins() {
-    if [[ ! -d "$PLUGINS_DIR" ]]; then
-        log_warn "Plugins directory '$PLUGINS_DIR' not found. Skipping."
+    if [[ ! -d "$plugins_dir" ]]; then
+        log_warn "Plugins directory '$plugins_dir' not found. Skipping."
         return
     fi
-    for plugin in "$PLUGINS_DIR"/*.sh; do
+    for plugin in "$plugins_dir"/*.sh; do
         if [[ -f "$plugin" ]]; then
             source "$plugin" || log_warn "Failed to load plugin '$plugin'."
             log_info "Loaded plugin: $plugin"

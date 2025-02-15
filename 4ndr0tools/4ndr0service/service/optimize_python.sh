@@ -1,8 +1,6 @@
-###############################################################################
+#!/usr/bin/env bash
 # File: optimize_python.sh
 # Description: Python environment optimization logic for 4ndr0service.
-###############################################################################
-#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 

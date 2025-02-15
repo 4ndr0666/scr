@@ -1,8 +1,9 @@
-###############################################################################
+#!/usr/bin/env bash
 # File: common.sh
 # Description: Common functions & configuration loader for 4ndr0service Suite.
-###############################################################################
-#!/usr/bin/env bash
+
+# =================== // 4ndr0service common.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -11,8 +12,7 @@ if [[ "${COMMON_SH_INCLUDED:-}" == "true" ]]; then
 fi
 export COMMON_SH_INCLUDED=true
 
-# Default config/log paths
-# Adjusted to reflect that config.json is stored under ~/.local/share/4ndr0service by default
+# Logging
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 LOG_FILE_DIR_DEFAULT="$HOME/.local/share/logs/4ndr0service/logs"
 LOG_FILE_DEFAULT="$LOG_FILE_DIR_DEFAULT/4ndr0service.log"
@@ -25,11 +25,12 @@ json_log() {
     local msg="$2"
     local timestamp
     timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
-    mkdir -p "${LOG_FILE_DIR:-$LOG_FILE_DIR_DEFAULT}"
+    \mkdir -p "${LOG_FILE_DIR:-$LOG_FILE_DIR_DEFAULT}"
     printf '{"timestamp":"%s","level":"%s","message":"%s"}\n' \
       "$timestamp" "$level" "$msg" >> "${LOG_FILE:-$LOG_FILE_DEFAULT}"
 }
 
+### Error Handling
 handle_error() {
     local error_message="$1"
     json_log "ERROR" "$error_message"
@@ -54,7 +55,7 @@ log_warn() {
 ensure_dir() {
     local dir="$1"
     if [[ ! -d "$dir" ]]; then
-        if mkdir -p "$dir"; then
+        if \mkdir -p "$dir"; then
             log_info "Created directory: '$dir'."
         else
             handle_error "Failed to create directory '$dir'."
@@ -163,7 +164,7 @@ create_config_if_missing() {
             local default_xdg_cache="$HOME/.cache"
             local default_xdg_state="$HOME/.local/state"
             local default_pkg_manager="pacman"
-            local default_settings_editor="nano"
+            local default_settings_editor="neovim"
             local default_user_interface="cli"
 
             cat > "$CONFIG_FILE" <<EOF
@@ -253,14 +254,14 @@ create_config_if_missing() {
     "SQL_CONFIG_HOME",
     "SQL_CACHE_HOME"
   ],
-  "backup_dir": "$(prompt_config_value "backup_dir" "/Nas/Build/Backups/4ndr0service")",
+  "backup_dir": "$(prompt_config_value "backup_dir" "$backup_dir")",
   "package_manager": "$(prompt_config_value "package_manager" "$default_pkg_manager")",
   "settings_editor": "$(prompt_config_value "settings_editor" "$default_settings_editor")",
   "user_interface": "$(prompt_config_value "user_interface" "$default_user_interface")",
-  "plugins_dir": "\$HOME/.config/4ndr0service/plugins",
+  "plugins_dir": "$(prompt_config_value "plugins_dir" "$plugins_dir")",
   "logging": {
-    "log_file_dir": "\$HOME/.local/share/logs/4ndr0service/",
-    "log_file": "\$HOME/.local/share/logs/4ndr0service/4ndr0service.log"
+    "log_file_dir": "$HOME/.local/share/logs/4ndr0service/",
+    "log_file": "$HOME/.local/share/logs/4ndr0service/4ndr0service.log"
   },
   "tool_package_map": {
     "mysql": "mysql",
@@ -318,7 +319,7 @@ load_config() {
     PKG_MANAGER="$(jq -r '.package_manager' "$CONFIG_FILE")"
     SETTINGS_EDITOR="$(jq -r '.settings_editor' "$CONFIG_FILE")"
     USER_INTERFACE="$(jq -r '.user_interface' "$CONFIG_FILE")"
-    PLUGINS_DIR="$(jq -r '.plugins_dir' "$CONFIG_FILE")"
+    plugins_dir="$(jq -r '.plugins_dir' "$CONFIG_FILE")"
 
     # Now expand them
     XDG_DATA_HOME="$(expand_path "$raw_XDG_DATA_HOME")"
@@ -327,6 +328,7 @@ load_config() {
     XDG_STATE_HOME="$(expand_path "$raw_XDG_STATE_HOME")"
     LOG_FILE_DIR="$(expand_path "$LOG_FILE_DIR")"
     LOG_FILE="$(expand_path "$LOG_FILE")"
+    plugins_dir="$(expand_path "$plugins_dir")"
 
     CARGO_HOME="$(expand_path "$raw_CARGO_HOME")"
     RUSTUP_HOME="$(expand_path "$raw_RUSTUP_HOME")"
@@ -354,7 +356,7 @@ load_config
 # Ensure primary directories exist
 ensure_dir "$LOG_FILE_DIR"
 ensure_dir "$backup_dir"
-ensure_dir "$PLUGINS_DIR"
+ensure_dir "$plugins_dir"
 
 ###############################################################################
 # Parallel Execution

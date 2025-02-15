@@ -1,11 +1,13 @@
-###############################################################################
-# File: manage_files.sh
-# Description: Provides batch execution of services and optional backup steps.
-###############################################################################
 #!/usr/bin/env bash
+# File: manage_files.sh
+# Provides batch execution of services and optional backup steps.
+
+# ==================== // 4ndr0service manage_files.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
+### Constants
 source "$PKG_PATH/common.sh"
 
 batch_execute_all() {
