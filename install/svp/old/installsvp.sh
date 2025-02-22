@@ -1,4 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# installsvp.sh
+#Author: 4ndr0666
+#Edited: 2-21-25
+#
+# --- // INSTALLSVP.SH // ========
 
 # Helper functions for status and error handling
 echo_status() {

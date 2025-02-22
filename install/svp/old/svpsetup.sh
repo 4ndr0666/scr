@@ -1,9 +1,9 @@
-#!/bin/bash
-#File: SVPSETUP.sh
+#!/usr/bin/env bash
+#File: svpsetup.sh
 #Author: 4ndr0666
 #Edited: 3-27-24
 #
-# --- // SVPSETUP.sh // ========
+# --- // SVPSETUP.SH // ========
 
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then
