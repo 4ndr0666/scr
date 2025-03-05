@@ -1,0 +1,12 @@
+[Unit]
+Description=ExpressVPN daemon
+After=syslog.target network.target
+
+[Service]
+Environment="LD_LIBRARY_PATH=/opt/expressvpn/lib"
+ExecStart=/opt/expressvpn/bin/expressvpn-daemon
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

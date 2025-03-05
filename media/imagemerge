@@ -1,0 +1,142 @@
+#!/bin/sh
+# Working revision: 95 lines, Original codebase: 56 lines
+#
+# This script intelligently detects the first image's original height using ffprobe
+# to dynamically match the second image’s height. If that detection fails, it falls
+# back to a prompt asking the user to select a scale height. It leverages fzf for file
+# selection, ensures idempotent output naming, and cleans up any temporary resources
+# upon exit.
+#
+# Dependencies needed: fzf, ffmpeg, ffprobe, find, mktemp
+#
+# Usage:
+#   1) Run the script.
+#   2) Select the first image via fzf.
+#   3) Select the second image via fzf.
+#   4) The script attempts to detect the first image's height. If successful, the second
+#      image will be scaled to match. If not, you will be prompted to choose a fallback
+#      scale height (720, 1080, 1440, or 2160), or default to 1080 if you do not select one.
+#
+# Example:
+#   ./imagemerge.sh
+
+###############################################################################
+# 1. Dependency Checks
+###############################################################################
+check_dependencies() {
+    for cmd in fzf ffmpeg ffprobe find mktemp; do
+        command -v "$cmd" >/dev/null 2>&1 || {
+            echo "Error: $cmd is not installed or not in PATH." >&2
+            exit 1
+        }
+    done
+}
+
+###############################################################################
+# 2. Create Temporary Directory and Ensure Cleanup
+###############################################################################
+create_tmp_dir() {
+    TMP_DIR=$(mktemp -d) || {
+        echo "Failed to create temporary directory"
+        exit 1
+    }
+}
+cleanup() {
+    [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT HUP INT QUIT TERM
+
+###############################################################################
+# 3. File Selection Function
+###############################################################################
+select_image() {
+    PROMPT="$1"
+    FILE=$(
+        find . -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) 2>/dev/null |
+        fzf --prompt="$PROMPT"
+    )
+    echo "$FILE"
+}
+
+###############################################################################
+# 4. Idempotent Output Name Generation
+###############################################################################
+generate_output_name() {
+    BASE="combined.png"
+    OUTPUT="$BASE"
+    COUNT=1
+    while [ -e "$OUTPUT" ]; do
+        OUTPUT="combined_$COUNT.png"
+        COUNT=$((COUNT + 1))
+    done
+    echo "$OUTPUT"
+}
+
+###############################################################################
+# 5. Attempt to Detect First Image Height
+###############################################################################
+get_image_height() {
+    # Uses ffprobe to extract the first video stream's height.
+    ffprobe -v error -select_streams v:0 -show_entries stream=height \
+            -of csv=p=0 "$1" 2>/dev/null
+}
+
+###############################################################################
+# 6. Fallback Scale Height Selection
+###############################################################################
+select_scale() {
+    CHOSEN=$(
+        printf "720\n1080\n1440\n2160\n" |
+        fzf --prompt="Fallback scale height: "
+    )
+    echo "$CHOSEN"
+}
+
+###############################################################################
+# 7. Main Execution
+###############################################################################
+check_dependencies
+create_tmp_dir
+
+# 7A. Select two images
+img1=$(select_image "Select first image: ")
+[ -z "$img1" ] && {
+    echo "No image selected for the first image."
+    exit 1
+}
+
+img2=$(select_image "Select second image: ")
+[ -z "$img2" ] && {
+    echo "No image selected for the second image."
+    exit 1
+}
+
+# 7B. Obtain first image height or fallback
+first_height=$(get_image_height "$img1")
+
+if [ -n "$first_height" ] 2>/dev/null; then
+    # If we have a valid height, we use it for the second image
+    echo "Detected height of first image: $first_height"
+    scale_filter="[1:v]scale=-1:$first_height[second]"
+    stack_filter="[0:v][second]hstack=inputs=2"
+else
+    # Fallback to user selection; default to 1080 if none chosen
+    fallback_scale=$(select_scale)
+    [ -z "$fallback_scale" ] && fallback_scale=1080
+    echo "Could not detect height. Falling back to $fallback_scale..."
+    scale_filter="[0:v]scale=-1:$fallback_scale[first];[1:v]scale=-1:$fallback_scale[second]"
+    stack_filter="[first][second]hstack=inputs=2"
+fi
+
+# 7C. Generate output name and execute ffmpeg
+output=$(generate_output_name)
+
+ffmpeg -hide_banner -loglevel error \
+    -i "$img1" -i "$img2" \
+    -filter_complex "
+    $scale_filter;
+    $stack_filter
+    " \
+    "$output" && echo "Combined image saved as $output" || echo "ffmpeg failed to combine images."
+
+exit 0
