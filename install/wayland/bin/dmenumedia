@@ -1,0 +1,151 @@
+#!/bin/bash
+
+# Media directories
+MEDIA_DIRS=("$HOME/Videos" "$HOME/Downloads" "/23.1" "/storage" "/sto2" "/4ndr0")
+
+# Directory to store playlists
+PLAYLIST_DIR="$HOME/.config/mpv/playlists"
+
+# Ensure the playlist directory exists
+mkdir -p "$PLAYLIST_DIR"
+
+# Function to display dmenu prompt (allow typing directory path)
+dmenu_prompt() {
+  echo -e "$1" | dmenu -i -l 10 -p "Select or type:"
+}
+
+# Function to check if the directory exists
+validate_directory() {
+  if [ -d "$1" ]; then
+    echo "$1"
+  else
+    echo "Invalid directory" >&2
+    return 1
+  fi
+}
+
+# Function to play selected media
+play_media() {
+  local media="$1"
+  mpv "$media" &
+}
+
+# Function to queue media in the selected mpv instance
+queue_media() {
+  local media="$1"
+  local sockets_dir="/tmp/mpvSockets"
+  if [ ! -d "$sockets_dir" ]; then
+    echo "No active mpv instances found."
+    return 1
+  fi
+
+  local mpv_sockets=$(ls "$sockets_dir")
+  if [ -z "$mpv_sockets" ]; then
+    echo "No active mpv instances found."
+    return 1
+  fi
+
+  local selected_socket=$(echo "$mpv_sockets" | dmenu -i -p "Select mpv instance to queue media:")
+  if [ -n "$selected_socket" ]; then
+    local socket_path="$sockets_dir/$selected_socket"
+    echo '{ "command": ["loadfile", "'"$media"'", "append-play"] }' | socat - "$socket_path"
+    notify-send "Queued media in mpv instance $selected_socket"
+  else
+    echo "No mpv instance selected."
+  fi
+}
+
+# Function to play the playlist
+play_playlist() {
+  local playlist="$1"
+  if [ -f "$playlist" ] && [ -s "$playlist" ]; then
+    mpv --shuffle --playlist="$playlist" --loop-playlist=inf --no-border --player-operation-mode=pseudo-gui --no-osc &
+  else
+    echo "The playlist file is empty or does not exist."
+  fi
+}
+
+# Function to generate a unique playlist name
+generate_playlist_name() {
+  local dir_name
+  dir_name=$(basename "$1")
+  local base_name="${PLAYLIST_DIR}/${dir_name}_playlist"
+  local playlist_name="${base_name}.m3u"
+  local counter=1
+
+  while [ -f "$playlist_name" ]; do
+    playlist_name="${base_name}_${counter}.m3u"
+    ((counter++))
+  done
+
+  echo "$playlist_name"
+}
+
+# Function to generate a playlist and play it
+generate_and_play_playlist() {
+  local dir="$1"
+  local playlist_file
+  playlist_file=$(generate_playlist_name "$dir")
+
+  find "$dir" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.m4v" -o -iname "*.webm" -o -iname "*.gif" \) > "$playlist_file"
+
+  if [ -s "$playlist_file" ]; then
+    play_playlist "$playlist_file"
+  else
+    echo "No media files found in $dir."
+    rm -f "$playlist_file"
+  fi
+}
+
+# Function to display and play media files from a directory
+browse_media() {
+  local dir="$1"
+  while true; do
+    local options=$(find "$dir" -mindepth 1 -maxdepth 1 -type d -print | sort)
+    if [ -n "$options" ]; then
+      dir_choice=$(dmenu_prompt "$(echo -e "$options\nBack")")
+      if [ "$dir_choice" = "Back" ]; then
+        return
+      elif [ -d "$dir_choice" ]; then
+        dir="$dir_choice"
+      fi
+    else
+      local media_files=$(find "$dir" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.m4v" -o -iname "*.webm" -o -iname "*.gif" \))
+      local selected_media=$(dmenu_prompt "$media_files")
+      if [ -n "$selected_media" ]; then
+        action=$(dmenu_prompt "Play Now\nQueue in mpv\nBack")
+        case "$action" in
+          "Play Now") play_media "$selected_media" ;;
+          "Queue in mpv") queue_media "$selected_media" ;;
+          "Back") ;;
+        esac
+      fi
+      break
+    fi
+  done
+}
+
+# Main menu
+while true; do
+  dir_choice=$(dmenu_prompt "$(printf "%s\n" "${MEDIA_DIRS[@]}" && echo "Type a directory...\nExit")")
+  if [ "$dir_choice" = "Exit" ]; then
+    exit 0
+  elif [ "$dir_choice" = "Type a directory..." ]; then
+    dir_choice=$(dmenu_prompt "Type a directory path:")
+    dir_choice=$(validate_directory "$dir_choice")
+    [ -z "$dir_choice" ] && continue
+  fi
+
+  mode_choice=$(dmenu_prompt "Playlist Mode\nBrowse Mode\nExit")
+  case "$mode_choice" in
+    "Playlist Mode")
+      generate_and_play_playlist "$dir_choice"
+      ;;
+    "Browse Mode")
+      browse_media "$dir_choice"
+      ;;
+    *)
+      exit 0
+      ;;
+  esac
+done

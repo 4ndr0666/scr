@@ -1,0 +1,67 @@
+#!/bin/sh
+
+# Enhanced script for feeding a URL or file path and choosing an application to open it
+
+# Fetch the input feed (URL or file path) from dmenu if not provided as an argument
+feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
+
+# Display the list of programs to choose from using dmenu
+choice=$(printf "copy url\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
+
+# Process the selected option and execute the corresponding action
+case "$choice" in
+    "copy url")
+        echo "$feed" | wl-copy
+        ;;
+
+    "mpv")
+        setsid -f mpv -quiet "$feed" >/dev/null 2>&1
+        ;;
+
+    "mpv loop")
+        setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1
+        ;;
+
+    "mpv float")
+        setsid -f "$TERMINAL" -e mpv --geometry=30% --title="mpvfloat" "$feed" >/dev/null 2>&1
+        ;;
+
+    "queue yt-dlp")
+        qndl "$feed" >/dev/null 2>&1
+        ;;
+
+    "queue yt-dlp audio")
+        qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames'
+        ;;
+
+    "queue download")
+        qndl "$feed" 'curl -LO' >/dev/null 2>&1
+        ;;
+
+    "PDF")
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && zathura "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    "nsxiv")
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && nsxiv -a "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    "vim")
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && setsid -f "$TERMINAL" -e "$EDITOR" "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    "setbg")
+        curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" --mode fill >/dev/null 2>&1
+        ;;
+
+    "browser")
+        setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
+        ;;
+
+    "lynx")
+        setsid -f "$TERMINAL" -e lynx "$feed" >/dev/null 2>&1
+        ;;
+esac

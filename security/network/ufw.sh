@@ -245,7 +245,7 @@ net.ipv4.icmp_echo_ignore_all=0
 net.ipv4.tcp_sack=1
 
 # Swappiness
-vm.swappiness=10
+vm.swappiness=133
 
 # Network Performance Enhancements
 net.core.rmem_max=16777216
@@ -818,7 +818,11 @@ validate_configurations() {
         "net.ipv4.icmp_echo_ignore_broadcasts=1"
         "net.ipv4.icmp_echo_ignore_all=0"
         "net.ipv4.tcp_sack=1"
-        "vm.swappiness=10"
+        "vm.swappiness=133"
+	"kernel.nmi_watchdog = 0"
+	"kernel.unprivileged_userns_clone=1"
+	"kernel.printk = 3 3 3 3"
+	"kernel.sysrq=1"
         "net.core.rmem_max=16777216"
         "net.core.wmem_max=16777216"
         "net.core.optmem_max=65536"

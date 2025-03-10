@@ -1,7 +1,7 @@
 input:not(.urlbar-input):not(.textbox-input):not(.form-control):not([type='checkbox']) {
 -moz-appearance: none !important;
-background-color: white;
-color: black;
+background-color: black;
+color: cyan;
 }
 
 #downloads-indicator-counter {
@@ -10,14 +10,14 @@ color: white;
 
 textarea {
 -moz-appearance: none !important;
-background-color: white;
-color: black;
+background-color: black;
+color: cyan;
 }
 
 select {
 -moz-appearance: none !important;
-background-color: white;
-color: black;
+background-color: black;
+color: cyan;
 }
 
 
