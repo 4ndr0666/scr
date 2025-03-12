@@ -562,6 +562,7 @@ register_protocol() {
 
 print_bookmarklets() {
   cat <<'EOF_BM'
+Save this bookmarklet as YTDLC:
 
 ➡️ javascript:(function(){const url=window.location.href;if(!url.startsWith("http")){alert("Invalid URL.");return;}window.location.href=`ytdl://${encodeURIComponent(url)}`})();
 EOF_BM
@@ -628,7 +629,8 @@ main() {
   register_protocol
   reapply_immutability "$YTDL_FILE"
   reapply_immutability "$HANDLER_FILE"
-  glow "✔️ Installation complete. Save this bookmarklet as YTDLC:"
+  glow "✔️ Installation complete."
+  echo
   print_bookmarklets
 }
 
