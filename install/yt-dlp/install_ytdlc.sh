@@ -114,7 +114,7 @@ refresh_cookie_file() {
   local cookie_file
   cookie_file="$(get_cookie_path_for_domain "$domain")"
   if [[ -z "$cookie_file" ]]; then
-    echo "Error: No cookie file mapped for domain '$domain'."
+    bug "❌ Error: No cookie file mapped for domain '$domain'."
     return 1
   fi
   local clipboard_cmd=""
@@ -123,20 +123,20 @@ refresh_cookie_file() {
   elif command -v xclip >/dev/null 2>&1; then
     clipboard_cmd="xclip -selection clipboard -o"
   else
-    echo "Error: No suitable clipboard utility found. Install 'wl-clipboard' or 'xclip'."
+    bug "❌ Error: No suitable clipboard utility found. Install 'wl-clipboard' or 'xclip'."
     return 1
   fi
-  printf "Please copy the correct cookies for '%s' to your clipboard, then press Enter.\n" "$domain"
+  printf "➡️ Copy current cookie file for '%s' to your clipboard, then press Enter.\n" "$domain"
   read -r
   local clipboard_data
   clipboard_data=$($clipboard_cmd 2>/dev/null || true)
   if [[ -z "$clipboard_data" ]]; then
-    echo "Error: Clipboard is empty or unreadable."
+    bug "❌ Error: Clipboard is empty or unreadable."
     return 1
   fi
   mkdir -p "$(dirname "$cookie_file")"
-  echo "$clipboard_data" > "$cookie_file" || { echo "Error: Could not write to '$cookie_file'."; return 1; }
-  chmod 600 "$cookie_file" 2>/dev/null || echo "Warning: Could not set permissions to 600 on '$cookie_file'."
+  echo "$clipboard_data" > "$cookie_file" || { bug "❌ Error: Could not write to '$cookie_file'."; return 1; }
+  chmod 600 "$cookie_file" 2>/dev/null || bug "❌ Warning: Could not secure '$cookie_file'."
   echo "Cookie file for '$domain' updated successfully!"
 }
 
@@ -173,7 +173,7 @@ prompt_cookie_update() {
     done
   fi
   if [[ -z "$domain" ]]; then
-    echo "Invalid selection: $choice"
+    bug "❌ Invalid selection: $choice"
     return 1
   fi
   refresh_cookie_file "$domain"
@@ -259,7 +259,7 @@ ytdl() {
 ytf() {
   if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Usage: ytf <URL>"
-    echo "Lists available formats for a given URL. You will be prompted to enter the desired format ID (default: best)."
+    echo "Lists all available download formats."
     return 0
   fi
   local url="$1"
@@ -268,7 +268,7 @@ ytf() {
     return 1
   fi
   if ! validate_url "$url"; then
-    echo "Error: Invalid URL: $url"
+    bug "❌ Error: Invalid URL: $url"
     return 1
   fi
   local domain
@@ -285,9 +285,8 @@ ytf() {
   echo ""
   local best_fmt
   best_fmt=$(select_best_format "$url" "$cookie_file")
-  echo "Automatically selected best format: $best_fmt"
   echo ""
-  printf "Enter the desired format ID (default: %s): " "$best_fmt"
+  printf "Enter format ID: " "$best_fmt"
   read -r user_input
   if [[ -z "$user_input" ]]; then
     user_input="$best_fmt"
@@ -316,7 +315,7 @@ ytdlc() {
         if [[ -n "$2" && "$2" != -* ]]; then
           odir="$2"; shift 2;
         else
-          echo "Error: --output-dir requires a non-empty argument."
+          bug "❌ Error: --output-dir requires a non-empty argument."
           show_ytdlc_help; return 1;
         fi;;
       --update)
@@ -327,7 +326,7 @@ ytdlc() {
         if [[ -n "$2" && "$2" != -* ]]; then
           extra_args+=("-f" "$2"); shift 2;
         else
-          echo "Error: -f requires an argument."; return 1;
+          bug "❌ Error: -f requires an argument."; return 1;
         fi;;
       -*)
         extra_args+=("$1"); shift;;
@@ -340,56 +339,53 @@ ytdlc() {
     return 0
   fi
   if (( ${#urls[@]} == 0 )); then
-    echo "No URLs specified."
+    bug "❌ No URLs specified."
     show_ytdlc_help; return 1;
   fi
   if [[ ! -d "$odir" ]]; then
-    mkdir -p "$odir" || { echo "Error: Could not create '$odir'."; return 1; }
+    mkdir -p "$odir" || { bug "❌ Error: Could not create '$odir'."; return 1; }
   fi
   for url in "${urls[@]}"; do
     echo "----------------------------------------"
     echo "Analyzing URL: $url"
     if ! validate_url "$url"; then
-      echo "Error: Invalid URL: $url"
+      bug "❌ Error: Invalid URL: $url"
       continue
     fi
     # --- Convert YouTube embed URL if needed ---
     if [[ "$url" =~ youtube\.com/embed/([^?]+) ]]; then
       video_id="${BASH_REMATCH[1]}"
       url="https://www.youtube.com/watch/${video_id}"
-      echo "Converted embed URL to: $url"
+      echo "➡️ Converted embed URL to: $url"
     fi
     local domain
     domain=$(get_domain_from_url "$url")
     local cookie_file
     cookie_file=$(get_cookie_path_for_domain "$domain")
     if [[ -z "$cookie_file" ]]; then
-      echo "Error: No cookie file mapped for domain '$domain'."
-      echo "Use 'ytdlc --update' to add or refresh cookie files."
+      bug "❌ Error: No cookie file mapped for domain '$domain'."
+      echo "➡️ Use 'ytdlc --update' to add or refresh cookie files."
       continue
     fi
     if [[ ! -f "$cookie_file" ]]; then
-      echo "Cookie file not found at '$cookie_file'."
-      echo "Use 'ytdlc --update' to create or refresh cookie for '$domain'."
+      bug "❌ Cookie file not found at '$cookie_file'."
+      echo "➡️ Use 'ytdlc --update' and paste the new cookie for '$domain'."
       continue
     fi
     local perms
     perms=$(stat -c '%a' "$cookie_file" 2>/dev/null || echo '???')
     if [[ "$perms" != "600" ]]; then
-      echo "Adjusting cookie file permissions to 600."
-      chmod 600 "$cookie_file" 2>/dev/null || { echo "Warning: Could not set permissions on '$cookie_file'."; }
-    else
-      echo "Permissions for '$cookie_file' are already set to 600."
+      chmod 600 "$cookie_file" 2>/dev/null || { echo "❌ Warning: Could not secure '$cookie_file'."; }
     fi
     if (( listfmt )); then
-      echo "Listing available formats for '$url':"
+      echo "➡️ Listing available formats for '$url':"
       ytf "$url"
       echo "----------------------------------------"
       continue
     fi
     local bestf
     bestf=$(select_best_format "$url" "$cookie_file")
-    echo "Selected format ID: $bestf"
+    glow "✔️ Selected format ID: $bestf"
     if [[ "$bestf" != "best" ]]; then
       local fmt_info
       fmt_info=$(get_format_details "$url" "$cookie_file" "$bestf")
@@ -397,7 +393,7 @@ ytdlc() {
     else
       echo "Format details: N/A"; echo ""
     fi
-    echo "Attempting advanced download for '$url'..."
+    echo "➡️ Attempting advanced download for '$url'..."
     yt-dlp \
       --add-metadata --embed-metadata --external-downloader aria2c \
       --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
@@ -406,16 +402,16 @@ ytdlc() {
       --output "$odir/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
     local exit_code_adv=$?
     if [[ $exit_code_adv -eq 0 ]]; then
-      echo "Advanced download completed successfully for '$url'."
+      glow "✔️ Advanced download completed successfully for '$url'."
     else
-      echo "Advanced download failed for '$url'. Falling back to simple download (ytdl)..."
+      bug "❌ Advanced download failed for '$url'. Falling back to simple download (ytdl)..."
       ytdl "$url"
       local exit_code_simple=$?
       if [[ $exit_code_simple -eq 0 ]]; then
-        echo "Fallback download (ytdl) succeeded for '$url'."
+        glow "✔️ Fallback download (ytdl) succeeded for '$url'."
       else
-        echo "Fallback download (ytdl) also failed for '$url'."
-        echo "Automatically reattempting advanced download..."
+        bug "❌ Fallback download (ytdl) also failed for '$url'."
+        echo "➡️ Automatically reattempting advanced download..."
         yt-dlp \
           --add-metadata --embed-metadata --external-downloader aria2c \
           --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
@@ -430,7 +426,7 @@ ytdlc() {
           read -r update_choice
           if [[ "$update_choice" =~ ^[Yy](es)?$ ]]; then
             refresh_cookie_file "$domain" || { echo "Cookie update failed. Skipping re-attempt for '$url'."; continue; }
-            echo "➡️ Cookies updated. Reattempting advanced download for '$url'..."
+            glow "➡️ Cookies updated. Reattempting advanced download for '$url'..."
             yt-dlp \
               --add-metadata --embed-metadata --external-downloader aria2c \
               --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
