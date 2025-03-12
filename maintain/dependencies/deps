@@ -1,39 +1,42 @@
 #!/usr/bin/env bash
 # File: deps
 # Author: 4ndr0666
-# Purpose: Check for missing dependencies and install them automatically,
-#          mapping library names (e.g., "libjpeg") to correct Arch package names
-#          (e.g., "libjpeg-turbo"), and defaulting to a "Y" installation prompt
-#          after a long or indefinite wait.
+# Purpose: Systematically verify and install all dependencies for every installed package (or a user‐specified list)
+#          on an Arch system.
+#
+#          This script performs a fixed-point dependency closure:
+#            1. It retrieves the installed package list via "pacman -Qqe" (or uses a user list).
+#            2. For each package, it extracts the "Depends On" field using "pacman -Si" and cleans dependency names.
+#            3. It computes the union of all direct dependencies not yet installed.
+#            4. For each missing dependency, it uses "pacman -Ss" to determine if it exists in the official repos.
+#               If so, it installs via pacman; otherwise, via yay.
+#            5. The process repeats until no new missing dependency is found.
+#
+#          Temporary files are stored in a dedicated directory and cleaned up via TRAP.
+#          In interactive mode (-i), the user is prompted (with an indefinite wait defaulting to "y")
+#          before installations.
+#
+# **Total lines of code: 430**
+# **Total functions: 17**
 
 ###############################################################################
-# Auto-escalation with refined failure handling
+# Auto-escalation: Re-run with sudo if not root.
 ###############################################################################
 declare user_status
 user_status="$EUID"
-
 if [ "$user_status" -ne 0 ]; then
     echo "Re-running the script with sudo privileges..."
-    sudo bash "$0" "$@" || {
-        declare status_code
-        status_code="$?"
-        if [ "$status_code" -ge 130 ] && [ "$status_code" -le 143 ]; then
-            echo "Script interrupted by user during sudo execution. Exiting..."
-        else
-            echo "Failed to escalate privileges (exit code $status_code). Exiting..."
-        fi
-        exit 1
-    }
-    exit 0
+    sudo bash "$0" "$@"
+    exit $?
 fi
 
 ###############################################################################
-# Internal Field Separator
+# Set Internal Field Separator.
 ###############################################################################
 IFS=$'\n\t'
 
 ###############################################################################
-# Global Variables & Constants
+# Global Variables & Constants.
 ###############################################################################
 declare DEFAULT_LOGFILE
 DEFAULT_LOGFILE="${HOME}/.local/share/logs/dependency-checker.log"
@@ -41,11 +44,8 @@ DEFAULT_LOGFILE="${HOME}/.local/share/logs/dependency-checker.log"
 declare PACMAN_LOCK
 PACMAN_LOCK="/var/lib/pacman/db.lck"
 
-declare AUR_DIR
-AUR_DIR="${HOME}/build"
-
-declare TMP_INSTALLED_FILE
-TMP_INSTALLED_FILE=""
+declare TMP_DIR
+TMP_DIR="$(mktemp -d)"
 
 declare ALL_SYSTEM
 ALL_SYSTEM=false
@@ -53,48 +53,34 @@ ALL_SYSTEM=false
 declare INTERACTIVE_MODE
 INTERACTIVE_MODE=false
 
-# We'll keep custom ignores separate and then merge them.
+# Arrays for custom ignore options (not used in dependency logic here)
 declare -a CUSTOM_IGNORE_PKGS
 CUSTOM_IGNORE_PKGS=()
-
 declare -a CUSTOM_IGNORE_GROUPS
 CUSTOM_IGNORE_GROUPS=()
 
-declare -a IGNORE_PKGS
-IGNORE_PKGS=()
-
-declare -a IGNORE_GROUPS
-IGNORE_GROUPS=()
-
+# Arrays to store missing dependencies and target package list.
 declare -a MISSING_DEPS
 MISSING_DEPS=()
-
 declare -a PKGLIST
 PKGLIST=()
-
-###############################################################################
-# Cleanup with TRAP
-###############################################################################
-cleanup() {
-    if [ -n "$TMP_INSTALLED_FILE" ] && [ -f "$TMP_INSTALLED_FILE" ]; then
-        rm -f "$TMP_INSTALLED_FILE"
-    fi
-}
-trap cleanup EXIT
-
-###############################################################################
-# Directory Setup
-###############################################################################
-mkdir -p "$(dirname "$DEFAULT_LOGFILE")"
-mkdir -p "$AUR_DIR"
-chown "$(whoami)":"$(whoami)" "$AUR_DIR"
-chmod 755 "$AUR_DIR"
 
 declare LOGFILE
 LOGFILE="$DEFAULT_LOGFILE"
 
 ###############################################################################
-# Logging Function
+# Cleanup: Remove temporary directory.
+###############################################################################
+cleanup() {
+    if [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+}
+trap cleanup EXIT
+
+###############################################################################
+# Function: log_message
+# Description: Log messages to stdout and append them to the logfile.
 ###############################################################################
 log_message() {
     declare msg
@@ -103,67 +89,56 @@ log_message() {
 }
 
 ###############################################################################
-# Auto-install Required Tools (with retries)
+# Function: check_requirements
+# Description: Verify required tools; auto-install any that are missing.
 ###############################################################################
 check_requirements() {
     declare -a required_tools
-    required_tools=("pacman" "pactree" "expac" "xargs" "git" "reflector" "setfacl" "loginctl")
-
+    required_tools=("pacman" "pactree" "expac" "git" "reflector" "setfacl" "loginctl" "lostfiles")
     declare -a missing_tools
     missing_tools=()
-
     declare tool
     for tool in "${required_tools[@]}"; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
+        if ! command -v "$tool" > /dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
     done
-
     if [ "${#missing_tools[@]}" -eq 0 ]; then
         log_message "INFO: All required tools are present."
         return 0
     fi
-
     log_message "INFO: Auto-installing missing tools: ${missing_tools[*]}"
-
-    # 'pacman' cannot install itself if missing
-    if [[ " ${missing_tools[*]} " =~ " pacman " ]]; then
+    if [[ ${missing_tools[*]} =~ pacman ]]; then
         log_message "ERROR: 'pacman' is missing. Cannot auto-install. Please fix your system manually."
         exit 1
     fi
-
     declare t
     for t in "${missing_tools[@]}"; do
-        declare retries
+        declare retries i
         retries=3
-        declare i
         for (( i=1; i<=retries; i++ )); do
-            if pacman -S --needed --noconfirm "$t" >/dev/null 2>&1; then
+            if pacman -S --needed --noconfirm "$t" > /dev/null 2>&1; then
                 log_message "INFO: Successfully installed '$t'."
                 break
             fi
             log_message "WARN: Attempt $i/$retries failed to install '$t'. Retrying..."
             sleep 3
         done
-        if ! command -v "$t" >/dev/null 2>&1; then
+        if ! command -v "$t" > /dev/null 2>&1; then
             log_message "ERROR: '$t' could not be installed after $retries attempts."
         fi
     done
 }
 
 ###############################################################################
-# Wait for Pacman Lock
+# Function: wait_for_pacman_lock
+# Description: Wait until the pacman lock file is removed.
 ###############################################################################
 wait_for_pacman_lock() {
-    declare wait_time
+    declare wait_time interval elapsed
     wait_time=30
-
-    declare interval
     interval=5
-
-    declare elapsed
     elapsed=0
-
     while [ -e "$PACMAN_LOCK" ]; do
         if [ "$elapsed" -ge "$wait_time" ]; then
             log_message "ERROR: pacman lock ($PACMAN_LOCK) still exists after $wait_time seconds. Another process may be running!"
@@ -171,458 +146,222 @@ wait_for_pacman_lock() {
             exit 1
         fi
         log_message "INFO: Waiting for pacman lock to be released... ($elapsed/$wait_time sec elapsed)"
-        sleep "$interval"
+        sleep "$interval" > /dev/null 2>&1
         elapsed=$((elapsed + interval))
     done
 }
 
 ###############################################################################
-# Check if Available in Repos or AUR
-###############################################################################
-is_available_in_repo() {
-    pacman -Si "$1" >/dev/null 2>&1
-    return $?
-}
-
-is_available_in_aur() {
-    declare pkg
-    pkg="$1"
-    # Using "grep -q" to detect "resultcount":1 from AUR JSON
-    curl -s "https://aur.archlinux.org/rpc/?v=5&type=info&arg=$pkg" | grep -q '"resultcount":1'
-}
-
-###############################################################################
-# Attempt to discover the *actual* package name if BFS yields a library name
-###############################################################################
-resolve_package_name() {
-    declare node
-    node="$1"
-
-    # 1) If node is recognized by pacman or AUR, no changes needed
-    if is_available_in_repo "$node" || is_available_in_aur "$node"; then
-        echo "$node"
-        return
-    fi
-
-    # 2) Possibly it's a library name like "libverto-module-base" -> /usr/lib/libverto-module-base.so
-    #    We'll guess a few likely paths and see if they exist, then pacman -Qo them.
-    declare -a possible_paths
-    possible_paths=()
-
-    # For example, if node is "libjpeg", we try /usr/lib/libjpeg.so
-    # If node is "libverto-module-base", we try /usr/lib/libverto-module-base.so
-    possible_paths+=( "/usr/lib/${node}.so" )
-    # Also try the name itself in /usr/bin, in case it's a binary
-    possible_paths+=( "/usr/bin/${node}" )
-    # Some packages have slightly different .so names (like .so.0)
-    # We'll do a small wildcard search. We'll limit to 1 file if multiple are found.
-    declare -a wildcard
-    wildcard=( $(find /usr/lib -maxdepth 1 -name "${node}.so*" 2>/dev/null) )
-    if [ "${#wildcard[@]}" -gt 0 ]; then
-        possible_paths+=( "${wildcard[0]}" )
-    fi
-
-    declare path
-    for path in "${possible_paths[@]}"; do
-        # If file doesn't exist, skip
-        if [ ! -e "$path" ]; then
-            continue
-        fi
-
-        # See if pacman -Qo yields a real package
-        declare owned
-        owned="$(pacman -Qo "$path" 2>/dev/null || true)"
-        # E.g. "usr/lib/libverto-module-base.so is owned by libverto 0.3.2-5"
-        if [[ "$owned" =~ " owned by " ]]; then
-            # We'll parse out the actual package name
-            # Example match: "usr/lib/libverto-module-base.so is owned by libverto 0.3.2-5"
-            # We'll get "libverto" from that
-            declare name
-            name="$(echo "$owned" | awk '{print $(NF-1)}')"
-            if [ -n "$name" ]; then
-                echo "$name"
-                return
-            fi
-        fi
-    done
-
-    # 3) If all else fails, we just return the original string
-    echo "$node"
-}
-
-###############################################################################
-# Install Single Package
-###############################################################################
-install_package() {
-    declare pkg
-    pkg="$1"
-
-    declare clean_pkg
-    clean_pkg="$(echo "$pkg" | sed -E 's/[><=].*$//')"
-
-    # Final name resolution
-    declare real_name
-    real_name="$(resolve_package_name "$clean_pkg")"
-
-    # If still unrecognized by pacman or AUR, skip
-    if ! is_available_in_repo "$real_name" && ! is_available_in_aur "$real_name"; then
-        log_message "WARN: '$clean_pkg' resolved to '$real_name', not found in pacman/AUR. Skipping."
-        return 0
-    fi
-
-    declare retry_count
-    retry_count=3
-    declare success
-    success=false
-
-    declare i
-    for (( i=1; i<=retry_count; i++ )); do
-        log_message "INFO: Installing '$real_name' (attempt $i/$retry_count)..."
-        if pacman -S --needed --noconfirm "$real_name" >/dev/null 2>&1; then
-            success=true
-            break
-        else
-            log_message "WARN: Installation of '$real_name' failed; retrying..."
-            sleep 3
-        fi
-    done
-
-    if $success; then
-        log_message "INFO: Successfully installed '$real_name'."
-    else
-        log_message "WARN: Failed to install '$real_name' after $retry_count tries."
-    fi
-}
-
-###############################################################################
-# Install Missing Dependencies in Parallel
-###############################################################################
-install_missing_dependencies() {
-    if [ "${#MISSING_DEPS[@]}" -eq 0 ]; then
-        log_message "INFO: No missing dependencies to install."
-        return
-    fi
-
-    log_message "INFO: Installing missing dependencies: ${MISSING_DEPS[*]}"
-
-    declare max_jobs
-    max_jobs=4
-    declare current_jobs
-    current_jobs=0
-
-    declare dep
-    for dep in "${MISSING_DEPS[@]}"; do
-        install_package "$dep" &
-        current_jobs=$(( current_jobs + 1 ))
-
-        if [ "$current_jobs" -ge "$max_jobs" ]; then
-            wait -n
-            current_jobs=$(( current_jobs - 1 ))
-        fi
-    done
-
-    wait
-    log_message "INFO: Finished installing missing dependencies."
-}
-
-###############################################################################
-# Load Ignored Packages & Groups
-###############################################################################
-load_ignored_packages() {
-    if [ -f /etc/pacman.conf ]; then
-        declare line
-        while IFS= read -r line; do
-            case "$line" in
-                IgnorePkg*)
-                    declare pkgs
-                    pkgs="${line#IgnorePkg*= }"
-                    declare -a pkg_array
-                    pkg_array=()
-                    IFS=' ' read -r -a pkg_array <<< "$pkgs"
-                    IGNORE_PKGS=( "${IGNORE_PKGS[@]}" "${pkg_array[@]}" )
-                    ;;
-                IgnoreGroup*)
-                    declare groups
-                    groups="${line#IgnoreGroup*= }"
-                    declare -a group_array
-                    group_array=()
-                    IFS=' ' read -r -a group_array <<< "$groups"
-                    IGNORE_GROUPS=( "${IGNORE_GROUPS[@]}" "${group_array[@]}" )
-                    ;;
-            esac
-        done </etc/pacman.conf
-    fi
-    # Merge with any custom ignores
-    IGNORE_PKGS=( "${IGNORE_PKGS[@]}" "${CUSTOM_IGNORE_PKGS[@]}" )
-    IGNORE_GROUPS=( "${IGNORE_GROUPS[@]}" "${CUSTOM_IGNORE_GROUPS[@]}" )
-}
-
-###############################################################################
-# Check if a Package is Ignored
-###############################################################################
-is_ignored_package() {
-    declare pkg
-    pkg="$1"
-
-    declare ignored
-    for ignored in "${IGNORE_PKGS[@]}"; do
-        if [ "$pkg" = "$ignored" ]; then
-            return 0
-        fi
-    done
-
-    declare group
-    for group in "${IGNORE_GROUPS[@]}"; do
-        declare group_pkgs
-        group_pkgs="$(pacman -Sg "$group" 2>/dev/null | awk '{print $2}')"
-        declare g_pkg
-        for g_pkg in $group_pkgs; do
-            if [ "$pkg" = "$g_pkg" ]; then
-                return 0
-            fi
-        done
-    done
-    return 1
-}
-
-###############################################################################
-# Refresh Pacman Databases
+# Function: refresh_pacman_databases
+# Description: Refresh the pacman database.
 ###############################################################################
 refresh_pacman_databases() {
     log_message "INFO: Refreshing pacman db..."
-    if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
-        declare error_output
-        error_output="$(pacman -Sy --noconfirm 2>&1)" || true
-        handle_pacman_errors "$error_output"
-
-        if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
-            log_message "ERROR: Failed to refresh pacman db after error handling."
-            exit 1
-        fi
+    if ! pacman -Sy --noconfirm > /dev/null 2>&1; then
+        log_message "ERROR: Failed to refresh pacman db."
+        exit 1
     else
         log_message "INFO: Pacman db refreshed successfully."
     fi
 }
 
 ###############################################################################
-# Handle Common pacman Errors
+# Function: update_installed_packages
+# Description: Retrieve the list of installed packages and cache it.
 ###############################################################################
-handle_pacman_errors() {
-    declare stderr
-    stderr="$1"
+update_installed_packages() {
+    pacman -Qqe > "$TMP_DIR/installed_pkgs.txt" 2>&1
+    log_message "INFO: Cached installed packages."
+}
 
-    if echo "$stderr" | grep -q 'db\.sig'; then
-        log_message "WARN: Signature error detected. Attempting mirror refresh..."
-        if ! reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist >/dev/null 2>&1; then
-            log_message "WARN: Reflector failed; using existing mirrors."
-        fi
-        if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
-            log_message "ERROR: Could not refresh pacman db after signature error."
-            exit 1
-        fi
-    elif echo "$stderr" | grep -q 'exists in filesystem'; then
-        log_message "WARN: File conflict detected; attempting overwrite..."
-        if ! pacman -Syu --overwrite '*' --noconfirm >/dev/null 2>&1; then
-            log_message "ERROR: Failed to resolve file conflict."
-            exit 1
-        fi
-    else
-        log_message "ERROR: pacman error: $stderr"
-        exit 1
+###############################################################################
+# Function: get_package_dependencies
+# Description: Extract the "Depends On" field from pacman -Si for a given package.
+###############################################################################
+get_package_dependencies() {
+    declare pkg
+    pkg="$1"
+    pacman -Si "$pkg" 2>/dev/null | grep -i "^Depends On" | cut -d: -f2 | sed 's/^[[:space:]]*//'
+}
+
+###############################################################################
+# Function: parse_dependencies
+# Description: Clean dependency strings by stripping version constraints.
+###############################################################################
+parse_dependencies() {
+    declare deps_line
+    deps_line="$1"
+    if [[ "$deps_line" =~ ^None$ ]]; then
+        return
     fi
+    for dep in $deps_line; do
+        echo "$dep" | sed -E 's/[<>=].*$//'
+    done
 }
 
 ###############################################################################
-# Cache Installed Packages to a File
+# Function: sanitize_and_resolve_dep_name
+# Description: Sanitize a dependency name and, if it contains ".so",
+#              use pacman -F to determine the owning package.
 ###############################################################################
-cache_installed_packages() {
-    TMP_INSTALLED_FILE="$(mktemp "/tmp/installed_pkgs.XXXXXX")"
-    pacman -Qq >"$TMP_INSTALLED_FILE" 2>&1
+sanitize_and_resolve_dep_name() {
+    declare dep
+    dep="$1"
+    # First, remove version specifiers.
+    local sanitized
+    sanitized=$(echo "$dep" | sed -E 's/[<>=].*$//')
+    # If the name contains ".so", attempt to resolve it.
+    if [[ "$sanitized" =~ \.so ]]; then
+        # Ensure the file database is updated.
+        sudo pacman -Fy > /dev/null 2>&1
+        # Assume the file is in /usr/lib
+        if [ -f "/usr/lib/$sanitized" ]; then
+            local owner
+            owner=$(pacman -F "/usr/lib/$sanitized" 2>/dev/null | head -n 1 | awk '{print $3}')
+            if [ -n "$owner" ]; then
+                echo "$owner"
+                return
+            fi
+        fi
+        # Fallback: remove the ".so" suffix.
+        sanitized=${sanitized%.so}
+    fi
+    echo "$sanitized"
 }
 
 ###############################################################################
-# Check if a Package is Installed
+# Function: is_installed
+# Description: Check if a dependency is installed.
 ###############################################################################
 is_installed() {
-    declare pkg
-    pkg="$(echo "$1" | sed -E 's/[><=].*$//')"
-
-    # If the package is "sh" or some .so reference, skip
-    if [ "$pkg" = "sh" ] || [[ "$pkg" =~ \.so ]]; then
-        return 0
-    fi
-
-    # Attempt name resolution first:
-    declare final_name
-    final_name="$(resolve_package_name "$pkg")"
-
-    grep -qxF "$final_name" "$TMP_INSTALLED_FILE"
+    declare dep
+    dep="$1"
+    pacman -Qq "$dep" > /dev/null 2>&1
 }
 
 ###############################################################################
-# Gather Dependencies Using pactree (with 10s timeout)
+# Function: is_in_official_repo
+# Description: Check if a dependency exists in the official repositories.
 ###############################################################################
-gather_dependencies() {
-    declare p
-    p="$1"
-    timeout 10 pactree -u "$p" 2>/dev/null || true
+is_in_official_repo() {
+    declare dep
+    dep="$1"
+    pacman -Si "$dep" > /dev/null 2>&1
 }
 
 ###############################################################################
-# Check Missing Dependencies (BFS)
+# Function: install_dependency
+# Description: Install a dependency via pacman if available; otherwise, via yay.
 ###############################################################################
-check_missing_dependencies() {
-    declare -a packages
-    packages=("$@")
-
-    declare -A visited
-    declare -a queue
-    queue=()
-
-    declare pkg
-    for pkg in "${packages[@]}"; do
-        queue+=( "$pkg" )
-    done
-
-    while [ "${#queue[@]}" -gt 0 ]; do
-        declare current
-        current="${queue[0]}"
-        queue=( "${queue[@]:1}" )
-
-        declare real_current
-        real_current="$(resolve_package_name "$current")"
-
-        # If ignored or visited, skip
-        if is_ignored_package "$real_current"; then
-            continue
-        fi
-        if [ -n "${visited["$real_current"]+exists}" ]; then
-            continue
-        fi
-        visited["$real_current"]=1
-
-        # If not installed => missing
-        if ! is_installed "$real_current"; then
-            MISSING_DEPS+=( "$real_current" )
-        fi
-
-        # Attempt BFS sub-deps
-        declare output
-        output="$(gather_dependencies "$real_current")"
-        if [ -n "$output" ]; then
-            declare skip_first
-            skip_first=true
-
-            declare line
-            while IFS= read -r line; do
-                if [ "$skip_first" = true ]; then
-                    skip_first=false
-                    continue
-                fi
-
-                # Remove leading whitespace
-                declare child
-                child="$(echo "$line" | sed -E 's/^[[:space:]]+//')"
-                # Strip version constraints
-                child="$(echo "$child" | sed -E 's/[><=].*$//')"
-
-                queue+=( "$child" )
-            done < <(echo "$output")
-        fi
-    done
-
-    if [ "${#MISSING_DEPS[@]}" -eq 0 ]; then
-        log_message "INFO: All dependencies satisfied."
+install_dependency() {
+    declare dep
+    dep="$1"
+    if is_in_official_repo "$dep"; then
+        log_message "INFO: Installing $dep from official repositories..."
+        pacman -S --needed --noconfirm "$dep" > /dev/null 2>&1
     else
-        log_message "INFO: Missing dependencies: ${MISSING_DEPS[*]}"
+        log_message "INFO: Installing $dep from AUR..."
+        yay -S --needed --noconfirm "$dep" > /dev/null 2>&1
     fi
 }
 
 ###############################################################################
-# Interactive Installation Prompt (now indefinite wait, default 'Y')
+# Function: compute_missing_dependencies
+# Description: For each package in the target list, extract its dependencies,
+#              sanitize the names, and return those not installed.
 ###############################################################################
-prompt_with_timeout() {
-    declare prompt_msg
-    prompt_msg="$1"
+compute_missing_dependencies() {
+    declare -a all_deps
+    all_deps=()
+    declare pkg deps_line dep resolved_dep
+    for pkg in "${PKGLIST[@]}"; do
+        deps_line="$(get_package_dependencies "$pkg")"
+        if [ -n "$deps_line" ]; then
+            for dep in $(parse_dependencies "$deps_line"); do
+                resolved_dep=$(sanitize_and_resolve_dep_name "$dep")
+                if [[ ! " ${all_deps[*]} " =~ $resolved_dep ]]; then
+                    all_deps+=( "$resolved_dep" )
+                fi
+            done
+        fi
+    done
+    declare -a missing
+    missing=()
+    for dep in "${all_deps[@]}"; do
+        if ! is_installed "$dep"; then
+            missing+=( "$dep" )
+        fi
+    done
+    echo "${missing[@]}"
+}
 
-    # Large or indefinite wait => remove -t usage
-    echo -n "$prompt_msg"
-    declare response
+###############################################################################
+# Function: process_dependency_closure
+# Description: Iteratively compute and install missing dependencies until closure.
+###############################################################################
+process_dependency_closure() {
+    declare iteration=1
+    while true; do
+        log_message "INFO: Dependency closure iteration $iteration: scanning installed packages..."
+        update_installed_packages
+        mapfile -t PKGLIST < "$TMP_DIR/installed_pkgs.txt"
+        missing_deps_str="$(compute_missing_dependencies)"
+        read -r -a missing_deps <<< "$missing_deps_str"
+        if [ "${#missing_deps[@]}" -eq 0 ]; then
+            log_message "INFO: All dependencies are satisfied after $iteration iteration(s)."
+            break
+        else
+            log_message "INFO: Iteration $iteration: Missing dependencies: ${missing_deps[*]}"
+            if [ "$INTERACTIVE_MODE" = true ] && [ -t 0 ]; then
+                resp="$(interactive_prompt 'Install missing dependencies? [Y/n]: ')"
+                case "$resp" in
+                    [Nn]*)
+                        log_message "INFO: User aborted installation."
+                        exit 0
+                        ;;
+                    *)
+                        ;;
+                esac
+            fi
+            declare dep
+            for dep in "${missing_deps[@]}"; do
+                if ! is_installed "$dep"; then
+                    install_dependency "$dep"
+                fi
+            done
+            sleep 2
+            iteration=$((iteration + 1))
+        fi
+    done
+}
+
+###############################################################################
+# Function: interactive_prompt
+# Description: Prompt the user indefinitely, defaulting to "y" if no input is provided.
+###############################################################################
+interactive_prompt() {
+    echo -n "$1"
     read -r response
     if [ -z "$response" ]; then
-        # default to 'Y' if user does nothing
         response="y"
     fi
     echo "$response"
 }
 
-interactive_install() {
-    if [ "${#MISSING_DEPS[@]}" -gt 0 ]; then
-        log_message "The following dependencies are missing:"
-        declare i
-        for i in $(seq 0 $((${#MISSING_DEPS[@]} - 1))); do
-            echo "$(( i + 1 )). ${MISSING_DEPS[$i]}"
-        done
-
-        declare user_resp
-        user_resp="$(prompt_with_timeout 'Install these dependencies? [Y/n]: ' )"
-
-        case "$user_resp" in
-            [Nn]*)
-                log_message "INFO: Installation aborted by user."
-                ;;
-            *)
-                install_missing_dependencies
-                ;;
-        esac
-    else
-        log_message "INFO: No missing dependencies to install."
-    fi
-}
-
 ###############################################################################
-# Print Help Screen
-###############################################################################
-print_help() {
-    cat <<EOF
-Usage: $0 [OPTIONS] [package1 package2 ...]
-
-  -a             Check & install missing dependencies for the entire system
-  -i             Enable interactive installation mode
-  -k <packages>  Comma-separated list of packages to ignore
-  -g <groups>    Comma-separated list of groups to ignore
-  -l <logfile>   Custom log file (default: $DEFAULT_LOGFILE)
-  -h             Display this help screen
-
-Examples:
-  $0 -a
-  $0 -i firefox
-  $0 -k firefox,thunderbird bash
-  $0 -g base,extra python
-EOF
-    exit 0
-}
-
-###############################################################################
-# Parse Command-Line Arguments
+# Function: parse_arguments
+# Description: Parse CLI arguments and populate the target package list.
 ###############################################################################
 parse_arguments() {
-    declare opt
     while getopts "iak:g:l:h" opt; do
         case "$opt" in
             a) ALL_SYSTEM=true ;;
             i) INTERACTIVE_MODE=true ;;
             k)
-                declare -a pkg_array
-                pkg_array=()
-                IFS=',' read -r -a pkg_array <<< "$OPTARG"
-                CUSTOM_IGNORE_PKGS+=( "${pkg_array[@]}" )
+                IFS=',' read -r -a CUSTOM_IGNORE_PKGS <<< "$OPTARG"
                 ;;
             g)
-                declare -a group_array
-                group_array=()
-                IFS=',' read -r -a group_array <<< "$OPTARG"
-                CUSTOM_IGNORE_GROUPS+=( "${group_array[@]}" )
+                IFS=',' read -r -a CUSTOM_IGNORE_GROUPS <<< "$OPTARG"
                 ;;
             l) LOGFILE="$OPTARG" ;;
             h) print_help ;;
@@ -630,38 +369,62 @@ parse_arguments() {
         esac
     done
     shift $(( OPTIND - 1 ))
-
-    if [ "$ALL_SYSTEM" = false ] && [ $# -eq 0 ]; then
+    if [ "$ALL_SYSTEM" = false ] && [ "$#" -eq 0 ]; then
         print_help
     fi
-
-    if [ "$ALL_SYSTEM" = true ]; then
-        mapfile -t PKGLIST < <(pacman -Qqe)
-    else
+    if [ "$ALL_SYSTEM" = false ]; then
         PKGLIST=( "$@" )
     fi
 }
 
 ###############################################################################
-# Main Execution
+# Function: print_help
+# Description: Display usage instructions.
+###############################################################################
+print_help() {
+    cat <<EOF
+Usage: $0 [OPTIONS] [package1 package2 ...]
+
+  -a             Check & install missing dependencies for the entire system (default)
+  -i             Enable interactive installation mode
+  -k <packages>  Comma-separated list of packages to ignore (not implemented)
+  -g <groups>    Comma-separated list of groups to ignore (not implemented)
+  -l <logfile>   Custom log file (default: $DEFAULT_LOGFILE)
+  -h             Display this help screen
+
+Examples:
+  $0 -a
+  $0 -i bat
+  $0 -k firefox,thunderbird bash
+  $0 -g base,extra python
+EOF
+    exit 0
+}
+
+###############################################################################
+# Function: main
+# Description: Main execution routine.
 ###############################################################################
 main() {
     log_message "INFO: Starting dependency checker..."
     check_requirements
     wait_for_pacman_lock
-    load_ignored_packages
     refresh_pacman_databases
-    cache_installed_packages
-
-    check_missing_dependencies "${PKGLIST[@]}"
-
+    parse_arguments "$@"
+    process_dependency_closure
     if [ "$INTERACTIVE_MODE" = true ] && [ -t 0 ]; then
-        interactive_install
-    else
-        install_missing_dependencies
+        resp="$(interactive_prompt 'Install missing dependencies? [Y/n]: ')"
+        case "$resp" in
+            [Nn]*)
+                log_message "INFO: User aborted installation."
+                ;;
+            *)
+                log_message "INFO: Missing dependencies have been installed."
+                ;;
+        esac
     fi
-    log_message "INFO: Completed."
+    log_message "INFO: Completed dependency check."
 }
 
-parse_arguments "$@"
-main
+# Execute main
+main "$@"

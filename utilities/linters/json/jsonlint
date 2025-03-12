@@ -1,0 +1,20 @@
+#!/bin/bash
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <path to JSON file>"
+    exit 1
+fi
+
+CONFIG_FILE="$1"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "File not found: $CONFIG_FILE"
+    exit 1
+fi
+
+if jq . "$CONFIG_FILE" > /dev/null 2>&1; then
+    echo "JSON is valid. Reformatting file..."
+    jq . "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "File reformatted successfully."
+else
+    echo "JSON is invalid. Please fix the errors."
+fi
