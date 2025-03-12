@@ -350,7 +350,7 @@ net.ipv4.tcp_congestion_control=bbr
     set_immutable "$SYSCTL_UFW_FILE"
 
     log "Applying sysctl settings..."
-    if ! sysctl --system; then
+    if sysctl --system; then
         log "Sysctl settings applied successfully."
     else
         log "Error: Failed to apply sysctl settings."
@@ -540,10 +540,11 @@ configure_ufw() {
     if [[ "$VPN_FLAG" == "true" ]]; then
         log "VPN flag set. Configuring VPN-specific rules..."
         detect_vpn_port
-	if ! detect_vpn_port; then
+        if [[ $? -ne 0 ]]; then
             log "Error: VPN port detection failed. Exiting."
             exit 1
         fi
+
         if [[ -n "${VPN_IFACES:-}" ]]; then
             for VPN_IF in $VPN_IFACES; do
                 if [[ "$DRY_RUN" == "false" ]]; then
