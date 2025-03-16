@@ -1,67 +1,95 @@
 #!/usr/bin/env bash
+# Author: 4ndr0666
 
-# Automated Arch Linux Installation Script
-# by 4ndr0666
+# ==================== // 4ndr0install //
 
-set -euo pipefail
+## Constants
 
-## Define Official and AUR Packages
-OFFICIAL_PKGS=(
-  base-devel
-  debugedit
-  unzip
-  archlinux-keyring
-  github-cli
-  git-delta
-  exa
-  fd
-  micro
-  expac
-  bat
-  bash-completion
-  pacdiff
-  neovim
-  xorg-xhost
-  xclip
-  ripgrep
-  diffuse
-  fzf
-  sysz
-  zsh-syntax-highlighting
-  zsh-history-substring-search
-  zsh-autosuggestions
-  lsd
-  git-extras
+PKGS_OFFICIAL=(
+    base-devel
+    debugedit
+    unzip
+    archlinux-keyring
+    github-cli
+    git-delta
+    exa
+    fd
+    micro
+    expac
+    bat
+    bash-completion
+    pacdiff
+    neovim
+    xorg-xhost
+    xclip
+    ripgrep
+    diffuse
+    fzf
+    zsh-syntax-highlighting
+    zsh-history-substring-search
+    zsh-autosuggestions
+    lsd
+    git-extras
 )
 
-AUR_PKGS=(
-  brave-beta-bin
-  bashmount-git
-  breeze-hacked-cursor-theme-git
-  lf-git
+PKGS_AUR=(
+    sysz
+    brave-beta-bin
+    bashmount-git
+    breeze-hacked-cursor-theme-git
+    lf-git
 )
 
-## Update system first
-sudo pacman -Syu --noconfirm
+AUR_HELPER="yay"
 
-## Ensure debugedit is installed first (critical for package building)
-sudo pacman -S --needed --noconfirm debugedit
+## Functions
 
-## Install Official Packages
-sudo pacman -S --needed --noconfirm "${OFFICIAL_PKGS[@]}"
+print_step() {
+    printf "\033[1;36m:: %s\033[0m\n" "$@"
+}
 
-## Install yay if it's not already installed
-if ! command -v yay &> /dev/null; then
-  git clone https://aur.archlinux.org/yay.git /tmp/yay
-  (cd /tmp/yay && makepkg -si --noconfirm)
-fi
+error_exit() {
+    printf "%b\n" "\033[1;31m[ERROR]\033[0m $1"
+    exit 1
+}
 
-## Install AUR Packages
-yay -S --needed --noconfirm "${AUR_PKGS[@]}"
+install_official_pkgs() {
+    printf "%b\n" "\nOne second while I set things up..."
+    sudo pacman -Sy --needed --noconfirm "${PKGS_OFFICIAL[@]}" || error "Pacman installation failed."
+}
 
-## Cleanup
-echo "Cleaning package cache..."
-yay -Yc --noconfirm
+install_yay() {
+    if ! command -v yay >/dev/null 2>&1; then
+        printf "%b\n" "\nFetching Yay..."
+        sudo pacman -S --needed --noconfirm base-devel git || error "Pacman base-devel failed."
+        git clone https://aur.archlinux.org/yay.git /tmp/yay && \
+        pushd /tmp/yay && \
+        makepkg -si --noconfirm && \
+        popd && rm -rf /tmp/yay || error "Yay installation failed."
+    else
+        printf "%b\n" "\nYay is already installed. Skipping installation."
+    fi
+}
 
-## Finish
-echo "✅ Installation complete!"
+install_aur_pkgs() {
+    printf "%b\n" "\nInstalling AUR packages..."
+    yay -Sy --needed --noconfirm "${PKGS_AUR[@]}" || error "Yay installation failed."
+}
+
+## Main entry point
+
+main() {
+    #### Ensure yay (AUR Helper)
+    install_yay
+
+    #### Install official repo packages
+    install_official_pkgs
+
+    #### Install AUR packages
+    install_aur_pkgs
+
+    #### Cleanup
+    printf "%b\n" "\n4ndr0install has setup the machine."
+}
+
+main "$@"
