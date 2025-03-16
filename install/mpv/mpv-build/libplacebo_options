@@ -1,0 +1,5 @@
+-Dvulkan=enabled
+-Dglslang=enabled
+-Dshaderc=enabled
+-Dlcms=enabled
+-Dd3d11=disabled
