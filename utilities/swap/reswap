@@ -1,0 +1,15 @@
+#!/bin/bash
+
+adjust_swappiness() {
+    local target_swappiness=133
+    local free_ram_mb
+    free_ram_mb=$(free -m | awk '/^Mem:/{print $4}')
+    free_ram_mb=${free_ram_mb:-0}
+    sysctl -w vm.swappiness="$target_swappiness" || {
+        echo "Error: Failed to set swappiness."
+        exit 1
+    }
+    echo "Swappiness adjusted to $target_swappiness. Free memory: ${free_ram_mb}MB"
+}
+
+adjust_swappiness
