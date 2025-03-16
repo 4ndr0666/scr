@@ -1760,15 +1760,14 @@ def check_zram_configuration():
 # 28. adjust_swappiness() => skipping if user has own config
 ###################################
 
-
-def adjust_swappiness(value=133, force=False):
+def adjust_swappiness(value=10, force=False):
     """
     Adjust the swappiness sysctl param to 'value'.
     If force=False and user has /etc/sysctl.d/* config, skip changing at runtime.
     """
-    swappiness_file = "/etc/sysctl.d/99-IPv4.conf"
+    swappiness_file = "/etc/sysctl.d/99-swappiness.conf"
     if not force and os.path.isfile(swappiness_file):
-        log_and_print(f"{INFO} /etc/sysctl.d/99-IPv4.conf already manages swappiness. Skipping direct set.", "info")
+        log_and_print(f"{INFO} /etc/sysctl.d/99-swappiness.conf already manages swappiness. Skipping direct set.", "info")
         return
 
     log_and_print(f"{INFO} Adjusting swappiness to {value}...", "info")

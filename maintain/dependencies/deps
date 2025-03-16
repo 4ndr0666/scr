@@ -1,33 +1,39 @@
 #!/usr/bin/env bash
+# =============================================================================
 # File: deps
-# Author: 4ndr0666
-# Purpose: Systematically verify and install all dependencies for every installed package (or a user‐specified list)
-#          on an Arch system.
+# Author: 4ndr0666 (Revised by Assistant)
+# Purpose: Systematically verify and install all dependencies for every 
+#          installed package (or a user‐specified list) on an Arch system.
 #
 #          This script performs a fixed-point dependency closure:
-#            1. It retrieves the installed package list via "pacman -Qqe" (or uses a user list).
-#            2. For each package, it extracts the "Depends On" field using "pacman -Si" and cleans dependency names.
-#            3. It computes the union of all direct dependencies not yet installed.
-#            4. For each missing dependency, it uses "pacman -Ss" to determine if it exists in the official repos.
-#               If so, it installs via pacman; otherwise, via yay.
-#            5. The process repeats until no new missing dependency is found.
+#            1. Retrieves the installed package list via "pacman -Qqe" (or uses 
+#               a user-provided list).
+#            2. For each package, it extracts the "Depends On" field using 
+#               "pacman -Qi" and cleans dependency names robustly.
+#            3. Computes the union of all direct dependencies not yet installed.
+#            4. For each missing dependency, it checks if it exists in the 
+#               official repos and installs via pacman; otherwise, uses yay.
+#            5. Repeats the process until no new missing dependency is found.
 #
-#          Temporary files are stored in a dedicated directory and cleaned up via TRAP.
-#          In interactive mode (-i), the user is prompted (with an indefinite wait defaulting to "y")
-#          before installations.
+#          If pacman database refresh fails due to GPGME errors, a fallback 
+#          function repairs the keyring and databases.
 #
-# **Total lines of code: 430**
-# **Total functions: 17**
+#          Temporary files are stored in a dedicated directory and cleaned up 
+#          via TRAP.
+#
+#          Interactive mode (-i) prompts the user (defaulting to "y") before 
+#          installations.
+#
+# Total Functions: 19
+# Total Lines of Code: ~260
+# =============================================================================
 
 ###############################################################################
 # Auto-escalation: Re-run with sudo if not root.
 ###############################################################################
-declare user_status
-user_status="$EUID"
-if [ "$user_status" -ne 0 ]; then
+if [ "$EUID" -ne 0 ]; then
     echo "Re-running the script with sudo privileges..."
-    sudo bash "$0" "$@"
-    exit $?
+    exec sudo "$0" "$@"
 fi
 
 ###############################################################################
@@ -38,22 +44,15 @@ IFS=$'\n\t'
 ###############################################################################
 # Global Variables & Constants.
 ###############################################################################
-declare DEFAULT_LOGFILE
 DEFAULT_LOGFILE="${HOME}/.local/share/logs/dependency-checker.log"
-
-declare PACMAN_LOCK
+LOGFILE="${DEFAULT_LOGFILE}"
 PACMAN_LOCK="/var/lib/pacman/db.lck"
-
-declare TMP_DIR
 TMP_DIR="$(mktemp -d)"
 
-declare ALL_SYSTEM
 ALL_SYSTEM=false
-
-declare INTERACTIVE_MODE
 INTERACTIVE_MODE=false
 
-# Arrays for custom ignore options (not used in dependency logic here)
+# Custom ignore arrays (currently not integrated in dependency logic)
 declare -a CUSTOM_IGNORE_PKGS
 CUSTOM_IGNORE_PKGS=()
 declare -a CUSTOM_IGNORE_GROUPS
@@ -65,15 +64,13 @@ MISSING_DEPS=()
 declare -a PKGLIST
 PKGLIST=()
 
-declare LOGFILE
-LOGFILE="$DEFAULT_LOGFILE"
-
 ###############################################################################
-# Cleanup: Remove temporary directory.
+# Function: cleanup
+# Description: Remove the temporary directory on exit.
 ###############################################################################
 cleanup() {
-    if [ -d "$TMP_DIR" ]; then
-        rm -rf "$TMP_DIR"
+    if [ -d "${TMP_DIR}" ]; then
+        rm -rf "${TMP_DIR}"
     fi
 }
 trap cleanup EXIT
@@ -83,9 +80,8 @@ trap cleanup EXIT
 # Description: Log messages to stdout and append them to the logfile.
 ###############################################################################
 log_message() {
-    declare msg
-    msg="$1"
-    echo -e "$msg" 2>&1 | tee -a "$LOGFILE"
+    local msg="$1"
+    echo -e "$msg" | tee -a "$LOGFILE" 2>&1
 }
 
 ###############################################################################
@@ -93,95 +89,147 @@ log_message() {
 # Description: Verify required tools; auto-install any that are missing.
 ###############################################################################
 check_requirements() {
-    declare -a required_tools
-    required_tools=("pacman" "pactree" "expac" "git" "reflector" "setfacl" "loginctl" "lostfiles")
-    declare -a missing_tools
-    missing_tools=()
-    declare tool
+    local tool
+    local required_tools=( "pacman" "pactree" "expac" "git" "reflector" "setfacl" "loginctl" "lostfiles" )
+    local missing_tools=()
     for tool in "${required_tools[@]}"; do
-        if ! command -v "$tool" > /dev/null 2>&1; then
+        if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
     done
-    if [ "${#missing_tools[@]}" -eq 0 ]; then
-        log_message "INFO: All required tools are present."
-        return 0
-    fi
-    log_message "INFO: Auto-installing missing tools: ${missing_tools[*]}"
-    if [[ ${missing_tools[*]} =~ pacman ]]; then
-        log_message "ERROR: 'pacman' is missing. Cannot auto-install. Please fix your system manually."
-        exit 1
-    fi
-    declare t
-    for t in "${missing_tools[@]}"; do
-        declare retries i
-        retries=3
-        for (( i=1; i<=retries; i++ )); do
-            if pacman -S --needed --noconfirm "$t" > /dev/null 2>&1; then
-                log_message "INFO: Successfully installed '$t'."
-                break
-            fi
-            log_message "WARN: Attempt $i/$retries failed to install '$t'. Retrying..."
-            sleep 3
-        done
-        if ! command -v "$t" > /dev/null 2>&1; then
-            log_message "ERROR: '$t' could not be installed after $retries attempts."
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_message "INFO: Auto-installing missing tools: ${missing_tools[*]}"
+        if [[ " ${missing_tools[*]} " == *"pacman"* ]]; then
+            log_message "ERROR: 'pacman' is missing. Please fix your system manually."
+            exit 1
         fi
-    done
+        local retries i
+        for tool in "${missing_tools[@]}"; do
+            retries=3
+            for (( i = 1; i <= retries; i++ )); do
+                if pacman -S --needed --noconfirm "$tool" >/dev/null 2>&1; then
+                    log_message "INFO: Successfully installed '$tool'."
+                    break
+                fi
+                log_message "WARN: Attempt $i/$retries failed to install '$tool'. Retrying..."
+                sleep 3
+            done
+            if ! command -v "$tool" >/dev/null 2>&1; then
+                log_message "ERROR: '$tool' could not be installed after $retries attempts."
+            fi
+        done
+    else
+        log_message "INFO: All required tools are present."
+    fi
 }
 
 ###############################################################################
 # Function: wait_for_pacman_lock
-# Description: Wait until the pacman lock file is removed.
+# Description: Wait until the pacman lock file is released.
 ###############################################################################
 wait_for_pacman_lock() {
-    declare wait_time interval elapsed
-    wait_time=30
-    interval=5
-    elapsed=0
+    local wait_time=30
+    local interval=5
+    local elapsed=0
     while [ -e "$PACMAN_LOCK" ]; do
         if [ "$elapsed" -ge "$wait_time" ]; then
-            log_message "ERROR: pacman lock ($PACMAN_LOCK) still exists after $wait_time seconds. Another process may be running!"
+            log_message "ERROR: pacman lock ($PACMAN_LOCK) persists after $wait_time seconds. Another process may be running!"
             log_message "INFO: Remove lock with: rm -f $PACMAN_LOCK"
             exit 1
         fi
         log_message "INFO: Waiting for pacman lock to be released... ($elapsed/$wait_time sec elapsed)"
-        sleep "$interval" > /dev/null 2>&1
+        sleep "$interval"
         elapsed=$((elapsed + interval))
     done
 }
 
 ###############################################################################
+# Function: fix_pacman_keyring
+# Description: Fallback routine to fix keyring and database issues.
+###############################################################################
+fix_pacman_keyring() {
+    log_message "INFO: Attempting to fix pacman keyring and database issues..."
+    if ! pacman -Sy archlinux-keyring --noconfirm >/dev/null 2>&1; then
+        log_message "ERROR: Failed to update archlinux-keyring."
+        exit 1
+    fi
+    log_message "INFO: archlinux-keyring updated successfully."
+    
+    log_message "INFO: Removing pacman sync databases..."
+    sudo rm -f /var/lib/pacman/sync/*
+    
+    log_message "INFO: Removing /etc/pacman.d/gnupg folder contents..."
+    sudo rm -rf /etc/pacman.d/gnupg/*
+    
+    log_message "INFO: Initializing pacman keyring..."
+    if ! pacman-key --init >/dev/null 2>&1; then
+        log_message "ERROR: pacman-key --init failed."
+        exit 1
+    fi
+    
+    log_message "INFO: Populating pacman keyring..."
+    if ! pacman-key --populate >/dev/null 2>&1; then
+        log_message "ERROR: pacman-key --populate failed."
+        exit 1
+    fi
+    
+    log_message "INFO: Adding Ubuntu keyserver to /etc/pacman.d/gnupg/gpg.conf..."
+    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf >/dev/null 2>&1
+    
+    log_message "INFO: Retrying pacman database refresh..."
+    if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
+        log_message "ERROR: pacman database refresh still failing after keyring fix."
+        exit 1
+    fi
+    log_message "INFO: Pacman database refresh successful after keyring fix."
+}
+
+###############################################################################
 # Function: refresh_pacman_databases
-# Description: Refresh the pacman database.
+# Description: Refresh the pacman database with fallback on GPGME error.
 ###############################################################################
 refresh_pacman_databases() {
-    log_message "INFO: Refreshing pacman db..."
-    if ! pacman -Sy --noconfirm > /dev/null 2>&1; then
-        log_message "ERROR: Failed to refresh pacman db."
-        exit 1
+    log_message "INFO: Refreshing pacman database..."
+    local output
+    output=$(pacman -Sy --noconfirm 2>&1)
+    local ret_code=$?
+    if [ $ret_code -ne 0 ]; then
+        if echo "$output" | grep -qi "GPGME error"; then
+            log_message "ERROR: Failed to refresh pacman database due to GPGME error. Output:"
+            log_message "$output"
+            fix_pacman_keyring
+        else
+            log_message "ERROR: Failed to refresh pacman database. Output:"
+            log_message "$output"
+            exit 1
+        fi
     else
-        log_message "INFO: Pacman db refreshed successfully."
+        log_message "INFO: Pacman database refreshed successfully."
     fi
 }
 
 ###############################################################################
 # Function: update_installed_packages
-# Description: Retrieve the list of installed packages and cache it.
+# Description: Retrieve and cache the list of installed packages.
 ###############################################################################
 update_installed_packages() {
-    pacman -Qqe > "$TMP_DIR/installed_pkgs.txt" 2>&1
+    if ! pacman -Qqe > "$TMP_DIR/installed_pkgs.txt" 2>&1; then
+        log_message "ERROR: Failed to cache installed packages."
+        exit 1
+    fi
     log_message "INFO: Cached installed packages."
 }
 
 ###############################################################################
 # Function: get_package_dependencies
-# Description: Extract the "Depends On" field from pacman -Si for a given package.
+# Description: Extract the "Depends On" field from pacman -Qi for a given package.
 ###############################################################################
 get_package_dependencies() {
-    declare pkg
-    pkg="$1"
-    pacman -Si "$pkg" 2>/dev/null | grep -i "^Depends On" | cut -d: -f2 | sed 's/^[[:space:]]*//'
+    local pkg="$1"
+    pacman -Qi "$pkg" 2>/dev/null | awk -F':' '/^Depends On/ {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2);
+        if ($2 != "None") { print $2 }
+    }'
 }
 
 ###############################################################################
@@ -189,11 +237,9 @@ get_package_dependencies() {
 # Description: Clean dependency strings by stripping version constraints.
 ###############################################################################
 parse_dependencies() {
-    declare deps_line
-    deps_line="$1"
-    if [[ "$deps_line" =~ ^None$ ]]; then
-        return
-    fi
+    local deps_line="$1"
+    local dep
+    # Split on whitespace
     for dep in $deps_line; do
         echo "$dep" | sed -E 's/[<>=].*$//'
     done
@@ -201,29 +247,22 @@ parse_dependencies() {
 
 ###############################################################################
 # Function: sanitize_and_resolve_dep_name
-# Description: Sanitize a dependency name and, if it contains ".so",
-#              use pacman -F to determine the owning package.
+# Description: Sanitize a dependency name and resolve shared object files.
 ###############################################################################
 sanitize_and_resolve_dep_name() {
-    declare dep
-    dep="$1"
-    # First, remove version specifiers.
+    local dep="$1"
     local sanitized
+    local owner
     sanitized=$(echo "$dep" | sed -E 's/[<>=].*$//')
-    # If the name contains ".so", attempt to resolve it.
     if [[ "$sanitized" =~ \.so ]]; then
-        # Ensure the file database is updated.
-        sudo pacman -Fy > /dev/null 2>&1
-        # Assume the file is in /usr/lib
+        pacman -Fy >/dev/null 2>&1
         if [ -f "/usr/lib/$sanitized" ]; then
-            local owner
-            owner=$(pacman -F "/usr/lib/$sanitized" 2>/dev/null | head -n 1 | awk '{print $3}')
+            owner=$(pacman -F "/usr/lib/$sanitized" 2>/dev/null | head -n1 | awk '{print $3}')
             if [ -n "$owner" ]; then
                 echo "$owner"
                 return
             fi
         fi
-        # Fallback: remove the ".so" suffix.
         sanitized=${sanitized%.so}
     fi
     echo "$sanitized"
@@ -231,12 +270,11 @@ sanitize_and_resolve_dep_name() {
 
 ###############################################################################
 # Function: is_installed
-# Description: Check if a dependency is installed.
+# Description: Check if a package/dependency is installed.
 ###############################################################################
 is_installed() {
-    declare dep
-    dep="$1"
-    pacman -Qq "$dep" > /dev/null 2>&1
+    local dep="$1"
+    pacman -Qq "$dep" >/dev/null 2>&1
 }
 
 ###############################################################################
@@ -244,54 +282,69 @@ is_installed() {
 # Description: Check if a dependency exists in the official repositories.
 ###############################################################################
 is_in_official_repo() {
-    declare dep
-    dep="$1"
-    pacman -Si "$dep" > /dev/null 2>&1
+    local dep="$1"
+    pacman -Si "$dep" >/dev/null 2>&1
 }
 
 ###############################################################################
 # Function: install_dependency
-# Description: Install a dependency via pacman if available; otherwise, via yay.
+# Description: Install a dependency via pacman (if in official repo) or via yay.
 ###############################################################################
 install_dependency() {
-    declare dep
-    dep="$1"
+    local dep="$1"
     if is_in_official_repo "$dep"; then
         log_message "INFO: Installing $dep from official repositories..."
-        pacman -S --needed --noconfirm "$dep" > /dev/null 2>&1
+        pacman -S --needed --noconfirm "$dep" >/dev/null 2>&1
     else
         log_message "INFO: Installing $dep from AUR..."
-        yay -S --needed --noconfirm "$dep" > /dev/null 2>&1
+        yay -S --needed --noconfirm "$dep" >/dev/null 2>&1
     fi
 }
 
 ###############################################################################
+# Function: interactive_prompt
+# Description: Prompt the user, defaulting to "y" if no input is provided.
+###############################################################################
+interactive_prompt() {
+    local prompt="$1"
+    local response
+    echo -n "$prompt"
+    read -r response
+    if [ -z "$response" ]; then
+        response="y"
+    fi
+    echo "$response"
+}
+
+###############################################################################
 # Function: compute_missing_dependencies
-# Description: For each package in the target list, extract its dependencies,
-#              sanitize the names, and return those not installed.
+# Description: For each target package, extract and sanitize dependencies, and
+#              return those not installed.
 ###############################################################################
 compute_missing_dependencies() {
-    declare -a all_deps
+    declare -A all_deps
     all_deps=()
-    declare pkg deps_line dep resolved_dep
+    local pkg deps_line dep resolved_dep
     for pkg in "${PKGLIST[@]}"; do
-        deps_line="$(get_package_dependencies "$pkg")"
+        deps_line=$(get_package_dependencies "$pkg")
         if [ -n "$deps_line" ]; then
-            for dep in $(parse_dependencies "$deps_line"); do
+            # Read the parsed dependencies into an array
+            read -r -a dep_array <<< "$(parse_dependencies "$deps_line")"
+            for dep in "${dep_array[@]}"; do
                 resolved_dep=$(sanitize_and_resolve_dep_name "$dep")
-                if [[ ! " ${all_deps[*]} " =~ $resolved_dep ]]; then
-                    all_deps+=( "$resolved_dep" )
-                fi
+                all_deps["$resolved_dep"]=1
             done
         fi
     done
-    declare -a missing
-    missing=()
-    for dep in "${all_deps[@]}"; do
-        if ! is_installed "$dep"; then
-            missing+=( "$dep" )
+
+    local missing=()
+    local key
+    for key in "${!all_deps[@]}"; do
+        if ! is_installed "$key"; then
+            missing+=("$key")
         fi
     done
+    # Output missing dependencies as space-separated string.
     echo "${missing[@]}"
 }
 
@@ -300,30 +353,30 @@ compute_missing_dependencies() {
 # Description: Iteratively compute and install missing dependencies until closure.
 ###############################################################################
 process_dependency_closure() {
-    declare iteration=1
+    local iteration=1
+    local missing_deps_str
     while true; do
-        log_message "INFO: Dependency closure iteration $iteration: scanning installed packages..."
+        log_message "INFO: Dependency closure iteration ${iteration}: scanning installed packages..."
         update_installed_packages
+        # Use mapfile to read installed packages into PKGLIST array.
         mapfile -t PKGLIST < "$TMP_DIR/installed_pkgs.txt"
-        missing_deps_str="$(compute_missing_dependencies)"
+        missing_deps_str=$(compute_missing_dependencies)
+        # Read missing_deps_str into an array.
         read -r -a missing_deps <<< "$missing_deps_str"
         if [ "${#missing_deps[@]}" -eq 0 ]; then
-            log_message "INFO: All dependencies are satisfied after $iteration iteration(s)."
+            log_message "INFO: All dependencies are satisfied after ${iteration} iteration(s)."
             break
         else
-            log_message "INFO: Iteration $iteration: Missing dependencies: ${missing_deps[*]}"
+            log_message "INFO: Iteration ${iteration}: Missing dependencies: ${missing_deps[*]}"
             if [ "$INTERACTIVE_MODE" = true ] && [ -t 0 ]; then
-                resp="$(interactive_prompt 'Install missing dependencies? [Y/n]: ')"
-                case "$resp" in
-                    [Nn]*)
-                        log_message "INFO: User aborted installation."
-                        exit 0
-                        ;;
-                    *)
-                        ;;
-                esac
+                local resp
+                resp=$(interactive_prompt 'Install missing dependencies? [Y/n]: ')
+                if [[ "$resp" =~ ^[Nn] ]]; then
+                    log_message "INFO: User aborted installation."
+                    exit 0
+                fi
             fi
-            declare dep
+            local dep
             for dep in "${missing_deps[@]}"; do
                 if ! is_installed "$dep"; then
                     install_dependency "$dep"
@@ -336,23 +389,11 @@ process_dependency_closure() {
 }
 
 ###############################################################################
-# Function: interactive_prompt
-# Description: Prompt the user indefinitely, defaulting to "y" if no input is provided.
-###############################################################################
-interactive_prompt() {
-    echo -n "$1"
-    read -r response
-    if [ -z "$response" ]; then
-        response="y"
-    fi
-    echo "$response"
-}
-
-###############################################################################
 # Function: parse_arguments
-# Description: Parse CLI arguments and populate the target package list.
+# Description: Parse CLI arguments and set target package list.
 ###############################################################################
 parse_arguments() {
+    local opt
     while getopts "iak:g:l:h" opt; do
         case "$opt" in
             a) ALL_SYSTEM=true ;;
@@ -373,7 +414,7 @@ parse_arguments() {
         print_help
     fi
     if [ "$ALL_SYSTEM" = false ]; then
-        PKGLIST=( "$@" )
+        PKGLIST=("$@")
     fi
 }
 
@@ -389,7 +430,7 @@ Usage: $0 [OPTIONS] [package1 package2 ...]
   -i             Enable interactive installation mode
   -k <packages>  Comma-separated list of packages to ignore (not implemented)
   -g <groups>    Comma-separated list of groups to ignore (not implemented)
-  -l <logfile>   Custom log file (default: $DEFAULT_LOGFILE)
+  -l <logfile>   Custom log file (default: ${DEFAULT_LOGFILE})
   -h             Display this help screen
 
 Examples:
@@ -413,15 +454,13 @@ main() {
     parse_arguments "$@"
     process_dependency_closure
     if [ "$INTERACTIVE_MODE" = true ] && [ -t 0 ]; then
-        resp="$(interactive_prompt 'Install missing dependencies? [Y/n]: ')"
-        case "$resp" in
-            [Nn]*)
-                log_message "INFO: User aborted installation."
-                ;;
-            *)
-                log_message "INFO: Missing dependencies have been installed."
-                ;;
-        esac
+        local resp
+        resp=$(interactive_prompt 'Final confirmation: Install any remaining missing dependencies? [Y/n]: ')
+        if [[ "$resp" =~ ^[Nn] ]]; then
+            log_message "INFO: User aborted final installation."
+        else
+            log_message "INFO: All missing dependencies have been processed."
+        fi
     fi
     log_message "INFO: Completed dependency check."
 }

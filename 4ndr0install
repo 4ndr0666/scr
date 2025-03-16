@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# Automated Arch Linux Installation Script
+# by 4ndr0666
+
+set -euo pipefail
+
+## Define Official and AUR Packages
+OFFICIAL_PKGS=(
+  base-devel
+  debugedit
+  unzip
+  archlinux-keyring
+  github-cli
+  git-delta
+  exa
+  fd
+  micro
+  expac
+  bat
+  bash-completion
+  pacdiff
+  neovim
+  xorg-xhost
+  xclip
+  ripgrep
+  diffuse
+  fzf
+  sysz
+  zsh-syntax-highlighting
+  zsh-history-substring-search
+  zsh-autosuggestions
+  lsd
+  git-extras
+)
+
+AUR_PKGS=(
+  brave-beta-bin
+  bashmount-git
+  breeze-hacked-cursor-theme-git
+  lf-git
+)
+
+## Update system first
+sudo pacman -Syu --noconfirm
+
+## Ensure debugedit is installed first (critical for package building)
+sudo pacman -S --needed --noconfirm debugedit
+
+## Install Official Packages
+sudo pacman -S --needed --noconfirm "${OFFICIAL_PKGS[@]}"
+
+## Install yay if it's not already installed
+if ! command -v yay &> /dev/null; then
+  git clone https://aur.archlinux.org/yay.git /tmp/yay
+  (cd /tmp/yay && makepkg -si --noconfirm)
+fi
+
+## Install AUR Packages
+yay -S --needed --noconfirm "${AUR_PKGS[@]}"
+
+## Cleanup
+echo "Cleaning package cache..."
+yay -Yc --noconfirm
+
+## Finish
+echo "✅ Installation complete!"
