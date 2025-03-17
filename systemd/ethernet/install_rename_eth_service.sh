@@ -3,6 +3,19 @@ set -euo pipefail
 
 # ================== // INSTALL_ETH_RENAME_SERVICE.SH //
 
+## Privileges
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script requires root privileges. Please enter your password to continue."
+    exec sudo "$0" "$@"
+fi
+echo "💀WARNING💀 - you are now operating as root..."
+sleep 2
+
+## Cyan highlight variables (for success messages)
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
 ## Constants
 
 TARGET_MAC="74:27:EA:66:76:46"
@@ -40,7 +53,7 @@ fi
 EOF
 
 sudo chmod +x "${RENAME_SCRIPT}"
-echo "✅ service script created successfully."
+echo -e "${CYAN}✅ Service script created successfully.${RESET}"
 
 ## Udev rule
 
@@ -49,7 +62,7 @@ sudo tee "${UDEV_RULE}" >/dev/null <<EOF
 SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="${TARGET_MAC}", NAME="${TARGET_IF}"
 EOF
 
-echo "✅ Udev rule created successfully."
+echo -e "${CYAN}✅ Udev rule created successfully.${RESET}"
 
 ## Systemd Service
 
@@ -69,7 +82,7 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-echo "✅ Systemd service installed."
+echo -e "${CYAN}✅ Systemd service installed.${RESET}"
 
 # 4. Reload Systemd, Udev, and Enable Service
 echo "🔄 Reloading Udev rules and Systemd daemon..."
@@ -78,8 +91,8 @@ sudo udevadm trigger --attr-match=address="${TARGET_MAC}"
 sudo systemctl daemon-reload
 sudo systemctl enable --now rename-eth.service
 
-echo "✅ Ethernet renaming service enabled and started."
+echo -e "${CYAN}✅ Ethernet renaming service enabled and started.${RESET}"
 
 # Final check
-echo "🚀 Installation Complete! Current network ifaces:"
+echo -e "${CYAN}Installation Complete! Current network ifaces:${RESET}"
 ip link show "${TARGET_IF}"
