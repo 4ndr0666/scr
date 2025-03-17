@@ -5,30 +5,36 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-source $PKG_PATH/common.sh
+# Ensure PKG_PATH is defined (fallback: directory of this script)
+: "${PKG_PATH:=$(dirname "$(realpath "$0")")}"
+
+# Use environment variables if already set; otherwise, parse command-line arguments.
+FIX_MODE="${FIX_MODE:-false}"
+REPORT_MODE="${REPORT_MODE:-false}"
+
+if [[ "$#" -gt 0 ]]; then
+    for arg in "$@"; do
+        case "$arg" in
+            --help)
+                echo "Usage: $0 [--help] [--report] [--fix]"
+                exit 0
+                ;;
+            --report)
+                REPORT_MODE="true"
+                ;;
+            --fix)
+                FIX_MODE="true"
+                ;;
+            *)
+                echo "Unknown argument: $arg"
+                exit 1
+                ;;
+        esac
+    done
+fi
+
+source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
-
-REPORT_MODE="false"
-FIX_MODE="false"
-
-for arg in "$@"; do
-    case "$arg" in
-        --help)
-            echo "Usage: $0 [--help] [--report] [--fix]"
-            exit 0
-            ;;
-        --report)
-            REPORT_MODE="true"
-            ;;
-        --fix)
-            FIX_MODE="true"
-            ;;
-        *)
-            echo "Unknown argument: $arg"
-            exit 1
-            ;;
-    esac
-done
 
 REQUIRED_ENV_VARS=($(jq -r '.required_env[]' "$CONFIG_FILE"))
 DIRECTORY_VARS=($(jq -r '.directory_vars[]' "$CONFIG_FILE"))
@@ -75,22 +81,20 @@ check_directories() {
                 any_issue=true
             fi
         fi
-        # skip GOROOT checks
-        if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
-            continue
-        fi
-        if [[ -d "$dir" && ! -w "$dir" ]]; then
-            if [[ "$fix_mode" == "true" ]]; then
-                if chmod u+w "$dir"; then
-                    log_info "Set write permission for $dir"
-                    echo "Set write permission for $dir"
+        if [[ "$var" != "GOROOT" ]]; then
+            if [[ -d "$dir" && ! -w "$dir" ]]; then
+                if [[ "$fix_mode" == "true" ]]; then
+                    if chmod u+w "$dir"; then
+                        log_info "Set write permission for $dir"
+                        echo "Set write permission for $dir"
+                    else
+                        log_warn "Could not set write permission for $dir"
+                        any_issue=true
+                    fi
                 else
-                    log_warn "Could not set write permission for $dir"
+                    log_warn "Directory '$dir' is not writable."
                     any_issue=true
                 fi
-            else
-                log_warn "Directory '$dir' is not writable."
-                any_issue=true
             fi
         fi
     done
@@ -159,7 +163,12 @@ print_report() {
             echo "  - $tool: NOT FOUND"
         fi
     done
-    echo "========================================"
+    echo
+    echo "----- Recommendations -----"
+    echo "- For any missing tools, ensure your config file contains a valid package mapping."
+    echo "- If directories or environment variables are missing, run with the --fix flag."
+    echo "- Review the report above for any items marked as NOT SET or NOT WRITABLE."
+    echo "=============================="
 }
 
 main() {

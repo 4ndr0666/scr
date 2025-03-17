@@ -7,9 +7,11 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-###Constants
+### Constants
 PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 export PKG_PATH
+
+# Source core modules
 source "$PKG_PATH/common.sh"
 source "$PKG_PATH/controller.sh"
 source "$PKG_PATH/manage_files.sh"
@@ -65,10 +67,15 @@ for arg in "$@"; do
     esac
 done
 
+# Export flags so sub-scripts receive them
+export FIX_MODE="$fix_mode"
+export REPORT_MODE="$report_mode"
+
 if [[ "$test_mode" == "true" ]]; then
     run_core_checks "$report_mode" "$fix_mode" "$parallel"
     cat "$LOG_FILE"
     exit 0
 fi
 
-run_core_checks "$report_mode" "$fix_mode" "$parallel"
+# Uncomment the following line to run core checks automatically:
+# run_core_checks "$report_mode" "$fix_mode" "$parallel"

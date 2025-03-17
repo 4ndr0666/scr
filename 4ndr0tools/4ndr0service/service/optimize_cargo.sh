@@ -2,7 +2,7 @@
 # File: optimize_cargo.sh
 # Optimizes Cargo environment in alignment with XDG Base Directory Specs.
 
-# ==================== // 4ndr0service optimze_cargo.sh //
+# ==================== // 4ndr0service optimize_cargo.sh //
 ### Debugging
 set -euo pipefail
 IFS=$'\n\t'
@@ -14,9 +14,9 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-### Loggin
+### Logging
 LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory."; exit 1; }
+mkdir -p "$(dirname "$LOG_FILE")" || { echo "Failed to create log directory." >&2; exit 1; }
 
 log() {
     local message="$1"
@@ -30,12 +30,13 @@ handle_error() {
     exit 1
 }
 
+# --- // Check if directory is writable
 check_directory_writable() {
     local dir_path="$1"
     if [[ ! -w "$dir_path" ]]; then
         handle_error "Directory $dir_path is not writable."
     else
-        echo "✅ Directory $dir_path is writable."
+        echo -e "${CYAN}✅ Directory $dir_path is writable.${NC}"
         log "Directory '$dir_path' is writable."
     fi
 }
@@ -44,9 +45,9 @@ export CARGO_HOME="${CARGO_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/rustup}"
 
 install_rustup() {
-    echo "📦 Installing rustup..."
+    echo -e "${CYAN}📦 Installing rustup...${NC}"
     if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; then
-        echo "✅ rustup installed successfully."
+        echo -e "${CYAN}✅ rustup installed successfully.${NC}"
         log "rustup installed successfully."
     else
         handle_error "Failed to install rustup."
@@ -55,51 +56,58 @@ install_rustup() {
 }
 
 update_rustup_and_cargo() {
-    if rustup self update &>/dev/null; then
-        if rustup update; then
-            echo "✅ rustup and Cargo updated successfully."
+    echo -e "${CYAN}🔄 Updating rustup and Cargo toolchain...${NC}"
+    if rustup self update > /dev/null 2>&1; then
+        if rustup update stable > /dev/null 2>&1; then
+            echo -e "${CYAN}✅ rustup and Cargo updated successfully.${NC}"
             log "rustup and Cargo updated successfully."
         else
-            echo "⚠️ Warning: Failed to update Cargo."
+            echo -e "${YELLOW}⚠️ Warning: Failed to update Cargo.${NC}"
             log "Warning: Failed to update Cargo."
         fi
     else
-        echo "⚠️ rustup self-update disabled for this system. Use system package manager to update rustup."
+        echo -e "${YELLOW}⚠️ rustup self-update disabled for this system. Use your system package manager to update rustup.${NC}"
         log "rustup self-update not available."
+    fi
+    # Ensure default toolchain is set (required on Arch)
+    if ! rustup default | grep -q "stable"; then
+        echo -e "${CYAN}🔄 Setting default toolchain to stable...${NC}"
+        rustup default stable > /dev/null 2>&1 || handle_error "Failed to set default toolchain."
+        log "Default toolchain set to stable."
     fi
 }
 
 cargo_install_or_update() {
     local package_name="$1"
     if cargo install --list | grep -q "^$package_name "; then
-        echo "🔄 Updating Cargo package: $package_name..."
+        echo -e "${CYAN}🔄 Updating Cargo package: $package_name...${NC}"
         if cargo install "$package_name" --force; then
-            echo "✅ $package_name updated successfully."
+            echo -e "${CYAN}✅ $package_name updated successfully.${NC}"
             log "$package_name updated successfully."
         else
-            echo "⚠️ Warning: Failed to update $package_name."
+            echo -e "${YELLOW}⚠️ Warning: Failed to update $package_name.${NC}"
             log "Warning: Failed to update $package_name."
         fi
     else
-        echo "📦 Installing Cargo package: $package_name..."
+        echo -e "${CYAN}📦 Installing Cargo package: $package_name...${NC}"
         if cargo install "$package_name"; then
-            echo "✅ $package_name installed successfully."
+            echo -e "${CYAN}✅ $package_name installed successfully.${NC}"
             log "$package_name installed successfully."
         else
-            echo "⚠️ Warning: Failed to install $package_name."
+            echo -e "${YELLOW}⚠️ Warning: Failed to install $package_name.${NC}"
             log "Warning: Failed to install $package_name."
         fi
     fi
 }
 
 consolidate_cargo_directories() {
-    echo "🧹 Ensuring Cargo directories exist..."
+    echo -e "${CYAN}🧹 Ensuring Cargo directories exist...${NC}"
     mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" || handle_error "Failed creating Cargo dirs."
 
     # Merge .cargo into $CARGO_HOME if they differ
     if [[ -d "$HOME/.cargo" && "$HOME/.cargo" != "$CARGO_HOME" ]]; then
-        echo "🧹 Merging existing .cargo => $CARGO_HOME..."
-        if command -v rsync &>/dev/null; then
+        echo -e "${CYAN}🧹 Merging existing .cargo => $CARGO_HOME...${NC}"
+        if command -v rsync > /dev/null 2>&1; then
             rsync -a --remove-source-files --progress "$HOME/.cargo/" "$CARGO_HOME/" \
                 || handle_error "Failed to merge .cargo => $CARGO_HOME."
             rmdir "$HOME/.cargo" 2>/dev/null || true
@@ -111,9 +119,23 @@ consolidate_cargo_directories() {
 
     # Merge .rustup into $RUSTUP_HOME if they differ
     if [[ -d "$HOME/.rustup" && "$HOME/.rustup" != "$RUSTUP_HOME" ]]; then
-        echo "🧹 Merging existing .rustup => $RUSTUP_HOME..."
-        if command -v rsync &>/dev/null; then
-            rsync -a --remove-source-files --progress "$HOME/.rustup/" "$RUSTUP_HOME/" \
+        echo -e "${CYAN}🧹 Merging existing .rustup => $RUSTUP_HOME...${NC}"
+        # Attempt to remove immutable attributes if possible
+        if command -v chattr > /dev/null 2>&1; then
+            chattr -R -i "$HOME/.rustup" > /dev/null 2>&1 || log "Warning: Unable to remove immutable attributes from ~/.rustup."
+        fi
+        # Check and exclude settings.toml if permission cannot be changed
+        RSYNC_EXCLUDES=""
+        if [ -f "$HOME/.rustup/settings.toml" ]; then
+            if ! chmod u+w "$HOME/.rustup/settings.toml" 2>/dev/null; then
+                echo -e "${CYAN}🔄 Unable to modify permissions on ~/.rustup/settings.toml; excluding it from migration...${NC}"
+                RSYNC_EXCLUDES="--exclude=settings.toml"
+            else
+                rm -f "$HOME/.rustup/settings.toml" || log "Warning: Failed to remove ~/.rustup/settings.toml."
+            fi
+        fi
+        if command -v rsync > /dev/null 2>&1; then
+            rsync -a $RSYNC_EXCLUDES --remove-source-files --progress "$HOME/.rustup/" "$RUSTUP_HOME/" \
                 || handle_error "Failed to merge .rustup => $RUSTUP_HOME."
             rmdir "$HOME/.rustup" 2>/dev/null || true
         else
@@ -126,79 +148,79 @@ consolidate_cargo_directories() {
 }
 
 install_cargo_tools() {
-    echo "🔧 Installing essential Cargo tools (cargo-update, cargo-audit)..."
+    echo -e "${CYAN}🔧 Installing essential Cargo tools (cargo-update, cargo-audit)...${NC}"
     cargo_install_or_update "cargo-update"
     cargo_install_or_update "cargo-audit"
 }
 
 manage_permissions() {
-    echo "🔐 Verifying permissions for Cargo directories..."
+    echo -e "${CYAN}🔐 Verifying permissions for Cargo directories...${NC}"
     check_directory_writable "$CARGO_HOME"
     check_directory_writable "$RUSTUP_HOME"
     log "Permissions verified for Cargo directories."
 }
 
 validate_cargo_installation() {
-    echo "✅ Validating Cargo installation..."
-    if ! cargo --version &>/dev/null; then
+    echo -e "${CYAN}✅ Validating Cargo installation...${NC}"
+    if ! cargo --version > /dev/null 2>&1; then
         handle_error "Cargo missing. Use --fix to attempt installation."
     fi
-    if ! rustup --version &>/dev/null; then
+    if ! rustup --version > /dev/null 2>&1; then
         handle_error "rustup not installed correctly."
     fi
-    echo "✅ Cargo and rustup are installed + configured."
+    echo -e "${CYAN}✅ Cargo and rustup are installed + configured.${NC}"
     log "Cargo validated."
 }
 
 perform_final_cleanup() {
-    echo "🧼 Performing final cleanup tasks..."
+    echo -e "${CYAN}🧼 Performing final cleanup tasks...${NC}"
     if [[ -d "$CARGO_HOME/tmp" ]]; then
-        echo "🗑️ Cleaning $CARGO_HOME/tmp..."
-        rm -rf "${CARGO_HOME:?}/tmp" || log "Warning: Failed removing $CARGO_HOME/tmp."
+        echo -e "${CYAN}🗑️ Cleaning $CARGO_HOME/tmp...${NC}"
+        rm -rf "${CARGO_HOME:?}/tmp" > /dev/null 2>&1 || log "Warning: Failed removing $CARGO_HOME/tmp."
         log "Removed $CARGO_HOME/tmp."
     fi
     if [[ -d "$RUSTUP_HOME/tmp" ]]; then
-        echo "🗑️ Cleaning $RUSTUP_HOME/tmp..."
-        rm -rf "${RUSTUP_HOME:?}/tmp" || log "Warning: Failed removing $RUSTUP_HOME/tmp."
+        echo -e "${CYAN}🗑️ Cleaning $RUSTUP_HOME/tmp...${NC}"
+        rm -rf "${RUSTUP_HOME:?}/tmp" > /dev/null 2>&1 || log "Warning: Failed removing $RUSTUP_HOME/tmp."
         log "Removed $RUSTUP_HOME/tmp."
     fi
-    echo "🧼 Final cleanup completed."
+    echo -e "${CYAN}🧼 Final cleanup completed.${NC}"
     log "Cargo final cleanup done."
 }
 
 optimize_cargo_service() {
-    echo "🔧 Starting Cargo environment optimization..."
+    echo -e "${CYAN}🔧 Starting Cargo environment optimization...${NC}"
 
-    if ! command -v rustup &>/dev/null; then
-        echo "📦 rustup not installed. Installing..."
+    if ! command -v rustup > /dev/null 2>&1; then
+        echo -e "${CYAN}📦 rustup not installed. Installing...${NC}"
         install_rustup
     else
-        echo "✅ rustup already installed."
+        echo -e "${CYAN}✅ rustup already installed.${NC}"
         log "rustup installed."
     fi
 
-    echo "🔄 Updating rustup + Cargo..."
+    echo -e "${CYAN}🔄 Updating rustup + Cargo...${NC}"
     update_rustup_and_cargo
 
-    echo "🛠️ Setting PATH for Cargo..."
+    echo -e "${CYAN}🛠️ Setting PATH for Cargo...${NC}"
     export PATH="$CARGO_HOME/bin:$PATH"
 
-    echo "🧹 Consolidating Cargo directories..."
+    echo -e "${CYAN}🧹 Consolidating Cargo directories...${NC}"
     consolidate_cargo_directories
 
-    echo "🔧 Installing essential Cargo tools..."
+    echo -e "${CYAN}🔧 Installing essential Cargo tools...${NC}"
     install_cargo_tools
 
-    echo "🔐 Managing permissions..."
+    echo -e "${CYAN}🔐 Managing permissions...${NC}"
     manage_permissions
 
-    echo "✅ Validating Cargo installation..."
+    echo -e "${CYAN}✅ Validating Cargo installation...${NC}"
     validate_cargo_installation
 
-    echo "🧼 Final cleanup..."
+    echo -e "${CYAN}🧼 Final cleanup...${NC}"
     perform_final_cleanup
 
-    echo "🎉 Cargo environment optimization complete."
+    echo -e "${CYAN}🎉 Cargo environment optimization complete.${NC}"
     echo -e "${CYAN}CARGO_HOME:${NC} $CARGO_HOME"
     echo -e "${CYAN}RUSTUP_HOME:${NC} $RUSTUP_HOME"
     echo -e "${CYAN}Cargo version:${NC} $(cargo --version)"

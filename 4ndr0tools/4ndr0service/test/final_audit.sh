@@ -74,28 +74,17 @@ check_systemd_timer() {
     else
         echo "$SYSTEMD_TIMER is not enabled."
     fi
-}
 
-get_dir_for_keyword() {
-    local kw="$1"
-    case "$kw" in
-        config_watch) echo "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
-        data_watch)   echo "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
-        cache_watch)  echo "${XDG_CACHE_HOME:-$HOME/.cache}" ;;
-        *) echo "" ;;
-    esac
-}
-
-add_missing_audit_rule() {
-    local key="$1"
-    local path="$2"
-    echo "Adding audit rule for $key -> $path..."
-    if sudo auditctl -w "$path" -p war -k "$key"; then
-        echo "✅ auditd rule added for $key"
-        json_log "INFO" "auditd rule added: $key -> $path"
-    else
-        echo "⚠️ Warning: Could not add audit rule for $key => $path"
-        json_log "WARN" "Failed adding rule for $key => $path"
+    # Auto-fix: if --fix is active, attempt to enable and start the timer.
+    if [[ "$FIX_MODE" == "true" ]]; then
+        echo "Attempting to enable and start $SYSTEMD_TIMER..."
+        if systemctl --user enable "$SYSTEMD_TIMER" && systemctl --user start "$SYSTEMD_TIMER"; then
+            echo "✅ $SYSTEMD_TIMER enabled and started."
+            json_log "INFO" "$SYSTEMD_TIMER enabled and started."
+        else
+            echo "⚠️ Warning: Failed to enable/start $SYSTEMD_TIMER."
+            json_log "WARN" "Failed to enable/start $SYSTEMD_TIMER."
+        fi
     fi
 }
 
@@ -117,7 +106,14 @@ check_auditd_rules() {
             local dpath
             dpath="$(get_dir_for_keyword "$mkey")"
             if [[ -n "$dpath" ]]; then
-                add_missing_audit_rule "$mkey" "$dpath"
+                echo "Adding audit rule for $mkey -> $dpath..."
+                if sudo auditctl -w "$dpath" -p war -k "$mkey"; then
+                    echo "✅ auditd rule added for $mkey"
+                    json_log "INFO" "auditd rule added: $mkey -> $dpath"
+                else
+                    echo "⚠️ Warning: Could not add audit rule for $mkey => $dpath"
+                    json_log "WARN" "Failed adding rule for $mkey => $dpath"
+                fi
             else
                 echo "No known directory for key $mkey. Skipping."
             fi
@@ -125,6 +121,16 @@ check_auditd_rules() {
     else
         echo "All auditd rules are correctly set."
     fi
+}
+
+get_dir_for_keyword() {
+    local kw="$1"
+    case "$kw" in
+        config_watch) echo "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+        data_watch)   echo "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+        cache_watch)  echo "${XDG_CACHE_HOME:-$HOME/.cache}" ;;
+        *) echo "" ;;
+    esac
 }
 
 check_pacman_dupes() {
@@ -167,6 +173,23 @@ provide_recommendations() {
     fi
 }
 
+check_verify_script() {
+    if [[ ! -x "$VERIFY_SCRIPT" ]]; then
+        handle_error "verify_environment.sh not found or not executable at $VERIFY_SCRIPT"
+    fi
+
+    echo "Running verify_environment.sh..."
+    if ! "$VERIFY_SCRIPT" --report > /tmp/verify_report.txt 2>/dev/null; then
+        echo "Warning: verify_environment.sh returned non-zero. Check /tmp/verify_report.txt"
+    fi
+
+    if grep -Eq "NOT WRITABLE|not writable|NOT FOUND|Missing tool|Missing environment variable|MISSING" /tmp/verify_report.txt; then
+        echo "Verification encountered issues. Check /tmp/verify_report.txt"
+    else
+        echo "All environment variables, directories, and tools are correctly set up."
+    fi
+}
+
 run_audit() {
     echo "===== Finalization Audit ====="
     echo
@@ -192,6 +215,7 @@ run_audit
 
 if [[ "$FIX_MODE" == "true" ]]; then
     echo "Performing additional fix steps from final_audit.sh if needed..."
+    # (Additional fix steps could be added here.)
 fi
 
 if [[ "$REPORT_MODE" == "true" ]]; then

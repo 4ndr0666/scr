@@ -43,11 +43,11 @@ remove_npmrc_prefix_conflict() {
 install_nvm_for_nvm_service() {
     echo "📦 Installing NVM..."
     if command -v curl &>/dev/null; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash \
-            || handle_error "Failed to install NVM (curl)."
+        LATEST_NVM_VERSION=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
+        curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${LATEST_NVM_VERSION}/install.sh" | bash || handle_error "Failed to install NVM (curl)."
     elif command -v wget &>/dev/null; then
-        wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash \
-            || handle_error "Failed to install NVM (wget)."
+        LATEST_NVM_VERSION=$(wget -qO- https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
+        wget -qO- "https://raw.githubusercontent.com/nvm-sh/nvm/${LATEST_NVM_VERSION}/install.sh" | bash || handle_error "Failed to install NVM (wget)."
     else
         handle_error "No curl or wget => cannot install NVM."
     fi

@@ -1,42 +1,22 @@
 #!/usr/bin/env bash
 # File: common.sh
 # Description: Common functions & configuration loader for 4ndr0service Suite.
-
-# =================== // 4ndr0service common.sh //
-### Debugging
 set -euo pipefail
 IFS=$'\n\t'
+
+# =================== // 4ndr0service common.sh //
+
+## Constants
 
 if [[ "${COMMON_SH_INCLUDED:-}" == "true" ]]; then
     return
 fi
 export COMMON_SH_INCLUDED=true
-
-# Logging
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 LOG_FILE_DIR_DEFAULT="$HOME/.local/share/logs/4ndr0service/logs"
 LOG_FILE_DEFAULT="$LOG_FILE_DIR_DEFAULT/4ndr0service.log"
 
-###############################################################################
-# Logging and Error-Handling
-###############################################################################
-json_log() {
-    local level="$1"
-    local msg="$2"
-    local timestamp
-    timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
-    \mkdir -p "${LOG_FILE_DIR:-$LOG_FILE_DIR_DEFAULT}"
-    printf '{"timestamp":"%s","level":"%s","message":"%s"}\n' \
-      "$timestamp" "$level" "$msg" >> "${LOG_FILE:-$LOG_FILE_DEFAULT}"
-}
-
-### Error Handling
-handle_error() {
-    local error_message="$1"
-    json_log "ERROR" "$error_message"
-    echo -e "\033[0;31m❌ Error: $error_message\033[0m" >&2
-    exit 1
-}
+## Logging
 
 log_info() {
     local message="$1"
@@ -49,9 +29,27 @@ log_warn() {
     echo -e "\033[1;33m⚠️ Warning: $message\033[0m"
 }
 
-###############################################################################
-# Directory Helpers
-###############################################################################
+json_log() {
+    local level="$1"
+    local msg="$2"
+    local timestamp
+    timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+    \mkdir -p "${LOG_FILE_DIR:-$LOG_FILE_DIR_DEFAULT}"
+    printf '{"timestamp":"%s","level":"%s","message":"%s"}\n' \
+      "$timestamp" "$level" "$msg" >> "${LOG_FILE:-$LOG_FILE_DEFAULT}"
+}
+
+## Error Handling
+
+handle_error() {
+    local error_message="$1"
+    json_log "ERROR" "$error_message"
+    echo -e "\033[0;31m❌ Error: $error_message\033[0m" >&2
+    exit 1
+}
+
+## Directory Helpers
+
 ensure_dir() {
     local dir="$1"
     if [[ ! -d "$dir" ]]; then
@@ -65,9 +63,8 @@ ensure_dir() {
     fi
 }
 
-###############################################################################
-# Tool Installation Helpers
-###############################################################################
+## Installation Helpers
+
 attempt_tool_install() {
     local tool="$1"
     local fix_mode="$2"
@@ -125,9 +122,8 @@ attempt_tool_install() {
     fi
 }
 
-###############################################################################
-# Helper for expanding variables like $XDG_DATA_HOME inside JSON
-###############################################################################
+## Variable expansion
+
 expand_path() {
     local raw="$1"
     # Expand $XDG_DATA_HOME, $XDG_CONFIG_HOME, $XDG_CACHE_HOME, $HOME, etc.
@@ -140,9 +136,8 @@ expand_path() {
     echo "$expanded"
 }
 
-###############################################################################
-# Config Creation if Missing
-###############################################################################
+## Config
+
 prompt_config_value() {
     local key="$1"
     local default_val="$2"
@@ -349,18 +344,16 @@ load_config() {
     SQL_CONFIG_HOME="$(expand_path "$raw_SQL_CONFIG_HOME")"
     SQL_CACHE_HOME="$(expand_path "$raw_SQL_CACHE_HOME")"
 }
-
-# Immediately load config
 load_config
 
-# Ensure primary directories exist
+## Ensure primary directories exist
+
 ensure_dir "$LOG_FILE_DIR"
 ensure_dir "$backup_dir"
 ensure_dir "$plugins_dir"
 
-###############################################################################
-# Parallel Execution
-###############################################################################
+## Parallel Execution
+
 run_parallel_checks() {
     local checks=("$@")
     local pids=()
