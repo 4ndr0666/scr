@@ -5,7 +5,6 @@ set -euo pipefail
 # ================== // INSTALL_YTDLC.SH //
 
 ## Constants
-
 BIN_DIR="/usr/local/bin"
 APP_DIR="$HOME/.local/share/applications"
 CONFIG_DIR="$HOME/.config"
@@ -15,7 +14,6 @@ DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 HANDLER_FILE="$BIN_DIR/ytdl-handler.sh"
 
 ## Color
-
 CYAN="\033[38;2;21;255;255m"
 BOLD="\033[1m"
 RED="\033[0;31m"
@@ -26,7 +24,7 @@ glow() {
 bug() {
   echo -e "${BOLD}${RED}$1${NC}"
 }
-  
+
 ## Deps
 
 check_dependencies() {
@@ -45,10 +43,12 @@ check_dependencies() {
   fi
   if (( ${#NEED_PKGS[@]} > 0 )); then
     sudo pacman -S --needed --noconfirm "${NEED_PKGS[@]}"
+  else
+    glow "All required packages appear to be installed."
   fi
 }
 
-## Functions to remove and reapply immutability on files
+## Immutability functions
 
 remove_immutability() {
   local file="$1"
@@ -56,7 +56,6 @@ remove_immutability() {
     sudo chattr -i "$file" 2>/dev/null || true
   fi
 }
-
 reapply_immutability() {
   local file="$1"
   if [[ -f "$file" ]]; then
@@ -64,8 +63,7 @@ reapply_immutability() {
   fi
 }
 
-## Ytdl.zsh
-
+## ytdl.zsh
 write_ytdl_zsh() {
   mkdir -p "$ZSH_DIR"
   cat > "$YTDL_FILE" <<'EOF_YTDL'
@@ -75,7 +73,7 @@ write_ytdl_zsh() {
 # =============== // YTDL.ZSH //
 
 ## Config Maps
-declare -A YTDLP_COOKIES_MAP=(
+typeset -A YTDLP_COOKIES_MAP=(
   ["youtube.com"]="$HOME/.config/yt-dlp/youtube_cookies.txt"
   ["youtu.be"]="$HOME/.config/yt-dlp/youtube_cookies.txt"
   ["patreon.com"]="$HOME/.config/yt-dlp/patreon_cookies.txt"
@@ -86,30 +84,33 @@ declare -A YTDLP_COOKIES_MAP=(
 )
 PREFERRED_FORMATS=("335" "315" "313" "308" "303" "299" "302" "271" "248" "137")
 
-## Validate
-
+### Validate URL format.
 validate_url() {
   local url="$1"
-  if [[ "$url" =~ ^https?:// ]]; then
-    return 0
+  [[ "$url" =~ ^https?:// ]] && return 0 || return 1
+}
+
+### Normalize domain (handles special cases for fanvue.com).
+get_domain_from_url() {
+  local url="$1"
+  local domain
+  domain=$(echo "$url" | awk -F/ '{print $3}' | sed 's/^www\.//; s/^m\.//')
+  local lower_domain
+  lower_domain=$(echo "$domain" | tr '[:upper:]' '[:lower:]')
+  if [[ "$lower_domain" =~ fanvue\.com$ ]]; then
+    echo "fanvue.com"
   else
-    return 1
+    echo "$domain"
   fi
 }
 
-#### get_domain_from_url: normalize any domain ending with "fanvue.com" to "fanvue.com"
-get_domain_from_url() {
-  local url="$1"
-  echo "$url" | awk -F/ '{print $3}' | sed 's/^www\.//; s/^m\.//'
-}
-
+### Retrieve the cookie file path based on domain.
 get_cookie_path_for_domain() {
   local domain="$1"
   echo "${YTDLP_COOKIES_MAP[$domain]}"
 }
 
-## Update
-
+### Refresh the cookie file using clipboard contents.
 refresh_cookie_file() {
   local domain="$1"
   if [[ -z "$domain" ]]; then
@@ -119,7 +120,7 @@ refresh_cookie_file() {
   local cookie_file
   cookie_file="$(get_cookie_path_for_domain "$domain")"
   if [[ -z "$cookie_file" ]]; then
-    bug "❌ Error: No cookie file mapped for domain '$domain'." >&2
+    echo "❌ Error: No cookie file mapped for domain '$domain'." >&2
     return 1
   fi
   local clipboard_cmd=""
@@ -128,7 +129,7 @@ refresh_cookie_file() {
   elif command -v xclip >/dev/null 2>&1; then
     clipboard_cmd="xclip -selection clipboard -o"
   else
-    bug "❌ Error: No suitable clipboard utility found. Install 'wl-clipboard' or 'xclip'." >&2
+    echo "❌ Error: No suitable clipboard utility found. Install 'wl-clipboard' or 'xclip'." >&2
     return 1
   fi
   printf "➡️ Copy current cookie file for '%s' to your clipboard, then press Enter.\n" "$domain"
@@ -136,59 +137,77 @@ refresh_cookie_file() {
   local clipboard_data
   clipboard_data=$($clipboard_cmd 2>/dev/null || true)
   if [[ -z "$clipboard_data" ]]; then
-    bug "❌ Error: Clipboard is empty or unreadable." >&2
+    echo "❌ Error: Clipboard is empty or unreadable." >&2
     return 1
   fi
   mkdir -p "$(dirname "$cookie_file")"
-  echo "$clipboard_data" > "$cookie_file" || { bug "❌ Error: Could not write to '$cookie_file'." >&2; return 1; }
-  chmod 600 "$cookie_file" 2>/dev/null || bug "❌ Warning: Could not secure '$cookie_file'." >&2
+  echo "$clipboard_data" > "$cookie_file" || { echo "❌ Error: Could not write to '$cookie_file'." >&2; return 1; }
+  chmod 600 "$cookie_file" 2>/dev/null || echo "❌ Warning: Could not secure '$cookie_file'." >&2
   echo "Cookie file for '$domain' updated successfully!"
 }
 
-## Prompt
-
+### Prompt user to update cookies.
+# If fzf is available, use it for fuzzy selection.
 prompt_cookie_update() {
   echo "Select the domain to update cookies for:"
   local domains
-  if [[ -n "${ZSH_VERSION:-}" ]]; then
+  if command -v fzf >/dev/null 2>&1; then
     domains=("${(@k)YTDLP_COOKIES_MAP}")
-  else
-    domains=( "${!YTDLP_COOKIES_MAP[@]}" )
-  fi
-  local idx=1
-  for d in "${domains[@]}"; do
-    echo "  $idx) $d"
-    idx=$(( idx + 1 ))
-  done
-  printf "Enter the number or domain [1-%d]: " $(( idx - 1 ))
-  read -r choice
-  local domain=""
-  if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le $(( idx - 1 )) ]]; then
-    if [[ -n "${ZSH_VERSION:-}" ]]; then
-      domain="${domains[$choice]}"
+    local selection
+    selection=$(printf "%s\n" "${domains[@]}" | fzf --prompt="Domain: ")
+    if [[ -n "$selection" ]]; then
+      refresh_cookie_file "$selection"
+      return $?
     else
-      domain="${domains[$(( choice - 1 ))]}"
+      echo "❌ No selection made." >&2
+      return 1
     fi
   else
-    for item in "${domains[@]}"; do
-      if [[ "$item" == "$choice" ]]; then
-        domain="$item"
-        break
-      fi
+    if [[ -n "${ZSH_VERSION:-}" ]]; then
+      domains=("${(@k)YTDLP_COOKIES_MAP}")
+    else
+      domains=( "${!YTDLP_COOKIES_MAP[@]}" )
+    fi
+    local idx=1
+    for d in "${domains[@]}"; do
+      echo "  $idx) $d"
+      idx=$(( idx + 1 ))
     done
+    printf "Enter the number or domain [1-%d]: " $(( idx - 1 ))
+    read -r choice
+    local domain=""
+    if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le $(( idx - 1 )) ]]; then
+      if [[ -n "${ZSH_VERSION:-}" ]]; then
+        domain="${domains[$choice]}"
+      else
+        domain="${domains[$(( choice - 1 ))]}"
+      fi
+    else
+      for item in "${domains[@]}"; do
+        if [[ "$item" == "$choice" ]]; then
+          domain="$item"
+          break
+        fi
+      done
+    fi
+    if [[ -z "$domain" ]]; then
+      echo "❌ Invalid selection: $choice" >&2
+      return 1
+    fi
+    refresh_cookie_file "$domain"
   fi
-  if [[ -z "$domain" ]]; then
-    bug "❌ Invalid selection: $choice" >&2
-    return 1
-  fi
-  refresh_cookie_file "$domain"
 }
 
-## Default
-
+### For fanvue.com, always return "best" as the format.
 select_best_format() {
   local url="$1"
   local cfile="$2"
+  local domain
+  domain=$(get_domain_from_url "$url")
+  if [[ "$(echo "$domain" | tr '[:upper:]' '[:lower:]')" == "fanvue.com" ]]; then
+    echo "best"
+    return
+  fi
   local formats_json
   formats_json=$(yt-dlp -j --cookies "$cfile" "$url" 2>/dev/null || true)
   if [[ -z "$formats_json" ]]; then
@@ -204,7 +223,7 @@ select_best_format() {
   echo "best"
 }
 
-## Formats
+## Formats: Get details for a given format.
 
 get_format_details() {
   local url="$1"
@@ -223,7 +242,7 @@ get_format_details() {
   echo "$out" | jq '{format_id, ext, resolution, fps, tbr, vcodec, acodec, filesize}'
 }
 
-## YTDL 
+## YTDL: Quick download; accepts a -c flag to force using cookies.
 
 ytdl() {
   local use_cookie=0
@@ -259,12 +278,12 @@ ytdl() {
     --newline --ignore-config --no-playlist --no-mtime "${args[@]}"
 }
 
-## YTF
+## YTF: List formats, prompt for a format ID, and pass it to ytdlc.
 
 ytf() {
   if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Usage: ytf <URL>"
-    echo "Lists all available download formats."
+    echo "Lists available download formats for the given URL and prompts for the desired format ID (default: best)."
     return 0
   fi
   local url="$1"
@@ -273,7 +292,7 @@ ytf() {
     return 1
   fi
   if ! validate_url "$url"; then
-    bug "❌ Error: Invalid URL: $url" >&2
+    echo "❌ Error: Invalid URL: $url" >&2
     return 1
   fi
   local domain
@@ -290,8 +309,9 @@ ytf() {
   echo ""
   local best_fmt
   best_fmt=$(select_best_format "$url" "$cookie_file")
+  echo "Automatically selected best format: $best_fmt"
   echo ""
-  printf "Enter format ID: " "$best_fmt"
+  printf "Enter the desired format ID (default: %s): " "$best_fmt"
   read -r user_input
   if [[ -z "$user_input" ]]; then
     user_input="$best_fmt"
@@ -300,8 +320,24 @@ ytf() {
   ytdlc -f "$user_input" "$url"
 }
 
-## YTDLC 
+## Helper: Attempt advanced download.
 
+### This helper encapsulates the complex command invocation for advanced downloads.
+attempt_advanced_download() {
+  local url="$1"
+  local cookie_file="$2"
+  local bestf="$3"
+  local odir="$4"
+  shift 4
+  local extra_args=("$@")
+  yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
+    --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
+    -f "${bestf}+bestaudio/best" --merge-output-format webm \
+    --no-playlist --no-mtime --cookies "$cookie_file" \
+    --output "${odir}/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
+}
+
+### ytdlc: Advanced download with fallback and reattempt logic.
 ytdlc() {
   if [[ $# -eq 0 ]]; then
     show_ytdlc_help
@@ -320,7 +356,7 @@ ytdlc() {
         if [[ -n "$2" && "$2" != -* ]]; then
           odir="$2"; shift 2;
         else
-          bug "❌ Error: --output-dir requires a non-empty argument."
+          echo "❌ Error: --output-dir requires a non-empty argument." >&2
           show_ytdlc_help; return 1;
         fi;;
       --update)
@@ -331,7 +367,7 @@ ytdlc() {
         if [[ -n "$2" && "$2" != -* ]]; then
           extra_args+=("-f" "$2"); shift 2;
         else
-          bug "❌ Error: -f requires an argument." >&2; return 1;
+          echo "❌ Error: -f requires an argument." >&2; return 1;
         fi;;
       -*)
         extra_args+=("$1"); shift;;
@@ -344,20 +380,20 @@ ytdlc() {
     return 0
   fi
   if (( ${#urls[@]} == 0 )); then
-    bug "❌ No URLs specified." >&2
+    echo "❌ No URLs specified." >&2
     show_ytdlc_help; return 1;
   fi
   if [[ ! -d "$odir" ]]; then
-    mkdir -p "$odir" || { bug "❌ Error: Could not create '$odir'." >&2; return 1; }
+    mkdir -p "$odir" || { echo "❌ Error: Could not create '$odir'." >&2; return 1; }
   fi
   for url in "${urls[@]}"; do
     echo "----------------------------------------"
     echo "Analyzing URL: $url"
     if ! validate_url "$url"; then
-      bug "❌ Error: Invalid URL: $url" >&2
+      echo "❌ Error: Invalid URL: $url" >&2
       continue
     fi
-    # --- Convert YouTube embed URL if needed ---
+    ### Convert YouTube embed URL if needed.
     if [[ "$url" =~ youtube\.com/embed/([^?]+) ]]; then
       video_id="${BASH_REMATCH[1]}"
       url="https://www.youtube.com/watch/${video_id}"
@@ -368,19 +404,21 @@ ytdlc() {
     local cookie_file
     cookie_file=$(get_cookie_path_for_domain "$domain")
     if [[ -z "$cookie_file" ]]; then
-      bug "❌ Error: No cookie file mapped for domain '$domain'." >&2
+      echo "❌ Error: No cookie file mapped for domain '$domain'." >&2
       echo "➡️ Use 'ytdlc --update' to add or refresh cookie files."
       continue
     fi
     if [[ ! -f "$cookie_file" ]]; then
-      bug "❌ Cookie file not found at '$cookie_file'." >&2
+      echo "❌ Cookie file not found at '$cookie_file'." >&2
       echo "➡️ Use 'ytdlc --update' and paste the new cookie for '$domain'."
       continue
     fi
     local perms
     perms=$(stat -c '%a' "$cookie_file" 2>/dev/null || echo '???')
     if [[ "$perms" != "600" ]]; then
-      chmod 600 "$cookie_file" 2>/dev/null || { bug "❌ Warning: Could not secure '$cookie_file'." >&2; }
+      chmod 600 "$cookie_file" 2>/dev/null || { echo "❌ Warning: Could not secure '$cookie_file'." >&2; }
+    else
+      echo "Permissions for '$cookie_file' are already set to 600."
     fi
     if (( listfmt )); then
       echo "➡️ Listing available formats for '$url':"
@@ -390,7 +428,7 @@ ytdlc() {
     fi
     local bestf
     bestf=$(select_best_format "$url" "$cookie_file")
-    glow "✔️ Selected format ID: $bestf"
+    echo "✔️ Selected format ID: $bestf"
     if [[ "$bestf" != "best" ]]; then
       local fmt_info
       fmt_info=$(get_format_details "$url" "$cookie_file" "$bestf")
@@ -399,53 +437,34 @@ ytdlc() {
       echo "Format details: N/A"; echo ""
     fi
     echo "➡️ Attempting advanced download for '$url'..."
-    yt-dlp \
-      --add-metadata --embed-metadata --external-downloader aria2c \
-      --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
-      -f "$bestf+bestaudio/best" --merge-output-format webm \
-      --no-playlist --no-mtime --cookies "$cookie_file" \
-      --output "$odir/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
+    attempt_advanced_download "$url" "$cookie_file" "$bestf" "$odir" "${extra_args[@]}"
     local exit_code_adv=$?
     if [[ $exit_code_adv -eq 0 ]]; then
-      glow "✔️ Advanced download completed successfully for '$url'."
+      echo "✔️ Advanced download completed successfully for '$url'."
     else
-      bug "❌ Advanced download failed for '$url'. Falling back to simple download (ytdl)..." >&2
+      echo "❌ Advanced download failed for '$url'." >&2
+      echo "➡️ Falling back to simple download (ytdl)..." >&2
       ytdl "$url"
       local exit_code_simple=$?
       if [[ $exit_code_simple -eq 0 ]]; then
-        glow "✔️ Fallback download (ytdl) succeeded for '$url'."
+        echo "✔️ Fallback download (ytdl) succeeded for '$url'."
       else
-        bug "❌ Fallback download (ytdl) also failed for '$url'." >&2
-        echo "➡️ Automatically reattempting advanced download..."
-        yt-dlp \
-          --add-metadata --embed-metadata --external-downloader aria2c \
-          --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
-          -f "$bestf+bestaudio/best" --merge-output-format webm \
-          --no-playlist --no-mtime --cookies "$cookie_file" \
-          --output "$odir/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
-        if [[ $? -eq 0 ]]; then
-          glow "✔️ Reattempt after fallback succeeded for '$url'."
-        else
-          bug "❌ Reattempt after fallback failed for '$url'." >&2
-          echo -n "Update cookie file for '$domain' and reattempt advanced download? (y/n): "
-          read -r update_choice
-          if [[ "$update_choice" =~ ^[Yy](es)?$ ]]; then
-            refresh_cookie_file "$domain" || { echo "Cookie update failed. Skipping re-attempt for '$url'."; continue; }
-            glow "➡️ Cookies updated. Reattempting advanced download for '$url'..."
-            yt-dlp \
-              --add-metadata --embed-metadata --external-downloader aria2c \
-              --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
-              -f "$bestf+bestaudio/best" --merge-output-format webm \
-              --no-playlist --no-mtime --cookies "$cookie_file" \
-              --output "$odir/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
-            if [[ $? -eq 0 ]]; then
-              glow "✔️ Reattempt after cookie update succeeded for '$url'."
-            else
-              bug "❌ Reattempt after cookie update failed for '$url'. Skipping." >&2
-            fi
+        echo "❌ Fallback download (ytdl) also failed for '$url'." >&2
+        echo -n "➡️ Automatically reattempt advanced download? (max 1 reattempt) (y/n): "
+        read -r reattempt_choice
+        if [[ "$reattempt_choice" =~ ^[Yy](es)?$ ]]; then
+          yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
+            --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
+            -f "$bestf+bestaudio+bestaudio" --merge-output-format webm \
+            --no-playlist --no-mtime --cookies "$cookie_file" \
+            --output "$odir/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
+          if [[ $? -eq 0 ]]; then
+            echo "✔️ Reattempt after fallback succeeded for '$url'."
           else
-            echo "Skipping re-attempt for '$url'."
+            echo "❌ Reattempt after fallback failed for '$url'. Skipping." >&2
           fi
+        else
+          echo "➡️ Skipping re-attempt for '$url'."
         fi
       fi
     fi
@@ -473,24 +492,24 @@ Examples:
   ytdlc https://patreon.com/page -f 303
 EOF_HELP
 }
+
 EOF_YTDL
   glow "✔️ Wrote ytdl.zsh to $YTDL_FILE"
 }
 
-## Write Protocol Handler
+## Ytdl-handler.sh
 
 write_protocol_handler() {
-  sudo mkdir -p "$BIN_DIR"
-  sudo tee "$HANDLER_FILE" > /dev/null <<'EOH_HANDLER'
+	sudo mkdir -p "$BIN_DIR"
+	sudo tee "$HANDLER_FILE" >/dev/null <<'EOF_HANDLER'
 #!/usr/bin/env bash
 set -euo pipefail
 
 if [ -z "${1:-}" ] || [ "$1" = "%u" ]; then
-  bug "Error: No valid URL provided. Exiting." >&2
+  echo "Error: No valid URL provided. Exiting." >&2
   exit 1
 fi
 
-#### Remove the "ytdl://" prefix and decode the URL.
 feed="${1#ytdl://}"
 if command -v python3 >/dev/null 2>&1; then
   feed_decoded=$(echo "$feed" | python3 -c "import sys, urllib.parse as ul; print(ul.unquote(sys.stdin.read().strip()))")
@@ -499,7 +518,6 @@ else
 fi
 final_feed="${feed_decoded:-$feed}"
 
-#### YouTube Embed Link Conversion 
 if [[ "$final_feed" =~ youtube\.com/embed/([^?]+) ]]; then
   video_id="${BASH_REMATCH[1]}"
   final_feed="https://www.youtube.com/watch/${video_id}"
@@ -508,15 +526,15 @@ elif [[ "$final_feed" =~ youtube\.com/watch\?v=([^&]+) ]]; then
   final_feed="https://www.youtube.com/watch/${video_id}"
 fi
 
-glow "✔️ Final feed processed: $final_feed" >&2
+echo "✔️ Final feed processed: $final_feed" >&2
 #### Launch the dmenuhandler with the processed URL.
 exec /usr/local/bin/dmenuhandler "$final_feed"
-EOH_HANDLER
+EOF_HANDLER
   sudo chmod +x "$HANDLER_FILE"
   glow "✔️ Wrote protocol handler to $HANDLER_FILE"
 }
 
-## ytdl.desktop
+## Ytdl.desktop
 
 write_desktop_file() {
   mkdir -p "$APP_DIR"
@@ -531,7 +549,7 @@ EOF_DESK
   glow "✔️ Wrote desktop file to $DESKTOP_FILE"
 }
 
-## XDG-MIME register 
+## XDG register protocol
 
 register_protocol() {
   if [ ! -f "$DESKTOP_FILE" ]; then
@@ -544,7 +562,6 @@ register_protocol() {
 }
 
 ## Print bookmarklet
-
 print_bookmarklets() {
   cat <<'EOF_BM'
 Save this bookmarklet as YTDLC:
@@ -553,16 +570,18 @@ Save this bookmarklet as YTDLC:
 EOF_BM
 }
 
-## Dmenuhandler
-
+## --------------------- Write dmenuhandler --------------------- ##
 write_dmenuhandler() {
+  sudo mkdir -p "$BIN_DIR"
   if [ -f "$BIN_DIR/dmenuhandler" ]; then
-    echo "➡️ dmenuhandler already exists at $BIN_DIR/dmenuhandler; preserving existing file."
-  else
-    sudo tee "$BIN_DIR/dmenuhandler" > /dev/null <<'EOH_DMENU'
+    read -rp "Dmenuhandler detected, overwrite? (y/n) " _consent
+    if [[ $_consent != [Yy] ]]; then
+      return
+    fi
+  fi
+  sudo tee "$BIN_DIR/dmenuhandler" > /dev/null <<'EOF_DMENU'
 #!/bin/sh
 # Author: 4ndr0666
-
 # ================== // DMENUHANDLER //
 
 # Input feed: if no argument is provided, prompt the user via dmenu
@@ -570,7 +589,7 @@ feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
 
 case "$(printf "copy url\\nytdlc\\nnsxiv\\nsetbg\\nPDF\\nbrowser\\nlynx\\nvim\\nmpv\\nmpv loop\\nmpv float\\nqueue yt-dlp\\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")" in
 	"copy url") echo "$feed" | wl-copy ;;
-	"ytdlc") setsid -f "$TERMINAL" -e zsh -ic "echo 'Listing formats for $feed:' && ytf \"$feed\"" ;;
+	"ytdlc") setsid -f "$TERMINAL" -e bash -c "echo 'Listing formats for $feed:'; ytf \"$feed\"" ;;
 	"nsxiv") curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && nsxiv -a "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1 ;;
 	"setbg") curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" >/dev/null 2>&1 ;;
 	"PDF") curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && zathura "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1 ;;
@@ -584,10 +603,9 @@ case "$(printf "copy url\\nytdlc\\nnsxiv\\nsetbg\\nPDF\\nbrowser\\nlynx\\nvim\\n
 	"queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' >/dev/null 2>&1 ;;
 	"queue download") qndl "$feed" 'curl -LO' >/dev/null 2>&1 ;;
 esac
-EOH_DMENU
-    sudo chmod +x "$BIN_DIR/dmenuhandler"
-    glow "✔️ Installed new dmenuhandler to $BIN_DIR/dmenuhandler"
-  fi
+EOF_DMENU
+  sudo chmod +x "$BIN_DIR/dmenuhandler"
+  glow "✔️ Installed new dmenuhandler to $BIN_DIR/dmenuhandler"
 }
 
 ## Main Entry Point
@@ -599,7 +617,7 @@ main() {
   read -r
 
   if [[ $EUID -eq 0 ]]; then
-    bug "❌ Warning: It's recommended not to run this as root. Press Enter to continue."
+    echo "❌ Warning: It's recommended not to run this as root. Press Enter to continue."
     read -r
   fi
 
@@ -609,7 +627,8 @@ main() {
   write_ytdl_zsh
   write_protocol_handler
   write_desktop_file
-  write_dmenuhandler
+  # Optionally, uncomment the next line to overwrite dmenuhandler.
+  # write_dmenuhandler
   register_protocol
   reapply_immutability "$YTDL_FILE"
   reapply_immutability "$HANDLER_FILE"
@@ -617,5 +636,4 @@ main() {
   echo
   print_bookmarklets
 }
-
 main
