@@ -1,10 +1,7 @@
 #!/bin/bash
-#
-##File: /usr/local/bin/fixkeys.sh
-#Author: 4ndr0666
-#Edited: 02-07-2024
+# Author: 4ndr0666
 
-# ----------------------- // FIX_KEYS.SH // ========
+# ==================== // FIXKEYS.SH //
 auto_escalate() {
     if [ "$(id -u)" -ne 0 ]; then
         sudo "$0" "$@"

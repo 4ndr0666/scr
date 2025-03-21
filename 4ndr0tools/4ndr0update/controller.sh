@@ -6,7 +6,7 @@ fetch_news() {
 }
 
 fixgpg() {
-	fixkeys
+	4ndr0keyfix
 	printf "\n"
 }
 

@@ -1,9 +1,7 @@
 #!/bin/bash
-# File: /usr/local/bin/fixkeys.sh
 # Author: 4ndr0666
-# Edited: 02-07-2024
 
-# ----------------------- // FIX_KEYS.SH // ========
+# ==================== // FIXKEYS //
 GREEN_COLOR='\033[0;32m'
 NO_COLOR='\033[0m' # No Color
 SUCCESS="✔️"
