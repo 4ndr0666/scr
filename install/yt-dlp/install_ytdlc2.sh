@@ -14,6 +14,7 @@ DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 HANDLER_FILE="$BIN_DIR/ytdl-handler.sh"
 
 ## Color
+
 CYAN="\033[38;2;21;255;255m"
 BOLD="\033[1m"
 RED="\033[0;31m"
@@ -64,6 +65,7 @@ reapply_immutability() {
 }
 
 ## ytdl.zsh
+
 write_ytdl_zsh() {
   mkdir -p "$ZSH_DIR"
   cat > "$YTDL_FILE" <<'EOF_YTDL'
@@ -90,7 +92,8 @@ validate_url() {
   [[ "$url" =~ ^https?:// ]] && return 0 || return 1
 }
 
-### Normalize domain (handles special cases for fanvue.com).
+### Normalize domain.
+### For fanvue URLs, we force the domain to "fanvue.com" (lowercase) so that our cookie mapping works.
 get_domain_from_url() {
   local url="$1"
   local domain
@@ -110,7 +113,7 @@ get_cookie_path_for_domain() {
   echo "${YTDLP_COOKIES_MAP[$domain]}"
 }
 
-### Refresh the cookie file using clipboard contents.
+### Refresh cookie file using clipboard.
 refresh_cookie_file() {
   local domain="$1"
   if [[ -z "$domain" ]]; then
@@ -198,7 +201,7 @@ prompt_cookie_update() {
   fi
 }
 
-### For fanvue.com, always return "best" as the format.
+### For fanvue.com, force default "best" format.
 select_best_format() {
   local url="$1"
   local cfile="$2"
@@ -428,7 +431,12 @@ ytdlc() {
     fi
     local bestf
     bestf=$(select_best_format "$url" "$cookie_file")
-    echo "✔️ Selected format ID: $bestf"
+    # For fanvue, force bestf to "best"
+    if [[ "$(echo "$(get_domain_from_url "$url")" | tr '[:upper:]' '[:lower:]')" == "fanvue.com" ]]; then
+      bestf="best"
+      echo "➡️ Fanvue URL detected; defaulting to format: best"
+    fi
+    glow "✔️ Selected format ID: $bestf"
     if [[ "$bestf" != "best" ]]; then
       local fmt_info
       fmt_info=$(get_format_details "$url" "$cookie_file" "$bestf")
@@ -500,8 +508,8 @@ EOF_YTDL
 ## Ytdl-handler.sh
 
 write_protocol_handler() {
-	sudo mkdir -p "$BIN_DIR"
-	sudo tee "$HANDLER_FILE" >/dev/null <<'EOF_HANDLER'
+  sudo mkdir -p "$BIN_DIR"
+  sudo tee "$HANDLER_FILE" > /dev/null <<'EOF_HANDLER'
 #!/usr/bin/env bash
 set -euo pipefail
 

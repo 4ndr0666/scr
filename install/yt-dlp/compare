@@ -88,7 +88,8 @@ validate_url() {
   [[ "$url" =~ ^https?:// ]] && return 0 || return 1
 }
 
-### Normalize domain (handles special cases for fanvue.com).
+### Normalize domain.
+# For fanvue URLs, we force the domain to "fanvue.com" (lowercase) so that our cookie mapping works.
 get_domain_from_url() {
   local url="$1"
   local domain
@@ -102,13 +103,13 @@ get_domain_from_url() {
   fi
 }
 
-### Retrieve the cookie file path based on domain.
+### Retrieve cookie file path for a given domain.
 get_cookie_path_for_domain() {
   local domain="$1"
   echo "${YTDLP_COOKIES_MAP[$domain]}"
 }
 
-### Refresh the cookie file using clipboard contents.
+### Refresh cookie file using clipboard.
 refresh_cookie_file() {
   local domain="$1"
   if [[ -z "$domain" ]]; then
@@ -196,7 +197,7 @@ prompt_cookie_update() {
   fi
 }
 
-### For fanvue.com, always return "best" as the format.
+### For fanvue.com, force default "best" format.
 select_best_format() {
   local url="$1"
   local cfile="$2"
@@ -239,7 +240,7 @@ get_format_details() {
   echo "$out" | jq '{format_id, ext, resolution, fps, tbr, vcodec, acodec, filesize}'
 }
 
-### ytdl: Quick download; accepts a -c flag to force cookies.
+### ytdl: Quick download; supports a -c flag to force cookie usage.
 ytdl() {
   local use_cookie=0
   local args=()
@@ -274,7 +275,7 @@ ytdl() {
     --newline --ignore-config --no-playlist --no-mtime "${args[@]}"
 }
 
-### ytf: List available formats, prompt for a format ID, and pass it to ytdlc.
+### ytf: List formats, prompt for a format ID, then pass it to ytdlc.
 ytf() {
   if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Usage: ytf <URL>"
@@ -315,9 +316,9 @@ ytf() {
   ytdlc -f "$user_input" "$url"
 }
 
-### Helper: Attempt advanced download.
-# This helper encapsulates the complex command invocation for advanced downloads.
+### Helper: Attempt an advanced download.
 attempt_advanced_download() {
+  # This helper encapsulates the complex command for advanced download.
   local url="$1"
   local cookie_file="$2"
   local bestf="$3"
@@ -422,6 +423,11 @@ ytdlc() {
     fi
     local bestf
     bestf=$(select_best_format "$url" "$cookie_file")
+    # For fanvue, force bestf to "best"
+    if [[ "$(echo "$(get_domain_from_url "$url")" | tr '[:upper:]' '[:lower:]')" == "fanvue.com" ]]; then
+      bestf="best"
+      echo "➡️ Fanvue URL detected; defaulting to format: best"
+    fi
     glow "✔️ Selected format ID: $bestf"
     if [[ "$bestf" != "best" ]]; then
       local fmt_info
@@ -466,7 +472,7 @@ ytdlc() {
   done
 }
 
-## Help for ytdlc
+### Help for ytdlc
 show_ytdlc_help() {
   cat <<'EOF_HELP'
 Usage: ytdlc [options] <URL> [<URL> ...] [yt-dlp options]
@@ -618,7 +624,7 @@ main() {
   write_ytdl_zsh
   write_protocol_handler
   write_desktop_file
-  # Optionally, uncomment the next line to overwrite dmenuhandler.
+  # Uncomment the next line if you wish to overwrite the existing dmenuhandler.
   # write_dmenuhandler
   register_protocol
   reapply_immutability "$YTDL_FILE"
