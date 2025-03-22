@@ -10,7 +10,6 @@ import shutil
 shittyfiles = [
     '~/.adobe',
     '~/.macromedia',
-    '~/.thumbnails',
     '~/.FRD/log/app.log',
     '~/.FRD/links.txt',
     '~/.objectdb',
@@ -47,7 +46,7 @@ shittyfiles = [
     '~/.zoom/',
     '~/.Skype/',
     '~/.minecraft/logs/',
-    '~/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
+#    '~/.cache/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
     '~/.local/share/Trash/',  # Trash directory, safe to empty if confirmed with the user
 #    '/var/tmp/',  # System temporary files, can be cleaned but might affect currently running processes
     # Be cautious with system-wide directories like '/tmp/', which may contain files needed by other users or system services
@@ -62,7 +61,6 @@ shittyfiles = [
     '~/.composer/cache/',
     '~/.gem/cache/',
     '~/.cache/pip/',
-    '~/.gnupg/',
     '~/.wget-hsts',
     '~/.docker/',
     '~/.local/share/baloo/',

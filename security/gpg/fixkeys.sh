@@ -1,8 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Author: 4ndr0666
-set -e
+#set -e
 
 # ==================== // FIXKEYS.SH //
+
+## Privileges
+
+if [[ "$EUID" -ne 0 ]]; then
+    echo "Acquiring SU privileges..."
+    sudo "$0" "$@"
+    exit $?
+fi
 
 ## Colors
 
@@ -47,15 +55,10 @@ refresh() {
 
 ## Main Entry Point
 
-if [ "$(id -u)" -ne 0 ]; then
-    sudo "$0" "$@"
-    exit $?
-fi
-
 main() {
     initialize || echo "failed to initialize keyring" exit 1
     refresh || echo "failed to refresh keys" exit 1
     prominent "${GOOD}Keys are now fixed!"
 }
 
-main "$@"
+main 
