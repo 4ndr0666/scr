@@ -1,0 +1,27 @@
+#!/bin/bash
+# Usage: ./script.sh {filter|colorize} filename
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 {-(f)ilter | -(c)olorize} filename"
+    exit 1
+fi
+
+cmd=$1
+file=$2
+
+if [ "$cmd" = "-f" ]; then
+    # Print only non-commented lines
+    grep -v '^[[:space:]]*#' "$file"
+elif [ "$cmd" = "-c" ]; then
+    # Use awk to colorize: commented lines in gray, non-commented in green
+    awk '{
+        if ($0 ~ /^[[:space:]]*#/) {
+            print "\033[1;30m" $0 "\033[0m"
+        } else {
+            print "\033[0;32m" $0 "\033[0m"
+        }
+    }' "$file"
+else
+    echo "Unknown command: $cmd"
+    exit 1
+fi

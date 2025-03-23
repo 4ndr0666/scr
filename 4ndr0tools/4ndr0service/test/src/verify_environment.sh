@@ -5,40 +5,22 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Ensure PKG_PATH is defined (fallback: directory of this script)
-: "${PKG_PATH:=$(dirname "$(realpath "$0")")}"
+# Ensure PKG_PATH is defined as three levels up from this script.
+: "${PKG_PATH:=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")}"
 
-# Use environment variables if already set; otherwise, parse command-line arguments.
-FIX_MODE="${FIX_MODE:-false}"
-REPORT_MODE="${REPORT_MODE:-false}"
-
-if [[ "$#" -gt 0 ]]; then
-    for arg in "$@"; do
-        case "$arg" in
-            --help)
-                echo "Usage: $0 [--help] [--report] [--fix]"
-                exit 0
-                ;;
-            --report)
-                REPORT_MODE="true"
-                ;;
-            --fix)
-                FIX_MODE="true"
-                ;;
-            *)
-                echo "Unknown argument: $arg"
-                exit 1
-                ;;
-        esac
-    done
-fi
-
+# shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
-REQUIRED_ENV_VARS=($(jq -r '.required_env[]' "$CONFIG_FILE"))
-DIRECTORY_VARS=($(jq -r '.directory_vars[]' "$CONFIG_FILE"))
-REQUIRED_TOOLS=($(jq -r '.tools[]' "$CONFIG_FILE"))
+# Use environment variables if already set; otherwise, assign defaults.
+FIX_MODE="${FIX_MODE:-false}"
+REPORT_MODE="${REPORT_MODE:-false}"
+export FIX_MODE REPORT_MODE
+
+# Safely load arrays from the JSON config using mapfile.
+mapfile -t REQUIRED_ENV_VARS < <(jq -r '.required_env[]' "$CONFIG_FILE")
+mapfile -t DIRECTORY_VARS < <(jq -r '.directory_vars[]' "$CONFIG_FILE")
+mapfile -t REQUIRED_TOOLS < <(jq -r '.tools[]' "$CONFIG_FILE")
 
 check_env_vars() {
     local fix_mode="$1"

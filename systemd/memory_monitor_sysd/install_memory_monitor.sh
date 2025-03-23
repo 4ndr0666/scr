@@ -286,7 +286,11 @@ After=memory_monitor.service systemd-oomd.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/freecache.sh
-RemainAfterExit=yes
+AmbientCapabilities=CAP_KILL CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_KILL CAP_IPC_LOCK
+Nice=-20
+OOMScoreAdjust=-100
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -303,6 +307,7 @@ Type=simple
 ExecStart=/usr/local/bin/memory_monitor.sh
 Restart=on-failure
 RestartSec=5s
+
 [Install]
 WantedBy=multi-user.target
 EOF

@@ -473,87 +473,24 @@ def clean_old_kernels():
     (e.g., linux, linux-zen). If a leftover older version is present, remove it.
     We'll parse /usr/lib/modules to find leftover versions and attempt removing them via pacman.
     """
-    log_and_print(f"{INFO} Cleaning up old kernel images...", "info")
+    log_and_print(f"{INFO} Cleaning up old kernel modules...", "info")
     with spinning_spinner():
         try:
-            # Gather info about installed kernel packages:
-            explicitly_installed = subprocess.check_output(["pacman", "-Qeq"], text=True).strip().split("\n")
-            current_kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
-            # e.g. current_kernel might be "6.3.2-zen1-1-zen"
-            # Let's parse the base name: "linux-zen" or "linux" if possible
-            # We'll do a naive approach: the substring before '-'
-            # But let's do a better parse
-            # If user has kernel name "linux-zen", pacman pkg might be "linux-zen" but we want to ensure not removing any that matches current version
-
-            # parse /usr/lib/modules for leftover kernel versions
-            modules_dir = "/usr/lib/modules"
-            if not os.path.isdir(modules_dir):
-                log_and_print(f"{FAILURE} /usr/lib/modules directory not found! Cannot clean old kernels.", "error")
-                return
-
-            installed_folders = os.listdir(modules_dir)  # e.g. ["6.3.2-arch1-1", "6.3.2-zen1-1-zen"]
-            # We'll build a mapping from folder to potential kernel package name
-            # Then check if that kernel is installed
-
-            def guess_pkg_for_kernel_version(foldername):
-                # If foldername contains "zen" -> "linux-zen"
-                # If foldername is "6.3.2-arch1-1" -> likely "linux"
-                # This is somewhat naive but covers the common use case
-                if "zen" in foldername:
-                    return "linux-zen"
-                elif "hardened" in foldername:
-                    return "linux-hardened"
-                elif "lts" in foldername:
-                    return "linux-lts"
-                else:
-                    return "linux"
-
-            # Identify leftover versions
-            kernels_to_remove = []
-
-            for folder in installed_folders:
-                pkgname = guess_pkg_for_kernel_version(folder)
-                # Check if pkg is explicitly installed
-                if pkgname not in explicitly_installed:
-                    # Possibly orphan leftover modules
-                    # We'll attempt to remove or handle them
-                    kernels_to_remove.append((pkgname, folder))
-                else:
-                    # It's installed. Check if this folder version matches the current running version or not
-                    if folder not in current_kernel:
-                        # Possibly older leftover if the user updated recently
-                        # But only add if the pkg is indeed installed
-                        kernels_to_remove.append((pkgname, folder))
-
-            if kernels_to_remove:
-                log_and_print(f"{INFO} Kernels/folders to remove: {kernels_to_remove}", "info")
-                confirm = prompt_with_timeout(
-                    "Do you want to remove these kernels/folders? [y/N]: ",
-                    persistent=True
-                ).lower()
-                if confirm == "y":
-                    # We'll do a combination approach: attempt pacman -Rns, also remove leftover folder in /usr/lib/modules
-                    for pkg, folder in kernels_to_remove:
-                        # if pkg is installed, attempt to remove
-                        if pkg in explicitly_installed:
-                            subprocess.run(["sudo", "pacman", "-Rns", "--noconfirm", pkg], check=False)
-                        # if the folder remains
-                        folderpath = os.path.join(modules_dir, folder)
-                        if os.path.exists(folderpath):
-                            shutil.rmtree(folderpath, ignore_errors=True)
-                    log_and_print(
-                        f"{SUCCESS} Old kernel modules cleaned up.",
-                        "info",
-                    )
-                else:
-                    log_and_print(f"{INFO} Kernel cleanup canceled by user.", "info")
-            else:
-                log_and_print(f"{INFO} No old kernel images to remove.", "info")
-
+            result = subprocess.run(
+                ['for i in /usr/lib/modules/[0-9]*; do if [[ $${i##*/} = \'%v\' ]] || pacman -Qo "$${i}"; then continue; fi; rsync -AHXal "$${i}" /usr/lib/modules/.old/; rm -rf "$${i}"; done'],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            log_and_print(
+                f"{SUCCESS} Old kernel modules cleaned up. Details:\n{result.stdout}",
+                "info",
+            )
         except subprocess.CalledProcessError as e:
-            log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", "error")
-        except Exception as ex:
-            log_and_print(f"{FAILURE} Unexpected error: {str(ex)}", "error")
+            log_and_print(
+                    f"{FAILURE} Error: Failed to remove old modules: {e.stderr.strip()}",
+                    "error",
+            )
 
 ################################
 # 7. vacuum_journalctl() (Improvement #1)
