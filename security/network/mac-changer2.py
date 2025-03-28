@@ -228,7 +228,6 @@ def restore_nm_file(nm_file):
         print(f"[-] Backup file {bak_file} not found; cannot restore.")
         return False
     try:
-        # Remove immutable if set
         chattr_set_immutable(nm_file, enable=False)
         shutil.copy2(bak_file, nm_file)
         print(f"[+] Restored {nm_file} from {bak_file}")
@@ -239,11 +238,11 @@ def restore_nm_file(nm_file):
 
 def restore_interface_mac(interface):
     """
-    Restores the original MAC of the interface from /tmp.
+    Restores the interface MAC from the memorized file.
     """
     mem_file = f"/tmp/original_mac_{interface}"
     if not os.path.isfile(mem_file):
-        print(f"[*] No memorized MAC in {mem_file}")
+        print(f"[*] No memorized MAC found in {mem_file}")
         return
     try:
         with open(mem_file, "r") as f:
@@ -265,18 +264,14 @@ def apply_new_mac(interface, nm_file, new_mac, persistent=False):
     1. Memorize the current MAC.
     2. Backup the nm_file.
     3. Remove immutable attribute if possible.
-    4. Update the nm_file with the new MAC (ephemeral change).
-    5. Optionally, leave the change persistent.
-    6. Reload NetworkManager by using nmcli with the connection ID.
-    7. Immediately set the MAC on the interface.
+    4. Update the nm_file with the new MAC.
+    5. Reload NetworkManager using the connection ID.
+    6. Immediately set the MAC on the interface.
     """
     memorize_original_mac(interface)
     backup_nm_file(nm_file)
-
-    # Remove immutable before editing; ignore if unsupported.
     chattr_set_immutable(nm_file, enable=False)
 
-    # Update nm_file in-place.
     temp_nm = nm_file + ".temp"
     if not update_nm_file_mac(nm_file, temp_nm, new_mac):
         sys.exit("[-] Failed to update the .nmconnection file.")
@@ -286,21 +281,18 @@ def apply_new_mac(interface, nm_file, new_mac, persistent=False):
     except Exception as ex:
         sys.exit(f"[-] Failed to move temporary file: {ex}")
 
-    # Lock the file if desired.
     chattr_set_immutable(nm_file, enable=True)
 
-    # Reload NetworkManager using the connection ID.
     conn_id = get_connection_id(nm_file)
     if not conn_id:
         sys.exit("[-] Could not parse connection ID from the .nmconnection file.")
     safe_cmd(["nmcli", "connection", "reload"])
     safe_cmd(["nmcli", "connection", "up", conn_id])
 
-    # Immediately change the MAC using ip link.
     change_mac_ephemeral(interface, new_mac)
 
     if persistent:
-        print("[+] Persistent mode: The new MAC will remain in the nmconnection file.")
+        print("[+] Persistent mode: The new MAC remains in the configuration.")
     else:
         print("[*] Ephemeral change applied; you can restore later with --restore.")
 
@@ -318,11 +310,93 @@ def restore_original(interface, nm_file):
     restore_interface_mac(interface)
 
 ###############################################################################
-# 8. Command-line parsing and main entry
+# 8. New Feature: Config File Generation
+###############################################################################
+
+def generate_config_file():
+    """
+    Generates a configuration file at /etc/NetworkManager/mac-changer.conf.
+    Prompts the user for desired persistent MAC specifications.
+    """
+    config_path = "/etc/NetworkManager/mac-changer.conf"
+    if os.path.isfile(config_path):
+        overwrite = input(f"[?] Config file {config_path} exists. Overwrite? [y/N]: ").strip().lower()
+        if overwrite != "y":
+            print("[*] Keeping existing config file.")
+            return
+    default_mac = input("Enter default persistent MAC (or leave empty to use current persistent value): ").strip()
+    content = (
+        "# mac-changer configuration file\n"
+        "# This file is used by mac-changer for persistent MAC address settings\n\n"
+        "[MAC-Changer]\n"
+        f"default_mac = {default_mac if default_mac else ''}\n"
+    )
+    try:
+        with open(config_path, "w") as f:
+            f.write(content)
+        os.chmod(config_path, 0o644)
+        print(f"[+] Configuration file written to {config_path}")
+    except Exception as ex:
+        sys.exit(f"[-] Failed to write config file: {ex}")
+
+###############################################################################
+# 9. New Feature: Install Renamer Startup Script
+###############################################################################
+
+def install_renamer_script():
+    """
+    Installs a startup script at /usr/local/bin/iface-renamer.sh that force-renames
+    the interface based on user-provided TARGET_MAC and TARGET_IF.
+    """
+    script_path = "/usr/local/bin/iface-renamer.sh"
+    if os.path.isfile(script_path):
+        overwrite = input(f"[?] Startup script {script_path} exists. Overwrite? [y/N]: ").strip().lower()
+        if overwrite != "y":
+            print("[*] Keeping existing startup script.")
+            return
+
+    target_mac = input("Enter TARGET_MAC (e.g., 74:27:EA:66:76:46): ").strip()
+    target_if = input("Enter TARGET_IF (e.g., enp2s0): ").strip()
+    script_content = f"""#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_MAC="{target_mac}"
+TARGET_IF="{target_if}"
+
+CURRENT_IF="$(ip -o link | awk -v mac="$TARGET_MAC" 'tolower($0) ~ tolower(mac) {{print $2}}' | sed 's/://')"
+
+if [ -z "$CURRENT_IF" ]; then
+    echo "❌ Ethernet iface with MAC $TARGET_MAC not found."
+    exit 1
+fi
+
+if [ "$CURRENT_IF" != "$TARGET_IF" ]; then
+    echo "🔄 Renaming iface from $CURRENT_IF → $TARGET_IF"
+    ip link set "$CURRENT_IF" down
+    ip link set "$CURRENT_IF" name "$TARGET_IF"
+    ip link set "$TARGET_IF" up
+else
+    echo "✔️ Iface dev already named $TARGET_IF"
+fi
+"""
+    try:
+        with open(script_path, "w") as f:
+            f.write(script_content)
+        os.chmod(script_path, 0o755)
+        print(f"[+] Startup renamer script installed at {script_path}")
+    except Exception as ex:
+        sys.exit(f"[-] Failed to install renamer script: {ex}")
+
+###############################################################################
+# 10. Command-line parsing and main entry
 ###############################################################################
 
 def get_arguments():
-    parser = optparse.OptionParser()
+    usage = ("Usage: %prog [options]\n\n"
+             "This script changes the MAC address of a network interface using NetworkManager.\n"
+             "Options allow ephemeral changes, persistent updates, and restoration.\n"
+             "Additionally, you can generate a config file or install a startup renamer script.")
+    parser = optparse.OptionParser(usage=usage)
     parser.add_option("-i", "--interface", dest="interface",
                       help="Network interface (e.g. enp2s0)")
     parser.add_option("-m", "--mac", dest="new_mac",
@@ -333,10 +407,17 @@ def get_arguments():
                       default=False, help="Restore original MAC and configuration.")
     parser.add_option("-p", "--persistent", action="store_true", dest="persistent",
                       default=False, help="Make the change persistent across reboots.")
+    parser.add_option("-g", "--gen-config", action="store_true", dest="gen_config",
+                      default=False, help="Generate configuration file at /etc/NetworkManager/mac-changer.conf")
+    parser.add_option("-R", "--install-renamer", action="store_true", dest="install_renamer",
+                      default=False, help="Install interface renamer startup script at /usr/local/bin/iface-renamer.sh")
     opts, _ = parser.parse_args()
 
-    if not opts.interface:
-        parser.error("[-] Please specify --interface, e.g. -i enp2s0")
+    # If no options provided, show help.
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
+
     if not opts.nm_file:
         opts.nm_file = "/etc/NetworkManager/system-connections/Ethernet connection 1.nmconnection"
     if not opts.restore and not opts.new_mac:
@@ -348,6 +429,15 @@ def main():
     ensure_root()
     opts = get_arguments()
 
+    # Process additional features first:
+    if opts.gen_config:
+        generate_config_file()
+        sys.exit(0)
+    if opts.install_renamer:
+        install_renamer_script()
+        sys.exit(0)
+
+    # Process main MAC change flows:
     if opts.restore:
         restore_original(opts.interface, opts.nm_file)
     else:
