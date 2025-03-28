@@ -7,7 +7,7 @@ export USER_INTERFACE='cli'
 
 # Editor used to modify settings (vim, nano, micro)
 # NOTE: EDITOR environment variable takes precedence
-export SETTINGS_EDITOR='lite-xl'
+export SETTINGS_EDITOR='nvim'
 
 # Country to generate the mirror list for
 export MIRRORLIST_COUNTRY='United States'
@@ -17,7 +17,7 @@ export MIRRORLIST_COUNTRY='United States'
 #######################################################################
 
 # Define the AUR helper to use (trizen, yay, or others)
-export AUR_HELPER="trizen"
+export AUR_HELPER="yay"
 
 # Directory where currently installed AUR packages are stored
 export AUR_DIR="/home/build"

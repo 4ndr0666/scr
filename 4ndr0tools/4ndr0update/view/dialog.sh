@@ -9,13 +9,13 @@ main () {
 	if [[ "$EUID" -eq 0 ]]; then
 		while true; do
 			REPLY=$(dialog --stdout --title "4ndr0update" --menu "By Your Command:" 15 50 8 \
-					1 "Update System" \
-					2 "Clean System" \
-					3 "Scan System" \
-					4 "Backup System" \
-					5 "Restore System" \
-					6 "Vacuum System" \
-					7 "Update Settings" \
+					1 "Update" \
+					2 "Clean" \
+					3 "Journal Errors" \
+					4 "Create Backup" \
+					5 "Restore Backup" \
+					6 "Vacuum.py" \
+					7 "Settings" \
 					0 "Exit")
 			clear;
 			case "$REPLY" in

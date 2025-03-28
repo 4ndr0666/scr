@@ -1,7 +1,7 @@
 #!/bin/bash
 
 remove_orphaned_packages() {
-	printf "\nChecking for orphaned packages...\n"
+	printf "\n➡️ Checking for orphaned packages\n"
 	mapfile -t orphaned < <(pacman -Qtdq)
 	if [[ "${orphaned[*]}" ]]; then
 		printf "ORPHANED PACKAGES FOUND:\n"
@@ -47,11 +47,11 @@ clean_package_cache() {
     printf "\n"
     read -r -p "Do you want to clean up the package cache? [y/N] "
     if [[ "$REPLY" =~ ^[yY]$ ]]; then
-        printf "Cleaning up the package cache...\n"
+    	printf "➡️ Cleaning package cache\n"
         paccache -r
-	printf "...Done cleaning up the package cache\n"
+		printf "✔️ Package cache cleaned\n"
     else
-        printf "...Skipping package cache clean.\n"
+        printf "➡️ Skipping package cache clean.\n"
     fi
 }
 
@@ -59,7 +59,7 @@ clean_broken_symlinks() {
     printf "\n"
     read -r -p "Do you want to search for broken symlinks? [y/N] "
     if [[ "$REPLY" =~ ^[yY]$ ]]; then
-        printf "Checking for broken symlinks...\n"
+        printf "➡️ Scanning for broken symlinks\n"
         mapfile -t broken_symlinks < <(find "${SYMLINKS_CHECK[@]}" -xtype l -print)
         if [[ "${broken_symlinks[*]}" ]]; then
             printf "BROKEN SYMLINKS TO BE DELETED:\n"
@@ -67,14 +67,14 @@ clean_broken_symlinks() {
 	    rm "${broken_symlinks[@]}"
             fi
         else
-            printf "...No broken symlinks found\n"
+            printf "➡️ Symlinks working appropriately\n"
         fi
 }
 
 clean_old_config() {
     user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
     test -z "$user_home" && user_home="~"
-    printf "\nREMINDER: Check the following directories for old configuration files:\n"
+    printf "\n➡️ Manually check:\n"
     printf "$user_home/\n"
     printf "$user_home/.config/\n"
     printf "$user_home/.cache/\n"

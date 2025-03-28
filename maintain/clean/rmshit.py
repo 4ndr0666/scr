@@ -39,6 +39,18 @@ shittyfiles = [
     '~/.asy/',
     '~/.cmake/',
     '~/.cache/mozilla/',
+    '~/.cache/mesa_shader_cache',
+    '~/.cache/mesa_shader_cache_db',
+    '~/.cache/go-build',
+    '~/.cache/go',
+    '~/.cache/qtshadercache-x86_64-little_endian-lp64',
+    '~/.cache/yarn',
+    '~/.local/share/Trash/info',
+    '~/.local/share/Trash/files',
+    '~/.cache/mozilla/',
+    '~/.cache/gstreamer-1.0/',
+    '~/.cache/fontconfig/',
+    '~/.cache/mesa/',
     '~/.cache/chromium/',
     '~/.cache/google-chrome/',
     '~/.cache/spotify/',
@@ -46,10 +58,7 @@ shittyfiles = [
     '~/.zoom/',
     '~/.Skype/',
     '~/.minecraft/logs/',
-#    '~/.cache/.thumbnails/',  # Redundant with '~/.cache/.thumbnails', consider keeping only one
-    '~/.local/share/Trash/',  # Trash directory, safe to empty if confirmed with the user
-#    '/var/tmp/',  # System temporary files, can be cleaned but might affect currently running processes
-    # Be cautious with system-wide directories like '/tmp/', which may contain files needed by other users or system services
+    '~/.local/share/Trash/'
     '~/.vim/.swp',
     '~/.vim/.backup',
     '~/.vim/.undo',
@@ -67,9 +76,6 @@ shittyfiles = [
     '~/.kde/share/apps/okular/docdata/',
     '~/.local/share/akonadi/',
     '~/.xsession-errors',
-    '~/.cache/gstreamer-1.0/',
-    '~/.cache/fontconfig/',
-    '~/.cache/mesa/',
     '~/.nv/ComputeCache/',
 ]
 

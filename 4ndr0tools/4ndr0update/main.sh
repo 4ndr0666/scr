@@ -17,7 +17,7 @@ check_optdepends() {
 }
 
 fallback_view() {
-	printf "\nIncorrect USER_INTERFACE setting -- falling back to default\n" 1>&2
+	printf "\n❌ Incorrect USER_INTERFACE -- falling back to default\n" 1>&2
 	read
 	source $(pkg_path)/view/dialog.sh
 }
@@ -44,21 +44,20 @@ source_controller() {
 }
 
 execute_main() {
+	printf "\n"
 	main
 	test "$?" == 1 && repair_settings
 }
 
 if [[ "$EUID" -ne 0 ]]; then
-        printf "💀WARNING💀 - you are now a superuser...\n" 1>&2
+#	printf "💀 Auto-escalated 💀\n"
 	sudo "$0" "$@"
 	exit $?
-fi
-
-if [[ "$EUID" -eq 0 ]]; then
+else
 	source_settings
 	source_service
 	source_controller
-
+fi	
 	case "$USER_INTERFACE" in
 		'cli')
 			source $(pkg_path)/view/cli.sh;;
@@ -67,6 +66,4 @@ if [[ "$EUID" -eq 0 ]]; then
 		*)
 			fallback_view;;	
 	esac
-
-	execute_main
-fi
+execute_main

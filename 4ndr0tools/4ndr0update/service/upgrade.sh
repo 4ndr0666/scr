@@ -20,48 +20,47 @@ retry_command() {
 configure_reflector() {
     printf "\n"
     read -r -p "Update Mirrorlist? [y/N]"
+
     if [[ "$REPLY" =~ [yY] ]]; then
+		reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
+		printf "✔️ Mirrorlist updated\n"
+    fi
+    
 	if ! systemctl is-enabled reflector.timer > /dev/null 2>&1; then
-        sudo systemctl enable --now reflector.timer
-        echo "Checking Reflector Service...\n"
-    else
-        echo "Already Enabled.\n"
-    fi
-	printf "Updating mirrorlist...\n"
-	reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
-	printf "...Mirrorlist updated\n"
-    fi
+		sudo systemctl enable --now reflector.timer
+		printf "➡️ Checking Reflector Service...\n"
+	else
+    	printf "✔️ Already Enabled\n"
+	fi
 }
 
 
 system_update() {
-    printf "\nPerforming system upgrade...\n"
-    retry_command sudo /usr/bin/pacman -Syu
-
-    if ! retry_command sudo /usr/bin/pacman -Syu; then
-        echo "Error: System update failed."
+    printf "\n➡️ Updating system\n"
+    retry_command sudo /usr/bin/pacman -Syyu
+    if ! retry_command sudo /usr/bin/pacman -Syyu; then
+        echo "❌ System update failed."
         return 1
+    else
+    	printf "✔️ Update complete\n"
     fi
-
-    printf "...Update complete!\n"
 }
-
 
 # Function to check and install a package if it is missing
 ensure_package_installed() {
     local pkg="$1"
     if ! pacman -Qs "$pkg" > /dev/null; then
-        echo "Package $pkg is missing. Installing..."
+        printf "➡️ Installing $pkg "
         retry_command sudo pacman -S --noconfirm "$pkg"
     else
-        echo "Package $pkg is already installed."
+        printf "✔️ $pkg is already installed."
     fi
 }
 
 # Function to verify and install missing dependencies for a package
 check_and_install_dependencies() {
     local pkg="$1"
-    echo "Checking dependencies for $pkg..."
+    printf "➡️ Checking dependencies for $pkg..."
 
     local dependencies
     dependencies=$(pactree -u -d1 "$pkg" | tail -n +2)
@@ -76,7 +75,7 @@ aur_setup() {
 	printf "\n"
 	read -r -p "Do you want to setup the AUR package directory at $AUR_DIR? [y/N]"
 	if [[ "$REPLY" =~ [yY] ]]; then
-		printf "Setting up AUR package directory...\n"
+		printf "➡️ Setting up AUR package directory...\n"
 		if [[ ! -d "$AUR_DIR" ]]; then
 			mkdir -p "$AUR_DIR"
 			test -n "$SUDO_USER" && chown "$SUDO_USER" "$AUR_DIR"
@@ -98,7 +97,7 @@ rebuild_aur() {
 		printf "\n"
 		read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N]"
 		if [[ "$REPLY" =~ [yY] ]]; then
-			printf "Rebuilding AUR packages...\n"
+			printf "➡️ Rebuilding AUR packages...\n"
 			if [[ -n "$(ls -A $AUR_DIR)" ]]; then
 				starting_dir="$(pwd)"
 				for aur_pkg in "$AUR_DIR"/*/; do
@@ -117,9 +116,9 @@ rebuild_aur() {
 					fi
 				done
 				cd "$starting_dir"
-				printf "...Done rebuilding AUR packages\n"
+				printf "Done rebuilding AUR packages\n"
 			else
-				printf "...No AUR packages in $AUR_DIR\n"
+				printf "No AUR packages in $AUR_DIR\n"
 			fi
 		fi
 	else
@@ -129,8 +128,7 @@ rebuild_aur() {
 }
 
 handle_pacfiles() {
-	printf "\nChecking for pacfiles...\n"
+	printf "➡️ Checking for pacfiles\n"
 	pacdiff
-	printf "...Done checking for pacfiles\n"
 }
 

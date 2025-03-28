@@ -2,8 +2,10 @@
 
 main() {
     if [[ "$EUID" -eq 0 ]]; then
-    PS3='Action to take: '
-    select opt in "Update System" "Clean System" "Scan system" "Backup System" "Restore System" "Vacuum System" "Settings" "Exit"; do
+    printf "\n"
+    
+    PS3='Option (press enter for menu): '
+    select opt in "Update" "Clean" "Journal Errors" "Create Backup" "Restore Backup" "Vacuum.py" "Settings" "Exit"; do
         case $REPLY in
             1) system_upgrade;;
             2) system_clean;;
@@ -16,7 +18,7 @@ main() {
                ;;
             7) update_settings;;
             8) break;;
-            *) echo "Please choose an existing option";;
+            *) printf "Please choose an existing option";;
         esac
     done
     fi

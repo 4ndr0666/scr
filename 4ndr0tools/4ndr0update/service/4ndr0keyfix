@@ -1,65 +1,67 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Author: 4ndr0666
+#set -e
 
-# ==================== // FIXKEYS //
-GREEN_COLOR='\033[0;32m'
-NO_COLOR='\033[0m' # No Color
-SUCCESS="✔️"
+# ==================== // FIXKEYS.SH //
+
+## Privileges
+
+if [[ "$EUID" -ne 0 ]]; then
+    echo "Acquiring SU privileges..."
+    sudo "$0" "$@"
+    exit $?
+fi
+
+## Colors
+
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+GOOD="✔️"
 INFO="➡️"
 EXPLOSION="💥"
-
 prominent() {
     local message="$1"
-    local color="${2:-$GREEN_COLOR}"
-    echo -e "${BOLD}${color}$message${NO_COLOR}"
+    local color="${2:-$GREEN}"
+    echo -e "${BOLD}${color}$message${NC}"
 }
 
-# --- // FUNCTIONS:
-reinstall() {
-    prominent "${EXPLOSION} Reinstalling the arch-keyring..."
-    sleep 2
-    if ! pacman -Sy archlinux-keyring --noconfirm; then
-        echo "Failed to reinstall archlinux-keyring."
-        exit 1
-    fi
+## Removal
+
+remove() {
+    prominent "${INFO} Removing the pacman databases..."
+    rm /var/lib/pacman/sync/* || echo "failed to remove databases" exit 1
+    prominent "${INFO} Removing /etc/pacman.d/gnupg files..."
+    rm -rf /etc/pacman.d/gnupg/* || echo "failed to remove /etc/pacman.d/gnupg files" exit 1
 }
 
-clean() {
-    prominent "${INFO} Removing old sync data and gpg dir..."
-    sleep 2
-    rm -rf /var/lib/pacman/sync/*
-    rm -rf /etc/pacman.d/gnupg/*
+## Pacman-key
+
+initialize() {
+    prominent "${INFO} Initializing Pacman-key..."
+    pacman-key --init || echo "failed to initialize pacman-key." exit 1
+    prominent "${INFO} Populating Pacman-key..."
+    pacman-key --populate || echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
+                           # echo "keyserver hkps://keyserver.ubuntu.com" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf || \
+                           # echo "keyserver hkps://keys.openpgp.org" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
 }
 
-init() {
-    prominent "${SUCCESS}Initializing new pacman key..."
-    sleep 2
-    sudo pacman-key --init
+## New Databases
+
+refresh() {
+    prominent "${INFO} Getting new databases..."
+    pacman -Sy || echo "failed to retreive new databases." exit 1
+    prominent "${INFO} Reinstalling keyring..."
+    pacman -Sy archlinux-keyring --noconfirm || echo "Failed to reinstall archlinux-keyring." exit 1
 }
 
-populate() {
-    prominent "${SUCCESS}Populating the keyring and explicitly adding the ubuntu keyserver..."
-    sleep 2
-    sudo pacman-key --populate
-    echo "keyserver hkps://keyserver.ubuntu.com" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf || \
-    echo "keyserver hkps://keys.openpgp.org" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
-#    echo "keyserver hkp://keyserver.ubuntu.com:80" | sudo tee --append /etc/pacman.d/gnupg/gpg.conf
-}
+## Main Entry Point
 
-sync() {
-    prominent "${SUCCESS}Creating fresh repo databases..."
-    sudo pacman -Sy
-}
-
-# --- // MAIN:
 main() {
-    reinstall
-    clean
-    init
-    populate
-    sync
-    prominent "${EXPLOSION}done!${EXPLOSION}"
-    sleep 1
+    remove || echo "failed to remove corrupt databases" exit 1
+    initialize || echo "failed to initialize keyring" exit 1
+    refresh || echo "failed to refresh keys" exit 1
+    prominent "${GOOD}Keys are now fixed!"
     exit 0
 }
-main "$@"
+
+main 

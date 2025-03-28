@@ -18,6 +18,7 @@ GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 GOOD="✔️"
 INFO="➡️"
+EXPLOSION="💥"
 prominent() {
     local message="$1"
     local color="${2:-$GREEN}"
@@ -56,9 +57,11 @@ refresh() {
 ## Main Entry Point
 
 main() {
+    remove || echo "failed to remove corrupt databases" exit 1
     initialize || echo "failed to initialize keyring" exit 1
     refresh || echo "failed to refresh keys" exit 1
     prominent "${GOOD}Keys are now fixed!"
+    exit 0
 }
 
 main 

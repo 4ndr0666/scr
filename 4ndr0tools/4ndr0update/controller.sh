@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 fetch_news() {
 	arch_news
@@ -14,12 +14,13 @@ system_upgrade() {
        printf "➡️ Starting system upgrade..."
        fetch_news
        fetch_warnings
-       configure_reflector
-       aur_setup
-       rebuild_aur
+#       configure_reflector
+#       aur_setup
+#       rebuild_aur
        handle_pacfiles
        system_update || { fixgpg && system_update; }
-        
+       printf "\n"
+
 #	if configure_reflector; then
 #		echo "Reflector configured successfully."
 #	else
@@ -64,7 +65,7 @@ system_clean() {
         clean_package_cache
         clean_broken_symlinks
         clean_old_config
-#        printf "✔️ System cleaning complete!" 
+#        printf "✔️ System cleaning complete!"
         printf "\n"
 #	if remove_orphaned_packages; then
 #		echo "Orphaned packages removed."
@@ -89,35 +90,36 @@ system_clean() {
 }
 
 system_errors() {
-	printf "➡️ Scanning system errors..."
+	printf "➡️ Scanning system errors\n"
 	failed_services
 	journal_errors
 	printf "\n"
 }
+
 backup_system() {
-	printf "➡️ Starting system backup..."
+	printf "➡️ Starting system backup\n"
 	if execute_backup; then
-		printf "✔️ System backup completed successfully."
+		printf "✔️ System backup completed successfully.\n"
 	else
-		printf "Error: System backup failed."
+		printf "❌ System backup failed.\n"
 		exit 1
 	fi
 	printf "\n"
 }
 
 restore_system() {
-	echo "➡️ Starting system restore..."
+	printf "➡️ Starting system restore\n"
 	if execute_restore; then
-		printf "✔️ System restored successfully."
+		printf "✔️ System restored successfully\n"
 	else
-		printf "Error: System restore failed."
+		printf "❌ System restore failed.\n"
 		exit 1
 	fi
 	printf "\n"
 }
 
 update_settings() {
-	printf "➡️ Updating settings..."
+	printf "➡️ Updating settings\n"
 	modify_settings
 	source_settings
 	printf "✔️ Settings updated successfully."

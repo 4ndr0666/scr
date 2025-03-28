@@ -7,7 +7,6 @@
 
 # --- // CONSTANTS_AND_COLORS:
 BASEPATH=$(dirname "$0")
-
 if [ -f "${BASEPATH}/colors.sh" ]; then
     . "${BASEPATH}/colors.sh"
 else
@@ -19,17 +18,18 @@ else
     }
 fi
 
+# These ensure we only show each category of commands once
 _sync=false
 _search=false
 _query=false
 _files=false
 _remove=false
 
+# Capture the argument string
 args=$@
 
+#-----------------------------------------------------------------------------------
 
-# --- // FUNCTION_DEFINITIONS ========
-# --- // HELP_MENU:
 help(){
 
     heading green "HELP" 
@@ -45,12 +45,13 @@ help(){
     exit 1
 }
 
-# --- // PACMAN_CMDS_FOR_SEARCHING_REMOTE_PKGS:
+#-----------------------------------------------------------------------------------
+
 search() {
 
     if [ $_search == false ]; then
     
-        heading green "QUERYING"
+        heading green "SEARCH REMOTE PACKAGES"
 
         echo -e "${grn}pacman${r}${yel} -Ql${r} ${cyn}keyword${r}\t  # Search package databases that contain a keyword"
         echo -e "${grn}pacman${r}${yel} -Ss${r} ${yel}'^${r}${cyn}keyword${r}${yel}'${r}\t  # Search for package name that begins with a keyword"
@@ -60,12 +61,13 @@ search() {
     fi
 }
 
-# --- // INSTALLED_PACKGE_INFO:
+#-----------------------------------------------------------------------------------
+
 query() {
 
     if [ $_query == false ]; then
 
-        heading olive "SEARCH"
+        heading olive "SEARCH LOCAL PACKAGES"
         
         echo -e "${grn}pacman${r}${yel} -Qs${r}\t\t  # Show all installed packages"
         echo -e "${grn}pacman${r}${yel} -Qs${r} ${cyn}keyword${r}\t  # Search for installed packages that contain a keyword"
@@ -78,44 +80,58 @@ query() {
         echo -e "${grn}pacman${r}${yel} -Qq | grep -Ee '-(bzr|cvs|darcs|git|hg|svn)$'${r}\t  # List all dev packages"
         echo -e "${grn}pacman${r}${yel} -Qq | fzf --preview 'pacman -Qil {}' --layout=reverse --bind 'enter:execute(pacman -Qil {} | less)' ${r}\t  # Browse all in GUI"
 
+
+
+
         _query=true
     fi                
 }
 
-# --- // PKG_FILES_INFORMATION:
+#-----------------------------------------------------------------------------------
+
 files() {
 
     if [ $_files == false ]; then
 
-        heading blue "FILES"
+        heading blue "SEARCH FILES"
 
-        echo -e "${grn}lsof${r}${yel} +c 0 | grep -w DEL | awk '1 { print $1 ": " $NF }' | sort -u ${r} ${cyn}${r}\t  # These pkgs are using old libraries" 
-        echo -e "${grn}pacman${r}${yel} -Fs${r} ${cyn}keyword${r}\t                    # Search onboard pkgfiles by keyword"
-        echo -e "${grn}pacman${r}${yel} -Q | grep -i${r} ${cyn}keyword${r}\t            # Search installed pkgs by keyword"
-        echo -e "${grn}pacman${r}${yel} -Fl${r} ${cyn}package-name${r}\t                    # Lists all files installed via remote pkg" 
-        echo -e "${grn}pacman${r}${yel} -Fo${r} ${cyn}/path/filename${r}\t            # List the remote pkg a file belongs to" 
-        echo -e "${grn}pacman${r}${yel} -Q${r}\t                            # List all installed pkgs" 
-        echo -e "${grn}paccheck${r}${yel} --md5sum --quiet${r} ${r}\t            # List all files that have changed" 
+        echo -e "${grn}pacman${r}${yel} -Fs${r} ${cyn}keyword${r}\t                    # Search for package filenames that contain a keyword"
+        echo -e "${grn}pacman${r}${yel} -Q | grep -i${r} ${cyn}keyword${r}\t            # Search for installed packages by keyword"
+        echo -e "${grn}pacman${r}${yel} -Fl${r} ${cyn}package-name${r}\t                    # Show all files installed by a remote package"
+        echo -e "${grn}pacman${r}${yel} -Fo${r} ${cyn}/path/filename${r}\t            # Show which remote package a file belongs to"
+        echo -e "${grn}pacman${r}${yel} -Q${r}\t                            # Show all packages installed"
+        echo -e "${grn}paccheck${r}${yel} --md5sum --quiet${r} ${r}\t            # Show all changed files from packages"
+        echo -e "${grn}lsof${r}${yel} +c 0 | grep -w DEL | awk '1 { print $1 ": " $NF }' | sort -u ${r} ${cyn}${r}\t  # Show apps using old libraries"
+        echo -e "${grn}expac${r}${yel} --timefmt='%Y-%m-%d %T' '%l\t%n' | sort | tail -n 20${r}\t  # Show last 20 installed packages"
+        
+
 
         _files=true
     fi
 }
 
-# --- // SPECIAL_DOWNLOAD_USES:
+#-----------------------------------------------------------------------------------
+
 sync() {
 
     if [ $_sync == false ]; then
     
-        heading purple "SYNC"
+        heading purple "SYNC COMMANDS"
 
+        echo -e "${grn}pacman${r}${yel} -U${r} ${cyn}/path/package.pkg.tar.xz${r}\t  # Install a local package"
         echo -e "${grn}pacman${r}${yel} -S --needed - < ${cyn}pkglist.txt${r}\t  # Install from a list"
+        echo -e "${grn}pacman${r}${yel} -S${r} ${cyn}package-name${r}\t  # Install a package"
+        echo -e "${grn}pacman${r}${yel} -Syu${r}\t\t  # Update all installed packages and sync and refresh database"
+        echo -e "${grn}pacman${r}${yel} -Sy${r}\t\t  # Sync and refresh the pacman database"
+        echo -e "${grn}pacman${r}${yel} -Syy${r}\t\t  # Sync and FORCE refresh the pacman database. Be careful!"
         echo -e "${grn}pacman${r}${yel} -Sw${r} ${cyn}package-name${r}\t  # Download a package but do not install it"
+        echo -e "${grn}pacman${r}${yel} -Scc${r}\t\t  # Clear caches (run this periodically)"
 
         _sync=true
     fi
 }
 
-# --- // PKG_REMOVAL_COMMANDS:
+#-----------------------------------------------------------------------------------
 remove() {
 
     if [ $_remove == false ]; then
@@ -137,6 +153,7 @@ remove() {
 }
 clear
 
+# No arguments, we show all
 if [ -z "$args" ]; then
     sync
     search
@@ -151,16 +168,20 @@ args=${args,,}    # lowercase
 args=${args// /}  # remove spaces
 args=${args//-/}  # remove dashes
 
+# Help menu
 if [[ $args =~ [h] ]] ; then
     help
 fi
 
+# Invalid arguments trigger help
 if [[ $args =~ [^srqfx] ]]; then
     help
 fi
 
+# Explode the characters into an array
 args=$(echo $args | grep -o .)
 
+# Show specific request
 for arg in ${args[@]}; do
     case "$arg" in
         s)  sync    ;;
