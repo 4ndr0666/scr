@@ -1,78 +1,58 @@
 #!/bin/sh
+# Author: 4ndr0666
 
-# Log file for debugging
-LOGFILE=~/dmenuhandler.log
+# ================== // DMENUHANDLER //
 
-# Process input feed
+# Input feed: if no argument is provided, prompt the user via dmenu
 feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
-
-echo "Feed received: $feed" >> "$LOGFILE"
-
-# Display dmenu options
-choice=$(printf "Copy URL\nView Image\nSet Background\nOpen as PDF\nOpen in Browser\nOpen in Lynx\nEdit in Vim\nPlay in MPV\nDownload\nQueue YTDL\nQueue YTDLC\nYTF" | dmenu -i -p "Choose action:")
-
-echo "Choice selected: $choice" >> "$LOGFILE"
-
+TERMINAL="st"
+# Prompt for action
+choice=$(printf "copy url\nytdlc\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
 case "$choice" in
-    "Copy URL")
+    "copy url")
         echo "$feed" | wl-copy
         ;;
-    "View Image")
-        tmpfile="/tmp/$(basename "$feed" | sed "s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && nsxiv -a "$tmpfile" >> "$LOGFILE" 2>&1
+    "ytdlc")
+        if echo "$feed" | grep -qi "fanvue.com"; then
+            setsid -f "$TERMINAL" -e zsh -ic "echo 'Fanvue link detected. Using format best.' && ytdlc \"$feed\" -f best && echo 'Press Enter to close the terminal.' && read" >/dev/null 2>&1
+        else
+            setsid -f "$TERMINAL" -e zsh -ic "echo 'Listing formats for $feed:' && ytf \"$feed\" && echo 'Enter the desired format ID: ' && read fmt && echo 'Choose YTDL or YTDLC for download: ' && echo '1) YTDL' && echo '2) YTDLC' && read choice && case \"\$choice\" in 1) ytdl \"$feed\" -f \"\$fmt\" ;; 2) ytdlc \"$feed\" -f \"\$fmt\" ;; *) echo 'Invalid choice. Exiting.' ;; esac && echo 'Press Enter to close the terminal.' && read" >/dev/null 2>&1
+        fi
         ;;
-    "Set Background")
-        sed -i -e "s|WALLPAPER=.*|WALLPAPER='$feed'|g" "/home/andro/.config/wayfire/scripts/wallpaper" >> "$LOGFILE" 2>&1
+    "nsxiv")
+        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && nsxiv -a "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
         ;;
-    "Open as PDF")
-        tmpfile="/tmp/$(basename "$feed" | sed "s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && zathura "$tmpfile" >> "$LOGFILE" 2>&1
+    "setbg")
+        curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" >/dev/null 2>&1
         ;;
-    "Open in Browser")
-        setsid -f "$BROWSER" "$feed" >> "$LOGFILE" 2>&1
+    "PDF")
+        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && zathura "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
         ;;
-    "Open in Lynx")
-        lynx "$feed" >> "$LOGFILE" 2>&1
+    "browser")
+        setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
         ;;
-    "Edit in Vim")
-        tmpfile="/tmp/$(basename "$feed" | sed "s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && setsid -f "$TERMINAL" -e "$EDITOR" "$tmpfile" >> "$LOGFILE" 2>&1
+    "W3m")
+        setsid -f "$TERMINAL" -e w3m "$feed" >/dev/null 2>&1
         ;;
-    "Play in MPV")
-        setsid -f mpv -quiet "$feed" >> "$LOGFILE" 2>&1
+    "vim")
+        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && setsid -f "$TERMINAL" -e "$EDITOR" "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
         ;;
-    "Download")
-        qndl "$feed" 'curl -LO' >> "$LOGFILE" 2>&1
+    "mpv")
+        setsid -f mpv -quiet "$feed" >/dev/null 2>&1
         ;;
-    "Queue YTDL")
-        # Pass URL to ytdl and display terminal for visibility
-        setsid -f "$TERMINAL" -e zsh -ic "ytdl \"$feed\"; echo 'Press Enter to close the terminal.'; read" >> "$LOGFILE" 2>&1
+    "mpv loop")
+        setsid -f mpv -quiet --loop=inf "$feed" >/dev/null 2>&1
         ;;
-    "Queue YTDLC")
-        # Pass URL to ytdlc and display terminal for visibility
-        setsid -f "$TERMINAL" -e zsh -ic "ytdlc \"$feed\"; echo 'Press Enter to close the terminal.'; read" >> "$LOGFILE" 2>&1
+    "mpv float")
+        setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30% --title="mpvfloat" "$feed" >/dev/null 2>&1
         ;;
-    "YTF")
-        # List formats and allow selection for download
-        setsid -f "$TERMINAL" -e zsh -ic "
-            echo 'Listing formats for $feed:' && \
-            ytf \"$feed\" && \
-            echo 'Enter the desired format ID: ' && \
-            read fmt && \
-            echo 'Choose YTDL or YTDLC for download: ' && \
-            echo '1) YTDL' && \
-            echo '2) YTDLC' && \
-            read choice && \
-            case \"\$choice\" in
-                1) ytdl \"$feed\" -f \"\$fmt\" ;;
-                2) ytdlc \"$feed\" -f \"\$fmt\" ;;
-                *) echo 'Invalid choice. Exiting.' ;;
-            esac
-            echo 'Press Enter to close the terminal.'
-            read
-        " >> "$LOGFILE" 2>&1
+    "queue yt-dlp")
+        qndl "$feed" >/dev/null 2>&1
+        ;;
+    "queue yt-dlp audio")
+        qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' >/dev/null 2>&1
         ;;
     *)
-        echo "Invalid choice or no action taken." >> "$LOGFILE"
+        echo "Invalid choice or no action taken." >/dev/null 2>&1
         ;;
 esac

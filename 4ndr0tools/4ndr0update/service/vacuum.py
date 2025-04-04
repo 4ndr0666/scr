@@ -469,28 +469,71 @@ def remove_broken_symlinks():
 
 def clean_old_kernels():
     """
-    Clean up old kernel images, with user confirmation, preserving the currently installed major kernel families
-    (e.g., linux, linux-zen). If a leftover older version is present, remove it.
-    We'll parse /usr/lib/modules to find leftover versions and attempt removing them via pacman.
+    Clean old kernel versions not in use. Retains currently running kernel and removes others via pacman if traceable.
     """
-    log_and_print(f"{INFO} Cleaning up old kernel modules...", "info")
-    with spinning_spinner():
-        try:
-            result = subprocess.run(
-                ['for i in /usr/lib/modules/[0-9]*; do if [[ $${i##*/} = \'%v\' ]] || pacman -Qo "$${i}"; then continue; fi; rsync -AHXal "$${i}" /usr/lib/modules/.old/; rm -rf "$${i}"; done'],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            log_and_print(
-                f"{SUCCESS} Old kernel modules cleaned up. Details:\n{result.stdout}",
-                "info",
-            )
-        except subprocess.CalledProcessError as e:
-            log_and_print(
-                    f"{FAILURE} Error: Failed to remove old modules: {e.stderr.strip()}",
-                    "error",
-            )
+    log_and_print(f"{INFO} Scanning for old kernel modules to clean...", "info")
+    current_kernel = os.uname().release
+    modules_path = "/usr/lib/modules"
+    old_versions = []
+
+    if not os.path.isdir(modules_path):
+        log_and_print(f"{FAILURE} Modules directory not found: {modules_path}", "error")
+        return
+
+    try:
+        installed_versions = [
+            d for d in os.listdir(modules_path)
+            if os.path.isdir(os.path.join(modules_path, d)) and re.match(r'^\d+\.\d+', d)
+        ]
+        old_versions = [v for v in installed_versions if v != current_kernel]
+
+        if not old_versions:
+            log_and_print(f"{SUCCESS} No old kernel modules found to clean.", "info")
+            return
+
+        log_and_print(f"{INFO} Found old kernel module versions: {old_versions}", "info")
+
+        confirm = prompt_with_timeout(
+            f"Do you want to remove these old kernels: {old_versions}? [y/N]: ",
+            persistent=True
+        ).lower()
+
+        if confirm != "y":
+            log_and_print(f"{INFO} Kernel cleanup aborted by user.", "info")
+            return
+
+        with spinning_spinner():
+            for version in old_versions:
+                module_path = os.path.join(modules_path, version)
+                try:
+                    # Try to find owning package
+                    result = subprocess.run(
+                        ["pacman", "-Qo", module_path],
+                        capture_output=True, text=True, check=True
+                    )
+                    pkg_line = result.stdout.strip()
+                    pkg_name = pkg_line.split(" is owned by ")[-1].split()[0]
+                    log_and_print(f"{INFO} Removing kernel package: {pkg_name} (version: {version})", "info")
+
+                    remove_result = subprocess.run(
+                        ["sudo", "pacman", "-Rns", "--noconfirm", pkg_name],
+                        capture_output=True, text=True
+                    )
+
+                    if remove_result.returncode == 0:
+                        log_and_print(f"{SUCCESS} Removed old kernel package: {pkg_name}", "info")
+                    else:
+                        log_and_print(f"{FAILURE} Failed to remove package {pkg_name}. Attempting manual cleanup.", "error")
+                        shutil.rmtree(module_path, ignore_errors=True)
+                        log_and_print(f"{WARNING} Manually removed kernel module: {version}", "warning")
+
+                except subprocess.CalledProcessError:
+                    log_and_print(f"{WARNING} Kernel version {version} not owned by any package. Removing manually...", "warning")
+                    shutil.rmtree(module_path, ignore_errors=True)
+                    log_and_print(f"{SUCCESS} Removed orphaned kernel module: {version}", "info")
+
+    except Exception as e:
+        log_and_print(f"{FAILURE} Error during kernel cleanup: {str(e)}", "error")
 
 ################################
 # 7. vacuum_journalctl() (Improvement #1)

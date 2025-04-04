@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
+# Total Functions: 19 | Total Lines: ~400
 set -euo pipefail
 
 # ================== // INSTALL_YTDLC.SH //
@@ -323,10 +324,11 @@ attempt_advanced_download() {
   local bestf="$3"
   local odir="$4"
   shift 4
+  local extra_args=("$@")
   yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
     --external-downloader-args "aria2c:-c -j8 -x8 -s8 -k2M" \
-    --ignore-config --no-playlist --no-mtime \
-    --cookies "$cookie_file" \
+    -f "${bestf}+bestaudio/best" --merge-output-format webm \
+    --no-playlist --no-mtime --cookies "$cookie_file" \
     --output "${odir}/%(title)s.%(ext)s" "${extra_args[@]}" "$url"
 }
 
@@ -633,7 +635,6 @@ main() {
   write_ytdl_zsh
   write_protocol_handler
   write_desktop_file
-  # Uncomment the next line if you wish to overwrite the existing dmenuhandler.
   write_dmenuhandler
   register_protocol
   reapply_immutability "$YTDL_FILE"
