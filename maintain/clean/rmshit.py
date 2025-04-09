@@ -38,6 +38,7 @@ shittyfiles = [
     '~/.qutebrowser/',
     '~/.asy/',
     '~/.cmake/',
+    '~/.cache/thumbnails'
     '~/.cache/mozilla/',
     '~/.cache/mesa_shader_cache',
     '~/.cache/mesa_shader_cache_db',
@@ -47,10 +48,13 @@ shittyfiles = [
     '~/.cache/yarn',
     '~/.local/share/Trash/info',
     '~/.local/share/Trash/files',
-    '~/.cache/mozilla/',
+    '~/.cache/electron',
+    '~/.cache/fontconfig'
+    '~/.cache/mesa_shader_cache_db'
+    '~/.cache/mozilla'
     '~/.cache/gstreamer-1.0/',
     '~/.cache/fontconfig/',
-    '~/.cache/mesa/',
+    '~/.cache/mesa_shader_cache/',
     '~/.cache/chromium/',
     '~/.cache/google-chrome/',
     '~/.cache/spotify/',

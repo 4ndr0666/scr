@@ -1,0 +1,12 @@
+[Unit]
+Description=Brave Beta Browser
+
+[Service]
+ExecStart=/usr/bin/brave-beta \
+    --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
+    --enable-features=UsesOzonePlatform,AllowLegacyMV2Extensions,BraveGoogleSignInPermission,ExtensionManifestV2,FluentOverlayScrollbar,IsolatedWebApps,ToastRefinements,WaylandPerSurfaceScale,WaylandTextInputV3,WaylandUiScale \
+    --disable-crash-reporter=,beta
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
