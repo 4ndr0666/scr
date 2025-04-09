@@ -1,0 +1,12 @@
+[Unit]
+Description=Mako Notification Daemon
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/mako --config=%h/.config/wayfire/mako/config
+Restart=on-failure
+# We use simple type since mako is a straightforward process
+Type=simple
+
+[Install]
+WantedBy=default.target

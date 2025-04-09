@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply GTK Themes and Icons
+
+[Service]
+Type=oneshot
+ExecStart=/home/andro/.config/wayfire/scripts/gtkthemes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
