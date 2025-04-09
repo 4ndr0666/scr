@@ -1,5 +1,6 @@
 [Unit]
-Description=Apply GTK Themes and Icons
+Description=Apply GTK Themes, Icons, Cursor, and Fonts for Wayfire Session
+Before=graphical-session.target
 
 [Service]
 Type=oneshot
