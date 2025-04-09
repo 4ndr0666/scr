@@ -1,5 +1,6 @@
 ## Directories
 
+.mypy_cache/
 __pycache__/
 node_modules/
 .ssh/
@@ -8,6 +9,9 @@ node_modules/
 .idea/
 .pytest_cache/
 
+## Files
+
+*.mp4
 *.swp
 *~
 *tmp*
