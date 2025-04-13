@@ -628,7 +628,7 @@ apply_configurations() {
     sysctl_config
     configure_ufw
     enhance_network_performance
-    validate_configurations
+#    validate_configurations
 }
 apply_configurations
 final_verification
