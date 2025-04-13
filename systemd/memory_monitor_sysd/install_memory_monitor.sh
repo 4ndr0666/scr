@@ -17,13 +17,12 @@ OOMD_SERVICE="/etc/systemd/system/systemd-oomd.service"
 EARLYOOM_SERVICE="/etc/systemd/system/earlyoom.service"
 OOMD_CONF="/etc/systemd/oomd.conf"
 EARLYOOM_BIN=""
-SILENT=1 # If set to 1, noncritical log output is discarded.
-SKIP_DEPS=1 # If set to 1, dependency checking/installation is skipped.
+SILENT=1         # If set to 1, noncritical log output is discarded.
+SKIP_DEPS=1      # If set to 1, dependency checking/installation is skipped.
 
 ## Colors
 CYAN='\033[0;36m'
 RESET='\033[0m'
-
 
 ## Logging
 log_info() {
@@ -262,7 +261,7 @@ validateServiceFile() {
 ## Process Whitelist Configuration
 
 configureWhitelist() {
-    echo -e "${CYAN}# === // OOM Killer Whitelist Selections//${RESET}"
+    echo -e "${CYAN}# === // OOM Killer Whitelist Selections //${RESET}"
     sleep 1
     echo ""
     echo "Use the arrow keys and TAB to select processes to protect."
@@ -314,6 +313,8 @@ AmbientCapabilities=CAP_KILL CAP_IPC_LOCK
 CapabilityBoundingSet=CAP_KILL CAP_IPC_LOCK
 Nice=-20
 OOMScoreAdjust=-100
+KillMode=control-group
+TimeoutStopSec=10s
 
 [Install]
 WantedBy=multi-user.target
@@ -331,6 +332,8 @@ Type=simple
 ExecStart=/usr/local/bin/memory_monitor.sh
 Restart=on-failure
 RestartSec=5s
+KillMode=control-group
+TimeoutStopSec=10s
 
 [Install]
 WantedBy=multi-user.target
@@ -340,6 +343,9 @@ EOF
 #### Memory Monitor Script
 MEMORY_MONITOR_SCRIPT_CONTENT=$(cat <<'EOF'
 #!/bin/bash
+
+# (Optional) Trap SIGCHLD to reap background children if any in future modifications.
+trap 'while wait -n 2>/dev/null; do :; done' SIGCHLD
 
 while true; do
     FREE_RAM=$(free -m | awk '/^Mem:/{print $4}')
@@ -439,6 +445,9 @@ buildFreeCacheScript() {
     cat <<'EOS'
 #!/bin/bash
 set -euo pipefail
+
+# Reap background children to prevent zombies.
+trap 'while wait -n 2>/dev/null; do :; done' SIGCHLD
 
 # Ensure FINAL_WHITELIST is set; if not, use default values.
 : "${FINAL_WHITELIST:=wayfire Xwayland}"
