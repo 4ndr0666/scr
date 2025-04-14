@@ -3,5 +3,4 @@
 *.md text=auto
 *.log diff=none
 *.txt  text=auto
-permissions/PermMaster/permissions_manifest.acl filter=lfs diff=lfs merge=lfs -text
-
+*.zip filter=lfs diff=lfs merge=lfs -text
