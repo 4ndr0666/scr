@@ -81,6 +81,7 @@ shittyfiles = [
     '~/.local/share/akonadi/',
     '~/.xsession-errors',
     '~/.nv/ComputeCache/',
+    '/Nas/Backups/rsnapshot',
 ]
 
 def yesno(question, default="n"):
