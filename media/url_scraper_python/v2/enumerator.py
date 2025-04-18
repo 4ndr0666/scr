@@ -1,6 +1,3 @@
-# ================================
-# enumerator.py
-# ================================
 #!/usr/bin/env python3
 """
 enumerator.py
@@ -57,30 +54,47 @@ def get_status_code(url):
         return 0
 
 
-def extract_numeric_portion(filename):
+def extract_first_numeric_portion(filename):
     """
-    Extracts a numeric portion from a filename (e.g., '39.jpg').
-    Returns int if found, else None.
+    Extracts the FIRST numeric portion from a filename, ignoring trailing digits.
+    Example:
+      'sis-roma-9-1-scaled.jpg' -> returns (prefix='sis-roma-', number='9',
+                                            suffix='-1-scaled', extension='.jpg')
+    If no numeric portion is found, returns None.
     """
-    match = re.search(r"(\d+)\.(?:jpg|jpeg|png|gif|bmp)$", filename, re.IGNORECASE)
-    return int(match.group(1)) if match else None
+    # Pattern breakdown:
+    #   ^(.*?)    -> capture everything up to the first digits (prefix)
+    #   (\d+)     -> capture the first group of digits
+    #   (.*)      -> capture any remaining characters until final extension
+    #   (\.(?:jpg|jpeg|png|gif|bmp))$ -> capture the extension
+    pattern = re.compile(r"^(.*?)(\d+)(.*)(\.(?:jpg|jpeg|png|gif|bmp))$", re.IGNORECASE)
+    match = pattern.search(filename)
+    if match:
+        prefix = match.group(1)
+        number_str = match.group(2)       # the digits we will enumerate
+        suffix = match.group(3)
+        extension = match.group(4)
+        return prefix, number_str, suffix, extension
+    return None
 
 
-def build_url_sequence(base_url, start_num, end_num, width=2):
+def build_url_sequence(base_url, start_num, end_num, width=2,
+                       prefix="", suffix="", extension=""):
     """
-    Builds a list of URLs from start_num to end_num,
-    replacing the numeric portion in base_url with zero-padded
-    numbers of length 'width'.
+    Builds a list of URLs from start_num to end_num by replacing the
+    *first* numeric group with zero-padded numbers (of length 'width').
+    
+    The rest (prefix, suffix, extension) remain intact.
     """
     urls = []
     for i in range(start_num, end_num + 1):
         new_num_str = str(i).zfill(width)
-        new_url = re.sub(
-            r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
-            lambda m: f"{new_num_str}.{m.group(2)}",
-            base_url,
-            flags=re.IGNORECASE
-        )
+        # Construct the new filename
+        new_filename = f"{prefix}{new_num_str}{suffix}{extension}"
+        # Replace the old filename in base_url with new_filename
+        # This is the simplest approach if the old 'filename' is at the end:
+        url_before_filename = base_url.rsplit('/', 1)[0]  # everything before last '/'
+        new_url = f"{url_before_filename}/{new_filename}"
         urls.append(new_url)
     return urls
 
@@ -113,18 +127,23 @@ def check_urls_in_sequence(url_list):
 
 def auto_enumerate_images(base_url):
     """
-    Auto-detect a numeric portion in the filename, then expand outward
-    until encountering CONSECUTIVE_404_THRESHOLD failures in each direction.
-    Builds the final list of discovered images, checks statuses.
+    Auto-detect the *first* numeric portion in the filename, then expand outward
+    until hitting CONSECUTIVE_404_THRESHOLD failures in each direction.
+    
+    Example:
+      If the filename is 'sis-roma-9-1-scaled.jpg', the enumerated part is '9',
+      with prefix='sis-roma-', suffix='-1-scaled', extension='.jpg'.
+      We then attempt 8,7,6,... downward, and 10,11,12,... upward until repeated 404s.
     """
-    filename = base_url.split('/')[-1]
-    numeric_value = extract_numeric_portion(filename)
-    if numeric_value is None:
+    filename = base_url.rsplit('/', 1)[-1]  # only the filename
+    extracted = extract_first_numeric_portion(filename)
+    if not extracted:
         color_print("No numeric portion found in URL filename; cannot enumerate.", LIGHT_RED)
         return []
 
-    match_width = re.search(r"(\d+)\.(?:jpg|jpeg|png|gif|bmp)$", filename, re.IGNORECASE)
-    width = len(match_width.group(1)) if match_width else 2
+    prefix, number_str, suffix, extension = extracted
+    numeric_value = int(number_str)
+    width = len(number_str)
 
     found_nums = {numeric_value}
     consecutive_fails = 0
@@ -132,13 +151,10 @@ def auto_enumerate_images(base_url):
     # Scan backwards
     current = numeric_value - 1
     while current > 0 and consecutive_fails < CONSECUTIVE_404_THRESHOLD:
-        test_url = re.sub(
-            r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
-            lambda m: f"{str(current).zfill(width)}.{m.group(2)}",
-            base_url,
-            flags=re.IGNORECASE
-        )
-        if 200 <= get_status_code(test_url) <= 299:
+        test_filename = f"{prefix}{str(current).zfill(width)}{suffix}{extension}"
+        test_url = base_url.rsplit('/', 1)[0] + "/" + test_filename
+        sc = get_status_code(test_url)
+        if 200 <= sc <= 299:
             found_nums.add(current)
             consecutive_fails = 0
         else:
@@ -149,22 +165,24 @@ def auto_enumerate_images(base_url):
     consecutive_fails = 0
     current = numeric_value + 1
     while current <= MAX_LOOKAHEAD and consecutive_fails < CONSECUTIVE_404_THRESHOLD:
-        test_url = re.sub(
-            r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
-            lambda m: f"{str(current).zfill(width)}.{m.group(2)}",
-            base_url,
-            flags=re.IGNORECASE
-        )
-        if 200 <= get_status_code(test_url) <= 299:
+        test_filename = f"{prefix}{str(current).zfill(width)}{suffix}{extension}"
+        test_url = base_url.rsplit('/', 1)[0] + "/" + test_filename
+        sc = get_status_code(test_url)
+        if 200 <= sc <= 299:
             found_nums.add(current)
             consecutive_fails = 0
         else:
             consecutive_fails += 1
         current += 1
 
+    # Build final sequence
     min_found = min(found_nums)
     max_found = max(found_nums)
-    url_list = build_url_sequence(base_url, min_found, max_found, width=width)
+    url_list = build_url_sequence(base_url, min_found, max_found,
+                                  width=width,
+                                  prefix=prefix,
+                                  suffix=suffix,
+                                  extension=extension)
     color_print(f"Enumerated {len(url_list)} images from {min_found} to {max_found}:", CYAN)
     check_urls_in_sequence(url_list)
     return url_list

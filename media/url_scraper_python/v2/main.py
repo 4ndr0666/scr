@@ -1,6 +1,3 @@
-# ================================
-# main.py
-# ================================
 #!/usr/bin/env python3
 """
 main.py
@@ -25,7 +22,6 @@ Dependencies:
 
 import sys
 import argparse
-
 import enumerator
 import integration
 

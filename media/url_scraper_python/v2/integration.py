@@ -1,6 +1,3 @@
-# ================================
-# integration.py
-# ================================
 #!/usr/bin/env python3
 """
 integration.py
@@ -85,4 +82,3 @@ def store_urls(url_list, out_file):
                 f.write(url + "\n")
                 appended_count += 1
     return appended_count
-
