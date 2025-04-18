@@ -1,1048 +1,896 @@
-#!/bin/bash
-# File: gui.sh
+#!/usr/bin/env bash
 # Author: 4ndr0666
-# Edited: 12-16-2024
-
 # ============================== // GUI.SH //
-# --- // Colors:
-GREEN='\033[0;32m'
-BOLD='\033[1m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-SUCCESS="✔️"
-FAILURE="❌"
+
+## Colors & Icons
+CYAN="\033[38;2;21;255;255m"
+NC="\033[0m"
 INFO="➡️"
-EXPLOSION="💥"
+ERROR="❌"
+SUCCESS="✔️"
+
 prominent() {
-    echo -e "${BOLD}${GREEN}$1${NC}"
+	local msg
+	msg="$1"
+	printf '%b\n' "${BOLD}${GREEN}${msg}${NC}"
+	return 0
 }
 
 bug() {
-    echo -e "${BOLD}${RED}$1${NC}"
+	local msg
+	msg="$1"
+	printf '%b\n' "${BOLD}${RED}${msg}${NC}"
+	return 1
 }
 
-echo_cyan() { echo -e "\e[36m$1\e[0m"; }
+echo_cyan() {
+	local msg
+	msg="$1"
+	printf '%b\n' "\e[36m${msg}\e[0m"
+	return 0
+}
 
-# Function to check and set up SSH key for GitHub
+# --- // check_and_setup_ssh:
 check_and_setup_ssh() {
-    local ssh_key="${HOME}/.ssh/id_ed25519"
+	local ssh_key
+	ssh_key="${HOME}/.ssh/id_ed25519"
 
-    if [ -f "$ssh_key" ]; then
-        prominent "SSH key exists."
-    else
-        prominent "SSH key not found. Creating one now..."
-        ssh-keygen -t ed25519 -C "01_dolor.loftier@icloud.com" -f "$ssh_key" -N ""
-        eval "$(ssh-agent -s)"
-        ssh-add "$ssh_key"
-        echo "SSH key created and added to the ssh-agent."
+	if [[ -f "${ssh_key}" ]]; then
+		prominent "SSH key exists at ${ssh_key}."
+		return 0
+	fi
 
-        echo_cyan "Please manually upload the SSH key to GitHub."
-        gh auth login
-        gh ssh-key add "$ssh_key.pub"
-    fi
+	prominent "SSH key not found. Generating one..."
+	if ! ssh-keygen -t ed25519 -C "01_dolor.loftier@icloud.com" -f "${ssh_key}" -N ''; then
+		bug "ssh-keygen failed."
+		return 1
+	fi
+
+	if ! eval "$(ssh-agent -s)"; then
+		bug "Failed to start ssh-agent."
+		return 1
+	fi
+
+	if ! ssh-add "${ssh_key}"; then
+		bug "Failed to add SSH key to agent."
+		return 1
+	fi
+
+	echo_cyan "Please upload ${ssh_key}.pub to GitHub."
+	if ! gh auth login --scopes repo; then
+		bug "gh auth login failed."
+		return 1
+	fi
+
+	if ! gh ssh-key add "${ssh_key}.pub"; then
+		bug "Failed to add SSH key to GitHub account."
+		return 1
+	fi
+
+	prominent "SSH setup complete."
+	return 0
 }
 
-# --- // MANAGE_REMOTES:
+# --- // list_and_manage_remotes:
 list_and_manage_remotes() {
-    prominent "Current Git remotes:"
-    git remote -v
-    read -rp "Would you like to remove any remotes? (yes/no): " response
-    if [[ "$response" =~ ^[yY] ]]; then
-        local remotes
-        remotes=$(git remote)
-        local remote_to_remove
-        remote_to_remove=$(echo "$remotes" | fzf --height=40% --prompt="Select a remote to remove: ")
-        if [ -n "$remote_to_remove" ]; then
-            if git remote | grep -q "^$remote_to_remove$"; then
-                git remote remove "$remote_to_remove"
-                prominent "Remote '$remote_to_remove' has been removed."
-            else
-                bug "Remote '$remote_to_remove' not found."
-            fi
-        else
-            echo "No remotes removed."
-        fi
-    else
-        echo "No changes made to remotes."
-    fi
+	prominent "Current Git remotes:"
+	git remote -v || bug "git remote failed." && return 1
+
+	read -rp "Remove any remote? (y/N): " response
+	if [[ ! "${response}" =~ ^[Yy]$ ]]; then
+		prominent "No remotes removed."
+		return 0
+	fi
+
+	local remotes remote_to_remove
+	mapfile -t remotes < <(git remote)
+	if [[ ${#remotes[@]} -eq 0 ]]; then
+		bug "No remotes to remove."
+		return 1
+	fi
+
+	remote_to_remove=$(printf '%s\n' "${remotes[@]}" | fzf --height=40% --prompt="Select remote to remove: ")
+	if [[ -z "${remote_to_remove}" ]]; then
+		prominent "No selection made."
+		return 0
+	fi
+
+	if git remote remove "${remote_to_remove}"; then
+		prominent "Removed remote '${remote_to_remove}'."
+	else
+		bug "Failed to remove '${remote_to_remove}'."
+		return 1
+	fi
+
+	return 0
 }
 
-# --- // SWITCH_GCLONE_TO_SSH:
+# --- // switch_to_ssh:
 switch_to_ssh() {
-    local remote_name
-    remote_name=$(git remote | fzf --height=40% --prompt="Select a remote to switch to SSH: ")
+	local remote_name old_url user_repo new_url
+	remote_name=$(git remote | fzf --height=40% --prompt="Select remote to convert: ")
+	if [[ -z "${remote_name}" ]]; then
+		bug "No remote selected."
+		return 1
+	fi
 
-    if [ -z "$remote_name" ]; then
-        bug "No remote selected."
-        return
-    fi
+	if ! old_url=$(git remote get-url "${remote_name}"); then
+		bug "Failed to get URL for ${remote_name}."
+		return 1
+	fi
 
-    local old_url new_url
-    old_url=$(git remote get-url "$remote_name")
+	if [[ "${old_url}" == git@github.com:* ]]; then
+		prominent "Already using SSH."
+		return 0
+	fi
 
-    if [[ "$old_url" == git@github.com:* ]]; then
-        prominent "The remote '$remote_name' is already using SSH."
-        return
-    fi
+	user_repo=${old_url#*github.com/}
+	user_repo=${user_repo%.git}
+	new_url="git@github.com:4ndr0666/${user_repo}.git"
 
-    local user_repo
-    user_repo=${old_url#*github.com/}
-    user_repo=${user_repo%.git}
-    new_url="git@github.com:4ndr0666/$user_repo.git"
+	if ! gh repo view "4ndr0666/${user_repo}" &>/dev/null; then
+		read -rp "Repo not found on GitHub. Create? (y/N): " yn
+		if [[ "${yn}" =~ ^[Yy]$ ]]; then
+			if ! gh repo create "4ndr0666/${user_repo}" --private --confirm; then
+				bug "Repo creation failed."
+				return 1
+			fi
+			prominent "Created remote repo."
+		else
+			bug "SSH switch aborted."
+			return 1
+		fi
+	fi
 
-    # Check if the repository exists, if not, prompt to create it
-    if ! gh repo view "4ndr0666/$user_repo" >/dev/null 2>&1; then
-        read -rp "Repository '4ndr0666/$user_repo' does not exist on GitHub. Would you like to create it? (y/n): " create_repo
-        if [[ "$create_repo" =~ ^[yY]$ ]]; then
-            if gh repo create "4ndr0666/$user_repo" --private --confirm; then
-                prominent "Repository '4ndr0666/$user_repo' created successfully on GitHub."
-            else
-                bug "Failed to create repository '4ndr0666/$user_repo' on GitHub."
-                return 1
-            fi
-        else
-            bug "Repository creation skipped. Aborting SSH switch."
-            return 1
-        fi
-    fi
+	if git remote set-url "${remote_name}" "${new_url}"; then
+		prominent "Set ${remote_name} → ${new_url}"
+	else
+		bug "Failed to set-url."
+		return 1
+	fi
 
-    git remote set-url "$remote_name" "$new_url"
-    prominent "Switched '$remote_name' to use SSH: $new_url"
+	return 0
 }
 
-# --- // UPDATE_REMOTE_URL:
+# --- // update_remote_url:
 update_remote_url() {
-    local repo_base="https://github.com/4ndr0666/"
-    local repos
-    repos=$(gh repo list 4ndr0666 -L 100 --json name -q '.[].name')
+	local repo_base repos repo_name new_url
+	repo_base='https://github.com/4ndr0666/'
+	mapfile -t repos < <(gh repo list 4ndr0666 -L100 --json name -q '.[].name')
+	if [[ ${#repos[@]} -eq 0 ]]; then
+		bug "No repos found."
+		return 1
+	fi
 
-    if [ -z "$repos" ]; then
-        bug "No repositories found under '4ndr0666'."
-        return 1
-    fi
+	prominent "Select repo to update:"
+	repo_name=$(printf '%s\n' "${repos[@]}" | fzf --height=40% --prompt="Repo: ")
+	if [[ -z "${repo_name}" ]]; then
+		bug "Abort."
+		return 1
+	fi
 
-    prominent "Select the repository you want to update:"
-    local repo_name
-    repo_name=$(echo "$repos" | fzf --height=40% --prompt="Select repository: ")
+	new_url="${repo_base}${repo_name}.git"
+	gh repo view "4ndr0666/${repo_name}" &>/dev/null || {
+		read -rp "Create on GitHub? (y/N): " yn
+		if [[ "${yn}" =~ ^[Yy]$ ]]; then
+			gh repo create "4ndr0666/${repo_name}" --private --confirm || {
+				bug "Create failed"
+				return 1
+			}
+		else
+			bug "Aborted."
+			return 1
+		fi
+	}
 
-    if [ -z "$repo_name" ]; then
-        bug "No repository selected. Aborting update."
-        return 1
-    fi
-
-    local new_url="${repo_base}${repo_name}.git"
-
-    # Check if the repository exists, if not, prompt to create it
-    if ! gh repo view "4ndr0666/$repo_name" >/dev/null 2>&1; then
-        read -rp "Repository '4ndr0666/$repo_name' does not exist on GitHub. Would you like to create it? (y/n): " create_repo
-        if [[ "$create_repo" =~ ^[yY]$ ]]; then
-            if gh repo create "4ndr0666/$repo_name" --private --confirm; then
-                prominent "Repository '4ndr0666/$repo_name' created successfully on GitHub."
-            else
-                bug "Failed to create repository '4ndr0666/$repo_name' on GitHub."
-                return 1
-            fi
-        else
-            bug "Repository creation skipped. Aborting remote URL update."
-            return 1
-        fi
-    fi
-
-    git remote set-url origin "$new_url"
-    prominent "Remote URL updated to $new_url"
+	git remote set-url origin "${new_url}" || {
+		bug "set-url failed"
+		return 1
+	}
+	prominent "origin → ${new_url}"
+	return 0
 }
 
-# --- // REMOTE_FETCH:
+# --- // fetch_from_remote:
 fetch_from_remote() {
-    prominent "Fetching updates from remote..."
-    git fetch origin
-    prominent "Fetch complete."
+	prominent "Fetching origin..."
+	git fetch origin || {
+		bug "fetch failed"
+		return 1
+	}
+	prominent "Fetch complete."
+	return 0
 }
 
-# --- // REMOTE_PULL:
+# --- // pull_from_remote:
 pull_from_remote() {
-    local current_branch
-    current_branch=$(git branch --show-current)
-    prominent "Pulling updates from remote for branch '$current_branch'..."
-    git pull origin "$current_branch"
-    prominent "Pull complete."
+	local branch
+	branch=$(git branch --show-current)
+	prominent "Pulling ${branch}..."
+	git pull origin "${branch}" || {
+		bug "pull failed"
+		return 1
+	}
+	prominent "Pull complete."
+	return 0
 }
 
-# --- // REMOTE_PUSH:
+# --- // push_to_remote:
 push_to_remote() {
-    local current_branch
-    current_branch=$(git branch --show-current)
-    
-    # Check for uncommitted changes
-    if ! git diff-index --quiet HEAD --; then
-        prominent "Uncommitted changes detected. Staging and committing them..."
-        git add -A
-        local auto_message="Auto-commit: Pushing changes on $(date +%Y-%m-%d_%H:%M:%S)"
-        git commit -m "$auto_message"
-        prominent "Changes committed with message: '$auto_message'"
-    fi
+	local branch auto_msg
+	branch=$(git branch --show-current)
+	if ! git diff-index --quiet HEAD --; then
+		prominent "Staging & committing changes..."
+		git add -A || {
+			bug "git add failed"
+			return 1
+		}
+		auto_msg="Auto-commit: $(date +'%Y-%m-%d_%H:%M:%S')"
+		git commit -m "${auto_msg}" || {
+			bug "commit failed"
+			return 1
+		}
+		prominent "Committed: ${auto_msg}"
+	fi
 
-    prominent "Pushing local branch '$current_branch' to remote..."
-    git push -u origin "$current_branch"
-    prominent "Push complete."
+	prominent "Pushing ${branch}..."
+	git push -u origin "${branch}" || {
+		bug "push failed"
+		return 1
+	}
+	prominent "Push complete."
+	return 0
 }
 
-# --- // LIST_BRANCHES:
+# --- // list_branches:
 list_branches() {
-    prominent "Available branches:"
-    git branch
+	prominent "Branches:"
+	git branch --all || {
+		bug "git branch failed"
+		return 1
+	}
+	return 0
 }
 
-# --- // SWITCH_BRANCH:
+# --- // switch_branch:
 switch_branch() {
-    prominent "Select the branch you want to switch to:"
-    local branches
-    branches=$(git branch | sed 's/* //')
-    local branch_name
-    branch_name=$(echo "$branches" | fzf --height=40% --prompt="Select branch: ")
+	local branches branch_name
+	mapfile -t branches < <(git branch --all | sed 's|remotes/||g')
+	branch_name=$(printf '%s\n' "${branches[@]}" | fzf --height=40% --prompt="Branch: ")
+	if [[ -z "${branch_name}" ]]; then
+		bug "No branch."
+		return 1
+	fi
 
-    if [ -z "$branch_name" ]; then
-        bug "No branch selected. Aborting switch."
-        return 1
-    fi
+	read -rp "Switch to ${branch_name}? (y/N): " yn
+	if [[ ! "${yn}" =~ ^[Yy]$ ]]; then
+		prominent "Canceled."
+		return 0
+	fi
 
-    # Confirm selection
-    read -rp "Are you sure you want to switch to branch '$branch_name'? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Switch branch action canceled."
-        return 0
-    fi
-
-    if git checkout "$branch_name"; then
-        prominent "Switched to branch '$branch_name'."
-    else
-        bug "Failed to switch to branch '$branch_name'. Ensure it exists."
-    fi
+	git checkout "${branch_name}" || {
+		bug "checkout failed"
+		return 1
+	}
+	prominent "Switched to ${branch_name}."
+	return 0
 }
 
-# --- // CREATE_BRANCH:
+# --- // create_new_branch:
 create_new_branch() {
-    read -rp "Enter new branch name: " new_branch
+	local new_branch
+	read -rp "New branch name: " new_branch
+	if [[ -z "${new_branch}" ]]; then
+		bug "No name."
+		return 1
+	fi
 
-    if [ -z "$new_branch" ]; then
-        bug "No branch name provided. Aborting creation."
-        return 1
-    fi
+	read -rp "Create & switch to ${new_branch}? (y/N): " yn
+	if [[ ! "${yn}" =~ ^[Yy]$ ]]; then
+		prominent "Canceled."
+		return 0
+	fi
 
-    # Confirm creation
-    read -rp "Are you sure you want to create and switch to branch '$new_branch'? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Create branch action canceled."
-        return 0
-    fi
-
-    if git checkout -b "$new_branch"; then
-        prominent "Branch '$new_branch' created and checked out."
-    else
-        bug "Failed to create branch '$new_branch'. It may already exist."
-    fi
+	git checkout -b "${new_branch}" || {
+		bug "create failed"
+		return 1
+	}
+	prominent "Created & switched to ${new_branch}."
+	return 0
 }
 
-# --- // DELETE_BRANCH:
+# --- // delete_branch:
 delete_branch() {
-    prominent "Select the branch you want to delete:"
-    local branches
-    branches=$(git branch | sed 's/* //')
-    local del_branch
-    del_branch=$(echo "$branches" | fzf --height=40% --prompt="Select branch to delete: ")
+	local branches del_branch
+	mapfile -t branches < <(git branch --all | sed 's|remotes/||g')
+	del_branch=$(printf '%s\n' "${branches[@]}" | fzf --height=40% --prompt="Delete: ")
+	if [[ -z "${del_branch}" ]]; then
+		bug "No branch."
+		return 1
+	fi
 
-    if [ -z "$del_branch" ]; then
-        bug "No branch selected. Aborting deletion."
-        return 1
-    fi
+	read -rp "Delete ${del_branch}? (y/N): " yn
+	if [[ ! "${yn}" =~ ^[Yy]$ ]]; then
+		prominent "Canceled."
+		return 0
+	fi
 
-    # Confirm deletion
-    read -rp "Are you sure you want to delete branch '$del_branch'? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Delete branch action canceled."
-        return 0
-    fi
-
-    if git branch --list "$del_branch" > /dev/null; then
-        git branch -d "$del_branch"
-        prominent "Branch '$del_branch' deleted."
-    else
-        bug "Branch '$del_branch' does not exist."
-    fi
+	git branch -d "${del_branch}" || {
+		bug "delete failed"
+		return 1
+	}
+	prominent "Deleted ${del_branch}."
+	return 0
 }
 
-# --- // RECONNECT_OLD_REPO:
+# --- // reconnect_old_repo:
 reconnect_old_repo() {
-    read -rp "Do you know the remote URL or name? (URL/Name): " reconnect_type
-    case "$reconnect_type" in
-        URL|url)
-            read -rp "Enter the remote URL: " reconnect_url
-            # Extract repo name from URL
-            local repo_name
-            repo_name=$(basename "$reconnect_url" .git)
-            # Check if repo exists under '4ndr0666'
-            if ! gh repo view "4ndr0666/$repo_name" >/dev/null 2>&1; then
-                read -rp "Repository '4ndr0666/$repo_name' does not exist on GitHub. Would you like to create it? (y/n): " create_repo
-                if [[ "$create_repo" =~ ^[yY]$ ]]; then
-                    if gh repo create "4ndr0666/$repo_name" --private --confirm; then
-                        prominent "Repository '4ndr0666/$repo_name' created successfully on GitHub."
-                    else
-                        bug "Failed to create repository '4ndr0666/$repo_name' on GitHub."
-                        return 1
-                    fi
-                else
-                    bug "Repository creation skipped. Aborting reconnect."
-                    return 1
-                fi
-            fi
-            git remote add origin "$reconnect_url"
-            prominent "Remote 'origin' added with URL '$reconnect_url'."
-            ;;
-        Name|name)
-            read -rp "Enter the remote name (e.g., 'repo'): " reconnect_name
-            local new_url="git@github.com:4ndr0666/$reconnect_name.git"
-            # Check if repo exists under '4ndr0666'
-            if ! gh repo view "4ndr0666/$reconnect_name" >/dev/null 2>&1; then
-                read -rp "Repository '4ndr0666/$reconnect_name' does not exist on GitHub. Would you like to create it? (y/n): " create_repo
-                if [[ "$create_repo" =~ ^[yY]$ ]]; then
-                    if gh repo create "4ndr0666/$reconnect_name" --private --confirm; then
-                        prominent "Repository '4ndr0666/$reconnect_name' created successfully on GitHub."
-                    else
-                        bug "Failed to create repository '4ndr0666/$reconnect_name' on GitHub."
-                        return 1
-                    fi
-                else
-                    bug "Repository creation skipped. Aborting reconnect."
-                    return 1
-                fi
-            fi
-            git remote add origin "$new_url"
-            prominent "Remote 'origin' added with SSH URL '$new_url'."
-            ;;
-        *)
-            bug "Invalid option. Exiting..."
-            return 1
-            ;;
-    esac
+	local type reconnect_url repo_name new_url yn
+	read -rp "Do you know URL or Name? (url/name): " type
+
+	case "${type,,}" in
+	url)
+		read -rp "Enter URL: " reconnect_url
+		repo_name=$(basename "${reconnect_url}" .git)
+		new_url="${reconnect_url}"
+		;;
+	name)
+		read -rp "Enter name: " repo_name
+		new_url="git@github.com:4ndr0666/${repo_name}.git"
+		;;
+	*)
+		bug "Invalid."
+		return 1
+		;;
+	esac
+
+	gh repo view "4ndr0666/${repo_name}" &>/dev/null || {
+		read -rp "Create on GitHub? (y/N): " yn
+		if [[ "${yn}" =~ ^[Yy]$ ]]; then
+			gh repo create "4ndr0666/${repo_name}" --private --confirm || {
+				bug "create failed"
+				return 1
+			}
+		else
+			bug "Abort."
+			return 1
+		fi
+	}
+
+	git remote add origin "${new_url}" || {
+		bug "remote add failed"
+		return 1
+	}
+	prominent "Origin set → ${new_url}"
+	return 0
 }
 
-# --- // STASHES:
+# --- // manage_stashes:
 manage_stashes() {
-    echo "1. Stash Changes"
-    echo "2. List Stashes"
-    echo "3. Apply Latest Stash"
-    echo "4. Pop Latest Stash"
-    echo "5. Clear All Stashes"
-    echo "6. Show Stash Contents"
-    echo "7. Apply Specific Stash"
-    echo "8. Drop Specific Stash"
-    read -rp "Enter your choice (1-8): " stash_choice
+	echo "1) Stash changes"
+	echo "2) List stashes"
+	echo "3) Apply latest"
+	echo "4) Pop latest"
+	echo "5) Clear all"
+	echo "6) Show stash"
+	echo "7) Apply specific"
+	echo "8) Drop specific"
+	read -rp "Choice (1-8): " choice
 
-    case "$stash_choice" in
-        1)
-            read -rp "Enter a message for the stash (optional): " message
-            if git stash push -m "$message"; then
-                prominent "Changes stashed. ${SUCCESS}"
-            else
-                bug "Failed to stash changes. ${FAILURE}"
-            fi
-            ;;
-        2)
-            echo "Stash list:"
-            git stash list
-            ;;
-        3)
-            if git stash apply; then
-                prominent "Latest stash applied. ${SUCCESS}"
-            else
-                bug "Failed to apply latest stash. ${FAILURE}"
-            fi
-            ;;
-        4)
-            if git stash pop; then
-                prominent "Latest stash popped and removed. ${SUCCESS}"
-            else
-                bug "Failed to pop latest stash. ${FAILURE}"
-            fi
-            ;;
-        5)
-            read -rp "Are you sure you want to clear all stashes? (y/n): " confirm_clear
-            if [[ "$confirm_clear" =~ ^[yY]$ ]]; then
-                if git stash clear; then
-                    prominent "All stashes cleared. ${SUCCESS}"
-                else
-                    bug "Failed to clear stashes. ${FAILURE}"
-                fi
-            else
-                prominent "Clear stashes action canceled."
-            fi
-            ;;
-        6)
-            read -rp "Enter stash @{number} to show contents (e.g., stash@{0}): " stash_number
-            if git stash show -p "$stash_number"; then
-                prominent "Displayed contents of $stash_number."
-            else
-                bug "Failed to show contents of $stash_number. Ensure it exists."
-            fi
-            ;;
-        7)
-            read -rp "Enter stash @{number} to apply (e.g., stash@{0}): " stash_number
-            if git stash apply "$stash_number"; then
-                prominent "Specific stash '$stash_number' applied. ${SUCCESS}"
-            else
-                bug "Failed to apply stash '$stash_number'. ${FAILURE}"
-            fi
-            ;;
-        8)
-            read -rp "Enter stash @{number} to drop (e.g., stash@{0}): " stash_number
-            if git stash drop "$stash_number"; then
-                prominent "Specific stash '$stash_number' dropped. ${SUCCESS}"
-            else
-                bug "Failed to drop stash '$stash_number'. ${FAILURE}"
-            fi
-            ;;
-        *)
-            bug "Invalid choice! ${FAILURE}"
-            ;;
-    esac
+	case "${choice}" in
+	1)
+		read -rp "Message (optional): " msg
+		git stash push -m "${msg}" || bug "stash failed"
+		;;
+	2) git stash list || bug "list failed" ;;
+	3) git stash apply || bug "apply failed" ;;
+	4) git stash pop || bug "pop failed" ;;
+	5)
+		read -rp "Clear all? (y/N): " yn
+		[[ "${yn}" =~ ^[Yy]$ ]] && git stash clear || prominent "Canceled"
+		;;
+	6)
+		read -rp "Stash (e.g. stash@{0}): " s
+		git stash show -p "${s}" || bug "show failed"
+		;;
+	7)
+		read -rp "Stash to apply: " s
+		git stash apply "${s}" || bug "apply failed"
+		;;
+	8)
+		read -rp "Stash to drop: " s
+		git stash drop "${s}" || bug "drop failed"
+		;;
+	*)
+		bug "Invalid"
+		return 1
+		;;
+	esac
+	return 0
 }
 
-# --- // CHERRY_PICK_COMMITS:
+# --- // cherry_pick_commits:
 cherry_pick_commits() {
-    prominent "Fetching latest commits..."
-    git fetch --all
-
-    local commits
-    commits=$(git log --oneline --graph --all)
-
-    local selected_commit
-    selected_commit=$(echo "$commits" | fzf --height=40% --prompt="Select a commit to cherry-pick: " | awk '{print $NF}')
-
-    if [ -z "$selected_commit" ]; then
-        bug "No commit selected. Aborting cherry-pick."
-        return 1
-    fi
-
-    # Confirm selection
-    read -rp "Are you sure you want to cherry-pick commit $selected_commit? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Cherry-pick canceled."
-        return 0
-    fi
-
-    # Attempt to cherry-pick
-    if git cherry-pick "$selected_commit"; then
-        prominent "Commit $selected_commit cherry-picked successfully."
-    else
-        bug "Cherry-pick failed. Please resolve conflicts manually."
-    fi
+	prominent "Fetching all..."
+	git fetch --all || {
+		bug "fetch failed"
+		return 1
+	}
+	local commit
+	commit=$(git log --oneline --graph --all | fzf --height=40% --prompt="Pick commit: " | awk '{print $1}')
+	if [[ -z "${commit}" ]]; then
+		bug "No commit."
+		return 1
+	fi
+	read -rp "Cherry-pick ${commit}? (y/N): " yn
+	if [[ "${yn}" =~ ^[Yy]$ ]]; then
+		git cherry-pick "${commit}" || bug "cherry-pick failed"
+	else
+		prominent "Canceled."
+	fi
+	return 0
 }
 
-# --- // RESTORE_BRANCH:
+# --- // restore_branch:
 restore_branch() {
-    prominent "Retrieving commit history..."
-    local commits
-    commits=$(git log --oneline --all)
-
-    local selected_commit
-    selected_commit=$(echo "$commits" | fzf --height=40% --prompt="Select a commit to restore: " | awk '{print $NF}')
-
-    if [ -z "$selected_commit" ]; then
-        bug "No commit selected. Aborting restore."
-        return 1
-    fi
-
-    # Confirm selection
-    read -rp "Are you sure you want to restore commit $selected_commit? This will create a new branch. (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Restore process canceled."
-        return 0
-    fi
-
-    # Create new branch from selected commit
-    local branch_name="restore-$(date +%Y%m%d%H%M%S)"
-    if git checkout -b "$branch_name" "$selected_commit"; then
-        prominent "New branch '$branch_name' created at commit $selected_commit."
-    else
-        bug "Failed to create and switch to branch '$branch_name'."
-        return 1
-    fi
-
-    # Optionally merge into main branch
-    read -rp "Do you want to merge changes into your main branch and push to remote? (y/n): " merge_choice
-
-    if [[ $merge_choice =~ ^[Yy]$ ]]; then
-        # Hardcoded main branch name
-        local main_branch="main"
-
-        # Check if main branch exists
-        if git show-ref --verify --quiet "refs/heads/$main_branch"; then
-            git checkout "$main_branch"
-        else
-            bug "Main branch '$main_branch' does not exist."
-            return 1
-        fi
-
-        # Merge the restored branch
-        if git merge "$branch_name"; then
-            prominent "Branch '$branch_name' merged into '$main_branch' successfully."
-        else
-            bug "Merge failed. Please resolve conflicts manually."
-            return 1
-        fi
-
-        # Push to remote
-        if git push origin "$main_branch"; then
-            prominent "Changes pushed to remote repository."
-        else
-            bug "Failed to push changes to remote."
-        fi
-    else
-        prominent "Skipping merge and push to remote repository."
-    fi
+	local commit branch_name yn
+	commit=$(git log --oneline --all | fzf --height=40% --prompt="Select commit: " | awk '{print $1}')
+	if [[ -z "${commit}" ]]; then
+		bug "No commit."
+		return 1
+	fi
+	read -rp "New branch from ${commit}? (y/N): " yn
+	if [[ ! "${yn}" =~ ^[Yy]$ ]]; then
+		prominent "Canceled."
+		return 0
+	fi
+	branch_name="restore-$(date +%Y%m%d%H%M%S)"
+	git checkout -b "${branch_name}" "${commit}" || {
+		bug "checkout failed"
+		return 1
+	}
+	prominent "Branch ${branch_name} created."
+	read -rp "Merge into main & push? (y/N): " yn
+	if [[ "${yn}" =~ ^[Yy]$ ]]; then
+		git checkout main || {
+			bug "no main"
+			return 1
+		}
+		git merge "${branch_name}" || bug "merge failed"
+		git push origin main || bug "push failed"
+	fi
+	return 0
 }
 
-# --- // REVERT_VERSION:
+# --- // revert_version:
 revert_version() {
-    prominent "Recent actions in the repository:"
-    git reflog -10
-
-    local reflog_entry
-    reflog_entry=$(git reflog | awk '{print $1}' | fzf --height=40% --prompt="Select a reflog entry to revert to: ")
-
-    if [ -z "$reflog_entry" ]; then
-        bug "No reflog entry selected. Aborting revert."
-        return 1
-    fi
-
-    # Confirm selection
-    read -rp "Are you sure you want to revert to $reflog_entry? This action is irreversible. (yes/no): " confirmation
-
-    if [[ "$confirmation" == "yes" ]]; then
-        if git reset --hard "$reflog_entry"; then
-            prominent "Reverted to $reflog_entry successfully."
-        else
-            bug "Failed to revert. Ensure the reflog entry is correct."
-            return 1
-        fi
-    else
-        prominent "Revert action canceled."
-        return 0
-    fi
+	prominent "Recent reflog:"
+	git reflog -10
+	local entry
+	entry=$(git reflog | fzf --height=40% --prompt="Select entry: " | awk '{print $1}')
+	if [[ -z "${entry}" ]]; then
+		bug "None selected."
+		return 1
+	fi
+	read -rp "Reset hard to ${entry}? (yes/no): " yn
+	if [[ "${yn}" == "yes" ]]; then
+		git reset --hard "${entry}" || {
+			bug "reset failed"
+			return 1
+		}
+		prominent "Reset to ${entry}"
+	else
+		prominent "Canceled."
+	fi
+	return 0
 }
 
-# --- // VIEW_COMMIT_HISTORY:
+# --- // view_commit_history:
 view_commit_history() {
-    prominent "Showing commit history for the current branch:"
-    git log --oneline --graph --decorate | less
+	prominent "Commit history:"
+	git log --oneline --graph --decorate | less
+	return 0
 }
 
-# --- // REBASE_BRANCH:
+# --- // rebase_branch:
 rebase_branch() {
-    prominent "Select the base branch to rebase onto:"
-    local base_branch
-    base_branch=$(git branch --all | grep -v HEAD | sed 's/remotes\///' | sort | uniq | fzf --height=40% --prompt="Select base branch: ")
-
-    if [ -z "$base_branch" ]; then
-        bug "No base branch selected. Aborting rebase."
-        return 1
-    fi
-
-    # Confirm selection
-    read -rp "Are you sure you want to rebase the current branch onto '$base_branch'? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Rebase action canceled."
-        return 0
-    fi
-
-    # Attempt to rebase
-    if git rebase "$base_branch"; then
-        prominent "Current branch rebased onto '$base_branch' successfully."
-    else
-        bug "Rebase failed. Please resolve conflicts manually."
-    fi
+	local base confirm
+	base=$(git branch --all | grep -v HEAD | sed 's|remotes/||g' | sort -u | fzf --height=40% --prompt="Base branch: ")
+	if [[ -z "${base}" ]]; then
+		bug "None."
+		return 1
+	fi
+	read -rp "Rebase onto ${base}? (y/N): " confirm
+	if [[ "${confirm}" =~ ^[Yy]$ ]]; then
+		git rebase "${base}" || {
+			bug "rebase failed"
+			return 1
+		}
+		prominent "Rebase onto ${base} complete."
+	else
+		prominent "Canceled."
+	fi
+	return 0
 }
 
-# --- // RESOLVE_MERGE_CONFLICTS:
+# --- // resolve_merge_conflicts:
 resolve_merge_conflicts() {
-    prominent "Select the branch you want to merge into the current branch:"
-    local target_branch
-    target_branch=$(git branch --all | grep -v HEAD | sed 's/remotes\///' | sort | uniq | fzf --height=40% --prompt="Select target branch: ")
-
-    if [ -z "$target_branch" ]; then
-        bug "No target branch selected. Aborting merge."
-        return 1
-    fi
-
-    # Confirm selection
-    read -rp "Are you sure you want to merge '$target_branch' into the current branch? (y/n): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        prominent "Merge action canceled."
-        return 0
-    fi
-
-    # Attempt to merge
-    if git merge "$target_branch"; then
-        prominent "Branch '$target_branch' merged successfully."
-    else
-        bug "Merge resulted in conflicts."
-        # Prompt to resolve conflicts automatically
-        read -rp "Would you like to attempt automatic conflict resolution? (y/n): " resolve_confirm
-        if [[ "$resolve_confirm" == [yY] ]]; then
-            resolve_git_conflicts_automatically
-            # After attempting to resolve, check if merge was successful
-            if git merge --continue 2>/dev/null; then
-                prominent "Merge completed after automatic conflict resolution."
-            else
-                bug "Automatic conflict resolution failed. Please resolve conflicts manually."
-            fi
-        else
-            prominent "Please resolve conflicts manually."
-        fi
-    fi
+	local target confirm
+	target=$(git branch --all | grep -v HEAD | sed 's|remotes/||g' | sort -u | fzf --height=40% --prompt="Merge branch: ")
+	if [[ -z "${target}" ]]; then
+		bug "None."
+		return 1
+	fi
+	read -rp "Merge ${target}? (y/N): " confirm
+	if [[ "${confirm}" =~ ^[Yy]$ ]]; then
+		if git merge "${target}"; then
+			prominent "Merged ${target}."
+		else
+			bug "Merge conflicts."
+			read -rp "Auto-resolve? (y/N): " yn
+			if [[ "${yn}" =~ ^[Yy]$ ]]; then
+				resolve_git_conflicts_automatically
+				git merge --continue || {
+					bug "merge-continue failed"
+					return 1
+				}
+				prominent "Auto-resolve complete."
+			fi
+		fi
+	else
+		prominent "Canceled."
+	fi
+	return 0
 }
 
-# --- // FIX_GIT_REPOSITORY:
+# --- // fix_git_repository:
 fix_git_repository() {
-    prominent "Starting Git Repository Fix Process..."
+	local backup_dir hooks_dir fsck_output bad_refs specific_bad_ref line ref_name
+	backup_dir="../git_repo_backup_$(date +%Y%m%d_%H%M%S)"
+	prominent "Backing up to ${backup_dir}"
+	if ! cp -r . "${backup_dir}"; then
+		bug "Backup failed."
+		return 1
+	fi
 
-    # Step 1: Backup the repository
-    local backup_dir="../git_repo_backup_$(date +%Y%m%d_%H%M%S)"
-    prominent "Backing up current repository to $backup_dir"
-    cp -r . "$backup_dir"
-    if [ $? -eq 0 ]; then
-        prominent "Backup completed successfully."
-    else
-        bug "Backup failed. Aborting."
-        return 1
-    fi
+	hooks_dir=".git/hooks"
+	if [[ -d "${hooks_dir}" ]]; then
+		prominent "Disabling hooks..."
+		while IFS= read -r hook; do
+			[[ -x "${hook}" && ! "${hook}" =~ \.sample$ ]] || continue
+			mv "${hook}" "${hook}.disabled" || bug "mv failed"
+			prominent "Disabled ${hook}"
+		done < <(find "${hooks_dir}" -type f)
+	fi
 
-    # Step 2: Disable Git hooks
-    local hooks_dir=".git/hooks"
-    if [ -d "$hooks_dir" ]; then
-        prominent "Disabling Git hooks by renaming them."
-        for hook in "$hooks_dir"/*; do
-            [ -e "$hook" ] || continue
-            hook_name=$(basename "$hook")
-            if [ -x "$hook" ] && [[ "$hook_name" != *.sample ]]; then
-                mv "$hook" "${hook}.disabled"
-                prominent "Disabled hook: $hook_name"
-            fi
-        done
-    else
-        bug "Git hooks directory not found."
-    fi
+	prominent "Running git fsck --full"
+	fsck_output=$(git fsck --full 2>&1) || true
+	printf '%s\n' "${fsck_output}"
 
-    # Step 3: Run Git Integrity Checks
-    prominent "Running 'git fsck --full' to identify bad references."
-    local fsck_output
-    fsck_output=$(git fsck --full 2>&1) || true
-    echo "$fsck_output"
+	bad_refs=()
+	while IFS= read -r line; do
+		if [[ "${line}" =~ ^(error|warning):\ ([^ ]+)\ (.+)$ ]]; then
+			ref_name="${BASH_REMATCH[2]}"
+			bad_refs+=("${ref_name}")
+		fi
+	done <<<"${fsck_output}"
 
-    # Parse bad refs
-    local bad_refs=()
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^(error|warning):\ +([^\ ]+)\ +(.+)$ ]]; then
-            # Extract the ref name
-            local ref_name="${BASH_REMATCH[2]}"
-            bad_refs+=("$ref_name")
-        fi
-    done <<< "$fsck_output"
+	if [[ ${#bad_refs[@]} -gt 0 ]]; then
+		prominent "Bad refs found:"
+		for ref_name in "${bad_refs[@]}"; do
+			prominent "Deleting ${ref_name}"
+			git update-ref -d "${ref_name}" || bug "delete-ref failed"
+		done
+	else
+		prominent "No bad refs."
+	fi
 
-    if [ ${#bad_refs[@]} -eq 0 ]; then
-        prominent "No bad references found."
-    else
-        prominent "Found bad references:"
-        for ref in "${bad_refs[@]}"; do
-            prominent "  - $ref"
-            # Remove the bad ref
-            git update-ref -d "$ref" || bug "Failed to delete ref: $ref"
-        done
-    fi
+	specific_bad_ref=$(git show-ref | grep '_zsh_highlight_highlighter_cursor_predicate' || true)
+	if [[ -n "${specific_bad_ref}" ]]; then
+		ref_name=$(awk '{print $2}' <<<"${specific_bad_ref}")
+		prominent "Deleting specific ref ${ref_name}"
+		git update-ref -d "${ref_name}" || bug "delete failed"
+	fi
 
-    # Additionally, remove any refs containing '_zsh_highlight_highlighter_cursor_predicate'
-    local specific_bad_ref
-    specific_bad_ref=$(git show-ref | grep '_zsh_highlight_highlighter_cursor_predicate' || true)
-    if [ -n "$specific_bad_ref" ]; then
-        local ref_name
-        ref_name=$(echo "$specific_bad_ref" | awk '{print $2}')
-        prominent "Removing specific bad reference: $ref_name"
-        git update-ref -d "$ref_name" || bug "Failed to delete ref: $ref_name"
-    else
-        prominent "No references found containing '_zsh_highlight_highlighter_cursor_predicate'."
-    fi
+	prominent "Expiring reflog"
+	git reflog expire --expire=now --all || bug "reflog expire failed"
 
-    # Step 4: Prune Reflog and Run Garbage Collection
-    prominent "Expiring reflog entries."
-    git reflog expire --expire=now --all
+	prominent "Running git gc --prune=now --aggressive"
+	git gc --prune=now --aggressive || {
+		bug "gc failed"
+		return 1
+	}
 
-    prominent "Running 'git gc --prune=now --aggressive'."
-    if git gc --prune=now --aggressive; then
-        prominent "'git gc' executed successfully."
-    else
-        bug "Error: 'git gc' failed."
-        return 1
-    fi
+	prominent "Writing commit graph"
+	git commit-graph write --reachable || {
+		bug "graph write failed"
+		return 1
+	}
 
-    # Step 5: Rebuild Commit Graph
-    prominent "Rebuilding commit graph."
-    if git commit-graph write --reachable; then
-        prominent "Commit graph rebuilt successfully."
-    else
-        bug "Error: Failed to rebuild commit graph."
-        return 1
-    fi
+	prominent "Verifying integrity"
+	git fsck --full || {
+		bug "fsck failed"
+		return 1
+	}
 
-    # Step 6: Verify Repository Integrity
-    prominent "Verifying repository integrity with 'git fsck --full'."
-    if git fsck --full; then
-        prominent "Repository integrity verified successfully."
-    else
-        bug "Error: Repository integrity check failed."
-        return 1
-    fi
-
-    # Optional Step 7: Re-enable Git Hooks
-    # Uncomment the following lines if you wish to re-enable hooks after fixing
-    # if [ -d "$hooks_dir" ]; then
-    #     prominent "Re-enabling Git hooks."
-    #     for hook in "$hooks_dir"/*.disabled; do
-    #         [ -e "$hook" ] || continue
-    #         mv "$hook" "${hook%.disabled}"
-    #         hook_name=$(basename "$hook" .disabled)
-    #         prominent "Re-enabled hook: $hook_name"
-    #     done
-    # fi
-
-    prominent "Git repository fix process completed successfully."
+	prominent "Git fix process complete."
+	return 0
 }
 
-# --- // SETUP_GIT_HOOKS:
+# --- // setup_git_hooks:
 setup_git_hooks() {
-    prominent "Setting up Git hooks..."
+	local GIT_HOOKS_DIR HOOKS_LOG
 
-    # Define the hooks directory
-    local GIT_HOOKS_DIR=".git/hooks"
+	GIT_HOOKS_DIR=".git/hooks"
+	HOOKS_LOG="${GIT_HOOKS_DIR}/hooks_setup.log"
 
-    # Ensure the hooks directory exists
-    if [ ! -d "$GIT_HOOKS_DIR" ]; then
-        bug ".git/hooks directory not found. Ensure this script is run in the root of a Git repository."
-        return 1
-    fi
+	if [[ ! -d "${GIT_HOOKS_DIR}" ]]; then
+		bug ".git/hooks not found"
+		return 1
+	fi
 
-    # Log file
-    local HOOKS_LOG="$GIT_HOOKS_DIR/hooks_setup.log"
-    echo "Git hooks setup started at $(date)" > "$HOOKS_LOG"
+	printf 'Git hooks setup started at %s\n' "$(date)" >"${HOOKS_LOG}"
 
-    # Function to install or update a hook
-    install_hook() {
-        local hook_name="$1"
-        local hook_content="$2"
+	install_hook() {
+		local hook_name="$1" hook_content="$2" hook_path
+		hook_path="${GIT_HOOKS_DIR}/${hook_name}"
 
-        local hook_path="$GIT_HOOKS_DIR/$hook_name"
+		if [[ -f "${hook_path}" && ! "${hook_path}" =~ \.sample$ ]]; then
+			cp "${hook_path}" "${hook_path}.backup.$(date +%s)"
+			printf 'Backed up %s\n' "${hook_name}" >>"${HOOKS_LOG}"
+		fi
 
-        # Backup existing hook if it exists and is not a sample
-        if [ -f "$hook_path" ] && [[ "$hook_path" != *".sample" ]]; then
-            cp "$hook_path" "${hook_path}.backup.$(date +%s)"
-            echo "Backed up existing hook: $hook_path" | tee -a "$HOOKS_LOG"
-        fi
+		printf '%s\n' "${hook_content}" >"${hook_path}"
+		chmod +x "${hook_path}"
+		printf 'Installed %s\n' "${hook_name}" >>"${HOOKS_LOG}"
+	}
 
-        # Install the new hook
-        echo "$hook_content" > "$hook_path"
-        chmod +x "$hook_path"
-        echo "Installed/Updated hook: $hook_path" | tee -a "$HOOKS_LOG"
-    }
-
-    # Enhanced commit-msg hook
-    COMMIT_MSG_HOOK='#!/usr/bin/env bash
+	# commit-msg hook
+	COMMIT_MSG_HOOK='#!/usr/bin/env bash
 set -euo pipefail
-
-# Enforce commit message standards
-# 1. Subject line <= 72 characters
-# 2. No placeholders
-# 3. Proper format
-
-COMMIT_MSG_FILE="$1"
-
-if [ ! -f "$COMMIT_MSG_FILE" ]; then
-    echo "Error: Commit message file not found: $COMMIT_MSG_FILE"
-    exit 1
+msg_file="$1"
+if [[ ! -f "${msg_file}" ]]; then
+  echo "Missing commit-msg file." >&2
+  exit 1
 fi
-
-COMMIT_MSG_CONTENT=$(cat "$COMMIT_MSG_FILE")
-
-# Ensure commit message is not empty
-if [ -z "$COMMIT_MSG_CONTENT" ]; then
-    echo "Error: Commit message is empty."
-    exit 1
+subj=$(head -n1 "${msg_file}")
+if (( ${#subj} > 72 )); then
+  echo "Subject too long (${#subj} chars)." >&2
+  exit 1
 fi
-
-# Check subject line length
-SUBJECT_LINE=$(head -n 1 "$COMMIT_MSG_FILE")
-if [ ${#SUBJECT_LINE} -gt 72 ]; then
-    echo "Error: Subject line exceeds 72 characters."
-    echo "Subject: $SUBJECT_LINE"
-    exit 1
+if grep -qi placeholder "${msg_file}"; then
+  echo "Forbidden word: placeholder" >&2
+  exit 1
 fi
-
-# Forbidden words check (no placeholders)
-if echo "$COMMIT_MSG_CONTENT" | grep -qi "placeholder"; then
-    echo "Error: Commit message contains forbidden word: 'placeholder'."
-    exit 1
-fi
-
-echo "Commit message check passed."
 exit 0
 '
 
-    # Enhanced pre-commit hook
-    PRE_COMMIT_HOOK='#!/bin/bash
+	# pre-commit hook
+	PRE_COMMIT_HOOK='#!/usr/bin/env bash
 set -euo pipefail
-
-# Pre-commit hook to enforce:
-# 1. No large files (>100MB)
-# 2. Run shfmt and shellcheck on staged .sh files
-
-# Maximum allowed file size in KB
-MAX_SIZE=100000  # 100 MB
-
-# Check for large files
-for file in $(git diff --cached --name-only --diff-filter=ACM | grep -E "\.sh$"); do
-    if [ -f "$file" ]; then
-        size=$(du -k "$file" | cut -f1)
-        if [ "$size" -gt "$MAX_SIZE" ]; then
-            echo "Error: Attempting to commit large file '$file' ($size KB)."
-            exit 1
-        fi
-    fi
+max_kb=100000
+mapfile -t shs < <(git diff --cached --name-only --diff-filter=ACM | grep -E "\.sh$" || true)
+for f in "${shs[@]}"; do
+  [[ -f "${f}" ]] || continue
+  kb=$(du -k "${f}" | cut -f1)
+  (( kb <= max_kb )) || { echo "Large file ${f} (${kb} KB)" >&2; exit 1; }
 done
-
-# Get list of staged shell scripts
-scripts=$(git diff --cached --name-only --diff-filter=ACM | grep -E "\.sh$")
-
-if [ -z "$scripts" ]; then
-    exit 0
-fi
-
-PASS=true
-
-# Run shfmt for formatting
-for script in $scripts; do
-    shfmt -w "$script"
-    git add "$script"
-    echo "Formatted script: $script"
+for f in "${shs[@]}"; do
+  shfmt -w "${f}"
+  git add "${f}"
 done
-
-# Run shellcheck for linting
-for script in $scripts; do
-    shellcheck "$script"
-    if [ $? -ne 0 ]; then
-        PASS=false
-        echo "shellcheck issues found in $script"
-    fi
-done
-
-if ! $PASS; then
-    echo "Error: shellcheck found issues. Please fix them before committing."
-    exit 1
-fi
-
-echo "Pre-commit checks passed."
+bash -c "shellcheck ${shs[*]}" || { echo "shellcheck issues" >&2; exit 1; }
 exit 0
 '
 
-    # Enhanced pre-push hook
-    PRE_PUSH_HOOK='#!/bin/sh
+	# pre-push hook
+	PRE_PUSH_HOOK='#!/bin/sh
 set -euo pipefail
-
-# Pre-push hook to run integration tests before pushing
-
-# Define the integration tests script path
-INTEGRATION_TESTS_SCRIPT="Git/scripts/integration_tests.sh"
-
-if [ -f "$INTEGRATION_TESTS_SCRIPT" ]; then
-    echo "Running integration tests..."
-    bash "$INTEGRATION_TESTS_SCRIPT"
-    if [ $? -ne 0 ]; then
-        echo "Error: Integration tests failed. Push aborted."
-        exit 1
-    fi
-    echo "Integration tests passed."
+tests="Git/scripts/integration_tests.sh"
+if [[ -x "${tests}" ]]; then
+  printf "Running tests...\n"
+  bash "${tests}"
 else
-    echo "Warning: Integration tests script not found: $INTEGRATION_TESTS_SCRIPT"
-    echo "Skipping integration tests."
+  printf "Tests missing, skipping.\n"
 fi
-
 exit 0
 '
 
-    # Additional Hook: post-commit to notify user
-    POST_COMMIT_HOOK='#!/bin/sh
-# Notify user of a successful commit
-COMMIT_MESSAGE=$(git log -1 --pretty=%B | head -n 1)
-notify-send "Git" "Commit successful: $COMMIT_MESSAGE"
+	# post-commit hook
+	POST_COMMIT_HOOK='#!/bin/sh
+msg=$(git log -1 --pretty=%B | head -n1)
+notify-send "Git" "Committed: ${msg}"
 exit 0
 '
 
-    # Install or update commit-msg hook
-    install_hook "commit-msg" "$COMMIT_MSG_HOOK"
+	install_hook commit-msg "${COMMIT_MSG_HOOK}"
+	install_hook pre-commit "${PRE_COMMIT_HOOK}"
+	install_hook pre-push "${PRE_PUSH_HOOK}"
+	install_hook post-commit "${POST_COMMIT_HOOK}"
 
-    # Install or update pre-commit hook
-    install_hook "pre-commit" "$PRE_COMMIT_HOOK"
-
-    # Install or update pre-push hook
-    install_hook "pre-push" "$PRE_PUSH_HOOK"
-
-    # Install or update post-commit hook
-    install_hook "post-commit" "$POST_COMMIT_HOOK"
-
-    # Summary
-    echo "Git hooks setup completed successfully." | tee -a "$HOOKS_LOG"
-    echo "All Git hooks have been installed and enhanced." | tee -a "$HOOKS_LOG"
-
-    prominent "Git hooks have been set up successfully."
+	prominent "Git hooks installed."
+	return 0
 }
 
-# --- // RUN_INTEGRATION_TESTS:
+# --- // run_integration_tests:
 run_integration_tests() {
-    local test_script="Git/scripts/integration_tests.sh"
-
-    if [ -f "$test_script" ]; then
-        prominent "Running integration tests..."
-        bash "$test_script"
-        if [ $? -eq 0 ]; then
-            prominent "Integration tests passed successfully. ${SUCCESS}"
-        else
-            bug "Integration tests failed. ${FAILURE}"
-        fi
-    else
-        bug "Integration tests script not found at $test_script."
-    fi
+	local script="Git/scripts/integration_tests.sh"
+	if [[ -x "${script}" ]]; then
+		prominent "Running integration tests..."
+		bash "${script}" || {
+			bug "Tests failed"
+			return 1
+		}
+		prominent "Tests passed."
+	else
+		bug "Test script not found."
+	fi
+	return 0
 }
 
-# --- // RESOLVE_GIT_CONFLICTS_AUTOMATICALLY:
+# --- // resolve_git_conflicts_automatically:
 resolve_git_conflicts_automatically() {
-    local resolver_script="Git/scripts/automated_git_conflict_resolver.sh"
-
-    if [ -f "$resolver_script" ]; then
-        prominent "Running automated Git conflict resolver..."
-        bash "$resolver_script"
-        if [ $? -eq 0 ]; then
-            prominent "Automated conflict resolution completed successfully. ${SUCCESS}"
-        else
-            bug "Automated conflict resolution failed. ${FAILURE}"
-        fi
-    else
-        bug "Automated conflict resolver script not found at $resolver_script."
-    fi
+	local resolver="Git/scripts/automated_git_conflict_resolver.sh"
+	if [[ -x "${resolver}" ]]; then
+		prominent "Resolving conflicts..."
+		bash "${resolver}" || {
+			bug "Resolver failed"
+			return 1
+		}
+		prominent "Conflicts resolved."
+	else
+		bug "Resolver script missing."
+	fi
+	return 0
 }
 
-# --- // SETUP_CRON_JOB:
+# --- // setup_cron_job:
 setup_cron_job() {
-    local cron_script="Git/scripts/setup_cron_job.sh"
-
-    if [ -f "$cron_script" ]; then
-        prominent "Setting up cron job..."
-        bash "$cron_script"
-        if [ $? -eq 0 ]; then
-            prominent "Cron job set up successfully. ${SUCCESS}"
-        else
-            bug "Failed to set up cron job. ${FAILURE}"
-        fi
-    else
-        bug "Cron job setup script not found at $cron_script."
-    fi
+	local cron_script="Git/scripts/setup_cron_job.sh"
+	if [[ -x "${cron_script}" ]]; then
+		prominent "Setting cron job..."
+		bash "${cron_script}" || {
+			bug "Cron setup failed"
+			return 1
+		}
+		prominent "Cron job configured."
+	else
+		bug "Cron script missing."
+	fi
+	return 0
 }
 
-# --- // SETUP_DEPENDENCIES:
+# --- // setup_dependencies:
 setup_dependencies() {
-    local dependencies_script="Git/scripts/setup_dependencies.sh"
-
-    if [ -f "$dependencies_script" ]; then
-        prominent "Setting up dependencies..."
-        bash "$dependencies_script"
-        if [ $? -eq 0 ]; then
-            prominent "Dependencies set up successfully. ${SUCCESS}"
-        else
-            bug "Failed to set up dependencies. ${FAILURE}"
-        fi
-    else
-        bug "Dependencies setup script not found at $dependencies_script."
-    fi
+	local deps_script="Git/scripts/setup_dependencies.sh"
+	if [[ -x "${deps_script}" ]]; then
+		prominent "Installing dependencies..."
+		bash "${deps_script}" || {
+			bug "Deps setup failed"
+			return 1
+		}
+		prominent "Dependencies installed."
+	else
+		bug "Deps script missing."
+	fi
+	return 0
 }
 
-# --- // PERFORM_BACKUP:
+# --- // perform_backup:
 perform_backup() {
-    local backup_script="Git/scripts/backup_new.sh"
-
-    if [ -f "$backup_script" ]; then
-        prominent "Performing backup..."
-        bash "$backup_script"
-        if [ $? -eq 0 ]; then
-            prominent "Backup completed successfully. ${SUCCESS}"
-        else
-            bug "Backup failed. ${FAILURE}"
-        fi
-    else
-        bug "Backup script not found at $backup_script."
-    fi
+	local backup_script="Git/scripts/backup_new.sh"
+	if [[ -x "${backup_script}" ]]; then
+		prominent "Performing backup..."
+		bash "${backup_script}" || {
+			bug "Backup failed"
+			return 1
+		}
+		prominent "Backup done."
+	else
+		bug "Backup script missing."
+	fi
+	return 0
 }
 
-# --- // MAIN_LOGIC_LOOP:
+# ─── GUI LOOP ─────────────────────────────────────────────────────────────────
 gui() {
-  while true; do
-    clear
-    echo -e "${GREEN}#${NC} --- ${GREEN}//${NC} Git User Interface ${GREEN}//${NC}"
-    echo ""
-    echo -e "${GREEN}1${NC}) Check and generate SSH key\t${GREEN}14${NC}) Cherry-pick commits"
-    echo -e "${GREEN}2${NC}) List current remotes\t\t${GREEN}15${NC}) Restore Branch from Commit History"
-    echo -e "${GREEN}3${NC}) Update remote URL\t\t${GREEN}16${NC}) Revert to previous version"
-    echo -e "${GREEN}4${NC}) Switch from HTTPS to SSH\t${GREEN}17${NC}) View Commit History"
-    echo -e "${GREEN}5${NC}) Fetch from remote\t\t${GREEN}18${NC}) Rebase Branch"
-    echo -e "${GREEN}6${NC}) Pull from remote\t\t${GREEN}19${NC}) Resolve Merge Conflicts"
-    echo -e "${GREEN}7${NC}) Push to remote\t\t${GREEN}20${NC}) Perform Backup"
-    echo -e "${GREEN}8${NC}) List branches\t\t${GREEN}21${NC}) Fix Git Repository"
-    echo -e "${GREEN}9${NC}) Switch branch\t\t${GREEN}22${NC}) Setup Git Hooks"
-    echo -e "${GREEN}10${NC}) Create new branch\t\t${GREEN}23${NC}) Run Integration Tests"
-    echo -e "${GREEN}11${NC}) Delete branch\t\t${GREEN}24${NC}) Resolve Git Conflicts Automatically"         
-    echo -e "${GREEN}12${NC}) Reconnect old repo\t\t${GREEN}25${NC}) Setup Cron Job"
-    echo -e "${GREEN}13${NC}) Manage stashes\t\t${GREEN}26${NC}) Setup Dependencies" 
-    echo -e "${GREEN}e${NC}) Exit"    
-    echo ""
-    echo -e "${GREEN}By your command:${NC}"
-    read -rp " " choice  # Corrected line to capture the user's choice
+	local choice
 
-    case "$choice" in
-      1) check_and_setup_ssh ;;
-      2) list_and_manage_remotes ;;
-      3) update_remote_url ;;
-      4) switch_to_ssh ;;
-      5) fetch_from_remote ;;
-      6) pull_from_remote ;;
-      7) push_to_remote ;;
-      8) list_branches ;;
-      9) switch_branch ;;
-      10) create_new_branch ;;
-      11) delete_branch ;;
-      12) reconnect_old_repo ;;
-      13) manage_stashes ;;
-      14) cherry_pick_commits ;;
-      15) restore_branch ;;
-      16) revert_version ;;
-      17) view_commit_history ;;
-      18) rebase_branch ;;
-      19) resolve_merge_conflicts ;;
-      20) perform_backup ;;
-      21) fix_git_repository ;;
-      22) setup_git_hooks ;;
-      23) run_integration_tests ;;
-      24) resolve_git_conflicts_automatically ;;
-      25) setup_cron_job ;;
-      26) setup_dependencies ;;
-       e) echo "Exiting..."; exit 0 ;;  # Changed 'return' to 'exit' for script termination
-      *) bug "Invalid choice!";;
-    esac
-  done
+	# helper for printing a single menu entry
+	menu_item() {
+		# $1 = label number (e or digit), $2 = description
+		printf "    ${CYAN}%2s)${NC} %-13s" "$1" "$2"
+	}
+
+	while true; do
+		clear
+
+		# Header
+		echo -e "${CYAN}#${NC} === ${CYAN}//${NC} Git User Interface ${CYAN}//${NC}"
+        echo
+		# Rows of four entries (last row has three)
+	    menu_item 1 "Setup SSH"
+	    menu_item 2 "List Remotes"
+	    menu_item 3 "Update URL"
+	    menu_item 4 "HTTPS→SSH"
+	    echo
+	    menu_item 5 "Fetch"
+	    menu_item 6 "Pull"
+	    menu_item 7 "Push"
+	    menu_item 8 "Branches"
+	    echo
+	    menu_item 9 "Switch Branch"
+	    menu_item 10 "New Branch"
+	    menu_item 11 "Delete Branch"
+	    menu_item 12 "Reconnect"
+	    echo
+	    menu_item 13 "Manage Stash"
+	    menu_item 14 "Cherry-pick"
+	    menu_item 15 "Restore"
+	    menu_item 16 "Revert"
+	    echo
+	    menu_item 17 "History"
+	    menu_item 18 "Rebase"
+	    menu_item 19 "Merge"
+	    menu_item 20 "Backup"
+	    echo
+	    menu_item 21 "Fix Repo"
+	    menu_item 22 "Hooks"
+	    menu_item 23 "Tests"
+	    menu_item 24 "Auto-Resolve"
+	    echo
+	    menu_item 25 "Cron"
+	    menu_item 26 "Deps"
+	    menu_item e "Exit"
+	    echo
+	    echo
+		# Prompt
+		printf "%b" "\n"
+		read -rp "By your command: " choice
+		echo
+
+		case "$choice" in
+		1) check_and_setup_ssh ;;
+		2) list_and_manage_remotes ;;
+		3) update_remote_url ;;
+		4) switch_to_ssh ;;
+		5) fetch_from_remote ;;
+		6) pull_from_remote ;;
+		7) push_to_remote ;;
+		8) list_branches ;;
+		9) switch_branch ;;
+		10) create_new_branch ;;
+		11) delete_branch ;;
+		12) reconnect_old_repo ;;
+		13) manage_stashes ;;
+		14) cherry_pick_commits ;;
+		15) restore_branch ;;
+		16) revert_version ;;
+		17) view_commit_history ;;
+		18) rebase_branch ;;
+		19) resolve_merge_conflicts ;;
+		20) perform_backup ;;
+		21) fix_git_repository ;;
+		22) setup_git_hooks ;;
+		23) run_integration_tests ;;
+		24) resolve_git_conflicts_automatically ;;
+		25) setup_cron_job ;;
+		26) setup_dependencies ;;
+		e | E)
+			echo -e "${CYAN}💥 Terminated!${NC}"
+			exit 0
+			;;
+		*)
+			echo -e "${ERROR}Invalid choice: '$choice'${NC}"
+			sleep 1
+			;;
+		esac
+
+		echo
+		echo -e "${INFO}Press [Enter] to return to menu…${NC}"
+		read
+	done
 }
 
+# Start the interface
 gui
