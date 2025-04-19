@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-# File: BraveClean.sh
 # Author: 4ndr0666
-# Date: 2024-12-06
-
 set -euo pipefail
 IFS=$'\n\t'
+# ============================== // BRAVECLEAN.SH //
 
-# Color variables
+## Color variables
 RED="\e[01;31m"
 GRN="\e[01;32m"
 YLW="\e[01;33m"
 RST="\e[00m"
 
+## Logging
 LOG_FILE="/tmp/BraveClean.log"
-
 log() {
   local msg
   msg="$1"
   printf "%s %s\n" "$(date +%Y-%m-%dT%H:%M:%S%z)" "$msg" >> "$LOG_FILE"
 }
 
+## Error
 error_exit() {
   local msg
   msg="$1"
@@ -28,16 +27,17 @@ error_exit() {
   exit 1
 }
 
+## Deps
 dep_check_vacuum() {
   if ! command -v sqlite3 >/dev/null 2>&1; then
     error_exit "sqlite3 not found. Please install it."
   fi
 }
-
 dep_check_all() {
   dep_check_vacuum
 }
 
+## Spinner
 spinner() {
   local pid delay spin i
   pid="$1"; delay=0.1; spin='|/-\'
@@ -220,7 +220,7 @@ main() {
   fi
   vacuum_browsers
   perform_brave_cleanup
-  echo -e "\n${GRN}BraveClean complete.${RST}"
+  echo -e "\n${GRN}Cleaned all this shit up! Have fun...${RST}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
