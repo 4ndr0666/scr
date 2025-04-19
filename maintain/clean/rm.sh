@@ -4,13 +4,18 @@ set -eu
 
 # ============================== // RM.SH //
 # Description:
-#   - If TARGET is a Btrfs subvolume, kill holders, unmount,
-#     disable quotas, delete nested subvolumes & parent in metadata only.
-#   - Otherwise remove immutability & fix perms, then:
-#       • If rsync is available, prune via rsync‑to‑empty‐dir and remove TARGET.
-#       • Else rename TARGET→TARGET.old, recreate TARGET, then parallel‑delete old tree with live progress.
+#   - Always re‑exec under sudo for full privileges.
+#   - Attempt Btrfs metadata delete (subvolume delete + nested).
+#   - Fallback: rsync‑prune if available.
+#   - Final fallback: rename → recreate → parallel delete with live progress.
 # Usage: rm.sh <target-dir> [interval_seconds]
 # --------------------------------------------
+
+## Auto-escalate
+if [ "$(id -u)" -ne 0 ]; then
+    printf 'Re‑running with sudo privileges…\n' >&2
+    exec sudo sh "$0" "$@"
+fi
 
 ## Declarations
 TARGET=
@@ -37,65 +42,66 @@ ensure_dir() {
 
 ## Subv Check
 is_btrfs_subvol() {
-    command -v btrfs > /dev/null 2>&1 && \
       btrfs subvolume show -- "$1" > /dev/null 2>&1
 }
 
 ## Kill
 kill_holders() {
-    command -v fuser > /dev/null 2>&1 && \
-      sudo fuser -vk -- "$1" > /dev/null 2>&1
+    fuser -vk -- "$1" > /dev/null 2>&1 ||:
 }
 
 ## Umount
 unmount_subvol() {
-    command -v umount > /dev/null 2>&1 && \
-      sudo umount -- "$1" > /dev/null 2>&1 ||:
+    mountpoint -q -- "$1" && umount -- "$1" > /dev/null 2>&1 ||:
 }
 
 ## Quota
 disable_quota() {
     MP=$(df --output=target "$1" | tail -1)
-    command -v btrfs > /dev/null 2>&1 && \
-      sudo btrfs quota disable -- "$MP" > /dev/null 2>&1
+    btrfs quota disable -- "$MP" > /dev/null 2>&1 ||:
 }
 
 ## Nested Subv Delete
 delete_nested_subvols() {
     MP=$(df --output=target "$1" | tail -1)
-    sudo btrfs subvolume list --raw "$MP" \
+    btrfs subvolume list -R "$MP" \
       | awk -v t="$1" '$NF ~ t { print $NF }' \
       | while IFS= read -r sv; do
-          sudo btrfs subvolume delete -- "$MP/$sv" > /dev/null 2>&1 ||:
+          btrfs subvolume delete -- "$MP/$sv" > /dev/null 2>&1 ||:
         done
 }
 
 ## Subv Delete
-delete_subvol() {
+attempt_subvol_delete() {
     kill_holders "$TARGET"
     unmount_subvol "$TARGET"
     disable_quota "$TARGET"
     delete_nested_subvols "$TARGET"
-    if sudo btrfs subvolume delete -- "$TARGET" > /dev/null 2>&1; then
+    if btrfs subvolume delete -- "$TARGET" > /dev/null 2>&1; then
         printf '✅ Btrfs subvolume "%s" deleted.\n' "$TARGET"
         exit 0
-    else
-        printf 'Error: failed to delete subvolume "%s"\n' "$TARGET" >&2
-        exit 1
     fi
 }
 
 ## Perms
 ensure_modifiable() {
-    PATH_TO_FIX=$1
-    if command -v sudo > /dev/null 2>&1; then
-        sudo chattr -R -i -- "$PATH_TO_FIX" > /dev/null 2>&1 || \
-          printf 'Warning: could not clear immutable flags on "%s"\n' "$PATH_TO_FIX" >&2
-        sudo chown -R "$(id -u):$(id -g)" -- "$PATH_TO_FIX" > /dev/null 2>&1 || \
-          printf 'Warning: could not change ownership on "%s"\n' "$PATH_TO_FIX" >&2
+    chattr -R -i -- "$1" > /dev/null 2>&1 || printf 'Warning: chattr failed on "%s"\n' "$1" >&2
+    chown -R root:root -- "$1" > /dev/null 2>&1 || printf 'Warning: chown failed on "%s"\n' "$1" >&2
+    chmod -R u+rwX -- "$1" > /dev/null 2>&1 || printf 'Warning: chmod failed on "%s"\n' "$1" >&2
+}
+
+## Rsync‑prune fallback
+rsync_prune() {
+    TMP=$(mktemp -d) || return 1
+    if rsync -a --delete "$TMP"/ "$TARGET"/ > /dev/null 2>&1; then
+        rmdir -- "$TARGET" > /dev/null 2>&1 || printf 'Warning: rmdir failed on "%s"\n' "$TARGET" >&2
+        rm -rf -- "$TMP"
+        printf '✅ "%s" pruned and removed via rsync\n' "$TARGET"
+        exit 0
+    else
+        rm -rf -- "$TMP"
+        return 1
     fi
-    chmod -R u+rwX -- "$PATH_TO_FIX" > /dev/null 2>&1 || \
-      printf 'Warning: could not adjust permissions on "%s"\n' "$PATH_TO_FIX" >&2
 }
 
 ## Fallback
@@ -107,31 +113,19 @@ prepare_fallback() {
         DEL_TARGET="${BASE}-${TIMESTAMP}"
         printf 'Notice: "%s" exists, using "%s"\n' "$BASE" "$DEL_TARGET"
     fi
-    mv -- "$TARGET" "$DEL_TARGET" || {
-        printf 'Error: could not rename "%s" to "%s"\n' "$TARGET" "$DEL_TARGET" >&2
-        exit 1
-    }
+    mv -- "$TARGET" "$DEL_TARGET" || { printf 'Error: mv failed\n' >&2; exit 1; }
     if command -v btrfs > /dev/null 2>&1; then
-        sudo btrfs subvolume create -- "$TARGET" > /dev/null 2>&1 || \
-          mkdir -- "$TARGET"
+        btrfs subvolume create -- "$TARGET" > /dev/null 2>&1 || mkdir -- "$TARGET"
     else
-        mkdir -- "$TARGET" ||:
+        mkdir -- "$TARGET"
     fi
 }
 
 ## Parallel Delete
 delete_parallel() {
     cd "$DEL_TARGET" || return 1
-    if ! find . -mindepth 1 -type f -print0 \
-         | xargs -0 -n100 -P8 rm -f --; then
-        printf 'Error: file deletion failed\n' >&2
-        return 1
-    fi
-    if ! find . -mindepth 1 -depth -type d -print0 \
-         | xargs -0 -n50 -P8 rmdir --ignore-fail-on-non-empty --; then
-        printf 'Error: dir deletion failed\n' >&2
-        return 1
-    fi
+    find . -mindepth 1 -type f -print0 | xargs -0 -n100 -P8 rm -f -- || { printf 'Error: file delete\n' >&2; return 1; }
+    find . -mindepth 1 -depth -type d -print0 | xargs -0 -n50 -P8 rmdir --ignore-fail-on-non-empty -- || { printf 'Error: dir delete\n' >&2; return 1; }
     printf '✅ "%s" cleared.\n' "$DEL_TARGET"
 }
 
@@ -148,18 +142,11 @@ monitor_progress() {
 
 ## TRAP
 cleanup() {
-    if [ -n "${DEL_PID:-}" ] && kill -0 "$DEL_PID" 2>/dev/null; then
-        kill "$DEL_PID" 2>/dev/null
-    fi
+    [ -n "${DEL_PID:-}" ] && kill -0 "$DEL_PID" 2>/dev/null && kill "$DEL_PID" 2>/dev/null ||:
 }
 trap cleanup EXIT INT TERM
 
 ## Main Entry Point
-
-if [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-  printf 'Error: this script must run as root or with passwordless sudo\n' >&2
-  exit 1
-fi
 
 main() {
     [ $# -ge 1 ] || usage
@@ -167,33 +154,26 @@ main() {
     INTERVAL=${2:-10}
 
     ensure_dir "$TARGET"
-    if is_btrfs_subvol "$TARGET"; then
-        delete_subvol
-    else
-        ensure_modifiable "$TARGET"
-        if command -v rsync > /dev/null 2>&1; then
-            TMP=$(mktemp -d) || exit 1
-            if ! rsync -a --delete "$TMP"/ "$TARGET"/ > /dev/null 2>&1; then
-                printf 'Error: rsync prune failed on "%s"\n' "$TARGET" >&2
-                rm -rf -- "$TMP"
-                exit 1
-            fi
-            rmdir -- "$TARGET" > /dev/null 2>&1 || \
-              printf 'Warning: could not remove "%s" after prune\n' "$TARGET" >&2
-            rm -rf -- "$TMP"
-            printf '✅ "%s" pruned and removed via rsync\n' "$TARGET"
-            exit 0
-        fi
-        prepare_fallback
-        ensure_modifiable "$DEL_TARGET"
-        delete_parallel & DEL_PID=$!
-        monitor_progress "$DEL_PID"
-        if ! wait "$DEL_PID"; then
-            printf 'Error: deletion process (%s) failed\n' "$DEL_PID" >&2
-            exit 1
-        fi
-        printf '✅ Deletion process (%s) complete.\n' "$DEL_PID"
+    # 1) Try Btrfs metadata delete
+    attempt_subvol_delete
+    # 2) Rsync prune fallback if rsync exists
+    if command -v rsync > /dev/null 2>&1; then
+        rsync_prune || printf 'Warning: rsync prune failed, proceeding to xargs fallback\n' >&2
     fi
+    # 3) Final fallback: parallel-delete
+    ensure_modifiable "$TARGET"
+    prepare_fallback
+    ensure_modifiable "$DEL_TARGET"
+    delete_parallel & DEL_PID=$!
+    monitor_progress "$DEL_PID"
+    wait_status=0
+    wait "$DEL_PID" || wait_status=$?
+    if [ "$wait_status" -ne 0 ]; then
+        printf 'Error: deletion process (%s) failed with code %d\n' "$DEL_PID" "$wait_status" >&2
+        exit 1
+    fi
+    printf '✅ Deletion process (%s) complete.\n' "$DEL_PID"
+    exit 0
 }
 
 main "$@"
