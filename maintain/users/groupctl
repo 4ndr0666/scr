@@ -1,31 +1,29 @@
 #!/bin/bash
-# File: group_manager.sh
 # Author: 4ndr0666
-# Edited: 11-27-24 (Revised: [Current Date])
-# Description: A minimalistic yet powerful tool for managing user groups, including creation,
-#              deletion, adding/removing users to/from groups, and applying standard group presets.
-#              Enhanced with a visually engaging menu system and robust feedback.
-
-# ============================== // GROUP_MANAGER //
 set -euo pipefail
 IFS=$'\n\t'
+# ======================== // GROUPCTL //
+## Description: A minimalistic yet powerful tool for managing user groups, 
+#             including creation, deletion, adding/removing users to/from 
+#             groups, and applying standard group presets.
+# -----------------------------------
 
-# --- // Colors:
-RC='\033[0m'
-RED='\033[31m'
-YELLOW='\033[33m'
-CYAN='\033[36m'
-GREEN='\033[32m'
-
-# --- // Constants:
-LOG_FILE="/var/log/group_manager.log"
-BACKUP_DIR="/root/group_manager_backups/$(date +%F_%T)"
+## Constants
+LOG_FILE="/home/andro/.local/share/logs/groupctl.log"
+BACKUP_DIR="/Nas/Backups/groupctl_backups/"
 USER_TO_MANAGE=()
 VERBOSE=false
 DRY_RUN=false
 PACKAGER=""
 
-# --- // Priv_check:
+## Colors
+RC='\033[0m'
+RED='\033[31m'
+YELLOW='\033[33m'
+CYAN="\033[38;2;21;255;255m"
+#CYAN='\033[36m'
+
+## Auto-escalate
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         printf "%b\n" "${RED}[!] Re-running with root privileges...${RC}"
@@ -34,12 +32,11 @@ check_root() {
     fi
 }
 
-# --- // Logging: 
+## Logging 
 log() {
     local MESSAGE="$1"
     echo -e "$(date '+%Y-%m-%d %H:%M:%S') $MESSAGE" >> "$LOG_FILE"
 }
-
 log_verbose() {
     if [ "$VERBOSE" = true ]; then
         local MESSAGE="$1"
@@ -47,20 +44,19 @@ log_verbose() {
     fi
 }
 
-# --- // Validate: 
+## Validate 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# --- // Trap:
+## TRAP
 terminate_script() {
     log "${RED}[!] Script terminated prematurely.${RC}"
     exit 1
 }
-
 trap terminate_script SIGINT SIGTERM
 
-# --- // Package Manager Detection:
+## Package Manager Detection
 determine_package_manager() {
     PACKAGERS=('pacman' 'apt-get' 'dnf' 'zypper')
     for pgm in "${PACKAGERS[@]}"; do
@@ -75,7 +71,7 @@ determine_package_manager() {
     exit 1
 }
 
-# --- // Install Package:
+## Install
 install_package() {
     local PKG="$1"
     if [ "$DRY_RUN" = false ]; then
@@ -103,7 +99,7 @@ install_package() {
     fi
 }
 
-# --- // Check and Install Dependencies:
+## Deps
 check_dependencies() {
     printf "%b\n" "${CYAN}[*] Checking and installing dependencies...${RC}"
     local DEPENDENCIES=('fzf' 'shellcheck' 'polkit' 'chpasswd' 'usermod' 'chattr' 'openssl')
@@ -124,7 +120,7 @@ check_dependencies() {
     done
 }
 
-# --- // Check if Polkit is Installed:
+## Polkit 
 is_polkit_installed() {
     case "$PACKAGER" in
         pacman)
@@ -145,7 +141,7 @@ is_polkit_installed() {
     esac
 }
 
-# --- // Display Help Message:
+## Help
 show_help() {
     printf "%b\n" "${CYAN}Usage: ./group_manager.sh [options] [username1] [username2] ...${RC}"
     echo ""
@@ -158,7 +154,7 @@ show_help() {
     exit 0
 }
 
-# --- // Parse Command-Line Arguments:
+## Cli args
 parse_arguments() {
     while [[ "$#" -gt 0 ]]; do
         case $1 in
@@ -178,7 +174,7 @@ parse_arguments() {
         shift
     done
 
-    # Prompt for username if none provided
+    ### Username prompt 
     if [ "${#USER_TO_MANAGE[@]}" -eq 0 ]; then
         read -rp "Enter the username(s) to manage (separate multiple users with spaces): " -a USER_TO_MANAGE
         if [ "${#USER_TO_MANAGE[@]}" -eq 0 ]; then
@@ -188,7 +184,7 @@ parse_arguments() {
     fi
 }
 
-# --- // Confirmation Prompt:
+## Confirmation 
 confirm_action() {
     local PROMPT="$1"
     while true; do
@@ -201,14 +197,14 @@ confirm_action() {
     done
 }
 
-# --- // Backup Files:
+## Backup 
 backup_files() {
     log "${CYAN}[*] Backing up critical configuration files...${RC}"
     if [ "$DRY_RUN" = false ]; then
         mkdir -p "$BACKUP_DIR"
         for FILE in /etc/group /etc/gshadow /etc/sudoers /etc/sudoers.d; do
             if [ -e "$FILE" ]; then
-                cp -r "$FILE" "$BACKUP_DIR"/ || log "${RED}[!] Failed to backup $FILE.${RC}"
+                cp -r "$FILE" "$BACKUP_DIR" || log "${RED}[!] Failed to backup $FILE.${RC}"
             else
                 log "${YELLOW}[!] File $FILE does not exist. Skipping backup.${RC}"
             fi
@@ -219,7 +215,7 @@ backup_files() {
     fi
 }
 
-# --- // Correct File Permissions and Ownership:
+## Perms 
 correct_permissions() {
     local FILE="$1"
     local PERM="$2"
@@ -261,7 +257,6 @@ correct_permissions() {
     fi
 }
 
-# --- // Apply Permissions to Critical Files and Directories:
 apply_permissions() {
     log "${CYAN}[*] Applying correct permissions to critical files and directories...${RC}"
     declare -A FILES
@@ -279,7 +274,7 @@ apply_permissions() {
     done
 }
 
-# --- // Remove Lock Files:
+## Lockfile
 remove_lock_files() {
     log "${CYAN}[*] Removing lock files if they exist...${RC}"
     local LOCK_FILES=('/etc/group.lock' '/etc/gshadow.lock' '/etc/sudoers.lock' '/etc/sudoers.d.lock')
@@ -297,7 +292,7 @@ remove_lock_files() {
     done
 }
 
-# --- // Create a Group if It Doesn't Exist:
+## Make group 
 create_group() {
     local GROUP="$1"
     if ! grep -q "^$GROUP:" /etc/group; then
@@ -312,7 +307,7 @@ create_group() {
     fi
 }
 
-# --- // Delete a Group if It Exists:
+## Delete group
 delete_group() {
     local GROUP="$1"
     if grep -q "^$GROUP:" /etc/group; then
@@ -327,7 +322,7 @@ delete_group() {
     fi
 }
 
-# --- // Display User's Current Groups:
+## Current groups
 view_user_groups() {
     local USER="$1"
     if id "$USER" &>/dev/null; then
@@ -339,7 +334,7 @@ view_user_groups() {
     fi
 }
 
-# --- // Add User to Selected Groups:
+## Add user to group
 add_user_to_groups() {
     local USER="$1"
     shift
@@ -356,7 +351,7 @@ add_user_to_groups() {
     printf "%b\n" "${CYAN}[+] Operation completed: User '$USER' has been added to selected groups.${RC}"
 }
 
-# --- // Remove User from Selected Groups:
+## Rm user from group 
 remove_user_from_groups() {
     local USER="$1"
     shift
@@ -376,7 +371,7 @@ remove_user_from_groups() {
     printf "%b\n" "${CYAN}[+] Operation completed: User '$USER' has been removed from selected groups.${RC}"
 }
 
-# --- // Apply Standard Preset of Groups to the User:
+## Presets
 apply_standard_preset() {
     local USER="$1"
     local STANDARD_GROUPS=("adm" "users" "disk" "wheel" "cdrom" "audio" "video" "usb" "optical" "storage" "scanner" "lp" "network" "power")
@@ -393,7 +388,7 @@ apply_standard_preset() {
     printf "%b\n" "${CYAN}[+] Standard preset applied to user '$USER'.${RC}"
 }
 
-# --- // Enable a Group in Sudoers:
+## Sudoers
 enable_group_in_sudoers() {
     local GROUP="$1"
     local SUDOERS_FILE="/etc/sudoers.d/${GROUP}-sudo"
@@ -411,7 +406,6 @@ enable_group_in_sudoers() {
     fi
 }
 
-# --- // Disable a Group in Sudoers:
 disable_group_in_sudoers() {
     local GROUP="$1"
     local SUDOERS_FILE="/etc/sudoers.d/${GROUP}-sudo"
@@ -428,7 +422,7 @@ disable_group_in_sudoers() {
     fi
 }
 
-# --- // Generate Summary Report:
+## Summary
 generate_summary_report() {
     log "${CYAN}[*] Generating summary report...${RC}"
     if [ "$DRY_RUN" = false ]; then
@@ -446,7 +440,7 @@ generate_summary_report() {
     fi
 }
 
-# --- // Generate Comprehensive Report:
+## Report
 generate_comprehensive_report() {
     log "${CYAN}[*] Generating comprehensive report...${RC}"
     if [ "$DRY_RUN" = false ]; then
@@ -457,7 +451,7 @@ generate_comprehensive_report() {
     fi
 }
 
-# --- // Final Syntax Check:
+## Final check
 final_syntax_check() {
     log "${CYAN}[*] Performing final syntax check with ShellCheck...${RC}"
     if command_exists shellcheck; then
@@ -467,7 +461,7 @@ final_syntax_check() {
     fi
 }
 
-# --- // Robust Menu System:
+## Main entry point
 main_menu() {
     while true; do
         clear
@@ -613,46 +607,23 @@ main_menu() {
     done
 }
 
-# ------------------------------ Main Execution ------------------------------
-
-# Check if the script is run as root (pass along any arguments)
 check_root "$@"
-
-# Parse command-line arguments
 parse_arguments "$@"
-
-# Determine package manager (if needed)
 #determine_package_manager
+#check_dependencies
 
-# Initialize log file with correct permissions
+## Logging init
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 chown root:root "$LOG_FILE"
-log "${CYAN}[+] Log file created at $LOG_FILE.${RC}"
 log "${CYAN}[+] Starting group_manager.sh for user(s): ${USER_TO_MANAGE[*]}${RC}"
 
-# Check and install dependencies (if desired)
-#check_dependencies
-
-# Remove lock files if any
 remove_lock_files
-
-# Apply correct permissions to critical files
 apply_permissions
-
-# Backup critical files
-backup_files
-
-# Launch robust main menu
+#backup_files
 main_menu
-
-# Generate reports
 generate_summary_report
 generate_comprehensive_report
-
-# Final syntax check
 final_syntax_check
-
-# Finalize script
-log "${CYAN}[+] group_manager.sh completed successfully.${RC}"
-printf "%b\n" "${CYAN}[+] All tasks completed. Please review the log at $LOG_FILE for details.${RC}"
+log "${CYAN}[+] Groupctl complete!${RC}"
+printf "%b\n" "${CYAN}[+] All tasks completed. Log at $LOG_FILE.${RC}"
