@@ -1,231 +1,202 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Author: 4ndr0666
-set -euo pipefail
+set -eu
 # ============================ // REPAIR_PACMANDB.SH //
+## Descripttion: Detect and repair corrupt Pacman metadata entries
+# ----------------------------
 
 ## Constants
-readonly LOCK_FILE="/var/lib/pacman/db.lck"
-readonly CACHE_DIR="/var/cache/pacman/pkg"
-readonly LOG_FILE_DEFAULT="/var/log/pacman_healer.log"
-readonly TMP_AUR="/tmp/pacman_healer.aur.$$"
-readonly TMP_MISSING="/tmp/pacman_healer.missing.$$"
-
-## FLAGS
 DRY_RUN=false
 AGGRESSIVE=false
-LOG_FILE="$LOG_FILE_DEFAULT"
+SHOW_HELP=false
 
-## ARGUMENT PARSING
-while [[ $# -gt 0 ]]; do
-	case "$1" in
-	--dry-run) DRY_RUN=true ;;
-	--aggressive) AGGRESSIVE=true ;;
-	--log)
-		shift
-		LOG_FILE="$1"
-		;;
-	--help | -h)
-		echo "Usage: $0 [--dry-run] [--aggressive] [--log logfile]"
-		exit 0
-		;;
-	*)
-		echo "Unknown argument: $1" >&2
-		exit 1
-		;;
-	esac
-	shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true ;;
+    --aggressive) AGGRESSIVE=true ;;
+    --help|-h) SHOW_HELP=true ;;
+    *) printf 'Unknown argument: %s\n' "$1" >&2; exit 1 ;;
+  esac
+  shift
 done
 
-## LOGGING
-log() {
-	local msg="$1"
-	printf '[%s] %s\n' "$(date +'%F %T')" "$msg" | sudo tee -a "$LOG_FILE"
-}
-die() {
-	local err="$1"
-	log "FATAL: $err"
-	exit 1
-}
+## Help
+if [ "$SHOW_HELP" = true ]; then
+  cat <<EOF
+Usage: $0 [--dry-run] [--aggressive] [--help]
+  --dry-run     : show actions without making changes
+  --aggressive  : after repair, purge cache and fully update system
+  --help, -h    : display this help
+EOF
+  exit 0
+fi
 
-### ========== CLEANUP HANDLER ==========
-cleanup() {
-	[[ -f "$TMP_AUR" ]] && rm -f "$TMP_AUR"
-	[[ -f "$TMP_MISSING" ]] && rm -f "$TMP_MISSING"
-}
-trap cleanup EXIT
+## Logging/Error
+info()  { printf '[INFO]  %s\n' "$1"; }
+error() { printf '[ERROR] %s\n' "$1" >&2; }
 
-### ========== MODULES ==========
-drop_stale_lock() {
-	if [[ -f "$LOCK_FILE" ]]; then
-		log "Removing stale pacman lock..."
-		$DRY_RUN || rm -f "$LOCK_FILE"
-	fi
-}
+## Clean
+LOCK_FILE=/var/lib/pacman/db.lck
+CACHE_DIR=/var/cache/pacman/pkg
 
-clean_partial_downloads() {
-	log "Cleaning partial packages from $CACHE_DIR..."
-	if $DRY_RUN; then
-		find "$CACHE_DIR" -type f -name '*.part'
-	else
-		find "$CACHE_DIR" -type f -name '*.part' -delete
-	fi
-}
+if [ -f "$LOCK_FILE" ]; then
+  info "Removing stale lock: $LOCK_FILE"
+  [ "$DRY_RUN" = false ] && rm -f "$LOCK_FILE"
+fi
 
-refresh_pacman_db() {
-	log "Refreshing pacman database and keyring..."
-	if ! $DRY_RUN; then
-		pacman -Sy --noconfirm >/dev/null 2>&1 || {
-			pacman -Scc --noconfirm >/dev/null 2>&1
-			pacman -Sy --noconfirm >/dev/null 2>&1 || die "pacman -Sy failed after cleanup."
-		}
-		pacman-key --init >/dev/null 2>&1 || true
-		pacman-key --populate archlinux >/dev/null 2>&1 || true
-	else
-		log "[DRY] pacman -Sy and keyring init would be run"
-	fi
-}
+info "Cleaning partial downloads in $CACHE_DIR"
 
-detect_missing_files() {
-	log "Scanning for packages with missing files..."
-	if $DRY_RUN; then
-		pacman -Qk 2>&1 | grep -v "::" | grep -v " 0 missing" | sort -u
-		return
-	fi
+if [ "$DRY_RUN" = false ]; then
+  find "$CACHE_DIR" -type f -name '*.part' -delete
+else
+  find "$CACHE_DIR" -type f -name '*.part'
+fi
 
-	>"$TMP_MISSING"
-	pacman -Qk 2>&1 | while IFS= read -r line; do
-		if [[ "$line" =~ :.*missing\ files ]]; then
-			pkg_name="${line%%:*}"
-			if [[ -n "$pkg_name" ]]; then
-				echo "$pkg_name" >>"$TMP_MISSING"
-			fi
-		fi
-	done
+## PacmanDB & Keys
+info "Refreshing pacman database & keyring"
 
-	if [[ ! -s "$TMP_MISSING" ]]; then
-		log "No broken packages detected."
-		exit 0
-	fi
+if [ "$DRY_RUN" = false ]; then
+  pacman -Sy --noconfirm >/dev/null 2>&1 || {
+    pacman -Scc --noconfirm >/dev/null 2>&1
+    pacman -Sy --noconfirm >/dev/null 2>&1 || error "pacman -Sy failed"
+  }
+  pacman-key --init >/dev/null 2>&1 || true
+  pacman-key --populate archlinux >/dev/null 2>&1 || true
+else
+  info "[DRY] pacman -Sy and keyring init"
+fi
 
-	mapfile -t BROKEN_PKGS <"$TMP_MISSING"
-	log "Found ${#BROKEN_PKGS[@]} packages with missing files."
-}
+printf 'Perform full system upgrade? [Y/n]: '
+read -r ans
 
-classify_packages() {
-	log "Classifying packages into Repo and AUR groups..."
-	REPO_PKGS=()
-	AUR_PKGS=()
+case "$ans" in [Nn]*) info "Skipping full upgrade." ;; *)
+  if [ "$DRY_RUN" = false ]; then
+    pacman -Syu --noconfirm
+  else
+    info "[DRY] pacman -Syu"
+  fi
+;; esac
 
-	for pkg in "${BROKEN_PKGS[@]}"; do
-		if pacman -Si "$pkg" >/dev/null 2>&1; then
-			REPO_PKGS+=("$pkg")
-		else
-			AUR_PKGS+=("$pkg")
-		fi
-	done
+## Broken
+TMP_BROKEN=$(mktemp)
+info "Scanning for packages with missing/corrupt metadata"
+pacman -Qk 2>&1 \
+  | awk -F: '/missing|error/ {print $1}' \
+  | sort -u \
+  >"$TMP_BROKEN"
 
-	log "Repo: ${#REPO_PKGS[@]} | AUR: ${#AUR_PKGS[@]}"
+if [ ! -s "$TMP_BROKEN" ]; then
+  info "No broken packages detected."
+  rm -f "$TMP_BROKEN"
+  exit 0
+fi
+
+## Fzf
+info "Select packages to repair"
+TMP_SELECTED=$(mktemp)
+fzf --multi --reverse --preview 'pacman -Si {}' \
+    --bind '?:toggle-preview,shift-up:preview-up,shift-down:preview-down,ctrl-a:select-all' \
+    --prompt='> ' --height=80% <"$TMP_BROKEN" \
+  >"$TMP_SELECTED" || {
+    info "No selection made, exiting."
+    rm -f "$TMP_BROKEN" "$TMP_SELECTED"
+    exit 0
 }
 
-repair_repo_packages() {
-	if ((${#REPO_PKGS[@]} == 0)); then
-		log "No repo packages to repair."
-		return
-	fi
+## Classification 
+TMP_REPO=$(mktemp)
+TMP_AUR=$(mktemp)
 
-	log "Reinstalling ${#REPO_PKGS[@]} repo packages..."
-	if $DRY_RUN; then
-		printf '[DRY] pacman -S --noconfirm --needed %s\n' "${REPO_PKGS[*]}"
-	else
-		pacman -S --noconfirm --needed "${REPO_PKGS[@]}" >/dev/null 2>&1 || die "Repo reinstall failed."
-	fi
-}
+while IFS= read -r pkg; do
+  if pacman -Si "$pkg" >/dev/null 2>&1; then
+    printf '%s\n' "$pkg" >>"$TMP_REPO"
+  else
+    printf '%s\n' "$pkg" >>"$TMP_AUR"
+  fi
+done <"$TMP_SELECTED"
 
-repair_aur_packages() {
-	if ((${#AUR_PKGS[@]} == 0)); then
-		log "No AUR packages to handle."
-		return
-	fi
+info "Repo packages: $(wc -l <"$TMP_REPO")"
+info "AUR packages : $(wc -l <"$TMP_AUR")"
 
-	if command -v yay >/dev/null 2>&1 && [[ -n ${SUDO_USER:-} ]]; then
-		log "Rebuilding ${#AUR_PKGS[@]} AUR packages (user: $SUDO_USER)..."
-		if $DRY_RUN; then
-			printf '[DRY] yay -S --noconfirm --needed %s\n' "${AUR_PKGS[*]}"
-		else
-			sudo -u "$SUDO_USER" yay -S --noconfirm --needed "${AUR_PKGS[@]}" >/dev/null 2>&1 || log "Some AUR packages failed."
-		fi
-	else
-		printf '%s\n' "${AUR_PKGS[@]}" >"$TMP_AUR"
-		log "Skipped AUR packages; saved list to $TMP_AUR."
-	fi
-}
+## Repair logic 
+while IFS= read -r pkg; do
+  info "Reinstalling repo package: $pkg"
+  if [ "$DRY_RUN" = false ]; then
+    if ! pacman -S --noconfirm --needed "$pkg"; then
+      info "Standard reinstall failed, forcing overwrite"
+      pacman -S --noconfirm --overwrite "*" "$pkg"
+    fi
+    if pacman -Qk "$pkg" | grep -qE 'missing|error'; then
+      error "Verification failed for $pkg"
+    else
+      info "Repaired: $pkg"
+    fi
+  else
+    info "[DRY] pacman -S --needed $pkg"
+  fi
+done <"$TMP_REPO"
 
-aggressive_cleanup() {
-	if ! $AGGRESSIVE; then return; fi
+## Repair AUR packages
+while IFS= read -r pkg; do
+  info "Handling AUR package: $pkg"
+  if command -v yay >/dev/null 2>&1 && [ -n "${SUDO_USER:-}" ]; then
+    if [ "$DRY_RUN" = false ]; then
+      sudo -u "$SUDO_USER" yay -S --noconfirm --needed "$pkg" \
+        || info "Some AUR rebuilds may have failed"
+    else
+      info "[DRY] yay -S --needed $pkg"
+    fi
+  else
+    info "No AUR helper; pkg left in $(tty)"
+  fi
+done <"$TMP_AUR"
 
-	log "AGGRESSIVE mode: Purging cache + full update."
-	if $DRY_RUN; then
-		log "[DRY] pacman -Scc --noconfirm"
-		log "[DRY] pacman -Syyu --noconfirm"
-	else
-		pacman -Scc --noconfirm >/dev/null 2>&1 || log "Pacman cache purge failed."
-		pacman -Syyu --noconfirm >/dev/null 2>&1 || log "System update failed."
-	fi
-}
+## Advanced DB repair/audit
+if [ "$AGGRESSIVE" = true ]; then
+  info "AGGRESSIVE: purging cache + full update"
+  if [ "$DRY_RUN" = false ]; then
+    pacman -Scc --noconfirm >/dev/null 2>&1 || true
+    pacman -Syyu --noconfirm >/dev/null 2>&1 || true
+  else
+    info "[DRY] pacman -Scc & pacman -Syyu"
+  fi
+fi
 
-recover_pacman_db() {
-	log "Attempting DB structure repair with pacman-db-upgrade..."
-	if $DRY_RUN; then
-		log "[DRY] pacman-db-upgrade"
-	else
-		if command -v pacman-db-upgrade >/dev/null 2>&1; then
-			pacman-db-upgrade >/dev/null 2>&1 || log "pacman-db-upgrade skipped or failed."
-		else
-			log "pacman-db-upgrade not installed."
-		fi
-	fi
-}
+## Pacman-db-upgrade
+if command -v pacman-db-upgrade >/dev/null 2>&1; then
+  info "Running pacman-db-upgrade"
+  [ "$DRY_RUN" = false ] && pacman-db-upgrade >/dev/null 2>&1
+fi
 
-repair_with_pacrepairdb() {
-	if command -v pacrepairdb >/dev/null 2>&1; then
-		log "Running pacrepairdb..."
-		if $DRY_RUN; then
-			log "[DRY] pacrepairdb --nocolor --noconfirm"
-		else
-			pacrepairdb --nocolor --noconfirm >/dev/null 2>&1 || log "pacrepairdb completed with warnings."
-		fi
-	else
-		log "pacrepairdb not found. Install with: sudo pacman -S pacutils"
-	fi
-}
+## Pacrepairdb
+if command -v pacrepairdb >/dev/null 2>&1; then
+  info "Running pacrepairdb"
+  [ "$DRY_RUN" = false ] && pacrepairdb --nocolor --noconfirm >/dev/null 2>&1
+fi
 
-report_unowned_files() {
-	if command -v pacfiles >/dev/null 2>&1; then
-		log "Scanning for unowned files via pacfiles..."
-		if $DRY_RUN; then
-			log "[DRY] pacfiles --unowned"
-		else
-			pacfiles --unowned | tee -a "$PACFILES"
-		fi
-	else
-		log "pacfiles (pacutils) not found. Install with: sudo pacman -S pacutils"
-	fi
-}
+## Report unowned files
+if command -v pacfiles >/dev/null 2>&1; then
+  info "Reporting unowned files"
+  if [ "$DRY_RUN" = false ]; then
+    pacfiles --unowned
+  else
+    info "[DRY] pacfiles --unowned"
+  fi
+fi
 
-### ========== MAIN ==========
-main() {
-	drop_stale_lock
-	clean_partial_downloads
-	refresh_pacman_db
-	detect_missing_files
-	classify_packages
-	repair_repo_packages
-	repair_aur_packages
-	aggressive_cleanup
-	recover_pacman_db
-	repair_with_pacrepairdb
-	report_unowned_files
-	log "✅ pacman_healer.sh completed with extended verification."
-}
+## Verification summary 
+info "Verification pass: re-checking selected packages"
+while IFS= read -r pkg; do
+  if pacman -Qk "$pkg" | grep -qE 'missing|error'; then
+    error "Still broken: $pkg"
+  else
+    info "OK: $pkg"
+  fi
+done <"$TMP_SELECTED"
 
-main "$@"
+info "All done."
+
+## Cleanup temp files
+rm -f "$TMP_BROKEN" "$TMP_SELECTED" "$TMP_REPO" "$TMP_AUR"
+
+exit 0
