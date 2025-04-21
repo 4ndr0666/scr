@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# toggle-chaotic-mirror.sh
+# Enable or disable the Chaotic-AUR CDN mirror in pacman’s mirrorlist.
+
+set -Euo pipefail
+IFS=$'\n\t'
+
+#── Configuration ───────────────────────────────────────────
+readonly MIRRORLIST="/etc/pacman.d/chaotic-mirrorlist"
+readonly CDN_PATTERN='^Server = https://cdn-mirror\.chaotic\.cx'
+
+show_usage() {
+  cat <<EOF
+Usage: sudo $0 <on|off|status>
+
+  on      Uncomment the Chaotic-AUR CDN mirror entry.
+  off     Comment out the Chaotic-AUR CDN mirror entry.
+  status  Show whether the CDN mirror is enabled or disabled.
+EOF
+  exit 1
+}
+
+ensure_root() {
+  [[ $EUID -eq 0 ]] || { echo "[ERROR] Must be run as root."; exit 1; }
+}
+
+ensure_file() {
+  [[ -f $MIRRORLIST ]] || { echo "[ERROR] Mirrorlist not found: $MIRRORLIST"; exit 1; }
+}
+
+toggle_off() {
+  # Prefix matching lines with "# "
+  sed -ri.bak \
+    -e "/$CDN_PATTERN/ s|^[[:space:]]*|# |" \
+    "$MIRRORLIST"
+  log_info "Mirror disabled. Backup: ${MIRRORLIST}.bak"
+}
+
+toggle_on() {
+  # Remove leading "# " from matching lines
+  sed -ri.bak \
+    -e "/[[:space:]]*#\s*$CDN_PATTERN/ s|^[[:space:]]*#\s*||" \
+    "$MIRRORLIST"
+  log_info "Mirror enabled. Backup: ${MIRRORLIST}.bak"
+}
+
+show_status() {
+  if grep -Eq "$CDN_PATTERN" "$MIRRORLIST"; then
+    if grep -Eq "^[[:space:]]*#\s*$CDN_PATTERN" "$MIRRORLIST"; then
+      echo "Chaotic-AUR CDN mirror: disabled"
+    else
+      echo "Chaotic-AUR CDN mirror: enabled"
+    fi
+  else
+    echo "Mirror entry not found."
+    exit 1
+  fi
+}
+
+log_info() {
+  printf '[INFO] %s\n' "$1"
+}
+
+main() {
+  ensure_root
+  ensure_file
+
+  case "${1:-}" in
+    on)     toggle_on    ;;
+    off)    toggle_off   ;;
+    status) show_status  ;;
+    *)      show_usage   ;;
+  esac
+}
+
+main "$@"

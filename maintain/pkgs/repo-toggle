@@ -1,8 +1,0 @@
-#!/bin/bash
-cml='/etc/pacman.d/chaotic-mirrorlist' cdn='Server = https://cdn-mirror.chaotic.cx'
-case "$1" in
-  off) sed -Ei 's|^\s*'"$cdn"'|#&|' $cml ;;
-   on) sed -Ei 's|^\s*#\s*('"$cdn"'.*)|\1|' $cml ;;
-    *) echo "usage: sudo ${0##*/} on|off"
-       grep -q '^\s*#\s*'"$cdn" $cml && echo 'R2 disabled' || echo 'R2 enabled'
-esac
