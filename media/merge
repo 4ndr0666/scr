@@ -1,8 +1,4 @@
 #!/bin/sh -e
-set -x
-
-# Enhanced Video Concatenation Script (Production-Ready)
-# POSIX-Compliant, Modular, and Robust
 
 usage() {
     printf '%s\n' "Usage: mergebeta [OPTIONS] [files]"
@@ -22,27 +18,56 @@ usage() {
 }
 
 # Default settings
-output_dir="./normalized_videos"
+output_dir="$PWD/merged_video"
 target_res="1920:1080"
 fps="60"
 codec="libx264"
-crf="18"
+crf="0"
 remove_audio=true
-preset="slow"
+preset="fast"
 
 # Parse arguments
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        -o) shift; output_dir="$1" ;;
-        -r) shift; target_res="$1" ;;
-        -f) shift; fps="$1" ;;
-        -c) shift; codec="$1" ;;
-        -crf) shift; crf="$1" ;;
-        -a) shift; remove_audio="$1" ;;
-        -p) shift; preset="$1" ;;
-        -h|--help) usage; exit 0 ;;
-        -*) printf '%s\n' "Unknown option: $1"; usage; exit 1 ;;
-         *) break ;;  # Any non-option arguments (files) break out
+        -o| --output)
+	  output_dir="$1"
+	  shift 1 
+	  ;;
+        -r)
+	  target_res="$1"
+	  shift 1 
+	  ;;
+        -f) 
+	  fps="$1"
+	  shift 1 
+	  ;;
+        -c) 
+	  codec="$1"
+	  shift 1
+	  ;;
+        -crf)
+	  crf="$1"
+	  shift 1
+	  ;;
+        -a) 
+	  remove_audio="$1"
+	  shift 1
+	  ;;
+        -p) 
+	  preset="$1"
+	  shift 1
+	  ;;
+        -h|--help) 
+	  usage; 
+	  exit 0 
+	  ;;
+        -*) printf '%s\n' "Unknown option: $1"
+	  usage; 
+	  exit 1 
+	  ;;
+         *) 
+	  break 
+	  ;;  
     esac
     shift
 done
@@ -116,7 +141,7 @@ fi
 
 # Create the output directory
 mkdir -p "$output_dir"
-output_file="${output_dir%/}/output.mp4"
+output_file="${output_dir%/}/merged_video.mp4"
 
 # 1) Attempt direct concatenation
 # '-safe 0' allows for absolute/relative paths with spaces in concat list
@@ -159,5 +184,5 @@ ffmpeg -safe 0 -f concat -i "$normalized_list" \
        -preset "$preset" \
        "$output_file"
 
-printf '%s\n' "Normalization and concatenation successful: $output_file"
+printf '%s\n' "Files successfuly merged as: $output_file"
 exit 0
