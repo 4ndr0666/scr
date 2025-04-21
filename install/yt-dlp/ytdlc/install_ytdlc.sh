@@ -13,58 +13,58 @@ YTDL_FILE="$ZSH_DIR/ytdl.zsh"
 DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 HANDLER_FILE="$BIN_DIR/ytdl-handler.sh"
 
-## Color definitions for output
+## Colors
 CYAN="\033[38;2;21;255;255m"
 BOLD="\033[1m"
 RED="\033[0;31m"
 NC="\033[0m"
 glow() {
-  echo -e "${BOLD}${CYAN}$1${NC}"
+	echo -e "${BOLD}${CYAN}$1${NC}"
 }
 bug() {
-  echo -e "${BOLD}${RED}$1${NC}"
+	echo -e "${BOLD}${RED}$1${NC}"
 }
 
-## --------------------- Dependency Check --------------------- ##
+## Deps
 check_dependencies() {
-  local -a NEED_PKGS=()
-  if ! command -v aria2c >/dev/null 2>&1; then
-    NEED_PKGS+=("aria2")
-  fi
-  if ! command -v xclip >/dev/null 2>&1 && ! command -v wl-paste >/dev/null 2>&1; then
-    NEED_PKGS+=("xclip" "wl-clipboard")
-  fi
-  if ! command -v jq >/dev/null 2>&1; then
-    NEED_PKGS+=("jq")
-  fi
-  if ! command -v yt-dlp >/dev/null 2>&1; then
-    NEED_PKGS+=("yt-dlp")
-  fi
-  if (( ${#NEED_PKGS[@]} > 0 )); then
-    sudo pacman -S --needed --noconfirm "${NEED_PKGS[@]}"
-  else
-    glow "All required packages appear to be installed."
-  fi
+	local -a NEED_PKGS=()
+	if ! command -v aria2c >/dev/null 2>&1; then
+		NEED_PKGS+=("aria2")
+	fi
+	if ! command -v xclip >/dev/null 2>&1 && ! command -v wl-paste >/dev/null 2>&1; then
+		NEED_PKGS+=("xclip" "wl-clipboard")
+	fi
+	if ! command -v jq >/dev/null 2>&1; then
+		NEED_PKGS+=("jq")
+	fi
+	if ! command -v yt-dlp >/dev/null 2>&1; then
+		NEED_PKGS+=("yt-dlp")
+	fi
+	if ((${#NEED_PKGS[@]} > 0)); then
+		sudo pacman -S --needed --noconfirm "${NEED_PKGS[@]}"
+	else
+		glow "All required packages appear to be installed."
+	fi
 }
 
-## --------------------- Immutability Functions --------------------- ##
+## Immutability Functions
 remove_immutability() {
-  local file="$1"
-  if [[ -f "$file" ]]; then
-    sudo chattr -i "$file" 2>/dev/null || true
-  fi
+	local file="$1"
+	if [[ -f "$file" ]]; then
+		sudo chattr -i "$file" 2>/dev/null || true
+	fi
 }
 reapply_immutability() {
-  local file="$1"
-  if [[ -f "$file" ]]; then
-    sudo chattr +i "$file" 2>/dev/null || true
-  fi
+	local file="$1"
+	if [[ -f "$file" ]]; then
+		sudo chattr +i "$file" 2>/dev/null || true
+	fi
 }
 
-## --------------------- Write ytdl.zsh --------------------- ##
+## Ytdl.zsh
 write_ytdl_zsh() {
-  mkdir -p "$ZSH_DIR"
-  cat > "$YTDL_FILE" <<'EOF_YTDL'
+	mkdir -p "$ZSH_DIR"
+	cat >"$YTDL_FILE" <<'EOF_YTDL'
 #!/usr/bin/env zsh
 # Author: 4ndr0666
 
@@ -502,49 +502,62 @@ EOF_HELP
 }
 
 EOF_YTDL
-  glow "✔️ Wrote ytdl.zsh to $YTDL_FILE"
+	glow "✔️ Wrote ytdl.zsh to $YTDL_FILE"
 }
 
-## --------------------- Write protocol handler --------------------- ##
+## ytdl-handler.sh
 write_protocol_handler() {
-  sudo mkdir -p "$BIN_DIR"
-  sudo tee "$HANDLER_FILE" > /dev/null <<'EOF_HANDLER'
-#!/usr/bin/env bash
-set -euo pipefail
+	sudo mkdir -p "$BIN_DIR"
+	sudo tee "$HANDLER_FILE" >/dev/null <<'EOF_HANDLER'
+#!/bin/sh
+# Author: 4ndr0666
+# ====================== // YTDL-HANDLER.SH //
 
+## Constants
+DMENUHANDLER="/home/andro/local/bin/dmenuhandler"
+
+## Validate
 if [ -z "${1:-}" ] || [ "$1" = "%u" ]; then
-  echo "Error: No valid URL provided. Exiting." >&2
-  exit 1
+    echo "Error: No valid URL provided. Exiting." >&2
+    exit 1
 fi
 
+## Pass URL
 feed="${1#ytdl://}"
+
+## Sanitize
 if command -v python3 >/dev/null 2>&1; then
-  feed_decoded=$(echo "$feed" | python3 -c "import sys, urllib.parse as ul; print(ul.unquote(sys.stdin.read().strip()))")
+    feed_decoded=$(printf "%s" "$feed" | python3 -c 'import sys, urllib.parse as ul; print(ul.unquote(sys.stdin.read()))')
 else
-  feed_decoded="$feed"
+    feed_decoded="$feed"
 fi
+
+## Sanitized URL
 final_feed="${feed_decoded:-$feed}"
 
-if [[ "$final_feed" =~ youtube\.com/embed/([^?]+) ]]; then
-  video_id="${BASH_REMATCH[1]}"
-  final_feed="https://www.youtube.com/watch/${video_id}"
+## Sanitize Youtube embed/watch URLs (todo: remove bashisms)
+if [[ "$final_feed" =~ youtube\.com/embed/([^?&/]+) ]]; then
+    video_id="${BASH_REMATCH[1]}"
+    final_feed="https://www.youtube.com/watch?v=${video_id}"
 elif [[ "$final_feed" =~ youtube\.com/watch\?v=([^&]+) ]]; then
-  video_id="${BASH_REMATCH[1]}"
-  final_feed="https://www.youtube.com/watch/${video_id}"
+    video_id="${BASH_REMATCH[1]}"
+    final_feed="https://www.youtube.com/watch?v=${video_id}"
+elif [[ "$final_feed" =~ youtu\.be/([^?&/]+) ]]; then
+    video_id="${BASH_REMATCH[1]}"
+    final_feed="https://www.youtube.com/watch?v=${video_id}"
 fi
 
-echo "✔️ Final feed processed: $final_feed" >&2
-#### Launch the dmenuhandler with the processed URL.
-exec /usr/local/bin/dmenuhandler "$final_feed"
+## Pass Sanitized URL to dmenuhandler
+exec $DMENUHANDLER "$final_feed"
 EOF_HANDLER
-  sudo chmod +x "$HANDLER_FILE"
-  glow "✔️ Wrote protocol handler to $HANDLER_FILE"
+	sudo chmod +x "$HANDLER_FILE"
+	glow "✔️ Wrote protocol handler to $HANDLER_FILE"
 }
 
-## --------------------- Write desktop file --------------------- ##
+## ytdl.desktop
 write_desktop_file() {
-  mkdir -p "$APP_DIR"
-  cat <<'EOF_DESK' > "$DESKTOP_FILE"
+	mkdir -p "$APP_DIR"
+	cat <<'EOF_DESK' >"$DESKTOP_FILE"
 [Desktop Entry]
 Name=YTDL Handler
 Exec=/usr/local/bin/ytdl-handler.sh %u
@@ -552,94 +565,52 @@ Type=Application
 MimeType=x-scheme-handler/ytdl;
 NoDisplay=true
 EOF_DESK
-  glow "✔️ Wrote desktop file to $DESKTOP_FILE"
+	glow "✔️ Wrote desktop file to $DESKTOP_FILE"
 }
 
-## --------------------- Register protocol --------------------- ##
+## Register protocol
 register_protocol() {
-  if [ ! -f "$DESKTOP_FILE" ]; then
-    echo "Desktop file not found at $DESKTOP_FILE" >&2
-    exit 1
-  fi
-  xdg-mime default ytdl.desktop x-scheme-handler/ytdl
-  update-desktop-database "$APP_DIR" > /dev/null 2>&1 || true
-  glow "✔️ Registered ytdl:// protocol with $DESKTOP_FILE"
+	if [ ! -f "$DESKTOP_FILE" ]; then
+		echo "Desktop file not found at $DESKTOP_FILE" >&2
+		exit 1
+	fi
+	xdg-mime default ytdl.desktop x-scheme-handler/ytdl
+	update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
+	glow "✔️ Registered ytdl:// protocol with $DESKTOP_FILE"
 }
 
-## --------------------- Print bookmarklet --------------------- ##
+## Print bookmarklet
 print_bookmarklets() {
-  cat <<'EOF_BM'
+	cat <<'EOF_BM'
 Save this bookmarklet as YTDLC:
 
 ➡️ javascript:(function(){const url=window.location.href;if(!url.startsWith("http")){alert("Invalid URL.");return;}window.location.href=`ytdl://${encodeURIComponent(url)}`})();
 EOF_BM
 }
 
-## --------------------- Write dmenuhandler --------------------- ##
-write_dmenuhandler() {
-  sudo mkdir -p "$BIN_DIR"
-  if [ -f "$BIN_DIR/dmenuhandler" ]; then
-    read -rp "Dmenuhandler detected, overwrite? (y/n) " _consent
-    if [[ $_consent != [Yy] ]]; then
-      return
-    fi
-  fi
-  sudo tee "$BIN_DIR/dmenuhandler" > /dev/null <<'EOF_DMENU'
-#!/bin/sh
-# Author: 4ndr0666
-# ================== // DMENUHANDLER //
-
-# Input feed: if no argument is provided, prompt the user via dmenu
-feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
-TERM_EMULATOR="${TERMINAL:-xterm}"
-choice=$(printf "copy url\nytdlc\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue yt-dlp\nqueue yt-dlp audio\nqueue download" | dmenu -i -p "Open it with?")
-case "$choice" in
-    "copy url") echo "$feed" | wl-copy ;;
-    "ytdlc") setsid -f "$TERM_EMULATOR" -e bash -c "echo 'Listing formats for $feed:'; ytf \"$feed\"" ;;
-    "nsxiv") curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')"; nsxiv -a "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1 ;;
-    "setbg") curl -L "$feed" > "$XDG_CACHE_HOME/pic"; swaybg -i "$XDG_CACHE_HOME/pic" >/dev/null 2>&1 ;;
-    "PDF") curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')"; zathura "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1 ;;
-    "browser") setsid -f "$BROWSER" "$feed" >/dev/null 2>&1 ;;
-    "lynx") setsid -f "$TERM_EMULATOR" -e lynx "$feed" >/dev/null 2>&1 ;;
-    "vim") curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')"; setsid -f "$TERM_EMULATOR" -e "$EDITOR" "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1 ;;
-    "mpv") setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
-    "mpv loop") setsid -f mpv -quiet --loop=inf "$feed" >/dev/null 2>&1 ;;
-    "mpv float") setsid -f "$TERM_EMULATOR" -e mpv --geometry=+0-0 --autofit=30% --title="mpvfloat" "$feed" >/dev/null 2>&1 ;;
-    "queue yt-dlp") setsid -f qndl "$feed" >/dev/null 2>&1 ;;
-    "queue yt-dlp audio") setsid -f qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' >/dev/null 2>&1 ;;
-    "queue download") setsid -f qndl "$feed" 'curl -LO' >/dev/null 2>&1 ;;
-    *) echo "Invalid choice or no action taken." >/dev/null 2>&1 ;;
-esac
-EOF_DMENU
-  sudo chmod +x "$BIN_DIR/dmenuhandler"
-  glow "✔️ Installed new dmenuhandler to $BIN_DIR/dmenuhandler"
-}
-
-## --------------------- Main Entry Point --------------------- ##
+## Main Entry Point
 main() {
-  echo "💥 === // YTDL Protocol //"
-  echo
-  glow "Press Enter to install or Ctrl+C to abort."
-  read -r
+	echo "💥 === // YTDL Protocol //"
+	echo
+	glow "Press Enter to install or Ctrl+C to abort."
+	read -r
 
-  if [[ $EUID -eq 0 ]]; then
-    echo "❌ Warning: It's recommended not to run this as root. Press Enter to continue."
-    read -r
-  fi
+	if [[ $EUID -eq 0 ]]; then
+		echo "❌ Warning: It's recommended not to run this as root. Press Enter to continue."
+		read -r
+	fi
 
-  check_dependencies
-  remove_immutability "$YTDL_FILE"
-  remove_immutability "$HANDLER_FILE"
-  write_ytdl_zsh
-  write_protocol_handler
-  write_desktop_file
-  # Uncomment the next line if you wish to overwrite the existing dmenuhandler.
-  write_dmenuhandler
-  register_protocol
-  reapply_immutability "$YTDL_FILE"
-  reapply_immutability "$HANDLER_FILE"
-  glow "✔️ Installation complete."
-  echo
-  print_bookmarklets
+	check_dependencies
+	remove_immutability "$YTDL_FILE"
+	remove_immutability "$HANDLER_FILE"
+	write_ytdl_zsh
+	write_protocol_handler
+	write_desktop_file
+	register_protocol
+	reapply_immutability "$YTDL_FILE"
+	reapply_immutability "$HANDLER_FILE"
+	glow "✔️ Installation complete."
+	echo
+	print_bookmarklets
 }
 main
