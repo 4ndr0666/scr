@@ -1,0 +1,61 @@
+#!/bin/sh
+# Author: 4ndr0666
+# ====================== // DMENUHANDLER2 //
+
+set -eu
+
+feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
+
+action="$(printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s" \
+	"copy url" \
+	"ytf" \
+	"mpv" \
+	"mpv loop" \
+	"mpv float" \
+	"queue yt-dlp" \
+	"queue audio" \
+	"queue download" \
+	"PDF" \
+	"nsxiv" \
+	"vim" \
+	"browser" |
+	dmenu -i -p "Open it with?")"
+
+case "$action" in
+copy\ url)
+	printf '%s' "$feed" | wl-copy
+	;;
+ytf)
+	setsid -f "$TERMINAL" -e zsh -ic ytf \"$feed\"
+	echo 'Press Enter to close the terminal.'
+	read >/dev/null 2>&1
+	;;
+mpv)
+	setsid -f mpv -quiet "$feed" >/dev/null 2>&1
+	;;
+mpv\ loop)
+	setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1
+	;;
+mpv\ float)
+	setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30% --title=mpvfloat "$feed" >/dev/null 2>&1
+	;;
+queue\ yt-dlp)
+	qndl "$feed"
+	;;
+queue\ audio)
+	qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames'
+	;;
+queue\ download)
+	qndl "$feed" 'curl -LO'
+	;;
+PDF | nsxiv | vim)
+	linkhandler "$feed"
+	;;
+browser)
+	setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
+	;;
+*)
+	# fallback: treat everything else via linkhandler
+	linkhandler "$feed"
+	;;
+esac

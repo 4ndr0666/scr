@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-#set -euo pipefail
-#IFS=$'\n\t'
+set -euo pipefail
+IFS=$'\n\t'
 
 # ===================== // SETUP_CONFIG_BACKUPS.SH //
+## Description: Backups up user defined directores
+# ------------------------------------------------
 
 ## Logging
 
 CONFIG_FILE="${1:-$HOME/.config/4ndr0tools/config_backups.json}"
 LOG_DIR="$HOME/.local/share/logs/"
-LOG_FILE="$LOG_DIR/backups-$(date +%F).log"
+LOG_FILE="$LOG_DIR/backup-$(date +%F).log"
 
 ## Colors
 
 CYAN="\033[38;2;21;255;255m"
 RED="\033[0;31m"
 NC="\033[0m"
-glow() {
-  echo -e \"["$(date +%F)\"]: ${CYAN}➡️ $1${NC}" >/dev/null 2>&1
-}
-bug() {
-  echo -e \"["$(date +%F)\"]: ${RED}❌ $1${NC}" >/dev/null 2>&1
-}
-glow() {
-    local message="$1"
-    glow "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >/dev/null 2>&1 
-}
+
+#bug() {
+#    local message="$1"
+#   echo -e "[$(date '+%Y-%m-%d %H:%M:%s')] ${RED}❌ $message$1${NC}" >/dev/null 2>&1
+#}
+
+#glow() {
+#    local message="$1"
+#    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] ${CYAN}$message$1${NC}" >/dev/null 2>&1
+#}
 
 ## Help
 
@@ -49,11 +51,11 @@ EOF
 
 load_configuration() {
     if [[ -f "$CONFIG_FILE" ]]; then
-        glow "Loading configuration from $CONFIG_FILE"
+        echo "Loading configuration from $CONFIG_FILE"
         BACKUP_DIR=$(jq -r '.backup_directory' "$CONFIG_FILE")
         readarray -t DIRS_TO_BACKUP < <(jq -r '.directories_to_backup[]' "$CONFIG_FILE")
     else
-        glow "Configuration file not found at $CONFIG_FILE. Initiating setup."
+        echo -e "${RED}Configuration file not found at $CONFIG_FILE${NC}. Initiating setup..."
         prompt_user_for_configuration
     fi
 }
@@ -61,7 +63,7 @@ load_configuration() {
 ## Config Genration
 
 prompt_user_for_configuration() {
-    echo "Configuration file not found. Let's set up your backup configuration."
+    echo -e "${RED}Configuration file not found.${NC} Let's set up your backup configuration."
     prompt_backup_directory
     prompt_directories_to_backup
     save_configuration
@@ -103,16 +105,16 @@ save_configuration() {
           backup_directory: $backup_directory,
           directories_to_backup: $directories_to_backup
       }' > "$CONFIG_FILE"
-    glow "Configuration saved to $CONFIG_FILE"
+    echo -e "${CYAN}Configuration saved to $CONFIG_FILE${NC}"
 }
 
 validate_configuration() {
     if [[ -z "$BACKUP_DIR" ]]; then
-        bug "ERROR: Backup directory is not defined."
+        echo -e  "${RED}ERROR:${NC} Backup directory is not defined."
         exit 1
     fi
     if [[ ${#DIRS_TO_BACKUP[@]} -eq 0 ]]; then
-        bug "ERROR: No directories specified for backup."
+        echo -e "${RED}ERROR:${NC} No directories specified for backup."
         exit 1
     fi
 }
@@ -123,9 +125,9 @@ setup_directories() {
     local dir="$1"
     if [[ ! -d "$dir" ]]; then
         mkdir -p "$dir"
-        glow "Created directory: $dir"
+        echo -e "${CYAN}Created directory: $dir${NC}"
     else
-        glow "Directory already exists: $dir"
+        echo "Directory already exists: $dir"
     fi
 }
 
@@ -140,14 +142,14 @@ backup_directory() {
         local backup_name="${basename}_${timestamp}.tar.gz"
         local backup_path="${dest_dir}/${backup_name}"
 
-        glow "Starting backup of $source_dir to $backup_path"
+        echo -e "${CYAN}Starting backup of $source_dir to $backup_path${NC}"
         if ! tar -czf "$backup_path" -C "$(dirname "$source_dir")" "$(basename "$source_dir")" 2>>"$LOG_FILE"; then
-            bug "ERROR: Failed to create archive for $source_dir"
+            echo -e  "${RED}ERROR${NC}: Failed to create archive for $source_dir"
             return 1
         fi
-        glow "Successfully backed up $source_dir to $backup_path"
+        echo "${CYAN}Successfully backed up $source_dir to $backup_path${NC}"
     else
-        bug "WARNING: Directory $source_dir does not exist. Skipping backup."
+        echo -e "${RED}WARNING: Directory $source_dir does not exist.${NC} Skipping backup."
     fi
 }
 
@@ -158,10 +160,10 @@ setup_cron_job() {
     local cron_schedule="$2"
     local cron_command="$3"
     if crontab -l 2>/dev/null | grep -Fq "$cron_command"; then
-        glow "Cron job for $script_path already exists. Skipping."
+        echo "Cron job for $script_path already exists. Skipping."
     else
         (crontab -l 2>/dev/null; echo "$cron_schedule $cron_command") | crontab -
-        glow "Added cron job: $cron_schedule $cron_command"
+        echo -e "${CYAN}Added cron job: $cron_schedule $cron_command${NC}"
     fi
 }
 
@@ -176,7 +178,7 @@ overwrite_configuration() {
     if [[ "$overwrite_choice" =~ ^[Yy]$ ]]; then
         prompt_user_for_configuration
     else
-        glow "Configuration overwrite canceled by user."
+        echo -e "${RED}Configuration overwrite canceled by user.${NC}"
     fi
 }
 
@@ -196,7 +198,7 @@ main() {
                 exit 0
                 ;;
             *)
-                echo "Unknown option: $1"
+                echo -e "${RED}Unknown option: $1${NC}"
                 display_help
                 exit 1
                 ;;
@@ -205,7 +207,7 @@ main() {
 
     setup_directories "$LOG_DIR"
     touch "$LOG_FILE"
-    glow "=== Starting Backup Script ==="
+    echo -e "${CYAN}===${NC} Starting Backup Script ${CYAN}===${NC}"
 
     ensure_jq_installed
     load_configuration
@@ -221,16 +223,16 @@ main() {
 
     local script_path
     script_path=$(realpath "$0")
-    local cron_schedule="30 1 * * *"
-    local cron_command="/bin/bash $script_path >/dev/null 2>&1"
+    local cron_schedule="*/60 * * * *"
+    local cron_command="/bin/bash $script_path"
     setup_cron_job "$script_path" "$cron_schedule" "$cron_command"
 
     if [[ ${#failed_backups[@]} -eq 0 ]]; then
-        glow "=== Backup Script Completed Successfully ==="
+        echo -e "${CYAN}===${NC} Backup Script Completed Successfully ${CYAN}===${NC}"
     else
-        bug "=== Backup Script Completed with Errors ==="
+        echo -e "${RED}===${NC} Backup Script Completed with Errors ${RED}===${NC}"
         for failed in "${failed_backups[@]}"; do
-            bug "Backup failed for: $failed"
+            echo -e  "${RED}Backup failed for:${NC} $failed"
         done
     fi
 }
