@@ -51,11 +51,11 @@ EOF
 
 load_configuration() {
     if [[ -f "$CONFIG_FILE" ]]; then
-        echo "Loading configuration from $CONFIG_FILE"
+        echo -e "${CYAN}Loading configuration from:${NC} $CONFIG_FILE"
         BACKUP_DIR=$(jq -r '.backup_directory' "$CONFIG_FILE")
         readarray -t DIRS_TO_BACKUP < <(jq -r '.directories_to_backup[]' "$CONFIG_FILE")
     else
-        echo -e "${RED}Configuration file not found at $CONFIG_FILE${NC}. Initiating setup..."
+        echo -e "${RED}Configuration file not found at:${NC} $CONFIG_FILE. Initiating setup..."
         prompt_user_for_configuration
     fi
 }
@@ -63,7 +63,7 @@ load_configuration() {
 ## Config Genration
 
 prompt_user_for_configuration() {
-    echo -e "${RED}Configuration file not found.${NC} Let's set up your backup configuration."
+    echo -e "${RED}Configuration file not found.${NC} Let's set up your backup configuration..."
     prompt_backup_directory
     prompt_directories_to_backup
     save_configuration
@@ -76,7 +76,7 @@ prompt_backup_directory() {
             BACKUP_DIR="$backup_dir"
             break
         else
-            echo "Backup directory cannot be empty."
+            echo -e "${RED}Backup directory cannot be empty.${NC}"
         fi
     done
 }
@@ -178,7 +178,7 @@ overwrite_configuration() {
     if [[ "$overwrite_choice" =~ ^[Yy]$ ]]; then
         prompt_user_for_configuration
     else
-        echo -e "${RED}Configuration overwrite canceled by user.${NC}"
+        echo -e "${RED}Configuration overwrite canceled by:${NC} user."
     fi
 }
 
@@ -198,7 +198,7 @@ main() {
                 exit 0
                 ;;
             *)
-                echo -e "${RED}Unknown option: $1${NC}"
+                echo -e "${RED}Unknown option:${NC} $1$"
                 display_help
                 exit 1
                 ;;
