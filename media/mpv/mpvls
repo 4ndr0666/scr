@@ -4,9 +4,9 @@
 # Description:
 #   - Discover the newest mpv IPC socket.
 #   - Query MPV for the current file’s path.
-#   - Sanitize the filename.
-#   - Print directory and sanitized filename on separate lines.
-#   - Copy the sanitized full path to wl-copy if available.
+#   - Escape spaces with backslashes so the output is verbatim escaped.
+#   - Print that escaped path to stdout.
+#   - Copy the escaped path to wl-copy if available.
 # Usage: mpv-current.sh [socket_dir]
 
 set -eu
@@ -26,43 +26,34 @@ fi
     exit 1
 }
 
-# 3) Find newest socket
+# 3) Pick the most recent socket
 SOCKET=$(ls -1t "$SOCKET_DIR"/* 2>/dev/null | head -n1 || true)
 [ -n "$SOCKET" ] && [ -S "$SOCKET" ] || {
     printf 'Error: no mpv socket found in: %s\n' "$SOCKET_DIR" >&2
     exit 1
 }
 
-# 4) Check dependencies
-for cmd in socat jq dirname basename sed; do
+# 4) Ensure dependencies
+for cmd in socat jq; do
     command -v "$cmd" >/dev/null 2>&1 || {
         printf 'Error: required command not found: %s\n' "$cmd" >&2
         exit 1
     }
 done
 
-# 5) Query MPV for the current file path
+# 5) Query MPV for the path
 JSON='{"command":["get_property","path"]}'
 RESPONSE=$(printf '%s\n' "$JSON" | socat STDIO UNIX-CONNECT:"$SOCKET")
 
-# 6) Extract file path
+# 6) Extract unescaped file path
 FILEPATH=$(printf '%s' "$RESPONSE" | jq -er '.data // empty') || {
     printf 'Error: no file is currently playing\n' >&2
     exit 1
 }
 
-# 7) Split into directory and filename
-DIR=$(dirname -- "$FILEPATH")
-FILE=$(basename -- "$FILEPATH")
+# 7) Escape spaces (and tabs) with backslashes
+ESCAPED=$(printf '%s' "$FILEPATH" | sed -e 's/\\/\\\\/g' -e 's/ /\\ /g')
 
-# 8) Sanitize filename (only once)
-SANITIZED_FILE=$(printf '%s' "$FILE" | sed 's/[^A-Za-z0-9_.-]/_/g')
-
-# 9) Print directory and sanitized filename
-printf '%s\n%s\n' "$DIR" "$SANITIZED_FILE"
-
-# 10) Copy sanitized full path to clipboard
-FULL_SANITIZED_PATH="$DIR/$SANITIZED_FILE"
-if command -v wl-copy >/dev/null 2>&1; then
-    printf '%s' "$FULL_SANITIZED_PATH" | wl-copy
-fi
+# 8) Print and copy
+printf '%s\n' "$ESCAPED"
+command -v wl-copy >/dev/null 2>&1 && printf '%s' "$ESCAPED" | wl-copy
