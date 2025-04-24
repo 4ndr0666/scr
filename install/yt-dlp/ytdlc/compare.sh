@@ -4,7 +4,6 @@ set -euo pipefail
 # ================== // INSTALL_YTDLC.SH //
 
 ## Constants (will be validated by ensure_xdg)
-
 BIN_DIR="/usr/local/bin"
 APP_DIR="$XDG_DATA_HOME/applications"
 ZSH_DIR="$XDG_CONFIG_HOME/zsh"
@@ -13,89 +12,81 @@ DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 HANDLER_FILE="$BIN_DIR/ytdl-handler.sh"
 DMENU_FILE="$BIN_DIR/dmenuhandler"
 
-## Color helpers (portable via tput)
-GLOW() { printf ' %s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
-BUG() { printf ' %s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
-INFO() { printf ' %s\n' "$(tput setaf 4)[→] $*$(tput sgr0)"; }
+## Colors via tput
+GLOW(){ printf ' %s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
+BUG (){ printf ' %s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
+INFO(){ printf ' %s\n' "$(tput setaf 4)[→] $*$(tput sgr0)"; }
 
 ## Ensure XDG compliance (or fall back)
-
-ensure_xdg() {
-	if [ -n "${XDG_DATA_HOME:-}" ] && [ -d "$XDG_DATA_HOME" ] &&
-		[ -n "${XDG_CONFIG_HOME:-}" ] && [ -d "$XDG_CONFIG_HOME" ]; then
-		GLOW "XDG compliance detected"
-	else
-		BUG "XDG_DATA_HOME or XDG_CONFIG_HOME unset/invalid; falling back"
-		XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-		XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-		INFO "XDG_DATA_HOME=$XDG_DATA_HOME"
-		INFO "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
-	fi
+ensure_xdg(){
+  if [ -n "${XDG_DATA_HOME:-}" ] && [ -d "$XDG_DATA_HOME" ] \
+     && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -d "$XDG_CONFIG_HOME" ]; then
+    GLOW "XDG compliance detected"
+  else
+    BUG "XDG_DATA_HOME or XDG_CONFIG_HOME unset/invalid; falling back"
+    XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+    XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+    INFO "XDG_DATA_HOME=$XDG_DATA_HOME"
+    INFO "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+  fi
 }
 
 ## Remove old immutable files so they can be cleaned
-unlock() {
-	local file="$1"
-	[ -f "$file" ] && sudo chattr -i "$file" 2>/dev/null || true
+remove_immutability(){
+  local file="$1"
+  [ -f "$file" ] && sudo chattr -i "$file" 2>/dev/null || true
 }
-lock() {
-	local file="$1"
-	[ -f "$file" ] && sudo chattr +i "$file" 2>/dev/null || true
+reapply_immutability(){
+  local file="$1"
+  [ -f "$file" ] && sudo chattr +i "$file" 2>/dev/null || true
 }
 
 ## Cleanup any previous installs
-
-cleanup_old() {
-	for f in "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"; do
-		if [ -e "$f" ]; then
-			INFO "Removing old: $f"
-			sudo rm -f "$f"
-		fi
-	done
+cleanup_old(){
+  for f in "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"; do
+    if [ -e "$f" ]; then
+      INFO "Removing old: $f"
+      sudo rm -f "$f"
+    fi
+  done
 }
 
-## Deps
-
-check_dependencies() {
-	local -a pkgs=()
-	command -v aria2c >/dev/null || pkgs+=(aria2)
-	{ command -v xclip || command -v wl-paste; } >/dev/null || pkgs+=(xclip wl-clipboard)
-	command -v jq >/dev/null || pkgs+=(jq)
-	command -v yt-dlp >/dev/null || pkgs+=(yt-dlp)
-	if [ "${#pkgs[@]}" -gt 0 ]; then
-		INFO "Installing dependencies: ${pkgs[*]}"
-		sudo pacman -S --needed --noconfirm "${pkgs[@]}"
-	else
-		GLOW "Dependencies OK"
-	fi
+## Dependencies
+check_dependencies(){
+  local -a pkgs=()
+  command -v aria2c >/dev/null   || pkgs+=(aria2)
+  { command -v xclip || command -v wl-paste; } >/dev/null || pkgs+=(xclip wl-clipboard)
+  command -v jq     >/dev/null   || pkgs+=(jq)
+  command -v yt-dlp >/dev/null   || pkgs+=(yt-dlp)
+  if [ "${#pkgs[@]}" -gt 0 ]; then
+    INFO "Installing dependencies: ${pkgs[*]}"
+    sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+  else
+    GLOW "Dependencies OK"
+  fi
 }
 
-## Bootstrap
-
-### Create empty cookie files so ytdl.zsh never errors on load
-bootstrap_cookies() {
-	local dir="$XDG_CONFIG_HOME/yt-dlp"
-	mkdir -p "$dir"
-	for file in youtube_cookies.txt youtu.be_cookies.txt patreon_cookies.txt \
-		vimeo_cookies.txt boosty_cookies.txt instagram_cookies.txt \
-		fanvue_cookies.txt redgifs_cookies.txt; do
-		touch "$dir/$file"
-		sudo chmod 600 "$dir/$file"
-	done
-	INFO "Initialized cookie files in $dir"
+## Create empty cookie files so ytdl.zsh never errors on load
+bootstrap_cookies(){
+  local dir="$XDG_CONFIG_HOME/yt-dlp"
+  mkdir -p "$dir"
+  for file in youtube_cookies.txt youtu.be_cookies.txt patreon_cookies.txt \
+              vimeo_cookies.txt boosty_cookies.txt instagram_cookies.txt \
+              fanvue_cookies.txt redgifs_cookies.txt; do
+    touch "$dir/$file"
+    chmod 600 "$dir/$file"
+  done
+  INFO "Initialized cookie files in $dir"
 }
 
-## Ytdlc Protocol
-
-write_ytdl_zsh() {
-	mkdir -p "$ZSH_DIR"
-	mkdir -p "$HOME/.config/yt-dlp"
-	tee "$YTDL_FILE" >/dev/null <<'EOF_YTDL'
+## Write the zsh plugin
+write_ytdl_zsh(){
+  mkdir -p "$ZSH_DIR"
+  cat >"$YTDL_FILE" <<'EOF_YTDL'
 #!/usr/bin/env zsh
 # Author: 4ndr0666
 # ======================== // YTDL.ZSH //
 
-## Constants
 typeset -A YTDLP_COOKIES_MAP=(
   [youtube.com]   ="$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
   [youtu.be]      ="$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
@@ -104,7 +95,6 @@ typeset -A YTDLP_COOKIES_MAP=(
   [boosty.to]     ="$XDG_CONFIG_HOME/yt-dlp/boosty_cookies.txt"
   [instagram.com] ="$XDG_CONFIG_HOME/yt-dlp/instagram_cookies.txt"
   [fanvue.com]    ="$XDG_CONFIG_HOME/yt-dlp/fanvue_cookies.txt"
-  [dzen.com]      ="$XDG_CONFIG_HOME/yt-dlp/dzen.cookies.txt"
   [redgifs.com]   ="$XDG_CONFIG_HOME/yt-dlp/redgifs_cookies.txt"
 )
 
@@ -130,7 +120,7 @@ prompt_cookie_update(){
   read -r
   cmd=$(command -v wl-paste || echo 'xclip -selection clipboard -o')
   eval "$cmd" >| "$cookie" && chmod 600 "$cookie"
-  echo "✔️ Cookie updated."
+  echo "✅ Cookie updated."
 }
 
 ytdl(){
@@ -203,7 +193,7 @@ ytdlc(){
     domain=$(get_domain_from_url "$url")
     cookie=$(get_cookie_path_for_domain "$domain")
     [ -f "$cookie" ] || { BUG "Missing cookie for $domain"; continue; }
-    chmod 600 "$cookie" 2>/dev/null || true
+    chmod 600 "$cookie" 2>/dev/null||true
 
     if (( listfmt )); then
       ytf "$url"; continue
@@ -218,34 +208,9 @@ ytdlc(){
   done
 }
 
-## Help
-
-show_ytdlc_help(){
-  cat<<'EOF_HELP'
-ytdlc – cookie-aware yt-dlp wrapper
-Usage: ytdlc [opts] URL…
-  -l, --list-formats
-  -o, --output-dir DIR
-  --update
-  -f ID
-  -h, --help
-
-Examples:
-  ytdlc --update
-  ytdlc --list-formats https://youtu.be/abc123
-  ytdlc --output-dir /tmp https://patreon.com/page
-  ytdlc https://patreon.com/page -f 303
-EOF_HELP
-}
-EOF_YTDL
-	chmod +x "$YTDL_FILE"
-	INFO "Wrote plugin → $YTDL_FILE"
-}
-
-## ytdl-handler.sh
-
-write_protocol_handler() {
-	sudo tee "$HANDLER_FILE" >/dev/null <<'EOF_HAND'
+## Helper: Protocol handler
+write_protocol_handler(){
+  sudo tee "$HANDLER_FILE" >/dev/null <<EOF
 #!/bin/sh
 # Author: 4ndr0666
 set -eu
@@ -258,15 +223,14 @@ case "\$feed" in
   *youtu.be/*)  id=\${feed##*/};          feed="https://www.youtube.com/watch?v=\$id" ;;
 esac
 exec "$DMENU_FILE" "\$feed"
-EOF_HAND
-	sudo chmod +x "$HANDLER_FILE"
-	INFO " Wrote handler $HANDLER_FILE"
+EOF
+  sudo chmod +x "$HANDLER_FILE"
+  INFO " Wrote handler $HANDLER_FILE"
 }
 
-## Dmenuhandler
-
-write_dmenuhandler() {
-	sudo tee "$DMENU_FILE" >/dev/null <<'EOF_DMENU'
+## Helper: dmenuhandler
+write_dmenuhandler(){
+  sudo tee "$DMENU_FILE" >/dev/null <<'EOF'
 #!/bin/sh
 # Author: 4ndr0666
 feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
@@ -289,42 +253,36 @@ case "$choice" in
   "queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' ;;
   "queue download")     qndl "$feed" 'curl -LO' ;;
 esac
-EOF_DMENU
-	sudo chmod +x "$DMENU_FILE"
-	INFO " Wrote dmenuhandler $DMENU_FILE"
+EOF
+  sudo chmod +x "$DMENU_FILE"
+  INFO " Wrote dmenuhandler $DMENU_FILE"
 }
 
-## Desktop File
-
-write_desktop_file() {
-	mkdir -p "$APP_DIR"
-	cat >"$DESKTOP_FILE" <<'EOF_DESK'
+## Desktop file
+write_desktop_file(){
+  mkdir -p "$APP_DIR"
+  cat >"$DESKTOP_FILE" <<'EOF'
 [Desktop Entry]
 Name=YTDL Handler
 Exec=/usr/local/bin/ytdl-handler.sh %u
 Type=Application
 MimeType=x-scheme-handler/ytdl;
 NoDisplay=true
-EOF_DESK
-	INFO " Wrote desktop file $DESKTOP_FILE"
+EOF
+  INFO " Wrote desktop file $DESKTOP_FILE"
 }
 
-## Xdg-mime registration
-
-register_protocol() {
-	[ -f "$DESKTOP_FILE" ] || {
-		BUG "Desktop file missing"
-		exit 1
-	}
-	xdg-mime default ytdl.desktop x-scheme-handler/ytdl
-	update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
-	INFO " Registered ytdl:// protocol"
+## Register protocol
+register_protocol(){
+  [ -f "$DESKTOP_FILE" ] || { BUG "Desktop file missing"; exit 1; }
+  xdg-mime default ytdl.desktop x-scheme-handler/ytdl
+  update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
+  INFO " Registered ytdl:// protocol"
 }
 
 ## Bookmarklet
-
-print_bookmarklets() {
-	cat <<'EOF_BM'
+print_bookmarklets(){
+  cat <<'EOF'
 Save this bookmarklet as YTF:
 
 ➡️ javascript:(function(){
@@ -332,43 +290,40 @@ Save this bookmarklet as YTF:
   if(!url.startsWith("http")){alert("Invalid URL.");return;}
   window.location.href=`ytdl://${encodeURIComponent(url)}`
 })();
-EOF_BM
+EOF
 }
 
 ## Main entry point
+main(){
+  ensure_xdg
+  GLOW "💥 === // INSTALL YTDLC //"
+  read -rp "Press ENTER to continue…" _
+  # remove immutability so we can clean up
+  remove_immutability "$YTDL_FILE"
+  remove_immutability "$HANDLER_FILE"
+  remove_immutability "$DMENU_FILE"
+  cleanup_old
 
-main() {
-	ensure_xdg
-	GLOW "💥 === // INSTALL YTDLC //"
-	read -rp "Press ENTER to continue…" _
-	unlock "$YTDL_FILE"
-	unlock "$HANDLER_FILE"
-	unlock "$DMENU_FILE"
-	unlock "$DESKTOP_FILE"
-	cleanup_old
+  if [ "$EUID" -eq 0 ]; then
+    BUG "Do not run as root. Press ENTER to continue."
+    read -r
+  fi
 
-	if [ "$EUID" -eq 0 ]; then
-		BUG "Do not run as root. Press ENTER to continue."
-		read -r
-	fi
+  check_dependencies
+  write_ytdl_zsh
+  bootstrap_cookies
+  write_protocol_handler
+  write_dmenuhandler
+  write_desktop_file
+  register_protocol
 
-	check_dependencies
+  reapply_immutability "$YTDL_FILE"
+  reapply_immutability "$HANDLER_FILE"
+  reapply_immutability "$DMENU_FILE"
 
-	write_ytdl_zsh
-	bootstrap_cookies
-	write_protocol_handler
-	write_dmenuhandler
-	write_desktop_file
-	register_protocol
-
-	lock "$YTDL_FILE"
-	lock "$HANDLER_FILE"
-	lock "$DMENU_FILE"
-	lock "$DESKTOP_FILE"
-
-	GLOW "Installation complete ✔️"
-	echo
-	print_bookmarklets
+  GLOW "Installation complete ✔️"
+  echo
+  print_bookmarklets
 }
 
 main
