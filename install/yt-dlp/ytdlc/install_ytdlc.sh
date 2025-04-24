@@ -36,11 +36,11 @@ ensure_xdg() {
 ## Remove old immutable files so they can be cleaned
 unlock() {
 	local file="$1"
-	[ -f "$file" ] && sudo chattr -i "$file" 2>/dev/null || true
+	[ -f "$file" ] && sudo chattr -i "$file" 2>/dev/null
 }
 lock() {
 	local file="$1"
-	[ -f "$file" ] && sudo chattr +i "$file" 2>/dev/null || true
+	[ -f "$file" ] && sudo chattr +i "$file" 2>/dev/null
 }
 
 ## Cleanup any previous installs
@@ -78,7 +78,7 @@ bootstrap_cookies() {
 	mkdir -p "$dir"
 	for file in youtube_cookies.txt youtu.be_cookies.txt patreon_cookies.txt \
 		vimeo_cookies.txt boosty_cookies.txt instagram_cookies.txt \
-		fanvue_cookies.txt redgifs_cookies.txt; do
+		fanvue_cookies.txt redgifs_cookies.txt dzen_cookies.txt; do
 		touch "$dir/$file"
 		sudo chmod 600 "$dir/$file"
 	done
