@@ -1,0 +1,30 @@
+#!/bin/sh
+
+# Define download directory
+DOWNLOAD_DIR="$HOME/Downloads"
+
+# Ensure yt-dlp is installed
+if ! command -v yt-dlp >/dev/null 2>&1; then
+    notify-send "Error" "yt-dlp is not installed. Please install it to proceed."
+    exit 1
+fi
+
+# Prompt for the URL using dmenu
+URL=$(echo "" | dmenu -p "Enter Reddit post URL:")
+
+# Check if URL is provided
+if [ -z "$URL" ]; then
+    notify-send "Error" "No URL provided."
+    exit 1
+fi
+
+# Download the media using yt-dlp
+yt-dlp "$URL" -o "$DOWNLOAD_DIR/%(title)s.%(ext)s"
+
+# Check if the download was successful
+if [ $? -eq 0 ]; then
+    notify-send "Download complete" "Media has been downloaded to $DOWNLOAD_DIR"
+else
+    notify-send "Error" "Failed to download the media from the provided URL."
+    exit 1
+fi

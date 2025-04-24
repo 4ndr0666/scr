@@ -3,8 +3,7 @@
 set -euo pipefail
 # ================== // INSTALL_YTDLC.SH //
 
-## Constants (will be validated by ensure_xdg)
-
+# ── locations (validated by ensure_xdg) ──────────────────────────
 BIN_DIR="/usr/local/bin"
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 ZSH_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
@@ -13,100 +12,69 @@ HANDLER_FILE="$BIN_DIR/ytdl-handler.sh"
 DMENU_FILE="$BIN_DIR/dmenuhandler"
 DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 
-## Colors
+# ── tiny colour helpers (tput → portable) ───────────────────────
+GLOW () { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
+BUG  () { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
+INFO () { printf '%s\n' "$(tput setaf 4)[→] $*$(tput sgr0)"; }
 
-GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
-BUG() { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
-INFO() { printf '%s\n' "$(tput setaf 4)[→] $*$(tput sgr0)"; }
-
-## XDG compliance (or fall back)
-
+# ── XDG dir sanity ───────────────────────────────────────────────
 ensure_xdg() {
-	: "${XDG_CONFIG_HOME:=$HOME/.config}"
-	: "${XDG_DATA_HOME:=$HOME/.local/share}"
-	[[ -d $XDG_CONFIG_HOME && -d $XDG_DATA_HOME ]] || {
-		BUG "XDG dirs missing"
-		exit 1
-	}
-	GLOW "XDG compliance detected"
+  : "${XDG_CONFIG_HOME:=$HOME/.config}"
+  : "${XDG_DATA_HOME:=$HOME/.local/share}"
+  [[ -d $XDG_CONFIG_HOME && -d $XDG_DATA_HOME ]] || {
+    BUG "XDG dirs missing"; exit 1; }
+  GLOW "XDG compliance detected"
 }
 
-## Immutability
+# ── immutability helpers ────────────────────────────────────────
+unlock() { [[ -e $1 ]] && sudo chattr -i "$1" 2>/dev/null || true; }
+lock()   { [[ -e $1 ]] && sudo chattr +i "$1" 2>/dev/null || true; }
 
-unlock() {
-	sudo chattr -i "$1" 2>/dev/null || {
-		BUG "No lock file found."
-		exit 1
-	}
-}
-lock() {
-	sudo chattr +i "$1" 2>/dev/null || {
-		BUG "No lock file found."
-		exit 1
-	}
-}
-
-## Cleanup
-
+# ── clean old install (after unlocking) ─────────────────────────
 cleanup_old() {
-	for f in "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"; do
-		unlock "$f"
-		[[ -e $f ]] && {
-			INFO "Removing old $f"
-			sudo rm -f "$f"
-		}
-	done
+  for f in "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"; do
+    unlock "$f"; [[ -e $f ]] && { INFO "Removing old $f"; sudo rm -f "$f"; }
+  done
 }
 
-## Deps
-
+# ── dependencies (Arch / pacman) ────────────────────────────────
 check_dependencies() {
-	local -a pkgs=()
-	command -v aria2c >/dev/null || pkgs+=(aria2)
-	{ command -v xclip || command -v wl-paste; } || pkgs+=(xclip wl-clipboard)
-	command -v jq >/dev/null || pkgs+=(jq)
-	command -v yt-dlp >/dev/null || pkgs+=(yt-dlp)
-	[[ ${#pkgs[@]} -eq 0 ]] && {
-		GLOW "Dependencies OK"
-		return
-	}
-	INFO "Installing: ${pkgs[*]}"
-	sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+  local -a pkgs=()
+  command -v aria2c     >/dev/null || pkgs+=(aria2)
+  { command -v xclip || command -v wl-paste; } || pkgs+=(xclip wl-clipboard)
+  command -v jq         >/dev/null || pkgs+=(jq)
+  command -v yt-dlp     >/dev/null || pkgs+=(yt-dlp)
+  [[ ${#pkgs[@]} -eq 0 ]] && { GLOW "Dependencies OK"; return; }
+  INFO "Installing: ${pkgs[*]}"
+  sudo pacman -S --needed --noconfirm "${pkgs[@]}"
 }
 
-## Bootstrap
-
-### Create empty cookie files so ytdl.zsh never errors on load
-
+# ── create empty cookie files so sourcing never fails ────────────
 bootstrap_cookies() {
-	local dir="$XDG_CONFIG_HOME/yt-dlp"
-	mkdir -p "$dir"
-	for f in youtube_cookies.txt youtu.be_cookies.txt patreon_cookies.txt \
-		vimeo_cookies.txt boosty_cookies.txt instagram_cookies.txt \
-		fanvue_cookies.txt redgifs_cookies.txt dzen.cookies.txt; do
-		: >|"$dir/$f"
-		chmod 600 "$dir/$f"
-	done
-	INFO "Cookie store initialised in $dir"
+  local dir="$XDG_CONFIG_HOME/yt-dlp"; mkdir -p "$dir"
+  for f in youtube_cookies.txt youtu.be_cookies.txt patreon_cookies.txt \
+           vimeo_cookies.txt boosty_cookies.txt instagram_cookies.txt \
+           fanvue_cookies.txt redgifs_cookies.txt dzen.cookies.txt; do
+    : >| "$dir/$f"
+    chmod 600 "$dir/$f"
+  done
+  INFO "Cookie store initialised in $dir"
 }
 
-## YTDL.zsh
-
+# ── ytdl.zsh ─────────────────────────────────────────────────────
 write_ytdl_zsh() {
-	mkdir -p "$ZSH_DIR"
-	tee "$YTDL_FILE" >/dev/null <<'ZSH'
+mkdir -p "$ZSH_DIR"
+tee "$YTDL_FILE" >/dev/null <<'ZSH'
 #!/usr/bin/env zsh
 # Author: 4ndr0666
 # ======================== // YTDL.ZSH //
 
-## Fallback
-
+# --- fallback log helpers (overridden by installer) --------------
 typeset -f GLOW >/dev/null || GLOW(){ print "[✔️] $*"; }
 typeset -f BUG  >/dev/null || BUG(){  print "[❌] $*"; }
 typeset -f INFO >/dev/null || INFO(){ print "[→]  $*"; }
 
-## Cookie Map
-
+# --- cookie map --------------------------------------------------
 typeset -A YTDLP_COOKIES_MAP=(
   [youtube.com]   "$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
   [youtu.be]      "$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
@@ -119,13 +87,12 @@ typeset -A YTDLP_COOKIES_MAP=(
   [redgifs.com]   "$XDG_CONFIG_HOME/yt-dlp/redgifs_cookies.txt"
 )
 
-## Idempotent File Creation
-
+# touch missing cookie files (idempotent)
 for f in ${(kv)YTDLP_COOKIES_MAP}; do [[ -f $f ]] || : >| "$f"; done
 
-## Validate
-
+# --- helpers -----------------------------------------------------
 validate_url() [[ $1 == http*://* ]]
+
 get_domain_from_url() {
   local d=${1#*://}; d=${d%%/*}; d=${d##www.}; d=${d##m.}
   d=$(print -r -- "$d" | tr '[:upper:]' '[:lower:]')
@@ -151,6 +118,7 @@ prompt_cookie_update() {
   GLOW "Cookie updated for $domain"
 }
 
+# --- wrappers ----------------------------------------------------
 ytdl() {
   local usec=0 args url domain cookie
   while (( $# )); do
@@ -226,8 +194,6 @@ ytdlc() {
   done
 }
 
-## Help
-
 show_ytdlc_help() {
   cat <<'EOF'
 ytdlc – cookie-aware yt-dlp wrapper
@@ -240,29 +206,21 @@ Usage: ytdlc [opts] URL…
 EOF
 }
 ZSH
-	chmod +x "$YTDL_FILE"
-	INFO "ytdl.zsh written"
+chmod +x "$YTDL_FILE"
+INFO "ytdl.zsh written"
 }
 
-## Ytdl-handler.sh
-
+# ── ytdl-handler.sh ──────────────────────────────────────────────
 write_handler() {
-	sudo tee "$HANDLER_FILE" >/dev/null <<'SH'
+sudo tee "$HANDLER_FILE" >/dev/null <<'SH'
 #!/bin/sh
-# Author: 4ndr0666
 set -eu
-# ========================= // YTDL-HANDLER.SH //
-
-## Constants
-
 DMENU=$(command -v dmenu) || { printf >&2 'dmenu not found\n'; exit 1; }
-
 clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard -in; }
 
 [ $# -eq 1 ] && [ "$1" != "%u" ] || { printf >&2 'No URL\n'; exit 1; }
 
 feed=${1#ytdl://}
-
 command -v python3 >/dev/null &&
   feed=$(printf '%s' "$feed" |
         python3 -c 'import sys,urllib.parse as u;print(u.unquote(sys.stdin.read()))')
@@ -283,165 +241,70 @@ case $choice in
   *) : ;;
 esac
 SH
-	sudo chmod +x "$HANDLER_FILE"
-	INFO "handler written"
+sudo chmod +x "$HANDLER_FILE"
+INFO "handler written"
 }
 
-## Dmenuhandler
-
+# ── (optional) dmenuhandler wrapper ──────────────────────────────
 write_dmenuhandler() {
-	sudo tee "$DMENU_FILE" >/dev/null <<'DM'
+sudo tee "$DMENU_FILE" >/dev/null <<'DM'
 #!/bin/sh
-# Author: 4ndr0666
-# ========================== // DMENUHANDLER //
-## Description: Feed a URL or file path to the dmenu
-#               and choose and app to open it with.
-# Usage:
-#       <Super> + <KEY_F9>
-# -------------------------------------
-
-## URL & File Path
-
 feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
+choice=$(printf '%s\n' copy url ytf ytdlc mpv 'mpv loop' 'queue yt-dlp' 'queue download' |
+         dmenu -i -p 'Open with?')
+clip() { command -v wl-copy && wl-copy || xclip -selection clipboard; }
 
-## Sync with installer
-
-PLUGIN="$HOME/.config/zsh/ytdl.zsh"
-
-## Dynamic clipboard
-
-clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard -in; }
-
-## Dmenu Options
-
-choice=$(printf "copy url\nytf\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
-
-case "$choice" in
-    copy*)
-        printf '%s' "$feed" | clip
-        ;;
-
-    ytf)
-        setsid -f "$TERMINAL" -e zsh -ic "ytf '$feed'; read -p 'ENTER to close…'"
-        ;;
-
-    mpv)
-        setsid -f mpv -quiet "$feed" >/dev/null 2>&1
-        ;;
-
-    "mpv loop")
-        setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1
-        ;;
-
-    "mpv float")
-        setsid -f "$TERMINAL" -e mpv --geometry=30% --title="mpvfloat" "$feed" >/dev/null 2>&1
-        ;;
-
-    "queue yt-dlp")
-        qndl "$feed" >/dev/null 2>&1
-        ;;
-
-    "queue yt-dlp audio")
-        qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames'
-        ;;
-
-    "queue download")
-        qndl "$feed" 'curl -LO' >/dev/null 2>&1
-        ;;
-
-    PDF)
-        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && zathura "$tmpfile" >/dev/null 2>&1
-        ;;
-
-    nsxiv)
-        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && nsxiv -a "$tmpfile" >/dev/null 2>&1
-        ;;
-
-    vim)
-        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
-        curl -sL "$feed" > "$tmpfile" && setsid -f "$TERMINAL" -e "$EDITOR" "$tmpfile" >/dev/null 2>&1
-        ;;
-
-    setbg)
-        curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" --mode fill >/dev/null 2>&1
-        ;;
-
-    browser)
-        setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
-        ;;
-
-    lynx)
-        setsid -f "$TERMINAL" -e lynx "$feed" >/dev/null 2>&1
-        ;;
+case $choice in
+  'copy url')          printf '%s' "$feed" | clip ;;
+  ytf)                 setsid -f "${TERMINAL:-st}" -e zsh -c "ytf '$feed'; read -r -p '\nENTER…'" ;;
+  ytdlc)               setsid -f "${TERMINAL:-st}" -e zsh -c "ytdlc '$feed'; read -r -p '\nENTER…'" ;;
+  mpv)                 setsid -f mpv -quiet "$feed" ;;
+  'mpv loop')          setsid -f mpv -quiet --loop "$feed" ;;
+  'queue yt-dlp')      qndl "$feed" ;;
+  'queue download')    qndl "$feed" 'curl -LO' ;;
 esac
 DM
-	sudo chmod +x "$DMENU_FILE"
-	INFO "dmenuhandler written"
+sudo chmod +x "$DMENU_FILE"
+INFO "dmenuhandler written"
 }
 
-## Desktop File
-
+# ── .desktop file ────────────────────────────────────────────────
 write_desktop() {
-	mkdir -p "$APP_DIR"
-	cat >"$DESKTOP_FILE" <<EOF
+mkdir -p "$APP_DIR"
+cat >"$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Name=YTDL handler
-Exec=/usr/local/bin/ytdl-handler.sh %u
+Exec=$HANDLER_FILE %u
 Type=Application
 MimeType=x-scheme-handler/ytdl;
 NoDisplay=true
 EOF
-	INFO "desktop entry written"
+INFO "desktop entry written"
 }
-
-## Xdg-mime registration
 
 register_xdg() {
-	xdg-mime default ytdl.desktop x-scheme-handler/ytdl
-	update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
-	INFO "xdg-mime registered"
+  xdg-mime default ytdl.desktop x-scheme-handler/ytdl
+  update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
+  INFO "xdg-mime registered"
 }
 
-## Bookmarklet
-
-print_bookmarklets() {
-	cat <<'EOF_BM'
-Save this bookmarklet as YTF:
-
-➡️ javascript:(function(){
-  const url=window.location.href;
-  if(!url.startsWith("http")){alert("Invalid URL.");return;}
-  window.location.href=`ytdl://${encodeURIComponent(url)}`
-})();
-EOF_BM
-}
-
-## Main entry point
-
+# ── main ─────────────────────────────────────────────────────────
 main() {
-	ensure_xdg
-	GLOW "💥 === // INSTALL YTDLC //"
-	read -rp "Press ENTER to continue…"
-	unlock "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"
-	cleanup_old
-	if [ "$EUID" -eq 0 ]; then
-		BUG "Do not run as root. Press ENTER to continue."
-		read -r
-	fi
-	check_dependencies
-	bootstrap_cookies
-	write_ytdl_zsh
-	write_handler
-	write_dmenuhandler
-	write_desktop
-	register_xdg
-	lock "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"
+  ensure_xdg
+  GLOW "💥 INSTALL YTDLC"
+  read -r -p "Press ENTER to continue…"
 
-	GLOW "Installation complete ✔️"
-	echo
-	print_bookmarklets
+  cleanup_old
+  check_dependencies
+  bootstrap_cookies
+  write_ytdl_zsh
+  write_handler
+  write_dmenuhandler
+  write_desktop
+  register_xdg
+
+  lock "$YTDL_FILE" "$HANDLER_FILE" "$DMENU_FILE" "$DESKTOP_FILE"
+  GLOW "Installation complete"
 }
 
 main "$@"

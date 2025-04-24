@@ -1,0 +1,146 @@
+#!/usr/bin/env zsh
+# Author: 4ndr0666
+# ======================== // YTDL.ZSH //
+
+## Constants
+typeset -A YTDLP_COOKIES_MAP=(
+  [youtube.com]   ="$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
+  [youtu.be]      ="$XDG_CONFIG_HOME/yt-dlp/youtube_cookies.txt"
+  [patreon.com]   ="$XDG_CONFIG_HOME/yt-dlp/patreon_cookies.txt"
+  [vimeo.com]     ="$XDG_CONFIG_HOME/yt-dlp/vimeo_cookies.txt"
+  [boosty.to]     ="$XDG_CONFIG_HOME/yt-dlp/boosty_cookies.txt"
+  [instagram.com] ="$XDG_CONFIG_HOME/yt-dlp/instagram_cookies.txt"
+  [fanvue.com]    ="$XDG_CONFIG_HOME/yt-dlp/fanvue_cookies.txt"
+  [dzen.com]      ="$XDG_CONFIG_HOME/yt-dlp/dzen.cookies.txt"
+  [redgifs.com]   ="$XDG_CONFIG_HOME/yt-dlp/redgifs_cookies.txt"
+)
+
+validate_url(){ [[ $1 == http*://* ]]; }
+get_domain_from_url(){
+  local d=${1#*://}; d=${d%%/*}; d=${d##www.}; d=${d##m.}; d=${(L)d}
+  [[ $d == fanvue.com ]] && print -r fanvue.com || print -r $d
+}
+get_cookie_path_for_domain(){ print -r ${YTDLP_COOKIES_MAP[$1]}; }
+
+prompt_cookie_update(){
+  local domain cookie cmd
+  echo "Select domain to refresh cookie:"
+  if command -v fzf >/dev/null; then
+    domain=$(print -rl -- ${(@k)YTDLP_COOKIES_MAP} | fzf --prompt=Domain:)
+  else
+    print -rl -- ${(@k)YTDLP_COOKIES_MAP} | nl -w2 -ba
+    read -rp "Choice: " domain
+    domain=${(@k)YTDLP_COOKIES_MAP}[$domain]
+  fi
+  cookie=$(get_cookie_path_for_domain "$domain") || return 1
+  printf "Copy cookie for %s then ENTER… " "$domain"
+  read -r
+  cmd=$(command -v wl-paste || echo 'xclip -selection clipboard -o')
+  eval "$cmd" >| "$cookie" && chmod 600 "$cookie"
+  echo "✔️ Cookie updated."
+}
+
+ytdl(){
+  local usecookie=0 args=() url domain cookie
+  while (( $# )); do
+    case $1 in -c) usecookie=1; shift;; *) args+=("$1"); shift;; esac
+  done
+  url=${args[1]}
+  if (( usecookie )); then
+    domain=$(get_domain_from_url $url)
+    cookie=$(get_cookie_path_for_domain $domain)
+    [[ -f $cookie ]] && yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
+      --external-downloader-args 'aria2c:-c -j8 -x8 -s8 -k2M' \
+      -f '335/315/313/308/303/299/271/248/137+bestaudio+bestaudio' \
+      --newline --ignore-config --no-playlist --no-mtime \
+      --cookies "$cookie" "${args[@]}" && return
+  fi
+  yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
+    --external-downloader-args 'aria2c:-c -j8 -x8 -s8 -k2M' \
+    -f '335/315/313/308/303/299/271/248/137+bestaudio+bestaudio' \
+    --newline --ignore-config --no-playlist --no-mtime "${args[@]}"
+}
+
+ytf(){
+  local url=$1 domain cookie fid
+  validate_url "$url" || { echo "Bad URL"; return 1; }
+  domain=$(get_domain_from_url "$url")
+  cookie=$(get_cookie_path_for_domain "$domain")
+  yt-dlp --list-formats ${cookie:+--cookies "$cookie"} "$url" || {
+    prompt_cookie_update
+    cookie=$(get_cookie_path_for_domain "$domain")
+    yt-dlp --list-formats ${cookie:+--cookies "$cookie"} "$url" || return 1
+  }
+  read -rp "Format ID (ENTER=default): " fid
+  if [[ -z $fid ]]; then
+    ytdl "$url"
+  else
+    yt-dlp --add-metadata --embed-metadata --external-downloader aria2c \
+      --external-downloader-args 'aria2c:-c -j8 -x8 -s8 -k2M' \
+      -f "$fid+bestaudio" --newline --ignore-config --no-playlist --no-mtime \
+      ${cookie:+--cookies "$cookie"} \
+      --output '%(title)s.%(ext)s' "$url"
+  fi
+}
+
+ytdlc(){
+  (( $# )) || { show_ytdlc_help; return 1; }
+  local listfmt=0 odir="$HOME/Downloads" update=0
+  typeset -a extra urls
+  while (( $# )); do
+    case $1 in
+      -l|--list-formats)    listfmt=1;;
+      -o|--output-dir)      odir=$2; shift;;
+      --update)             update=1;;
+      -f)                   extra+=("$1" "$2"); shift;;
+      -h|--help)            show_ytdlc_help; return 0;;
+      *)                    urls+=("$1");;
+    esac; shift
+  done
+  (( update )) && { prompt_cookie_update; return; }
+  mkdir -p "$odir"
+  for url in "${urls[@]}"; do
+    GLOW "──▶ $url"
+    validate_url "$url" || { BUG "Bad URL"; continue; }
+    [[ $url == *embed/* ]] && {
+      url="https://www.youtube.com/watch?v=${url##*/embed/}"
+      INFO "→ EMBED → $url"
+    }
+    local domain cookie
+    domain=$(get_domain_from_url "$url")
+    cookie=$(get_cookie_path_for_domain "$domain")
+    [ -f "$cookie" ] || { BUG "Missing cookie for $domain"; continue; }
+    chmod 600 "$cookie" 2>/dev/null || true
+
+    if (( listfmt )); then
+      ytf "$url"; continue
+    fi
+
+    if [[ $domain == fanvue.com ]]; then
+      GLOW "Fanvue → native"
+      yt-dlp --cookies "$cookie" --output "$odir/%(title)s.%(ext)s" "$url" && continue
+    fi
+
+    ytdl -c "$url" || { BUG "Both failed"; }
+  done
+}
+
+## Help
+
+show_ytdlc_help(){
+  cat<<'EOF_HELP'
+ytdlc – cookie-aware yt-dlp wrapper
+Usage: ytdlc [opts] URL…
+  -l, --list-formats
+  -o, --output-dir DIR
+  --update
+  -f ID
+  -h, --help
+
+Examples:
+  ytdlc --update
+  ytdlc --list-formats https://youtu.be/abc123
+  ytdlc --output-dir /tmp https://patreon.com/page
+  ytdlc https://patreon.com/page -f 303
+EOF_HELP
+}

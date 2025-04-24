@@ -6,13 +6,15 @@
 feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
 
 # Display the list of programs to choose from using dmenu
-choice=$(printf "copy url\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
+choice=$(printf "copy url\nytf\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
 
 # Process the selected option and execute the corresponding action
 case "$choice" in
     "copy url")
         echo "$feed" | wl-copy
         ;;
+    ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf \"$feed\"; read -p 'Press Enter to close…'" ;;
+
 
     "mpv")
         setsid -f mpv -quiet "$feed" >/dev/null 2>&1
