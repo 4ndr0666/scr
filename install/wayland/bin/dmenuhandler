@@ -1,58 +1,82 @@
 #!/bin/sh
+# Version: 1.0.0
 # Author: 4ndr0666
+set -eu
+# ========================== // DMENUHANDLER //
+## Description: Feed a URL or file path to the dmenu
+#               and choose and app to open it with.
+# Usage:
+#       <Super> + <KEY_F9>
+# -------------------------------------
 
-# ================== // DMENUHANDLER //
+## Dynamic Clipboard
 
-# Input feed: if no argument is provided, prompt the user via dmenu
-feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
-TERMINAL="st"
-# Prompt for action
-choice=$(printf "copy url\nytdlc\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
+clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard; }
+
+## URL & File Path
+
+feed="${1:-$(printf '' | dmenu -p 'Paste URL or file path')}"
+
+choice=$(printf "copy url\nytf\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" |
+         dmenu -i -p "Open it with?")
+
 case "$choice" in
-    "copy url")
-        echo "$feed" | wl-copy
+    copy*)
+        printf '%s' "$feed" | clip
         ;;
-    "ytdlc")
-        if echo "$feed" | grep -qi "fanvue.com"; then
-            setsid -f "$TERMINAL" -e zsh -ic "echo 'Fanvue link detected. Using format best.' && ytdlc \"$feed\" -f best && echo 'Press Enter to close the terminal.' && read" >/dev/null 2>&1
-        else
-            setsid -f "$TERMINAL" -e zsh -ic "echo 'Listing formats for $feed:' && ytf \"$feed\" && echo 'Enter the desired format ID: ' && read fmt && echo 'Choose YTDL or YTDLC for download: ' && echo '1) YTDL' && echo '2) YTDLC' && read choice && case \"\$choice\" in 1) ytdl \"$feed\" -f \"\$fmt\" ;; 2) ytdlc \"$feed\" -f \"\$fmt\" ;; *) echo 'Invalid choice. Exiting.' ;; esac && echo 'Press Enter to close the terminal.' && read" >/dev/null 2>&1
-        fi
+
+    ytf)
+        setsid -f "$TERMINAL" -e zsh -c "ytf '$feed'; read -r -p '\nENTER to close…'" ;;
         ;;
-    "nsxiv")
-        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && nsxiv -a "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
-        ;;
-    "setbg")
-        curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" >/dev/null 2>&1
-        ;;
-    "PDF")
-        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && zathura "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
-        ;;
-    "browser")
-        setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
-        ;;
-    "W3m")
-        setsid -f "$TERMINAL" -e w3m "$feed" >/dev/null 2>&1
-        ;;
-    "vim")
-        curl -sL "$feed" > "/tmp/$(basename "$feed" | sed 's/%20/ /g')" && setsid -f "$TERMINAL" -e "$EDITOR" "/tmp/$(basename "$feed" | sed 's/%20/ /g')" >/dev/null 2>&1
-        ;;
-    "mpv")
+
+    mpv)
         setsid -f mpv -quiet "$feed" >/dev/null 2>&1
         ;;
+
     "mpv loop")
-        setsid -f mpv -quiet --loop=inf "$feed" >/dev/null 2>&1
+        setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1
         ;;
+
     "mpv float")
-        setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30% --title="mpvfloat" "$feed" >/dev/null 2>&1
+        setsid -f "$TERMINAL" -e mpv --geometry=30% --title="mpvfloat" "$feed" >/dev/null 2>&1
         ;;
+
     "queue yt-dlp")
         qndl "$feed" >/dev/null 2>&1
         ;;
+
     "queue yt-dlp audio")
-        qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' >/dev/null 2>&1
+        qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames'
         ;;
-    *)
-        echo "Invalid choice or no action taken." >/dev/null 2>&1
+
+    "queue download")
+        qndl "$feed" 'curl -LO' >/dev/null 2>&1
+        ;;
+
+    PDF)
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && zathura "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    nsxiv)
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && nsxiv -a "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    vim)
+        tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
+        curl -sL "$feed" > "$tmpfile" && setsid -f "$TERMINAL" -e "$EDITOR" "$tmpfile" >/dev/null 2>&1
+        ;;
+
+    setbg)
+        curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" --mode fill >/dev/null 2>&1
+        ;;
+
+    browser)
+        setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
+        ;;
+
+    lynx)
+        setsid -f "$TERMINAL" -e lynx "$feed" >/dev/null 2>&1
         ;;
 esac

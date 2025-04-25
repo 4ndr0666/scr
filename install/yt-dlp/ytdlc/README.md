@@ -1,32 +1,51 @@
 # 🛰️ YTDLC Protocol Installer  
-**Version:** 1.0.0  
-**Author:** 4ndr0666
+**Version:** 1.1.0  
+**Author:** 4ndr0666  
+
+---
+
+## 📑 Table of Contents
+
+- [🗂️ Script Purpose](#️️📂-script-purpose)  
+- [🔍 Highlights](#🔍-highlights)  
+- [🚀 Quick Start](#🚀-quick-start)  
+- [🖥️ Requirements](#🖥️-requirements)  
+- [🔧 Features](#🔧-features)  
+- [🧪 Testing Suite](#🧪-testing-suite)  
+- [🧠 Developer Tips](#🧠-developer-tips)  
+- [🔐 Security & Safety](#🔐-security--safety)  
+- [📂 Directory Layout After Install](#📂-directory-layout-after-install)  
+- [🌐 Bookmarklet](#🌐-bookmarklet)  
+- [🆘 Troubleshooting](#🆘-troubleshooting)  
+- [🤝 Contributing](#🤝-contributing)  
+- [📜 License](#📜-license)  
+- [🎉 Thanks](#🎉-thanks)  
 
 ---
 
 ## 🗂️ Script Purpose
 
-This script, `install_ytdlc.sh`, is a **modular and interactive shell-based installer** for a complete multimedia download framework using `yt-dlp`, with rich cookie management, URI scheme integration, and dynamic launcher support via `dmenu`.
+`install_ytdlc.sh` is a **modular, interactive shell installer** for a robust multimedia download framework on Arch Linux. It automates:
 
-It provides:
-
-- Automatic setup of dependencies, cookie paths, launcher scripts
-- System protocol integration for `ytdl://` URLs
-- A user-friendly, clipboard-aware download menu
-- Bookmarklet integration for 1-click downloading from any browser
-
-Targeted toward advanced **Arch Linux** users who value flexibility, XDG compliance, and control.
+- Dependency installation via `pacman`  
+- Cookie-store setup for `yt-dlp`  
+- Generation of:
+  - `ytdl.zsh`: cookie-aware download functions for Zsh  
+  - `ytdl-handler.sh`: `ytdl://` URI launcher  
+  - `dmenuhandler`: dynamic Dmenu-based media launcher  
+  - `ytdl.desktop`: custom protocol registration  
+- Bookmarklet for 1-click browser downloads
 
 ---
 
 ## 🔍 Highlights
 
-- ✅ **Fully modular architecture**
-- ✅ **Adheres to XDG standards**
-- ✅ **Failsafe design with chattr locking**
-- ✅ **Rich debug & test suite**
-- 🎨 **User-friendly CLI UI with color-coded feedback**
-- 🛠️ **No placeholders—fully implemented & production-ready**
+- ✅ **Modular & XDG-compliant**  
+- ✅ **Automatic dependency management**  
+- ✅ **Failsafe design with `chattr +i` locking**  
+- ✅ **Comprehensive test suite with `--repair` support**  
+- 🎨 **Color-coded feedback & spinner animations**  
+- 🛠️ **Production-ready, no placeholders**
 
 ---
 
@@ -35,7 +54,7 @@ Targeted toward advanced **Arch Linux** users who value flexibility, XDG complia
 ```bash
 git clone https://github.com/youruser/ytdlc-installer.git
 cd ytdlc-installer
-chmod +x install_ytdlc.sh
+chmod +x install_ytdlc.sh test_ytdlc.sh
 ./install_ytdlc.sh
 ```
 
@@ -43,137 +62,131 @@ chmod +x install_ytdlc.sh
 
 ## 🖥️ Requirements
 
-| Requirement        | Details |
-|--------------------|---------|
-| OS                 | Arch Linux or derivatives |
-| Shell              | Zsh |
-| Package Manager    | pacman |
-| Required Tools     | `yt-dlp`, `aria2`, `jq`, `dmenu`, `wl-clipboard` or `xclip` |
-| Optional Enhancers | `fzf`, `mpv`, `zathura`, `lynx`, `nsxiv` |
-| Environment Vars   | `$TERMINAL`, `$EDITOR`, `$BROWSER` (used in `dmenuhandler`) |
+| Requirement        | Details                                                      |
+|--------------------|--------------------------------------------------------------|
+| **OS**             | Arch Linux or derivatives                                    |
+| **Shell**          | Zsh                                                          |
+| **Package Manager**| pacman                                                       |
+| **Tools**          | `yt-dlp`, `aria2c`, `jq`, `dmenu`, `wl-clipboard` or `xclip`|
+| **Optional**       | `fzf`, `mpv`, `zathura`, `lynx`, `nsxiv`                    |
+| **Env Vars**       | `$TERMINAL`, `$EDITOR`, `$BROWSER`                           |
 
-> All required packages are auto-installed via `pacman` if missing.
+> All required packages are installed automatically if missing.
 
 ---
 
 ## 🔧 Features
 
-| Component          | Description |
-|-------------------|-------------|
-| `ytdl.zsh`        | Zsh script with cookie-aware download logic |
-| `ytdl-handler.sh` | Protocol handler for `ytdl://` links with `dmenu` |
-| `dmenuhandler`    | Dmenu-powered launcher for files/URLs |
-| `ytdl.desktop`    | MIME registration for custom protocol |
-| **Bookmarklet**   | Enables 1-click streaming download from browsers |
-| **Hardening**     | Uses `chattr +i` to prevent accidental edits |
+| Component             | Description                                                           |
+|-----------------------|-----------------------------------------------------------------------|
+| **ytdl.zsh**          | Zsh functions: `ytdl`, `ytf`, `ytdlc` with cookie support            |
+| **ytdl-handler.sh**   | Protocol handler: decodes `ytdl://` URIs, calls `dmenuhandler`       |
+| **dmenuhandler**      | Dmenu menu: launch `ytf`, `mpv`, `queue` actions on URLs/files       |
+| **ytdl.desktop**      | MIME registration for `x-scheme-handler/ytdl`                        |
+| **Bookmarklet**       | One-click browser integration for any page                           |
+| **Hardening**         | Uses `chattr +i` to lock generated scripts against accidental edits   |
 
 ---
 
 ## 🧪 Testing Suite
 
-Run the full verification suite after installation:
+After install, verify with:
 
 ```bash
 chmod +x test_ytdlc.sh
 ./test_ytdlc.sh
 ```
 
-### With debug output:
-```bash
-DEBUG=1 ./test_ytdlc.sh
-```
-
-### With auto-repair (e.g., re-lock files):
-```bash
-REPAIR=1 ./test_ytdlc.sh
-```
+- **Debug mode**:  
+  ```bash
+  DEBUG=1 ./test_ytdlc.sh
+  ```
+- **Auto-repair** (fix shebangs, perms, version tags, immutability):  
+  ```bash
+  REPAIR=1 ./test_ytdlc.sh
+  ```
 
 ---
 
 ## 🧠 Developer Tips
 
-- You can simulate a browser-based call manually like so:
+- **Manual URI test**:  
   ```bash
-  ./ytdl-handler.sh 'ytdl://https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ'
+  ytdl-handler.sh 'ytdl://https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ'
   ```
-- Want to customize `dmenuhandler`? Edit the script directly—it's just a shell menu!
-
----
-
-## 🔐 Security & Safety
-
-- **DO NOT** run the installer as root. It uses `sudo` internally where needed.
-- Files are locked with `chattr +i` after generation to prevent tampering.
-- Manual override:
+- **Customize `dmenuhandler`**:  
+  Edit `$HOME/.local/bin/dmenuhandler`—it’s pure shell script.
+- **Temporarily unlock files**:  
   ```bash
   sudo chattr -i /usr/local/bin/ytdl-handler.sh
   ```
 
 ---
 
+## 🔐 Security & Safety
+
+- **Do NOT** run the installer as root.  
+- Uses `sudo` internally only when needed.  
+- Generated files are locked with `chattr +i` to prevent tampering.  
+
+---
+
 ## 📂 Directory Layout After Install
 
 ```
-
 $HOME/.config/
 ├── yt-dlp/
 │   └── *.cookies.txt
 └── zsh/
-    └── ytdl.zsh              # CLI download wrapper
+    └── ytdl.zsh
 
 /usr/local/bin/
-└── ytdl-handler.sh           # ytdl:// URI scheme handler
+└── ytdl-handler.sh
 
 $HOME/.local/bin/
-└── dmenuhandler              # Dynamic dmenu-based media launcher
+└── dmenuhandler
 
 $HOME/.local/share/applications/
-└── ytdl.desktop              # MIME registration file
-
+└── ytdl.desktop
 ```
 
 ---
 
 ## 🌐 Bookmarklet
 
-Paste this into a browser bookmark:
+Save this as a browser bookmark named **YTF**:
 
 ```javascript
 javascript:(()=>{const u=location.href;if(!/^https?:/.test(u)){alert('bad URL');return;}location.href=`ytdl://${encodeURIComponent(u)}`})();
 ```
 
-Save it as **YTF**.
-
 ---
 
 ## 🆘 Troubleshooting
 
-| Issue                            | Fix |
-|----------------------------------|-----|
-| `zsh: command not found: ytf`    | Ensure you sourced or called `ytdl.zsh` in your `.zshrc` |
-| `dmenu not found`                | Confirm `dmenu` is installed or try `DEBUG=1` to trace |
-| `xdg-mime not registering`       | Manually re-run `register_xdg` function in the script |
+| Issue                          | Solution                                                 |
+|-------------------------------|----------------------------------------------------------|
+| `ytdl: command not found`     | Ensure you sourced `ytdl.zsh` in your `~/.zshrc`         |
+| `dmenu not found`             | Install `dmenu` or set `DEBUG=1` to trace issues         |
+| `xdg-mime` registration error | Re-run `register_xdg` function or `update-desktop-database` |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome!
-
-1. Fork the repo
-2. Make enhancements (must be Arch-specific!)
-3. Submit a clean PR (no placeholders, fully debugged)
+1. Fork this repo  
+2. Make enhancements (Arch-specific!)  
+3. Submit a PR—fully implemented, no placeholders  
 
 ---
 
 ## 📜 License
 
-MIT License. Do anything with it—just don't ship bugs.
+MIT License. Do anything with it—just don’t ship bugs.
 
 ---
 
 ## 🎉 Thanks
 
-Built by **4ndr0666** for hackers who want seamless, scriptable, and GUI-integrated control of their multimedia downloads—directly from the browser or clipboard.
-
-Happy scripting! 🧪📦
+Built by **4ndr0666** for power users desiring seamless multimedia downloads🧪📦  
+Happy scripting!  

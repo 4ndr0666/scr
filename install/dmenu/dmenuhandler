@@ -1,22 +1,35 @@
 #!/bin/sh
+# Version: 1.0.0
+# Author: 4ndr0666
+set -eu
+# ========================== // DMENUHANDLER //
+## Description: Feed a URL or file path to the dmenu
+#               and choose and app to open it with.
+# Usage:
+#       <Super> + <KEY_F9>
+# -------------------------------------
 
-# Enhanced script for feeding a URL or file path and choosing an application to open it
+## Dynamic Clipboard
 
-# Fetch the input feed (URL or file path) from dmenu if not provided as an argument
-feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
+clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard; }
 
-# Display the list of programs to choose from using dmenu
-choice=$(printf "copy url\nytf\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")
+## URL & File Path
 
-# Process the selected option and execute the corresponding action
+feed="${1:-$(printf '' | dmenu -p 'Paste URL or file path')}"
+
+choice=$(printf "copy url\nytf\nnsxiv\nsetbg\nPDF\nbrowser\nlynx\nvim\nmpv\nmpv loop\nmpv float\nqueue download\nqueue yt-dlp\nqueue yt-dlp audio" |
+         dmenu -i -p "Open it with?")
+
 case "$choice" in
-    "copy url")
-        echo "$feed" | wl-copy
+    copy*)
+        printf '%s' "$feed" | clip
         ;;
-    ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf \"$feed\"; read -p 'Press Enter to close…'" ;;
 
+    ytf)
+        setsid -f "$TERMINAL" -e zsh -c "ytf '$feed'; read -r -p '\nENTER to close…'" ;;
+        ;;
 
-    "mpv")
+    mpv)
         setsid -f mpv -quiet "$feed" >/dev/null 2>&1
         ;;
 
@@ -40,30 +53,30 @@ case "$choice" in
         qndl "$feed" 'curl -LO' >/dev/null 2>&1
         ;;
 
-    "PDF")
+    PDF)
         tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
         curl -sL "$feed" > "$tmpfile" && zathura "$tmpfile" >/dev/null 2>&1
         ;;
 
-    "nsxiv")
+    nsxiv)
         tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
         curl -sL "$feed" > "$tmpfile" && nsxiv -a "$tmpfile" >/dev/null 2>&1
         ;;
 
-    "vim")
+    vim)
         tmpfile="/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"
         curl -sL "$feed" > "$tmpfile" && setsid -f "$TERMINAL" -e "$EDITOR" "$tmpfile" >/dev/null 2>&1
         ;;
 
-    "setbg")
+    setbg)
         curl -L "$feed" > "$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" --mode fill >/dev/null 2>&1
         ;;
 
-    "browser")
+    browser)
         setsid -f "$BROWSER" "$feed" >/dev/null 2>&1
         ;;
 
-    "lynx")
+    lynx)
         setsid -f "$TERMINAL" -e lynx "$feed" >/dev/null 2>&1
         ;;
 esac
