@@ -37,6 +37,7 @@ if ! ./test_ytdlc.sh --preinstall; then
 fi
 
 GLOW "System verification passed"
+echo ""
 
 ## Immutability
 
@@ -51,6 +52,7 @@ ensure_xdg() {
 		exit 1
 	}
 	GLOW "XDG compliance detected"
+	echo ""
 }
 
 ## Auto-Cleanup Old Installation
@@ -378,8 +380,6 @@ register_xdg() {
 
 bookmarklet() {
 	cat <<'BM'
-Save this bookmarklet as **YTF**:
-
 ➡️ javascript:(()=>{const u=location.href;if(!/^https?:/.test(u)){alert('bad URL');return;}location.href=`ytdl://${encodeURIComponent(u)}`})();
 BM
 }
@@ -393,7 +393,9 @@ main() {
 	}
 
 	ensure_xdg
-	GLOW "💥 === // INSTALL YTDLC //"
+	GLOW "💥 Configured!"
+	echo ""
+	printf "⚡=== // YTDLC PROTOCOL INSTALLER by 4ndr0666 //\n\n"
 	read -r -p "Press ENTER to continue…"
 
 	cleanup_old
@@ -409,7 +411,7 @@ main() {
 	done
 
 	GLOW "Installation complete"
-	echo
+	echo -e "$(tput setaf 6)\n💡 Alright $(whoami)... all you need to do now is save this bookmarlet:\n$(tput sgr0)"
 	bookmarklet
 }
 
