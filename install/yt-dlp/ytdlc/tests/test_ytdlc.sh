@@ -28,17 +28,16 @@ GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
 BUG() { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
 
 # ========== Spinner ==========
-show_progress() {
+show_arc_progress() {
 	local pid=$1 label=$2
-	local frames=("●○○○○○○○○○" "○●○○○○○○○○" "○○●○○○○○○○" "○○○●○○○○○○" "○○○○●○○○○○" \
-	              "○○○○○●○○○○" "○○○○○○●○○○" "○○○○○○○●○○" "○○○○○○○○●○" "○○○○○○○○○●")
+	local frames=("◜" "◠" "◝" "◞" "◡" "◟")
 	local i=0
 
 	tput civis
 	while ps -p "$pid" > /dev/null 2>&1; do
-		printf "\r$(tput setaf 4)⏳  %s %s$(tput sgr0)" "$label" "${frames[i]}"
-		sleep 0.15
-		i=$(( (i + 1) % 10 ))
+		printf "\r$(tput setaf 5)↻  %s %s$(tput sgr0)" "$label" "${frames[i]}"
+		sleep 0.2
+		i=$(( (i + 1) % ${#frames[@]} ))
 	done
 	printf "\r$(tput setaf 2)✔️  %s complete$(tput sgr0)%*s\n" "$label" 10 ""
 	tput cnorm
@@ -186,7 +185,8 @@ test_cookie_store() {
 		((count >= 9)) || fail "Expected >=9 cookies, found $count"
 		sleep 1  # simulate delay
 	) &
-	show_progress $! "Cookie validation"
+	show_arc_progress $! "Cookie validation"
+	echo ""
 	pass "Cookie store is initialized"
 }
 
