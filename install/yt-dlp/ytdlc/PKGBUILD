@@ -1,0 +1,16 @@
+# Maintainer: 4ndr0666 <your_email@domain.com>
+pkgname=ytdlc-protocol
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="YTDL Protocol Handler + Shell Enhancements (yt-dlp, aria2c, dmenu, cookies)"
+arch=('any')
+url="https://yourgithuburl.com/ytdlc-protocol"
+license=('MIT')
+depends=('yt-dlp' 'aria2' 'jq' 'dmenu' 'fzf' 'wl-clipboard' 'xclip' 'zathura' 'nsxiv' 'curl')
+source=('ytdlc_protocol_installer.sh' 'test_ytdlc.sh')
+sha256sums=('SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "$srcdir/ytdlc_protocol_installer.sh" "$pkgdir/usr/bin/ytdlc-install"
+    install -Dm755 "$srcdir/test_ytdlc.sh" "$pkgdir/usr/bin/ytdlc-test"
+}

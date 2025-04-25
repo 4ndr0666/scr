@@ -32,17 +32,19 @@ fi
 
 [[ "${DEBUG:-0}" -eq 1 ]] && set -x && DEBUG_LOG() { echo "[DEBUG] $*"; } || DEBUG_LOG() { :; }
 
-## Configure
-
+### Configure
+printf "\n"
 INFO "Configuring system..."
 
 if ! ./test_ytdlc.sh --preinstall; then
-	BUG "Validation failed. Please fix issues or re-run with --repair."
+	BUG "Issues detected. Attempting to repair..."
+	sleep 1
+	./test_ytdlc.sh --repair || {
+		BUG "Could not repair system..."
+	}
 	exit 1
+	GLOW "System repaired!"
 fi
-
-GLOW "System verification passed"
-echo ""
 
 ## Immutability
 
@@ -52,23 +54,29 @@ lock() { [[ -e $1 ]] && sudo chattr +i "$1" 2>/dev/null || true; }
 ## XDG compliance (or fall back)
 
 ensure_xdg() {
-	INFO "Ensuring XDG directories"
+	echo ""
+	INFO "Checking XDG Specifications..."
 	mkdir -p -- "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" \
 		"$APP_DIR" "$BIN_DIR" "$ZSH_DIR"
-	GLOW "XDG layout ready"
+	echo ""
+	GLOW "XDG compliant"
 	echo ""
 }
 
 ## Auto-Cleanup Old Installation
 
 cleanup_old() {
-	INFO "Cleaning previous install"
+	INFO "Cleaning previous installation..."
 	for f in "$YTDL_PLUGIN" "$YTDL_HANDLER_FILE" "$DMENUHANDLER_FILE" "$DESKTOP_FILE"; do
 		[[ -e $f ]] || continue
 		unlock "$f"
 		INFO "Removing → $f"
 		sudo rm -f -- "$f"
 	done
+	echo ""
+	GLOW "Environment Cleaned!"
+	echo ""
+	INFO "Installing system files..."
 }
 
 ## Deps
@@ -80,8 +88,6 @@ install_pkgs() {
 	if ((${#missing[@]})); then
 		INFO "Installing: ${missing[*]}"
 		sudo pacman -Sy --needed --noconfirm "${missing[@]}"
-	else
-		GLOW "All dependencies satisfied"
 	fi
 }
 
@@ -99,7 +105,8 @@ bootstrap_cookies() {
 		: >|"$dir/$f"
 		chmod 600 "$dir/$f"
 	done
-	INFO "Cookie store initialised → $dir"
+	echo ""
+	GLOW "Cookie Storage Initialised at → $dir"
 }
 
 ## YTDL.zsh
@@ -250,7 +257,54 @@ USAGE
 }
 ZSH
 	chmod +x "$YTDL_PLUGIN"
-	INFO "ytdl.zsh written"
+	GLOW "ytdl.zsh Plugin Installed"
+}
+
+## Ytdl-handler.sh
+
+write_handler() {
+	sudo tee "$YTDL_HANDLER_FILE" >/dev/null <<'WH'
+#!/usr/bin/env bash
+# Version: 1.1.0
+set -euo pipefail
+# ========================== // YTDL-HANDLER.SH // by 4ndr0666
+
+DMENU=$(command -v dmenu) || { printf >&2 '[❌] dmenu missing\n'; exit 1; }
+TERM_CMD="${TERMINAL:-alacritty}"
+
+clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard -in; }
+
+[ "$#" -ne 1 ] && { printf >&2 '[❌] Error: one URL arg needed\n'; exit 1; }
+[ "$1" = "%u" ] && { printf >&2 '[❌] Error: placeholder arg\n'; exit 1; }
+
+feed=${1#ytdl://}
+
+if command -v python3 >/dev/null; then
+    feed=$(printf '%s' "$feed" | python3 -c 'import sys, urllib.parse as u; print(u.unquote(sys.stdin.read().strip()))')
+fi
+
+case $feed in
+    *youtube.com/embed/*)
+        id=${feed##*/embed/}; id=${id%%\?*}
+        feed="https://www.youtube.com/watch?v=$id"
+        ;;
+    *youtu.be/*)
+        id=${feed##*/}; id=${id%%\?*}
+        feed="https://www.youtube.com/watch?v=$id"
+        ;;
+esac
+
+choice=$(printf '%s\n' 'copy url' ytf mpv cancel | "$DMENU" -i -p 'ytdl:')
+
+case "$choice" in
+    'copy url') printf '%s' "$feed" | clip ;;
+    ytf)   setsid -f "$TERM_CMD" -e zsh -ic "ytf '$feed'; read -r -p '\nPress ENTER…'" ;;
+    mpv)   setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
+    *) : ;;
+esac
+WH
+	sudo chmod +x "$YTDL_HANDLER_FILE"
+	GLOW "ytdl-handler.sh written → $YTDL_HANDLER_FILE"
 }
 
 ## Dmenuhandler
@@ -268,49 +322,35 @@ set -euo pipefail
 #       <Super> + <KEY_F9>
 # -------------------------------------
 
-## Constants
 
-TERM_CMD="${TERMINAL:-alacritty}"
-EDITOR_CMD="${EDITOR:-vim}"
-BROWSER_CMD="${BROWSER:-xdg-open}"
 
 ## Dynamic Clipboard
 
 clip(){ command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard; }
 
-## URL & File Path
+feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
 
-feed="${1:-$(printf '' | dmenu -p 'Paste URL or file path')}"
+case "$(printf "copy url\\nytf\\nnsxiv\\nsetbg\\nPDF\\nbrowser\\nlynx\\nvim\\nmpv\\nmpv loop\\nmpv float\\nqueue download\\nqueue yt-dlp\\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")" in
 
-[[ -z $feed ]] && exit 0
 
-choice=$(printf '%s\n' "copy url" "ytf" "mpv" "mpv loop" "mpv float" "queue download" \
-  "queue yt-dlp" "queue yt-dlp audio" "nsxiv" "PDF" "setbg" "browser" "lynx" "vim" | \
-  dmenu -i -p "Open it with?")
-
-[[ -z $choice ]] && exit 0
-
-tmpfile="/tmp/$(basename "${feed//%20/ }")"
-
-case "$choice" in
-  "copy url") printf '%s' "$feed" | clip ;;
-  ytf) setsid -f "$TERM_CMD" -e zsh -ic "ytf '$feed'; read -r -p 'ENTER to close…'" ;;
-  mpv) setsid -f mpv --quiet "$feed" ;;
-  "mpv loop") setsid -f mpv --quiet --loop "$feed" ;;
-  "mpv float") setsid -f "$TERM_CMD" -e mpv --geometry=30% --title=mpvfloat "$feed" ;;
-  "queue yt-dlp") qndl "$feed" >/dev/null 2>&1 ;;
-  "queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' ;;
-  "queue download") qndl "$feed" 'curl -LO' ;;
-  PDF)  curl -fsSL "$feed" >"$tmpfile" && zathura "$tmpfile" ;;
-  nsxiv) curl -fsSL "$feed" >"$tmpfile" && nsxiv -a "$tmpfile" ;;
-  vim)   curl -fsSL "$feed" >"$tmpfile" && setsid -f "$TERM_CMD" -e "$EDITOR_CMD" "$tmpfile" ;;
-  setbg) curl -fsSL "$feed" >"$XDG_CACHE_HOME/pic" && swaybg -i "$XDG_CACHE_HOME/pic" --mode fill ;;
-  browser) setsid -f "$BROWSER_CMD" "$feed" ;;
-  lynx) setsid -f "$TERM_CMD" -e lynx "$feed" ;;
+	"copy url") echo "$feed" | clip ;;
+        ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf '$feed'; read -r -p 'ENTER to close…'" ;;
+	mpv) setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
+	"mpv loop") setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1 ;;
+	"mpv float") setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30%  --title="mpvfloat" "$feed" >/dev/null 2>&1 ;;
+	"queue yt-dlp") qndl "$feed" >/dev/null 2>&1 ;;
+	"queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' ;;
+	"queue download") qndl "$feed" 'curl -LO' >/dev/null 2>&1 ;;
+	PDF) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && zathura "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
+	nsxiv) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && nsxiv -a "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
+	vim) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && setsid -f "$TERMINAL" -e "$EDITOR" "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
+        setbg) curl -L "$feed" > $XDG_CACHE_HOME/pic ; swaybg -i $XDG_CACHE_HOME/pic --mode fill >/dev/null 2>&1 ;;
+	browser) setsid -f "$BROWSER" "$feed" >/dev/null 2>&1 ;;
+	lynx) lynx "$feed" >/dev/null 2>&1 ;;
 esac
 DM
 	chmod +x "$DMENUHANDLER_FILE"
-	INFO "dmenuhandler written → $DMENUHANDLER_FILE"
+	GLOW "dmenuhandler written → $DMENUHANDLER_FILE"
 }
 
 ## Desktop File
@@ -326,7 +366,8 @@ Type=Application
 MimeType=x-scheme-handler/ytdl;
 NoDisplay=true
 EOF
-	INFO "Desktop entry written"
+	echo ""
+	INFO "Writting Desktop File For Registration..."
 }
 
 ## Xdg-mime registration
@@ -334,7 +375,8 @@ EOF
 register_xdg() {
 	xdg-mime default ytdl.desktop x-scheme-handler/ytdl
 	update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
-	GLOW "xdg-mime handler registered"
+	echo ""
+	GLOW "YTDLC protocol registered"
 }
 
 ## Bookmarklet
@@ -354,22 +396,33 @@ main() {
 	}
 
 	ensure_xdg
-	GLOW "💥 Configured!"
-	./test_ytdlc.sh --preinstall
+
+	GLOW "💥 System Ready For Installtion!"
 	echo ""
 
 	printf "⚡=== // YTDLC PROTOCOL INSTALLER by 4ndr0666 //\n\n"
 	read -r -p "Press ENTER to continue…"
+	echo ""
 
 	cleanup_old
 	install_pkgs
 	bootstrap_cookies
 	write_ytdl_plugin
+	write_handler
 	write_dmenuhandler
 	write_desktop
 	register_xdg
+	echo ""
 
-	for f in "$YTDL_PLUGIN" "$YTDL_HANDLER_FILE" "$DMENUHANDLER_FILE" "$DESKTOP_FILE"; do lock "$f"; done
+	printf "Validating installation...\n"
+	for f in "$YTDL_PLUGIN" "$YTDL_HANDLER_FILE" "$DMENUHANDLER_FILE" "$DESKTOP_FILE"; do
+		[[ -e $f ]] && echo "[OK] $f exists" || echo "[MISSING] $f missing"
+	done
+
+	for f in "$YTDL_PLUGIN" "$YTDL_HANDLER_FILE" "$DMENUHANDLER_FILE" "$DESKTOP_FILE"; do
+		lock "$f"
+	done
+	echo ""
 	GLOW "Installation complete"
 	echo -e "$(tput setaf 6)\n💡 Alright $(whoami)... all you need to do now is save this bookmarlet:\n$(tput sgr0)"
 	bookmarklet
