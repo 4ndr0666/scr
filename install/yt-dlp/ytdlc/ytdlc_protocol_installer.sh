@@ -18,6 +18,13 @@ DESKTOP_FILE="$APP_DIR/ytdl.desktop"
 
 ## Colors
 
+### Ensure truecolor support or fallback gracefully
+
+case "${COLORTERM}" in
+truecolor | 24bit) ;;
+*) export COLORTERM="24bit" ;;
+esac
+
 if command -v tput >/dev/null && [[ -t 1 ]]; then
 	GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
 	BUG() { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
@@ -33,6 +40,7 @@ fi
 [[ "${DEBUG:-0}" -eq 1 ]] && set -x && DEBUG_LOG() { echo "[DEBUG] $*"; } || DEBUG_LOG() { :; }
 
 ### Configure
+
 printf "\n"
 INFO "Configuring system..."
 
@@ -397,7 +405,7 @@ main() {
 
 	ensure_xdg
 
-	GLOW "💥 System Ready For Installtion!"
+	GLOW "💥 System Ready For Installation!"
 	echo ""
 
 	printf "⚡=== // YTDLC PROTOCOL INSTALLER by 4ndr0666 //\n\n"
@@ -420,7 +428,7 @@ main() {
 	done
 
 	for f in "$YTDL_PLUGIN" "$YTDL_HANDLER_FILE" "$DMENUHANDLER_FILE" "$DESKTOP_FILE"; do
-		lock "$f"
+		[[ -e "$f" ]] && lock "$f"
 	done
 	echo ""
 	GLOW "Installation complete"
