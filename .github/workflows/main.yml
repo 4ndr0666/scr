@@ -2,16 +2,17 @@ name: Shell Script CI
 
 on:
   push:
-  schedule:
-    - cron: "0 */1 * * *"
-    
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
 jobs:
   lint:
     name: Lint Shell Scripts
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: ./github/actions/checkout
 
     - name: Install shellcheck
       run: |
@@ -42,7 +43,7 @@ jobs:
     needs: lint
 
     steps:
-    - uses: actions/checkout@master
+    - uses: ./github/actions/checkout
 
     - name: Install Dependencies
       run: |
