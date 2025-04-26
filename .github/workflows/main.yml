@@ -2,10 +2,9 @@ name: Shell Script CI
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-
+  schedule:
+    - cron: "0 */1 * * *"
+    
 jobs:
   lint:
     name: Lint Shell Scripts
@@ -43,7 +42,7 @@ jobs:
     needs: lint
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@master
 
     - name: Install Dependencies
       run: |
