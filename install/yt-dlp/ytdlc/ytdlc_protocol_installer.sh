@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Version: 1.1.0
+# Author: 4ndr0666
+
 set -euo pipefail
 # ====================== // INSTALL_YTDLC.SH // by 4ndr0666
+## Description: The YTDLC protocol installer by 4ndr0666. Sets up a protocol to
+#               handle all YouTube links with YTDL://. Each time you visit a YouTube link
+#               the protocol will take over and launch anything you want.
+# ----------------------------------------------------
 
-## Constants (will be validated by ensure_xdg)
+## Constants & PATHS
 
 YTDL_HANDLER_FILE="/usr/local/bin/ytdl-handler.sh"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -44,10 +50,10 @@ fi
 printf "\n"
 INFO "Configuring system..."
 
-if ! ./test_ytdlc.sh --preinstall; then
+if ! ./configure --preinstall; then
 	BUG "Issues detected. Attempting to repair..."
 	sleep 1
-	./test_ytdlc.sh --repair || {
+	./configure --repair || {
 		BUG "Could not repair system..."
 	}
 	exit 1
