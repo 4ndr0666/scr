@@ -268,47 +268,75 @@ ZSH
 	GLOW "ytdl.zsh Plugin Installed"
 }
 
-## Ytdl-handler.sh
+## ytdl-handler.sh
 
 write_handler() {
 	sudo tee "$YTDL_HANDLER_FILE" >/dev/null <<'WH'
 #!/usr/bin/env bash
-# Version: 1.1.0
+# Version: 2.2.0
+# Author: 4ndr0666
+
 set -euo pipefail
 # ========================== // YTDL-HANDLER.SH // by 4ndr0666
+## Description: Handles the sanitized URLs that are passed via
+#               the YTDL:// protocol and passes it to the dmenuhandler.
+# --------------------------------------------------------
 
-DMENU=$(command -v dmenu) || { printf >&2 '[❌] dmenu missing\n'; exit 1; }
-TERM_CMD="${TERMINAL:-alacritty}"
+## Constants
+
+DMENU=$(command -v dmenu) || {
+	printf >&2 '[❌] dmenu missing\n'
+	exit 1
+}
+#TERM_CMD="${TERMINAL:-alacritty}"
+
+## Dynamic Clipboard
 
 clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard -in; }
 
-[ "$#" -ne 1 ] && { printf >&2 '[❌] Error: one URL arg needed\n'; exit 1; }
-[ "$1" = "%u" ] && { printf >&2 '[❌] Error: placeholder arg\n'; exit 1; }
+## Safeguards
+
+[ "$#" -ne 1 ] && {
+	printf >&2 '[❌] Error: one URL arg needed\n'
+	exit 1
+}
+[ "$1" = "%u" ] && {
+	printf >&2 '[❌] Error: placeholder arg\n'
+	exit 1
+}
+
+## URL
 
 feed=${1#ytdl://}
 
+## Sanitize
+
 if command -v python3 >/dev/null; then
-    feed=$(printf '%s' "$feed" | python3 -c 'import sys, urllib.parse as u; print(u.unquote(sys.stdin.read().strip()))')
+	feed=$(printf '%s' "$feed" | python3 -c 'import sys, urllib.parse as u; print(u.unquote(sys.stdin.read().strip()))')
 fi
 
 case $feed in
-    *youtube.com/embed/*)
-        id=${feed##*/embed/}; id=${id%%\?*}
-        feed="https://www.youtube.com/watch?v=$id"
-        ;;
-    *youtu.be/*)
-        id=${feed##*/}; id=${id%%\?*}
-        feed="https://www.youtube.com/watch?v=$id"
-        ;;
+*youtube.com/embed/*)
+	id=${feed##*/embed/}
+	id=${id%%\?*}
+	feed="https://www.youtube.com/watch?v=$id"
+	;;
+*youtu.be/*)
+	id=${feed##*/}
+	id=${id%%\?*}
+	feed="https://www.youtube.com/watch?v=$id"
+	;;
 esac
+
+## Mini-menu
 
 choice=$(printf '%s\n' 'copy url' ytf mpv cancel | "$DMENU" -i -p 'ytdl:')
 
 case "$choice" in
-    'copy url') printf '%s' "$feed" | clip ;;
-    ytf)   setsid -f "$TERM_CMD" -e zsh -ic "ytf '$feed'; read -r -p '\nPress ENTER…'" ;;
-    mpv)   setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
-    *) : ;;
+'copy url') printf '%s' "$feed" | clip ;;
+ytf) setsid -f "$TERM_CMD" -e zsh -ic "ytf '$feed'; read -r -p '\nPress ENTER…'" ;;
+mpv) setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
+*) : ;;
 esac
 WH
 	sudo chmod +x "$YTDL_HANDLER_FILE"
@@ -322,39 +350,44 @@ write_dmenuhandler() {
 	cat >"$DMENUHANDLER_FILE" <<'DM'
 #!/usr/bin/env bash
 # Version: 1.1.0
+# Author: 4ndr0666
+
 set -euo pipefail
-# ========================== // DMENUHANDLER // by 4ndr0666
-## Description: Feed a URL or file path to the dmenu
-#               and choose and app to open it with.
+# ========================== // DMENUHANDLER //
+## Description: Feed a URL or file path and assign a program to launch it.
 # Usage:
 #       <Super> + <KEY_F9>
 # -------------------------------------
 
-
-
 ## Dynamic Clipboard
 
-clip(){ command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard; }
+clip() { command -v wl-copy >/dev/null && wl-copy || xclip -selection clipboard; }
+
+## URL
 
 feed="${1:-$(true | dmenu -p 'Paste URL or file path')}"
 
+## Options
+
 case "$(printf "copy url\\nytf\\nnsxiv\\nsetbg\\nPDF\\nbrowser\\nlynx\\nvim\\nmpv\\nmpv loop\\nmpv float\\nqueue download\\nqueue yt-dlp\\nqueue yt-dlp audio" | dmenu -i -p "Open it with?")" in
 
-
-	"copy url") echo "$feed" | clip ;;
-        ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf '$feed'; read -r -p 'ENTER to close…'" ;;
-	mpv) setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
-	"mpv loop") setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1 ;;
-	"mpv float") setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30%  --title="mpvfloat" "$feed" >/dev/null 2>&1 ;;
-	"queue yt-dlp") qndl "$feed" >/dev/null 2>&1 ;;
-	"queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' ;;
-	"queue download") qndl "$feed" 'curl -LO' >/dev/null 2>&1 ;;
-	PDF) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && zathura "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
-	nsxiv) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && nsxiv -a "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
-	vim) curl -sL "$feed" > "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && setsid -f "$TERMINAL" -e "$EDITOR" "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")"  >/dev/null 2>&1 ;;
-        setbg) curl -L "$feed" > $XDG_CACHE_HOME/pic ; swaybg -i $XDG_CACHE_HOME/pic --mode fill >/dev/null 2>&1 ;;
-	browser) setsid -f "$BROWSER" "$feed" >/dev/null 2>&1 ;;
-	lynx) lynx "$feed" >/dev/null 2>&1 ;;
+"copy url") echo "$feed" | clip ;;
+ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf '$feed'; read -r -p 'ENTER to close…'" ;;
+mpv) setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
+"mpv loop") setsid -f mpv -quiet --loop "$feed" >/dev/null 2>&1 ;;
+"mpv float") setsid -f "$TERMINAL" -e mpv --geometry=+0-0 --autofit=30% --title="mpvfloat" "$feed" >/dev/null 2>&1 ;;
+"queue yt-dlp") qndl "$feed" >/dev/null 2>&1 ;;
+"queue yt-dlp audio") qndl "$feed" 'yt-dlp -o "%(title)s.%(ext)s" -f bestaudio --embed-metadata --restrict-filenames' ;;
+"queue download") qndl "$feed" 'curl -LO' >/dev/null 2>&1 ;;
+PDF) curl -sL "$feed" >"/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && zathura "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" >/dev/null 2>&1 ;;
+nsxiv) curl -sL "$feed" >"/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && nsxiv -a "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" >/dev/null 2>&1 ;;
+vim) curl -sL "$feed" >"/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" && setsid -f "$TERMINAL" -e "$EDITOR" "/tmp/$(echo "$feed" | sed "s|.*/||;s/%20/ /g")" >/dev/null 2>&1 ;;
+setbg)
+	curl -L "$feed" >$XDG_CACHE_HOME/pic
+	swaybg -i $XDG_CACHE_HOME/pic --mode fill >/dev/null 2>&1
+	;;
+browser) setsid -f "$BROWSER" "$feed" >/dev/null 2>&1 ;;
+lynx) lynx "$feed" >/dev/null 2>&1 ;;
 esac
 DM
 	chmod +x "$DMENUHANDLER_FILE"
@@ -368,7 +401,7 @@ write_desktop() {
 	cat >"$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Version=1.1
-Name=YTDL handler
+Name=YTDLC protocol
 Exec=$YTDL_HANDLER_FILE %u
 Type=Application
 MimeType=x-scheme-handler/ytdl;
