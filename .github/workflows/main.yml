@@ -12,8 +12,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: ./github/actions/checkout
-
+    - name: Checkout manually
+      run: |
+        git init
+        git remote add origin https://github.com/4ndr0666/scr.git
+        git fetch origin ${{ github.ref }}
+        git checkout FETCH_HEAD
+    
     - name: Install shellcheck
       run: |
         sudo apt-get update
@@ -43,7 +48,12 @@ jobs:
     needs: lint
 
     steps:
-    - uses: ./github/actions/checkout
+    - name: Checkout manually
+      run: |
+        git init
+        git remote add origin https://github.com/4ndr0666/scr.git
+        git fetch origin ${{ github.ref }}
+        git checkout FETCH_HEAD
 
     - name: Install Dependencies
       run: |
