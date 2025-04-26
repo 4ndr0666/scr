@@ -1,0 +1,7 @@
+name: 'Checkout Repo'
+description: 'Wrapper to checkout code'
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      run: git clone ${{ github.repositoryUrl }} .
