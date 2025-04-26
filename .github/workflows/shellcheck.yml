@@ -27,6 +27,10 @@ jobs:
   shfmt:
     name: Shell Fomatting
     runs-on: ubuntu-latest
+      - name: Run shfmt
+        run: |
+          shfmt -d .
+    
     needs: shellcheck
     steps:
       - name: Checkout sources
