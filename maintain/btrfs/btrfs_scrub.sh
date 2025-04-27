@@ -18,8 +18,9 @@ set -eu
 
 ## Logging
 TARGET=$1
-LOG=${XDG_DATA_HOME:-"$HOME/.local/share"}/logs/btrfs-scrub.log
-mkdir -p "$(dirname "$LOG")"
+LOG_DIR=${XDG_DATA_HOME:-"$HOME/.local/share"}/logs
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/btrfs-scrub-$(basename "$TARGET").log"
 : >"$LOG"
 
 ## Validate
@@ -34,12 +35,21 @@ echo "[$(timestamp)] scrub start on $TARGET" >>"$LOG"
 
 ## BTRFS Scrub
 if btrfs scrub start -- "$TARGET" >>"$LOG" 2>&1; then
-	while status=$(btrfs scrub status -- "$TARGET") && echo "$status" | grep -q running; do
+	while status=$(btrfs scrub status -- "$TARGET"); do
+		echo "$status" | grep -q "scrub status: running" || break
 		echo "[$(timestamp)] $status" >>"$LOG"
 		sleep 60
 	done
 	echo "[$(timestamp)] scrub completed on $TARGET" >>"$LOG"
+	
+	final_status=$(btrfs scrub status -- "$TARGET")
+	echo "[$(timestamp)] Final scrub status:" >>"$LOG"
+	echo "$final_status" >>"$LOG"
+	echo "$final_status" | grep -q 'errors detected: 0' || {
+		echo "[$(timestamp)] error: scrub finished with errors on $TARGET" >>"$LOG"
+		exit 1
+	}
 else
-	echo "[$(timestamp)] error: scrub failed on $TARGET" >>"$LOG"
+	echo "[$(timestamp)] error: scrub failed to start on $TARGET" >>"$LOG"
 	exit 1
 fi
