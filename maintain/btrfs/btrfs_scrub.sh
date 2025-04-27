@@ -1,100 +1,45 @@
 #!/bin/sh
 # Author: 4ndr0666
 set -eu
-
 # ======================= // BTRFS_SCRUB.SH //
-## Description: 
-#   Run a Btrfs scrub on a given mountpoint, wait for
-#   completion, and log results for periodic health checks.
-#
-## Usage:         
-#   btrfs-scrub.sh [-v|--verbose] <mount-point>
-# -------------------------------------------
+## Description: Run a scrub on a Btrfs mount
+## Usage:
+#  		btrfs-scrub.sh <mount-point>
+# ——————————————————————————————————————————
+
+## Check args and assign target
+[ $# -eq 1 ] || {
+	echo "Usage: $0 <mount-point>" >&2
+	exit 1
+}
+
+## Escalate
+[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
 
 ## Logging
+TARGET=$1
+LOG=${XDG_DATA_HOME:-"$HOME/.local/share"}/logs/btrfs-scrub.log
+mkdir -p "$(dirname "$LOG")"
+: >"$LOG"
 
-LOG_DIR=${XDG_DATA_HOME:-"$HOME/.local/share"}/logs
-LOG_FILE=$LOG_DIR/$(basename "$0" .sh).log
-init_logs() {
-	mkdir -p "$LOG_DIR"
-	touch "$LOG_FILE"
+## Validate
+mountpoint -q "$TARGET" || {
+	echo "Error: $TARGET is not a mountpoint" >&2
+	exit 1
 }
 
-## Help
+## Time
+timestamp() { date '+%Y-%m-%d_%H:%M:%S'; }
+echo "[$(timestamp)] scrub start on $TARGET" >>"$LOG"
 
-usage() {
-	printf 'Usage: %s [-v] <mount-point>\n' "$(basename "$0")" 1>&2
-	exit "${1:-2}"
-}
-
-## Auto-escalate
-
-auto_escalate() {
-	if [ "$(id -u)" -ne 0 ]; then
-		printf 'Escalating privileges...\n' 1>&2
-		exec sudo sh "$0" "$@"
-	fi
-}
-
-## Validation
-
-ensure_mount() {
-	mp=$1
-	if ! mountpoint -q "$mp"; then
-		printf 'Error: "%s" is not a mountpoint\n' "$mp" 1>&2
-		exit 1
-	fi
-}
-
-## Btrfs Scrub Logic
-
-run_scrub() {
-	mp=$1
-	ts=$(date -Iseconds)
-	printf '\n[%s] Starting scrub on %s\n' "$ts" "$mp" >>"$LOG_FILE"
-
-	if btrfs scrub start -- "$mp" >>"$LOG_FILE" 2>&1; then
-		while :; do
-			status=$(btrfs scrub status -- "$mp")
-			printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$status" >>"$LOG_FILE"
-			[ "$VERBOSE" -eq 1 ] && printf '%s\n' "$status"
-			case "$status" in
-			*running\ for*) sleep "$SLEEP_INTERVAL" ;;
-			*) break ;;
-			esac
-		done
-		printf '[%s] Scrub completed on %s\n' "$(date -Iseconds)" "$mp" >>"$LOG_FILE"
-		[ "$VERBOSE" -eq 1 ] && printf 'Scrub completed on %s\n' "$mp"
-	else
-		code=$?
-		printf '[%s] Error: scrub failed to start on %s\n' "$ts" "$mp" >>"$LOG_FILE"
-		exit "$code"
-	fi
-}
-
-## TRAP
-
-cleanup() { :; }
-trap cleanup EXIT INT TERM
-
-## Main Entry Point
-
-main() {
-	VERBOSE=0
-	SLEEP_INTERVAL=${SLEEP_INTERVAL:-60}
-	[ $# -ge 1 ] || usage 2
-	case "$1" in
-	-v | --verbose)
-		VERBOSE=1
-		shift
-		;;
-	esac
-	[ $# -eq 1 ] || usage 2
-	auto_escalate "$@"
-	mp=$1
-	ensure_mount "$mp"
-	init_logs
-	run_scrub "$mp"
-}
-
-main "$@"
+## BTRFS Scrub
+if btrfs scrub start -- "$TARGET" >>"$LOG" 2>&1; then
+	while status=$(btrfs scrub status -- "$TARGET") && echo "$status" | grep -q running; do
+		echo "[$(timestamp)] $status" >>"$LOG"
+		sleep 60
+	done
+	echo "[$(timestamp)] scrub completed on $TARGET" >>"$LOG"
+else
+	echo "[$(timestamp)] error: scrub failed on $TARGET" >>"$LOG"
+	exit 1
+fi
