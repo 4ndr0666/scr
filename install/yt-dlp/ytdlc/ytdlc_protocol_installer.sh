@@ -281,20 +281,12 @@ write_handler() {
 #!/usr/bin/env bash
 # Version: 2.2.0
 # Author: 4ndr0666
-
 set -euo pipefail
+
 # ========================== // YTDL-HANDLER.SH // by 4ndr0666
 ## Description: Handles the sanitized URLs that are passed via
 #               the YTDL:// protocol and passes it to the dmenuhandler.
 # --------------------------------------------------------
-
-## Constants
-
-DMENU=$(command -v dmenu) || {
-	printf >&2 '[❌] dmenu missing\n'
-	exit 1
-}
-#TERM_CMD="${TERMINAL:-alacritty}"
 
 ## Dynamic Clipboard
 
@@ -336,11 +328,11 @@ esac
 
 ## Mini-menu
 
-choice=$(printf '%s\n' 'copy url' ytf mpv cancel | "$DMENU" -i -p 'ytdl:')
+choice=$(printf '%s\n' 'copy url' ytf mpv cancel | dmenu -i -p 'ytdl:')
 
 case "$choice" in
-'copy url') printf '%s' "$feed" | clip ;;
-ytf) setsid -f "$TERM_CMD" -e zsh -ic "ytf '$feed'; read -r -p '\nPress ENTER…'" ;;
+'copy url') printf '%s' "$feed" | wl-copy ;;
+ytf) setsid -f "$TERMINAL" -e zsh -ic "ytf '$feed'; read -r -p '\nPress ENTER…'" ;;
 mpv) setsid -f mpv -quiet "$feed" >/dev/null 2>&1 ;;
 *) : ;;
 esac
