@@ -3,42 +3,35 @@
 set -eu
 
 # ======================= // BTRFS_SCRUB.SH //
-## Description: 
-#   Run a Btrfs scrub on a given mountpoint, wait for
-#   completion, and log results for periodic health checks.
+# Description: Run a Btrfs scrub on a given mountpoint,
+# wait for completion, and log results. Supports verbose mode
+# and configurable sleep interval via SLEEP_INTERVAL (default 60s).
 #
-## Usage:         
-#   btrfs-scrub.sh [-v|--verbose] <mount-point>
-# -------------------------------------------
-
-## Logging
+# Usage: btrfs-scrub.sh [-v|--verbose] <mount-point>
+# Environment:
+#   SLEEP_INTERVAL  seconds between status checks (default: 60)
 
 LOG_DIR=${XDG_DATA_HOME:-"$HOME/.local/share"}/logs
 LOG_FILE=$LOG_DIR/$(basename "$0" .sh).log
-init_logs() {
+
+init_logs(){
 	mkdir -p "$LOG_DIR"
 	touch "$LOG_FILE"
 }
 
-## Help
-
-usage() {
+usage(){
 	printf 'Usage: %s [-v] <mount-point>\n' "$(basename "$0")" 1>&2
 	exit "${1:-2}"
 }
 
-## Auto-escalate
-
-auto_escalate() {
+auto_escalate(){
 	if [ "$(id -u)" -ne 0 ]; then
 		printf 'Escalating privileges...\n' 1>&2
 		exec sudo sh "$0" "$@"
 	fi
 }
 
-## Validation
-
-ensure_mount() {
+ensure_mount(){
 	mp=$1
 	if ! mountpoint -q "$mp"; then
 		printf 'Error: "%s" is not a mountpoint\n' "$mp" 1>&2
@@ -46,9 +39,7 @@ ensure_mount() {
 	fi
 }
 
-## Btrfs Scrub Logic
-
-run_scrub() {
+run_scrub(){
 	mp=$1
 	ts=$(date -Iseconds)
 	printf '\n[%s] Starting scrub on %s\n' "$ts" "$mp" >>"$LOG_FILE"
@@ -59,8 +50,8 @@ run_scrub() {
 			printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$status" >>"$LOG_FILE"
 			[ "$VERBOSE" -eq 1 ] && printf '%s\n' "$status"
 			case "$status" in
-			*running\ for*) sleep "$SLEEP_INTERVAL" ;;
-			*) break ;;
+				*running\ for*) sleep "$SLEEP_INTERVAL" ;;
+				*) break ;;
 			esac
 		done
 		printf '[%s] Scrub completed on %s\n' "$(date -Iseconds)" "$mp" >>"$LOG_FILE"
@@ -72,24 +63,19 @@ run_scrub() {
 	fi
 }
 
-## TRAP
-
-cleanup() { :; }
+cleanup(){ :; }
 trap cleanup EXIT INT TERM
 
-## Main Entry Point
-
-main() {
+main(){
 	VERBOSE=0
 	SLEEP_INTERVAL=${SLEEP_INTERVAL:-60}
+
 	[ $# -ge 1 ] || usage 2
 	case "$1" in
-	-v | --verbose)
-		VERBOSE=1
-		shift
-		;;
+		-v|--verbose) VERBOSE=1; shift ;;
 	esac
 	[ $# -eq 1 ] || usage 2
+
 	auto_escalate "$@"
 	mp=$1
 	ensure_mount "$mp"
