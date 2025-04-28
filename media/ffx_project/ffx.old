@@ -1,0 +1,407 @@
+#!/usr/bin/env sh
+##############################################################################
+# ffx
+#
+# A single POSIX-compliant script merging:
+#   1) Downscale to 1080p
+#   2) Looperang (forward+reverse) via an image-based approach
+#   3) Slow Motion
+#   4) Process (video normalization)
+#
+# NOTES:
+#   - We exclusively use libx264 for encoding (where re-encoding is needed).
+#   - "process" step is automatically run first for other operations, if desired.
+#   - For Looperang, we rely on a proven image-sequence approach (CRF=0 = truly lossless).
+#   - If fzf is installed, we use it for interactive file selection; otherwise we prompt.
+#
+# USAGE:
+#   1) Interactive (no args):
+#         sh ffx
+#      Follow the menu to pick an operation.
+#
+#   2) Non-interactive:
+#         sh ffx <mode> [args...]
+#      Where <mode> ∈ {downscale, looperang, slomo, process}
+#
+##############################################################################
+set -eu
+
+##############################################################################
+# GLOBAL DEPENDENCIES CHECK
+##############################################################################
+command -v ffmpeg >/dev/null 2>&1 || {
+  echo "Error: ffmpeg not installed."
+  exit 1
+}
+command -v ffprobe >/dev/null 2>&1 || {
+  echo "Error: ffprobe not installed."
+  exit 1
+}
+command -v bc >/dev/null 2>&1 || {
+  echo "Error: bc not installed."
+  exit 1
+}
+
+##############################################################################
+# 0) FILE SELECTOR (INTERACTIVE)
+##############################################################################
+select_file_interactive() {
+  if command -v fzf >/dev/null 2>&1; then
+    found="$(find "$PWD" -maxdepth 1 -type f | fzf --prompt="Select a file: ")"
+    echo "$found"
+  else
+    echo "Enter path to video:"
+    read -r sel
+    echo "$sel"
+  fi
+}
+
+##############################################################################
+# 1) ANALYZE
+#    - Returns two sections:
+#       First line: video codec name
+#       Remaining lines: any error logs
+##############################################################################
+analyze_video() {
+  f="$1"
+  codec_info="$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=codec_name \
+    -of default=noprint_wrappers=1:nokey=1 "$f" 2>/dev/null || echo "")"
+
+  error_logs="$(ffprobe -v error -show_entries stream=errors \
+    -of default=noprint_wrappers=1:nokey=1 "$f" 2>/dev/null || echo "")"
+
+  printf "%s\n%s\n" "$codec_info" "$error_logs"
+}
+
+##############################################################################
+# 2) PROCESS (Normalization)
+#    - If file is already h264 + no errors => copy
+#    - Else => re-encode to libx264 (CRF=17 near-lossless)
+##############################################################################
+process_video() {
+  in_file="$1"
+  out_file="$2"
+
+  analysis="$(analyze_video "$in_file")"
+  vid_codec="$(echo "$analysis" | head -n 1 | tr -d ' \r')"
+  err_lines="$(echo "$analysis" | tail -n +2)"
+
+  if [ "$vid_codec" = "h264" ] && [ -z "$err_lines" ]; then
+    ffmpeg -i "$in_file" -c copy -fflags +genpts "$out_file"
+  else
+    ffmpeg -i "$in_file" \
+      -c:v libx264 -crf 17 -preset slow -pix_fmt yuv420p \
+      -c:a copy -map 0:v -map 0:a? \
+      "$out_file"
+  fi
+}
+
+##############################################################################
+# 3) DOWNSCALE
+#    - Downscale to 1080p if over 1080p, else copy.
+#    - CRF=18 for near-lossless, keep color space in bt709
+##############################################################################
+downscale_video() {
+  in_file="$1"
+  out_file="$2"
+  quality="18"
+
+  w="$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+    -of csv=p=0 "$in_file" 2>/dev/null || echo "0")"
+  h="$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+    -of csv=p=0 "$in_file" 2>/dev/null || echo "0")"
+
+  if [ "$w" -le 1920 ] && [ "$h" -le 1080 ] && [ "$w" -gt 0 ] && [ "$h" -gt 0 ]; then
+    echo "Already ≤1080p. Copying..."
+    ffmpeg -i "$in_file" -c copy -fflags +genpts "$out_file"
+    return
+  fi
+
+  cs="$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=color_space -of default=nw=1:nk=1 "$in_file" 2>/dev/null || echo "")"
+
+  if [ -z "$cs" ] || [ "$cs" = "bt709" ]; then
+    filters="scale=1920:1080:flags=lanczos,format=yuv420p"
+  else
+    filters="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=reinhard,zscale=t=bt709:m=bt709:r=tv,scale=1920:1080:flags=lanczos,format=yuv420p"
+  fi
+
+  ffmpeg -i "$in_file" \
+    -vf "$filters" \
+    -colorspace bt709 -color_primaries bt709 -color_trc bt709 \
+    -c:v libx264 -crf "$quality" -preset slow \
+    -c:a copy \
+    "$out_file"
+}
+
+##############################################################################
+# 4) LOOPERANG (Image-based approach with CRF=0 for truly lossless)
+#    Steps:
+#      a) detect FPS
+#      b) extract frames forward
+#      c) reverse frames
+#      d) rebuild forward & reversed segments with CRF=0
+#      e) concat
+##############################################################################
+looperang_video() {
+  in_file="$1"
+  out_file="$2"
+
+  # detect fps
+  fps_val="$(ffprobe -v 0 -select_streams v:0 -show_entries stream=avg_frame_rate \
+    -of csv=p=0 "$in_file" 2>/dev/null || echo "30")"
+  if [ -z "$fps_val" ]; then
+    fps_val="30"
+  fi
+
+  # parse fractional fps
+  fps_float="$(echo "$fps_val" | awk -F/ '{ if($2==0) {print 30} else {printf "%f", $1/$2} }')"
+
+  # unique directory for frames
+  base="$(basename "$in_file" | sed 's/\.[^.]*$//')"
+  forward_frames_dir="forward_frames_$base"
+  reversed_frames_dir="reversed_frames_$base"
+
+  mkdir -p "$forward_frames_dir" "$reversed_frames_dir"
+
+  echo "Extracting frames from: $in_file"
+  ffmpeg -i "$in_file" -qscale:v 2 "${forward_frames_dir}/frame-%06d.jpg"
+
+  echo "Reversing frames order..."
+  i=1
+  ls -1 "${forward_frames_dir}"/*.jpg | sort -r | while read -r frame; do
+    newname=$(printf "frame-%06d.jpg" "$i")
+    cp "$frame" "${reversed_frames_dir}/${newname}"
+    i=$((i+1))
+  done
+
+  # build forward & reverse
+  forward_vid="forward_${base}.mov"
+  reversed_vid="reversed_${base}.mov"
+
+  echo "Rebuilding forward video @ fps=${fps_float}, CRF=0..."
+  ffmpeg \
+    -framerate "$fps_float" \
+    -i "${forward_frames_dir}/frame-%06d.jpg" \
+    -c:v libx264 -crf 0 -preset medium \
+    -pix_fmt yuv420p -movflags +faststart \
+    "$forward_vid"
+
+  echo "Rebuilding reversed video @ fps=${fps_float}, CRF=0..."
+  ffmpeg \
+    -framerate "$fps_float" \
+    -i "${reversed_frames_dir}/frame-%06d.jpg" \
+    -c:v libx264 -crf 0 -preset medium \
+    -pix_fmt yuv420p -movflags +faststart \
+    "$reversed_vid"
+
+  # concat
+  concat_list="concat_list_${base}.txt"
+  printf "file '%s'\nfile '%s'\n" "$forward_vid" "$reversed_vid" > "$concat_list"
+
+  echo "Concatenating final boomerang => $out_file"
+  ffmpeg -f concat -safe 0 -i "$concat_list" -c copy "$out_file"
+
+  # cleanup frames
+  rm -rf "$forward_frames_dir" "$reversed_frames_dir" "$concat_list"
+
+  # prompt user if they'd like to remove forward_* & reversed_*
+  # for now, we'll remove them automatically (above).
+  rm -f "$forward_vid" "$reversed_vid"
+}
+
+##############################################################################
+# 5) SLOMO
+#    - if factor=1 => copy
+#    - else => setpts & atempo, CRF=17 near-lossless
+##############################################################################
+slomo_video() {
+  in_file="$1"
+  factor="$2"
+  out_file="$3"
+
+  case "$factor" in
+    ''|*[!0-9.]*)
+      echo "Error: slow_factor must be numeric."
+      return 1
+      ;;
+  esac
+
+  if [ "$(echo "$factor <= 0" | bc -l 2>/dev/null || echo 0)" -eq 1 ]; then
+    echo "Error: slow_factor must be >0."
+    return 1
+  fi
+
+  norm_factor="$(printf "%s" "$factor" | sed 's/[0]*$//; s/\.$//')"
+  if [ "$norm_factor" = "1" ]; then
+    ffmpeg -i "$in_file" -c copy -fflags +genpts "$out_file"
+  else
+    vf="setpts=${factor}*PTS"
+    af="$(echo "scale=4; 1/$factor" | bc -l)"
+    ffmpeg -i "$in_file" \
+      -filter_complex "[0:v]$vf[v];[0:a]atempo=$af[a]" \
+      -map "[v]" -map "[a]" \
+      -c:v libx264 -crf 17 -preset slow -pix_fmt yuv420p \
+      -c:a aac -b:a 320k \
+      "$out_file"
+  fi
+}
+
+##############################################################################
+# MENU
+##############################################################################
+print_menu() {
+  echo "--------------------------------------------"
+  echo " MULTI FFMPEG TOOL (ffx) "
+  echo "--------------------------------------------"
+  echo "1) Downscale to 1080p"
+  echo "2) Looperang (Forward+Reverse) - image-based"
+  echo "3) Slow Motion"
+  echo "4) Process (Normalization Only)"
+  echo "--------------------------------------------"
+  echo "Choose an option (1-4), or Ctrl+C to quit:"
+}
+
+menu_flow() {
+  print_menu
+  read -r choice
+  case "$choice" in
+    1)
+      echo "Selected: Downscale"
+      input="$(select_file_interactive)"
+      [ ! -f "$input" ] && { echo "Invalid file '$input'"; exit 1; }
+      echo "Output file name (default: downscaled_1080p.mp4):"
+      read -r out
+      [ -z "$out" ] && out="downscaled_1080p.mp4"
+
+      tmp="$(mktemp -u).mp4"
+      process_video "$input" "$tmp"
+      downscale_video "$tmp" "$out"
+      rm -f "$tmp"
+      ;;
+    2)
+      echo "Selected: Looperang"
+      input="$(select_file_interactive)"
+      [ ! -f "$input" ] && { echo "Invalid file '$input'"; exit 1; }
+      echo "Output file name (default: looperang_output.mp4):"
+      read -r out
+      [ -z "$out" ] && out="looperang_output.mp4"
+
+      tmp="$(mktemp -u).mp4"
+      process_video "$input" "$tmp"
+      looperang_video "$tmp" "$out"
+      rm -f "$tmp"
+      ;;
+    3)
+      echo "Selected: Slow Motion"
+      input="$(select_file_interactive)"
+      [ ! -f "$input" ] && { echo "Invalid file '$input'"; exit 1; }
+      echo "Enter slow factor (e.g. 2.0 for half-speed, 0.5 for faster):"
+      read -r factor
+      echo "Output file name (default: slowmotion_output.mp4):"
+      read -r out
+      [ -z "$out" ] && out="slowmotion_output.mp4"
+
+      tmp="$(mktemp -u).mp4"
+      process_video "$input" "$tmp"
+      slomo_video "$tmp" "$factor" "$out"
+      rm -f "$tmp"
+      ;;
+    4)
+      echo "Selected: Process Only"
+      input="$(select_file_interactive)"
+      [ ! -f "$input" ] && { echo "Invalid file '$input'"; exit 1; }
+      echo "Output file name (default: processed_output.mp4):"
+      read -r out
+      [ -z "$out" ] && out="processed_output.mp4"
+
+      process_video "$input" "$out"
+      ;;
+    *)
+      echo "Invalid choice."
+      exit 1
+      ;;
+  esac
+}
+
+##############################################################################
+# NON-INTERACTIVE
+##############################################################################
+noninteractive_flow() {
+  mode="$1"
+  shift
+
+  case "$mode" in
+    downscale)
+      in_file="${1:-}"
+      out_file="${2:-downscaled_1080p.mp4}"
+      [ -z "$in_file" ] || [ ! -f "$in_file" ] && {
+        echo "Error: Must provide valid input file for downscale."
+        exit 1
+      }
+      tmp="$(mktemp -u).mp4"
+      process_video "$in_file" "$tmp"
+      downscale_video "$tmp" "$out_file"
+      rm -f "$tmp"
+      ;;
+    looperang)
+      in_file="${1:-}"
+      out_file="${2:-looperang_output.mp4}"
+      [ -z "$in_file" ] || [ ! -f "$in_file" ] && {
+        echo "Error: Must provide valid input file for looperang."
+        exit 1
+      }
+      tmp="$(mktemp -u).mp4"
+      process_video "$in_file" "$tmp"
+      looperang_video "$tmp" "$out_file"
+      rm -f "$tmp"
+      ;;
+    slomo)
+      in_file="${1:-}"
+      factor="${2:-}"
+      out_file="${3:-slowmotion_output.mp4}"
+      [ -z "$in_file" ] || [ ! -f "$in_file" ] && {
+        echo "Error: Must provide valid input file for slomo."
+        exit 1
+      }
+      [ -z "$factor" ] && {
+        echo "Error: Must provide slow_factor for slomo."
+        exit 1
+      }
+      tmp="$(mktemp -u).mp4"
+      process_video "$in_file" "$tmp"
+      slomo_video "$tmp" "$factor" "$out_file"
+      rm -f "$tmp"
+      ;;
+    process)
+      in_file="${1:-}"
+      out_file="${2:-processed_output.mp4}"
+      [ -z "$in_file" ] || [ ! -f "$in_file" ] && {
+        echo "Error: Must provide valid input file to process."
+        exit 1
+      }
+      process_video "$in_file" "$out_file"
+      ;;
+    *)
+      echo "Error: Unknown mode '$mode'."
+      echo "Valid modes: downscale, looperang, slomo, process"
+      exit 1
+      ;;
+  esac
+}
+
+##############################################################################
+# MAIN
+##############################################################################
+main() {
+  if [ $# -eq 0 ]; then
+    menu_flow
+  else
+    mode="$1"
+    shift
+    noninteractive_flow "$mode" "$@"
+  fi
+}
+
+main "$@"
