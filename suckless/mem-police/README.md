@@ -1,6 +1,6 @@
 # mem-police
 
-**mem-police** is a minimalist Linux daemon designed to monitor system memory usage and terminate processes that exceed a specified memory threshold for a sustained period. It operates based on configurable parameters defined in `/etc/mem_police.conf`.
+A lightweight daemon to monitor resident memory usage of processes and enforce configurable upper limits.
 
 ---
 
@@ -16,56 +16,110 @@
 
 ## 📦 Installation
 
-### Prerequisites
+1. **Compile**  
 
-- Linux system with `/proc` filesystem.
-- C compiler (e.g., `gcc`).
-- `make` utility.
+   ```sh
 
-### Build and Install
+   cc -O2 -std=c11 -Wall -Wextra -pedantic \
+      -D_POSIX_C_SOURCE=200809L \
+      -o mem-police mem-police.c
 
-```sh
-make
-sudo make install
-```
+   ```
 
-This will compile `mem-police` and install it to `/usr/local/bin/mem-police`.
+2. **Install**  
+
+   ```sh
+
+   sudo install -m 755 mem-police /usr/local/bin/
+
+   ```
+
+3. **Configuration File**  
+
+   Create `/etc/mem_police.conf` with content:
+
+   ```ini
+   
+   # Mem-police Config
+   
+   THRESHOLD_MB=700
+   KILL_SIGNAL=SIGTERM
+   KILL_DELAY=20
+   SLEEP=30
+   WHITELIST="systemd X bash sshd NetworkManager dbus gnome-keyring-daemon wayfire swaybg"
+
+   ```
+   - **THRESHOLD_MB**: memory limit per process (in MB)  
+   - **KILL_SIGNAL**: signal to send after delay (name or number)  
+   - **KILL_DELAY**: seconds above threshold before killing  
+   - **SLEEP**: seconds between scans  
+   - **WHITELIST**: space-separated process names to ignore  
 
 ---
 
 ## ⚙️ Configuration
 
-Create or edit the configuration file at `/etc/mem_police.conf` with the following parameters:
-
-```ini
-THRESHOLD_MB=800
-KILL_SIGNAL=15
-KILL_DELAY=10
-SLEEP=30
-WHITELIST=sshd bash
-```
-
-- `THRESHOLD_MB`: Memory usage threshold in megabytes.
-- `KILL_SIGNAL`: Signal number to send (e.g., 15 for SIGTERM).
-- `KILL_DELAY`: Time in seconds to wait before forcefully killing a process.
-- `SLEEP`: Interval in seconds between memory checks.
-- `WHITELIST`: Space-separated list of process names to exclude.
+| Variable       | Description                                                 | Default  |
+| -------------- | ----------------------------------------------------------- | -------- |
+| `THRESHOLD_MB` | Max resident memory per process (MB)                        | *required* |
+| `KILL_SIGNAL`  | Signal to send (e.g. `SIGTERM`, `15`)                       | *required* |
+| `KILL_DELAY`   | Seconds over threshold before enforcing kill                | *required* |
+| `SLEEP`        | Polling interval in seconds                                 | 30       |
+| `WHITELIST`    | Process commands to exempt (space-separated list)           | *required* |
 
 ---
 
-## 🚀 Usage
+## ▶️ Usage
 
-Start the daemon:
-
-```sh
-sudo /usr/local/bin/mem-police
-```
-
-To run `mem-police` in the background and log output:
+Run as root or a user with permission to send signals:
 
 ```sh
-sudo nohup /usr/local/bin/mem-police > /var/log/mem-police.log 2>&1 &
+
+sudo mem-police
+
 ```
+
+It will:
+- Scan `/proc` every `SLEEP` seconds.
+- Track processes exceeding `THRESHOLD_MB`.
+- After `KILL_DELAY`, send `KILL_SIGNAL`, then `SIGKILL` if still alive.
+- Log actions to **stdout** (or redirect as desired).
+
+### Logging
+
+Background & Redirect output:
+
+```sh
+
+sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
+
+```
+
+---
+
+## ⏪ Uninstallation
+
+1. Remove binary:
+
+   ```sh
+
+   sudo rm /usr/local/bin/mem-police
+
+   ```
+2. Remove config:
+
+   ```sh
+
+   sudo rm /etc/mem_police.conf
+
+   ```
+3. (Optional) Clean up start-timer files:
+
+   ```sh
+
+   sudo rm /tmp/mempolice-*.start
+
+   ```
 
 ---
 
@@ -76,8 +130,10 @@ A test script `mem-police-tester.sh` is provided to simulate a high memory usage
 ### Run the Tester
 
 ```sh
+
 chmod +x mem-police-tester.sh
 ./mem-police-tester.sh 800
+
 ```
 
 This script will:
@@ -89,19 +145,6 @@ This script will:
 
 ---
 
-## 📄 License
+## 🛠️ License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please fork the repository and submit a pull request with your changes.
-
----
-
-## 📞 Contact
-
-For issues or feature requests, please open an issue on the [GitHub repository](https://github.com/yourusername/mem-police).
-
+This project is licensed under the MIT License. See the [LICENSE](MIT) file for details.
