@@ -1,0 +1,15 @@
+{
+  "directories": [
+    "bin",
+    "etc",
+    "logs",
+    "tmp"
+  ],
+  "files": [
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".gitignore",
+    "etc/default.conf"
+  ]
+}

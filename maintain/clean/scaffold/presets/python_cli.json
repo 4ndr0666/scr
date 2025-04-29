@@ -1,0 +1,16 @@
+{
+  "directories": [
+    "src",
+    "tests",
+    "docs"
+  ],
+  "files": [
+    "README.md",
+    "CHANGELOG.md",
+    ".gitignore",
+    "setup.py",
+    "src/__init__.py",
+    "src/main.py",
+    "tests/test_main.py"
+  ]
+}

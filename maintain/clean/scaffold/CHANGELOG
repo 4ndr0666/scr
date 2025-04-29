@@ -1,0 +1,25 @@
+# Scaffold - Project Bootstrapper
+# CHANGELOG
+
+## v4.0.0 (Initial Release)
+
+- Created `scaffold.py` CLI utility.
+- Added Dry-run mode before any file system changes.
+- Dynamically load project templates (presets) from JSON files.
+- Available Presets:
+  - Git Basic Repository
+  - Suckless Script Project Layout
+  - Minimal Static Webapp
+  - Minimal Python CLI Project
+- Interactive selection of presets.
+- Option to confirm creation after dry-run preview.
+- Presets folder: `presets/`
+- Lightweight: pure Python 3 standard library + optional Rich CLI output.
+- POSIX and Windows compatible (no OS-specific commands inside core).
+
+---
+# Future Ideas
+- Template Creator Mode (save custom scaffold templates)
+- Git init option after scaffold creation
+- License file auto-generation
+- Optional README/Changelog boilerplate text filling
