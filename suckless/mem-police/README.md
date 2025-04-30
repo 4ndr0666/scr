@@ -6,10 +6,10 @@ A minimal daemon to enforce per-process memory limits via simple “startfile”
 
 ## 🛠️ Features
 
-- **Configurable Thresholds**: Define memory usage limits in megabytes.  
-- **Grace Period**: Delay before terminating over-consuming processes.  
-- **Process Whitelisting**: Exclude specific processes from monitoring.  
-- **Logging**: Events output to standard output.  
+- **Configurable Thresholds**: Define memory usage limits in megabytes.
+- **Grace Period**: Delay before terminating over-consuming processes.
+- **Process Whitelisting**: Exclude specific processes from monitoring.
+- **Logging**: Events output to standard output.
 - **Lightweight**: Minimal dependencies, written in C.
 
 ---
@@ -26,7 +26,7 @@ A minimal daemon to enforce per-process memory limits via simple “startfile”
    ```sh
    sudo install -m 755 mem-police /usr/local/bin/
    ```
-3. **Configure**  
+3. **Configure**
    Create `/etc/mem_police.conf` with your settings:
    ```ini
    THRESHOLD_MB=700
@@ -57,13 +57,9 @@ A minimal daemon to enforce per-process memory limits via simple “startfile”
 
 ## ▶️ Usage
 
-Run as root or with sufficient privileges:
+Run as a background job with redirection:
 ```sh
-sudo mem-police
-```
-Logs are written to stdout; to persist:
-```sh
-sudo mem-police 2>&1 | tee /var/log/mem-police.log
+sudo sh -c 'mem-police 2>&1 | tee /var/log/mem-police.log' &
 ```
 
 ---

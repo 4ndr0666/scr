@@ -36,6 +36,7 @@ if cc -O2 -std=c11 -Wall -Wextra -pedantic \
      -o mem-police mem-police.c
 then
     GLOW "Compilation succeeded"
+    echo ""
 else
     BUG  "Compilation failed"
     exit 1
@@ -46,6 +47,8 @@ fi
 INFO "Installing to /usr/local/bin..."
 if install -m755 mem-police /usr/local/bin/; then
     GLOW "mem-police installed successfully."
+    echo ""
+    printf '%s\n' "Start mem-police with [→]$(tput setaf 4)  sudo sh -c 'mem-police 2>&1 | tee /var/log/mem-police.log' &$(tput sgr0)"
 else
     BUG  "Installation failed."
     exit 1
