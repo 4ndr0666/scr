@@ -1,6 +1,6 @@
 # mem-police
 
-A lightweight daemon to monitor resident memory usage of processes and enforce configurable upper limits.
+A minimal daemon to enforce per-process memory limits via simple “startfile” timing.
 
 ---
 
@@ -16,17 +16,17 @@ A lightweight daemon to monitor resident memory usage of processes and enforce c
 
 ## 📦 Installation
 
-1. **Compile**  
+1. **Compile**
 
    ```sh
 
    cc -O2 -std=c11 -Wall -Wextra -pedantic \
       -D_POSIX_C_SOURCE=200809L \
       -o mem-police mem-police.c
-     
+
    ```
 
-2. **Install**  
+2. **Install**
 
    ```sh
 
@@ -34,31 +34,26 @@ A lightweight daemon to monitor resident memory usage of processes and enforce c
 
    ```
 
-3. **Configuration File**  
+3. **Configuration File**
 
    Create `/etc/mem_police.conf` with content:
 
    ```ini
-   
+
    # Mem-police Config
-   
+
    THRESHOLD_MB=700
-   KILL_SIGNAL=SIGTERM
-   KILL_DELAY=20
+   KILL_SIGNAL=15
+   KILL_DELAY=60
    SLEEP=30
-   WHITELIST="systemd X bash sshd NetworkManager dbus gnome-keyring-daemon wayfire swaybg"
+   WHITELIST=systemd X bash sshd NetworkManager dbus gnome-keyring-daemon wayfire swaybg
 
    ```
-   - **THRESHOLD_MB**: memory limit per process (in MB)  
-   - **KILL_SIGNAL**: signal to send after delay (name or number)  
-   - **KILL_DELAY**: seconds above threshold before killing  
-   - **SLEEP**: seconds between scans  
-   - **WHITELIST**: space-separated process names to ignore  
 
    Make sure the file is readable by root only:
 
    ```sh
-   
+
    sudo chown root:root /etc/mem_police.conf
    sudo chmod 600     /etc/mem_police.conf
 
@@ -94,20 +89,26 @@ It will:
 - After `KILL_DELAY`, send `KILL_SIGNAL`, then `SIGKILL` if still alive.
 - Log actions to **stdout** (or redirect as desired).
 
-### Logging
-
-Background & Redirect output:
-
 ```sh
 
-sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
+sudo mem-police 2>&1 | tee /var/log/mem-police.log
 
 ```
 
-### Monitor & Iterate
+---
 
-- Check your logs (journalctl or /var/log/mem-police.log) for unexpected kills.
-- Adjust thresholds, delays, or whitelist entries as needed.
+### 🧪 Testing
+
+Use the TAP‐style tester:
+
+```sh
+
+chmod +x mem-police-tester.sh
+sudo ./mem-police-tester.sh 800 1024
+
+```
+
+It will output a TAP plan (1..4) and ok/not ok lines for each startfile and kill check.
 
 ---
 
@@ -120,6 +121,7 @@ sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
    sudo rm /usr/local/bin/mem-police
 
    ```
+
 2. Remove config:
 
    ```sh
@@ -127,6 +129,7 @@ sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
    sudo rm /etc/mem_police.conf
 
    ```
+
 3. (Optional) Clean up start-timer files:
 
    ```sh
@@ -134,28 +137,6 @@ sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
    sudo rm /tmp/mempolice-*.start
 
    ```
-
----
-
-## 🧪 Testing
-
-A test script `mem-police-tester.sh` is provided to simulate a high memory usage scenario and verify that `mem-police` responds appropriately.
-
-### Run the Tester
-
-```sh
-
-chmod +x mem-police-tester.sh
-./mem-police-tester.sh 800
-
-```
-
-This script will:
-
-1. Start `mem-police` if not already running.
-2. Launch a Python process that consumes the specified amount of memory.
-3. Monitor for the creation of a start file indicating the process is over the threshold.
-4. Wait for the process to be terminated by `mem-police`.
 
 ---
 

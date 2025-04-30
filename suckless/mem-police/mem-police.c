@@ -13,7 +13,6 @@ Compile with:
 #include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,18 +21,35 @@ Compile with:
 #include <time.h>
 #include <unistd.h>
 
-#define CONFIG_PATH     "/etc/mem_police.conf"
-#define STARTFILE_DIR   "/tmp"
-#define DEFAULT_SLEEP   30
-#define BUF_LEN         256
-#define MAX_WHITELIST   64
+#define CONFIG_PATH       "/etc/mem_police.conf"
+#define STARTFILE_DIR     "/tmp"
+#define DEFAULT_SLEEP     30
+#define BUF_LEN           256
+#define MAX_WHITELIST_LEN 1024
+#define MAX_WHITELIST     64
 
-static int  threshold_mb       = -1;
-static int  kill_signal        = -1;
-static int  kill_delay         = -1;
-static int  sleep_secs         = DEFAULT_SLEEP;
+static int   threshold_mb       = -1;
+static int   kill_signal        = -1;
+static int   kill_delay         = -1;
+static int   sleep_secs         = DEFAULT_SLEEP;
+static char  whitelist_buf[MAX_WHITELIST_LEN];
 static char *whitelist_entries[MAX_WHITELIST];
-static size_t whitelist_count  = 0;
+static size_t whitelist_count   = 0;
+
+/* Convert name or number to signal */
+static int str2sig(const char *s) {
+    if (isdigit((unsigned char)*s))
+        return atoi(s);
+    if (strncmp(s, "SIG", 3) == 0)
+        s += 3;
+    if (strcmp(s, "TERM") == 0) return SIGTERM;
+    if (strcmp(s, "KILL") == 0) return SIGKILL;
+    if (strcmp(s, "INT")  == 0) return SIGINT;
+    if (strcmp(s, "HUP")  == 0) return SIGHUP;
+    if (strcmp(s, "QUIT") == 0) return SIGQUIT;
+    /* add more as needed */
+    return -1;
+}
 
 /* Secure bounded logger */
 static void log_msg(const char *fmt, ...) {
@@ -62,24 +78,27 @@ static void load_config(void) {
         if (!key || !val) continue;
 
         if      (strcmp(key, "THRESHOLD_MB") == 0) threshold_mb = atoi(val);
-        else if (strcmp(key, "KILL_SIGNAL")  == 0) kill_signal  = atoi(val);
+        else if (strcmp(key, "KILL_SIGNAL")  == 0) kill_signal  = str2sig(val);
         else if (strcmp(key, "KILL_DELAY")   == 0) kill_delay   = atoi(val);
         else if (strcmp(key, "SLEEP")        == 0) sleep_secs   = atoi(val);
         else if (strcmp(key, "WHITELIST")    == 0) {
-            char *copy = strdup(val);
-            if (!copy) continue;
+            /* copy once, then tokenize in-place */
+            strncpy(whitelist_buf, val, sizeof whitelist_buf - 1);
+            whitelist_buf[sizeof whitelist_buf - 1] = '\0';
             char *ctx = NULL, *tok;
-            for (tok = strtok_r(copy, " \t", &ctx);
+            for (tok = strtok_r(whitelist_buf, " \t", &ctx);
                  tok && whitelist_count < MAX_WHITELIST;
                  tok = strtok_r(NULL, " \t", &ctx)) {
-                whitelist_entries[whitelist_count++] = strdup(tok);
+                whitelist_entries[whitelist_count++] = tok;
             }
-            free(copy);
         }
     }
     fclose(f);
 
-    if (threshold_mb < 0 || kill_signal < 0 || kill_delay < 0 || whitelist_count == 0) {
+    if (threshold_mb < 0
+     || kill_signal  < 0
+     || kill_delay   < 0
+     || whitelist_count == 0) {
         log_msg("[!] Invalid config in %s\n", CONFIG_PATH);
         exit(1);
     }
@@ -92,6 +111,17 @@ static int is_whitelisted(const char *cmd) {
             return 1;
     }
     return 0;
+}
+
+/* Parse directory name → pid, or -1 */
+static pid_t parse_pid_dir(const char *name) {
+    pid_t pid = 0;
+    for (const char *p = name; *p; p++) {
+        if (!isdigit((unsigned char)*p))
+            return -1;
+        pid = pid * 10 + (*p - '0');
+    }
+    return pid > 0 ? pid : -1;
 }
 
 /* Return VmRSS in MB or -1 */
@@ -136,8 +166,17 @@ static int get_comm(pid_t pid, char *out, size_t olen) {
 }
 
 int main(void) {
-    int ret;
     load_config();
+
+    /*
+     * The “startfile” mechanism:
+     * ─────────────────────────
+     * When a process first exceeds THRESHOLD_MB, we create
+     * /tmp/mempolice-<pid>.start containing a timestamp.
+     * If it remains over threshold for > KILL_DELAY, we kill it
+     * and unlink that file. When under threshold, any leftover
+     * startfile is removed immediately.
+     */
 
     for (;;) {
         DIR *dp = opendir("/proc");
@@ -149,13 +188,8 @@ int main(void) {
         time_t now = time(NULL);
         struct dirent *de;
         while ((de = readdir(dp)) != NULL) {
-            /* skip non-numeric dirs */
-            pid_t pid = 0;
-            for (const char *p = de->d_name; *p; p++) {
-                if (!isdigit((unsigned char)*p)) { pid = 0; break; }
-                pid = pid * 10 + (*p - '0');
-            }
-            if (pid <= 0) continue;
+            pid_t pid = parse_pid_dir(de->d_name);
+            if (pid < 0) continue;
 
             char cmd[BUF_LEN];
             if (get_comm(pid, cmd, sizeof cmd) < 0) continue;
@@ -165,17 +199,17 @@ int main(void) {
             if (mem < 0)                          continue;
 
             char startfile[PATH_MAX];
-            ret = snprintf(startfile, sizeof startfile,
-                           STARTFILE_DIR "/mempolice-%d.start", (int)pid);
-            if (ret < 0 || (size_t)ret >= sizeof startfile)
+            int  r = snprintf(startfile, sizeof startfile,
+                              STARTFILE_DIR "/mempolice-%d.start", (int)pid);
+            if (r < 0 || (size_t)r >= sizeof startfile)
                 continue;
 
             if (mem > threshold_mb) {
                 struct stat st;
                 if (stat(startfile, &st) != 0) {
+                    /* first over-threshold: create startfile */
                     if (errno != ENOENT)
                         log_msg("[!] stat(%s): %s\n", startfile, strerror(errno));
-                    /* first over-threshold */
                     FILE *sf = fopen(startfile, "w");
                     if (sf) {
                         fprintf(sf, "%ld\n", (long)now);
@@ -184,11 +218,12 @@ int main(void) {
                                 (int)pid, cmd);
                     }
                 } else {
-                    /* maybe kill */
+                    /* been over-threshold: kill if delay passed */
                     FILE *sf = fopen(startfile, "r");
                     if (sf) {
                         long t0;
-                        if (fscanf(sf, "%ld", &t0) == 1 && now - t0 > kill_delay) {
+                        if (fscanf(sf, "%ld", &t0) == 1
+                         && now - t0 > kill_delay) {
                             log_msg("[!] Killing PID %d (%s)\n", (int)pid, cmd);
                             if (kill(pid, kill_signal) < 0)
                                 log_msg("[!] kill(%d): %s\n", (int)pid, strerror(errno));
@@ -205,6 +240,7 @@ int main(void) {
                     }
                 }
             } else {
+                /* under threshold: clean up any stale startfile */
                 unlink(startfile);
             }
         }
