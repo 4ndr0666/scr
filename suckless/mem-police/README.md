@@ -23,7 +23,7 @@ A lightweight daemon to monitor resident memory usage of processes and enforce c
    cc -O2 -std=c11 -Wall -Wextra -pedantic \
       -D_POSIX_C_SOURCE=200809L \
       -o mem-police mem-police.c
-
+     
    ```
 
 2. **Install**  
@@ -54,6 +54,15 @@ A lightweight daemon to monitor resident memory usage of processes and enforce c
    - **KILL_DELAY**: seconds above threshold before killing  
    - **SLEEP**: seconds between scans  
    - **WHITELIST**: space-separated process names to ignore  
+
+   Make sure the file is readable by root only:
+
+   ```sh
+   
+   sudo chown root:root /etc/mem_police.conf
+   sudo chmod 600     /etc/mem_police.conf
+
+   ```
 
 ---
 
@@ -94,6 +103,11 @@ Background & Redirect output:
 sudo nohup mem-police 2>&1 | tee /var/log/mem-police.log
 
 ```
+
+### Monitor & Iterate
+
+- Check your logs (journalctl or /var/log/mem-police.log) for unexpected kills.
+- Adjust thresholds, delays, or whitelist entries as needed.
 
 ---
 
