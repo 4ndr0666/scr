@@ -12,6 +12,8 @@ if [[ "${COMMON_SH_INCLUDED:-}" == "true" ]]; then
     return
 fi
 export COMMON_SH_INCLUDED=true
+
+## Config & Logging Defaults
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 LOG_FILE_DIR_DEFAULT="$HOME/.local/share/logs/4ndr0service/logs"
 LOG_FILE_DEFAULT="$LOG_FILE_DIR_DEFAULT/4ndr0service.log"
@@ -122,7 +124,7 @@ attempt_tool_install() {
     fi
 }
 
-## Variable expansion
+## Path Expansion Utility
 
 expand_path() {
     local raw="$1"
@@ -137,7 +139,6 @@ expand_path() {
 }
 
 ## Config
-
 prompt_config_value() {
     local key="$1"
     local default_val="$2"
@@ -178,7 +179,6 @@ create_config_if_missing() {
     "MESON_HOME": "\$XDG_DATA_HOME/meson",
     "GOPATH": "\$XDG_DATA_HOME/go",
     "GOMODCACHE": "\$XDG_CACHE_HOME/go/mod",
-    "GOROOT": "/usr/lib/go",
     "VENV_HOME": "\$XDG_DATA_HOME/python/virtualenvs",
     "PIPX_HOME": "\$XDG_DATA_HOME/python/pipx",
     "ELECTRON_CACHE": "\$XDG_CACHE_HOME/electron",
@@ -215,6 +215,7 @@ create_config_if_missing() {
     "MYSQL_HOME",
     "SQLITE_HOME",
     "MESON_HOME",
+    "GOPATH",
     "GOMODCACHE",
     "GOROOT",
     "VENV_HOME",
@@ -271,6 +272,7 @@ EOF
     fi
 }
 
+## Load Configuration
 load_config() {
     create_config_if_missing
     if ! command -v jq &>/dev/null; then
@@ -316,7 +318,7 @@ load_config() {
     USER_INTERFACE="$(jq -r '.user_interface' "$CONFIG_FILE")"
     plugins_dir="$(jq -r '.plugins_dir' "$CONFIG_FILE")"
 
-    # Now expand them
+    # Expand paths to actual values
     XDG_DATA_HOME="$(expand_path "$raw_XDG_DATA_HOME")"
     XDG_CONFIG_HOME="$(expand_path "$raw_XDG_CONFIG_HOME")"
     XDG_CACHE_HOME="$(expand_path "$raw_XDG_CACHE_HOME")"
@@ -346,14 +348,12 @@ load_config() {
 }
 load_config
 
-## Ensure primary directories exist
-
+## Ensure Primary Directories Exist
 ensure_dir "$LOG_FILE_DIR"
 ensure_dir "$backup_dir"
 ensure_dir "$plugins_dir"
 
-## Parallel Execution
-
+## Parallel Execution Helper
 run_parallel_checks() {
     local checks=("$@")
     local pids=()

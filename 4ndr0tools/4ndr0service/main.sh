@@ -37,11 +37,13 @@ Examples:
 EOF
 }
 
+# Mode flags
 report_mode="false"
 fix_mode="false"
 parallel="false"
 test_mode="false"
 
+# Parse command-line arguments
 for arg in "$@"; do
     case "$arg" in
         --help)
@@ -67,7 +69,7 @@ for arg in "$@"; do
     esac
 done
 
-# Export flags so sub-scripts receive them
+# Export flags for sub-scripts
 export FIX_MODE="$fix_mode"
 export REPORT_MODE="$report_mode"
 

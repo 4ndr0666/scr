@@ -5,27 +5,32 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Ensure PKG_PATH is defined as three levels up from this script.
+# Set PKG_PATH to three levels up from this script's directory.
 : "${PKG_PATH:=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")}"
 
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
-# Use environment variables if already set; otherwise, assign defaults.
+# Set defaults for mode flags and export them.
 FIX_MODE="${FIX_MODE:-false}"
 REPORT_MODE="${REPORT_MODE:-false}"
 export FIX_MODE REPORT_MODE
 
-# Safely load arrays from the JSON config using mapfile.
+# Safely load arrays from the JSON config.
 mapfile -t REQUIRED_ENV_VARS < <(jq -r '.required_env[]' "$CONFIG_FILE")
-mapfile -t DIRECTORY_VARS < <(jq -r '.directory_vars[]' "$CONFIG_FILE")
-mapfile -t REQUIRED_TOOLS < <(jq -r '.tools[]' "$CONFIG_FILE")
+mapfile -t DIRECTORY_VARS   < <(jq -r '.directory_vars[]' "$CONFIG_FILE")
+mapfile -t REQUIRED_TOOLS   < <(jq -r '.tools[]' "$CONFIG_FILE")
 
+# --- Override: Skip checking GOROOT ---
+# In our automation, we are not using GOROOT; skip it.
 check_env_vars() {
     local fix_mode="$1"
     local missing_vars=()
     for var in "${REQUIRED_ENV_VARS[@]}"; do
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         if [[ -z "${!var:-}" ]]; then
             missing_vars+=("$var")
         fi
@@ -44,6 +49,9 @@ check_directories() {
     local fix_mode="$1"
     local any_issue=false
     for var in "${DIRECTORY_VARS[@]}"; do
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         local dir="${!var:-}"
         if [[ -z "$dir" ]]; then
             continue
@@ -63,26 +71,57 @@ check_directories() {
                 any_issue=true
             fi
         fi
-        if [[ "$var" != "GOROOT" ]]; then
-            if [[ -d "$dir" && ! -w "$dir" ]]; then
-                if [[ "$fix_mode" == "true" ]]; then
-                    if chmod u+w "$dir"; then
-                        log_info "Set write permission for $dir"
-                        echo "Set write permission for $dir"
-                    else
-                        log_warn "Could not set write permission for $dir"
-                        any_issue=true
-                    fi
+        if [[ -d "$dir" && ! -w "$dir" ]]; then
+            if [[ "$fix_mode" == "true" ]]; then
+                if chmod u+w "$dir"; then
+                    log_info "Set write permission for $dir"
+                    echo "Set write permission for $dir"
                 else
-                    log_warn "Directory '$dir' is not writable."
+                    log_warn "Could not set write permission for $dir"
                     any_issue=true
                 fi
+            else
+                log_warn "Directory '$dir' is not writable."
+                any_issue=true
             fi
         fi
     done
     if ! $any_issue; then
         log_info "All required directories are OK."
     fi
+}
+
+# --- Override attempt_tool_install for specific tools ---
+# We override this function to automatically install missing tools via pacman.
+attempt_tool_install() {
+    local tool="$1"
+    local fix_mode="$2"
+    case "$tool" in
+        psql)
+            echo "Attempting to install psql via pacman..."
+            if sudo pacman -S --needed --noconfirm postgresql; then
+                log_info "psql installed successfully via pacman."
+            else
+                log_warn "Failed to install psql via pacman."
+            fi
+            ;;
+        go)
+            echo "Attempting to install go via pacman..."
+            if sudo pacman -S --needed --noconfirm go; then
+                log_info "go installed successfully via pacman."
+            else
+                log_warn "Failed to install go via pacman."
+            fi
+            ;;
+        *)
+            # Fallback: use the original attempt_tool_install from common.sh, if available.
+            if declare -f original_attempt_tool_install &>/dev/null; then
+                original_attempt_tool_install "$tool" "$fix_mode"
+            else
+                log_warn "No installation procedure defined for $tool."
+            fi
+            ;;
+    esac
 }
 
 check_tools() {
@@ -108,6 +147,9 @@ print_report() {
     echo "========== ENVIRONMENT REPORT =========="
     echo "Environment Variables:"
     for var in "${REQUIRED_ENV_VARS[@]}"; do
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         if [[ -z "${!var:-}" ]]; then
             echo "  - $var: NOT SET"
         else
@@ -118,14 +160,15 @@ print_report() {
     echo
     echo "Directories:"
     for var in "${DIRECTORY_VARS[@]}"; do
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         local dir="${!var:-}"
         if [[ -z "$dir" ]]; then
             echo "  - $var: NOT SET, cannot check directory."
         else
             if [[ -d "$dir" ]]; then
-                if [[ "$var" == "GOROOT" && "$GOROOT" == "/usr/lib/go" ]]; then
-                    echo "  - $var: $dir [EXISTS, NOT WRITABLE - Expected]"
-                elif [[ -w "$dir" ]]; then
+                if [[ -w "$dir" ]]; then
                     echo "  - $var: $dir [OK]"
                 else
                     echo "  - $var: $dir [NOT WRITABLE]"
@@ -147,7 +190,7 @@ print_report() {
     done
     echo
     echo "----- Recommendations -----"
-    echo "- For any missing tools, ensure your config file contains a valid package mapping."
+    echo "- For missing tools, ensure your config file contains a valid package mapping."
     echo "- If directories or environment variables are missing, run with the --fix flag."
     echo "- Review the report above for any items marked as NOT SET or NOT WRITABLE."
     echo "=============================="

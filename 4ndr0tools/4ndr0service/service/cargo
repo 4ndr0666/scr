@@ -123,11 +123,9 @@ consolidate_cargo_directories() {
     # Merge .rustup into $RUSTUP_HOME if they differ
     if [[ -d "$HOME/.rustup" && "$HOME/.rustup" != "$RUSTUP_HOME" ]]; then
         echo -e "${CYAN}🧹 Merging existing .rustup => $RUSTUP_HOME...${NC}"
-        # Attempt to remove immutable attributes if possible
         if command -v chattr > /dev/null 2>&1; then
             chattr -R -i "$HOME/.rustup" > /dev/null 2>&1 || log "Warning: Unable to remove immutable attributes from ~/.rustup."
         fi
-        # Check and exclude settings.toml if permission cannot be changed
         RSYNC_EXCLUDES=""
         if [ -f "$HOME/.rustup/settings.toml" ]; then
             if ! chmod u+w "$HOME/.rustup/settings.toml" 2>/dev/null; then
@@ -259,7 +257,7 @@ optimize_cargo_service() {
     echo -e "${CYAN}🔐 Managing permissions...${NC}"
     manage_permissions
 
-    echo -e "${CYAN}✅ Validating Cargo installation...${NC}"
+    echo -e "${CYAN}✅ Enhanced verification of Cargo installation...${NC}"
     enhanced_verify_cargo
 
     echo -e "${CYAN}🧼 Final cleanup...${NC}"
