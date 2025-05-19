@@ -1,17 +1,39 @@
 #!/usr/bin/env bash
 # File: final_audit.sh
-# Description: Performs a comprehensive audit (systemd timers, auditd, pacman logs, etc).
+# Description: Performs a comprehensive environment audit and final checks.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-VERIFY_SCRIPT="$HOME/.local/bin/verify_environment.sh"
+# Determine PKG_PATH for module base directory
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+if [ -f "$SCRIPT_DIR/../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../../../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
+else
+    # As a fallback, assume PKG_PATH is one level up from test directory
+    PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+fi
+export PKG_PATH
+
+# Determine path to verify_environment.sh script
+if command -v verify_environment.sh &>/dev/null; then
+    VERIFY_SCRIPT="$(command -v verify_environment.sh)"
+elif [ -x "$PKG_PATH/test/src/verify_environment.sh" ]; then
+    VERIFY_SCRIPT="$PKG_PATH/test/src/verify_environment.sh"
+else
+    VERIFY_SCRIPT="$HOME/.local/bin/verify_environment.sh"
+fi
+
 SYSTEMD_TIMER="env_maintenance.timer"
 AUDIT_KEYWORDS=("config_watch" "data_watch" "cache_watch")
 PACMAN_LOG="/var/log/pacman.log"
 
-REPORT_MODE="false"
-FIX_MODE="false"
+REPORT_MODE="${REPORT_MODE:-false}"
+FIX_MODE="${FIX_MODE:-false}"
 
 for arg in "$@"; do
     case "$arg" in
@@ -34,23 +56,6 @@ handle_error() {
     echo -e "\033[0;31m❌ Error: $emsg\033[0m" >&2
     json_log "ERROR" "$emsg"
     exit 1
-}
-
-check_verify_script() {
-    if [[ ! -x "$VERIFY_SCRIPT" ]]; then
-        handle_error "verify_environment.sh not found or not executable at $VERIFY_SCRIPT"
-    fi
-
-    echo "Running verify_environment.sh..."
-    if ! "$VERIFY_SCRIPT" --report > /tmp/verify_report.txt 2>/dev/null; then
-        echo "Warning: verify_environment.sh returned non-zero. Check /tmp/verify_report.txt"
-    fi
-
-    if grep -Eq "NOT WRITABLE|not writable|NOT FOUND|Missing tool|Missing environment variable|MISSING" /tmp/verify_report.txt; then
-        echo "Verification encountered issues. Check /tmp/verify_report.txt"
-    else
-        echo "All environment variables, directories, and tools are correctly set up."
-    fi
 }
 
 check_systemd_bus() {
@@ -210,14 +215,17 @@ run_audit() {
     echo "===== Audit Complete ====="
 }
 
-echo "Running final_audit.sh..."
-run_audit
+# Execute the audit sequence if run directly
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    echo "Running final_audit.sh..."
+    run_audit
 
-if [[ "$FIX_MODE" == "true" ]]; then
-    echo "Performing additional fix steps from final_audit.sh if needed..."
-    # (Additional fix steps could be added here.)
-fi
+    if [[ "$FIX_MODE" == "true" ]]; then
+        echo "Performing additional fix steps from final_audit.sh if needed..."
+        # (Additional fix steps could be added here.)
+    fi
 
-if [[ "$REPORT_MODE" == "true" ]]; then
-    echo "Report mode invoked in final_audit.sh."
+    if [[ "$REPORT_MODE" == "true" ]]; then
+        echo "Report mode invoked in final_audit.sh."
+    fi
 fi

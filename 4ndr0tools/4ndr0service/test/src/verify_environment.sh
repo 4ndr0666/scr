@@ -5,8 +5,21 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=../common.sh
+# Determine PKG_PATH for module base
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+if [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/common.sh" ]; then
+    PKG_PATH="$SCRIPT_DIR"
+else
+    echo "Error: Could not determine package path." >&2
+    exit 1
+fi
+export PKG_PATH
+
+# shellcheck source=../../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
@@ -87,96 +100,52 @@ attempt_tool_install() {
     case "$tool" in
         psql)
             if [[ "$fix_mode" == "true" ]]; then
-                echo "Attempting to install psql via pacman..."
-                if sudo pacman -S --needed --noconfirm postgresql; then
-                    log_info "psql installed successfully via pacman."
+                if command -v yay &>/dev/null; then
+                    yay -S --noconfirm postgresql || log_warn "Failed to install psql via yay."
+                elif command -v pacman &>/dev/null; then
+                    sudo pacman -S --needed --noconfirm postgresql || log_warn "Failed to install psql via pacman."
                 else
-                    log_warn "Failed to install psql via pacman."
+                    log_warn "No package manager available to install psql."
                 fi
-            else
-                log_warn "psql missing. Run with --fix to install via pacman."
             fi
             ;;
-        go)
-            if [[ "$fix_mode" == "true" ]]; then
-                echo "Attempting to install go via pacman..."
-                if sudo pacman -S --needed --noconfirm go; then
-                    log_info "go installed successfully via pacman."
-                else
-                    log_warn "Failed to install go via pacman."
-                fi
-            else
-                log_warn "go missing. Run with --fix to install via pacman."
-            fi
-            ;;
-        pyenv)
-            if ! command -v pyenv &>/dev/null && [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
-                log_warn "pyenv installed at $PYENV_ROOT/bin but not in PATH"
-                echo "pyenv is installed at $PYENV_ROOT, but PATH is not configured to use it."
-            else
-                echo "pyenv not found. Please install using: curl https://pyenv.run | bash"
-            fi
-            ;;
-        pipx)
-            echo "pipx not found. Please install via: python3 -m pip install --user pipx"
-            ;;
-        poetry)
-            echo "poetry not found. Please install via: pipx install poetry"
-            ;;
-        *)
-            # Fallback to original if defined
-            if declare -f original_attempt_tool_install &>/dev/null; then
-                original_attempt_tool_install "$tool" "$fix_mode"
-            else
-                log_warn "No installation procedure defined for $tool."
-            fi
-            ;;
+        *);;
     esac
 }
 
 check_tools() {
     local fix_mode="$1"
-    local missing_tools=()
+    local any_missing=false
     for tool in "${REQUIRED_TOOLS[@]}"; do
-        if [[ "$tool" == "pyenv" ]]; then
-            if ! command -v pyenv &>/dev/null; then
-                if [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
-                    log_warn "pyenv installed at $PYENV_ROOT/bin but not in PATH"
-                    echo "pyenv is installed at $PYENV_ROOT, but PATH is not configured to use it."
-                    continue
-                else
-                    missing_tools+=("$tool")
-                fi
-            fi
-        else
-            if ! command -v "$tool" &>/dev/null; then
-                missing_tools+=("$tool")
+        if ! command -v "$tool" &>/dev/null; then
+            log_warn "Missing tool: $tool"
+            echo "Missing required tool: $tool"
+            any_missing=true
+            if [[ "$fix_mode" == "true" ]]; then
+                attempt_tool_install "$tool" "$fix_mode"
             fi
         fi
     done
-    if (( ${#missing_tools[@]} > 0 )); then
-        for mt in "${missing_tools[@]}"; do
-            log_warn "Missing tool: $mt"
-            echo "Missing tool: $mt"
-            attempt_tool_install "$mt" "$fix_mode"
-        done
-    else
-        log_info "All required tools are present."
+    if [[ "$any_missing" == "false" ]]; then
+        log_info "All required tools are installed."
     fi
 }
 
 print_report() {
-    echo "========== ENVIRONMENT REPORT =========="
+    echo "===== Environment Verification Report ====="
     echo "Environment Variables:"
     for var in "${REQUIRED_ENV_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
-        [[ -z "${!var:-}" ]] && echo "  - $var: NOT SET" || echo "  - $var: ${!var}"
+        if [[ -z "${!var:-}" ]]; then
+            echo "  - $var: NOT SET"
+        else
+            echo "  - $var: SET"
+        fi
     done
     echo
     echo "Directories:"
     for var in "${DIRECTORY_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
-        local dir="${!var:-}"
+        [[ "$var" == "GOROOT" ]] && { echo "  - $var: (skipped)"; continue; }
+        dir="${!var:-}"
         if [[ -z "$dir" ]]; then
             echo "  - $var: NOT SET, cannot check directory."
         else
@@ -221,4 +190,8 @@ main() {
     fi
     echo "Done."
 }
-main
+
+# Run main if executed directly
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi

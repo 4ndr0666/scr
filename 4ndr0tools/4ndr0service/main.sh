@@ -8,7 +8,18 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ### Constants
-PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Determine PKG_PATH dynamically for both direct and sourced use
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    PKG_PATH="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+else
+    echo "Error: Could not determine package path." >&2
+    exit 1
+fi
 export PKG_PATH
 
 # Source core modules
@@ -18,7 +29,7 @@ source "$PKG_PATH/manage_files.sh"
 
 ### Help
 show_help() {
-cat <<EOF
+    cat <<EOF
 4ndr0service Suite - Manage and Optimize Your Environment
 
 Usage: $0 [--help] [--report] [--fix] [--parallel] [--test]

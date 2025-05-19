@@ -5,6 +5,22 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Determine PKG_PATH dynamically if not already set
+if [ -z "${PKG_PATH:-}" ]; then
+    SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+    if [ -f "$SCRIPT_DIR/common.sh" ]; then
+        PKG_PATH="$SCRIPT_DIR"
+    elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
+        PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+    elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+        PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+    else
+        echo "Error: Could not determine package path." >&2
+        exit 1
+    fi
+    export PKG_PATH
+fi
+
 modify_settings() {
     local editor
     editor=$(jq -r '.settings_editor' "$CONFIG_FILE" || echo "vim")

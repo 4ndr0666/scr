@@ -8,7 +8,25 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ### Constants
+# Determine PKG_PATH dynamically
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    PKG_PATH="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+    PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+else
+    echo "Error: Could not determine package path." >&2
+    exit 1
+fi
+export PKG_PATH
+
+# Source shared module(s)
 source "$PKG_PATH/common.sh"
+
+# Default backup directory (override with BACKUP_DIR env var if set)
+backup_dir="${BACKUP_DIR:-$HOME/.local/share/4ndr0service/backups}"
 
 batch_execute_all() {
     echo "Batch executing all services in sequence..."
@@ -102,19 +120,20 @@ manage_files_main() {
       "Batch Execute All Services"
       "Batch Execute All in Parallel (Example)"
       "Optional Backups"
-      "Run Verification"
-      "Return"
+      "Exit"
     )
     select opt in "${options[@]}"; do
         case "$REPLY" in
             1) batch_execute_all ;;
             2) batch_execute_all_parallel ;;
             3) optional_backup ;;
-            4) run_verification ;;
-            5) break ;;
+            4) break ;;
             *) echo "Invalid option." ;;
         esac
     done
 }
 
-export -f batch_execute_all batch_execute_all_parallel optional_backup run_verification manage_files_main
+# If run directly, launch the manage files menu
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    manage_files_main
+fi
