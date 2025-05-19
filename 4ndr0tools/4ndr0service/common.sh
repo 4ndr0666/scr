@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# 4ndr0service: common.sh (unified env loader for pyenv/pipx/poetry/XDG)
-
+# File: common.sh
 set -euo pipefail
 
-# ---- XDG Environment ----
+expand_path() {
+    local raw="$1"
+    echo "${raw/#\~/$HOME}"
+}
+
+# XDG Directory Defaults
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 
-# ---- pyenv/pipx/poetry Environment ----
+# Pyenv/Pipx Defaults
 if [[ -z "${PYENV_ROOT:-}" ]]; then
     if [[ -d "$XDG_DATA_HOME/pyenv" ]]; then
         export PYENV_ROOT="$XDG_DATA_HOME/pyenv"
@@ -16,25 +20,27 @@ if [[ -z "${PYENV_ROOT:-}" ]]; then
         export PYENV_ROOT="$HOME/.pyenv"
     fi
 fi
+
 export PIPX_HOME="${PIPX_HOME:-$XDG_DATA_HOME/pipx}"
 export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$PIPX_HOME/bin}"
 
-# ---- Idempotent PATH order: pyenv/bin, pyenv/shims, pipx/bin, then rest ----
-case ":$PATH:" in
-    *:"$PYENV_ROOT/bin:"*) ;;
-    *) PATH="$PYENV_ROOT/bin:$PATH" ;;
-esac
-case ":$PATH:" in
-    *:"$PYENV_ROOT/shims:"*) ;;
-    *) PATH="$PYENV_ROOT/shims:$PATH" ;;
-esac
-case ":$PATH:" in
-    *:"$PIPX_BIN_DIR:"*) ;;
-    *) PATH="$PIPX_BIN_DIR:$PATH" ;;
-esac
+# Export pyenv, pipx, poetry, and local bin paths, avoiding duplicates.
+for dir in "$PYENV_ROOT/bin" "$PYENV_ROOT/shims" "$PIPX_BIN_DIR" "$HOME/.local/bin"; do
+    case ":$PATH:" in
+        *:"$dir:"*) ;;
+        *) PATH="$dir:$PATH" ;;
+    esac
+done
 export PATH
 
-# ---- Utility: Directory ensures for XDG dirs ----
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$PIPX_HOME" "$PIPX_BIN_DIR" "$PYENV_ROOT"
+# Utility functions for idempotent directory creation
+ensure_dir() {
+    local dir="$1"
+    [[ -d "$dir" ]] || mkdir -p "$dir"
+}
 
-# ---- End of common.sh ----
+# Logging
+log_info() { echo -e "\033[1;32mINFO:\033[0m $*"; }
+log_warn() { echo -e "\033[1;33mWARN:\033[0m $*"; }
+handle_error() { log_warn "Error: $*"; exit 1; }
+trap 'handle_error "Line $LINENO: $BASH_COMMAND"' ERR

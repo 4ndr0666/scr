@@ -5,7 +5,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-: "${PKG_PATH:=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")}"
+PKG_PATH="$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")"
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
@@ -14,25 +14,21 @@ FIX_MODE="${FIX_MODE:-false}"
 REPORT_MODE="${REPORT_MODE:-false}"
 export FIX_MODE REPORT_MODE
 
-# Safely load arrays from the JSON config.
 mapfile -t REQUIRED_ENV_VARS < <(jq -r '.required_env[]' "$CONFIG_FILE")
 mapfile -t DIRECTORY_VARS   < <(jq -r '.directory_vars[]' "$CONFIG_FILE")
 mapfile -t REQUIRED_TOOLS   < <(jq -r '.tools[]' "$CONFIG_FILE")
 
-# ---- Augment toolchain for pyenv/pipx/poetry compliance ----
-for _t in pyenv pipx poetry; do
-    [[ " ${REQUIRED_TOOLS[*]} " == *" $_t "* ]] || REQUIRED_TOOLS+=("$_t")
+# Always add pyenv, pipx, poetry for checks
+for _tool in pyenv pipx poetry; do
+    [[ " ${REQUIRED_TOOLS[*]} " == *" $_tool "* ]] || REQUIRED_TOOLS+=("$_tool")
 done
 
-# --- Override: Skip checking GOROOT ---
 check_env_vars() {
     local fix_mode="$1"
     local missing_vars=()
     for var in "${REQUIRED_ENV_VARS[@]}"; do
         [[ "$var" == "GOROOT" ]] && continue
-        if [[ -z "${!var:-}" ]]; then
-            missing_vars+=("$var")
-        fi
+        [[ -z "${!var:-}" ]] && missing_vars+=("$var")
     done
     if (( ${#missing_vars[@]} > 0 )); then
         for mv in "${missing_vars[@]}"; do
@@ -81,46 +77,54 @@ check_directories() {
             fi
         fi
     done
-    if ! $any_issue; then
-        log_info "All required directories are OK."
-    fi
+    ! $any_issue || log_warn "Some directories missing or not writable."
 }
 
-# --- Tool install override ---
+# Override for specific tools
 attempt_tool_install() {
     local tool="$1"
     local fix_mode="$2"
     case "$tool" in
         psql)
-            echo "Attempting to install psql via pacman..."
-            if sudo pacman -S --needed --noconfirm postgresql; then
-                log_info "psql installed successfully via pacman."
+            if [[ "$fix_mode" == "true" ]]; then
+                echo "Attempting to install psql via pacman..."
+                if sudo pacman -S --needed --noconfirm postgresql; then
+                    log_info "psql installed successfully via pacman."
+                else
+                    log_warn "Failed to install psql via pacman."
+                fi
             else
-                log_warn "Failed to install psql via pacman."
+                log_warn "psql missing. Run with --fix to install via pacman."
             fi
             ;;
         go)
-            echo "Attempting to install go via pacman..."
-            if sudo pacman -S --needed --noconfirm go; then
-                log_info "go installed successfully via pacman."
+            if [[ "$fix_mode" == "true" ]]; then
+                echo "Attempting to install go via pacman..."
+                if sudo pacman -S --needed --noconfirm go; then
+                    log_info "go installed successfully via pacman."
+                else
+                    log_warn "Failed to install go via pacman."
+                fi
             else
-                log_warn "Failed to install go via pacman."
+                log_warn "go missing. Run with --fix to install via pacman."
             fi
             ;;
         pyenv)
-            echo "pyenv missing. Install using:"
-            echo "  git clone https://github.com/pyenv/pyenv.git \"\$PYENV_ROOT\""
-            echo "and ensure \$PYENV_ROOT/bin is in your PATH."
+            if ! command -v pyenv &>/dev/null && [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
+                log_warn "pyenv installed at $PYENV_ROOT/bin but not in PATH"
+                echo "pyenv is installed at $PYENV_ROOT, but PATH is not configured to use it."
+            else
+                echo "pyenv not found. Please install using: curl https://pyenv.run | bash"
+            fi
             ;;
         pipx)
-            echo "pipx missing. Install using:"
-            echo "  python3 -m pip install --user --upgrade pipx"
+            echo "pipx not found. Please install via: python3 -m pip install --user pipx"
             ;;
         poetry)
-            echo "poetry missing. Install using:"
-            echo "  pipx install poetry"
+            echo "poetry not found. Please install via: pipx install poetry"
             ;;
         *)
+            # Fallback to original if defined
             if declare -f original_attempt_tool_install &>/dev/null; then
                 original_attempt_tool_install "$tool" "$fix_mode"
             else
@@ -134,7 +138,6 @@ check_tools() {
     local fix_mode="$1"
     local missing_tools=()
     for tool in "${REQUIRED_TOOLS[@]}"; do
-        # Special-case for pyenv (may be present but not in PATH)
         if [[ "$tool" == "pyenv" ]]; then
             if ! command -v pyenv &>/dev/null; then
                 if [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
@@ -167,13 +170,8 @@ print_report() {
     echo "Environment Variables:"
     for var in "${REQUIRED_ENV_VARS[@]}"; do
         [[ "$var" == "GOROOT" ]] && continue
-        if [[ -z "${!var:-}" ]]; then
-            echo "  - $var: NOT SET"
-        else
-            echo "  - $var: ${!var}"
-        fi
+        [[ -z "${!var:-}" ]] && echo "  - $var: NOT SET" || echo "  - $var: ${!var}"
     done
-
     echo
     echo "Directories:"
     for var in "${DIRECTORY_VARS[@]}"; do
@@ -193,24 +191,13 @@ print_report() {
             fi
         fi
     done
-
     echo
     echo "Tools:"
     for tool in "${REQUIRED_TOOLS[@]}"; do
-        if [[ "$tool" == "pyenv" ]]; then
-            if command -v pyenv &>/dev/null; then
-                echo "  - pyenv: FOUND ($(command -v pyenv))"
-            elif [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
-                echo "  - pyenv: PRESENT at $PYENV_ROOT/bin but NOT IN PATH"
-            else
-                echo "  - pyenv: NOT FOUND"
-            fi
+        if command -v "$tool" &>/dev/null; then
+            echo "  - $tool: FOUND ($(command -v "$tool"))"
         else
-            if command -v "$tool" &>/dev/null; then
-                echo "  - $tool: FOUND ($(command -v "$tool"))"
-            else
-                echo "  - $tool: NOT FOUND"
-            fi
+            echo "  - $tool: NOT FOUND"
         fi
     done
     echo
@@ -224,18 +211,14 @@ print_report() {
 main() {
     echo "Verifying environment alignment..."
     log_info "Starting environment verification..."
-
     check_env_vars "$FIX_MODE"
     check_directories "$FIX_MODE"
     check_tools "$FIX_MODE"
-
     echo "Verification complete."
     log_info "Verification complete."
-
     if [[ "$REPORT_MODE" == "true" ]]; then
         print_report
     fi
     echo "Done."
 }
-
 main
