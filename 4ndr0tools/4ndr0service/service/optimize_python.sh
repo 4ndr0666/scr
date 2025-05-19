@@ -3,7 +3,7 @@
 # Production-grade Python toolchain bootstrapper for 4ndr0service
 set -euo pipefail
 
-PKG_PATH="$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")"
+PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$PKG_PATH/common.sh"
 
 PY_VERSION="3.10.14"

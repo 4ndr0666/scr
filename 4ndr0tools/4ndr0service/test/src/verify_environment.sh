@@ -5,7 +5,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-PKG_PATH="$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")"
+PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"

@@ -8,7 +8,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ### Constants
-PKG_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PKG_PATH
 source "$PKG_PATH/common.sh"
 source "$PKG_PATH/settings_functions.sh"

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Compute PKG_PATH relative to this script
-PKG_PATH="$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")"
+PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
