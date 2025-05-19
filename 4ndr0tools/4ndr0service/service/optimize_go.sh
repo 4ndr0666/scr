@@ -84,132 +84,51 @@ update_go() {
         echo "✅ Go updated with Homebrew."
         log "Go updated with Homebrew."
     else
-        handle_error "Unsupported package manager. Go update aborted."
-    fi
-}
-
-get_latest_go_version() {
-    if command -v pacman &> /dev/null; then
-        pacman -Si go | grep Version | awk '{print $3}'
-    elif command -v apt-cache &> /dev/null; then
-        apt-cache policy golang | grep Candidate | awk '{print $2}'
-    elif command -v dnf &> /dev/null; then
-        dnf info golang | grep Version | awk '{print $3}'
-    elif command -v brew &> /dev/null; then
-        brew info go | grep -Eo 'go: stable [^,]+' | awk '{print $3}'
-    else
-        handle_error "Unsupported package manager. Cannot determine latest Go version."
+        handle_error "No recognized package manager => cannot update Go."
     fi
 }
 
 setup_go_paths() {
-    echo "🛠️ Setting up Go environment paths..."
-    temp_goroot=$(go env GOROOT)
-    if [[ -z "$temp_goroot" ]]; then
-        handle_error "GOROOT is not set correctly after Go installation."
+    local go_path="${XDG_DATA_HOME:-$HOME/.local/share}/go"
+    local go_bin="${go_path}/bin"
+    mkdir -p "$go_bin"
+    if [[ ":$PATH:" != *":$go_bin:"* ]]; then
+        export PATH="$go_bin:$PATH"
+        echo "Added $go_bin to PATH."
+        log "Added $go_bin to PATH."
     fi
-
-    export GOPATH="${XDG_DATA_HOME:-$HOME/.local/share}/go"
-    export GOMODCACHE="${XDG_CACHE_HOME:-$HOME/.cache}/go/mod"
-    export GOROOT="$temp_goroot"
-
-    echo -e "${CYAN}GOPATH:${NC} $GOPATH"
-    echo -e "${CYAN}GOMODCACHE:${NC} $GOMODCACHE"
-    echo -e "${CYAN}GOROOT:${NC} $GOROOT"
-
-    log "GOPATH set to '$GOPATH', GOMODCACHE set to '$GOMODCACHE', GOROOT set to '$GOROOT'."
-    mkdir -p "$GOPATH" "$GOMODCACHE" || handle_error "Failed to create GOPATH or GOMODCACHE directories."
-    check_directory_writable "$GOPATH"
-    check_directory_writable "$GOMODCACHE"
 }
 
 install_go_tools() {
-    echo "🔧 Installing Go tools (goimports, golangci-lint, gopls)..."
-    export PATH="$GOPATH/bin:$PATH"
-
-    # goimports
-    if ! go install golang.org/x/tools/cmd/goimports@latest; then
-        echo "⚠️ Warning: Failed to install goimports."
-        log "Warning: Failed to install goimports."
-    else
-        echo "✅ goimports installed."
-        log "goimports installed."
-    fi
-
-    # golangci-lint
-    if ! go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; then
-        echo "⚠️ Warning: Failed to install golangci-lint."
-        log "Warning: Failed to install golangci-lint."
-    else
-        echo "✅ golangci-lint installed."
-        log "golangci-lint installed."
-    fi
-
-    # gopls
-    if ! go install golang.org/x/tools/gopls@latest; then
-        echo "⚠️ Warning: Failed to install gopls."
-        log "Warning: Failed to install gopls."
-    else
-        echo "✅ gopls installed."
-        log "gopls installed."
-    fi
+    # Example: install or update common Go tools
+    echo "Installing or updating Go tools (gopls, golangci-lint)..."
+    go install golang.org/x/tools/gopls@latest 2>/dev/null || log "Warning: gopls install/update failed."
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 2>/dev/null || log "Warning: golangci-lint install/update failed."
 }
 
 manage_permissions() {
-    echo "🔐 Managing permissions for Go directories..."
-    check_directory_writable "$GOPATH"
-    check_directory_writable "$GOMODCACHE"
-    log "Permissions for Go directories are verified."
+    # Example placeholder for managing Go-related file permissions
+    echo "Ensuring Go directories have correct permissions..."
+    local go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE 2>/dev/null || echo "$HOME/go/pkg/mod")}"
+    if [[ -n "$go_mod_cache" ]]; then
+        chmod -R u+rw "${go_mod_cache}" 2>/dev/null || true
+    fi
 }
 
 manage_go_versions() {
-    echo "🔄 Managing multi-version Go support..."
-    if ! command -v goenv &> /dev/null; then
-        echo "📦 Installing goenv..."
-        if [[ -d "${XDG_DATA_HOME:-$HOME/.local/share}/goenv" ]]; then
-            echo "goenv directory already exists. Skipping."
-            log "goenv directory found, skipping clone."
-        else
-            git clone https://github.com/syndbg/goenv.git "${XDG_DATA_HOME:-$HOME/.local/share}/goenv" || log "Warning: Failed to clone goenv."
-        fi
-        export GOENV_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/goenv"
-        export PATH="$GOENV_ROOT/bin:$PATH"
-        if ! eval "$(goenv init -)" &>/dev/null; then
-            echo "⚠️ Warning: Failed to initialize goenv."
-            log "Warning: Failed to initialize goenv."
-        else
-            echo "✅ goenv initialized."
-            log "goenv initialized."
-        fi
-    else
-        echo "✅ goenv is already installed."
-        log "goenv is already installed."
-    fi
+    # Placeholder: Could handle multiple Go versions if needed
+    true
 }
 
 validate_go_installation() {
-    echo "✅ Validating Go installation..."
-    if ! go version &> /dev/null; then
-        handle_error "Go not found. Use --fix to install."
+    if ! command -v go &>/dev/null; then
+        handle_error "Go command not found after installation."
     fi
-    if [[ ! -d "$GOPATH" ]]; then
-        handle_error "GOPATH directory '$GOPATH' does not exist."
-    fi
-    if [[ ! -d "$GOMODCACHE" ]]; then
-        handle_error "GOMODCACHE directory '$GOMODCACHE' does not exist."
-    fi
-    echo "✅ Go is installed and configured correctly."
-    log "Go installation validated successfully."
+    go version &>/dev/null || handle_error "Go installation seems broken."
 }
 
 perform_go_cleanup() {
-    echo "🧼 Performing final cleanup..."
-    if [[ -d "$GOPATH/tmp" ]]; then
-        echo "🗑️ Cleaning up $GOPATH/tmp..."
-        rm -rf "${GOPATH:?}/tmp" || log "Warning: Failed to remove tmp in $GOPATH."
-        log "Cleaned up $GOPATH/tmp."
-    fi
-    if [[ -d "$GOMODCACHE/tmp" ]]; then
+    if [[ -n "${GOMODCACHE:-}" ]]; then
         echo "🗑️ Cleaning up $GOMODCACHE/tmp..."
         rm -rf "${GOMODCACHE:?}/tmp" || log "Warning: Failed to remove tmp in $GOMODCACHE."
         log "Cleaned up $GOMODCACHE/tmp."
@@ -223,8 +142,10 @@ optimize_go_service() {
     echo "🔍 Checking if Go is installed and up to date..."
     install_go
 
-    current_go_version=$(go version | awk '{print $3}')
-    latest_go_version=$(get_latest_go_version || echo "")
+    local current_go_version
+    current_go_version="$(go version | awk '{print $3}')"
+    local latest_go_version
+    latest_go_version="$(get_latest_go_version || echo "")"
     if [[ -n "$latest_go_version" && "$current_go_version" != "$latest_go_version" ]]; then
         echo "⏫ Updating Go from $current_go_version to $latest_go_version..."
         update_go
@@ -258,3 +179,20 @@ optimize_go_service() {
     echo -e "${CYAN}Go version:${NC} $(go version)"
     log "Go environment optimization completed."
 }
+
+get_latest_go_version() {
+    if command -v pacman &> /dev/null; then
+        pacman -Si go | grep -F "Version" | awk '{print $3}'
+    elif command -v apt-cache &> /dev/null; then
+        apt-cache policy golang | grep -F "Candidate:" | awk '{print $2}'
+    elif command -v brew &> /dev/null; then
+        brew info go --json=v1 | jq -r '.[0].versions.stable'
+    else
+        echo ""
+    fi
+}
+
+# Run optimization if executed directly
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    optimize_go_service
+fi
