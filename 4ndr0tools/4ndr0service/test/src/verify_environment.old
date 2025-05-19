@@ -5,11 +5,14 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Set PKG_PATH to three levels up from this script's directory.
 : "${PKG_PATH:=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")}"
+
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 
+# Set defaults for mode flags and export them.
 FIX_MODE="${FIX_MODE:-false}"
 REPORT_MODE="${REPORT_MODE:-false}"
 export FIX_MODE REPORT_MODE
@@ -19,17 +22,15 @@ mapfile -t REQUIRED_ENV_VARS < <(jq -r '.required_env[]' "$CONFIG_FILE")
 mapfile -t DIRECTORY_VARS   < <(jq -r '.directory_vars[]' "$CONFIG_FILE")
 mapfile -t REQUIRED_TOOLS   < <(jq -r '.tools[]' "$CONFIG_FILE")
 
-# ---- Augment toolchain for pyenv/pipx/poetry compliance ----
-for _t in pyenv pipx poetry; do
-    [[ " ${REQUIRED_TOOLS[*]} " == *" $_t "* ]] || REQUIRED_TOOLS+=("$_t")
-done
-
 # --- Override: Skip checking GOROOT ---
+# In our automation, we are not using GOROOT; skip it.
 check_env_vars() {
     local fix_mode="$1"
     local missing_vars=()
     for var in "${REQUIRED_ENV_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         if [[ -z "${!var:-}" ]]; then
             missing_vars+=("$var")
         fi
@@ -48,9 +49,13 @@ check_directories() {
     local fix_mode="$1"
     local any_issue=false
     for var in "${DIRECTORY_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         local dir="${!var:-}"
-        [[ -z "$dir" ]] && continue
+        if [[ -z "$dir" ]]; then
+            continue
+        fi
         if [[ ! -d "$dir" ]]; then
             log_warn "Directory '$dir' for '$var' does not exist."
             echo "Directory for $var: '$dir' does not exist."
@@ -86,7 +91,8 @@ check_directories() {
     fi
 }
 
-# --- Tool install override ---
+# --- Override attempt_tool_install for specific tools ---
+# We override this function to automatically install missing tools via pacman.
 attempt_tool_install() {
     local tool="$1"
     local fix_mode="$2"
@@ -107,20 +113,8 @@ attempt_tool_install() {
                 log_warn "Failed to install go via pacman."
             fi
             ;;
-        pyenv)
-            echo "pyenv missing. Install using:"
-            echo "  git clone https://github.com/pyenv/pyenv.git \"\$PYENV_ROOT\""
-            echo "and ensure \$PYENV_ROOT/bin is in your PATH."
-            ;;
-        pipx)
-            echo "pipx missing. Install using:"
-            echo "  python3 -m pip install --user --upgrade pipx"
-            ;;
-        poetry)
-            echo "poetry missing. Install using:"
-            echo "  pipx install poetry"
-            ;;
         *)
+            # Fallback: use the original attempt_tool_install from common.sh, if available.
             if declare -f original_attempt_tool_install &>/dev/null; then
                 original_attempt_tool_install "$tool" "$fix_mode"
             else
@@ -134,21 +128,8 @@ check_tools() {
     local fix_mode="$1"
     local missing_tools=()
     for tool in "${REQUIRED_TOOLS[@]}"; do
-        # Special-case for pyenv (may be present but not in PATH)
-        if [[ "$tool" == "pyenv" ]]; then
-            if ! command -v pyenv &>/dev/null; then
-                if [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
-                    log_warn "pyenv installed at $PYENV_ROOT/bin but not in PATH"
-                    echo "pyenv is installed at $PYENV_ROOT, but PATH is not configured to use it."
-                    continue
-                else
-                    missing_tools+=("$tool")
-                fi
-            fi
-        else
-            if ! command -v "$tool" &>/dev/null; then
-                missing_tools+=("$tool")
-            fi
+        if ! command -v "$tool" &>/dev/null; then
+            missing_tools+=("$tool")
         fi
     done
     if (( ${#missing_tools[@]} > 0 )); then
@@ -166,7 +147,9 @@ print_report() {
     echo "========== ENVIRONMENT REPORT =========="
     echo "Environment Variables:"
     for var in "${REQUIRED_ENV_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         if [[ -z "${!var:-}" ]]; then
             echo "  - $var: NOT SET"
         else
@@ -177,7 +160,9 @@ print_report() {
     echo
     echo "Directories:"
     for var in "${DIRECTORY_VARS[@]}"; do
-        [[ "$var" == "GOROOT" ]] && continue
+        if [[ "$var" == "GOROOT" ]]; then
+            continue
+        fi
         local dir="${!var:-}"
         if [[ -z "$dir" ]]; then
             echo "  - $var: NOT SET, cannot check directory."
@@ -197,20 +182,10 @@ print_report() {
     echo
     echo "Tools:"
     for tool in "${REQUIRED_TOOLS[@]}"; do
-        if [[ "$tool" == "pyenv" ]]; then
-            if command -v pyenv &>/dev/null; then
-                echo "  - pyenv: FOUND ($(command -v pyenv))"
-            elif [[ -n "${PYENV_ROOT:-}" && -x "$PYENV_ROOT/bin/pyenv" ]]; then
-                echo "  - pyenv: PRESENT at $PYENV_ROOT/bin but NOT IN PATH"
-            else
-                echo "  - pyenv: NOT FOUND"
-            fi
+        if command -v "$tool" &>/dev/null; then
+            echo "  - $tool: FOUND ($(command -v "$tool"))"
         else
-            if command -v "$tool" &>/dev/null; then
-                echo "  - $tool: FOUND ($(command -v "$tool"))"
-            else
-                echo "  - $tool: NOT FOUND"
-            fi
+            echo "  - $tool: NOT FOUND"
         fi
     done
     echo
