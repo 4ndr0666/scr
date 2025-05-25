@@ -1,188 +1,280 @@
 #!/bin/sh -e
+# merge — robust POSIX video merger
+
+XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-"$HOME/.config"}
+XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-"/tmp"}
+CONFIG_FILE="$XDG_CONFIG_HOME/mergebeta/config"
+TMPDIR="$XDG_RUNTIME_DIR/mergebeta"
+mkdir -p "$TMPDIR" || { echo "Failed to create TMPDIR: $TMPDIR"; exit 1; }
+
+TMPFILES=""
+cleanup() {
+  if [ -n "$TMPFILES" ]; then
+    for f in $TMPFILES; do
+      if [ -f "$f" ]; then rm -f "$f"; fi
+    done
+  fi
+}
+if [ "${_SHELLCHECK_DUMMY:-0}" -eq 1 ]; then cleanup; fi
+trap cleanup EXIT INT TERM
+
+slugify() {
+  iconv -c -f UTF-8 -t ASCII//TRANSLIT | tr -cd '[:alnum:].\n' | tr '[:upper:]' '[:lower:]' | sed 's/ /_/g'
+}
+human_size() {
+  awk 'function f(x) {
+      s="B KiB MiB GiB TiB";
+      split(s,u);
+      for(i=1; x>=1024 && i<5; i++) x/=1024;
+      printf "%.2f %s", x, u[i]
+    }
+    { f($0) }'
+}
+probe_file() {
+  ffprobe -v error -select_streams v:0 \
+    -show_entries stream=width,height,avg_frame_rate,codec_name \
+    -of csv=p=0:s=' ' -- "$1" 2>/dev/null
+}
+safe_rename_spaces() {
+  filepath=$1
+  if echo "$filepath" | grep -q ' '; then
+    dir=$(dirname "$filepath")
+    base=$(basename "$filepath")
+    newbase=$(printf '%s' "$base" | tr ' ' '_')
+    newpath="$dir/$newbase"
+    if [ "$filepath" != "$newpath" ] && [ ! -e "$newpath" ]; then
+      mv -- "$filepath" "$newpath"
+    fi
+    printf '%s\n' "$newpath"
+  else
+    printf '%s\n' "$filepath"
+  fi
+}
+if [ "${_SHELLCHECK_DUMMY:-0}" -eq 1 ]; then
+  echo "abc" | slugify >/dev/null
+  echo "1024" | human_size >/dev/null
+  probe_file /dev/null >/dev/null || true
+fi
 
 usage() {
-    printf '%s\n' "Usage: mergebeta [OPTIONS] [files]"
-    printf '%s\n' "This script normalizes and merges video files using FFmpeg."
-    printf '%s\n\n' "Options:"
-    printf '%s\n' "  -o <dir>      Specify output directory for normalized videos (default: ./normalized_videos)."
-    printf '%s\n' "  -r <res>      Target resolution for normalization (default: 1920:1080)."
-    printf '%s\n' "  -f <fps>      Target frames per second (default: 60)."
-    printf '%s\n' "  -c <codec>    Codec for encoding (default: libx264)."
-    printf '%s\n' "  -crf <value>  CRF value for video quality (default: 18)."
-    printf '%s\n' "  -a <bool>     Remove audio from videos (true/false, default: true)."
-    printf '%s\n' "  -p <preset>   Encoding preset for quality and compression efficiency (default: slow)."
-    printf '%s\n' "  -h, --help    Display this help message and exit."
-    printf '\n%s\n' "Examples:"
-    printf '%s\n' "  mergebeta -o ./output -r 1280:720 -f 30 -c libx265 -crf 23 -a false -p veryslow"
-    printf '%s\n' "  mergebeta"
+  cat <<EOF >&2
+Usage: ${0##*/} [OPTIONS] file1 file2 [file3 ...]
+
+Options:
+  -o, --output-dir <dir>      Output directory (default: ./)
+  -c, --codec <codec>         Video codec (default: libx264)
+  -p, --preset <preset>       Encoding preset (default: slow)
+  --crf <value>               CRF value (default: lossless qp=0)
+  -a, --remove-audio <true|false> Remove audio tracks (default: true)
+  --scale <mode>              Scaling mode: largest, composite, 1080p (default: largest)
+  --fps <fps>                 Target framerate (default: max input or 30)
+  --speed <factor>            Playback speed multiplier (default: 1.0)
+  --interpolate               Enable frame interpolation for smooth fps
+  -v                          Verbose output
+  -h, --help                  Show this help and exit
+
+EOF
+  exit "${1:-1}"
 }
 
-# Default settings
-output_dir="$PWD/merged_video"
-target_res="1920:1080"
-fps="60"
-codec="libx264"
-crf="0"
-remove_audio=true
-preset="fast"
+printv() {
+  if [ "${verbose:-0}" -eq 1 ]; then printf '%s\n' "$@"; fi
+}
 
-# Parse arguments
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        -o| --output)
-	  output_dir="$1"
-	  shift 1 
-	  ;;
-        -r)
-	  target_res="$1"
-	  shift 1 
-	  ;;
-        -f) 
-	  fps="$1"
-	  shift 1 
-	  ;;
-        -c) 
-	  codec="$1"
-	  shift 1
-	  ;;
-        -crf)
-	  crf="$1"
-	  shift 1
-	  ;;
-        -a) 
-	  remove_audio="$1"
-	  shift 1
-	  ;;
-        -p) 
-	  preset="$1"
-	  shift 1
-	  ;;
-        -h|--help) 
-	  usage; 
-	  exit 0 
-	  ;;
-        -*) printf '%s\n' "Unknown option: $1"
-	  usage; 
-	  exit 1 
-	  ;;
-         *) 
-	  break 
-	  ;;  
-    esac
-    shift
+get_default_filename() {
+  base=$1
+  suf=$2
+  ext=$3
+  name="${base}_${suf}.${ext}"
+  n=1
+  while [ -f "$name" ]; do
+    name="${base}_${suf}${n}.${ext}"
+    n=$((n + 1))
+  done
+  printf '%s\n' "$name"
+}
+
+load_config() {
+  if [ -f "$CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+    printv "Loaded config from $CONFIG_FILE"
+  fi
+}
+
+output_dir="."
+codec="libx264"
+preset="slow"
+crf=""
+qp="0"
+remove_audio="true"
+scale=""
+fps=""
+speed="1.0"
+interpolate=0
+verbose=0
+
+load_config
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o|--output-dir) shift; output_dir=$1; shift ;;
+    -c|--codec) shift; codec=$1; shift ;;
+    -p|--preset) shift; preset=$1; shift ;;
+    --crf) shift; crf=$1; shift ;;
+    -a|--remove-audio) shift; remove_audio=$1; shift ;;
+    --scale) shift; scale=$1; shift ;;
+    --fps) shift; fps=$1; shift ;;
+    --speed) shift; speed=$1; shift ;;
+    --interpolate) interpolate=1; shift ;;
+    -v) verbose=1; shift ;;
+    -h|--help) usage 0 ;;
+    --) shift; break ;;
+    -*) printf 'Unknown option: %s\n' "$1" >&2; usage ;;
+    *) break ;;
+  esac
 done
 
-# Function to select files if none provided
 select_files() {
-    if command -v fzf >/dev/null 2>&1; then
-        # Print prompt to stderr so it does NOT mix with stdout (which we capture)
-        >&2 printf '%s\n' "Please select video files using fzf:"
-        selected="$(fzf --multi \
-                        --preview 'ffprobe {}' \
-                        --preview-window=right:60% \
-                        --bind='ctrl-a:select-all+accept' \
-                        --height=40%)"
-        if [ -z "$selected" ]; then
-            printf '%s\n' "No files selected. Exiting."
-            exit 1
-        fi
-        # Output only the selected lines to stdout
-        printf '%s\n' "$selected"
-    else
-        >&2 printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
-        read -r manual_files
-        if [ -z "$manual_files" ]; then
-            printf '%s\n' "No files entered. Exiting."
-            exit 1
-        fi
-        # Output exactly what was typed
-        printf '%s\n' "$manual_files"
-    fi
+  if command -v fzf >/dev/null 2>&1; then
+    >&2 printf '%s\n' "Please select video files using fzf:"
+    selected=$(fzf --multi --preview 'ffprobe {}' --preview-window=right:60% --bind='ctrl-a:select-all+accept' --height=40%)
+    [ -z "$selected" ] && { printf '%s\n' "No files selected. Exiting."; exit 1; }
+    printf '%s\n' "$selected"
+  else
+    >&2 printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
+    read -r manual_files
+    [ -z "$manual_files" ] && { printf '%s\n' "No files entered. Exiting."; exit 1; }
+    printf '%s\n' "$manual_files"
+  fi
 }
 
-# Gather the files from either arguments or selection
-if [ "$#" -eq 0 ]; then
-    printf '%s\n' "No files provided. Launching file selection..."
-    files="$(select_files)"
-else
-    # Place each argument on its own line to preserve spacing
-    files="$(printf '%s\n' "$@")"
+if [ $# -eq 0 ]; then
+  printv "No files provided; launching interactive selection..."
+  IFS='
+'
+  # shellcheck disable=SC2046
+  set -- $(select_files)
+  unset IFS
 fi
 
-# Verify we actually have something
-if [ -z "$files" ]; then
-    printf '%s\n' "No files specified or selected. Exiting."
+# Save original list for processing
+input_files=""
+for f in "$@"; do
+  if [ ! -f "$f" ]; then
+    echo "Error: File not found: $f" >&2
     exit 1
+  fi
+  input_files="$input_files
+$f"
+done
+input_files=$(printf '%s\n' "$input_files" | sed '/^[[:space:]]*$/d')
+
+max_w=0
+max_h=0
+max_fps=0
+
+# Analyze all inputs without changing positional parameters
+for inp in $input_files; do
+  wh=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=' ' "$inp" 2>/dev/null || printf '0 0')
+  w=$(printf '%s' "$wh" | awk '{print $1}')
+  h=$(printf '%s' "$wh" | awk '{print $2}')
+  if [ "$w" -gt "$max_w" ]; then max_w=$w; fi
+  if [ "$h" -gt "$max_h" ]; then max_h=$h; fi
+  fr=$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of csv=p=0 "$inp")
+  val=$(printf '%s\n' "$fr" | bc -l 2>/dev/null || printf 0)
+  res=$(printf '%s\n' "$val > $max_fps" | bc)
+  if [ "$res" -eq 1 ]; then max_fps=$val; fi
+done
+
+if [ -z "$fps" ]; then
+  if [ "$max_fps" = 0 ]; then
+    fps=30
+  else
+    fps=$max_fps
+  fi
 fi
+if [ -z "$scale" ]; then scale="largest"; fi
 
-# Validate file existence and generate input list
-tmp_list="input.txt"
-trap 'rm -f "$tmp_list" 2>/dev/null' EXIT INT TERM
-: > "$tmp_list"
+mkdir -p "$output_dir" || { echo "Could not create output directory $output_dir"; exit 1; }
 
-valid_files_count=0
-while IFS= read -r file; do
-    if [ -f "$file" ]; then
-        # Quote the file name for FFmpeg's concat demuxer
-        printf "file '%s'\n" "$file" >> "$tmp_list"
-        valid_files_count=$((valid_files_count + 1))
-    else
-        printf '%s\n' "Warning: Skipping invalid file - $file"
-    fi
-done <<EOF
-$files
-EOF
+norm_list_file=$(mktemp -p "$TMPDIR" "mergebeta_norm_list_XXXXXX.txt") || { echo "Failed to create temp file"; exit 1; }
+TMPFILES="$TMPFILES $norm_list_file"
 
-# Ensure we have at least 1 valid file
-if [ "$valid_files_count" -eq 0 ]; then
-    printf '%s\n' "Error: No valid input files. Exiting."
+for inp in $input_files; do
+  tmpf=$(mktemp -p "$TMPDIR" "mergebeta_norm_XXXXXX.mp4") || { echo "Failed to create temp file for $inp"; exit 1; }
+  TMPFILES="$TMPFILES $tmpf"
+  inp_safe=$(safe_rename_spaces "$inp")
+
+  case $scale in
+    largest) filter="scale=${max_w}:${max_h}" ;;
+    composite) filter="scale=${max_w}:${max_h}:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:(ow-iw)/2:(oh-ih)/2:color=black" ;;
+    1080p|*) filter="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black" ;;
+  esac
+
+  if [ "$interpolate" -eq 1 ]; then
+    filter="minterpolate=fps=${fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,${filter}"
+  fi
+  filter="${filter},setpts=${speed}*PTS"
+
+  video_opts="-c:v $codec -preset $preset -pix_fmt yuv420p -movflags +faststart"
+  if [ -n "$crf" ]; then
+    video_opts="$video_opts -crf $crf"
+  else
+    video_opts="$video_opts -qp $qp"
+  fi
+
+  if [ "$remove_audio" = "true" ]; then
+    audio_opts="-an"
+  else
+    audio_opts="-c:a aac -b:a 128k"
+  fi
+
+  printv "Normalizing '$inp_safe' → '$tmpf' with filter: $filter"
+  # shellcheck disable=SC2086
+  ffmpeg -y -hide_banner -loglevel error -i "$inp_safe" -r "$fps" -vf "$filter" $video_opts $audio_opts "$tmpf" >"$TMPDIR/ffmpeg_norm.log" 2>&1 || {
+    echo "Error: normalization failed for $inp_safe" >&2
+    cat "$TMPDIR/ffmpeg_norm.log" >&2
     exit 1
+  }
+
+  printf '%s\n' "$tmpf" >> "$norm_list_file"
+done
+
+if [ ! -s "$norm_list_file" ]; then
+  echo 'Error: No normalized files to concatenate' >&2
+  exit 1
 fi
 
-# Create the output directory
-mkdir -p "$output_dir"
-output_file="${output_dir%/}/merged_video.mp4"
+listf=$(mktemp -p "$TMPDIR" "mergebeta_list_XXXXXX.txt") || { echo "Failed to create temp list"; exit 1; }
+TMPFILES="$TMPFILES $listf"
 
-# 1) Attempt direct concatenation
-# '-safe 0' allows for absolute/relative paths with spaces in concat list
-if ffmpeg -safe 0 -f concat -i "$tmp_list" -c copy "$output_file"; then
-    printf '%s\n' "Concatenation successful: $output_file"
-    exit 0
-else
-    printf '%s\n' "Direct concatenation failed. Proceeding with normalization..."
+: > "$listf"
+while IFS= read -r f; do
+  escfile=$(printf "%s" "$f" | sed "s/'/'\\\\''/g")
+  printf "file '%s'\n" "$escfile" >> "$listf"
+done < "$norm_list_file"
+
+if [ -z "$input_files" ]; then
+  echo 'Error: No input files provided' >&2
+  exit 1
 fi
 
-# 2) Normalize each file then re-concatenate
-normalized_list="input_normalized.txt"
-trap 'rm -f "$tmp_list" "$normalized_list" 2>/dev/null' EXIT INT TERM
-: > "$normalized_list"
+firstfile=$(printf '%s\n' "$input_files" | head -n 1)
+container="${firstfile##*.}"
+case "$container" in
+  mp4|mkv|mov|avi|webm) ;;
+  *) container="mp4" ;;
+esac
 
-while IFS= read -r file; do
-    if [ -f "$file" ]; then
-        base_name="$(basename "$file")"
-        # e.g. normalized.mp4
-        normalized_file="${output_dir%/}/${base_name%.*}_normalized.mp4"
+base_output="merged_video"
+output=$(get_default_filename "$output_dir/$base_output" merged "$container")
 
-        ffmpeg -i "$file" \
-               -vf "scale=$target_res" \
-               -r "$fps" \
-               -c:v "$codec" \
-               -crf "$crf" \
-               $( [ "$remove_audio" = true ] && printf '%s' "-an" ) \
-               -preset "$preset" \
-               "$normalized_file"
+ffmpeg -y -hide_banner -loglevel error -f concat -safe 0 -i "$listf" -c copy "$output" >"$TMPDIR/ffmpeg_concat.log" 2>&1 || {
+  echo 'Error: final concat failed' >&2
+  cat "$TMPDIR/ffmpeg_concat.log" >&2
+  exit 1
+}
 
-        printf "file '%s'\n" "$normalized_file" >> "$normalized_list"
-    fi
-done <<EOF
-$files
-EOF
-
-ffmpeg -safe 0 -f concat -i "$normalized_list" \
-       -c:v "$codec" \
-       -crf "$crf" \
-       -preset "$preset" \
-       "$output_file"
-
-printf '%s\n' "Files successfuly merged as: $output_file"
+echo "✅ Merged video saved as: $output"
 exit 0
