@@ -1,0 +1,615 @@
+#!/bin/bash
+# Author: 4ndr0666
+set -euo pipefail
+# ==================== // UFW.SH // ====================
+
+# Constants
+# Use 0 for false, 1 for true for boolean flags
+readonly VERBOSE=0
+readonly SILENT=0
+readonly DRY_RUN=0
+
+# Paths
+readonly LOG_DIR="$HOME/.local/share/logs"
+readonly LOG_FILE="$LOG_DIR/ufw.log"
+readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-ufw-custom.conf" # Dedicated file for script's sysctl settings
+
+# Ensure log directory and file exist and have correct permissions
+mkdir -p "$LOG_DIR" || {
+	echo "Error: Could not create log directory $LOG_DIR"
+	exit 1
+}
+touch "$LOG_FILE" || {
+	echo "Error: Could not create log file $LOG_FILE"
+	exit 1
+}
+chmod 600 "$LOG_FILE" || {
+	echo "Error: Could not set permissions on log file $LOG_FILE"
+	exit 1
+}
+
+# Logging Function
+log() {
+	local MESSAGE="$1"
+	local timestamp
+	timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+	if [[ "$SILENT" -eq 0 ]]; then
+		if [[ "$VERBOSE" -eq 1 ]]; then
+			echo "$timestamp : $MESSAGE" | tee -a "$LOG_FILE"
+		else
+			# Log only, no console output
+			echo "$timestamp : $MESSAGE" >>"$LOG_FILE"
+		fi
+	fi
+	# If SILENT is 1, do nothing
+}
+
+# Helper: Run command (honors dry-run)
+run_cmd_dry() {
+	local CMD=("$@")
+	log "Executing: ${CMD[*]}" # Always log the command being attempted
+
+	if [[ "$DRY_RUN" -eq 1 ]]; then
+		log "Dry-run: Would run: ${CMD[*]}"
+		return 0 # Simulate success in dry-run
+	else
+		"${CMD[@]}"
+		local status=$?
+		if [[ $status -ne 0 ]]; then
+			log "Error: Command failed with status $status: ${CMD[*]}"
+			# Decide if script should exit on command failure in non-dry-run
+			# set -e handles this, but explicit check allows custom handling
+		fi
+		return $status
+	fi
+}
+
+# Help:
+usage() {
+	echo "Usage: $0 [options]"
+	echo "Options:"
+	echo "  --vpn         Configure VPN-specific firewall rules."
+	echo "  --jdownloader Configure JDownloader2-specific firewall rules."
+	echo "  --verbose     Enable verbose output (log to console and file)."
+	echo "  --silent      Enable silent mode (no output to console or file)."
+	echo "  --dry-run     Simulate actions without making changes."
+	echo "  --help, -h    Display this help message."
+	exit 0
+}
+
+is_immutable() {
+	local file="$1"
+	if [[ ! -f "$file" ]]; then
+		# File doesn't exist, can't be immutable
+		return 1
+	fi
+	if command -v lsattr &>/dev/null; then
+		lsattr "$file" 2>/dev/null | grep -q '^....i'
+	else
+		log "Warning: 'lsattr' command not found. Cannot check immutable flag."
+		# Assume not immutable if lsattr is missing, or handle as error?
+		return 1
+	fi
+}
+
+remove_immutable() {
+	local file="$1"
+	if is_immutable "$file"; then
+		log "Attempting to remove immutable flag from $file..."
+		if run_cmd_dry chattr -i "$file"; then
+			log "Removed immutable flag from $file."
+		else
+			log "Error: Failed to remove immutable flag from $file."
+			# Decide if this is a fatal error
+			# exit 1
+		fi
+	else
+		log "Immutable flag not set on $file."
+	fi
+}
+
+set_immutable() {
+	local file="$1"
+	if [[ -f "$file" ]] && ! is_immutable "$file"; then
+		log "Attempting to set immutable flag on $file..."
+		if run_cmd_dry chattr +i "$file"; then
+			log "Set immutable flag on $file."
+		else
+			log "Error: Failed to set immutable flag on $file."
+			# Decide if this is a fatal error
+			# exit 1
+		fi
+	else
+		log "Immutable flag already set or file does not exist: $file."
+	fi
+}
+
+# Auto-escalate (check for root and exit)
+if [[ "$EUID" -ne 0 ]]; then
+	echo "Re-running the script with sudo privileges..."
+	sudo "$0" "$@"
+	exit $?
+fi
+
+# CLI Argument Parsing
+VPN_FLAG=0
+JD_FLAG=0
+parse_args() {
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--vpn)
+			VPN_FLAG=1
+			;;
+		--jdownloader)
+			JD_FLAG=1
+			;;
+		--verbose)
+			VERBOSE=1
+			;;
+		--silent)
+			SILENT=1
+			;;
+		--dry-run)
+			DRY_RUN=1
+			;;
+		--help | -h)
+			usage
+			;;
+		*)
+			log "Error: Unknown option '$1'"
+			usage
+			;;
+		esac
+		shift
+	done
+}
+parse_args "$@"
+
+if [[ "$SILENT" -eq 1 ]]; then
+	exec >/dev/null 2>&1
+fi
+
+check_dependencies() {
+	log "Checking required dependencies..."
+	local dependencies=("ufw" "ss" "awk" "grep" "sed" "systemctl" "ip" "sysctl" "lsattr" "chattr")
+	local missing_deps=()
+	for cmd in "${dependencies[@]}"; do
+		if ! command -v "$cmd" &>/dev/null; then
+			missing_deps+=("$cmd")
+		fi
+	done
+
+	if [[ ${#missing_deps[@]} -ne 0 ]]; then
+		log "Error: Missing required dependencies: ${missing_deps[*]}"
+		log "Please install them using your distribution's package manager."
+		exit 1
+	else
+		log "All required dependencies are satisfied."
+	fi
+}
+check_dependencies
+
+# Detect Primary Interface (excluding lo)
+detect_primary_interface() {
+	# More robust way to find default interface
+	PRIMARY_IF=$(ip route get 8.8.8.8 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}')
+	if [[ -z "$PRIMARY_IF" ]]; then
+		log "Error: Unable to detect the primary network interface."
+		exit 1
+	fi
+	log "Primary network interface detected: $PRIMARY_IF"
+}
+detect_primary_interface
+
+# VPN Interface and Port Detection
+detect_vpn_interfaces() {
+	VPN_IFACES=$(ip -o link show type tun,ppp | awk -F': ' '{print $2}' | xargs)
+	if [[ -z "$VPN_IFACES" ]]; then
+		log "Warning: No VPN interfaces detected (tun or ppp)."
+		return 1
+	else
+		log "Detected VPN interfaces: $VPN_IFACES"
+		return 0
+	fi
+}
+
+detect_vpn_port() {
+	log "Attempting to detect VPN port..."
+	VPN_PORT=""
+	if detect_vpn_interfaces; then
+		for VPN_IF in $VPN_IFACES; do
+			DETECTED_PORT=$(ss -u -a state established "( sport = :443 or dport = :443 or sport = :1194 or dport = :1194 or sport = :500 or dport = :500 or sport = :4500 or dport = :4500 )" | grep "$VPN_IF" | awk '{print $5}' | grep -oP '(?<=:)\d+' | head -n1) || true
+
+			if [[ -n "$DETECTED_PORT" && "$DETECTED_PORT" =~ ^[0-9]+$ ]]; then
+				VPN_PORT="$DETECTED_PORT"
+				log "Detected VPN UDP port on $VPN_IF: $VPN_PORT"
+				return 0
+			else
+				log "Warning: Unable to detect common UDP port on $VPN_IF. Continuing search..."
+			fi
+		done
+	fi
+
+	if [[ -z "$VPN_PORT" ]]; then
+		log "Warning: No specific VPN UDP port detected on active VPN interfaces."
+		VPN_PORT=443
+		log "Defaulting VPN UDP port to $VPN_PORT."
+	fi
+	return 0
+}
+
+configure_sysctl() {
+	log "Configuring sysctl settings..."
+
+	# Define desired sysctl settings in a heredoc for a dedicated file
+	local SYSCTL_CONTENT="
+$SYSCTL_UFW_FILE - Managed by ufw.sh. Do not edit manually.
+
+# Network hardening and performance enhancements.
+
+# IPv4 Hardening
+net.ipv4.ip_forward=1                     # Required for routing if the system acts as a router (e.g., for VPN killswitch)
+net.ipv4.conf.all.accept_redirects=0
+net.ipv4.conf.default.accept_redirects=0
+net.ipv4.conf.all.rp_filter=1             # Source Address Validation (prevents spoofing)
+net.ipv4.conf.default.rp_filter=1
+net.ipv4.conf.default.accept_source_route=0
+net.ipv4.conf.all.accept_source_route=0
+net.ipv4.icmp_ignore_bogus_error_responses=1
+net.ipv4.conf.default.log_martians=0      # Log packets with impossible addresses (optional, can be noisy)
+net.ipv4.conf.all.log_martians=0
+net.ipv4.icmp_echo_ignore_broadcasts=1    # Ignore ICMP echo requests to broadcast/multicast
+net.ipv4.icmp_echo_ignore_all=0           # Do not ignore all ICMP echo requests (allow pings)
+
+# TCP/UDP Tuning (Based on common recommendations, may need adjustment)
+net.ipv4.tcp_sack=1
+net.ipv4.tcp_window_scaling=1
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_tw_reuse=1                   # Reuse TIME_WAIT sockets (use with caution)
+net.ipv4.tcp_fin_timeout=10
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_keepalive_time=60
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=6
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_timestamps=0                 # Disable timestamps (privacy/security vs performance trade-off)
+
+# Core Network Tuning
+net.core.somaxconn=8192                   # Increase max number of connections waiting to be accepted
+net.core.netdev_max_backlog=5000          # Increase backlog for network devices
+net.core.rmem_max=16777216                # Max receive buffer size
+net.core.wmem_max=16777216                # Max send buffer size
+net.core.optmem_max=65536                 # Max ancillary buffer size
+net.ipv4.tcp_rmem=4096 87380 16777216     # TCP receive buffer: min, default, max
+net.ipv4.tcp_wmem=4096 65536 16777216     # TCP send buffer: min, default, max
+net.ipv4.udp_rmem_min=8192                # UDP receive buffer min
+net.ipv4.udp_wmem_min=8192                # UDP send buffer min
+
+# Congestion Control and QDisc
+net.core.default_qdisc=cake               # Default queueing discipline (requires kernel support)
+net.ipv4.tcp_congestion_control=bbr       # Default TCP congestion control (requires kernel support)
+
+# Swappiness (Adjust based on RAM)
+vm.swappiness=10                          # Lower value reduces swapping, keeping more in RAM (was 133, which is very high)
+
+# IPv6 Hardening (Optional, disable if not used)
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv6.conf.lo.disable_ipv6=1
+net.ipv6.conf.all.accept_source_route=0
+net.ipv6.conf.default.accept_source_route=0
+net.ipv6.conf.tun0.disable_ipv6=1         # Specific interface - better handled by network config
+"
+
+	# Ensure the directory exists
+	mkdir -p /etc/sysctl.d/ || {
+		log "Error: Could not create /etc/sysctl.d/"
+		exit 1
+	}
+
+	# Remove immutable flag before writing
+	remove_immutable "$SYSCTL_UFW_FILE"
+
+	# Write the content to the dedicated file
+	log "Writing sysctl configuration to $SYSCTL_UFW_FILE..."
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		echo "$SYSCTL_CONTENT" >"$SYSCTL_UFW_FILE"
+		log "$SYSCTL_UFW_FILE created/updated."
+	else
+		log "Dry-run: Would write sysctl configuration to $SYSCTL_UFW_FILE."
+		# Optionally display content in dry-run
+		# echo "$SYSCTL_CONTENT"
+	fi
+
+	# Set immutable flag after writing
+	set_immutable "$SYSCTL_UFW_FILE"
+
+	log "Applying sysctl settings from all files in /etc/sysctl.d/ and /etc/sysctl.conf..."
+	if run_cmd_dry sysctl --system; then
+		log "Sysctl settings applied successfully."
+	else
+		log "Error: Failed to apply sysctl settings."
+		# Decide if this is a fatal error
+		# exit 1
+	fi
+
+	# Optional: Validate specific critical settings after applying
+	log "Validating critical sysctl settings..."
+	local -A sysctl_validation_map=(
+		["net.ipv4.ip_forward"]="1"
+		["net.ipv4.conf.all.accept_redirects"]="0"
+		["net.ipv4.conf.default.accept_redirects"]="0"
+		["net.ipv4.conf.all.rp_filter"]="1"
+		["net.ipv4.conf.default.rp_filter"]="1"
+		["net.ipv4.conf.default.accept_source_route"]="0"
+		["net.ipv4.conf.all.accept_source_route"]="0"
+		["net.ipv4.icmp_ignore_bogus_error_responses"]="1"
+		["net.ipv4.icmp_echo_ignore_broadcasts"]="1"
+		["net.core.rmem_max"]="16777216"
+		["net.core.wmem_max"]="16777216"
+		["net.ipv4.tcp_rmem"]="4096 87380 16777216"
+		["net.ipv4.tcp_wmem"]="4096 65536 16777216"
+	)
+
+	local validation_failed=0
+	for key in "${!sysctl_validation_map[@]}"; do
+		local expected_value="${sysctl_validation_map[$key]}"
+		local actual_value
+		actual_value=$(sysctl -n "$key" 2>/dev/null || echo "unset")
+		# Normalize whitespace for comparison
+		local expected_normalized
+		expected_normalized=$(echo "$expected_value" | tr -s '[:space:]' ' ' | xargs)
+		local actual_normalized
+		actual_normalized=$(echo "$actual_value" | tr -s '[:space:]' ' ' | xargs)
+
+		if [[ "$actual_normalized" == "$expected_normalized" ]]; then
+			log "Validation passed: $key = $actual_value"
+		else
+			log "Validation failed: $key expected '$expected_value' but got '$actual_value'"
+			validation_failed=1
+		fi
+	done
+
+	if [[ "$validation_failed" -ne 0 ]]; then
+		log "Error: Sysctl validation failed for one or more settings."
+		# Decide if this is a fatal error
+		# exit 1
+	else
+		log "Sysctl validation completed successfully."
+	fi
+}
+
+configure_ufw() {
+	log "Configuring UFW firewall rules..."
+
+	# Define standard rules
+	local STANDARD_RULES=(
+		"limit in on $PRIMARY_IF to any port 22 proto tcp comment 'Limit SSH'"
+		"allow in on lo comment 'Allow loopback traffic'"
+		"allow out on lo comment 'Allow loopback traffic'"
+	)
+
+	# Define application-specific rules
+	local APP_RULES=(
+		"allow in on $PRIMARY_IF to any port 80 proto tcp comment 'Allow HTTP Traffic'"
+		"allow in on $PRIMARY_IF to any port 443 proto tcp comment 'Allow HTTPS Traffic'"
+		"allow in on $PRIMARY_IF to any port 7531 proto tcp comment 'Allow PlayWithMPV'"
+		"allow in on $PRIMARY_IF to any port 6800 proto tcp comment 'Allow Aria2c'"
+	)
+
+	local JDOWNLOADER_RULES=()
+	if [[ "$JD_FLAG" -eq 1 ]]; then
+		if [[ "$VPN_FLAG" -eq 1 && -n "${VPN_IFACES:-}" ]]; then
+			# If VPN is active and JD flag is set, allow JD on VPN interface
+			for VPN_IF in $VPN_IFACES; do
+				JDOWNLOADER_RULES+=(
+					"allow in on $VPN_IF to any port 9665 proto tcp comment 'Allow JDownloader2 Port on VPN'"
+					"allow in on $VPN_IF to any port 9666 proto tcp comment 'Allow JDownloader2 Port on VPN'"
+				)
+			done
+			# And deny JD on primary interface
+			JDOWNLOADER_RULES+=(
+				"deny in on $PRIMARY_IF to any port 9665 proto tcp comment 'Deny JDownloader2 Port on Primary IF'"
+				"deny in on $PRIMARY_IF to any port 9666 proto tcp comment 'Deny JDownloader2 Port on Primary IF'"
+			)
+		else
+			# If VPN is not active, allow JD on primary interface
+			JDOWNLOADER_RULES+=(
+				"allow in on $PRIMARY_IF to any port 9665 proto tcp comment 'Allow JDownloader2 Port'"
+				"allow in on $PRIMARY_IF to any port 9666 proto tcp comment 'Allow JDownloader2 Port'"
+			)
+		fi
+	fi
+
+	# (Rest of configure_ufw function and the script continues as in your original version...)
+
+	# Combine all rules
+	local ALL_RULES=("${STANDARD_RULES[@]}" "${APP_RULES[@]}" "${JDOWNLOADER_RULES[@]}")
+
+	# Get current UFW status once
+	local UFW_STATUS=""
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		UFW_STATUS=$(ufw status verbose)
+		log "Current UFW status retrieved."
+	else
+		log "Dry-run: Would retrieve UFW status."
+	fi
+
+	# Enable UFW if not enabled
+	if [[ "$UFW_STATUS" != "Status: active" ]]; then
+		log "UFW is not active. Enabling..."
+		if run_cmd_dry ufw --force enable; then
+			log "UFW enabled successfully."
+		else
+			log "Error: Failed to enable UFW."
+			# Decide if this is a fatal error
+			# exit 1
+		fi
+	else
+		log "UFW is already active."
+	fi
+
+	# Set default policies if not already set
+	local current_default_in
+	current_default_in=$(echo "$UFW_STATUS" | grep "Default:" | awk '{print $2}')
+	local current_default_out
+	current_default_out=$(echo "$UFW_STATUS" | grep "Default:" | awk '{print $4}')
+
+	if [[ "$current_default_in" != "deny" ]]; then
+		log "Setting default incoming policy to deny..."
+		if run_cmd_dry ufw default deny incoming; then
+			log "Default incoming policy set to deny."
+		else
+			log "Error: Failed to set default incoming policy."
+			# Decide if this is a fatal error
+			# exit 1
+		fi
+	else
+		log "Default incoming policy is already deny."
+	fi
+
+	local expected_default_out="allow"
+	if [[ "$VPN_FLAG" -eq 1 ]] && detect_vpn_interfaces; then
+		expected_default_out="deny"
+	fi
+
+	if [[ "$current_default_out" != "$expected_default_out" ]]; then
+		log "Setting default outgoing policy to $expected_default_out..."
+		if run_cmd_dry ufw default "$expected_default_out" outgoing; then
+			log "Default outgoing policy set to $expected_default_out."
+		else
+			log "Error: Failed to set default outgoing policy."
+			# Decide if this is a fatal error
+			# exit 1
+		fi
+	else
+		log "Default outgoing policy is already $expected_default_out."
+	fi
+
+	# Add rules if they don't exist
+	log "Adding UFW rules..."
+	for rule_spec in "${ALL_RULES[@]}"; do
+
+		local rule_desc
+		rule_desc=$(echo "$rule_spec" | sed -n "s/.comment '\(.*\)'/\1/p")
+		local rule_exists=0
+		if [[ -n "$UFW_STATUS" ]]; then
+			if echo "$UFW_STATUS" | grep -qF "$rule_desc"; then
+				rule_exists=1
+			fi
+		fi
+
+		if [[ "$rule_exists" -eq 0 ]]; then
+			log "Adding rule: $rule_spec"
+			if run_cmd_dry ufw $rule_spec; then
+				log "Rule added successfully."
+			else
+				log "Warning: Failed to add rule: $rule_spec"
+				# Continue even if one rule fails? Or exit? Let's continue for now.
+			fi
+		else
+			log "Rule already exists: $rule_desc"
+		fi
+	done
+
+	# Disable IPv6 in UFW defaults if enabled.
+	local ufw_defaults_file="/etc/default/ufw"
+	if [[ -f "$ufw_defaults_file" ]]; then
+		if grep -q "^IPV6=yes" "$ufw_defaults_file"; then
+			log "Disabling IPv6 in UFW default settings..."
+			if run_cmd_dry sed -i 's/^IPV6=yes/IPV6=no/' "$ufw_defaults_file"; then
+				log "Disabled IPv6 in $ufw_defaults_file."
+			else
+				log "Error: Failed to disable IPv6 in $ufw_defaults_file."
+				# Decide if this is a fatal error
+				# exit 1
+			fi
+		else
+			log "IPv6 already disabled in UFW defaults."
+		fi
+	else
+		log "Warning: UFW defaults file not found at $ufw_defaults_file."
+	fi
+
+	log "UFW configuration complete."
+
+	# Validation of rules (optional, ufw status check above covers existence)
+	log "Validating UFW status and policies..."
+	local validation_failed=0
+	UFW_STATUS=$(ufw status verbose) # Get status again after applying changes
+
+	if [[ "$UFW_STATUS" != "Status: active" ]]; then
+		log "Validation failed: UFW is not active."
+		validation_failed=1
+	else
+		log "Validation passed: UFW is active."
+	fi
+
+	current_default_in=$(echo "$UFW_STATUS" | grep "Default:" | awk '{print $2}')
+	current_default_out=$(echo "$UFW_STATUS" | grep "Default:" | awk '{print $4}')
+
+	if [[ "$current_default_in" != "deny" ]]; then
+		log "Validation failed: Default incoming policy is '$current_default_in', expected 'deny'."
+		validation_failed=1
+	else
+		log "Validation passed: Default incoming policy is 'deny'."
+	fi
+
+	expected_default_out="allow"
+	if [[ "$VPN_FLAG" -eq 1 ]] && detect_vpn_interfaces; then
+		expected_default_out="deny"
+	fi
+	if [[ "$current_default_out" != "$expected_default_out" ]]; then
+		log "Validation failed: Default outgoing policy is '$current_default_out', expected '$expected_default_out'."
+		validation_failed=1
+	else
+		log "Validation passed: Default outgoing policy is '$expected_default_out'."
+	fi
+
+	if [[ "$validation_failed" -ne 0 ]]; then
+		log "Error: UFW validation failed."
+		# Decide if this is a fatal error
+		# exit 1
+	else
+		log "UFW validation completed successfully."
+	fi
+}
+
+final_verification() {
+	echo ""
+	log "### UFW Status ###"
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		# Use tee here to show status on console even if not verbose, unless silent
+		if [[ "$SILENT" -eq 0 ]]; then
+			ufw status verbose | tee -a "$LOG_FILE"
+		else
+			ufw status verbose >>"$LOG_FILE" # Only log if silent
+		fi
+	else
+		log "Dry-run: Would display UFW status."
+	fi
+	echo ""
+	log "### Listening Ports ###"
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		if [[ "$SILENT" -eq 0 ]]; then
+			ss -tunlp | tee -a "$LOG_FILE"
+		else
+			ss -tunlp >>"$LOG_FILE" # Only log if silent
+		fi
+	else
+		log "Dry-run: Would display listening ports."
+	fi
+}
+
+apply_configurations() {
+	configure_sysctl
+	configure_ufw
+	# enhance_network_performance and validate_configurations are now integrated
+}
+
+log "Script started."
+apply_configurations
+final_verification
+echo ""
+log "System hardening script finished."

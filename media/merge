@@ -1,280 +1,1647 @@
-#!/bin/sh -e
-# merge — robust POSIX video merger
+#!/usr/bin/env bash
+#  Author: 4ndr0666
+set -euo pipefail
+# ======================== // MERGE //
+# Description: FFmpeg concatenation and processing wrapper
+# -----------------------------------------------------
 
-XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-"$HOME/.config"}
-XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-"/tmp"}
-CONFIG_FILE="$XDG_CONFIG_HOME/mergebeta/config"
-TMPDIR="$XDG_RUNTIME_DIR/mergebeta"
-mkdir -p "$TMPDIR" || { echo "Failed to create TMPDIR: $TMPDIR"; exit 1; }
+## XDG Constants
 
-TMPFILES=""
-cleanup() {
-  if [ -n "$TMPFILES" ]; then
-    for f in $TMPFILES; do
-      if [ -f "$f" ]; then rm -f "$f"; fi
-    done
-  fi
+: XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+: XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+## Temp Dir
+
+declare BASE_TMP_DIR # Declare outside function
+BASE_TMP_DIR="$(mktemp -d)" || {
+	echo "Error: Failed to create base temporary directory." >&2
+	exit 1
 }
-if [ "${_SHELLCHECK_DUMMY:-0}" -eq 1 ]; then cleanup; fi
-trap cleanup EXIT INT TERM
+declare -a TEMP_DIRS=("$BASE_TMP_DIR")
+declare -a TEMP_FILES=() # Initialize TEMP_FILES array
 
-slugify() {
-  iconv -c -f UTF-8 -t ASCII//TRANSLIT | tr -cd '[:alnum:].\n' | tr '[:upper:]' '[:lower:]' | sed 's/ /_/g'
-}
-human_size() {
-  awk 'function f(x) {
-      s="B KiB MiB GiB TiB";
-      split(s,u);
-      for(i=1; x>=1024 && i<5; i++) x/=1024;
-      printf "%.2f %s", x, u[i]
-    }
-    { f($0) }'
-}
-probe_file() {
-  ffprobe -v error -select_streams v:0 \
-    -show_entries stream=width,height,avg_frame_rate,codec_name \
-    -of csv=p=0:s=' ' -- "$1" 2>/dev/null
-}
-safe_rename_spaces() {
-  filepath=$1
-  if echo "$filepath" | grep -q ' '; then
-    dir=$(dirname "$filepath")
-    base=$(basename "$filepath")
-    newbase=$(printf '%s' "$base" | tr ' ' '_')
-    newpath="$dir/$newbase"
-    if [ "$filepath" != "$newpath" ] && [ ! -e "$newpath" ]; then
-      mv -- "$filepath" "$newpath"
-    fi
-    printf '%s\n' "$newpath"
-  else
-    printf '%s\n' "$filepath"
-  fi
-}
-if [ "${_SHELLCHECK_DUMMY:-0}" -eq 1 ]; then
-  echo "abc" | slugify >/dev/null
-  echo "1024" | human_size >/dev/null
-  probe_file /dev/null >/dev/null || true
-fi
+## TRAP
 
-usage() {
-  cat <<EOF >&2
-Usage: ${0##*/} [OPTIONS] file1 file2 [file3 ...]
+register_temp_file() {
+	local file_path="$1"
+	# Check if path is non-empty and not already registered
+	if [[ -n "$file_path" ]]; then
+		# Use a simple loop check to avoid duplicates (best effort)
+		local found=0
+		for f in "${TEMP_FILES[@]}"; do
+			if [[ "$f" == "$file_path" ]]; then
+				found=1
+				break
+			fi
+		done
+		[[ "$found" -eq 0 ]] && TEMP_FILES+=("$file_path")
+	fi
+}
+register_temp_dir() {
+	local dir_path="$1"
+	# Check if path is non-empty and not already registered
+	if [[ -n "$dir_path" ]]; then
+		local found=0
+		for d in "${TEMP_DIRS[@]}"; do
+			if [[ "$d" == "$dir_path" ]]; then
+				found=1
+				break
+			fi
+		done
+		[[ "$found" -eq 0 ]] && TEMP_DIRS+=("$dir_path")
+	fi
+}
+cleanup_all() {
+	printv "Cleaning up temporary files and directories..."
+	# Iterate over registered files and remove them safely
+	for f in "${TEMP_FILES[@]}"; do
+		# Check if the file exists before attempting removal
+		if [[ -f "$f" ]]; then
+			# Use -- to handle filenames starting with -
+			# Suppress errors as cleanup is best effort
+			rm -f -- "$f" >/dev/null 2>&1 || echo "Warning: Could not remove temporary file '$f'." >&2
+		fi
+	done
+	# Iterate over registered directories and remove them safely
+	for d in "${TEMP_DIRS[@]}"; do
+		# Check if the directory exists before attempting removal
+		if [[ -d "$d" ]]; then
+			# Use -- to handle directory names starting with -
+			# Suppress errors as cleanup is best effort
+			rm -rf -- "$d" >/dev/null 2>&1 || echo "Warning: Could not remove temporary directory '$d'." >&2
+		fi
+	done
+	printv "Cleanup complete."
+}
+trap cleanup_all EXIT INT TERM HUP
 
-Options:
-  -o, --output-dir <dir>      Output directory (default: ./)
-  -c, --codec <codec>         Video codec (default: libx264)
-  -p, --preset <preset>       Encoding preset (default: slow)
-  --crf <value>               CRF value (default: lossless qp=0)
-  -a, --remove-audio <true|false> Remove audio tracks (default: true)
-  --scale <mode>              Scaling mode: largest, composite, 1080p (default: largest)
-  --fps <fps>                 Target framerate (default: max input or 30)
-  --speed <factor>            Playback speed multiplier (default: 1.0)
-  --interpolate               Enable frame interpolation for smooth fps
-  -v                          Verbose output
-  -h, --help                  Show this help and exit
+## Utility
 
-EOF
-  exit "${1:-1}"
+command_exists() {
+	local cmd="$1"
+	command -v "$cmd" >/dev/null 2>&1
+}
+
+declare REALPATH_CMD # Declare globally
+
+check_deps() {
+	local -a deps=(ffmpeg ffprobe awk bc stat)
+	local -a missing_deps=()
+	local realpath_cmd=""
+	local realpath_found=0
+
+	# Determine the best way to get absolute paths
+	if command_exists realpath; then
+		realpath_cmd="realpath"
+		# Add realpath to the list if it exists, so we check if it's executable
+		# deps+=(realpath) # No need to add to deps if we check command_exists first
+		realpath_found=1
+	elif command_exists readlink; then
+		# Check if readlink supports -f (GNU coreutils)
+		# Use a temporary file for the test
+		local tmp_file
+		tmp_file=$(mktemp) || {
+			echo "Error: Failed to create temporary file for readlink test." >&2
+			exit 1
+		}
+		# Register the temp file for cleanup
+		register_temp_file "$tmp_file"
+		# Test readlink -f
+		if readlink -f "$tmp_file" >/dev/null 2>&1; then
+			realpath_cmd="readlink -f"
+			realpath_found=1
+		fi
+	fi
+
+	# If neither realpath nor a compatible readlink was found
+	if [[ "$realpath_found" -eq 0 ]]; then
+		echo "Error: Neither 'realpath' nor 'readlink -f' found. Cannot determine absolute paths." >&2
+		echo "Please install 'realpath' or GNU coreutils." >&2
+		exit 1
+	fi
+
+	# Check all required dependencies
+	for dep in "${deps[@]}"; do
+		if ! command_exists "$dep"; then
+			missing_deps+=("$dep")
+		fi
+	done
+
+	# Report missing dependencies and exit if any are found
+	if ((${#missing_deps[@]} > 0)); then
+		echo "Error: Required command(s) not found: ${missing_deps[*]}" >&2
+		echo "Please install them." >&2
+		exit 1
+	fi
+
+	# Store the determined realpath command globally
+	REALPATH_CMD="$realpath_cmd"
+}
+
+absolute_path() {
+	local path="$1"
+	local abs_path=""
+
+	# Check if REALPATH_CMD was successfully determined by check_deps
+	if [[ -z "${REALPATH_CMD:-}" ]]; then
+		echo "Error: Cannot determine absolute path for '$path'. REALPATH_CMD not set. Run check_deps first." >&2
+		return 1 # Indicate failure
+	fi
+
+	# Execute the determined command safely
+	# Use command substitution and check its exit status
+	if ! abs_path="$("$REALPATH_CMD" -- "$path")"; then
+		# The realpath command itself failed (e.g., file not found)
+		echo "Error: Could not determine absolute path for '$path'." >&2
+		return 1 # Indicate failure
+	fi
+
+	# Print the absolute path to standard output
+	printf '%s\n' "$abs_path"
+	return 0 # Indicate success
+}
+
+bytes_to_human() {
+	local bytes="${1:-0}"
+	# Use printf to pass bytes safely to awk
+	# Ensure bytes is treated as a number by awk
+	printf "%s" "$bytes" | awk '
+    BEGIN {
+      split("B KiB MiB GiB TiB PiB EiB ZiB YiB",u);
+      b = ARGV[1] + 0; # Ensure b is treated as a number
+      p=0;
+      while (b>=1024 && p<8) { b/=1024; p++ }
+      printf "%.2f %s\n", b, u[p+1]
+    }' "$bytes" # Pass $bytes as ARGV[1]
+}
+
+portable_stat() {
+	local file="$1"
+	local size=""
+	# Try GNU stat first, then BSD stat
+	# Check exit status of stat commands
+	if size=$(stat -c '%s' "$file" 2>/dev/null); then
+		printf '%s\n' "$size"
+		return 0 # Indicate success
+	elif size=$(stat -f '%z' "$file" 2>/dev/null); then
+		printf '%s\n' "$size"
+		return 0 # Indicate success
+	else
+		# Print error and return non-zero if stat fails
+		echo "Error: Could not get file size for '$file'." >&2
+		return 1 # Indicate failure
+	fi
+}
+
+validate_resolution() {
+	local res="$1"
+	if ! [[ "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+		echo "Error: Invalid resolution format '$res'. Expected WxH (e.g., 1280x720)." >&2
+		return 1 # Indicate validation failure
+	fi
+	return 0 # Indicate validation success
+}
+
+validate_fps() {
+	local fps="$1"
+	if ! [[ "$fps" =~ ^[0-9]+$ ]] || (("$fps" <= 0)); then
+		echo "Error: Invalid FPS '$fps'. Expected a positive integer." >&2
+		return 1 # Indicate validation failure
+	fi
+	return 0 # Indicate validation success
+}
+
+validate_factor() {
+	local factor="$1"
+	# Check if it looks like a number (integer or float)
+	if ! [[ "$factor" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+		echo "Error: Invalid factor format '$factor'. Expected a positive number (e.g., 2.0, 0.5)." >&2
+		return 1 # Indicate validation failure
+	fi
+	# Use printf and bc for reliable float comparison against zero
+	local factor_float
+	factor_float=$(printf "%.8f" "$factor") # Increased precision
+	local result
+	# Check if factor_float is less than or equal to 0
+	result=$(bc -l <<<"$factor_float <= 0" 2>/dev/null)
+	# Check bc exit status
+	if [[ $? -ne 0 ]]; then
+		echo "Error: bc calculation failed during factor validation." >&2
+		return 1
+	fi
+
+	if [[ "$result" -eq 1 ]]; then
+		echo "Error: Factor must be positive '$factor'." >&2
+		return 1 # Indicate validation failure
+	fi
+	return 0 # Indicate validation success
 }
 
 printv() {
-  if [ "${verbose:-0}" -eq 1 ]; then printf '%s\n' "$@"; fi
+	# Access global verbose variable
+	# Use parameter expansion default if verbose is not set
+	if [ "${verbose:-0}" -eq 1 ]; then
+		# Print arguments, handling potential spaces
+		# Using printf '%s\n' "$@" is robust for printing multiple arguments
+		printf '%s\n' "$@" >&2
+	fi
 }
 
 get_default_filename() {
-  base=$1
-  suf=$2
-  ext=$3
-  name="${base}_${suf}.${ext}"
-  n=1
-  while [ -f "$name" ]; do
-    name="${base}_${suf}${n}.${ext}"
-    n=$((n + 1))
-  done
-  printf '%s\n' "$name"
+	local base="$1"
+	local suf="$2"
+	local ext="$3"
+	local dir="${4:-.}" # Optional directory argument, default to current dir
+
+	local name="${base}_${suf}.${ext}"
+	local full_path="$dir/$name"
+	local n=1
+
+	# Loop until a non-existent filename is found
+	while [[ -e "$full_path" ]]; do
+		name="${base}_${suf}${n}.${ext}"
+		full_path="$dir/$name"
+		n=$((n + 1))
+	done
+	# Return the full path including directory to standard output
+	printf '%s\n' "$full_path"
 }
 
 load_config() {
-  if [ -f "$CONFIG_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$CONFIG_FILE"
-    printv "Loaded config from $CONFIG_FILE"
-  fi
+	# Check if the config file exists
+	if [[ -f "/etc/merge.conf" ]]; then
+		printv "Loading config..."
+		# shellcheck source=/dev/null # Ignore SC1090 as the path is not constant
+		# Use 'source' to load variables into the current shell environment
+		source "/etc/merge.conf"
+	fi
 }
 
-output_dir="."
-codec="libx264"
-preset="slow"
-crf=""
-qp="0"
-remove_audio="true"
-scale=""
-fps=""
-speed="1.0"
-interpolate=0
-verbose=0
-
-load_config
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -o|--output-dir) shift; output_dir=$1; shift ;;
-    -c|--codec) shift; codec=$1; shift ;;
-    -p|--preset) shift; preset=$1; shift ;;
-    --crf) shift; crf=$1; shift ;;
-    -a|--remove-audio) shift; remove_audio=$1; shift ;;
-    --scale) shift; scale=$1; shift ;;
-    --fps) shift; fps=$1; shift ;;
-    --speed) shift; speed=$1; shift ;;
-    --interpolate) interpolate=1; shift ;;
-    -v) verbose=1; shift ;;
-    -h|--help) usage 0 ;;
-    --) shift; break ;;
-    -*) printf 'Unknown option: %s\n' "$1" >&2; usage ;;
-    *) break ;;
-  esac
-done
+## File Selector
 
 select_files() {
-  if command -v fzf >/dev/null 2>&1; then
-    >&2 printf '%s\n' "Please select video files using fzf:"
-    selected=$(fzf --multi --preview 'ffprobe {}' --preview-window=right:60% --bind='ctrl-a:select-all+accept' --height=40%)
-    [ -z "$selected" ] && { printf '%s\n' "No files selected. Exiting."; exit 1; }
-    printf '%s\n' "$selected"
-  else
-    >&2 printf '%s\n' "fzf not found. Please manually specify file paths (space-separated):"
-    read -r manual_files
-    [ -z "$manual_files" ] && { printf '%s\n' "No files entered. Exiting."; exit 1; }
-    printf '%s\n' "$manual_files"
-  fi
+	local selected_output=""
+	local -a selected_array=()
+
+	# Check if fzf command exists
+	if command_exists fzf; then
+		printv "Launching interactive file selection with fzf..."
+		# Use find . -print0 to handle filenames with spaces/newlines correctly
+		# Use xargs -0 "${REALPATH_CMD}" -- to convert to absolute paths safely
+		# Use printf '%s' ... | tr '\0' '\n' to convert null-separated output to newline-separated for mapfile
+		# Capture stderr from xargs to suppress potential errors if realpath fails on some inputs
+		# Check exit status of the fzf pipeline
+		# The find command should also check its exit status, but pipefail handles the overall pipeline
+		if ! selected_output=$(find . -maxdepth 1 -type f \( -iname \.mp4 -o -iname \.mov -o -iname \.mkv -o -iname \.webm \) -print0 | xargs -0 "${REALPATH_CMD}" -- 2>/dev/null | fzf --multi --preview 'ffprobe -hide_banner -loglevel error {}' --preview-window=right:60% --bind='ctrl-a:select-all+accept' --height=40% --print0); then
+			# fzf returns non-zero if no selection or interrupted
+			echo "No files selected or fzf interrupted." >&2
+			return 1 # Indicate failure to select files
+		fi
+		# fzf --print0 outputs null-separated paths, convert to newline for array
+		# Use mapfile -d '' for robust null-separated input
+		mapfile -d '' -t selected_array < <(printf '%s' "$selected_output")
+	else
+		echo "fzf not found. Please manually specify file paths (space-separated)." >&2
+		echo "Quote paths with spaces. Press Enter when done:" >&2
+		local manual_input
+		# Read the entire line of manual input
+		read -r manual_input
+		if [[ -z "$manual_input" ]]; then
+			echo "No files entered." >&2
+			return 1 # Indicate failure to select files
+		fi
+		# Read into array, relying on default IFS (whitespace) for splitting.
+		# NOTE: This is a limitation for paths with spaces unless user quotes them.
+		# Using read -r -a is standard but has this limitation.
+		read -r -a selected_array <<<"$manual_input"
+
+		# Convert manual input paths to absolute paths and validate existence
+		local -a abs_selected_array=()
+		local file_found_count=0 # Count how many files were successfully processed
+		for f in "${selected_array[@]}"; do
+			if [[ -f "$f" ]]; then
+				local abs_f
+				# Use absolute_path function and check its exit status
+				if abs_f=$(absolute_path "$f"); then
+					abs_selected_array+=("$abs_f")
+					file_found_count=$((file_found_count + 1))
+				else
+					# absolute_path printed an error, continue to check other files
+					continue
+				fi
+			else
+				echo "Error: Input file not found: '$f'" >&2
+				# Do not exit here, allow user to enter multiple paths and report all errors
+			fi
+		done
+		# If no files were successfully found/converted from manual input
+		if ((file_found_count == 0)); then
+			echo "No valid files entered." >&2
+			return 1
+		fi
+		selected_array=("${abs_selected_array[@]}")
+	fi
+
+	# Check if any files were actually selected/processed
+	if ((${#selected_array[@]} == 0)); then
+		echo "No files selected." >&2
+		return 1
+	fi
+
+	# Print the selected absolute paths, one per line, to standard output
+	# Use printf '%s\n' to handle spaces in paths correctly
+	printf '%s\n' "${selected_array[@]}"
+	return 0 # Indicate success
 }
 
-if [ $# -eq 0 ]; then
-  printv "No files provided; launching interactive selection..."
-  IFS='
-'
-  # shellcheck disable=SC2046
-  set -- $(select_files)
-  unset IFS
-fi
+## Args
 
-# Save original list for processing
-input_files=""
-for f in "$@"; do
-  if [ ! -f "$f" ]; then
-    echo "Error: File not found: $f" >&2
-    exit 1
-  fi
-  input_files="$input_files
-$f"
-done
-input_files=$(printf '%s\n' "$input_files" | sed '/^[[:space:]]*$/d')
+get_video_opts() {
+	local codec="${1:-libx264}"
+	local preset="${2:-slow}"
+	local crf_val="${3:-}" # Use empty string to indicate not set
+	local qp_val="${4:-}"  # Use empty string to indicate not set
 
-max_w=0
-max_h=0
-max_fps=0
+	local -a opts=(
+		"-c:v" "$codec"
+		"-preset" "$preset"
+		"-pix_fmt" "yuv420p"
+		"-movflags" "+faststart"
+	)
 
-# Analyze all inputs without changing positional parameters
-for inp in $input_files; do
-  wh=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=' ' "$inp" 2>/dev/null || printf '0 0')
-  w=$(printf '%s' "$wh" | awk '{print $1}')
-  h=$(printf '%s' "$wh" | awk '{print $2}')
-  if [ "$w" -gt "$max_w" ]; then max_w=$w; fi
-  if [ "$h" -gt "$max_h" ]; then max_h=$h; fi
-  fr=$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of csv=p=0 "$inp")
-  val=$(printf '%s\n' "$fr" | bc -l 2>/dev/null || printf 0)
-  res=$(printf '%s\n' "$val > $max_fps" | bc)
-  if [ "$res" -eq 1 ]; then max_fps=$val; fi
-done
+	# Prioritize CRF if set, otherwise use QP if set, otherwise use a default CRF
+	if [[ -n "$crf_val" ]]; then
+		opts+=("-crf" "$crf_val")
+	elif [[ -n "$qp_val" ]]; then
+		opts+=("-qp" "$qp_val")
+	else
+		# Default CRF if neither is specified
+		opts+=("-crf" "18") # Good balance of quality and size
+	fi
 
-if [ -z "$fps" ]; then
-  if [ "$max_fps" = 0 ]; then
-    fps=30
-  else
-    fps=$max_fps
-  fi
-fi
-if [ -z "$scale" ]; then scale="largest"; fi
-
-mkdir -p "$output_dir" || { echo "Could not create output directory $output_dir"; exit 1; }
-
-norm_list_file=$(mktemp -p "$TMPDIR" "mergebeta_norm_list_XXXXXX.txt") || { echo "Failed to create temp file"; exit 1; }
-TMPFILES="$TMPFILES $norm_list_file"
-
-for inp in $input_files; do
-  tmpf=$(mktemp -p "$TMPDIR" "mergebeta_norm_XXXXXX.mp4") || { echo "Failed to create temp file for $inp"; exit 1; }
-  TMPFILES="$TMPFILES $tmpf"
-  inp_safe=$(safe_rename_spaces "$inp")
-
-  case $scale in
-    largest) filter="scale=${max_w}:${max_h}" ;;
-    composite) filter="scale=${max_w}:${max_h}:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:(ow-iw)/2:(oh-ih)/2:color=black" ;;
-    1080p|*) filter="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black" ;;
-  esac
-
-  if [ "$interpolate" -eq 1 ]; then
-    filter="minterpolate=fps=${fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,${filter}"
-  fi
-  filter="${filter},setpts=${speed}*PTS"
-
-  video_opts="-c:v $codec -preset $preset -pix_fmt yuv420p -movflags +faststart"
-  if [ -n "$crf" ]; then
-    video_opts="$video_opts -crf $crf"
-  else
-    video_opts="$video_opts -qp $qp"
-  fi
-
-  if [ "$remove_audio" = "true" ]; then
-    audio_opts="-an"
-  else
-    audio_opts="-c:a aac -b:a 128k"
-  fi
-
-  printv "Normalizing '$inp_safe' → '$tmpf' with filter: $filter"
-  # shellcheck disable=SC2086
-  ffmpeg -y -hide_banner -loglevel error -i "$inp_safe" -r "$fps" -vf "$filter" $video_opts $audio_opts "$tmpf" >"$TMPDIR/ffmpeg_norm.log" 2>&1 || {
-    echo "Error: normalization failed for $inp_safe" >&2
-    cat "$TMPDIR/ffmpeg_norm.log" >&2
-    exit 1
-  }
-
-  printf '%s\n' "$tmpf" >> "$norm_list_file"
-done
-
-if [ ! -s "$norm_list_file" ]; then
-  echo 'Error: No normalized files to concatenate' >&2
-  exit 1
-fi
-
-listf=$(mktemp -p "$TMPDIR" "mergebeta_list_XXXXXX.txt") || { echo "Failed to create temp list"; exit 1; }
-TMPFILES="$TMPFILES $listf"
-
-: > "$listf"
-while IFS= read -r f; do
-  escfile=$(printf "%s" "$f" | sed "s/'/'\\\\''/g")
-  printf "file '%s'\n" "$escfile" >> "$listf"
-done < "$norm_list_file"
-
-if [ -z "$input_files" ]; then
-  echo 'Error: No input files provided' >&2
-  exit 1
-fi
-
-firstfile=$(printf '%s\n' "$input_files" | head -n 1)
-container="${firstfile##*.}"
-case "$container" in
-  mp4|mkv|mov|avi|webm) ;;
-  *) container="mp4" ;;
-esac
-
-base_output="merged_video"
-output=$(get_default_filename "$output_dir/$base_output" merged "$container")
-
-ffmpeg -y -hide_banner -loglevel error -f concat -safe 0 -i "$listf" -c copy "$output" >"$TMPDIR/ffmpeg_concat.log" 2>&1 || {
-  echo 'Error: final concat failed' >&2
-  cat "$TMPDIR/ffmpeg_concat.log" >&2
-  exit 1
+	# Print array elements separated by null characters for safe reading
+	# Use printf '%s\0' to handle potential spaces or special chars in options
+	printf '%s\0' "${opts[@]}"
 }
 
-echo "✅ Merged video saved as: $output"
-exit 0
+get_audio_opts() {
+	local remove_audio="${1:-false}" # Default to keeping audio
+
+	local -a opts=()
+	if [[ "$remove_audio" = "true" ]]; then
+		opts+=("-an") # No audio
+	else
+		opts+=("-c:a" "aac" "-b:a" "128k") # Default audio codec and bitrate
+	fi
+
+	# Print array elements separated by null characters for safe reading
+	printf '%s\0' "${opts[@]}"
+}
+
+## Filter Chain
+
+generate_atempo_filter() {
+	local target_speed="$1"
+	local rem_speed="$target_speed"
+	local -a atempo_parts=() # Array to build filter parts
+
+	# Use printf for precise float formatting before bc
+	local formatted_rem_speed
+	formatted_rem_speed=$(printf "%.8f" "$rem_speed") # Increased precision for intermediate calcs
+
+	# Check if target_speed is valid (positive number)
+	if ! validate_factor "$target_speed"; then
+		# validate_factor prints its own error
+		return 1 # Indicate failure
+	fi
+
+	# Handle speed 1.0 explicitly to avoid adding atempo=1.0
+	local bc_is_one
+	bc_is_one=$(bc -l <<<"$formatted_rem_speed == 1.0" 2>/dev/null)
+	# Check bc exit status
+	if [[ $? -ne 0 ]]; then
+		echo "Error: bc calculation failed (comparison == 1.0)." >&2
+		return 1
+	fi
+
+	if [[ "$bc_is_one" -eq 1 ]]; then
+		printf '' # Return empty string for speed 1.0
+		return 0
+	fi
+
+	# Chain atempo=2.0 for speeds > 2.0
+	local bc_result
+	bc_result=$(bc -l <<<"$formatted_rem_speed > 2.0" 2>/dev/null)
+	# Check bc exit status
+	if [[ $? -ne 0 ]]; then
+		echo "Error: bc calculation failed (comparison > 2.0)." >&2
+		return 1
+	fi
+	while [[ "$bc_result" -eq 1 ]]; do
+		atempo_parts+=(atempo=2.0)
+		local new_rem_speed
+		new_rem_speed=$(bc -l <<<"$formatted_rem_speed / 2.0" 2>/dev/null)
+		# Check if bc calculation was successful
+		if [[ $? -ne 0 || -z "$new_rem_speed" ]]; then
+			echo "Error: bc calculation failed during atempo filter generation (division by 2.0)." >&2
+			return 1 # Indicate failure
+		fi
+		rem_speed="$new_rem_speed"
+		formatted_rem_speed=$(printf "%.8f" "$rem_speed")
+		bc_result=$(bc -l <<<"$formatted_rem_speed > 2.0" 2>/dev/null)
+		if [[ $? -ne 0 ]]; then
+			echo "Error: bc calculation failed (comparison > 2.0 in loop)." >&2
+			return 1
+		fi
+	done
+
+	# Chain atempo=0.5 for speeds < 0.5
+	bc_result=$(bc -l <<<"$formatted_rem_speed < 0.5" 2>/dev/null)
+	if [[ $? -ne 0 ]]; then
+		echo "Error: bc calculation failed (comparison < 0.5)." >&2
+		return 1
+	fi
+	while [[ "$bc_result" -eq 1 ]]; do
+		atempo_parts+=(atempo=0.5)
+		local new_rem_speed
+		new_rem_speed=$(bc -l <<<"$formatted_rem_speed / 0.5" 2>/dev/null) # Dividing by 0.5 is multiplying by 2
+		# Check if bc calculation was successful
+		if [[ $? -ne 0 || -z "$new_rem_speed" ]]; then
+			echo "Error: bc calculation failed during atempo filter generation (division by 0.5)." >&2
+			return 1 # Indicate failure
+		fi
+		rem_speed="$new_rem_speed"
+		formatted_rem_speed=$(printf "%.8f" "$rem_speed")
+		bc_result=$(bc -l <<<"$formatted_rem_speed < 0.5" 2>/dev/null)
+		if [[ $? -ne 0 ]]; then
+			echo "Error: bc calculation failed (comparison < 0.5 in loop)." >&2
+			return 1
+		fi
+	done
+
+	# Add the final remaining speed
+	# Ensure the final speed is within [0.5, 2.0] range before adding
+	local is_in_range
+	is_in_range=$(bc -l <<<"$formatted_rem_speed >= 0.5 && $formatted_rem_speed <= 2.0" 2>/dev/null)
+	if [[ $? -ne 0 ]]; then
+		echo "Error: bc calculation failed (range check)." >&2
+		return 1
+	fi
+
+	if [[ "$is_in_range" -eq 1 ]]; then
+		# Format the final speed to 4 decimal places for the filter string
+		atempo_parts+=(atempo="$(printf "%.4f" "$rem_speed")")
+	else
+		# This case should ideally not be reached with correct logic
+		echo "Error: Calculated final atempo speed '$rem_speed' is out of range [0.5, 2.0]." >&2
+		return 1 # Indicate failure
+	fi
+
+	local atempo_filter_str=""
+	# Join filter parts with commas
+	# Use printf and IFS for safe joining
+	# Use a subshell to keep IFS change local
+	atempo_filter_str=$(
+		IFS=,
+		printf '%s' "${atempo_parts[*]}"
+	)
+
+	# Check if any parts were generated (should be unless speed was exactly 1.0, which is handled)
+	if [[ -z "$atempo_filter_str" ]]; then
+		# This case should not be reached if speed was not 1.0 and logic is correct
+		echo "Error: Failed to generate atempo filter string for speed '$target_speed' (result was empty)." >&2
+		return 1 # Indicate failure
+	fi
+
+	printf '%s' "$atempo_filter_str"
+	return 0 # Indicate success
+}
+
+## Help
+
+usage() {
+	local exit_status="${1:-1}"
+	cat <<EOH
+Merge - Lightweight FFMPEG Wrapper
+
+Usage: ${0##*/} <subcommand> [global options] [subcommand options] [args...]
+
+Global Options (apply to process, merge, looperang, slowmo):
+  -r WxH   Output resolution (e.g., 1280x720). For merge, determines target resolution.
+  -f N     Output FPS (integer). For merge, determines target FPS.
+  -c <codec> Video codec (default: libx264)
+  -p <preset> Encoding preset (default: slow)
+  --crf <value> CRF value (default: 18, overrides qp)
+  --qp <value> QP value (default: none, used if crf is not set)
+  -a <bool>  Remove audio tracks (true|false, default: false for process/looperang/slowmo, true for merge)
+  -v       Verbose output
+  -h, --help Show this message
+
+Subcommands:
+  probe <file>                     Show media info
+  process [opts] <in> [out]        Scale/FPS convert
+  merge   [opts] <f1> <f2> [...]   Concat compatible clips (re-encodes if needed)
+  looperang [opts] <in> [out]      Forward+reverse loop
+  slowmo  [opts] <in> [out]        Slow-motion (default factor=2)
+
+Merge-specific Options:
+  -o <out> Output file (default: determined from first input)
+  --scale <mode> Scaling mode for merge: largest, composite, 1080p (default: largest)
+                  'largest': Scale all to largest input resolution (or -r if specified), padding if needed.
+                  'composite': Scale all to 1280x720 (or -r if specified), padding if needed.
+                  '1080p': Scale all to 1920x1080 (or -r if specified), padding if needed.
+  --speed <factor> Playback speed multiplier for merge (default: 1.0)
+  --interpolate Enable frame interpolation for smooth fps in merge
+  --output-dir <dir> Output directory for merge (default: .)
+
+slowmo only:
+  -s F     Slow factor (float, e.g., 2.0 for 2× slow, 0.5× for 0.5× slow)
+
+Config File:
+  Options can be set in a config file (e.g., output_dir="~/Videos", codec="libvpx-vp9").
+  Command-line options override config file options.
+EOH
+	exit "$exit_status"
+}
+
+## Probe
+
+cmd_probe() {
+	local in="${1:-}"
+
+	# Validate input file argument
+	if [[ -z "$in" ]]; then
+		echo "Error: No input file provided for probe." >&2
+		usage >&2 # Show usage on missing required arg
+		# shellcheck disable=SC2317 # Intentional exit on missing required arg
+		exit 1
+	fi
+	if [[ ! -f "$in" ]]; then
+		echo "Error: Input file not found: '$in'" >&2
+		# shellcheck disable=SC2317 # Intentional exit on invalid input
+		exit 1
+	fi
+
+	local sz=""
+	# Get file size, check exit status of portable_stat
+	if ! sz=$(portable_stat "$in"); then
+		echo "Warning: Could not get file size for '$in'." >&2
+		sz="N/A" # Set to N/A on failure
+	fi
+
+	local ffprobe_output=""
+	# Capture stderr for potential ffprobe errors
+	# Using -v quiet to suppress non-error messages from ffprobe itself
+	# Check exit status of ffprobe
+	if ! ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,avg_frame_rate:format=duration,format_name "$in" 2>&1); then
+		echo "Error running ffprobe on '$in':" >&2
+		echo "$ffprobe_output" >&2 # Print captured stderr
+		# shellcheck disable=SC2317 # Intentional exit on ffprobe failure
+		exit 1
+	fi
+
+	local probe_data=""
+	# Use printf to safely pipe ffprobe output to awk (handles nulls/backslashes)
+	# Use awk for parsing, more robust than grep | awk chain
+	# Handle cases where streams or format info might be missing
+	probe_data=$(printf '%s' "$ffprobe_output" | awk '
+		/^width=/ { width=$2 }
+		/^height=/ { height=$2 }
+		/^avg_frame_rate=/ { avg_frame_rate=$2 }
+		/^duration=/ { duration=$2 }
+		/^format_name=/ { split($2, a, ","); format_name=a[1] }
+		END {
+			printf "width=%s\n", width ? width : "N/A";
+			printf "height=%s\n", height ? height : "N/A";
+			printf "avg_frame_rate=%s\n", avg_frame_rate ? avg_frame_rate : "N/A";
+			printf "duration=%s\n", duration ? duration : "N/A";
+			printf "format_name=%s\n", format_name ? format_name : "N/A";
+		}
+	')
+
+	# Extract values from parsed probe_data
+	local width=""
+	width=$(printf '%s' "$probe_data" | grep '^width=' | cut -d'=' -f2)
+	local height=""
+	height=$(printf '%s' "$probe_data" | grep '^height=' | cut -d'=' -f2)
+	local res="N/A" # Initialize res
+	[[ "$width" != "N/A" && "$height" != "N/A" ]] && res="${width}x${height}"
+
+	local avg_frame_rate=""
+	avg_frame_rate=$(printf '%s' "$probe_data" | grep '^avg_frame_rate=' | cut -d'=' -f2)
+	local fps="N/A"  # Initialize fps
+	local fps_val="" # Initialize fps_val
+
+	if [[ "$avg_frame_rate" != "N/A" ]]; then
+		# Use bc for floating point division
+		# Check if bc successfully produces a number before assigning
+		# Use printf for precise float formatting before bc
+		if fps_val=$(bc -l <<<"$(printf "%.8f" "$avg_frame_rate")" 2>/dev/null); then
+			# bc succeeded, format to 2 decimal places
+			fps=$(printf "%.2f" "$fps_val")
+		fi # If bc failed, fps remains "N/A"
+	fi
+
+	local dur=""
+	dur=$(printf '%s' "$probe_data" | grep '^duration=' | cut -d'=' -f2)
+	local container=""
+	container=$(printf '%s' "$probe_data" | grep '^format_name=' | cut -d'=' -f2)
+
+	# Use unquoted EOF for heredoc to allow variable expansion
+	cat <<EOF
+=== PROBE REPORT ===
+
+File: '$in'
+Container: ${container}
+Size: $(bytes_to_human "$sz")
+Resolution: ${res}
+Frame Rate: ${fps}
+Duration: ${dur}s
+EOF
+}
+
+## Process
+
+cmd_process() {
+	local in="${1:-}"
+	local out="${2:-${in%.*}_processed.mp4}" # Default output name
+
+	# Validate input file argument
+	if [[ -z "$in" ]]; then
+		echo "Error: No input file provided for process." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required arg
+		exit 1
+	fi
+	if [[ ! -f "$in" ]]; then
+		echo "Error: Input file not found: '$in'" >&2
+		# shellcheck disable=SC2317 # Intentional exit on invalid input
+		exit 1
+	fi
+
+	# Access global options set in main (defaults handled in main)
+	local current_res="${resolution}" # Use global/config/cmdline, required
+	local current_fps="${fps}"        # Use global/config/cmdline, required
+	local current_codec="${codec}"
+	local current_preset="${preset}"
+	local current_crf="${crf}"
+	local current_qp="${qp}"
+	local current_remove_audio="${remove_audio}"
+
+	# Validate required options for process
+	if [[ -z "$current_res" ]]; then
+		echo "Error: Output resolution (-r) is required for 'process' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+	if [[ -z "$current_fps" ]]; then
+		echo "Error: Output FPS (-f) is required for 'process' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+
+	# Get encoding options as arrays using null separator
+	local vopts_str
+	vopts_str=$(get_video_opts "$current_codec" "$current_preset" "$current_crf" "$current_qp")
+	local aopts_str
+	aopts_str=$(get_audio_opts "$current_remove_audio")
+
+	# Read null-separated strings into arrays safely
+	local -a vopts=()
+	local -a aopts=()
+	mapfile -d '' -t vopts < <(printf '%s' "$vopts_str")
+	mapfile -d '' -t aopts < <(printf '%s' "$aopts_str")
+
+	printv "Processing '$in' to '$out' (Resolution: $current_res, FPS: $current_fps)..."
+	printv "Video Options: ${vopts[*]}"
+	printv "Audio Options: ${aopts[*]}"
+
+	# Build FFmpeg command array
+	# Start with the command name 'ffmpeg'
+	local -a ffmpeg_cmd=(ffmpeg -hide_banner -loglevel error -y -i "$in")
+
+	# Add video filter chain (scale and fps)
+	# Use parameter expansion to replace 'x' with ':' for the scale filter
+	ffmpeg_cmd+=("-vf" "scale=${current_res/x/:},fps=${current_fps}")
+
+	# Add video and audio encoding options
+	ffmpeg_cmd+=("${vopts[@]}")
+	ffmpeg_cmd+=("${aopts[@]}")
+
+	# Add output file
+	ffmpeg_cmd+=("$out")
+
+	printv "FFmpeg command: ${ffmpeg_cmd[*]}"
+
+	# Execute FFmpeg command and check exit status
+	if ! "${ffmpeg_cmd[@]}"; then
+		echo "Error: ffmpeg process failed for '$in'." >&2
+		# shellcheck disable=SC2317 # Intentional exit on ffmpeg failure
+		exit 1
+	fi
+
+	echo "✅ Processed: $out"
+}
+
+## Merge
+
+cmd_merge() {
+	# Access global options set in main (defaults handled in main)
+	local current_resolution="${resolution:-}"
+	local current_fps="${fps:-}" # Use global/config/cmdline fps if set
+	local current_codec="${codec:-}"
+	local current_preset="${preset:-}"
+	local current_crf="${crf:-}"
+	local current_qp="${qp:-}"
+	# Note: remove_audio default for merge is handled in main before calling cmd_merge
+	local current_remove_audio="${remove_audio:-}"
+	local current_scale_mode="${scale_mode:-}"
+	local current_speed_factor="${speed_factor:-}"
+	local current_interpolate="${interpolate:-}"
+	local current_output_dir="${output_dir:-}"
+	local current_output="${output:-}" # Output file specified by -o
+
+	local -a files=("$@") # Positional arguments are input files
+
+	# If no files provided, use interactive selection
+	if ((${#files[@]} == 0)); then
+		printv "No files provided; launching interactive selection..."
+		# Read newline-separated paths from select_files into the files array
+		# Use mapfile/readarray for robustness
+		# Check exit status of select_files
+		local selected_files_str
+		# Capture stdout from select_files
+		if ! selected_files_str=$(select_files); then
+			# select_files already printed an error/message
+			# shellcheck disable=SC2317 # Intentional exit on no files selected
+			exit 1
+		fi
+		# Read newline-separated paths into the files array
+		mapfile -t files < <(printf '%s' "$selected_files_str")
+	fi
+
+	# Check if any files were selected/provided after potential interactive step
+	if ((${#files[@]} < 2)); then # Need at least 2 files to merge
+		echo "Error: Need at least two input files for merge. ${#files[@]} provided." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on insufficient files
+		exit 1
+	fi
+
+	# Validate input files exist and get absolute paths
+	local -a abs_files=()
+	local valid_file_count=0
+	for f in "${files[@]}"; do
+		if [[ -f "$f" ]]; then
+			local abs_f
+			# Use absolute_path function and check its exit status
+			if abs_f=$(absolute_path "$f"); then
+				abs_files+=("$abs_f")
+				valid_file_count=$((valid_file_count + 1))
+			else
+				# absolute_path printed an error, continue to check other files
+				continue
+			fi
+		else
+			echo "Error: Input file not found: '$f'" >&2
+			# Do not exit here, allow checking all input files
+		fi
+	done
+
+	# If none of the provided files were valid
+	if ((valid_file_count == 0)); then
+		echo "Error: No valid input files found." >&2
+		# shellcheck disable=SC2317 # Intentional exit on no valid files
+		exit 1
+	fi
+
+	files=("${abs_files[@]}")     # Use absolute paths for all processing
+	local num_inputs=${#files[@]} # Update num_inputs based on valid files
+
+	local max_w=0 max_h=0 max_fps=0.0 # Use float for max_fps
+	printv "Analyzing input files for max resolution and FPS..."
+	for inp in "${files[@]}"; do
+		local ffprobe_output=""
+		# Capture stderr for potential ffprobe errors
+		# Check exit status of ffprobe
+		if ! ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,avg_frame_rate "$inp" 2>&1); then
+			echo "Warning: Could not probe video stream of '$inp'. Skipping analysis for this file." >&2
+			echo "$ffprobe_output" >&2 # Print captured stderr
+			continue                   # Skip to next file if probe fails
+		fi
+
+		local w=""
+		w=$(printf '%s' "$ffprobe_output" | awk '/^width=/ {print $2}')
+		local h=""
+		h=$(printf '%s' "$ffprobe_output" | awk '/^height=/ {print $2}')
+		local fr=""
+		fr=$(printf '%s' "$ffprobe_output" | awk '/^avg_frame_rate=/ {print $2}')
+
+		# Update max width and height if valid numbers are found
+		if [[ "$w" =~ ^[0-9]+$ ]] && [[ "$h" =~ ^[0-9]+$ ]]; then
+			((w > max_w)) && max_w=$w
+			((h > max_h)) && max_h=$h
+		fi
+
+		# Update max FPS if a valid frame rate is found
+		if [[ -n "$fr" ]]; then
+			# Use bc for floating point comparison
+			local val
+			# Use printf for precise float formatting before bc
+			# Use || echo 0.0 to handle potential bc errors gracefully during analysis
+			val=$(bc -l <<<"$(printf "%.8f" "$fr")" 2>/dev/null || echo 0.0)
+			# Compare using bc
+			local bc_compare
+			bc_compare=$(bc -l <<<"$val > $max_fps" 2>/dev/null)
+			# Check bc exit status
+			if [[ $? -ne 0 ]]; then
+				echo "Warning: bc comparison failed during FPS analysis for '$inp'." >&2
+				continue
+			fi
+
+			if [[ "$bc_compare" -eq 1 ]]; then
+				max_fps="$val"
+			fi
+		fi
+	done
+
+	local target_res="${current_resolution:-}" # Use global/config/cmdline resolution if set
+	local target_fps="${current_fps:-}"        # Use global/config/cmdline fps if set
+
+	# Determine target resolution if not specified via -r
+	if [[ -z "$target_res" ]]; then
+		case "$current_scale_mode" in
+		largest)
+			if ((max_w > 0 && max_h > 0)); then
+				target_res="${max_w}x${max_h}"
+				printv "Target resolution not specified, using max input resolution ($current_scale_mode mode): $target_res"
+			else
+				# Fallback if no video streams found or probe failed
+				target_res="1280x720" # A reasonable default
+				printv "Could not determine max input resolution, defaulting to $target_res ($current_scale_mode mode)." >&2
+			fi
+			;;
+		composite)
+			target_res="1280x720" # Default for composite
+			printv "Target resolution not specified, defaulting to $target_res ($current_scale_mode mode)."
+			;;
+		1080p)
+			target_res="1920x1080" # Default for 1080p
+			printv "Target resolution not specified, defaulting to $target_res ($current_scale_mode mode)."
+			;;
+		*)
+			# Should not be reached due to validation in main, but for safety
+			echo "Error: Unknown scale mode '$current_scale_mode'." >&2
+			# shellcheck disable=SC2317 # Intentional exit on invalid scale mode
+			exit 1
+			;;
+		esac
+	else
+		# Resolution was specified via -r, validate it
+		if ! validate_resolution "$target_res"; then
+			# validate_resolution printed an error
+			# shellcheck disable=SC2317 # Intentional exit on validation failure
+			exit 1
+		fi
+		printv "Target resolution specified: $target_res (scale mode: $current_scale_mode)"
+	fi
+
+	# Determine target FPS if not specified via -f
+	if [[ -z "$target_fps" ]]; then
+		local bc_max_fps_gt_0
+		bc_max_fps_gt_0=$(bc -l <<<"$max_fps > 0" 2>/dev/null)
+		if [[ $? -ne 0 ]]; then
+			echo "Error: bc comparison failed during target FPS determination." >&2
+			exit 1
+		fi
+
+		if [[ "$bc_max_fps_gt_0" -eq 1 ]]; then
+			# Round max_fps to nearest integer for target_fps
+			target_fps=$(printf "%.0f" "$max_fps")
+			printv "Target FPS not specified, using rounded max input FPS: $target_fps"
+		else
+			# Fallback if no video streams found or probe failed
+			target_fps=30 # A reasonable default
+			printv "Could not determine max input FPS, defaulting to: $target_fps"
+		fi
+	else
+		# FPS was specified via -f, validate it
+		if ! validate_fps "$target_fps"; then
+			# validate_fps printed an error
+			# shellcheck disable=SC2317 # Intentional exit on validation failure
+			exit 1
+		fi
+		printv "Target FPS specified: $target_fps"
+	fi
+
+	# Parse target resolution into width and height for scaling filters
+	local target_res_w
+	target_res_w=$(echo "$target_res" | cut -d'x' -f1)
+	local target_res_h
+	target_res_h=$(echo "$target_res" | cut -d'x' -f2)
+
+	# --- Build FFmpeg Command ---
+	# Start with the command name 'ffmpeg'
+	local -a ffmpeg_cmd=(ffmpeg -hide_banner -loglevel error -y)
+	local video_filter_chain=""
+	local audio_filter_chain=""
+	local input_video_maps=""
+	local input_audio_maps=""
+
+	# Add inputs and build per-stream filters
+	for i in "${!files[@]}"; do
+		local input_file="${files[$i]}"
+		ffmpeg_cmd+=("-i" "$input_file")
+
+		# Video filter chain for input i
+		# Start with input stream [i:v]
+		local v_chain="[${i}:v]"
+
+		# Apply speed factor
+		# Use printf for precise float formatting before including in filter string
+		v_chain+=",setpts=$(printf "%.8f" "$current_speed_factor")*PTS"
+
+		# Apply scaling (maintain aspect ratio and pad)
+		# scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2
+		v_chain+=",scale=${target_res_w}:${target_res_h}:force_original_aspect_ratio=decrease"
+		v_chain+=",pad=${target_res_w}:${target_res_h}:(ow-iw)/2:(oh-ih)/2"
+
+		# Apply interpolation if enabled (before FPS)
+		if [[ "$current_interpolate" -eq 1 ]]; then
+			# minterpolate works best when input FPS is higher than target FPS,
+			# or when used to increase FPS. Applying it before the final fps filter.
+			v_chain+=",minterpolate='mi_mode=blend:fps=${target_fps}'"
+		fi
+
+		# Apply target FPS
+		v_chain+=",fps=${target_fps}"
+
+		# Label the output video stream for concatenation
+		v_chain+="[v${i}]"
+		video_filter_chain+="$v_chain;"
+		input_video_maps+="[v${i}]"
+
+		# Audio filter chain for input i (if keeping audio)
+		if [[ "$current_remove_audio" != "true" ]]; then
+			local a_chain="[${i}:a]"
+
+			# Build atempo chain for audio speed adjustment (1/speed_factor)
+			local target_audio_speed_val
+			target_audio_speed_val=$(bc -l <<<"1 / $(printf "%.8f" "$current_speed_factor")" 2>/dev/null)
+			if [[ $? -ne 0 || -z "$target_audio_speed_val" ]]; then
+				echo "Error: Could not calculate target audio speed (1 / $current_speed_factor)." >&2
+				# shellcheck disable=SC2317 # Intentional exit on calculation failure
+				exit 1
+			fi
+
+			local atempo_filter_str
+			# Call generate_atempo_filter and check its exit status
+			if ! atempo_filter_str=$(generate_atempo_filter "$target_audio_speed_val"); then
+				# generate_atempo_filter printed an error
+				# shellcheck disable=SC2317 # Intentional exit on filter generation failure
+				exit 1
+			fi
+
+			# Apply atempo filter chain IF it's not empty (i.e., speed was not exactly 1.0)
+			if [[ -n "$atempo_filter_str" ]]; then
+				a_chain+=",${atempo_filter_str}"
+			fi
+
+			# Label the output audio stream for concatenation
+			a_chain+="[a${i}]"
+			audio_filter_chain+="$a_chain;"
+			input_audio_maps+="[a${i}]"
+		fi
+	done
+
+	# Add the final concat filter(s)
+	# Build the full filter_complex string by combining video and audio chains
+	local filter_complex=""
+
+	# Add video chain and concat
+	# Remove trailing semicolon from video_filter_chain before adding concat
+	video_filter_chain="${video_filter_chain%;}" # Remove last char if it's ';'
+	filter_complex+="$video_filter_chain"
+	filter_complex+="${input_video_maps}concat=n=${num_inputs}:v=1:a=$([[ "$current_remove_audio" != "true" ]] && echo 1 || echo 0)}[v_out]"
+
+	# Add audio chain and concat ONLY if audio is not removed
+	if [[ "$current_remove_audio" != "true" ]]; then
+		# Remove trailing semicolon from audio_filter_chain before adding concat
+		audio_filter_chain="${audio_filter_chain%;}" # Remove last char if it's ';'
+		filter_complex+=";$audio_filter_chain"
+		filter_complex+="${input_audio_maps}concat=n=${num_inputs}:v=0:a=1[a_out]"
+	fi
+
+	ffmpeg_cmd+=("-filter_complex" "$filter_complex")
+
+	# Map output streams
+	ffmpeg_cmd+=("-map" "[v_out]")
+	if [[ "$current_remove_audio" != "true" ]]; then
+		ffmpeg_cmd+=("-map" "[a_out]")
+	fi
+
+	# Get encoding options as arrays using null separator
+	local vopts_str
+	vopts_str=$(get_video_opts "$current_codec" "$current_preset" "$current_crf" "$current_qp")
+	local aopts_str
+	aopts_str=$(get_audio_opts "$current_remove_audio")
+
+	# Read null-separated strings into arrays safely
+	local -a vopts=()
+	local -a aopts=()
+	mapfile -d '' -t vopts < <(printf '%s' "$vopts_str")
+	mapfile -d '' -t aopts < <(printf '%s' "$aopts_str")
+
+	# Add encoding options
+	ffmpeg_cmd+=("${vopts[@]}")
+	ffmpeg_cmd+=("${aopts[@]}")
+
+	# Determine final output path
+	local final_output_path=""
+	if [[ -z "$current_output" ]]; then
+		# Use base name of the first input file for default output name
+		local base_name
+		base_name=$(basename "${files[0]%.*}")
+		# Use get_default_filename to find a unique name
+		final_output_path=$(get_default_filename "$base_name" "merged" "mp4" "$current_output_dir")
+	else
+		# If output is specified, ensure it's a full path relative to output_dir if not absolute
+		if [[ "$current_output" != /* ]]; then
+			final_output_path="$current_output_dir/$current_output"
+		else
+			final_output_path="$current_output"
+		fi
+		# Ensure the output directory exists if specified via -o
+		local output_dir_path
+		output_dir_path=$(dirname "$final_output_path")
+		if ! mkdir -p "$output_dir_path" >/dev/null 2>&1; then
+			echo "Error: Failed to create output directory '$output_dir_path' for '$final_output_path'." >&2
+			# shellcheck disable=SC2317 # Intentional exit on directory creation failure
+			exit 1
+		fi
+	fi
+
+	# Add output file
+	ffmpeg_cmd+=("$final_output_path")
+
+	printv "Merging files: ${files[*]}"
+	printv "Target Resolution: $target_res, Target FPS: $target_fps"
+	printv "Scale Mode: $current_scale_mode, Speed Factor: $current_speed_factor, Interpolate: $current_interpolate"
+	printv "Remove Audio: $current_remove_audio"
+	printv "Output File: $final_output_path"
+	printv "FFmpeg filter_complex: $filter_complex" # Print the constructed filter_complex
+	printv "FFmpeg command: ${ffmpeg_cmd[*]}"
+
+	# Execute FFmpeg command
+	if ! "${ffmpeg_cmd[@]}"; then
+		echo "Error: ffmpeg merge failed." >&2
+		exit 1
+	fi
+
+	echo "✅ Merged: $final_output_path"
+}
+
+## Looperang
+
+cmd_looperang() {
+	local in="${1:-}"
+	local out="${2:-${in%.*}_looperang.mp4}" # Default output name
+
+	# Validate input file argument
+	if [[ -z "$in" ]]; then
+		echo "Error: No input file provided for looperang." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required arg
+		exit 1
+	fi
+	if [[ ! -f "$in" ]]; then
+		echo "Error: Input file not found: '$in'" >&2
+		# shellcheck disable=SC2317 # Intentional exit on invalid input
+		exit 1
+	fi
+
+	# Access global options set in main (defaults handled in main)
+	local current_res="${resolution}" # Use global/config/cmdline, required
+	local current_fps="${fps}"        # Use global/config/cmdline, required
+	local current_codec="${codec}"
+	local current_preset="${preset}"
+	local current_crf="${crf}"
+	local current_qp="${qp}"
+	local current_remove_audio="${remove_audio}"
+
+	# Validate required options for looperang
+	if [[ -z "$current_res" ]]; then
+		echo "Error: Output resolution (-r) is required for 'looperang' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+	if [[ -z "$current_fps" ]]; then
+		echo "Error: Output FPS (-f) is required for 'looperang' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+
+	# Get encoding options as arrays using null separator
+	local vopts_str
+	vopts_str=$(get_video_opts "$current_codec" "$current_preset" "$current_crf" "$current_qp")
+	local aopts_str
+	aopts_str=$(get_audio_opts "$current_remove_audio")
+
+	# Read null-separated strings into arrays safely
+	local -a vopts=()
+	local -a aopts=()
+	mapfile -d '' -t vopts < <(printf '%s' "$vopts_str")
+	mapfile -d '' -t aopts < <(printf '%s' "$aopts_str")
+
+	printv "Creating looperang from '$in' to '$out' (Resolution: $current_res, FPS: $current_fps)..."
+	printv "Video Options: ${vopts[*]}"
+	printv "Audio Options: ${aopts[*]}"
+
+	# --- Build FFmpeg Command ---
+	# Start with the command name 'ffmpeg'
+	local -a ffmpeg_cmd=(ffmpeg -hide_banner -loglevel error -y -i "$in")
+
+	# Filter complex: split video/audio, reverse video/audio, concat original and reversed
+	local video_filter_chain
+	video_filter_chain="[0:v]split[f][r];[r]reverse[r];[f][r]concat=n=2:v=1:a=$([[ "$current_remove_audio" != "true" ]] && echo 1 || echo 0)}[v_out]"
+	local audio_filter_chain
+	local audio_filter_chain=""
+	local map_v
+	map_v="-map [v_out]"
+	local map_a
+	map_a=""
+
+	# Add audio chain if keeping audio
+	if [[ "$current_remove_audio" != "true" ]]; then
+		audio_filter_chain="[0:a]asplit[af][ar];[ar]areverse[ar];[af][ar]aconcat=n=2:v=0:a=1[a_out]"
+		map_a="-map [a_out]"
+	fi
+
+	# Combine video and audio chains with a semicolon if both exist
+	local filter_complex="$video_filter_chain"
+	if [[ -n "$audio_filter_chain" ]]; then
+		filter_complex+=";$audio_filter_chain"
+	fi
+
+	ffmpeg_cmd+=("-filter_complex" "$filter_complex")
+
+	# Map output streams
+	ffmpeg_cmd+=("$map_v")
+	[[ -n "$map_a" ]] && ffmpeg_cmd+=("$map_a")
+
+	# Apply scaling and FPS filters after concat for efficiency and consistency
+	# Use parameter expansion to replace 'x' with ':' for the scale filter
+	ffmpeg_cmd+=("-vf" "scale=${current_res/x/:},fps=${current_fps}")
+
+	# Add video and audio encoding options
+	ffmpeg_cmd+=("${vopts[@]}")
+	ffmpeg_cmd+=("${aopts[@]}")
+
+	# Add output file
+	ffmpeg_cmd+=("$out")
+
+	printv "FFmpeg filter_complex: $filter_complex" # Print the constructed filter_complex
+	printv "FFmpeg command: ${ffmpeg_cmd[*]}"
+
+	# Execute FFmpeg command and check exit status
+	if ! "${ffmpeg_cmd[@]}"; then
+		echo "Error: ffmpeg looperang failed for '$in'." >&2
+		# shellcheck disable=SC2317 # Intentional exit on ffmpeg failure
+		exit 1
+	fi
+
+	echo "✅ Looperang created: $out"
+}
+
+## Slow Motion
+
+cmd_slowmo() {
+	local in="${1:-}"
+	local out="${2:-${in%.*}_slowmo.mp4}" # Default output name
+
+	# Validate input file argument
+	if [[ -z "$in" ]]; then
+		echo "Error: No input file provided for slowmo." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required arg
+		exit 1
+	fi
+	if [[ ! -f "$in" ]]; then
+		echo "Error: Input file not found: '$in'" >&2
+		# shellcheck disable=SC2317 # Intentional exit on invalid input
+		exit 1
+	fi
+
+	# Access global options set in main (defaults handled in main)
+	local current_res="${resolution}"       # Use global/config/cmdline, required
+	local current_fps="${fps}"              # Use global/config/cmdline, required
+	local current_factor="${slowmo_factor}" # Use global/config/cmdline, required
+	local current_codec="${codec}"
+	local current_preset="${preset}"
+	local current_crf="${crf}"
+	local current_qp="${qp}"
+	local current_remove_audio="${remove_audio}"
+
+	# Validate required options for slowmo
+	if [[ -z "$current_res" ]]; then
+		echo "Error: Output resolution (-r) is required for 'slowmo' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+	if [[ -z "$current_fps" ]]; then
+		echo "Error: Output FPS (-f) is required for 'slowmo' command." >&2
+		usage >&2
+		# shellcheck disable=SC2317 # Intentional exit on missing required option
+		exit 1
+	fi
+	# slowmo_factor is validated in main's option parsing
+
+	# --- Build audio atempo chain ---
+	# The atempo filter applies a SPEED multiplier (0.5 to 2.0).
+	# If video is slowed by factor F (playback speed 1/F), audio must be sped by 1/F
+	# to keep original duration, OR slowed by 1/F to match the new duration.
+	# This script assumes the goal is to match the slowed video duration,
+	# so audio speed multiplier needed is 1/factor.
+	# We need to chain atempo filters to achieve the target speed 1/factor.
+
+	local target_audio_speed_val
+	# Use printf for precise float formatting before bc
+	target_audio_speed_val=$(bc -l <<<"1 / $(printf "%.8f" "$current_factor")" 2>/dev/null) # Increased precision
+	if [[ $? -ne 0 || -z "$target_audio_speed_val" ]]; then
+		echo "Error: Could not calculate target audio speed (1 / $current_factor)." >&2
+		# shellcheck disable=SC2317 # Intentional exit on calculation failure
+		exit 1
+	fi
+
+	local atempo_filter_str=""
+	local audio_filter_chain=""
+	local map_v="-map [v_out]"
+	local map_a=""
+
+	if [[ "$current_remove_audio" != "true" ]]; then
+		# Call generate_atempo_filter and check its exit status
+		if ! atempo_filter_str=$(generate_atempo_filter "$target_audio_speed_val"); then
+			# generate_atempo_filter printed an error
+			# shellcheck disable=SC2317 # Intentional exit on filter generation failure
+			exit 1
+		fi
+		# Build audio chain ONLY if atempo_filter_str is not empty (i.e., speed was not 1.0)
+		if [[ -n "$atempo_filter_str" ]]; then
+			audio_filter_chain="[0:a]${atempo_filter_str}[a_out]"
+			map_a="-map [a_out]"
+		else
+			# If speed is 1.0 and audio is kept, just map the original audio stream
+			map_a="-map 0:a"
+		fi
+	fi
+
+	# Get encoding options as arrays using null separator
+	local vopts_str
+	vopts_str=$(get_video_opts "$current_codec" "$current_preset" "$current_crf" "$current_qp")
+	local aopts_str
+	aopts_str=$(get_audio_opts "$current_remove_audio")
+
+	# Read null-separated strings into arrays safely
+	local -a vopts=()
+	local -a aopts=()
+	mapfile -d '' -t vopts < <(printf '%s' "$vopts_str")
+	mapfile -d '' -t aopts < <(printf '%s' "$aopts_str")
+
+	printv "Creating slow-motion from '$in' to '$out' (Factor: $current_factor, Resolution: $current_res, FPS: $current_fps)..."
+	printv "Video Options: ${vopts[*]}"
+	[[ "$current_remove_audio" != "true" ]] && printv "Audio Filter: $atempo_filter_str"
+	printv "Audio Options: ${aopts[*]}"
+
+	# Build FFmpeg command array
+	# Start with the command name 'ffmpeg'
+	local -a ffmpeg_cmd=(ffmpeg -hide_banner -loglevel error -y -i "$in")
+
+	# Video filter chain: setpts, scale, fps
+	# Use parameter expansion to replace 'x' with ':' for the scale filter
+	local video_filter_chain
+	video_filter_chain="[0:v]setpts=$(printf "%.8f" "$current_factor")*PTS,scale=${current_res/x/:},fps=${current_fps}[v_out]"
+
+	# Combine video and audio chains with a semicolon if both exist
+	local filter_complex="$video_filter_chain"
+	if [[ -n "$audio_filter_chain" ]]; then
+		filter_complex+=";$audio_filter_chain"
+	fi
+
+	# Add filter_complex only if it's not empty (it will always have video chain)
+	# This conditional is technically redundant now but harmless
+	if [[ -n "$filter_complex" ]]; then
+		ffmpeg_cmd+=("-filter_complex" "$filter_complex")
+	fi
+
+	# Map output streams
+	ffmpeg_cmd+=("$map_v")
+	[[ -n "$map_a" ]] && ffmpeg_cmd+=("$map_a")
+
+	# Add video and audio encoding options
+	ffmpeg_cmd+=("${vopts[@]}")
+	ffmpeg_cmd+=("${aopts[@]}")
+
+	# Add output file
+	ffmpeg_cmd+=("$out")
+
+	printv "FFmpeg filter_complex: $filter_complex" # Print the constructed filter_complex
+	printv "FFmpeg command: ${ffmpeg_cmd[*]}"
+
+	# Execute FFmpeg command and check exit status
+	if ! "${ffmpeg_cmd[@]}"; then
+		echo "Error: ffmpeg slowmo failed for '$in'." >&2
+		# shellcheck disable=SC2317 # Intentional exit on ffmpeg failure
+		exit 1
+	fi
+
+	echo "✅ Slow-motion processed: $out"
+}
+
+main() {
+	# Check dependencies and determine realpath command first
+	check_deps
+
+	# Load configuration file
+	#	load_config
+
+	# Default global options (can be overridden by config or command line)
+	# These are defaults if not set in config or command line
+	# Using parameter expansion defaults to ensure variables are set
+	# Note: Some defaults are set to empty string here and checked/defaulted later
+	# based on subcommand requirements or analysis (e.g., resolution, fps for merge)
+	declare resolution # Default: unset, determined by command or input
+	declare fps        # Default: unset, determined by command or input
+	declare codec="libx264"
+	declare preset="slow"
+	declare crf                  # Default: unset, get_video_opts will use 18
+	declare qp                   # Default: unset
+	declare remove_audio="false" # Default: keep audio (merge command overrides this default later)
+	declare scale_mode="largest" # Default: largest for merge
+	declare speed_factor="1.0"   # Default: 1.0 for merge
+	declare interpolate="0"      # Default: off for merge (0 or 1)
+	declare output_dir="."       # Default: current directory for merge output
+	declare slowmo_factor="2.0"  # Default: 2.0 for slowmo
+	declare verbose="0"          # Default: not verbose (0 or 1)
+	declare output               # Default: unset, output file specified by -o for merge
+
+	local subcommand=""
+	local -a positional_args=() # Arguments after subcommand
+
+	# Parse options and find subcommand
+	# This loop processes arguments until a subcommand or '--' is found
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-v)
+			verbose=1
+			shift
+			;;
+		-r | --resolution)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -r/--resolution requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			# Validate immediately
+			if ! validate_resolution "$1"; then
+				usage >&2
+				# shellcheck disable=SC2317 # Intentional exit on validation failure
+				exit 1
+			fi
+			resolution="$1"
+			shift
+			;;
+		-f | --fps)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -f/--fps requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			if ! validate_fps "$1"; then
+				usage >&2
+				exit 1
+			fi
+			fps="$1"
+			shift
+			;;
+		-c | --codec)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -c/--codec requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			codec="$1"
+			shift
+			;;
+		-p | --preset)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -p/--preset requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			preset="$1"
+			shift
+			;;
+		--crf)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: --crf requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			local crf_val="$1"
+			# Basic numeric check for crf
+			if ! [[ "$crf_val" =~ ^[0-9]+$ ]]; then
+				echo "Error: Invalid CRF value '$crf_val'. Expected a non-negative integer." >&2
+				usage >&2
+				exit 1
+			fi
+			crf="$crf_val"
+			shift
+			;;
+		--qp)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: --qp requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			local qp_val="$1"
+			# Basic numeric check for qp
+			if ! [[ "$qp_val" =~ ^[0-9]+$ ]]; then
+				echo "Error: Invalid QP value '$qp_val'. Expected a non-negative integer." >&2
+				usage >&2
+				exit 1
+			fi
+			qp="$qp_val"
+			shift
+			;;
+		-a | --remove-audio)
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -a/--remove-audio requires an argument ('true' or 'false')." >&2
+				usage >&2
+				exit 1
+			fi
+			local remove_audio_val="$1"
+			# Allow 'true' or 'false' case-insensitively, store as lowercase
+			case "$(echo "$remove_audio_val" | tr '[:upper:]' '[:lower:]')" in
+			true) remove_audio="true" ;;
+			false) remove_audio="false" ;;
+			*)
+				echo "Error: Invalid value for -a/--remove-audio: '$remove_audio_val'. Expected 'true' or 'false'." >&2
+				usage >&2
+				exit 1
+				;;
+			esac
+			shift
+			;;
+		--scale) # Merge-specific option parsed globally
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: --scale requires an argument ('largest', 'composite', or '1080p')." >&2
+				usage >&2
+				exit 1
+			fi
+			local scale_val="$1"
+			case "$scale_val" in
+			largest | composite | 1080p) scale_mode="$scale_val" ;;
+			*)
+				echo "Error: Invalid value for --scale: '$scale_val'. Expected 'largest', 'composite', or '1080p'." >&2
+				usage >&2
+				exit 1
+				;;
+			esac
+			shift
+			;;
+		--speed) # Merge-specific option parsed globally
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: --speed requires a numeric argument." >&2
+				usage >&2
+				exit 1
+			fi
+			local speed_val="$1"
+			if ! validate_factor "$speed_val"; then
+				usage >&2
+				# shellcheck disable=SC2317 # Intentional exit on validation failure
+				exit 1
+			fi
+			speed_factor="$speed_val"
+			shift
+			;;
+		--interpolate) # Merge-specific option parsed globally
+			interpolate=1
+			shift
+			;;
+		--output-dir) # Merge-specific option parsed globally
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: --output-dir requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			output_dir="$1"
+			shift
+			;;
+		-o | --output) # Merge-specific output file option parsed globally
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -o/--output requires an argument." >&2
+				usage >&2
+				exit 1
+			fi
+			output="$1"
+			shift
+			;;
+		-s | --slow-factor) # Slowmo-specific option parsed globally
+			shift
+			# Check if argument exists after shift
+			if [[ $# -eq 0 || -z "$1" ]]; then
+				echo "Error: -s/--slow-factor requires a numeric argument." >&2
+				usage >&2
+				exit 1
+			fi
+			local slowmo_val="$1"
+			if ! validate_factor "$slowmo_val"; then
+				usage >&2
+				# shellcheck disable=SC2317 # Intentional exit on validation failure
+				exit 1
+			fi
+			slowmo_factor="$slowmo_val"
+			shift
+			;;
+		-h | --help)
+			usage 0
+			;;
+		--) # Stop option parsing, treat rest as positional args
+			shift
+			positional_args=("$@") # Capture remaining args as positional
+			break
+			;;
+		-*)
+			# Unknown option encountered before subcommand.
+			# Treat as an error.
+			echo "Error: Unknown option '$1'." >&2
+			usage >&2
+			exit 1
+			;;
+		*)
+			# First non-option argument is the subcommand
+			subcommand="$1"
+			shift
+			positional_args=("$@") # Capture remaining args as positional
+			break                  # Stop parsing options
+			;;
+		esac
+	done
+
+	# If subcommand wasn't found, the first argument wasn't a subcommand
+	if [[ -z "$subcommand" ]]; then
+		echo "Error: No subcommand provided." >&2
+		usage >&2
+		exit 1
+	fi
+
+	# Dispatch subcommand with captured positional arguments
+	case "$subcommand" in
+	probe) cmd_probe "${positional_args[@]}" ;;
+	process) cmd_process "${positional_args[@]}" ;;
+	merge)
+		# Merge specific default: remove_audio=true if not already set by config or cmdline
+		: "${remove_audio:=true}"
+		cmd_merge "${positional_args[@]}"
+		;;
+	looperang) cmd_looperang "${positional_args[@]}" ;;
+	slowmo) cmd_slowmo "${positional_args[@]}" ;;
+	help | --help | -h) # Catch help again if it was after global options
+		usage 0
+		;;
+	*)
+		echo "Error: Unknown subcommand '$subcommand'." >&2
+		usage >&2
+		exit 1
+		;;
+	esac
+}
+
+main "$@"
