@@ -1,124 +1,230 @@
-#!/bin/sh
-# shellcheck shell=sh
-# File: mem-police-tester.sh
-# Usage: ./mem-police-tester.sh [HOG_MB...]
-
+#!/bin/bash
+# Author: 4ndr0666
 set -eu
+# ==================== // MEM-POLICE-TESTER.SH //
+## Description: Tests the mem-police daemon by spawning memory hogs,
+#              verifying that mem-police creates start files and kills them.
+## Usage: ./mem-police-tester.sh [HOG_MB...]
+# -----------------------------------------------
 
-# ==== Force 24-bit color mode if not already set ====
-case "${COLORTERM:-}" in
-  truecolor|24bit) ;; 
-  *) export COLORTERM="24bit" ;;
-esac
+TMPDIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
+SHM="/dev/shm"
 
-# ==== Advanced or Plain Text Color Functions ====
-if command -v tput >/dev/null && [ -t 1 ]; then
-    GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
-    BUG()  { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
-    INFO() { printf '%s\n' "$(tput setaf 4)[→]  $*$(tput sgr0)"; }
-else
-    GLOW() { printf '[OK] %s\n' "$*"; }
-    BUG()  { printf '[ERR] %s\n' "$*"; }
-    INFO() { printf '[..] %s\n' "$*"; }
+if [ ! -w "$SHM" ]; then
+	SHM="$TMPDIR"
 fi
 
-CONF=/etc/mem_police.conf
-LOG=/tmp/mem-police-debug.log
+CONF="/etc/mem_police.conf"
+LOG="$TMPDIR/mem-police-debug.$$.log"
+PID_FILE="$TMPDIR/mempolice-hogs.$$.pids"
+MEMPOLICE_START_DIR="/var/run/user/1000/mem-police"
 SLEEP_BETWEEN=1
 
-# Ensure config exists
-[ -r "$CONF" ] || { BUG "Missing config: $CONF"; exit 1; }
+## Logging
 
-# Read scan interval and kill delay
-SCAN_INTERVAL=$(awk -F= '/^SLEEP=/ {print $2}' "$CONF")
-KILL_DELAY=$(awk -F= '/^KILL_DELAY=/ {print $2}' "$CONF")
+if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+	GLOW() {
+		local message="$1"
+		printf '%s\n' "$(tput setaf 6)[✔] ${message}$(tput sgr0)"
+	}
+	BUG() {
+		local message="$1"
+		printf '%s\n' "$(tput setaf 1)[✗] ${message}$(tput sgr0)"
+	}
+	INFO() {
+		local message="$1"
+		printf '%s\n' "$(tput setaf 4)[→] ${message}$(tput sgr0)"
+	}
+else
+	GLOW() { printf '[OK] %s\n' "$1"; }
+	BUG() { printf '[ERR] %s\n' "$1"; }
+	INFO() { printf '[..] %s\n' "$1"; }
+fi
 
-# Derive grace period
-WAIT_GRACE=$((SCAN_INTERVAL * 2))
+## Config Parsing
 
-# Clean up old state
-INFO "Removing stale startfiles..."
-rm -f /tmp/mempolice-*.start
+sudo chown root:root /etc/mem_police.conf
+sudo chmod 600 /etc/mem_police.conf
+read_config() {
+	local key="$1"
+	awk -F'=' -v key="$key" '$1 == key { gsub(/[ \t\r\n]+$/, "", $2); print $2; exit }' "$CONF"
+}
+
+if [ ! -r "$CONF" ]; then
+	BUG "Missing or unreadable config file: $CONF"
+	exit 1
+fi
+
+SLEEP=$(read_config "SLEEP")
+: "${SLEEP:=30}"
+THRESHOLD_DURATION=$(read_config "THRESHOLD_DURATION")
+: "${THRESHOLD_DURATION:=60}"
+KILL_GRACE=$(read_config "KILL_GRACE")
+: "${KILL_GRACE:=5}"
+
+WAIT_GRACE=$((SLEEP * 2))
+WAIT_TOTAL=$((SLEEP + THRESHOLD_DURATION + KILL_GRACE + 5))
+
+INFO "mem-police config: SLEEP=${SLEEP}s, THRESHOLD_DURATION=${THRESHOLD_DURATION}s, KILL_GRACE=${KILL_GRACE}s"
+INFO "Test wait times: WAIT_GRACE=${WAIT_GRACE}s (for startfile), WAIT_TOTAL=${WAIT_TOTAL}s (for kill)"
+
+## Cleanup Routine
 
 cleanup() {
-    [ -n "${TAIL_PID:-}" ] && kill "$TAIL_PID" 2>/dev/null || true
-    for pid in $HOG_PIDS; do kill "$pid" 2>/dev/null || true; done
-    rm -f /dev/shm/hog.* 2>/dev/null || true
+	INFO "Running cleanup..."
+	if [ -n "${TAIL_PID:-}" ] && kill -0 "$TAIL_PID" 2>/dev/null; then
+		INFO "Stopping log tail (PID ${TAIL_PID})..."
+		kill "$TAIL_PID" 2>/dev/null || true
+	fi
+	if [ -f "$PID_FILE" ]; then
+		INFO "Killing hog processes listed in ${PID_FILE}..."
+		while read -r pid; do
+			if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+				INFO "Killing PID $pid..."
+				kill "$pid" 2>/dev/null || true
+			fi
+		done <"$PID_FILE"
+	fi
+	INFO "Removing temporary files..."
+	rm -f "$MEMPOLICE_START_DIR"/mempolice-*.start "$SHM"/hog."$$".* "$TMPDIR"/hog."$$".* "$PID_FILE" "$LOG" 2>/dev/null || true
+	GLOW "Cleanup complete."
 }
 trap cleanup EXIT INT TERM
 
-# Start mem-police if not running
-if ! pgrep -x mem-police >/dev/null 2>&1; then
-    INFO "Starting mem-police..."
-    mem-police >"$LOG" 2>&1 &
-    sleep 2
-    GLOW "mem-police launched (logs → $LOG)"
-else
-    INFO "mem-police already running"
+## Initial Cleanup
+
+rm -f "$MEMPOLICE_START_DIR"/mempolice-*.start "$SHM"/hog."$$".* "$TMPDIR"/hog."$$".* "$PID_FILE" "$LOG" 2>/dev/null || true
+
+rm -rf "$MEMPOLICE_START_DIR"/mem-police.pid "$MEMPOLICE_START_DIR"
+
+if [ ! -d "$MEMPOLICE_START_DIR" ]; then
+    mkdir -p "$MEMPOLICE_START_DIR"
+    chown andro:andro "$MEMPOLICE_START_DIR"
+    chmod 755 "$MEMPOLICE_START_DIR"
 fi
 
-# Tail its log
+
+## Daemon
+
+INFO "Checking if mem-police is running..."
+if ! pgrep -x mem-police >/dev/null 2>&1; then
+	INFO "mem-police not found. Starting mem-police..."
+#	MEM_POLICE_BIN=$(command -v mem-police || echo /usr/local/bin/mem-police)
+	su -c "andro" mem-police >"$LOG" 2>&1 &
+	mem_police_pid=$!
+	sleep 2
+	if kill -0 "$mem_police_pid" 2>/dev/null; then
+		GLOW "mem-police launched (PID ${mem_police_pid}, logs → $LOG)"
+	else
+		BUG "Failed to start mem-police. Check logs at $LOG."
+		exit 1
+	fi
+else
+	INFO "mem-police already running (PID $(pgrep -x mem-police))"
+fi
+
+## Tail Log
+
 INFO "Tailing log ($LOG)..."
+touch "$LOG"
 tail -n0 -f "$LOG" &
 TAIL_PID=$!
+sleep 1
 
-# Decide hog sizes
-if [ $# -gt 0 ]; then
-    HOG_SIZES="$*"
-else
-    HOG_SIZES=800
+## Hog Sizes
+
+HOG_SIZES_ARRAY=("$@")
+if [ ${#HOG_SIZES_ARRAY[@]} -eq 0 ]; then
+	HOG_SIZES_ARRAY=(800)
+fi
+INFO "Requested hog sizes (MB): ${HOG_SIZES_ARRAY[*]}"
+NUM_HOGS=0
+
+## Spawn Memory Hogs
+
+for mb in "${HOG_SIZES_ARRAY[@]}"; do
+	if ! [[ "$mb" =~ ^[1-9][0-9]*$ ]]; then
+		BUG "Invalid hog size: '$mb' (must be a positive integer > 0)"
+		continue
+	fi
+	OUTFILE="$SHM/hog.$$.$mb.mem"
+	bytes=$((mb * 1024 * 1024))
+	INFO "Spawning hog ${mb} MB ($bytes bytes) into $OUTFILE..."
+	(exec head -c "$bytes" </dev/zero >"$OUTFILE") &
+	hogpid=$!
+	if kill -0 "$hogpid" 2>/dev/null; then
+		echo "$hogpid" >>"$PID_FILE"
+		NUM_HOGS=$((NUM_HOGS + 1))
+		INFO "Spawned hog ${mb} MB (PID $hogpid, OUTFILE $OUTFILE)"
+	else
+		BUG "Failed to spawn hog ${mb} MB."
+		rm -f "$OUTFILE" 2>/dev/null || true
+	fi
+	if [ "${#HOG_SIZES_ARRAY[@]}" -gt 1 ] && [ "$NUM_HOGS" -gt 0 ] && [ "$NUM_HOGS" -lt "${#HOG_SIZES_ARRAY[@]}" ]; then
+		sleep "$SLEEP_BETWEEN"
+	fi
+done
+if [ "$NUM_HOGS" -eq 0 ]; then
+	BUG "No valid hog sizes provided or successfully spawned. Exiting."
+	echo "1..0"
+	exit 0
 fi
 
-# Spawn hog(s) via dd
-HOG_PIDS=""
-for mb in $HOG_SIZES; do
-    INFO "Spawning ${mb}MB hog..."
-    dd if=/dev/zero of=/dev/shm/hog.$$ bs=1M count="$mb" 2>/dev/null &
-    hog=$!
-    HOG_PIDS="$HOG_PIDS $hog"
-    ( sleep 120; kill "$hog" 2>/dev/null; rm -f /dev/shm/hog.$$ ) &
-done
+## TAP Test Plan
 
-# TAP plan
-NUM_HOGS=$(echo "$HOG_PIDS" | wc -w)
 TOTAL_TESTS=$((NUM_HOGS * 2))
 echo "1..$TOTAL_TESTS"
-
 COUNTER=1
 
-# 1) Check startfiles
-for pid in $HOG_PIDS; do
-    START="/tmp/mempolice-${pid}.start"
-    elapsed=0
-    while [ "$elapsed" -lt "$WAIT_GRACE" ]; do
-        [ -f "$START" ] && break
-        sleep "$SLEEP_BETWEEN"
-        elapsed=$((elapsed + SLEEP_BETWEEN))
-    done
+## Test 1: Check for mem-police start files
 
-    if [ -f "$START" ]; then
-        echo "ok $COUNTER - startfile for PID $pid created"
-    else
-        echo "not ok $COUNTER - startfile for PID $pid missing"
-    fi
-    COUNTER=$((COUNTER + 1))
-done
+INFO "Checking for mem-police start files..."
 
-# 2) Wait for kill
-WAIT_TOTAL=$((SCAN_INTERVAL + KILL_DELAY + SLEEP_BETWEEN + 1))
-INFO "Waiting ${WAIT_TOTAL}s for kills..."
+while read -r pid; do
+	START="$MEMPOLICE_START_DIR/mempolice-${pid}.start"
+	elapsed=0
+	found=0
+	INFO "Waiting for startfile $START for PID $pid (timeout ${WAIT_GRACE}s)..."
+	while [ "$elapsed" -lt "$WAIT_GRACE" ]; do
+		if [ -f "$START" ]; then
+			found=1
+			break
+		fi
+		sleep "$SLEEP_BETWEEN"
+		elapsed=$((elapsed + SLEEP_BETWEEN))
+	done
+	if [ "$found" -eq 1 ]; then
+		echo "ok $COUNTER - startfile for PID $pid created"
+	else
+		echo "not ok $COUNTER - startfile for PID $pid missing after ${WAIT_GRACE}s"
+		BUG "Startfile $START for PID $pid was not created within ${WAIT_GRACE}s."
+	fi
+	COUNTER=$((COUNTER + 1))
+done <"$PID_FILE"
+
+## Test 2: Wait for mem-police to kill hogs
+
+INFO "Waiting ${WAIT_TOTAL}s for hogs to be killed by mem-police..."
+
 sleep "$WAIT_TOTAL"
 
-# 3) Check kills
-for pid in $HOG_PIDS; do
-    if kill -0 "$pid" 2>/dev/null; then
-        echo "not ok $COUNTER - PID $pid still alive"
-        kill "$pid" 2>/dev/null || true
-    else
-        echo "ok $COUNTER - PID $pid was killed"
-    fi
-    COUNTER=$((COUNTER + 1))
-done
+## Test 3: Check if hogs were killed
+
+INFO "Checking if hogs were killed..."
+
+while read -r pid; do
+	if kill -0 "$pid" 2>/dev/null; then
+		echo "not ok $COUNTER - PID $pid still alive after ${WAIT_TOTAL}s"
+		BUG "PID $pid still alive. mem-police may not have killed it."
+		INFO "Attempting to kill PID $pid for cleanup..."
+		kill "$pid" 2>/dev/null || true
+	else
+		echo "ok $COUNTER - PID $pid was killed"
+		GLOW "PID $pid was killed as expected."
+	fi
+	COUNTER=$((COUNTER + 1))
+done <"$PID_FILE"
 
 GLOW "Test run complete."
+
 exit 0
