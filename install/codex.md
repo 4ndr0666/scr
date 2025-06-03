@@ -1,0 +1,3 @@
+- Scripts should be idempotent; running them multiple times should not cause adverse effects.
+- Include checks for existing installations to prevent redundant operations.
+- Log installation steps and outcomes to `install.log` for auditing purposes.

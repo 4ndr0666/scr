@@ -1,156 +1,150 @@
 #!/usr/bin/env bash
-# File: sora_prompt_chooser.sh
-# Description: Self-contained interactive prompt selector for Sora photography prompts.
-# Displays and copies fully embedded prompts with no external dependencies.
-# Requires: fzf, bat, wl-copy (all optional, fallback gracefully).
-
+# Author: 4ndr0666
 set -euo pipefail
 IFS=$'\n\t'
+# ===================== // SORA-PROMPT-SELECTOR.sh //
+## Interactive Sora gold-standard prompt selector.
+## Features: fzf menu, bat preview, wl-copy, add-prompt, canonical modules only.
 
-# Array of prompts: Each prompt is a multiline string with full details.
+# ========== Canonical Prompt Library ==========
+
 declare -a PROMPTS=(
-"1. Simulated Depth of Field Pull
 
-> **Prompt:** From a high-resolution studio portrait of the model, generate a video where the camera smoothly racks focus sequentially from the model’s eyes to lips and finally the background, simulating professional aperture adjustment during a beauty shoot. The camera movement should be subtle and fluid to emphasize depth shifts.
-> **Lighting:** Broncolor studio strobes with softboxes creating diffused, soft shadows.
-> **Lighting Direction:** Key light positioned at 45° camera right, fill light at 135° camera left.
-> **Shadow Quality:** Soft, gradual shadow edges.
-> **Lens:** 85mm f/1.4 prime lens, aperture wide open for shallow depth of field effect.
-> **Camera Move:** Smooth rack focus with minimal physical camera movement; static tripod mount.
-> **Environment:** Controlled studio environment with neutral seamless gray backdrop.
-> **Background Complexity:** Minimalist, smooth gradient gray.
-"
-"2. Lighting Shift Exploration
+"Full-Speed Run — Patterned Bikini, Sunlit Shoreline
 
-> **Prompt:** Animate this editorial portrait by smoothly transitioning the lighting from Rembrandt style (45° side key light creating characteristic triangular cheek shadow) to butterfly lighting (symmetrical, top-front key with soft shadows under the nose). Simulate a vertical softbox movement from side to top center, visibly altering shadow contours on the model’s face as in a professional lighting test.
-> **Lighting:** 1x 120cm rectangular softbox as key light, 1x large white bounce reflector as fill.
-> **Lighting Direction:** Key light shifts from camera left side (45° elevation) to directly overhead (90° elevation).
-> **Shadow Quality:** Soft, feathered shadows with smooth transitions.
-> **Lens:** 85mm f/1.8, fixed focus.
-> **Camera Move:** Locked tripod frame, no movement.
-> **Environment:** Studio setting with seamless white backdrop.
-> **Background Complexity:** Minimal, uniform white.
-"
-"3. Studio-to-Location Match Cut
+{[tracking shot, push in]
+I need you to generate a high-detail, Roger Deakins-inspired scene of an adult female athlete in a patterned bikini top and high-waisted black bottoms running directly toward the camera at full speed along a sunlit shoreline.
+Action: The subject is always in motion—never standing still or pausing—her arms and legs driving her forward with intensity. Hair and clothing fly with every stride; she never adjusts her hair or stops.
+Camera: The lens (85 mm f/2.0, shallow DoF) tracks perfectly with her face and upper body, pushing in so that her determined, focused expression fills most of the frame as she runs.
+Lighting: Hard natural sunlight at 30° camera-left (5600 K); silver bounce fill at 45° right for crisp facial highlights.
+Shadows: Strong side shadow, deep mid-tones, and clear edge separation.
+Environment: Open shoreline, ocean and surf blurred behind—no standing, no hair adjusting, no relaxation, no leisure—just athletic effort.
+Micro-Detail: Sunlight sparkles on skin, sweat, and rippling fabric at each stride; dynamic muscle and hair movement.
+Background: No visible beachgoers or distractions—subject is alone in motion.
+Mood: Pure athletic intensity and motion, never leisure or idleness.
+Loop: Optionally freeze final frame for seamless replay.
+Note: cinematic references must be interpreted within Sora’s current technical capabilities (1080 p / 24 fps default unless overridden).
+}"
 
-> **Prompt:** Generate a video transforming the background and ambient lighting from a high-key studio setup with artificial strobes to warm, natural window light streaming in from camera left. Maintain the model’s pose and expression constant throughout. Frame remains constant, highlighting gradual light temperature and intensity shift to emulate a location scout lighting test.
-> **Lighting:** High-key studio strobes with softboxes transitioning to natural daylight simulation.
-> **Lighting Direction:** Studio key light at 45° camera right transitioning to natural window light at 45° camera left.
-> **Shadow Quality:** Soft to moderate contrast shadows.
-> **Lens:** 50mm f/1.8 prime lens, constant framing.
-> **Camera Move:** Static tripod frame.
-> **Environment:** Studio interior transitioning to near-window location setting.
-> **Background Complexity:** Clean, minimalistic.
-"
-"4. Multi-Pose Morph Sequence
+"Macro Micro-Detail — Fabric & Skin, Deakins Lighting
 
-> **Prompt:** Animate a smooth interpolation sequence from a single fashion image where the model transitions through three classic poses: contrapposto stance, profile with gaze over shoulder, and frontal relaxed pose. Simulate photographer direction cues with subtle pauses between poses.
-> **Lighting:** Profoto beauty dish as key, with 2x 60cm strip softboxes as rim lights from camera left and right.
-> **Lighting Direction:** Key light at 30° camera front right, rim lights at 90° sides.
-> **Shadow Quality:** Moderate soft shadows with crisp rim highlights.
-> **Lens:** 85mm f/2.0 prime lens, shallow depth of field.
-> **Camera Move:** Fixed tripod with no movement.
-> **Environment:** Studio with seamless mid-gray backdrop.
-> **Background Complexity:** Minimal and uniform.
-"
-"5. Cinematic Camera Move (Arc or Dolly)
+{[push in, macro, static shot]
+I need you to enhance this photo with precision cinematic lighting inspired by Roger Deakins. Illuminate the subject to highlight micro-details and nuanced textures in both skin and fabric. Use hard natural sunlight angled at 30° camera-left for crisp highlights and gentle shadows, complemented by a subtle silver bounce at 45° right to softly lift midtones.
+Shadows: Rich, sculpted with clear edge separation and natural falloff.
+Lens: 100mm macro at f/2.8, shallow depth for extreme clarity.
+Camera: Begin static, then push in slightly to accentuate detail, keeping the composition clean and focused.
+Micro-Detail: Emphasize fabric weave, pores, and light interplay on skin.
+Environment: Neutral, softly blurred.
+Note: Cinematic references must be interpreted within each platform’s current capabilities.
+}"
 
-> **Prompt:** From a full-body portrait image, animate a smooth, slow camera arc moving horizontally from camera left to right around the model at a radius of approximately 3 meters, mimicking behind-the-scenes video shot on a gimbal stabilizer.
-> **Lighting:** Edge-lit setup with a 1.2m octabox key light camera right and low-intensity fill light camera left.
-> **Lighting Direction:** Key light positioned at 90° camera right, fill light at 120° camera left, low intensity.
-> **Shadow Quality:** Hard shadows with soft fill to retain detail.
-> **Lens:** 35mm f/2.8 wide-angle prime lens.
-> **Camera Move:** Horizontal arc/dolly move, steady speed, stabilized gimbal simulation.
-> **Environment:** Studio with neutral white seamless backdrop.
-> **Background Complexity:** Minimalist, clean.
-"
-"6. On-Set Environmental Effects
+"Full-Speed Run — Chest-Level, Ocean Blur
 
-> **Prompt:** Animate subtle environmental effects on a fashion portrait: simulate gentle wind blowing through the model’s hair and flowing fabric using controlled directional air movement. Add a light haze effect mimicking in-studio haze machine diffusion.
-> **Lighting:** Directional backlight with a 90cm Fresnel spotlight from camera rear left to create silhouette highlights.
-> **Lighting Direction:** Backlight at 135° camera left, moderate intensity.
-> **Shadow Quality:** Hard shadows with crisp edges from backlight.
-> **Lens:** 85mm f/1.8 prime lens.
-> **Camera Move:** Static tripod mount.
-> **Environment:** Studio environment with haze diffusion.
-> **Background Complexity:** Dark, minimal to emphasize silhouette and haze.
-"
-"7. Flash-to-Continuous Lighting Comparison
+{[push in, tracking shot]
+I need you to generate a high-detail, Roger Deakins-inspired scene of an adult female athlete running directly toward the camera along a sunlit shoreline. The camera starts at chest height, 1 meter from the subject, and tracks smoothly backward while pushing in so her face and upper body dominate the frame, keeping micro-details—skin texture, sunlight glint on moving fabric, individual hair strands—crisply in focus.
+Lighting: Natural hard sunlight at 30° camera-left (5600 K), emphasizing skin highlights and the movement of fabric; subtle silver bounce at 45° right for soft fill.
+Shadows: High contrast, with sculpted mid-tones and edge separation.
+Lens: 85 mm f/2.0 prime, shallow depth of field for cinematic focus fall-off.
+Environment & Background: Open shoreline, ocean and gentle surf blurred behind, with no visible beachgoers.
+Mood: Focused athletic determination; no leisure or relaxation.
+Action: Subject’s expression is intense and driven as she runs; hair and clothing respond dynamically to her motion and sunlight.
+Micro-Detail: Capture sunlight on damp skin, fabric stretch, and hair movement at every stride.
+Loop: Optionally freeze last frame 0.5 s for seamless replay.
+Note: cinematic references must be interpreted within Sora’s current technical capabilities (1080 p / 24 fps default unless overridden).
+}"
 
-> **Prompt:** Animate a seamless transition between two lighting setups: a crisp, flash-lit portrait with hard shadows and a soft continuous light mood with gentle shadow gradations. Model reacts subtly to light changes with slight head tilt and expression change.
-> **Lighting:** Flash with 60cm beauty dish key light transitioning to continuous LED panel with soft diffusion.
-> **Lighting Direction:** Key light from 45° camera right throughout transition.
-> **Shadow Quality:** Hard to soft gradient shadow transition.
-> **Lens:** 85mm f/1.4 prime lens.
-> **Camera Move:** Slight slow push-in dolly.
-> **Environment:** Studio setting with neutral backdrop.
-> **Background Complexity:** Minimal.
-"
-"8. Portfolio B-Roll Movement
+"Sprint Toward Camera — Outdoor Track, Bokeh
 
-> **Prompt:** Convert a high-resolution model portrait into a short, seamless looping B-roll featuring subtle head tilt, micro-expression shifts, and simulated handheld camera sway for organic editorial feel.
-> **Lighting:** Mixed natural window light from camera left combined with soft fill from bounce reflector camera right.
-> **Lighting Direction:** Natural fill balance, soft shadows.
-> **Shadow Quality:** Soft shadows with natural falloff.
-> **Lens:** 85mm f/1.8 prime lens.
-> **Camera Move:** Simulated handheld, slight, natural sway.
-> **Environment:** Indoor studio with large window.
-> **Background Complexity:** Simple, unobtrusive.
-"
-"9. Refined Skin/Texture Detail
-
-> **Prompt:** Animate a slow, deliberate camera glide over a beauty close-up focusing on the model’s face, revealing micro-details such as skin texture, makeup application, and jewelry sparkle, replicating macro lens video techniques.
-> **Lighting:** Ring light centered on face providing even, soft illumination with minimal shadows.
-> **Lighting Direction:** Frontal ring light, diffuse.
-> **Shadow Quality:** Minimal shadows, very soft.
-> **Lens:** 100mm macro lens equivalent, shallow depth of field.
-> **Camera Move:** Slow lateral glide and slight zoom-in.
-> **Environment:** Studio with neutral seamless backdrop.
-> **Background Complexity:** Minimal.
-"
-"10. Editorial Composite Expansion
-
-> **Prompt:** Extend a studio portrait by animating a slow zoom-out to reveal additional set elements including props and assistants, simulating a photographer pulling back for a wide editorial shot.
-> **Lighting:** Balanced three-point lighting: key (softbox, 45° camera right), fill (bounce reflector camera left), and backlight (hair light from rear center).
-> **Lighting Direction:** Classic three-point setup.
-> **Shadow Quality:** Soft with controlled highlights.
-> **Lens:** 50mm f/2.0 standard prime.
-> **Camera Move:** Slow zoom-out on tripod mount.
-> **Environment:** Studio set with visible set elements.
-> **Background Complexity:** Moderate, contextual.
-"
+{[push in, tracking shot]
+I need you to film an adult protagonist sprinting toward camera in a single 4-second take. The camera starts 1 m in front of chest height, travels backward 0.7 m while pushing in so the face fills 70 % of frame at cut-point.
+Camera / Lens: 85 mm f/2.0 prime—intimate close-up aesthetic inspired by Roger Deakins; shallow depth-of-field to reveal sweat beads and fabric weave.
+Lighting: Golden-hour hard key positioned 35 ° camera-left, 5600 K; 2 × 1 m silver bounce 35 ° right for fill.
+Shadows: Crisp highlights, gentle lifted mids; light skims across skin creating micro-detail sparkle.
+Environment & Background: Open outdoor track rendered with very shallow DoF; background softly blurred to neutral bokeh.
+Stabilisation: Gimbal simulation with breathing-level micro-sway; auto-focus locked on eyes.
+Loop: Freeze final frame 0.5 s for seamless replay.
+Post: Subtle 35 mm-grain overlay (235 ISO equivalent) for natural texture.
+Note: cinematic references must be interpreted within Sora’s current technical capabilities (1080 p / 24 fps default unless overridden).
+}"
 )
 
-# Check dependencies
+# ========== Dependencies ==========
+
 command -v fzf >/dev/null 2>&1 || { echo "fzf not found. Please install fzf to use this script."; exit 1; }
-command -v bat >/dev/null 2>&1 || { echo "bat not found. Please install bat to use this script."; exit 1; }
-command -v wl-copy >/dev/null 2>&1 || { echo "wl-copy not found. Clipboard copy will be skipped."; WL_COPY_MISSING=true; }
+BAT_BIN=$(command -v bat || true)
+WL_BIN=$(command -v wl-copy || true)
 
-# Prepare selection list (titles only)
-mapfile -t titles < <(printf "%s\n" "${PROMPTS[@]}" | grep -oP "^\d+\..*" | sed 's/>//g')
+# ========== Helper Functions ==========
 
-# Let user select prompt index
-selected_index=$(printf "%s\n" "${titles[@]}" | fzf --prompt="Select a Sora photography prompt: " | grep -oP '^\d+')
+add_prompt() {
+	echo "# Add New Prompt — End with Ctrl-D:"
+	local newp
+	newp="$(cat -)"
+	PROMPTS+=("$newp")
+	echo "[OK] Prompt added to session."
+}
 
-if [[ -z "$selected_index" ]]; then
-  echo "No prompt selected. Exiting."
-  exit 0
+# ========== Main Prompt Selector Logic ==========
+
+usage() {
+	cat <<EOF
+Usage: $0 [add]
+
+  add      Add a new prompt to the current session.
+  (none)   Launch fzf prompt selector.
+
+EOF
+}
+
+if [[ $# -gt 0 ]]; then
+	case "$1" in
+		add) add_prompt; exit 0 ;;
+		*) usage; exit 1 ;;
+	esac
 fi
 
-# Index in bash arrays is zero-based
-index=$((selected_index - 1))
+# Prepare titles for fzf: use the first non-empty line as the display title
+mapfile -t titles < <(
+	for prompt in "${PROMPTS[@]}"; do
+		echo "$prompt" | grep -m1 -v '^$'
+	done
+)
 
-prompt_text="${PROMPTS[$index]}"
+selected_index=$(printf "%s\n" "${titles[@]}" | fzf --prompt="Select a Sora prompt: ")
+if [[ -z "$selected_index" ]]; then
+	echo "No prompt selected. Exiting."
+	exit 0
+fi
 
-# Show prompt preview with bat
-bat --paging=always --style=plain --language=md <(echo "$prompt_text")
+# Find the selected prompt's index
+idx=-1
+for i in "${!PROMPTS[@]}"; do
+	first_line="$(echo "${PROMPTS[$i]}" | grep -m1 -v '^$')"
+	if [[ "$first_line" == "$selected_index" ]]; then
+		idx=$i
+		break
+	fi
+done
+if [[ "$idx" -lt 0 ]]; then
+	echo "Prompt selection error."
+	exit 1
+fi
 
-# Copy to clipboard if wl-copy available
-if [[ -z "${WL_COPY_MISSING:-}" ]]; then
-  echo "$prompt_text" | wl-copy
-  echo "Prompt copied to clipboard via wl-copy."
+prompt_text="${PROMPTS[$idx]}"
+
+# Preview with bat (fallback: less)
+if [[ -n $BAT_BIN ]]; then
+	echo "$prompt_text" | "$BAT_BIN" --language=md --style=plain --paging=always
 else
-  echo "wl-copy not available, skipping clipboard copy."
+	echo "$prompt_text" | less -R
+fi
+
+# Clipboard copy (wl-copy)
+if [[ -n $WL_BIN ]]; then
+	echo "$prompt_text" | "$WL_BIN"
+	echo "[OK] Prompt copied to clipboard via wl-copy."
+else
+	echo "[WARN] wl-copy not found; clipboard step skipped."
 fi
 
 exit 0

@@ -1,0 +1,3 @@
+- Maintenance scripts must include a dry-run option to preview changes.
+- Schedule scripts to run during off-peak hours to minimize system impact.
+- Document dependencies and required permissions at the beginning of each script.

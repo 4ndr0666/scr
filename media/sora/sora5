@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# === // SORA //  •  Prompt Selector & Enhancer (Pro-only)
+# Author: 4ndr0666
+# ---------------------------------------------------------------------------
+# Interactive fzf chooser for Master-Instruction prompts with:
+#   • image / video / storyboard attachments
+#   • modular Markdown “plugin” loader (add large prompt packs on-the-fly)
+#   • post-generation operations menu
+#   • strict validation (camera tags, restricted terms, ≤10 s, ≤1080 p)
+#   • syntax-highlighted preview + clipboard copy
+# POSIX-safe, ShellCheck-clean, idempotent
+# ---------------------------------------------------------------------------
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ── tput colour palette ─────────────────────────────────────────────────────
+OK="$(tput setaf 2)[OK]$(tput sgr0)"
+ERROR="$(tput setaf 1)[ERROR]$(tput sgr0)"
+NOTE="$(tput setaf 3)[NOTE]$(tput sgr0)"
+INFO="$(tput setaf 4)[INFO]$(tput sgr0)"
+WARN="$(tput setaf 1)[WARN]$(tput sgr0)"
+CAT="$(tput setaf 6)[ACTION]$(tput sgr0)"   # Cyan primary highlight
+MAGENTA="$(tput setaf 5)"
+ORANGE="$(tput setaf 214)"
+YELLOW="$(tput setaf 3)"
+GREEN="$(tput setaf 2)"
+BLUE="$(tput setaf 4)"
+SKY_BLUE="$(tput setaf 6)"
+RESET="$(tput sgr0)"
+
+# ----- Constants ------------------------------------------------------------
+readonly TECH_LIMITS='Technical note: Sora may mis-handle complex physics, causal logic, and left/right spatial reasoning.'
+readonly SAFETY_NOTE='All output videos carry OpenAI C2PA provenance metadata.'
+readonly PRO_DISCLAIMER='*Note: cinematic references interpreted within Sora Pro capabilities (1080 p  •  ≤10 s  •  24 fps).*'
+readonly MAX_DURATION=10                        # seconds – Pro cap per directive
+readonly RESO_REGEX='^[0-9]{3,4}p$'             # accepted "Resolution:" pattern
+BAD_WORDS_REGEX='(sexual|porn|gore|torture|rape|beheading|extremist|hate|terror|celebrity|trademark|copyright)'
+
+# Whitelisted camera-movement tags (must appear at least once)
+CAMERA_TAGS=(
+  "[push in]" "[pull out]" "[pan left]" "[pan right]" "[tilt up]" "[tilt down]"
+  "[truck left]" "[truck right]" "[pedestal up]" "[pedestal down]"
+  "[zoom in]" "[zoom out]" "[tracking shot]" "[static shot]" "[handheld]"
+  "[arc]" "[crane]" "[jib]" "[steadicam]" "[dolly]" "[whip pan]" "[roll]"
+  "[bird’s eye view]" "[over-the-shoulder]"
+)
+
+# ----- Dependencies ---------------------------------------------------------
+need() { command -v "$1" >/dev/null 2>&1 || { printf "%s %s required.\n" "$ERROR" "$1" >&2; exit 1; }; }
+need fzf
+BAT=$(command -v bat || true)
+WLC=$(command -v wl-copy || true)
+
+# ----- Prompt Library -------------------------------------------------------
+declare -a PROMPTS=()
+add_prompt() { PROMPTS+=("$1"); }
+
+# — Seed library (imported from “Sora Prompt Refiner”) —
+add_prompt "Slow-Motion Sprint — Sunlit Shoreline
+{[push in, tracking shot]
+Prompt: High-detail Roger Deakins-style sprint toward camera on a sunlit shoreline.
+Lighting: Hard sun 35° left (5600 K); silver bounce 45° right.
+Lens: 85 mm f/2.0, shallow DoF.
+Environment: Empty beach, heat-haze shimmer.
+Resolution: 1080p
+Duration: 5
+}"
+
+add_prompt "Studio Arc — Joy Jump
+{[truck left, pan right, tracking shot]
+Prompt: 6 s half-orbit (3 m radius) while model jumps for joy in studio.
+Lighting: 1.2 m octabox key 90° right; low fill 120° left.
+Lens: 35 mm f/2.8.
+Environment: Seamless white cyclorama.
+Resolution: 1080p
+Duration: 6
+}"
+
+add_prompt "Rainy Road — Red Dress Umbrella
+{[push in, tilt up]
+Prompt: Dolly-tilt (knees → waist) of laughing woman with inverted umbrella in rain.
+Lighting: Car headlights back-rim; LED key 60° right through ¼-grid.
+Lens: 40 mm anamorphic T2.2.
+Environment: Wet rural asphalt; puddles.
+Resolution: 1080p
+Duration: 6
+}"
+
+# ----- Markdown plugin loader ----------------------------------------------
+load_plugin() {
+  local file=$1
+  [[ ! -f $file ]] && { printf "%s Plugin not found: %s\n" "$ERROR" "$file"; return 1; }
+  local before=${#PROMPTS[@]}
+
+  local inblock=0 block=""
+  while IFS= read -r line; do
+    # ── Detect start of block (line begins with a double-quote + text) ──
+    if [ $inblock -eq 0 ] && [ "${line#\"}" != "$line" ]; then
+      inblock=1
+      block="${line#\"}"        # strip the leading quote
+      continue
+    fi
+    # ── Detect end of block: line is exactly a double-quote ──
+    if [ $inblock -eq 1 ] && [ "$line" = "\"" ]; then
+      PROMPTS+=("$block")
+      inblock=0
+      block=""
+      continue
+    fi
+    # ── Accumulate lines inside the block ──
+    [ $inblock -eq 1 ] && block+=$'\n'"$line"
+  done < "$file"
+
+  local after=${#PROMPTS[@]}
+  local added=$(( after - before ))
+  printf "%s %s (%d prompt%s added)\n" "$OK" "$file" "$added" \
+         "$([ "$added" = 1 ] && echo "" || echo "s")"
+}
+
+# ----- Usage ----------------------------------------------------------------
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  --add                Read new prompt from stdin (end Ctrl-D)
+  --plugin  FILE.md    Load Markdown prompt-pack plugin
+  --image   PATH       Attach input image reference
+  --video   PATH       Attach input video reference
+  --storyboard PATH    Attach storyboard JSON/YAML reference
+  -h, --help           Show this help
+EOF
+}
+
+# ----- Arg-parse ------------------------------------------------------------
+declare -a ATTACH=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --add)        printf "%s Paste new prompt block, end Ctrl-D:\n" "$CAT"; add_prompt "$(cat -)"; shift ;;
+    --plugin)     [[ $# -lt 2 ]] && { printf "%s --plugin requires a path\n" "$ERROR"; exit 1; }
+                  load_plugin "$2"; shift 2 ;;
+    --image|--video|--storyboard)
+                  [[ $# -lt 2 ]] && { printf "%s %s requires a path\n" "$ERROR" "$1"; exit 1; }
+                  ATTACH+=("$1=$2"); shift 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    *)            printf "%s Unknown option: %s\n" "$ERROR" "$1"; usage; exit 1 ;;
+  esac
+done
+
+# ----- Select prompt --------------------------------------------------------
+mapfile -t TITLES < <(for p in "${PROMPTS[@]}"; do echo "$p" | head -n1; done)
+sel=$(printf '%s\n' "${TITLES[@]}" | fzf --prompt="🎞  Select prompt: " --height=40% --border)
+[[ -z $sel ]] && { printf "%s No selection.\n" "$INFO"; exit 0; }
+
+idx=-1; for i in "${!PROMPTS[@]}"; do [[ ${PROMPTS[$i]} == "$sel"* ]] && { idx=$i; break; }; done
+(( idx < 0 )) && { printf "%s Selection error.\n" "$ERROR"; exit 1; }
+prompt=${PROMPTS[$idx]}
+
+# ----- Validation -----------------------------------------------------------
+warn() { printf "%s %s\n" "$WARN" "$1" >&2; }
+
+# camera tag presence
+tag_ok=0
+for tag in "${CAMERA_TAGS[@]}"; do grep -qiF "$tag" <<<"$prompt" && { tag_ok=1; break; }; done
+(( tag_ok )) || warn "No [camera movement] tag detected."
+
+# restricted terms
+grep -Eiq "$BAD_WORDS_REGEX" <<<"$prompt" && warn "Policy-violating term detected."
+
+# duration
+dur_line=$(grep -Eo '^Duration:[[:space:]]*[0-9]+' <<<"$prompt" || true)
+dur=0; [[ -n $dur_line ]] && dur=${dur_line##*:}
+(( dur > MAX_DURATION )) && warn "Duration ${dur}s exceeds ${MAX_DURATION}s limit."
+
+# resolution ≤ 1080 p
+reso_line=$(grep -Eo '^Resolution:[[:space:]]*[0-9]{3,4}p' <<<"$prompt" || true)
+if [[ -z $reso_line ]]; then
+  warn "No Resolution: field."
+else
+  reso=${reso_line##*:}
+  [[ ! $reso =~ $RESO_REGEX ]] && warn "Malformed resolution string."
+  num=${reso%p}; (( num > 1080 )) && warn "Resolution ${reso} exceeds 1080p cap."
+fi
+
+# ----- Append standard notes ------------------------------------------------
+prompt+=$'\n'"$PRO_DISCLAIMER"$'\n'"$SAFETY_NOTE"$'\n'"$TECH_LIMITS"
+
+# ----- Attach files ---------------------------------------------------------
+for kv in "${ATTACH[@]}"; do
+  key=${kv%%=*}; path=${kv#*=}
+  case $key in
+    --image)      prompt+=$'\n'"INPUT_IMAGE: $path" ;;
+    --video)      prompt+=$'\n'"INPUT_VIDEO: $path" ;;
+    --storyboard) prompt+=$'\n'"STORYBOARD_FILE: $path" ;;
+  esac
+done
+
+# ----- Post-generation op ---------------------------------------------------
+ops=(Re-cut Remix Blend Loop Stabilize ColorGrade Skip)
+post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="🎛  Post-gen op? " --height=12 --border)
+[[ $post != Skip && -n $post ]] && prompt+=$'\n'"POST_GEN_OP: $post"
+
+# ----- Final payload --------------------------------------------------------
+payload="# === // SORA //\n\n$prompt"
+
+if [[ -n $BAT ]]; then
+  printf '%b\n' "$payload" | "$BAT" --language=md --style=plain --paging=always
+else
+  printf '%b\n' "$payload" | less -R
+fi
+
+if [[ -n $WLC ]]; then
+  printf '%b\n' "$payload" | "$WLC"
+  printf "%s Copied to clipboard.\n" "$OK"
+else
+  printf "%s wl-copy not found; clipboard skipped.\n" "$WARN"
+fi

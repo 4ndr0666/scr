@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+#shellcheck disable=SC2034
+set -euo pipefail
+IFS=$'\n\t'
+# ======================= // SORA //
+## Description: Unified AI Video Prompter
+# -----------------------------------
+
+## Constants and Global
+
+PROJECT_GOAL="Produce ultra high quality video rendered from a single static photo, leveraging best-practice camera movement, gimbal/tracking simulation, and capturing micro-details highlighted by natural sunlight piercing fabric with lighting inspired by Roger Deakins’ cinematographic style. All prompt modules are field-tested and Master-Instruction compliant."
+
+SORA_DISCLAIMER="*Note: cinematic references must be interpreted within Sora’s current technical capabilities (1080p / 24 fps default unless overridden).*"
+
+CAMERA_TAGS=(
+    "[push in]" "[pull out]" "[pan left]" "[pan right]" "[tilt up]" "[tilt down]"
+    "[truck left]" "[truck right]" "[pedestal up]" "[pedestal down]"
+    "[zoom in]" "[zoom out]" "[tracking shot]" "[static shot]" "[shake]" "[handheld]"
+    "[arc]" "[crane]" "[jib]" "[steadicam]" "[dolly]" "[whip pan]" "[roll]"
+    "[bird’s eye view]" "[over-the-shoulder]"
+)
+
+## Embedded Prompt Library
+
+declare -a PROMPTS=()
+
+add_prompt() {
+    PROMPTS+=("$1")
+}
+
+# Example: Add your field-tested, Master-Instruction prompts here.
+add_prompt "Slow-motion Run Toward Camera
+
+{[push in, tracking shot]
+Prompt: Generate a high-detail, Roger Deakins–inspired video of an adult athlete sprinting directly toward the camera along a sunlit road. Camera starts at chest height, 1 meter from subject, tracking smoothly backward while pushing in, ensuring face and upper body dominate the frame. Micro-details—skin texture, sunlight glint on moving fabric, and individual hair strands—are crisp in focus.
+Lighting: Natural hard sunlight at 35° camera-left (5600 K); silver bounce 45° right for soft fill.
+Shadows: High contrast, mid-tone separation.
+Lens: 85 mm f/2.0 prime, shallow DoF.
+Environment: Sunlit empty roadway, heat-haze shimmer, no props.
+Action: Focused, athletic determination.
+Micro-Detail: Sunlight on damp skin, mesh fabric, sweat beads.
+Loop: Freeze last frame 0.5 s for seamless replay.
+${SORA_DISCLAIMER}
+}"
+
+add_prompt "360° Studio Arc with Joyful Jump
+
+{[truck left, pan right, tracking shot]
+Prompt: Animate a left-circling gimbal shot (3 m radius, 6 s) of a model in a studio. Model poses, then bursts into joyful vertical jumps as the camera arcs around. Auto-frame to keep head and body in view.
+Lighting: 1.2 m octabox key 90° camera-right, low fill 120° left.
+Shadows: Hard key with soft fill.
+Lens: 35 mm f/2.8 prime.
+Environment: Seamless white cyclorama, minimalist.
+Micro-Detail: Fabric movement, hair airborne, muscle flex.
+${SORA_DISCLAIMER}
+}"
+
+add_prompt "Rainy Road, Red Dress, Umbrella Loop
+
+{[push in, tilt up]
+Prompt: Create a 6-s dolly forward (1 m) from knee-high, tilting up to a waist-up framing of a barefoot woman in a vivid red dress, standing in rain on rural asphalt. Wind whips her hair; she laughs, holding an upside-down umbrella. Distant car headlights bloom through mist.
+Lighting: Practical headlights rear, 650 W LED key 60° right, 1/4 grid diffusion.
+Shadows: Moody hard rim, puddle reflections.
+Lens: 40 mm anamorphic T2.2.
+Environment: Night road, light fog, reflective puddles.
+Micro-Detail: Raindrop splashes, fabric translucency, hair in motion.
+${SORA_DISCLAIMER}
+}"
+
+# Add more prompt modules above as needed.
+
+# ========== Dependency Checks ==========
+
+command -v fzf >/dev/null 2>&1 || {
+    echo "❌ fzf required but not found." >&2
+    exit 1
+}
+BAT_BIN=$(command -v bat || true)
+WL_BIN=$(command -v wl-copy || true)
+
+# ========== Prompt Title Extraction ==========
+
+mapfile -t TITLES < <(for prompt in "${PROMPTS[@]}"; do
+    echo "$prompt" | head -n1 | xargs
+done)
+
+# ========== Prompt Selection Menu ==========
+
+sel_title=$(printf '%s\n' "${TITLES[@]}" | fzf --prompt='🎬  Pick a Sora prompt: ' --height=40% --border)
+[ -z "$sel_title" ] && { echo "No selection."; exit 0; }
+
+idx=0
+for i in "${!PROMPTS[@]}"; do
+    [[ "${PROMPTS[$i]}" == "$sel_title"* ]] && { idx=$i; break; }
+done
+prompt_text="${PROMPTS[$idx]}"
+
+# ========== Prompt Validation (Camera Tags, Checklist) ==========
+
+validate_prompt() {
+    local p="$1"
+    local valid=1
+    for tag in "${CAMERA_TAGS[@]}"; do
+        if grep -q "$tag" <<<"$p"; then
+            valid=0
+            break
+        fi
+    done
+    if (( valid )); then
+        echo "⚠️  Warning: No recognized [camera movement] tag found in this prompt!" >&2
+    fi
+    # Optionally: Add further checklist validation here
+}
+validate_prompt "$prompt_text"
+
+# ========== Preview Selected Prompt ==========
+
+clip_payload="# SORA PROMPT\n$prompt_text"
+
+if [[ -n $BAT_BIN ]]; then
+    echo -e "$clip_payload" | "$BAT_BIN" --language=md --style=plain --paging=always
+else
+    echo -e "$clip_payload" | less -R
+fi
+
+# ========== Copy to Clipboard ==========
+
+if [[ -n $WL_BIN ]]; then
+    printf '%s\n' "$clip_payload" | "$WL_BIN"
+    echo "✅ Prompt copied to clipboard."
+else
+    echo "⚠️  wl-copy not found; clipboard step skipped."
+fi
+
+exit 0

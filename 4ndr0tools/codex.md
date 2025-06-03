@@ -1,0 +1,3 @@
+- Treat all scripts as system-critical; avoid modifications without explicit approval.
+- Maintain compatibility with Arch Linux; ensure scripts do not introduce dependencies outside the Arch repositories.
+- Document any changes to scripts in the CHANGELOG.md file within this directory.

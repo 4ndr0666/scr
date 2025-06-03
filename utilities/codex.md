@@ -1,0 +1,3 @@
+- Utility scripts should be modular and reusable across different projects.
+- Include usage examples and expected outputs in the script documentation.
+- Avoid hardcoding paths; use environment variables or configuration files instead.

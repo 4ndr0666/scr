@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+set -euo pipefail
+IFS=$'\n\t'
+# ====================== // SORA2 /
+## Description: Interactive chooser for Sora-ready photo-studio prompts
+# ──────────────────────────────────────────────────────────
+
+## Constants/Globals
+
+SORA_DISCLAIMER="*Note: cinematic references must be interpreted within Sora’s current technical capabilities (1080 p / 24 fps default unless overridden).*"
+
+## Embedded prompt library 
+
+declare -a PROMPTS=(
+"Deakins Macro Orbit
+
+> [truck left, pan right, tracking shot, push in]  
+> I need you to create a half-orbit (~180 ° counter-clockwise) around an **adult model** on a seamless cyclorama.  
+> • Camera begins 0 .7 m from waist height and gently pushes in while circling so the upper torso fills the frame by mid-move.  
+> • The model strikes fashion poses, then bursts into joyful vertical jumps; the gimbal auto-tilts to keep the head centred at each apex.  
+> **Camera / Lens:** 100 mm macro f/2.8 prime — intimate close-up aesthetic inspired by *Roger Deakins*.  
+> **Lighting:** 1.2 m octabox key 90 ° camera-right gelled to 5600 K; 4 × 2 m bounce fill 120 ° camera-left; **6500 K cool rim light** behind subject.  
+> **Shadows:** Crisp highlights, gentle mid-tone lift.  
+> **Environment & Background:** Minimalist white cyclorama with shallow DoF and a soft neutral-grey vignette.  
+> **Insert Cut:** At 6 s, cut to a 1 s 150 mm f/4 macro of fabric weave & skin texture, then resume orbit.  
+> **Stabilisation:** Cinematic gimbal simulation with breathing-level micro-sway.  
+> **Loop:** Hold final frame 0.5 s for seamless replay.  
+> **Post:** Subtle film-grain overlay for naturalistic texture.  
+> ${SORA_DISCLAIMER}
+"
+"High-Key Beauty Portrait
+
+> [push in, static]  
+> I need you to film a 4- s push-in on an **adult model’s** face, capturing flawless skin texture.  
+> **Lighting:** Twin 150 cm octaboxes 45 ° left/right (F/8), white V-flat fill below.  
+> **Shadows:** Feather-soft, minimal contrast.  
+> **Lens:** 100 mm macro f/5.6, focus on iris.  
+> **Environment:** Pure-white seamless backdrop.  
+> ${SORA_DISCLAIMER}
+"
+"Dramatic Rembrandt Close-Up
+
+> [tilt down]  
+> Slow 4-s tilt from forehead to collarbone while the model holds gaze.  
+> **Lighting:** Single 1.2 m softbox 45 ° camera-left; silver reflector right.  
+> **Shadows:** Defined Rembrandt triangle.  
+> **Lens:** 85 mm f/1.4 shallow DoF.  
+> **Environment:** Charcoal-grey backdrop.  
+> ${SORA_DISCLAIMER}
+"
+"Color-Gel Fashion Pop
+
+> [truck left, pan right]  
+> Half-circle move (5 s) with alternating magenta/cyan gels washing over subject.  
+> **Lighting:** Two Profoto B10s with gels; strip hair-rim.  
+> **Lens:** 50 mm f/4.  
+> **Environment:** Matte-black sweep.  
+> ${SORA_DISCLAIMER}
+"
+"Golden-Hour Window Light
+
+> [static]  
+> Timelapse fade mimicking sun sweep across face (8 s).  
+> **Lighting:** 5600 K key through 4 × 6 window, warm bounce right.  
+> **Lens:** 35 mm f/2.8.  
+> **Environment:** Loft studio, wooden floor.  
+> ${SORA_DISCLAIMER}
+"
+"Hard Rim & Smoke Backlit Silhouette
+
+> [arc right]  
+> 120 ° orbit revealing silhouette then detail.  
+> **Lighting:** 300 W Fresnel backlight; haze for volumetric rays.  
+> **Lens:** 35 mm f/4.  
+> **Environment:** Dark industrial set.  
+> ${SORA_DISCLAIMER}
+"
+"Ring-Light Macro Texture Sweep
+
+> [pedestal up]  
+> 3-s glide from lips to eyes capturing gloss & iris reflection.  
+> **Lighting:** 18-in LED ring.  
+> **Lens:** 105 mm macro f/8.  
+> **Environment:** Matte-grey backdrop.  
+> ${SORA_DISCLAIMER}
+"
+"Split-Tone Editorial Switch
+
+> [static]  
+> Cool-to-warm split-light transition as model rotates 30 °.  
+> **Lighting:** Opposing strip boxes with CTB / CTO gels.  
+> **Lens:** 70 mm f/5.6.  
+> **Environment:** Neutral-beige canvas.  
+> ${SORA_DISCLAIMER}
+"
+"Fashion Trio Pose Morph
+
+> [dolly in]  
+> Interpolate three runway poses, ending medium shot.  
+> **Lighting:** Parabolic umbrella key + edge kicker.  
+> **Lens:** 50 mm f/2.  
+> **Environment:** White cyclorama.  
+> ${SORA_DISCLAIMER}
+"
+"Mixed Kelvin Contrast
+
+> [pan left]  
+> Cross-fade daylight key ↔ tungsten practicals while model sips coffee.  
+> **Lighting:** 5600 K scrimmed key; 3200 K bulbs in bg.  
+> **Lens:** 85 mm f/2.2.  
+> **Environment:** Café interior.  
+> ${SORA_DISCLAIMER}
+"
+"Continuous → Flash Pop Test
+
+> [push in]  
+> Dim LED to flash burst mid-shot, freezing motion.  
+> **Lighting:** 1000 lx LED → 800 Ws flash w/ beauty dish.  
+> **Lens:** 90 mm f/4.  
+> **Environment:** Mid-grey sweep.  
+> ${SORA_DISCLAIMER}
+"
+"Gelled Edge & Bounce Fill Beauty
+
+> [tilt up]  
+> Magenta rim + neutral fill feature cheekbones.  
+> **Lighting:** Magenta gel 45 ° back-right; silver bounce front.  
+> **Lens:** 100 mm f/2.8.  
+> **Environment:** Charcoal cloth backdrop.  
+> ${SORA_DISCLAIMER}
+"
+"Low-Key One-Light Painterly Portrait
+
+> [pan right]  
+> 20 ° camera move revealing textured muslin.  
+> **Lighting:** 36-in beauty dish 30 ° left with grid.  
+> **Lens:** 85 mm f/1.8.  
+> **Environment:** Hand-painted muslin backdrop.  
+> ${SORA_DISCLAIMER}
+"
+)
+
+## Dependency checks
+
+command -v fzf >/dev/null 2>&1 || { echo "❌ fzf required but not found." >&2; exit 1; }
+BAT_BIN=$(command -v bat || true)
+WL_BIN=$(command -v wl-copy || true)
+
+## Build menu titles 
+
+mapfile -t TITLES < <(printf '%s\n' "${PROMPTS[@]}" | awk 'NR==1 || /^"/{gsub(/"/,""); if ($0!="") {print $0}}' | grep -E '^[A-Za-z0-9]')
+
+## Present fzf menu
+
+sel_title=$(printf '%s\n' "${TITLES[@]}" | fzf --prompt='🎞  Pick a Sora prompt: ' --height=40% --border)
+[ -z "$sel_title" ] && { echo "No selection."; exit 0; }
+
+## Locate the chosen prompt index
+
+idx=0
+for i in "${!PROMPTS[@]}"; do
+  [[ ${PROMPTS[$i]} == "$sel_title"* ]] && { idx=$i; break; }
+done
+
+prompt_text=${PROMPTS[$idx]}
+clip_payload="# SORA PROMPT\n${prompt_text}"
+
+## Preview
+
+if [[ -n $BAT_BIN ]]; then
+  echo -e "$clip_payload" | "$BAT_BIN" --language=md --style=plain --paging=always
+else
+  echo -e "$clip_payload" | less -R
+fi
+
+## Clipboard copy 
+
+if [[ -n $WL_BIN ]]; then
+  printf '%s\n' "$clip_payload" | "$WL_BIN"
+  echo "✅ Prompt copied to clipboard."
+else
+  echo "⚠️  wl-copy not found; clipboard step skipped."
+fi
+
+exit 0
