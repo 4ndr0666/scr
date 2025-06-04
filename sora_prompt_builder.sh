@@ -12,7 +12,6 @@ usage() {
   printf '%s\n' "  $0 --pose leaning_forward"
   printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
   printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
-  exit 1
 }
 
 POSE=""
@@ -24,12 +23,14 @@ while [[ $# -gt 0 ]]; do
     --pose) POSE="$2"; shift 2 ;;
     --desc) DESC="$2"; shift 2 ;;
     --deakins) USE_DEAKINS=1; shift ;;
-    *) usage ;;
+    --help) usage; exit 0 ;;
+    *) usage; exit 1 ;;
   esac
 done
 
 if [[ -z "$POSE" && -z "$DESC" ]]; then
   usage
+  exit 1
 fi
 
 export POSE DESC USE_DEAKINS

@@ -4,3 +4,4 @@
 - Implement promptlib.py library and sora_prompt_builder.sh CLI for pose-based prompt generation.
 - Update shellcheck workflow to fail on warnings.
 - Added --foreground and --config options to mem-police with a root privilege check.
+- Added --help support to sora_prompt_builder.sh.
