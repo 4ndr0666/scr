@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+# Secure, robust, modular FFmpeg video utility
+
+set -euo pipefail
+set -E
+
+# XDG Base Directories & Globals
+declare -xr XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+declare -xr XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+declare -xr XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+declare -xr APP_NAME="merge"
+declare -xr MERGE_CONF="$XDG_CONFIG_HOME/$APP_NAME/merge.conf"
+
+mkdir -p "$XDG_CONFIG_HOME/$APP_NAME" "$XDG_CACHE_HOME/$APP_NAME" "$XDG_DATA_HOME/$APP_NAME"
+
+# Temporary resources
+declare -a TEMP_DIRS=() TEMP_FILES=()
+declare BASE_TMP_DIR
+BASE_TMP_DIR="$(mktemp -d -p "${TMPDIR:-/tmp}" "${APP_NAME}.XXXXXXXX")"
+TEMP_DIRS+=("$BASE_TMP_DIR")
+trap 'cleanup_all' EXIT INT TERM HUP
+
+cleanup_all() {
+    for f in "${TEMP_FILES[@]}"; do [[ -f "$f" ]] && rm -f "$f"; done
+    for d in "${TEMP_DIRS[@]}"; do [[ -d "$d" ]] && rm -rf "$d"; done
+}
+
+register_temp_file() { TEMP_FILES+=("$1"); }
+register_temp_dir()  { TEMP_DIRS+=("$1"); }
+
+# Default Configuration & Loader
+declare -A cfg=(
+    [verbose]=0
+    [output_dir]="$PWD"
+    [codec]="libx264"
+    [preset]="slow"
+    [crf]=18
+    [qp]=""
+    [resolution]="1920x1080"
+    [fps]=30
+    [remove_audio]="false"
+    [speed_factor]="1.0"
+)
+
+load_config() {
+    [[ -f "$MERGE_CONF" ]] || return
+    local key value
+    while IFS='=' read -r key value; do
+        key="${key//[[:space:]]/}"
+        value="${value%$'\r'}"
+        case "$key" in
+            verbose|crf|fps)
+                [[ "$value" =~ ^[0-9]+$ ]] && cfg[$key]="$value"
+                ;;
+            speed_factor)
+                [[ "$value" =~ ^[0-9]*\.?[0-9]+$ ]] && cfg[$key]="$value"
+                ;;
+            remove_audio)
+                [[ "$value" == "true" || "$value" == "false" ]] && cfg[$key]="$value"
+                ;;
+            resolution)
+                [[ "$value" =~ ^[0-9]+x[0-9]+$ ]] && cfg[$key]="$value"
+                ;;
+            output_dir|codec|preset|qp)
+                [[ -n "$value" ]] && cfg[$key]="$value"
+                ;;
+        esac
+    done < "$MERGE_CONF"
+}
+
+# Utility Functions
+printv() { [[ "${cfg[verbose]}" -eq 1 ]] && echo "[$(date +%T)] $*" >&2; }
+
+check_deps() {
+    for cmd in ffmpeg ffprobe jq bc stat realpath; do
+        command -v "$cmd" &>/dev/null || { echo "Missing dependency: $cmd" >&2; exit 1; }
+    done
+}
+
+abs_path() { realpath "$1"; }
+
+prepare_outdir() {
+    local dir
+    dir="$(dirname "$1")"
+    mkdir -p "$dir"
+}
+
+mk_tmp_out() {
+    local prefix="$1"
+    local file
+    file="$(mktemp "$BASE_TMP_DIR/${prefix}.XXXXXXXX.mp4")"
+    register_temp_file "$file"
+    echo "$file"
+}
+
+get_video_opts() {
+    local opts=( -c:v "${cfg[codec]}" -preset "${cfg[preset]}" -pix_fmt yuv420p -movflags +faststart )
+    if [[ -n "${cfg[qp]}" ]]; then
+        opts+=( -qp "${cfg[qp]}" )
+    else
+        opts+=( -crf "${cfg[crf]}" )
+    fi
+    echo "${opts[@]}"
+}
+
+get_audio_opts() {
+    if [[ "${cfg[remove_audio]}" == "true" ]]; then echo "-an"; else echo "-c:a aac -b:a 128k"; fi
+}
+
+generate_atempo() {
+    local speed="$1" parts=()
+    while bc <<<"$speed>2" | grep -q 1; do parts+=( "atempo=2.0" ); speed=$(bc <<<"$speed/2"); done
+    while bc <<<"$speed<0.5" | grep -q 1; do parts+=( "atempo=0.5" ); speed=$(bc <<<"$speed/0.5"); done
+    parts+=( "atempo=$(printf "%.4f" "$speed")" )
+    IFS=,; echo "${parts[*]}"
+}
+
+# Subcommands
+cmd_probe() {
+    for f in "$@"; do [[ ! -f "$f" ]] && echo "File not found: $f" >&2 && continue
+        echo "=== $f ==="
+        ffprobe -v quiet -print_format json -show_streams -show_format "$f" | jq .
+    done
+}
+
+cmd_process() {
+    local in="$1"; shift
+    [[ ! -f "$in" ]] && echo "Input file not found: $in" >&2 && exit 1
+    local out="${1:-${cfg[output_dir]}/$(basename "${in%.*}.processed.mp4")}"
+    local tmpout="$(mk_tmp_out process)"
+    ffmpeg -y -i "$in" -vf "scale=${cfg[resolution]},fps=${cfg[fps]}" $(get_video_opts) $(get_audio_opts) "$tmpout"
+    prepare_outdir "$out"; mv "$tmpout" "$out"; echo "✅ Processed: $out"
+}
+
+cmd_merge() {
+    local out="${cfg[output_dir]}/merged.mp4" inputs=() arg
+    while [[ $# -gt 0 ]]; do
+        arg="$1"
+        case "$arg" in
+            -o|--output) shift; out="$1";;
+            *) inputs+=("$arg");;
+        esac
+        shift
+    done
+    (( ${#inputs[@]} < 2 )) && echo "Need 2+ inputs" >&2 && exit 1
+    for f in "${inputs[@]}"; do [[ ! -f "$f" ]] && echo "Input file not found: $f" >&2 && exit 1; done
+    local tmpout="$(mk_tmp_out merge)" parts=() vlabels=() filter
+    for i in "${!inputs[@]}"; do parts+=( "[$i:v]scale=${cfg[resolution]},fps=${cfg[fps]}[v$i]" ); vlabels+=( "[v$i]" ); done
+    filter="$(IFS=';'; echo "${parts[*]};${vlabels[*]}concat=n=${#inputs[@]}:v=1:a=0[vout]")"
+    ffmpeg -y "${inputs[@]/#/-i }" -filter_complex "$filter" -map "[vout]" $(get_video_opts) $(get_audio_opts) "$tmpout"
+    prepare_outdir "$out"; mv "$tmpout" "$out"; echo "✅ Merged: $out"
+}
+
+cmd_looperang() {
+    local in="$1"; shift
+    [[ ! -f "$in" ]] && echo "Input file not found: $in" >&2 && exit 1
+    local out="${1:-${cfg[output_dir]}/$(basename "${in%.*}.looperang.mp4")}" tmpout="$(mk_tmp_out looperang)"
+    local filter="[0:v]split[a][b];[b]reverse[b];[a][b]concat=n=2:v=1:a=0,scale=${cfg[resolution]},fps=${cfg[fps]}[vout]"
+    [[ "${cfg[remove_audio]}" == "false" ]] && filter+=";[0:a]asplit[af][ar];[ar]areverse[ar];[af][ar]aconcat=n=2:v=0:a=1[aout]"
+    ffmpeg -y -i "$in" -filter_complex "$filter" -map "[vout]" $( [[ "${cfg[remove_audio]}" == "false" ]] && echo "-map [aout]" ) $(get_video_opts) $(get_audio_opts) "$tmpout"
+    prepare_outdir "$out"; mv "$tmpout" "$out"; echo "✅ Looperang: $out"
+}
+
+cmd_slowmo() {
+    local in="$1"; shift
+    [[ ! -f "$in" ]] && echo "Input file not found: $in" >&2 && exit 1
+    local out="${1:-${cfg[output_dir]}/$(basename "${in%.*}.slowmo.mp4")}" tmpout="$(mk_tmp_out slowmo)"
+    local factor="${cfg[speed_factor]}" inv_factor="$(bc -l <<< "1/$factor")" atempo="$(generate_atempo "$factor")"
+    local filter="[0:v]setpts=${factor}*PTS,scale=${cfg[resolution]},fps=${cfg[fps]}[vout]"
+    [[ "${cfg[remove_audio]}" == "false" ]] && filter+=";[0:a]${atempo}[aout]"
+    ffmpeg -y -i "$in" -filter_complex "$filter" -map "[vout]" $( [[ "${cfg[remove_audio]}" == "false" ]] && echo "-map [aout]" ) $(get_video_opts) $(get_audio_opts) "$tmpout"
+    prepare_outdir "$out"; mv "$tmpout" "$out"; echo "✅ Slowmo: $out"
+}
+
+main() {
+    check_deps
+    load_config
+    [[ -n "${cfg[output_dir]}" ]] && cfg[output_dir]="$(abs_path "${cfg[output_dir]}")"
+    [[ "$#" -eq 0 ]] && echo "Usage: $0 <command> ..." && exit 1
+    local cmd="$1"; shift
+    case "$cmd" in
+        probe)      cmd_probe "$@" ;;
+        process)    cmd_process "$@" ;;
+        merge)      cmd_merge "$@" ;;
+        looperang)  cmd_looperang "$@" ;;
+        slowmo)     cmd_slowmo "$@" ;;
+        *)          echo "Unknown command: $cmd" >&2; exit 1 ;;
+    esac
+}
+
+main "$@"
