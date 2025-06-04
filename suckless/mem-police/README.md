@@ -61,6 +61,10 @@ Run as a background job with redirection:
 ```sh
 sudo sh -c 'mem-police 2>&1 | tee /var/log/mem-police.log' &
 ```
+For debugging, run in the foreground or specify a custom config file:
+```sh
+sudo mem-police --foreground --config /path/to/custom.conf
+```
 
 ---
 

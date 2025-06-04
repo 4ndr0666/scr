@@ -48,6 +48,12 @@ typedef struct {
 
 static volatile sig_atomic_t keep_running = 1;
 static int pidfile_fd = -1;
+static const char *config_path = CONFIG_PATH;
+static int opt_foreground = 0;
+
+static void usage(const char *prog) {
+    fprintf(stderr, "Usage: %s [--config FILE] [--foreground] [--help]\n", prog);
+}
 
 static void log_syslog(int priority, const char *fmt, ...) {
     va_list ap;
@@ -161,25 +167,25 @@ static void check_startfile_dir(void) {
 
 static void check_config_permissions(void) {
     struct stat st;
-    if (stat(CONFIG_PATH, &st) != 0) {
-        log_syslog(LOG_ERR, "[mem-police] Cannot stat %s: %s", CONFIG_PATH, strerror(errno));
+    if (stat(config_path, &st) != 0) {
+        log_syslog(LOG_ERR, "[mem-police] Cannot stat %s: %s", config_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
     if (st.st_uid != 0 || st.st_gid != 0) {
-        log_syslog(LOG_ERR, "[mem-police] Config file %s must be owned by root:root", CONFIG_PATH);
+        log_syslog(LOG_ERR, "[mem-police] Config file %s must be owned by root:root", config_path);
         exit(EXIT_FAILURE);
     }
     if ((st.st_mode & 077) != 0) {
-        log_syslog(LOG_ERR, "[mem-police] Config file %s permissions too open (must be 0600 or stricter)", CONFIG_PATH);
+        log_syslog(LOG_ERR, "[mem-police] Config file %s permissions too open (must be 0600 or stricter)", config_path);
         exit(EXIT_FAILURE);
     }
 }
 
 static void load_config(mempolice_config_t *cfg) {
     check_config_permissions();
-    FILE *f = fopen(CONFIG_PATH, "r");
+    FILE *f = fopen(config_path, "r");
     if (!f) {
-        log_syslog(LOG_ERR, "[mem-police] fopen(%s): %s", CONFIG_PATH, strerror(errno));
+        log_syslog(LOG_ERR, "[mem-police] fopen(%s): %s", config_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
     char line[256];
@@ -415,9 +421,33 @@ static int write_statefile_atomic(const char *startfile, pid_t pid, time_t thres
     return 0;
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
     openlog("mem-police", LOG_PID | LOG_CONS, LOG_DAEMON);
-    daemonize();
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--config") == 0) {
+            if (i + 1 >= argc) {
+                usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            config_path = argv[++i];
+        } else if (strcmp(argv[i], "--foreground") == 0) {
+            opt_foreground = 1;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            usage(argv[0]);
+            return 0;
+        } else {
+            usage(argv[0]);
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (geteuid() != 0) {
+        log_syslog(LOG_ERR, "[mem-police] must be run as root");
+        return EXIT_FAILURE;
+    }
+
+    if (!opt_foreground)
+        daemonize();
     signal(SIGCHLD, SIG_IGN);
     write_pidfile();
     atexit(remove_pidfile);
