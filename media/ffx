@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# ffx - unified ffmpeg helper
+# Author: 4ndr0666
 set -euo pipefail
+# ========================= // FFX //
+## Description: Ffmpeg wrapper
+# ---------------------------------
+
+## Constants
 
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
@@ -27,7 +32,12 @@ run() { if [ "$DRY_RUN" = true ]; then printf '[dry-run] %s\n' "$*"; else eval "
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 absolute_path() { readlink -f "$1" 2>/dev/null || echo "$1"; }
 get_default_filename() {
-	local base="${1:-out}" suf="${2:-tmp}" ext="${3:-mp4}" n=1 f="${base}_${suf}.${ext}"
+	local base suf ext f n 
+	base="${1:-out}" 
+	suf="${2:-tmp}" 
+	ext="${3:-mp4}" 
+	n=1 
+	f="${base}_${suf}.${ext}"
 	while [ -e "$f" ]; do f="${base}_${suf}_$((n++)).${ext}"; done
 	printf '%s' "$f"
 }
@@ -50,6 +60,8 @@ advanced_prompt() {
 	fi
 }
 
+## Probe
+
 cmd_probe() {
 	advanced_prompt
 	local input="$1"
@@ -70,6 +82,8 @@ cmd_probe() {
 	printf 'File: %s\nContainer: %s\nResolution: %s\nFrame Rate: %s\nDuration: %ss\nSize: %s bytes\n' "$input" "$format" "$res" "$fps" "${dur%%.*}" "$size"
 }
 
+## Process
+
 cmd_process() {
 	advanced_prompt
 	local input="$1" output="${2:-}" forced_fps="${3:-$ADV_FPS}"
@@ -89,6 +103,8 @@ cmd_process() {
 	run ffmpeg -y -fflags +genpts -i "$input" -vf "$vf" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output"
 	log "Processed -> $output"
 }
+
+## Merge
 
 cmd_merge() {
 	advanced_prompt
@@ -132,6 +148,8 @@ cmd_merge() {
 	log "Merged -> $output"
 }
 
+## Looperang
+
 cmd_looperang() {
 	advanced_prompt
 	local input="$1" output="${2:-}"
@@ -157,6 +175,8 @@ cmd_looperang() {
 	log "Looperang -> $output"
 }
 
+## Speed
+
 cmd_speed() {
 	advanced_prompt
 	local input="$1" output="${2:-}" factor="${3:-2.0}" fps="${4:-$ADV_FPS}"
@@ -174,6 +194,8 @@ cmd_speed() {
 	run ffmpeg -y -i "$input" -filter:v "$vf" -r "$fps" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" "$output"
 	log "Speed -> $output"
 }
+
+## Help
 
 show_help() {
 	cat <<EOF
@@ -196,6 +218,8 @@ Commands:
   help
 EOF
 }
+
+## Main Entry Point
 
 main() {
 	[ $# -eq 0 ] && {
