@@ -7,7 +7,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 usage() {
-  printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins]"
+  printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--dry-run]"
+  printf '%s\n' "  --dry-run    Print the Python command instead of executing"
   printf '%s\n' "Examples:"
   printf '%s\n' "  $0 --pose leaning_forward"
   printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
@@ -17,14 +18,13 @@ usage() {
 POSE=""
 DESC=""
 USE_DEAKINS=0
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pose) POSE="$2"; shift 2 ;;
     --desc) DESC="$2"; shift 2 ;;
     --deakins) USE_DEAKINS=1; shift ;;
-    --help) usage; exit 0 ;;
-    *) usage; exit 1 ;;
   esac
 done
 
@@ -33,9 +33,6 @@ if [[ -z "$POSE" && -z "$DESC" ]]; then
   exit 1
 fi
 
-export POSE DESC USE_DEAKINS
-python3 - <<PYEOF
-import os
 from promptlib import prompt_orchestrator
 
 pose = os.getenv("POSE", "")
@@ -54,4 +51,13 @@ print(result["final_prompt"])
 print("\u2500" * 37)
 print(f"🎛️  Base Mode: {result['base_mode']}")
 print(f"🔧 Components Used: {', '.join(result['components_used'])}")
+PYCODE
+)
+
+if [[ $DRY_RUN -eq 1 ]]; then
+  printf '%s\n%s\n%s\n' "python3 - <<'PYEOF'" "$python_script" "PYEOF"
+else
+  python3 - <<PYEOF
+$python_script
 PYEOF
+fi
