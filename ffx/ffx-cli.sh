@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# ffx-cli - unified ffmpeg helper
+set -euo pipefail
+
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+FFX_CACHE_DIR="$XDG_CACHE_HOME/ffx"
+FFX_LOG_DIR="$XDG_DATA_HOME/logs"
+mkdir -p "$FFX_CACHE_DIR" "$FFX_LOG_DIR"
+
+ADVANCED=false
+VERBOSE=false
+DRY_RUN=false
+KEEP_AUDIO=false
+INTERP=false
+
+ADV_CONTAINER="mp4"
+ADV_RES="1920x1080"
+ADV_FPS="60"
+ADV_CODEC="libx264"
+ADV_PIX_FMT="yuv420p"
+ADV_CRF="18"
+
+log(){ [ "$VERBOSE" = true ] && printf '%s\n' "$*"; }
+run(){ if [ "$DRY_RUN" = true ]; then printf '[dry-run] %s\n' "$*"; else eval "$@"; fi; }
+command_exists(){ command -v "$1" >/dev/null 2>&1; }
+absolute_path(){ readlink -f "$1" 2>/dev/null || echo "$1"; }
+get_default_filename(){ local base="${1:-out}" suf="${2:-tmp}" ext="${3:-mp4}" n=1 f="${base}_${suf}.${ext}"; while [ -e "$f" ]; do f="${base}_${suf}_$((n++)).${ext}"; done; printf '%s' "$f"; }
+audio_opts(){ [ "$KEEP_AUDIO" = true ] && printf '--c:a copy' || printf '--an'; }
+
+advanced_prompt(){
+  if [ "$ADVANCED" = true ]; then
+    read -r -p "Container extension (mp4/mkv) [mp4]: " ADV_CONTAINER; ADV_CONTAINER="${ADV_CONTAINER:-mp4}"
+    read -r -p "Resolution [1920x1080]: " ADV_RES; ADV_RES="${ADV_RES:-1920x1080}"
+    read -r -p "Frame rate [60]: " ADV_FPS; ADV_FPS="${ADV_FPS:-60}"
+    read -r -p "Codec [libx264]: " ADV_CODEC; ADV_CODEC="${ADV_CODEC:-libx264}"
+    read -r -p "Pixel format [yuv420p]: " ADV_PIX_FMT; ADV_PIX_FMT="${ADV_PIX_FMT:-yuv420p}"
+    read -r -p "CRF value [18]: " ADV_CRF; ADV_CRF="${ADV_CRF:-18}"
+  fi
+}
+
+cmd_probe(){
+  advanced_prompt
+  local input="$1"; [ -z "$input" ] && { printf 'probe requires a file\n'; exit 1; }
+  [ ! -f "$input" ] && { printf 'file not found: %s\n' "$input"; exit 1; }
+  local format res fps dur size
+  format=$(ffprobe -v error -show_entries format=format_name -of default=nokey=1:noprint_wrappers=1 "$input")
+  res=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$input")
+  fps=$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=nokey=1:noprint_wrappers=1 "$input")
+  dur=$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$input")
+  size=$(stat -c '%s' "$input")
+  printf 'File: %s\nContainer: %s\nResolution: %s\nFrame Rate: %s\nDuration: %ss\nSize: %s bytes\n' "$input" "$format" "$res" "$fps" "${dur%%.*}" "$size"
+}
+
+cmd_process(){
+  advanced_prompt
+  local input="$1" output="${2:-}" forced_fps="${3:-$ADV_FPS}"
+  [ -z "$input" ] && { printf 'process requires <input>\n'; exit 1; }
+  [ ! -f "$input" ] && { printf 'file not found: %s\n' "$input"; exit 1; }
+  [ -z "$output" ] && output="$(get_default_filename "${input%.*}" processed "$ADV_CONTAINER")"
+  local height
+  height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nokey=1:noprint_wrappers=1 "$input")
+  local vf="fps=$forced_fps"; [ "${height:-0}" -gt 1080 ] && vf="scale=-2:1080,$vf"
+  run ffmpeg -y -fflags +genpts -i "$input" -vf "$vf" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output"
+  log "Processed -> $output"
+}
+
+cmd_merge(){
+  advanced_prompt
+  local output="" forced_fps="$ADV_FPS" files=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o|--output) output="$2"; shift 2;;
+      -s|--fps) forced_fps="$2"; shift 2;;
+      *) files+=("$1"); shift;;
+    esac
+  done
+  [ "${#files[@]}" -lt 2 ] && { printf 'merge requires at least two files\n'; exit 1; }
+  [ -z "$output" ] && output="$(get_default_filename output merged "$ADV_CONTAINER")"
+  local tmpdir tmplist; tmpdir=$(mktemp -d); tmplist="$tmpdir/list.txt"
+  for f in "${files[@]}"; do
+    [ ! -f "$f" ] && { printf 'file not found: %s\n' "$f"; rm -rf "$tmpdir"; exit 1; }
+    local temp="$tmpdir/$(basename "$f").mp4"
+    run ffmpeg -y -fflags +genpts -i "$f" -r "$forced_fps" -c copy "$temp" || run ffmpeg -y -i "$f" -r "$forced_fps" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" -an "$temp"
+    printf "file '%s'\n" "$(absolute_path "$temp")" >> "$tmplist"
+  done
+  run ffmpeg -y -f concat -safe 0 -i "$tmplist" -c copy "$output" || run ffmpeg -y -f concat -safe 0 -i "$tmplist" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" -an "$output"
+  rm -rf "$tmpdir"
+  log "Merged -> $output"
+}
+
+cmd_looperang(){
+  advanced_prompt
+  local input="$1" output="${2:-}"; [ -z "$input" ] && { printf 'looperang requires <input>\n'; exit 1; }
+  [ ! -f "$input" ] && { printf 'file not found: %s\n' "$input"; exit 1; }
+  [ -z "$output" ] && output="$(get_default_filename "${input%.*}" looperang "$ADV_CONTAINER")"
+  local tmpdir fwd rev list; tmpdir=$(mktemp -d); fwd="$tmpdir/fwd.mp4"; rev="$tmpdir/rev.mp4"; list="$tmpdir/list.txt"
+  run ffmpeg -y -i "$input" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$fwd"
+  run ffmpeg -y -i "$input" -vf reverse -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$rev"
+  printf "file '%s'\nfile '%s'\n" "$fwd" "$rev" > "$list"
+  run ffmpeg -y -f concat -safe 0 -i "$list" -c copy "$output" || run ffmpeg -y -f concat -safe 0 -i "$list" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$output"
+  rm -rf "$tmpdir"
+  log "Looperang -> $output"
+}
+
+cmd_speed(){
+  advanced_prompt
+  local input="$1" output="${2:-}" factor="${3:-2.0}" fps="${4:-$ADV_FPS}"
+  [ -z "$input" ] && { printf 'speed requires <input>\n'; exit 1; }
+  [ ! -f "$input" ] && { printf 'file not found: %s\n' "$input"; exit 1; }
+  [ -z "$output" ] && output="$(get_default_filename "${input%.*}" speed "$ADV_CONTAINER")"
+  local vf="setpts=${factor}*PTS"; $INTERP && vf="minterpolate=fps=$fps,$vf"
+  run ffmpeg -y -i "$input" -filter:v "$vf" -r "$fps" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" "$output"
+  log "Speed -> $output"
+}
+
+show_help(){
+  cat <<EOF
+ffx-cli - unified multimedia tool
+Usage: ffx-cli [global options] <command> [args]
+Global Options:
+  -A, --advanced        Prompt for advanced parameters
+  -v, --verbose         Verbose output
+  --dry-run             Show commands without running
+  -a, --keep-audio      Keep audio streams
+  -i, --interpolate     Enable motion interpolation for speed
+  -h, --help            Show this help
+Commands:
+  probe <file>
+  process <input> [output] [fps]
+  merge [-o output] [-s fps] <file...>
+  looperang <input> [output]
+  speed <input> [output] [factor] [fps]
+  help
+EOF
+}
+
+main(){
+  [ $# -eq 0 ] && { show_help; exit 1; }
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -A|--advanced) ADVANCED=true; shift;;
+      -v|--verbose) VERBOSE=true; shift;;
+      --dry-run) DRY_RUN=true; shift;;
+      -a|--keep-audio) KEEP_AUDIO=true; shift;;
+      -i|--interpolate) INTERP=true; shift;;
+      -h|--help) show_help; exit 0;;
+      *) break;;
+    esac
+  done
+  local cmd="$1"; shift || true
+  case "$cmd" in
+    probe) cmd_probe "$@";;
+    process) cmd_process "$@";;
+    merge) cmd_merge "$@";;
+    looperang) cmd_looperang "$@";;
+    speed) cmd_speed "$@";;
+    help) show_help;;
+    *) printf "Unknown command: %s\n" "$cmd"; exit 1;;
+  esac
+}
+
+main "$@"
