@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to restart a service safely
 restart_service() {

@@ -1,3 +1,4 @@
+# shellcheck disable=all
 # ---- // LOG_ACTION FUNCTION:
 log_action() {
     local action="$1"

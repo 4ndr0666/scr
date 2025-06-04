@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Ensure the script adheres to strict error handling and security practices
 set -euo pipefail

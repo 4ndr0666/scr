@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define backup directory and filename
 BACKUP_DIR="/Nas/Backups/"

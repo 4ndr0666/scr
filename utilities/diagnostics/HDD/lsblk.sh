@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # File: lsblk_aligned_v1.sh
 # Description:

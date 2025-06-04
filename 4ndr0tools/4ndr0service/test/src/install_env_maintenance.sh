@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # 4ndr0service Systemd Env Maintenance Installer
 set -euo pipefail
 

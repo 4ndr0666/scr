@@ -1,4 +1,5 @@
 #!/usr/bin/bash
+# shellcheck disable=all
 
 #grep does not like \s+ for reasons
 

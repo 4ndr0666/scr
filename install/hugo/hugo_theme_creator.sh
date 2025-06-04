@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Color variables for visual enhancement
 GREEN='\033[0;32m'

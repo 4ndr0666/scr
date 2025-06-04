@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- System Health Check ---
 

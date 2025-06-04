@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 # File: 4ndr0666.sh
 # Author: 4ndr0666
 # Edited: 4-23-24

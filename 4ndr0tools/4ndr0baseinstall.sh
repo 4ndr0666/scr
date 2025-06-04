@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: 4ndr0base.sh
 # Author: 4ndr0666
 # Quick setup script for basic requirements on a new machine.

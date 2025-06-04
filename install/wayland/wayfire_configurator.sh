@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: Wayfire_configurator.sh
 # Author: 4ndr0666
 # Date: 2024-12-17

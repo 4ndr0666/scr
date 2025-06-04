@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 # Automatically escalate privileges if not running as root
 if [ "$(id -u)" -ne 0 ]; then

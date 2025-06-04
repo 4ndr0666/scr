@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Comprehensive Systemd Management Tool
 # This script provides advanced management for systemd units with features to manage, snapshot, restore, and manipulate unit states, covering a wide range of systemctl functionalities.

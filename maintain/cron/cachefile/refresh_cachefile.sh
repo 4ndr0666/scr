@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define cache file path
 cache_file="$HOME/.cache/dynamic_dirs.list"

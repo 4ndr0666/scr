@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 directory="$HOME/custom_wallpapers/animated/"
 # Check if the directory exists
 if [[ -d "$directory" ]]; then

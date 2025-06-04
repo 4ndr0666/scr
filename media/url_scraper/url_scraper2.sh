@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # file: url_scraper2.sh
 # Author: 4ndr0666
 # Description: Scrapes URLs from a given webpage or generates a sequence of image URLs based on a base URL with numerical enumeration. Checks their statuses with enhanced features.

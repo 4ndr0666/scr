@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define the paths for the configuration files
 GRUB_DEFAULT_PATH="/etc/default/grub"

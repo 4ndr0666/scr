@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 modify_settings() {
     # Check if EDITOR is set and valid

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 padding=$'\u2001 '
 entries=( "$padding"$'<big>⮻ </big>\t'{'Copy','Save'}' active'

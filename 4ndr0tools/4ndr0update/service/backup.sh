@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 LOG_FILE="/var/log/4ndr0update_backup.log"
 

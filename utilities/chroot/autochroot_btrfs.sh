@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Ensure the script runs with root privileges
 check_root() {

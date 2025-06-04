@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 ###############################################################################
 # 4ndr0‑Java‑Hook‑Installer
 # Author : 4ndr0666  (edited by ChatGPT April 2025)

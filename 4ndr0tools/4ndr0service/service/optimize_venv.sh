@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_venv.sh
 # Description: Python venv & pipx optimization (XDG-compliant).
 

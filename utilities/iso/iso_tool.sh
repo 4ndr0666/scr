@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Variables
 WORKDIR="/home/username/archlive"

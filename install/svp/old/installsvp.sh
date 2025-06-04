@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # installsvp.sh
 #Author: 4ndr0666
 #Edited: 2-21-25

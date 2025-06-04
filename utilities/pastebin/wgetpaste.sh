@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # A Script that automates pasting to a number of pastebin services
 # relying only on bash, sed, coreutils (mktemp/sort/tr/wc/whoami/tee) and wget
 # Copyright (c) 2007-2009 Bo Ørsted Andresen <bo.andresen@zlin.dk>

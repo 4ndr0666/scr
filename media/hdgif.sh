@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Usage function for when the script is run without arguments or incorrect arguments
 usage() {

@@ -1,4 +1,5 @@
- #!/bin/bash
+#!/bin/bash
+# shellcheck disable=all
 
  config_file="/etc/pacman.conf"
  backup_file="/etc/pacman.conf.bak"

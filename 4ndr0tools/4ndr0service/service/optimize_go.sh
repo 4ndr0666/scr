@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_go.sh
 # Author: 4ndr0666
 # Date: 2024-11-24

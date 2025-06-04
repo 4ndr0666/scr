@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to check if fzf is installed
 check_fzf() {

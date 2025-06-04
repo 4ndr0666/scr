@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 set -euo pipefail
 
 # ================== // INSTALL_ETH_RENAME_SERVICE.SH //

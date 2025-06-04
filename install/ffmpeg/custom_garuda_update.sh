@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # /usr/local/bin/custom-garuda-update.sh
 # Enhanced wrapper script to manage custom ffmpeg binaries during Garuda system updates.
 

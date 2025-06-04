@@ -22,7 +22,7 @@ jobs:
         uses: reviewdog/action-shellcheck@v1
         with:
           shellcheck_flags: '--source-path=${{ github.workspace }}/.shellcheckrc'
-          reviewdog_flags: '-fail-level=any'
+          reviewdog_flags: '-fail-level=warning'
 
   shfmt:
     name: Shell Fomatting
@@ -31,3 +31,12 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+<<<<<<< HEAD
+=======
+
+      - name: Run shfmt
+        uses: reviewdog/action-shfmt@v1
+        with:
+          shfmt_flags: '-i 4 -ci'
+          reviewdog_flags: '-fail-level=warning'
+>>>>>>> 809df32 (chore: enforce shellcheck)

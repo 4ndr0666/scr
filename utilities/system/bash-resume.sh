@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 # bash-resume.sh - Allows executing scripts with resume support. Will track what commands have completed, and (by default) exit on failure,
 #  with subsequent runs skipping already-completed tasks.

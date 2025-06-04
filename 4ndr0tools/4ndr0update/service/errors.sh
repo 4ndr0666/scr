@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 failed_services() {
 	printf "\nFAILED SYSTEMD SERVICES:\n"

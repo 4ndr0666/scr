@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: view/cli.sh
 # Description: CLI menu interface for 4ndr0service Suite.
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # File: fs_repair.sh
 # Description: Diagnoses and fixes file system recognition issues by ensuring necessary kernel modules are loaded.

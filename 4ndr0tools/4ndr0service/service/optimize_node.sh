@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_node.sh
 # Description: Node.js environment optimization for the 4ndr0service suite.
 # Ensures Node.js (via nvm) and global CLI tools are set up using XDG directories.

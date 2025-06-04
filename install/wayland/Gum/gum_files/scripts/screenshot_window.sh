@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # .config/hypr/scripts/screenshot_window.sh
 # Screenshot a window Ctrl+Print
 

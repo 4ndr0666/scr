@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 swayidle -w \
                 timeout 160 'temp=$(brightnessctl g); brightnessctl set $((temp / 2))' \
                     resume 'temp=$(brightnessctl g); brightnessctl set $((temp * 2))' \

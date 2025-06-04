@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Merge contents of TheCLoudold and TheCLoudold1 into C
 rsync -av --ignore-existing --ignore-times --update --progress --recursive /23.1/TheCLoudold/ /23.1/C

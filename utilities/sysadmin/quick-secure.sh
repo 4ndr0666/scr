@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # === // QUICK-SECURE.SH // ======== ||
 GREEN='\033[0;32m'

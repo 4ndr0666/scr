@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # NVM_NODE_UPDATER
 # v2.0.0

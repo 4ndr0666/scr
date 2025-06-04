@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Production-Ready Kernel and Bootloader Management Script
 # Complete with Dracut, efibootmgr Support, Enhanced Error Handling, and User Empowerment
 

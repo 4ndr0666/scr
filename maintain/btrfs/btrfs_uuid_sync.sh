@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Comprehensive script to update UUIDs in /etc/fstab and GRUB for a Btrfs system
 

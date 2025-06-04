@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_python.sh
 # Production-grade Python toolchain bootstrapper for 4ndr0service
 

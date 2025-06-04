@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Directory to check (default to /etc if no argument is given)
 TARGET_DIR="${1:-/etc}"

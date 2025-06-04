@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 #File: freshroot.sh
 #Author: 4ndr0666

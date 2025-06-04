@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # process_image.sh
 # Usage: ./process_image.sh input_image.jpg output_image.jpg

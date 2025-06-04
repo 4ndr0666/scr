@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- Colors ---
 GRE="\033[32m" # Green

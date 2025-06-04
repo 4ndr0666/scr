@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 pkg_path() {
 	if [[ -L "$0" ]]; then

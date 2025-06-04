@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 #
 # Output one or more lines of information about
 #   - wireless LAN

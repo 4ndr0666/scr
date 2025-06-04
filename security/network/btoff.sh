@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 if [ $(bluetoothctl show | grep 'Powered' | cut -d ' ' -f2) == "yes" ]; then
 $(bluetoothctl discoverable off) && $(bluetoothctl power off) &&
 notify-send -i "network-bluetooth" 'Bluetooth' 'turned off via bluetoothctl'

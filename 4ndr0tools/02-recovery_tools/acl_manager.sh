@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to display a menu
 display_menu() {

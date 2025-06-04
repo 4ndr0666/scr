@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: makerecovery-etc
 # Author: 4ndr0666
 # Edited: 12-15-24

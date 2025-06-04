@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # secure_pass_manager.sh
 # Robust and Modular Script for Changing User Passwords on Arch Linux

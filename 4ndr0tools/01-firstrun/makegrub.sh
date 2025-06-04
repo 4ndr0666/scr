@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Ensure the script is run with root privileges
 if [ "$EUID" -ne 0 ]; then

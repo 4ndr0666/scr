@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Directory to snapshot (default to /etc)
 TARGET_DIR="${1:-/usr/bin}"

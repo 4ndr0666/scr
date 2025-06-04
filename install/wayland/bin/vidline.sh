@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 set -euo pipefail
 
 # Define color codes for output

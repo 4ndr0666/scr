@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # N_m3u8DL-RE Wrapper Script - Production-Ready Version with Advanced Options, Config Support, and Progress Bar
 

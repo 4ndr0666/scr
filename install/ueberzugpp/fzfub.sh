@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 case "$(uname -a)" in
     *Darwin*) UEBERZUG_TMP_DIR="$TMPDIR" ;;

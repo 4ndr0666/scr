@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: liveiso_boot_entry.sh
 # Author: 4ndr0666
 # Date: 04-11-2024

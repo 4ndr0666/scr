@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 echo -e "\e[36mStarting the merge process to combine multiple directories into one, prioritizing newer or larger files.\e[0m"
 

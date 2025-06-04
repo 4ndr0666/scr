@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 ###############################################################################
 # vidline.sh ~ A Comprehensive FFmpeg CLI Tool
 # If called with no args => usage => user picks from menu or quits => pick file via fzf

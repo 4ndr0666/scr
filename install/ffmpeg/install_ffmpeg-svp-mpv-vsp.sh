@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: install_ffmpegbeta.sh
 # Author: 4ndr0666
 # Date: 12-2-24

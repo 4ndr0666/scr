@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 # Author: 4ndr0666
 # ====================================== // RSNAPSHOT_RM.SH //
 # Description:

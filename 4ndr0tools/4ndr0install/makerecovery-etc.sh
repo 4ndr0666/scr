@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: makerecovery-etc.sh
 # Date: 12-15-2024
 # Author: 4ndr0666

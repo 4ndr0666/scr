@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- // Trigger-OOM-Killer //
 trigger_oom_killer() {

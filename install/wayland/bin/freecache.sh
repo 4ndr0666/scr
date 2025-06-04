@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: freecache.sh
 # Author: 4ndr0666
 set -euo pipefail

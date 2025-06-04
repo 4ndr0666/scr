@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- // Killit: Standalone Script with Wofi Integration
 

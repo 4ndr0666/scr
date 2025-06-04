@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Ensure the script is run as root or escalate privileges
 if [[ $(id -u) -ne 0 ]]; then

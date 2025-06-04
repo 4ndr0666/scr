@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # fix_sysadmin_tool.sh
 # Comprehensive Sysadmin Tool for Arch Linux

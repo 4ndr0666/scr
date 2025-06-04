@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=all
 # VLMC Install Script - Automated installation of VLMC dependencies and build.
 # Supports sh, bash, and zsh on Arch Linux with Wayland/Wayfire and XDG specifications.
 # This script is idempotent and logs all critical steps.

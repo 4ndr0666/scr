@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Define variables
 UPDATE_SCRIPT_PATH="/Nas/Build/git/syncing/scr/maintain/cron/aria2/update_trackers.sh"

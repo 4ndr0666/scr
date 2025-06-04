@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # svpinstaller.sh
 # Author: 4ndr0666
 # Edited: 3-27-24

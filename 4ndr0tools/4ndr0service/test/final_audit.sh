@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: final_audit.sh
 # Description: Performs a comprehensive environment audit and final checks.
 

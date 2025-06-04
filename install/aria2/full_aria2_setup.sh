@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # =============================================================================
 # Script Name: setup_aria2.sh

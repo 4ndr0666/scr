@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 # PermMaster - Restore Execute Permissions with Interactive Confirmation
 # Edited: 2024-04-27

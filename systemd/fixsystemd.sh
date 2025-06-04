@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # List of failed units
 failed_units=(

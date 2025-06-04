@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 last_chboot()                 { date -r /boot +%s; }
 last_chboot_hr()              { date -r /boot +'%F %T'; }

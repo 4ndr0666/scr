@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Check aria2 service status
 echo "Checking aria2 service status..."

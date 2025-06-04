@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Define variables
 SERVICE_FILE="/etc/systemd/system/aria2.service"

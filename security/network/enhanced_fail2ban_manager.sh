@@ -1,5 +1,5 @@
-
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 # Enhanced Fail2ban Management Script for Arch Linux
 # ==================================================

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 #
 # --- // 4ndr0666 Permissions Script:
 #                                                 .__

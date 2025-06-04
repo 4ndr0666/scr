@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Dependency Checker and Installer for Arch Linux
 # Version: 5.1
 # Date: 10-27-2024

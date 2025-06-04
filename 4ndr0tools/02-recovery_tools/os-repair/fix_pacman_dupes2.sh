@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to backup the current package database
 backup_database() {

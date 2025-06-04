@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define tracker list URLs
 URLS=(

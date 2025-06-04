@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # ----------------------------------------- // RESET_PERMISSIONS:
 # Script: reset_permissions.sh

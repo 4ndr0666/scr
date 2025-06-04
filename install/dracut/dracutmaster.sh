@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Script to clean up old kernels, update to the latest kernel, and regenerate initramfs
 

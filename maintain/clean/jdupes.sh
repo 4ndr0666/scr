@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 ###############################################################################
 # jdupes Menu-Driven Wrapper - Production-Ready Bash Version

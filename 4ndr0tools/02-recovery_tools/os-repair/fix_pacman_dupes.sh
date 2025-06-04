@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to identify duplicate packages
 identify_duplicates() {

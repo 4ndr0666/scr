@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_electron.sh
 # Description: Electron environment optimization (XDG-compliant).
 

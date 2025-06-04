@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: controller.sh
 # Central controller for the 4ndr0service Suite.
 

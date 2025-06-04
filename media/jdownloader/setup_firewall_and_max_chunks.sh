@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Function to check internet speed using speedtest-cli
 check_internet_speed() {

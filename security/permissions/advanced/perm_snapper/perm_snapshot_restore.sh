@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Snapshot file (from the previous script)
 SNAPSHOT_FILE="$1"

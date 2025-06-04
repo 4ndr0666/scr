@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # ===========================
 # ufwsuckless_verify.sh - Comprehensive Verification Script

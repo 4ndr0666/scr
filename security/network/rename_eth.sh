@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 set -euo pipefail
 
 TARGET_MAC="74:27:EA:66:76:46"

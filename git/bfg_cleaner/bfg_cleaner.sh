@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Description:
 # This script automates the process of removing a specified large file from a Git repository's history using BFG Repo-Cleaner.

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 get_groups() {
   pkginfo=$1

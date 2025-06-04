@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 if [ $(nmcli radio wifi) == "enabled" ]; then
 $(nmcli radio wifi off) &&
 notify-send -i "network-wireless" 'Wifi' 'turned off via nmcli'

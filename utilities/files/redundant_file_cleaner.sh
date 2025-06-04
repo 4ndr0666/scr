@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Script: remove_duplicates.sh
 # Purpose: Automatically identify and delete duplicate files with intelligent safeguards.

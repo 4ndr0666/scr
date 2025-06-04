@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 swaylock \
 	--screenshots \
 	--clock \

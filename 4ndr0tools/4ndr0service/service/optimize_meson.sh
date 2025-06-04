@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: optimize_meson.sh
 # Description: Meson & Ninja build tools optimization (XDG-compliant).
 

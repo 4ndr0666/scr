@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 #File: svpsetup.sh
 #Author: 4ndr0666
 #Edited: 3-27-24

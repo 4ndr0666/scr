@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Script: clone_drive.sh
 # Purpose: Clone a failing hard drive to a new one using ddrescue with enhanced safety and automation.

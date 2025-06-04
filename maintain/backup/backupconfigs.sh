@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 #File: Backupconfigs.sh
 #Author: 4ndr0666
 #Edited: 06-03-24

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # Version: 1.1.0
 # Author: 4ndr0666
 

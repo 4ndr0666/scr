@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: rsnapshot.sh
 # An interactive script to manage and restore rsnapshot backups on Arch Linux
 # Author: 4ndr0666

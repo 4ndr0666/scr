@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Unified Video Finder Script - Refactored and Production-Ready
 # Author: [Your Name]

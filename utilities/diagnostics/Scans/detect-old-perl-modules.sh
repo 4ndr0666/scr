@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 basedir=/usr/lib/perl5
 perlver=$(perl -e '$v = $^V->{version}; print $v->[0].".".($v->[1]);')

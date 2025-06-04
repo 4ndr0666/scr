@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # repair-pacman-metadata.sh
 # Repairs missing 'desc' entries and GPGME “No data” errors in Pacman.
 # Supports dual-mode: interactive (fzf) and batch (no fzf or --batch).

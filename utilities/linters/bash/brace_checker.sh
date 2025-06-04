@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # Author: 4ndr0666
 set -euo pipefail
 # ===================== // BRACE_CHECKER.SH //

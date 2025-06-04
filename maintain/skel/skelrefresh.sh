@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 #File: skelrefresh.sh
 #Author: 4ndr0666
 #Date: 04-12-2024

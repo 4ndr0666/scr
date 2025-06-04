@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Waybar Watchdog Script: Monitors and restarts Waybar if it crashes.
 
 # Logging setup

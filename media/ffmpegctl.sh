@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 ###############################################################################
 # FFmpeg Advanced Filter Chain Wrapper with fzf

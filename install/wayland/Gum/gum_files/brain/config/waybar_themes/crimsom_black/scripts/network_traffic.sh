@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # network_traffic.sh [-tPOLLING_INTERVAL] [NETWORK_INTERFACE...]
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: verify_environment.sh
 # Verifies/fixes environment for 4ndr0service Suite.
 # Usage: verify_environment.sh [--report] [--fix]

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # file: Bash/URL_Scraper/url_scraper.sh
 # Author: Avinal Kumar (https://github.com/avinal)

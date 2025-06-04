@@ -1,3 +1,4 @@
+# shellcheck disable=all
 # ---- // FACTORY_BOOT FUNCTION:
 factory_boot() {
     echo "🔧 Resetting ownership and permissions for /boot/..."

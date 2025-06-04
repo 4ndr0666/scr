@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 OUTDIR=pacmanlists
 OUTFILE=explicit.lst # edit name to your liking

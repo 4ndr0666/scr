@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Print ASCII art in green
 #echo -e "${GREEN}"

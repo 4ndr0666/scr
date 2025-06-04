@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 echo "Btrfs Snapshot Management Script"
 echo "================================="

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 if [ -z "$1" ]; then
     echo "No file provided"

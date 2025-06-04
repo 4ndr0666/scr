@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: streamit.sh
 # Author: 4ndr0666
 # Desc: Streamlink wrapper w presets

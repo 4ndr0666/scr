@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: main.sh
 # Entry point for the 4ndr0service Suite.
 

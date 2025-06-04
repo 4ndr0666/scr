@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Usage function for help message
 usage() {

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # https://wiki.archlinux.org/title/Simple_stateful_firewall
 
 # Verify running as root

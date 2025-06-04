@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 set +e
 btrfsmount() {
     echo "Mounting subvolumes to /mnt/dev..."

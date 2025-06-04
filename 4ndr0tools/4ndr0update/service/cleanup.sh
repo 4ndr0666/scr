@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 remove_orphaned_packages() {
 	printf "\n➡️ Checking for orphaned packages\n"

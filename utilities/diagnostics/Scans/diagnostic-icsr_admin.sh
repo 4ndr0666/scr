@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Update package lists and upgrade all upgradable packages
 sudo pacman -Syu --noconfirm

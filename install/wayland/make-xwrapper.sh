@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Automation Script for X11/Wayland Setup and Execution Environment
 # IMPORTANT: Run this script as your user (e.g., `andro`) to ensure proper setup.
 

@@ -1,4 +1,5 @@
 #!/bin/bash 
+# shellcheck disable=all
 #a copy paste work around for setting width of waybar , see : ./local/bin/mon.sh
 hyprctl monitors > /tmp/monitor
 

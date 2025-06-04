@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 check_exit() {
 	printf "Done - Press enter to continue\n";

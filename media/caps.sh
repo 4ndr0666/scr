@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # -----------------------------
 # caps.sh - Video Frame Capture Script

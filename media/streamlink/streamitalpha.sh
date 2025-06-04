@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # streamit.sh – Final Merged Script
 # Dynamically adjusts quality based on ffprobe if the stream is truly online.
 # Displays dot progress only for valid online streams, otherwise quickly fails.

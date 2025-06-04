@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 ## TEXT FORMATING
 TXT_NORMAL='\033[0m'

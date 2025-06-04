@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Exit on error, undefined variable usage, or pipeline failure
 set -euo pipefail

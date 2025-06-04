@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- // AUTO_ESCALATE:
 if [ "$(id -u)" -ne 0 ]; then

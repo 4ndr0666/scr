@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define the Lua script content
 LUA_CONFIG=$(cat << 'EOF'

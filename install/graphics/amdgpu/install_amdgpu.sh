@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: install_amdgpu.sh
 # Author: 4ndr0666
 # Date: 2025-01-21

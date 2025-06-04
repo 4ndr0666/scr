@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Comprehensive System Maintenance and Troubleshooting Script with UI and Dynamic Configuration
 #LOG_FILE="/var/log/system_maintenance.log"

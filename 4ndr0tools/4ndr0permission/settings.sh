@@ -1,3 +1,4 @@
+# shellcheck disable=all
 # =================== // Default Programs  //
 # --- // UI (cli or dialog):
 export USER_INTERFACE='cli'

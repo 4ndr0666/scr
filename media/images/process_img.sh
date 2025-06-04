@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # process_img.sh
 # Usage: /usr/local/bin/process_img.sh <input_image> <output_image> [options]

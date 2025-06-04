@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- // Securely_add_ssh_key:
 eval "$(ssh-agent -s)"

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Script to automatically install missing packages based on Lynis recommendations
 

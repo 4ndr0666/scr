@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 set -e
 
 # Auto-escalate to root if not already running as root

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 #v0.4 created by sc0ttman, August 2010
 #GPL license /usr/share/doc/legal/gpl-2.0.txt

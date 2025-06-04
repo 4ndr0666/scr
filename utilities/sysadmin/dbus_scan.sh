@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 
 # --- // Set up a cron job with sudo crontab -e. Then append this:  0 * * * * /path/to/dbus_daemon_analysis.sh

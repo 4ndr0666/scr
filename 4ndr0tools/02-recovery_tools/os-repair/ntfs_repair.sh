@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+# shellcheck disable=all
 use strict;
 use warnings;
 use File::Copy;

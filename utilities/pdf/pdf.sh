@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 ## read below file for details of qpdf usage
 # /usr/share/doc/qpdf/qpdf-manual.pdf
 #

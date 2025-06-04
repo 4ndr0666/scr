@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 ### BEGIN INIT INFO
 # Provides: zram
 # Required-Start: $local_fs

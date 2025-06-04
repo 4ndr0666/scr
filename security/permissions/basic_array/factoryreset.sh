@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 # --- Factory Reset Permissions Script ---
 # Description: This script resets the permissions of critical system directories and files

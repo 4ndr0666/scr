@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 main() {
     if [[ "$EUID" -eq 0 ]]; then

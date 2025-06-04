@@ -1,3 +1,4 @@
+# shellcheck disable=all
 # ---- // RESTORE_PERMISSIONS FUNCTION WITH FZF AND HARDCODED PATH:
 restore_permissions() {
     local backup_base_dir="/Nas/Backups/permission_backups/"

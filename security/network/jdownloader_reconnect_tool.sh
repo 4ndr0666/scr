@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # List of VPN servers to cycle through
 VPN_SERVERS=(

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: gui.sh
 # Author: 4ndr0666
 # Edited: 12-16-2024

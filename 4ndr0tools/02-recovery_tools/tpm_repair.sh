@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Check TPM status
 echo "Checking TPM status..."

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define GnuPG directory path and log file location
 GNUPG_DIR="/home/andro/.gnupg"

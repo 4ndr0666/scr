@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Enhanced PulseAudio switching script with notification
 
 # Ensure required commands are available

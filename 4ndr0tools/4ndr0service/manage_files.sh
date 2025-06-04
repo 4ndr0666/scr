@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # File: manage_files.sh
 # Provides batch execution of services and optional backup steps.
 

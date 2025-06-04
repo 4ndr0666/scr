@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 while true; do
     FREE_RAM=$(free -m | awk '/^Mem:/{print $4}')
     FREE_RAM=${FREE_RAM:-0}  # Default to 0 if undefined

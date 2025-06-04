@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Prompt user for the directory to search
 echo "Which dir?"

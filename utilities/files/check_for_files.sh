@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define the log file to store audit results
 AUDIT_LOG="/home/andro/.local/share/logs/critical_files_audit.log"

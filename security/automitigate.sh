@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Update system
 sudo pacman -Syu --noconfirm

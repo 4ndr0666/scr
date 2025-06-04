@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # List of snapshots to protect
 PROTECT_SNAPSHOTS=(

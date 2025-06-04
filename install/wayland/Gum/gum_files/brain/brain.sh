@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # check if gum is installed 
 if ! which "gum" &> /dev/null
 then 

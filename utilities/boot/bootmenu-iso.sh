@@ -1,4 +1,5 @@
- #!/bin/bash
+#!/bin/bash
+# shellcheck disable=all
 # Description: This script manages the download and boot configuration for multiple Linux distributions.
 
 # Define colors for output

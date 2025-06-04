@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: ApplyNetworkConfigs.sh
 # Author: 4ndr0666
 # Edited: 02-06-24

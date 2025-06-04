@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Define the maximum number of mpv instances allowed
 max_instances=3

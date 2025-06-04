@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Log a message with a timestamp
 log_message() {

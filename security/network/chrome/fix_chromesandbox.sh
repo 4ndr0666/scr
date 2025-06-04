@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 chrome_sandbox_path=$(find /usr/share -name chrome-sandbox 2>/dev/null)
 

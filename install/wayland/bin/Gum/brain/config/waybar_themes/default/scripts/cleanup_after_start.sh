@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 sleep 20
 hyprctl keyword windowrule "workspace unset,nmtui-colors"

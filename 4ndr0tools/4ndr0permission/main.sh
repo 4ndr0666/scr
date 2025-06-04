@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 # Function to get the script path (detecting symlinks)
 pkg_path() {

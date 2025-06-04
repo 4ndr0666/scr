@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 # Check if the argument is valid
 if [ -z "$1" ] || [ "$1" = "%u" ]; then

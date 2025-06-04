@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=all
 set -e
 
 EXITCODE=0

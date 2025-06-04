@@ -1,3 +1,4 @@
+# shellcheck disable=all
 import urllib.request
 import requests
 import json

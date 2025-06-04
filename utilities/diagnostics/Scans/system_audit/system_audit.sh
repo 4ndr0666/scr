@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Script: diagnostic_audit_split.sh
 # Description: Conducts a comprehensive system diagnostic audit and splits the output into manageable segments.

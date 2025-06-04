@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 cat <<"EOF"
   ____       _   _                  _                 _ 
  / ___|     | | | |_   _ _ __  _ __| | __ _ _ __   __| |

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Configuration
 RCLONE_CONFIG="/home/andro/.config/rclone/rclone.conf"

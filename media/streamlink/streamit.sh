@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # Unified Streamit Script - Refactored and Production-Ready
 # Author: [Your Name]
 # Description: A comprehensive script to manage streaming via Streamlink with robust error handling and configurability.

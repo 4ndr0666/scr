@@ -1,3 +1,4 @@
+# shellcheck disable=all
 echo
 tput setaf 2
 echo "################################################################"

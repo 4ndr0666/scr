@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Auto escalate to root
 if [ "$(id -u)" -ne 0 ]; then

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- CONSTANTS AND VARIABLES:
 LOG_FILE="/var/log/home_manager.log"

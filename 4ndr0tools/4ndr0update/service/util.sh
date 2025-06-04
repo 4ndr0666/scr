@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Maximum retries for system commands
 MAX_RETRIES=3

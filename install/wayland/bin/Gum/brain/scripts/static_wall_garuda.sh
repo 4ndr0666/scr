@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 directory="/usr/share/wallpapers/garuda-wallpapers/"
 # Check if the directory exists
 if [[ -d "$directory" ]]; then

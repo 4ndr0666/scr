@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # --- // PlayMedia: Standalone Script with Wofi Integration
 

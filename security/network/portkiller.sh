@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # file: /usr/local/bin/Ports_Scan
 PS3='Please enter your choice: '
 options=$(lsof -PiTCP -sTCP:LISTEN | awk '{print $9}' | sed -n '1!p')

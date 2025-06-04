@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 # repair-pacmandb.sh
 # Integrated tool: selective cache cleanup, DB duplicate fix,
 # GPGME syncdb/keyring repair, missing‑desc repair, cache validation,

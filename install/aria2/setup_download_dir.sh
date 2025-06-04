@@ -1,4 +1,5 @@
 #!/bin/zsh
+# shellcheck disable=all
 
 # Define the download directory
 DOWNLOAD_DIR="/sto2/Downloads/"

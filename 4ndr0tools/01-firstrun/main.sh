@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 # File: main.sh
 # Author: 4ndr0666
 

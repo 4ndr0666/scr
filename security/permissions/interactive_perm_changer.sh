@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Script to universally adjust file permissions with user input.
 

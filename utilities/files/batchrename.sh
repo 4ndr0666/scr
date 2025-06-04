@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 VERSION="1.2.4"
 _currentdir=$(pwd)
 _tempname="TMP129384756XYZ"

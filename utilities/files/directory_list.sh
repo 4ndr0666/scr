@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # Prompt for the parent directory
 read -p "Enter the parent directory path: " parent_dir

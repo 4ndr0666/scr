@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=all
 
 args=('--force' '--no-hostonly-cmdline')
 

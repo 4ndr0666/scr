@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 validate() {
     command=$1

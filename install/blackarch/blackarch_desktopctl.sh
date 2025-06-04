@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=all
 
 # This script manages BlackArch Linux repositories and desktop entries.
 
