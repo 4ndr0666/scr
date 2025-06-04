@@ -32,7 +32,12 @@ run() { if [ "$DRY_RUN" = true ]; then printf '[dry-run] %s\n' "$*"; else eval "
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 absolute_path() { readlink -f "$1" 2>/dev/null || echo "$1"; }
 get_default_filename() {
-	local base="${1:-out}" suf="${2:-tmp}" ext="${3:-mp4}" n=1 f="${base}_${suf}.${ext}"
+	local base suf ext f n 
+	base="${1:-out}" 
+	suf="${2:-tmp}" 
+	ext="${3:-mp4}" 
+	n=1 
+	f="${base}_${suf}.${ext}"
 	while [ -e "$f" ]; do f="${base}_${suf}_$((n++)).${ext}"; done
 	printf '%s' "$f"
 }
