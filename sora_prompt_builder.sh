@@ -13,7 +13,6 @@ usage() {
   printf '%s\n' "  $0 --pose leaning_forward"
   printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
   printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
-  exit 1
 }
 
 POSE=""
@@ -26,29 +25,30 @@ while [[ $# -gt 0 ]]; do
     --pose) POSE="$2"; shift 2 ;;
     --desc) DESC="$2"; shift 2 ;;
     --deakins) USE_DEAKINS=1; shift ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    --help) usage ;;
-    *) usage ;;
   esac
 done
 
 if [[ -z "$POSE" && -z "$DESC" ]]; then
   usage
+  exit 1
 fi
 
-python_script=$(cat <<'PYCODE'
 from promptlib import prompt_orchestrator
 
+pose = os.getenv("POSE", "")
+desc = os.getenv("DESC", "")
+use_deakins = os.getenv("USE_DEAKINS", "0") == "1"
+
 result = prompt_orchestrator(
-    pose_tag=${POSE:+"${POSE}"},
-    subject_description=${DESC:+"${DESC}"},
-    use_deakins=bool(${USE_DEAKINS})
+    pose_tag=pose or None,
+    subject_description=desc or None,
+    use_deakins=use_deakins,
 )
 
-print("─────────────────────────────────────")
+print("\u2500" * 37)
 print("🎬 Final Prompt:")
 print(result["final_prompt"])
-print("─────────────────────────────────────")
+print("\u2500" * 37)
 print(f"🎛️  Base Mode: {result['base_mode']}")
 print(f"🔧 Components Used: {', '.join(result['components_used'])}")
 PYCODE
