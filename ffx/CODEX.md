@@ -1,25 +1,93 @@
-- A brief description of the ffx modules:
+- This project is for FFMPEG and video manipulation.
+- There are several iterations of the wrapper for historical purposes and to reference for optimiation.
+- Use the following endpoints when sourcing through the web: [Filter Chains](https://alfg.dev/ffmpeg-commander/?video.preset=slow&video.pass=crf&video.bitrate=10M&video.frame_rate=60&video.faststart=true&video.size=1920&video.scaling=spline&audio.codec=none&filters.denoise=heavy), [Proper Encoding] (https://trac.ffmpeg.org/wiki/Encode/H.264), [Official Documentation](https://ffmpeg.org/documentation.html).
+- Certainly. Below is a detailed plain-text instruction document you can paste into a coding-tuned model’s “custom instruction” field or context setup. It is purpose-built to rehydrate the context of your FFX project using only the content provided, so the model can operate with full awareness of the structure, principles, and current development state without requiring access to prior chat logs or additional documents.
+- Module/Feature breakdown:
+" 
+The main purpose of this project is: Merge multiple video files losslessly or with fallback encoding if needed. Secure, stream-copy-first logic, with smart fallback encoding (lossless or fast).
 
-```markdown
-**Fix**
+**Features:**
 
-In my experience, the most common issue that causes corrupt playback or broken renderings is incorrect timestamps. If you know of a superior method to resolve please explain and propose your ideas. This is the only method I could fathom due to limited knowledge:
-    - Rectify the incorrect timestamps for appropriate playback like this: "Non-monotonic DTS; previous: 203586, current: 127672; changing to 203587. This may result in incorrect timestamps in the output file".
+* Secure temp file handling via `mktemp` and `trap`-driven cleanup
+* Three encoding strategies:
 
-**Probe**
+  1. `-c copy` stream copy if compatible
+  2. `-qp 0` lossless fallback (default)
+  3. `-crf 15` fast fallback (`-q` flag)
+* Optional `-f` to force overwrite
+* Uses `.mp4` by default, configurable
 
-The upscaling software I use only accepts files with a maximum resolution of 1080p. The purpose of the `probe` operation is to quickly parse relavent info so I can determine which files need to be downscaled with the `process` option. Help me continue to enhance and refine this option by addressing the following issues:
-    - The container line invariably displays "movmp4m4a3gp3g2mj2" no matter the selected file. Correct this.
-    - Adjust the "File Size" output so that it is human readable.
+**Supported options:**
 
-**Process**
+* `-o <file>`: Set output name
+* `-q`: Fast (CRF 15) mode
+* `-f`: Force overwrite
+* `-h`: Help/usage
 
-This option aims to losslessly and precisely process any video file to a max of 1080p. The core tenants of such a function should:
-    - Opt for processing methods that allow for source quality output or as close to it as possible such as direct copy where applicable.
+---
 
-**Merge**
+### 🧪 Tests
 
-As the heart of our script, it needs to successfully merge any and all selected video files of varying parameters and values into a single file that is appropriate for flawless playback in any media player. It should opt for merging methods that allow for source-quality renders or as close to it as possible via direct copy when applicable.  
+Comprehensive BATS suite with:
+
+* Argument/option parsing
+* Stream copy tests
+* Fallback lossless & fast encode
+* Environment verification
+* Error case handling
+* Trap/cleanup verification
+
+---
+
+### 🧰 Dispatcher Core (ffxd-v3.2.sh)
+
+**High-Level API Interface:**
+Built on modular subcommands: `merge`, `probe`, `slowmo`, `looperang`, `process`
+
+**Key Components:**
+
+* Temp file helpers: `mk_tmp_out`, `register_temp_file`, `cleanup_all`
+* Video/audio param generators: `get_video_opts`, `get_audio_opts`
+* Audio filter generator: `generate_atempo` handles `atempo` chaining
+* Output hygiene: `prepare_outdir` ensures directories are created before writing
+
+**Subcommands:**
+
+* `merge`: Concat files with filters if incompatible
+* `slowmo`: Slows footage using `setpts=1/speed * PTS` and `atempo`
+* `process`: Normalize resolution and fps
+* `probe`: JSON metadata via ffprobe
+* `looperang`: Creates a mirrored bounce animation
+
+---
+
+### 🔐 Security + Design Policies
+
+* Absolute paths only (realpath enforced)
+* No eval, no subshell injection
+* Temporary resources cleaned on `INT`, `TERM`, `EXIT`
+* No global state; all subcommands idempotent and composable
+* Strict ShellCheck compliance in all scripts
+
+---
+
+### 🧱 Build/Install/Test (Makefile)
+
+```
+make install        # Install merge.sh to /usr/local/bin
+make test           # Run BATS suite
+make merge-fast     # Example run with fast fallback
+make merge-lossless # Example run with lossless fallback
+make clean          # Purge artifacts
 ```
 
-- Use the following endpoints when sourcing through the web: [Filter Chains](https://alfg.dev/ffmpeg-commander/?video.preset=slow&video.pass=crf&video.bitrate=10M&video.frame_rate=60&video.faststart=true&video.size=1920&video.scaling=spline&audio.codec=none&filters.denoise=heavy), [Proper Encoding] (https://trac.ffmpeg.org/wiki/Encode/H.264), [Official Documentation](https://ffmpeg.org/documentation.html)
+---
+
+### 🔐 SHA256 Checksum
+
+Final validated package: `ffx`
+
+```
+89fcc0d41314300f941f8c943bd65473ca88530370808cae5a343258f483d21a
+```
+"
