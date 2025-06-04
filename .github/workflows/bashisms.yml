@@ -1,0 +1,47 @@
+name: Check for bashisms
+
+on:
+  pull_request:
+    paths:
+      - 'core/tabs/**/*.sh'
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  check-bashisms:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: git fetch origin ${{ github.base_ref }}
+
+      - name: Install devscripts
+        run: sudo apt-get update && sudo apt-get install -y devscripts
+
+      - name: Get changed .sh files (PR only)
+        id: changed-sh-files
+        if: github.event_name == 'pull_request'
+        uses: tj-actions/changed-files@v45
+        with:
+          files: '**/*.sh'
+
+      - name: Get all .sh files (if workflow dispatched)
+        id: sh-files
+        if: github.event_name != 'pull_request'
+        run: |
+          files=$(find . -type f -name "*.sh" | tr '\n' ' ')
+          echo "files=${files:-none}" >> $GITHUB_ENV
+
+      - name: Set FILES for bashism check
+        id: set-files
+        run: |
+          if [[ "${{ steps.changed-sh-files.outputs.any_changed }}" == 'true' ]]; then
+            echo "FILES=${{ steps.changed-sh-files.outputs.all_changed_files }}" >> $GITHUB_ENV
+          else
+            echo "FILES=${{ env.files }}" >> $GITHUB_ENV
+          fi
+
+      - name: Check for bashisms
+        run: |
+          IFS=' ' read -r -a file_array <<< "$FILES"
+          checkbashisms "${file_array[@]}"
