@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+# Canonical pose tags used across prompting functions
+POSE_TAGS: list[str] = [
+    "leaning_forward",
+    "crouching",
+    "one_knee_up",
+    "looking_back_seductively",
+    "sitting_on_heels",
+]
 
 # ---------------------------------------------------------------------------
 # Module 2: generate_prompt_variants
@@ -300,4 +308,5 @@ __all__ = [
     "generate_pose_prompt",
     "apply_deakins_lighting",
     "prompt_orchestrator",
+    "POSE_TAGS",
 ]
