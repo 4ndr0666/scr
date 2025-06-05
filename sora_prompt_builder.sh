@@ -4,26 +4,23 @@
 set -euo pipefail
 IFS=$'\n\t'
 # ====================== // SORA PROMPT BUILDER //
-## Description:Unified prompt generation CLI
+## Description: Unified prompt generation CLI
 ## Requires: Python ≥3.9 with functions loaded via promptlib.py
 # -----------------------------------------
 
-## Help
-
 usage() {
-	printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--copy] [--dry-run]"
-	printf '%s\n' "Examples:"
-	printf '%s\n' "  $0 --pose leaning_forward"
-	printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
-	printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
-	printf '%s\n' "Options:"
-	printf '%s\n' "  --copy      Copy final prompt to clipboard if wl-copy exists"
-	printf '%s\n' "  --dry-run   Print the python command but do not execute"
-	printf '%s\n' "  --help      Show this help message"
-	exit 1
+    printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--copy] [--dry-run] [--interactive]"
+    printf '%s\n' "Examples:"
+    printf '%s\n' "  $0 --pose leaning_forward"
+    printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
+    printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
+    printf '%s\n' "Options:"
+    printf '%s\n' "  --copy        Copy final prompt to clipboard if wl-copy exists"
+    printf '%s\n' "  --dry-run     Print the Python command but do not execute"
+    printf '%s\n' "  --interactive Launch interactive mode (requires TTY and prompt_toolkit)"
+    printf '%s\n' "  --help        Show this help message"
+    exit 1
 }
-
-## Global Constants
 
 POSE=""
 DESC=""
@@ -33,43 +30,39 @@ DRY_RUN=0
 INTERACTIVE=0
 
 while [[ $# -gt 0 ]]; do
-	case "$1" in
-	--pose)
-		POSE="$2"
-		shift 2
-		;;
-	--desc)
-		DESC="$2"
-		shift 2
-		;;
-	--deakins)
-		USE_DEAKINS=1
-		shift
-		;;
-	--copy)
-		COPY_FLAG=1
-		shift
-		;;
-	--dry-run)
-		DRY_RUN=1
-		shift
-		;;
-	--interactive)
-		INTERACTIVE=1
-		shift
-		;;
-	--help)
-		usage
-		;;
-	*)
-		usage
-		;;
-	esac
+    case "$1" in
+        --pose)
+            POSE="$2"
+            shift 2
+            ;;
+        --desc)
+            DESC="$2"
+            shift 2
+            ;;
+        --deakins)
+            USE_DEAKINS=1
+            shift
+            ;;
+        --copy)
+            COPY_FLAG=1
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        --interactive)
+            INTERACTIVE=1
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        *)
+            usage
+            ;;
+    esac
 done
-
-if [[ $INTERACTIVE -eq 0 && -z "$POSE" && -z "$DESC" ]]; then
-	usage
-fi
 
 if [[ $INTERACTIVE -eq 1 ]]; then
         FINAL_OUTPUT=$(
@@ -82,6 +75,24 @@ from prompt_toolkit.styles import Style
 from promptlib import prompt_orchestrator, POSE_TAGS
 
 import sys
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import WordCompleter
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.input import create_input
+    from prompt_toolkit.output import create_output
+except ModuleNotFoundError as exc:
+    print("prompt_toolkit is required for interactive mode.", file=sys.stderr)
+    raise SystemExit(1) from exc
+
+try:
+    tty_in = open("/dev/tty")
+    tty_out = open("/dev/tty", "w")
+except OSError as exc:
+    print("Interactive mode requires a TTY.", file=sys.stderr)
+    raise SystemExit(1) from exc
+
+from promptlib import prompt_orchestrator, POSE_TAGS
 
 try:
     from prompt_toolkit import PromptSession
@@ -139,21 +150,20 @@ PYEOF
         exit 0
 fi
 
-
 if [[ -z "$POSE" && -z "$DESC" ]]; then
-	usage
+    usage
 fi
 
 cmd=(python3 - "$POSE" "$DESC" "$USE_DEAKINS")
 
 if [[ $DRY_RUN -eq 1 ]]; then
-	printf '%s ' "${cmd[@]}" "<<'PYEOF'"
-	printf '\n%s\n' "# python code omitted for brevity" "PYEOF"
-	exit 0
+    printf '%s ' "${cmd[@]}" "<<'PYEOF'"
+    printf '\n%s\n' "# python code omitted for brevity" "PYEOF"
+    exit 0
 fi
 
 FINAL_OUTPUT=$(
-	python3 - "$POSE" "$DESC" "$USE_DEAKINS" <<'PYEOF'
+    python3 - "$POSE" "$DESC" "$USE_DEAKINS" <<'PYEOF'
 import sys
 from promptlib import prompt_orchestrator
 
@@ -178,12 +188,12 @@ PYEOF
 
 printf '%s\n' "$FINAL_OUTPUT"
 
-if [[ $COPY_FLAG -eq 1 ]]; then
-	if command -v wl-copy >/dev/null 2>&1; then
-		printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-		printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
-	else
-		printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
-	fi
+if [[ $COPY_FLAG -eq 1 && -n "$FINAL_OUTPUT" ]]; then
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf '%s\n' "$FINAL_OUTPUT" | wl-copy
+        printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
+    else
+        printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
+    fi
 fi
 
