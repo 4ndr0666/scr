@@ -65,8 +65,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $INTERACTIVE -eq 1 ]]; then
-    FINAL_OUTPUT=$(
-        python3 - "$USE_DEAKINS" <<'PYEOF'
+        FINAL_OUTPUT=$(
+                python3 - "$USE_DEAKINS" <<'PYEOF'
+import os
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from promptlib import prompt_orchestrator, POSE_TAGS
+
 import sys
 try:
     from prompt_toolkit import PromptSession
@@ -87,6 +94,16 @@ except OSError as exc:
 
 from promptlib import prompt_orchestrator, POSE_TAGS
 
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import WordCompleter
+    from prompt_toolkit.styles import Style
+except ModuleNotFoundError as exc:
+    print("prompt_toolkit is required for interactive mode.", file=sys.stderr)
+    raise SystemExit(1) from exc
+
+from promptlib import prompt_orchestrator, POSE_TAGS
+
 style = Style.from_dict({
     "prompt": "fg:#00f7ff",
     "": "fg:#005b69 bg:#151515",
@@ -94,14 +111,17 @@ style = Style.from_dict({
     "completion-menu.completion.current": "fg:#15FFFF bg:#262626",
 })
 
-session = PromptSession(
-    input=create_input(tty_in),
-    output=create_output(tty_out),
-    style=style,
-)
+try:
+    tty_in = open("/dev/tty")
+except OSError as exc:
+    print("Interactive mode requires a TTY.", file=sys.stderr)
+    raise SystemExit(1) from exc
 
-pose = session.prompt("Pose Tag: ", completer=WordCompleter(POSE_TAGS, ignore_case=True))
-desc = session.prompt("Description (optional): ")
+session = PromptSession(input=tty_in, output=sys.stdout)
+pose = session.prompt(
+    "Pose Tag: ", completer=WordCompleter(POSE_TAGS, ignore_case=True), style=style
+)
+desc = session.prompt("Description (optional): ", style=style)
 use_deakins = bool(int(sys.argv[1]))
 
 result = prompt_orchestrator(
@@ -117,17 +137,17 @@ print("────────────────────────�
 print(f"🎛️  Base Mode: {result['base_mode']}")
 print(f"🔧 Components Used: {', '.join(result['components_used'])}")
 PYEOF
-    )
-    printf '%s\n' "$FINAL_OUTPUT"
-    if [[ $COPY_FLAG -eq 1 && -n "$FINAL_OUTPUT" ]]; then
-        if command -v wl-copy >/dev/null 2>&1; then
-            printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-            printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
-        else
-            printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
+        )
+	printf '%s\n' "$FINAL_OUTPUT"
+	if [[ $COPY_FLAG -eq 1 ]]; then
+		if command -v wl-copy >/dev/null 2>&1; then
+			printf '%s\n' "$FINAL_OUTPUT" | wl-copy
+			printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
+		else
+			printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
+		fi
         fi
-    fi
-    exit 0
+        exit 0
 fi
 
 if [[ -z "$POSE" && -z "$DESC" ]]; then
@@ -176,3 +196,4 @@ if [[ $COPY_FLAG -eq 1 && -n "$FINAL_OUTPUT" ]]; then
         printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
     fi
 fi
+
