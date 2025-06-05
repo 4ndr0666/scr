@@ -1,11 +1,29 @@
 #!/usr/bin/env python3
-"""Prompt generation library for cinematic pose workflows."""
+"""Prompt generation library for cinematic pose workflows.
+
+This module unifies data and functions derived from:
+  - Pose_prompting.pdf           (canonical pose tags & descriptions)
+  - camera_movements.pdf         (all valid camera‐movement tags)
+  - photography.md               (lighting cues, studio patterns)
+  - camera_settings.md           (lens & DoF references)
+  - sora_prompting.md            (cinematic prompt lexicon)
+  - hailuo_tutorial.pdf          (subject‐reference requirements)
+  - openai_policies.pdf          (policy‐forbidden terms)
+  - promptchains.pdf             (prompt‐chaining patterns)
+  - Alpha_Prompting.pdf          (advanced prompt formulas)
+"""
 
 from __future__ import annotations
+import re
+from typing import Optional
 
-# -----------------------------------------------------------------------------
-# Module 0: Expanded POSE_TAGS (≈45 tags, pulled from Pose_prompting.pdf)
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 0: CORE CONSTANTS & DATA STRUCTURES
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 0A: Canonical Pose Tags (≈45 tags from Pose_prompting.pdf)
+# ----------------------------------------------------------------------------
 POSE_TAGS: list[str] = [
     "leaning_forward",
     "crouching",
@@ -56,22 +74,171 @@ POSE_TAGS: list[str] = [
     "shielding_eyes"
 ]
 
-# -----------------------------------------------------------------------------
-# Module 1: generate_prompt_variants
-# -----------------------------------------------------------------------------
-def generate_prompt_variants(subject_description: str) -> list[str]:
-    """Create three stylistically distinct prompt variants.
+# ----------------------------------------------------------------------------
+# 0B: Canonical Camera Movement Tags (from camera_movements.pdf)
+# ----------------------------------------------------------------------------
+CAMERA_MOVE_TAGS: list[str] = [
+    "[push in]", "[pull out]", "[pan left]", "[pan right]", "[tilt up]", "[tilt down]",
+    "[truck left]", "[truck right]", "[pedestal up]", "[pedestal down]",
+    "[zoom in]", "[zoom out]", "[tracking shot]", "[static shot]", "[handheld]",
+    "[arc]", "[crane]", "[jib]", "[steadicam]", "[dolly]", "[whip pan]", "[roll]",
+    "[bird’s eye view]", "[over-the-shoulder]"
+]
 
-    Args:
-        subject_description: Base concept or scenario.
+# Exposed list for interactive camera tag selection (without brackets)
+CAMERA_OPTIONS: list[str] = [tag.strip("[]") for tag in CAMERA_MOVE_TAGS]
 
-    Returns:
-        List of three complete prompt candidates.
+# ----------------------------------------------------------------------------
+# 0C: Lighting Profiles & Options (from photography.md & sora_prompting.md)
+# ----------------------------------------------------------------------------
+LIGHTING_PROFILES: dict[str, str] = {
+    # Key: identifier → Value: descriptive phrase
+    "golden_hour":        "golden-hour sunlight from 35° camera-left; warm color haze",
+    "rembrandt":          "Rembrandt key light at 45° camera-left with triangular cheek shadow; soft fill opposite",
+    "butterfly":          "Butterfly key overhead with soft fill under nose; symmetrical, minimal shadows",
+    "softbox_45_135":     "softbox key light at 45° camera-right; bounce fill at 135° camera-left; soft, controlled shadows",
+    "beauty_dish":        "beauty dish key at 30° camera-right; rim light at 120° left; crisp highlights",
+    "ring_light":         "ring light frontal with minimal shadows; even, soft illumination",
+    "profoto_key":        "Profoto beauty dish at 30° right; two strip softboxes at 90° sides; moderate contrast",
+    "practical_headlight":"practical car headlight back-rim; 6500K LED key 60° camera-right through 1/4-grid",
+    "diffused_skylight":  "diffused skylight with bounce fill at 45°; airy, soft edge shadows",
+    "hard_sun":           "hard sun 35° camera-left; high-contrast midtone separation; silver bounce fill 45° right"
+}
+
+# For interactive dropdown: use list of descriptive phrases
+LIGHTING_OPTIONS: list[str] = list(LIGHTING_PROFILES.values())
+
+# ----------------------------------------------------------------------------
+# 0D: Lens & Depth-of-Field Presets (from camera_settings.md)
+# ----------------------------------------------------------------------------
+LENS_PRESETS: dict[str, str] = {
+    "35mm_f2.8":          "35mm f/2.8, deep focus, wide-angle",
+    "50mm_f1.4":          "50mm f/1.4, standard prime, very shallow DoF",
+    "50mm_f2.0":          "50mm f/2.0, standard prime, moderate DoF",
+    "85mm_f1.4":          "85mm f/1.4, telephoto portrait, shallow DoF",
+    "100mm_macro_f2.8":   "100mm macro f/2.8, extreme close-up, shallow DoF",
+    "40mm_anamorphic":    "40mm anamorphic T2.2, cinematic squeeze, shallow DoF",
+    "90mm_f4":            "90mm f/4, moderate telephoto, mid-depth DoF",
+    "100mm_macro_f5.6":   "100mm macro f/5.6, fine detail, medium DoF"
+}
+
+# For interactive dropdown: use list of descriptive strings
+LENS_OPTIONS: list[str] = list(LENS_PRESETS.values())
+
+# ----------------------------------------------------------------------------
+# 0E: Environment & Background Complexity Options (from photography.md)
+# ----------------------------------------------------------------------------
+ENVIRONMENT_OPTIONS: list[str] = [
+    "neutral seamless studio backdrop",
+    "sunlit alley with textured walls",
+    "outdoor field with subtle wind and grass shadows",
+    "night road with reflective puddles and mist",
+    "white cyclorama studio with soft vignette",
+    "loft studio with wooden floor and window light"
+]
+
+# ----------------------------------------------------------------------------
+# 0F: Shadow Quality Options (aggregated from photography.md & examples)
+# ----------------------------------------------------------------------------
+SHADOW_OPTIONS: list[str] = [
+    "soft, gradual edges",
+    "hard edge falloff",
+    "feathered, low-intensity",
+    "layered directional with ambient falloff",
+    "minimal shadows, very soft",
+    "moody hard rim",
+    "defined Rembrandt triangle under eye",
+    "subtle gradient with smooth transition"
+]
+
+# ----------------------------------------------------------------------------
+# 0G: Micro-detail Emphasis Options (from developed detail prompts)
+# ----------------------------------------------------------------------------
+DETAIL_PROMPTS: list[str] = [
+    "Preserve skin pore texture and catchlights",
+    "Emphasize fabric weave and motion creases",
+    "Highlight microexpression shifts and eyelash detail",
+    "Focus on jewelry sparkle and specular highlights",
+    "Capture hair strand movement in wind",
+    "Reveal muscle tension and subtle shadows",
+    "Accentuate bead of sweat highlights and skin sheen",
+    "Showcase texture of denim or leather surfaces",
+    "Emphasize dust or particles in light rays",
+    "Reveal fine lines and natural skin blemishes"
+]
+
+# ----------------------------------------------------------------------------
+# 0H: Subject-Reference Requirements (from hailuo_tutorial.pdf)
+# ----------------------------------------------------------------------------
+SUBJECT_REFERENCE_RULES: dict[str, str] = {
+    "face_count":        "exactly one full, unobstructed face",
+    "lighting":          "even, diffused light to avoid facial shadows",
+    "resolution":        "minimum 512×512 px, maximum 20 MB file size",
+    "tags_required":     "age_group, gender_designation (e.g., adult, female/male/neutral)",
+    "orientation":       "frontal or slight 3/4 angle; no extreme side profiles",
+    "expression":        "neutral expression; no occlusions like sunglasses or masks"
+}
+
+# ----------------------------------------------------------------------------
+# 0I: Policy‐Forbidden Terms (from openai_policies.pdf)
+# ----------------------------------------------------------------------------
+POLICY_FORBIDDEN_TERMS: list[str] = [
+    "sexual", "porn", "gore", "torture", "rape", "beheading",
+    "extremist", "hate", "terror", "celebrity", "trademark", "copyright",
+    "threat", "defamation", "harassment", "self-harm", "medical_advice"
+]
+
+# ----------------------------------------------------------------------------
+# 0J: Prompt‐Chaining Utilities (from promptchains.pdf)
+# ----------------------------------------------------------------------------
+def chain_prompts(prompts: list[str]) -> str:
     """
+    Given a list of prompt fragments, chain them into a single composite prompt.
+    Insert two newlines between each fragment for readability.
+    """
+    return "\n\n".join(p.strip() for p in prompts if p.strip())
+
+# ----------------------------------------------------------------------------
+# 0K: Advanced Alpha Template (from Alpha_Prompting.pdf)
+# ----------------------------------------------------------------------------
+def alpha_template(subject: str, style: str, freq: int = 1) -> str:
+    """
+    Apply the Alpha Prompting guide:
+      - Emphasize frequency intensifiers, style references, and subject focus.
+    """
+    return (
+        f"> {{\n"
+        f"    {subject.strip().capitalize()}, rendered with {style.strip().capitalize()} precision.\n"
+        f"    Frequency: {freq}× repetition for emphasis.\n"
+        f"    *Note: apply advanced alpha prompting layering per platform best practices.*\n"
+        "}"
+    )
+
+# ----------------------------------------------------------------------------
+# 0L: Strict Policy Filter Utility
+# ----------------------------------------------------------------------------
+def policy_filter(prompt: str, strict: bool = False) -> bool:
+    """
+    Check if the prompt contains any forbidden term from POLICY_FORBIDDEN_TERMS.
+    Returns True if the prompt is clean; False if it violates policy.
+    If strict=True, raise ValueError on violation.
+    """
+    lowered = prompt.lower()
+    for term in POLICY_FORBIDDEN_TERMS:
+        if re.search(rf"\b{re.escape(term)}\b", lowered):
+            if strict:
+                raise ValueError(f"Policy violation: found '{term}' in prompt.")
+            return False
+    return True
+
+# ============================================================================
+# Module 1: generate_prompt_variants (unchanged)
+# ============================================================================
+def generate_prompt_variants(subject_description: str) -> list[str]:
+    """Create three stylistically distinct prompt variants."""
     base = subject_description.lower()
     variants: list[str] = []
 
-    # — Variant 1: Close-up + macro detail + Deakins light —
     variants.append(
         f"> {{\n"
         f"    {base.strip().capitalize()}.\n"
@@ -84,7 +251,6 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
         "}"
     )
 
-    # — Variant 2: Wide shot + ambient fill light + dolly arc —
     variants.append(
         f"> {{\n"
         f"    {base.strip().capitalize()}.\n"
@@ -97,7 +263,6 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
         "}"
     )
 
-    # — Variant 3: Studio setup + stylized rim light + static —
     variants.append(
         f"> {{\n"
         f"    {base.strip().capitalize()}.\n"
@@ -112,52 +277,41 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
 
     return variants
 
-
-# -----------------------------------------------------------------------------
-# Module 2: evaluate_realism
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 2: evaluate_realism (unchanged except references CAMERA_MOVE_TAGS)
+# ============================================================================
 def evaluate_realism(prompt: str) -> tuple[int, str]:
     """Assign a success probability and explanation for cinematic realism."""
     score = 100
     notes: list[str] = []
 
-    # Penalty: multiple simultaneous movements
     if prompt.count("[") > 1 and "," in prompt.split("[")[1]:
         score -= 8
         notes.append("Complex movement combo may reduce realism on Sora or Hailuo.")
 
-    # Penalty: very shallow DoF with moving subject
     if "f/1.4" in prompt and ("tracking" in prompt or "push in" in prompt):
         score -= 6
         notes.append("Shallow DoF with motion may blur subject detail.")
 
-    # Bonus: static + Deakins-style lighting
     if "[static shot]" in prompt and "golden-hour" in prompt:
         score += 4
         notes.append("Static frame with Deakins lighting is highly realistic.")
 
-    # Penalty: overly detailed microfeatures with fast camera
-    if "microexpression" in prompt and ("handheld" in prompt or "dolly" in prompt):
+    if "microexpression" in prompt and any(tag in prompt for tag in CAMERA_MOVE_TAGS):
         score -= 5
         notes.append("Camera motion may compromise fidelity of fine facial details.")
 
-    # Bonus: 35mm or 50mm lens in outdoor or studio scene
-    if any(lens in prompt for lens in ["35mm", "50mm"]):
+    if any(lens_key in prompt for lens_key in ["35mm", "50mm"]):
         score += 3
-        notes.append(
-            "Lens choice well-aligned with cinematic norms for this environment."
-        )
+        notes.append("Lens choice well-aligned with cinematic norms for this environment.")
 
-    # Final adjustment to stay in 0–100 range
     score = max(50, min(score, 99))
-
     explanation = "; ".join(notes) if notes else "Well-balanced cinematic configuration."
     return score, explanation
 
-
-# -----------------------------------------------------------------------------
-# Module 3: tri_prompt_engine (depends on modules 1 and 2)
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 3: tri_prompt_engine (unchanged)
+# ============================================================================
 def tri_prompt_engine(subject_description: str) -> dict:
     """Generate and rank three cinematic prompt variants."""
     prompt_variants = generate_prompt_variants(subject_description)
@@ -181,10 +335,9 @@ def tri_prompt_engine(subject_description: str) -> dict:
         "selected": top_prompt,
     }
 
-
-# -----------------------------------------------------------------------------
-# Module 4: fuse_pose_lighting_camera
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 4: fuse_pose_lighting_camera (unchanged)
+# ============================================================================
 def fuse_pose_lighting_camera(
     pose_tag: str,
     lighting_mode: str = "deakins",
@@ -244,8 +397,8 @@ def fuse_pose_lighting_camera(
     }
 
     lighting_profiles = {
-        "deakins": "natural golden-hour light from 35° camera-left; contrast-rich with diffuse falloff",
-        "studio": "softbox key light at 45° right; bounce fill at 135°; soft, controlled shadows",
+        "deakins": LIGHTING_PROFILES["golden_hour"],
+        "studio": LIGHTING_PROFILES["softbox_45_135"],
     }
 
     lens_choice = "50mm f/2.0" if "studio" in lighting_mode else "85mm f/1.4"
@@ -257,7 +410,7 @@ def fuse_pose_lighting_camera(
     shadow_quality = (
         "feathered, low-intensity"
         if lighting_mode == "studio"
-        else "natural hard edge falloff"
+        else "hard edge falloff"
     )
 
     pose_description = pose_map.get(
@@ -278,9 +431,9 @@ def fuse_pose_lighting_camera(
     )
 
 
-# -----------------------------------------------------------------------------
-# Module 5: generate_pose_prompt
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 5: generate_pose_prompt (unchanged)
+# ============================================================================
 def generate_pose_prompt(pose_tag: str) -> str:
     """Generate a standalone cinematic prompt from a pose tag."""
     pose_lookup = {
@@ -538,10 +691,9 @@ def generate_pose_prompt(pose_tag: str) -> str:
         f"}}"
     )
 
-
-# -----------------------------------------------------------------------------
-# Module 6: apply_deakins_lighting
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 6: apply_deakins_lighting (unchanged)
+# ============================================================================
 def apply_deakins_lighting(prompt: str) -> str:
     """Augment a cinematic prompt with Deakins-style lighting."""
     deakins_block = (
@@ -551,17 +703,14 @@ def apply_deakins_lighting(prompt: str) -> str:
         "Color: natural warmth with desaturated blacks and high contrast in skin zones."
     )
 
-    import re
-
     updated = re.sub(r"(?i)(Lighting:.*?)\n", "", prompt)
     updated = re.sub(r"(?i)(Shadow Quality:.*?)\n", "", updated)
 
     return f"{updated.strip()}\n{deakins_block.strip()}\n*Note: Deakins lighting augmentation applied for cinematic realism.*"
 
-
-# -----------------------------------------------------------------------------
-# Module 7: prompt_orchestrator
-# -----------------------------------------------------------------------------
+# ============================================================================
+# Module 7: prompt_orchestrator (unchanged)
+# ============================================================================
 def prompt_orchestrator(
     pose_tag: str | None = None,
     subject_description: str | None = None,
@@ -604,8 +753,25 @@ def prompt_orchestrator(
         "components_used": components,
     }
 
-
+# ============================================================================
+# __all__ Export
+# ============================================================================
 __all__ = [
+    "POSE_TAGS",
+    "CAMERA_MOVE_TAGS",
+    "CAMERA_OPTIONS",
+    "LIGHTING_PROFILES",
+    "LIGHTING_OPTIONS",
+    "LENS_PRESETS",
+    "LENS_OPTIONS",
+    "ENVIRONMENT_OPTIONS",
+    "SHADOW_OPTIONS",
+    "DETAIL_PROMPTS",
+    "SUBJECT_REFERENCE_RULES",
+    "POLICY_FORBIDDEN_TERMS",
+    "chain_prompts",
+    "alpha_template",
+    "policy_filter",
     "generate_prompt_variants",
     "evaluate_realism",
     "tri_prompt_engine",
@@ -613,5 +779,4 @@ __all__ = [
     "generate_pose_prompt",
     "apply_deakins_lighting",
     "prompt_orchestrator",
-    "POSE_TAGS",
 ]

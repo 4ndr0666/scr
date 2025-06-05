@@ -106,10 +106,19 @@ done
 # Step 1: Interactive “Prompt Builder” Mode
 # =============================================================================
 if [[ $INTERACTIVE -eq 1 ]]; then
-    # Run the Python builder, capture only FINAL_RESULT (no duplicate prints)
+    # Run the Python builder, capture only FINAL_OUTPUT (no duplicate prints)
     FINAL_OUTPUT="$(python3 - "$USE_DEAKINS" <<'PYEOF'
 import sys
-from pathlib import Path
+from promptlib import (
+    POSE_TAGS,
+    LIGHTING_OPTIONS,
+    LENS_OPTIONS,
+    CAMERA_OPTIONS,
+    ENVIRONMENT_OPTIONS,
+    SHADOW_OPTIONS,
+    DETAIL_PROMPTS,
+    generate_pose_prompt
+)
 
 # prompt_toolkit imports
 try:
@@ -130,60 +139,7 @@ except OSError:
     print("Interactive mode requires a TTY.", file=sys.stderr)
     raise SystemExit(1)
 
-from promptlib import generate_pose_prompt, POSE_TAGS
-
-# Pre-defined option lists
-LIGHTING_OPTIONS = [
-    "natural golden-hour (35° camera-left)",
-    "softbox key (45° camera-right) + bounce fill (135° camera-left)",
-    "ring light frontal, minimal shadows",
-    "beauty dish 30° right + rim light 120° left",
-    "practical car headlight back-rim + LED key 60° right",
-    "diffused skylight + bounce fill 45°"
-]
-LENS_OPTIONS = [
-    "85mm f/1.4, shallow DoF",
-    "50mm f/2.0, moderate DoF",
-    "35mm f/2.8, deep focus",
-    "100mm macro f/2.8",
-    "40mm anamorphic T2.2",
-    "100mm macro f/5.6"
-]
-CAMERA_OPTIONS = [
-    "push in",
-    "static shot",
-    "tracking shot",
-    "arc, dolly left",
-    "handheld sway",
-    "pedestal down",
-    "tilt up"
-]
-ENVIRONMENT_OPTIONS = [
-    "neutral seamless studio backdrop",
-    "sunlit alley with textured walls",
-    "outdoor field with subtle wind",
-    "night road with reflective puddles",
-    "white cyclorama studio",
-    "loft studio with wooden floor"
-]
-SHADOW_OPTIONS = [
-    "soft, gradual edges",
-    "hard edge falloff",
-    "feathered, low-intensity",
-    "layered directional with ambient falloff",
-    "minimal shadows, very soft",
-    "moody hard rim"
-]
-DETAIL_PROMPTS = [
-    "Preserve skin pore texture and catchlights",
-    "Emphasize fabric weave and motion creases",
-    "Highlight microexpression shifts and eyelash detail",
-    "Focus on jewelry sparkle and specular highlights",
-    "Capture hair strand movement in wind",
-    "Reveal muscle tension and subtle shadows"
-]
-
-# Style for prompt_toolkit
+# Define style for prompt_toolkit
 style = Style.from_dict({
     "prompt": "fg:#00f7ff",
     "": "fg:#005b69 bg:#151515",
@@ -249,7 +205,7 @@ with tty_in, tty_out:
     # Build prompt components
     pose_block = generate_pose_prompt(pose)
     pose_lines = pose_block.splitlines()
-    description_line = pose_lines[1].strip()  # second line holds the description
+    description_line = pose_lines[1].strip()  # second line holds the pose description
 
     movements = ", ".join([m.strip() for m in camera_move.split(",")])
 
@@ -316,7 +272,6 @@ for file in "${PLUGIN_FILES[@]}"; do
         PROMPTS+=("$block")
     done < <(python3 plugin_loader.py "$file")
 done
-
 # =============================================================================
 # Step 4: If no plugin-loaded prompts, directly call Python orchestrator
 # =============================================================================
@@ -350,6 +305,7 @@ result = prompt_orchestrator(
 # Policy check (lenient by default)
 policy_filter(result["final_prompt"], strict=False)
 
+# Print formatted output
 print("─────────────────────────────────────")
 print("🎬 Final Prompt:")
 print(result["final_prompt"])
@@ -377,12 +333,12 @@ fi
 # =============================================================================
 mapfile -t TITLES < <(
     for p in "${PROMPTS[@]}"; do
-        # Extract first line as title, remove leading/trailing quotes
+        # Use first non-empty line as a title (stripped of leading/trailing quotes)
         echo "$p" | sed -n '1s/^"\{0,1\}//;s/"$//;p;'
     done
 )
 
-sel=$(printf '%s\n' "${TITLES[@]}" | fzf --prompt="🎞  Select prompt: " --height=40% --border)
+sel=$(printf '%s\n' "${TITLES[@]}" | fzf --prompt="${CAT} Select prompt: " --height=40% --border)
 if [[ -z $sel ]]; then
     echo "${INFO} No selection." >&2
     exit 130
@@ -444,7 +400,8 @@ fi
 # =============================================================================
 prompt+=$'\n'"*Note: cinematic references must be interpreted within each platform’s current capabilities.*"
 
-# Attach files if flags used
+# Attach files if flags used (image/video/storyboard)
+# Although --image/--video/--storyboard not explicitly re-parsed here, this block remains
 for kv in "${ATTACH[@]:-}"; do
     key=${kv%%=*}
     path=${kv#*=}
@@ -457,7 +414,7 @@ done
 
 # Post-generation operation menu
 ops=(Re-cut Remix Blend Loop Stabilize ColorGrade Skip)
-post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="🎛  Post-gen op? " --height=12 --border)
+post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="${CAT} Post-gen op? " --height=12 --border)
 [[ $post != Skip && -n $post ]] && prompt+=$'\n'"POST_GEN_OP: $post"
 
 # =============================================================================
