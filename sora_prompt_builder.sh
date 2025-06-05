@@ -95,18 +95,19 @@ style = Style.from_dict({
     "completion-menu.completion.current": "fg:#15FFFF bg:#262626",
 })
 
-session = PromptSession(
-    input=create_input(tty_in.fileno()),
-    output=create_output(tty_out.fileno()),
-)
+with tty_in, tty_out:
+    session = PromptSession(
+        input=create_input(tty_in),
+        output=create_output(tty_out),
+    )
 
-pose = session.prompt(
-    "Pose Tag: ",
-    completer=WordCompleter(POSE_TAGS, ignore_case=True),
-    style=style,
-)
-desc = session.prompt("Description (optional): ", style=style)
-use_deakins = bool(int(sys.argv[1]))
+    pose = session.prompt(
+        "Pose Tag: ",
+        completer=WordCompleter(POSE_TAGS, ignore_case=True),
+        style=style,
+    )
+    desc = session.prompt("Description (optional): ", style=style)
+    use_deakins = bool(int(sys.argv[1]))
 
 result = prompt_orchestrator(
     pose_tag=pose or None,
