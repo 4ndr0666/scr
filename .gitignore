@@ -89,3 +89,4 @@ Thumbs.db
 *.3gp
 *.flv
 *.webp
+.codex-venv/
