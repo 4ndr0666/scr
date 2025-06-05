@@ -6,7 +6,7 @@ IFS=$'\n\t'
 
 # ====================== // SORA PROMPT BUILDER //
 ## Description: Unified prompt generation CLI
-## Requires: Python ≥3.9 with functions loaded via promptlib.py
+## Requires: Python ≥3.9 with functions loaded via promptlib.py and plugin_loader.py
 # -----------------------------------------
 
 usage() {
@@ -16,11 +16,12 @@ usage() {
     printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
     printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
     printf '%s\n' "  $0 --plugin plugins/prompts1.md"
+    printf '%s\n' "  $0 --interactive"
     printf '%s\n' "Options:"
     printf '%s\n' "  --plugin     Load a Markdown prompt-pack plugin (adds all quoted blocks)"
     printf '%s\n' "  --copy        Copy final prompt to clipboard if wl-copy exists"
     printf '%s\n' "  --dry-run     Print the Python command but do not execute"
-    printf '%s\n' "  --interactive Launch interactive mode (requires TTY and prompt_toolkit)"
+    printf '%s\n' "  --interactive Launch interactive builder (requires TTY and prompt_toolkit)"
     printf '%s\n' "  --help        Show this help message"
     exit 1
 }
@@ -33,6 +34,9 @@ DRY_RUN=0
 INTERACTIVE=0
 PLUGIN_FILES=()
 
+# ────────────────────────────────────────────────────────────────────────────
+# Parse command-line arguments
+# ────────────────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --pose)
@@ -73,14 +77,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# =============================================================================
-# Step 1: Start interactive mode if requested
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# If interactive builder is requested, launch multi-step prompt builder
+# ────────────────────────────────────────────────────────────────────────────
 if [[ $INTERACTIVE -eq 1 ]]; then
     FINAL_OUTPUT=$(
         python3 - "$USE_DEAKINS" <<'PYEOF'
 import sys
+from pathlib import Path
 
+# prompt_toolkit imports
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import WordCompleter
@@ -91,6 +97,7 @@ except ModuleNotFoundError:
     print("prompt_toolkit is required for interactive mode.", file=sys.stderr)
     raise SystemExit(1)
 
+# Ensure TTY is available
 try:
     tty_in = open("/dev/tty")
     tty_out = open("/dev/tty", "w")
@@ -98,44 +105,161 @@ except OSError:
     print("Interactive mode requires a TTY.", file=sys.stderr)
     raise SystemExit(1)
 
-from promptlib import prompt_orchestrator, POSE_TAGS
+from promptlib import (
+    generate_pose_prompt,
+    POSE_TAGS,
+)
 
-style = Style.from_dict({
-    "prompt": "fg:#00f7ff",
-    "": "fg:#005b69 bg:#151515",
-    "completion-menu.completion": "fg:#005b69 bg:#151515",
-    "completion-menu.completion.current": "fg:#15FFFF bg:#262626",
-})
+# Define lists for successive building blocks
+LIGHTING_OPTIONS = [
+    "natural golden-hour (35° camera-left)",
+    "softbox key (45° camera-right) + bounce fill (135° camera-left)",
+    "ring light frontal, minimal shadows",
+    "beauty dish 30° right + rim light 120° left",
+    "practical car headlight back-rim + LED key 60° right",
+    "diffused skylight + bounce fill 45°"
+]
 
+LENS_OPTIONS = [
+    "85mm f/1.4, shallow DoF",
+    "50mm f/2.0, moderate DoF",
+    "35mm f/2.8, deep focus",
+    "100mm macro f/2.8",
+    "40mm anamorphic T2.2",
+    "100mm macro f/5.6"
+]
+
+CAMERA_OPTIONS = [
+    "push in",
+    "static shot",
+    "tracking shot",
+    "arc, dolly left",
+    "handheld sway",
+    "pedestal down",
+    "tilt up"
+]
+
+ENVIRONMENT_OPTIONS = [
+    "neutral seamless studio backdrop",
+    "sunlit alley with textured walls",
+    "outdoor field with subtle wind",
+    "night road with reflective puddles",
+    "white cyclorama studio",
+    "loft studio with wooden floor"
+]
+
+SHADOW_OPTIONS = [
+    "soft, gradual edges",
+    "hard edge falloff",
+    "feathered, low-intensity",
+    "layered directional with ambient falloff",
+    "minimal shadows, very soft",
+    "moody hard rim"
+]
+
+DETAIL_PROMPTS = [
+    "Preserve skin pore texture and catchlights",
+    "Emphasize fabric weave and motion creases",
+    "Highlight microexpression shifts and eyelash detail",
+    "Focus on jewelry sparkle and specular highlights",
+    "Capture hair strand movement in wind",
+    "Reveal muscle tension and subtle shadows"
+]
+
+# Build prompt step by step
 with tty_in, tty_out:
     session = PromptSession(
         input=create_input(tty_in),
         output=create_output(tty_out),
     )
 
+    # 1) Pose selection
     pose = session.prompt(
         "Pose Tag: ",
         completer=WordCompleter(POSE_TAGS, ignore_case=True),
-        style=style,
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
     )
-    desc = session.prompt("Description (optional): ", style=style)
-    use_deakins = bool(int(sys.argv[1]))
 
-result = prompt_orchestrator(
-    pose_tag=pose or None,
-    subject_description=desc or None,
-    use_deakins=use_deakins,
-)
+    # 2) Lighting selection
+    lighting = session.prompt(
+        "Lighting (choose one): ",
+        completer=WordCompleter(LIGHTING_OPTIONS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
 
-print("─────────────────────────────────────")
-print("🎬 Final Prompt:")
-print(result["final_prompt"])
-print("─────────────────────────────────────")
-print(f"🎛️  Base Mode: {result['base_mode']}")
-print(f"🔧 Components Used: {', '.join(result['components_used'])}")
+    # 3) Lens selection
+    lens = session.prompt(
+        "Lens (choose one): ",
+        completer=WordCompleter(LENS_OPTIONS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
+
+    # 4) Camera movement selection
+    camera_move = session.prompt(
+        "Camera Movement Tags (comma-separated): ",
+        completer=WordCompleter(CAMERA_OPTIONS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
+
+    # 5) Environment selection
+    environment = session.prompt(
+        "Environment (choose one): ",
+        completer=WordCompleter(ENVIRONMENT_OPTIONS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
+
+    # 6) Shadow quality selection
+    shadow = session.prompt(
+        "Shadow Quality (choose one): ",
+        completer=WordCompleter(SHADOW_OPTIONS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
+
+    # 7) Detail emphasis selection
+    detail = session.prompt(
+        "Micro-detail Focus (choose one): ",
+        completer=WordCompleter(DETAIL_PROMPTS, ignore_case=True),
+        style=Style.from_dict({"prompt": "fg:#00f7ff", "": "fg:#005b69 bg:#151515"}),
+    )
+
+    # Build the pose description by stripping the braces and leading characters
+    pose_block = generate_pose_prompt(pose)
+    # pose_block begins with "> {\n    Description ...", so remove first two lines ( "> {" and "    ")
+    pose_lines = pose_block.splitlines()
+    # Extract just the description line (second line), strip leading spaces
+    description_line = pose_lines[1].strip()
+
+    # Combine into final prompt block
+    movements = ", ".join([m.strip() for m in camera_move.split(",")])
+    final = (
+        f"> {{\n"
+        f"    {description_line}\n"
+        f"    Lighting: {lighting}.\n"
+        f"    Lens: {lens}.\n"
+        f"    Camera: [{movements}].\n"
+        f"    Environment: {environment}.\n"
+        f"    Shadow Quality: {shadow}.\n"
+        f"    Detail: {detail}.\n"
+        f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
+        f"}}"
+    )
+
+    print("─────────────────────────────────────")
+    print("🎬 Final Prompt:")
+    print(final)
+    print("─────────────────────────────────────")
+    print(f"🎛️  Builder Mode: {'deakins' if bool(int(sys.argv[1])) else 'standard'}")
+    print("🔧 Components Used: pose, lighting, lens, camera, environment, shadow, detail")
+    FINAL_RESULT = final
+
+print(FINAL_RESULT)
 PYEOF
     )
+
+    # Print interactive result
     printf '%s\n' "$FINAL_OUTPUT"
+
+    # Copy to clipboard if requested
     if [[ $COPY_FLAG -eq 1 ]]; then
         if command -v wl-copy >/dev/null 2>&1; then
             printf '%s\n' "$FINAL_OUTPUT" | wl-copy
@@ -144,44 +268,39 @@ PYEOF
             printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
         fi
     fi
+
     exit 0
 fi
 
-# =============================================================================
-# Step 2: Ensure at least one of --pose or --desc or --plugin is provided
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Ensure that at least one of --pose, --desc, or --plugin is provided
+# ────────────────────────────────────────────────────────────────────────────
 if [[ -z "$POSE" && -z "$DESC" && ${#PLUGIN_FILES[@]} -eq 0 ]]; then
     usage
 fi
 
-# =============================================================================
-# Step 3: Collate default and plugin-loaded prompts into PROMPTS[]
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 1: Collate default and plugin-loaded prompts into PROMPTS[]
+# ────────────────────────────────────────────────────────────────────────────
 declare -a PROMPTS=()
 
-# (A) If user specified plugin files, load them via plugin_loader.py
+# (A) Load from plugin files if any
 for file in "${PLUGIN_FILES[@]}"; do
     if [[ ! -f $file ]]; then
         echo "Error: plugin file not found: $file" >&2
         exit 1
     fi
 
-    # Use plugin_loader.py to extract null-delimited blocks
     while IFS= read -r -d '' block; do
         PROMPTS+=("$block")
     done < <(python3 plugin_loader.py "$file")
 done
 
-# (B) If user provided a pose/desc but no plugin, we leave PROMPTS empty—
-#     selection will be handled by prompt_orchestrator instead of pre-built library.
-
-# =============================================================================
-# Step 4: If not in library mode (PROMPTS empty), dispatch to Python directly
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 2: If no plugin, call Python directly for --pose / --desc
+# ────────────────────────────────────────────────────────────────────────────
 if [[ ${#PROMPTS[@]} -eq 0 ]]; then
-    # Either --pose and/or --desc was provided, so call prompt_orchestrator directly.
     if [[ -z "$POSE" && -z "$DESC" ]]; then
-        # Neither description nor pose → no work to do
         exit 0
     fi
 
@@ -228,12 +347,11 @@ PYEOF
     exit 0
 fi
 
-# =============================================================================
-# Step 5: Otherwise, present fzf library-based selection of loaded plugin prompts
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 3: Otherwise, present fzf library-based selection of loaded prompts
+# ────────────────────────────────────────────────────────────────────────────
 mapfile -t TITLES < <(
     for p in "${PROMPTS[@]}"; do
-        # Extract the first non-empty line as the “title”
         echo "$p" | sed -n '1s/^"\{0,1\}//;s/"$//;p;'
     done
 )
@@ -244,7 +362,6 @@ if [[ -z $sel ]]; then
     exit 130
 fi
 
-# Find the index of the selected title
 idx=-1
 for i in "${!TITLES[@]}"; do
     if [[ "${TITLES[$i]}" == "$sel" ]]; then
@@ -259,9 +376,9 @@ fi
 
 prompt="${PROMPTS[$idx]}"
 
-# =============================================================================
-# Step 6: Validation (camera tags, forbidden terms, duration, resolution)
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 4: Validation (camera tags, forbidden terms, duration, resolution)
+# ────────────────────────────────────────────────────────────────────────────
 warn() { printf "⚠️  %s\n" "$1" >&2; }
 
 # camera tag presence
@@ -283,7 +400,7 @@ dur=0
 [[ -n $dur_line ]] && dur=${dur_line##*:}
 (( dur > MAX_DURATION )) && warn "Duration ${dur}s exceeds ${MAX_DURATION}s limit."
 
-# resolution ≤ 1080p
+# resolution ≤ 1080 p
 reso_line=$(grep -Eo '^Resolution:[[:space:]]*[0-9]{3,4}p' <<<"$prompt" || true)
 if [[ -z $reso_line ]]; then
     warn "No Resolution: field."
@@ -294,12 +411,11 @@ else
     (( num > 1080 )) && warn "Resolution ${reso} exceeds 1080p cap."
 fi
 
-# =============================================================================
-# Step 7: Append standard notes, attachments, post-gen-op
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 5: Append standard notes, attachments, post-gen-op
+# ────────────────────────────────────────────────────────────────────────────
 prompt+=$'\n'"$PRO_DISCLAIMER"$'\n'"$SAFETY_NOTE"$'\n'"$TECH_LIMITS"
 
-# Attach files if flags used
 for kv in "${ATTACH[@]:-}"; do
     key=${kv%%=*}
     path=${kv#*=}
@@ -310,14 +426,13 @@ for kv in "${ATTACH[@]:-}"; do
     esac
 done
 
-# Post-generation op
 ops=(Re-cut Remix Blend Loop Stabilize ColorGrade Skip)
 post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="🎛  Post-gen op? " --height=12 --border)
 [[ $post != Skip && -n $post ]] && prompt+=$'\n'"POST_GEN_OP: $post"
 
-# =============================================================================
-# Step 8: Final payload preview + optional clipboard copy
-# =============================================================================
+# ────────────────────────────────────────────────────────────────────────────
+# Step 6: Final payload preview + optional clipboard copy
+# ────────────────────────────────────────────────────────────────────────────
 payload="# === // SORA //\n\n$prompt"
 
 if [[ -n $BAT ]]; then
