@@ -13,17 +13,18 @@ secrets.json
 *.swo
 *.bak
 *.swo
-*.swn  
+*.swn
 *.~?
 *~
 
-## Logs and Runtime 
+## Logs and Runtime
 *.log
 *.log.*
 *.pid
 *.db
 
 ## Python
+.mypy*
 __pycache__/
 *.py[cod]
 *.egg-info
@@ -41,9 +42,9 @@ yarn-debug.log*
 .yarn/cache/
 
 ## C/C++/Rust/Go
-target/           
+target/
 *.dll
-bin/             
+bin/
 *.o
 *.ko
 *.a
@@ -53,7 +54,7 @@ bin/
 ## Vendor
 vendor/
 
-## Operating‑system Noise 
+## Operating‑system Noise
 .thumbnails/
 $RECYCLE.BIN/
 desktop.ini
@@ -77,7 +78,7 @@ Thumbs.db
 *.xz
 
 ## Large Media
-*.webm     
+*.webm
 *.iso
 *.img
 *.mp4
