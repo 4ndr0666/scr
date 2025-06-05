@@ -72,13 +72,20 @@ if [[ $INTERACTIVE -eq 0 && -z "$POSE" && -z "$DESC" ]]; then
 fi
 
 if [[ $INTERACTIVE -eq 1 ]]; then
-	FINAL_OUTPUT=$(
-		python3 - "$USE_DEAKINS" <<'PYEOF'
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.styles import Style
-from promptlib import prompt_orchestrator, POSE_TAGS
+        FINAL_OUTPUT=$(
+                python3 - "$USE_DEAKINS" <<'PYEOF'
+import os
 import sys
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import WordCompleter
+    from prompt_toolkit.styles import Style
+except ModuleNotFoundError as exc:
+    print("prompt_toolkit is required for interactive mode.", file=sys.stderr)
+    raise SystemExit(1) from exc
+
+from promptlib import prompt_orchestrator, POSE_TAGS
 
 style = Style.from_dict({
     "prompt": "fg:#00f7ff",
@@ -87,10 +94,18 @@ style = Style.from_dict({
     "completion-menu.completion.current": "fg:#15FFFF bg:#262626",
 })
 
-session = PromptSession()
+try:
+    tty_in = open("/dev/tty")
+except OSError as exc:
+    print("Interactive mode requires a TTY.", file=sys.stderr)
+    raise SystemExit(1) from exc
 
-pose = session.prompt('Pose Tag: ', completer=WordCompleter(POSE_TAGS, ignore_case=True), style=style)
-desc = session.prompt('Description (optional): ', style=style)
+session = PromptSession(input=tty_in)
+
+pose = session.prompt(
+    "Pose Tag: ", completer=WordCompleter(POSE_TAGS, ignore_case=True), style=style
+)
+desc = session.prompt("Description (optional): ", style=style)
 use_deakins = bool(int(sys.argv[1]))
 
 result = prompt_orchestrator(
@@ -99,14 +114,14 @@ result = prompt_orchestrator(
     use_deakins=use_deakins,
 )
 
-print('─────────────────────────────────────')
-print('🎬 Final Prompt:')
-print(result['final_prompt'])
-print('─────────────────────────────────────')
+print("─────────────────────────────────────")
+print("🎬 Final Prompt:")
+print(result["final_prompt"])
+print("─────────────────────────────────────")
 print(f"🎛️  Base Mode: {result['base_mode']}")
 print(f"🔧 Components Used: {', '.join(result['components_used'])}")
 PYEOF
-	)
+        )
 	printf '%s\n' "$FINAL_OUTPUT"
 	if [[ $COPY_FLAG -eq 1 ]]; then
 		if command -v wl-copy >/dev/null 2>&1; then
@@ -115,40 +130,10 @@ PYEOF
 		else
 			printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
 		fi
-	fi
+        fi
+        exit 0
 fi
-exit 0
 
-while [[ $# -gt 0 ]]; do
-	case "$1" in
-	--pose)
-		POSE="$2"
-		shift 2
-		;;
-	--desc)
-		DESC="$2"
-		shift 2
-		;;
-	--deakins)
-		USE_DEAKINS=1
-		shift
-		;;
-	--copy)
-		COPY_FLAG=1
-		shift
-		;;
-	--dry-run)
-		DRY_RUN=1
-		shift
-		;;
-	--help)
-		usage
-		;;
-	*)
-		usage
-		;;
-	esac
-done
 
 if [[ -z "$POSE" && -z "$DESC" ]]; then
 	usage
@@ -196,3 +181,4 @@ if [[ $COPY_FLAG -eq 1 ]]; then
 		printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
 	fi
 fi
+
