@@ -23,22 +23,24 @@ CAT="$(tput setaf 6)[ACTION]$(tput sgr0)"   # Cyan primary highlight
 # ────────────────────────────────────────────────────────────────────────────
 usage() {
     cat <<EOF
-Usage: $(basename "$0") --pose <pose_tag> | --desc <description> [--deakins] [--plugin <file.md>] [--copy] [--dry-run] [--interactive]
+Usage: $(basename "$0") [--interactive] [--deakins] [--copy] [--plugin <file.md>]
 
 Examples:
-  $(basename "$0") --pose leaning_forward
-  $(basename "$0") --desc "editorial fashion crouch under golden sunlight"
-  $(basename "$0") --pose crouching --desc "moody alley scene" --deakins
-  $(basename "$0") --plugin plugins/prompts1.md
   $(basename "$0") --interactive
+  $(basename "$0") --interactive --deakins
+  $(basename "$0") --plugin plugins/prompts1.md
+  $(basename "$0") --interactive --plugin plugins/prompts1.md --copy
 
 Options:
-  --plugin     Load a Markdown prompt-pack plugin (extracts all quoted blocks)
-  --copy       Copy final prompt to clipboard if wl-copy exists
-  --dry-run    Show Python command(s) without executing
-  --interactive Launch interactive builder (requires TTY and prompt_toolkit)
-  --deakins    Apply Deakins-style lighting augmentation
-  --help       Show this help message and exit
+  --interactive Launch the interactive prompt builder (recommended).
+  --deakins     Apply Deakins-style lighting augmentation to the final prompt.
+  --plugin      Load a Markdown prompt-pack plugin (extracts quoted blocks).
+  --copy        Copy final prompt to clipboard if wl-copy exists.
+  --help        Show this help message and exit.
+
+Note: 
+  • CLI mode (e.g. --pose <tag> or --desc <text>) is a future TODO.
+  • For full parameter autocompletion and ease of use, run --interactive.
 EOF
     exit 1
 }
@@ -46,8 +48,6 @@ EOF
 # ────────────────────────────────────────────────────────────────────────────
 # Global Variables & Defaults
 # ────────────────────────────────────────────────────────────────────────────
-POSE=""
-DESC=""
 USE_DEAKINS=0
 COPY_FLAG=0
 DRY_RUN=0
@@ -64,14 +64,6 @@ BAD_WORDS_REGEX='(sexual|porn|gore|torture|rape|beheading|extremist|hate|terror|
 # =============================================================================
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --pose)
-            POSE="$2"
-            shift 2
-            ;;
-        --desc)
-            DESC="$2"
-            shift 2
-            ;;
         --deakins)
             USE_DEAKINS=1
             shift
@@ -103,10 +95,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # =============================================================================
-# Step 1: Interactive “Prompt Builder” Mode
+# Step 1: Interactive “Prompt Builder” Mode (enforced)
 # =============================================================================
 if [[ $INTERACTIVE -eq 1 ]]; then
-    # Run the Python builder, capture only FINAL_OUTPUT (no duplicate prints)
     FINAL_OUTPUT="$(python3 - "$USE_DEAKINS" <<'PYEOF'
 import sys
 from promptlib import (
@@ -138,6 +129,9 @@ try:
 except OSError:
     print("Interactive mode requires a TTY.", file=sys.stderr)
     raise SystemExit(1)
+
+# Extract USE_DEAKINS from sys.argv[1]
+use_deakins_flag = bool(int(sys.argv[1]))
 
 # Define style for prompt_toolkit
 style = Style.from_dict({
@@ -202,25 +196,50 @@ with tty_in, tty_out:
         style=style,
     )
 
-    # Build prompt components
+    # Build prompt components from pose
     pose_block = generate_pose_prompt(pose)
     pose_lines = pose_block.splitlines()
     description_line = pose_lines[1].strip()  # second line holds the pose description
 
     movements = ", ".join([m.strip() for m in camera_move.split(",")])
 
-    final = (
-        f"> {{\n"
-        f"    {description_line}\n"
-        f"    Lighting: {lighting}.\n"
-        f"    Lens: {lens}.\n"
-        f"    Camera: [{movements}].\n"
-        f"    Environment: {environment}.\n"
-        f"    Shadow Quality: {shadow}.\n"
-        f"    Detail: {detail}.\n"
-        f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
-        f"}}"
-    )
+    # If not Deakins, insert user-selected lighting/shadow
+    if not use_deakins_flag:
+        final = (
+            f"> {{\n"
+            f"    {description_line}\n"
+            f"    Lighting: {lighting}.\n"
+            f"    Lens: {lens}.\n"
+            f"    Camera: [{movements}].\n"
+            f"    Environment: {environment}.\n"
+            f"    Shadow Quality: {shadow}.\n"
+            f"    Detail: {detail}.\n"
+            f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
+            f"}}"
+        )
+    else:
+        # Deakins-style lighting block (override)
+        deakins_lines = [
+            "Lighting: golden-hour sunlight piercing from 35° camera-left, casting long shadows with soft core and hard edge.",
+            "Shadow Quality: layered, directional, with visible ambient falloff.",
+            "Atmosphere: subtle haze; background underexposed to emphasize midtone structure.",
+            "Color: natural warmth with desaturated blacks and high contrast in skin zones.",
+            "*Note: Deakins lighting augmentation applied for cinematic realism.*"
+        ]
+        final = (
+            f"> {{\n"
+            f"    {description_line}\n"
+            f"    {deakins_lines[0]}\n"
+            f"    {deakins_lines[1]}\n"
+            f"    {deakins_lines[2]}\n"
+            f"    {deakins_lines[3]}\n"
+            f"    Lens: {lens}.\n"
+            f"    Camera: [{movements}].\n"
+            f"    Environment: {environment}.\n"
+            f"    Detail: {detail}.\n"
+            f"    {deakins_lines[4]}\n"
+            f"}}"
+        )
 
     # Output only the final prompt block
     print(final)
@@ -234,7 +253,11 @@ PYEOF
     printf '%s\n' "$FINAL_OUTPUT"
     echo "─────────────────────────────────────"
     echo "🎛️  Builder Mode: standard"
-    echo "🔧 Components Used: pose, lighting, lens, camera, environment, shadow, detail"
+    if [[ $USE_DEAKINS -eq 1 ]]; then
+        echo "🔧 Components Used: pose, deakins_lighting, lens, camera, environment, detail"
+    else
+        echo "🔧 Components Used: pose, lighting, lens, camera, environment, shadow, detail"
+    fi
 
     # Auto-copy if requested
     if [[ $COPY_FLAG -eq 1 ]]; then
@@ -250,9 +273,9 @@ PYEOF
 fi
 
 # =============================================================================
-# Step 2: Validate that at least one of --pose, --desc, or --plugin is provided
+# Step 2: Validate that at least one of --interactive or --plugin is provided
 # =============================================================================
-if [[ -z "$POSE" && -z "$DESC" && ${#PLUGIN_FILES[@]} -eq 0 ]]; then
+if [[ $INTERACTIVE -eq 0 && ${#PLUGIN_FILES[@]} -eq 0 ]]; then
     usage
 fi
 
@@ -273,58 +296,9 @@ for file in "${PLUGIN_FILES[@]}"; do
     done < <(python3 plugin_loader.py "$file")
 done
 # =============================================================================
-# Step 4: If no plugin-loaded prompts, directly call Python orchestrator
+# Step 4: If no plugin-loaded prompts, exit (interactive handled everything)
 # =============================================================================
 if [[ ${#PROMPTS[@]} -eq 0 ]]; then
-    if [[ -z "$POSE" && -z "$DESC" ]]; then
-        exit 0
-    fi
-
-    CMD=(python3 - "$POSE" "$DESC" "$USE_DEAKINS")
-    if [[ $DRY_RUN -eq 1 ]]; then
-        printf '%s ' "${CMD[@]}" "<<'PYEOF'"
-        printf '\n%s\n' "# python code omitted for brevity" "PYEOF"
-        exit 0
-    fi
-
-    FINAL_OUTPUT="$(
-        python3 - "$POSE" "$DESC" "$USE_DEAKINS" <<'PYEOF'
-import sys
-from promptlib import prompt_orchestrator, policy_filter
-
-pose = sys.argv[1] or None
-desc = sys.argv[2] or None
-use_deakins = bool(int(sys.argv[3]))
-
-result = prompt_orchestrator(
-    pose_tag=pose,
-    subject_description=desc,
-    use_deakins=use_deakins,
-)
-
-# Policy check (lenient by default)
-policy_filter(result["final_prompt"], strict=False)
-
-# Print formatted output
-print("─────────────────────────────────────")
-print("🎬 Final Prompt:")
-print(result["final_prompt"])
-print("─────────────────────────────────────")
-print(f"🎛️  Base Mode: {result['base_mode']}")
-print(f"🔧 Components Used: {', '.join(result['components_used'])}")
-PYEOF
-    )"
-
-    printf '%s\n' "$FINAL_OUTPUT"
-    if [[ $COPY_FLAG -eq 1 ]]; then
-        if command -v wl-copy >/dev/null 2>&1; then
-            printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-            echo "${OK} Prompt copied to clipboard via wl-copy."
-        else
-            echo "${WARN} wl-copy not installed. Skipping clipboard copy."
-        fi
-    fi
-
     exit 0
 fi
 
@@ -401,7 +375,6 @@ fi
 prompt+=$'\n'"*Note: cinematic references must be interpreted within each platform’s current capabilities.*"
 
 # Attach files if flags used (image/video/storyboard)
-# Although --image/--video/--storyboard not explicitly re-parsed here, this block remains
 for kv in "${ATTACH[@]:-}"; do
     key=${kv%%=*}
     path=${kv#*=}
