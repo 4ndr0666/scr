@@ -3,3 +3,4 @@ This update adds optional foreground execution and a configurable config path to
 Implemented promptlib.py with modular prompt generation functions and a sora_prompt_builder.sh CLI.
 Updated sora_prompt_builder.sh to support --copy, --dry-run, and --help flags while fixing the heredoc invocation.
 Introduced an interactive mode leveraging prompt_toolkit for autocompleted pose selection and a custom color scheme.
+Added --dry-run support to sora_prompt_builder.sh for previewing the Python command before execution.

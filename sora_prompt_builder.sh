@@ -7,17 +7,16 @@ set -euo pipefail
 IFS=$'\n\t'
 
 usage() {
-  printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--copy] [--dry-run] [--interactive]"
-  printf '%s\n' "Examples:"
-  printf '%s\n' "  $0 --pose leaning_forward"
-  printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
-  printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
-  printf '%s\n' "Options:"
-  printf '%s\n' "  --copy      Copy final prompt to clipboard if wl-copy exists"
-  printf '%s\n' "  --dry-run      Print the python command but do not execute"
-  printf '%s\n' "  --interactive  Launch interactive prompt-toolkit UI"
-  printf '%s\n' "  --help         Show this help message"
-  exit 1
+	printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--copy] [--dry-run]"
+	printf '%s\n' "Examples:"
+	printf '%s\n' "  $0 --pose leaning_forward"
+	printf '%s\n' "  $0 --desc 'editorial fashion crouch under golden sunlight'"
+	printf '%s\n' "  $0 --pose crouching --desc 'moody alley scene' --deakins"
+	printf '%s\n' "Options:"
+	printf '%s\n' "  --copy      Copy final prompt to clipboard if wl-copy exists"
+	printf '%s\n' "  --dry-run   Print the python command but do not execute"
+	printf '%s\n' "  --help      Show this help message"
+	exit 1
 }
 
 POSE=""
@@ -111,17 +110,52 @@ PYEOF
     fi
   fi
   exit 0
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--pose)
+		POSE="$2"
+		shift 2
+		;;
+	--desc)
+		DESC="$2"
+		shift 2
+		;;
+	--deakins)
+		USE_DEAKINS=1
+		shift
+		;;
+	--copy)
+		COPY_FLAG=1
+		shift
+		;;
+	--dry-run)
+		DRY_RUN=1
+		shift
+		;;
+	--help)
+		usage
+		;;
+	*)
+		usage
+		;;
+	esac
+done
+
+if [[ -z "$POSE" && -z "$DESC" ]]; then
+	usage
 fi
 
 cmd=(python3 - "$POSE" "$DESC" "$USE_DEAKINS")
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  printf '%s ' "${cmd[@]}" "<<'PYEOF'"
-  printf '\n%s\n' "# python code omitted for brevity" "PYEOF"
-  exit 0
+	printf '%s ' "${cmd[@]}" "<<'PYEOF'"
+	printf '\n%s\n' "# python code omitted for brevity" "PYEOF"
+	exit 0
 fi
 
-FINAL_OUTPUT=$(python3 - "$POSE" "$DESC" "$USE_DEAKINS" <<'PYEOF'
+FINAL_OUTPUT=$(
+	python3 - "$POSE" "$DESC" "$USE_DEAKINS" <<'PYEOF'
 import sys
 from promptlib import prompt_orchestrator
 
@@ -147,10 +181,10 @@ PYEOF
 printf '%s\n' "$FINAL_OUTPUT"
 
 if [[ $COPY_FLAG -eq 1 ]]; then
-  if command -v wl-copy >/dev/null 2>&1; then
-    printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-    printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
-  else
-    printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
-  fi
+	if command -v wl-copy >/dev/null 2>&1; then
+		printf '%s\n' "$FINAL_OUTPUT" | wl-copy
+		printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
+	else
+		printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
+	fi
 fi
