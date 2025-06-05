@@ -8,3 +8,5 @@
 - Added --interactive mode to sora_prompt_builder.sh using prompt_toolkit with autocompletion and custom colors.
 - Added --dry-run option to sora_prompt_builder.sh to print the Python command without executing.
 - Added --help support to sora_prompt_builder.sh.
+- Fixed shebang in promptlib.py and corrected interactive exit logic in sora_prompt_builder.sh.
+- Interactive mode in sora_prompt_builder.sh now reads from /dev/tty and reports missing prompt_toolkit.
