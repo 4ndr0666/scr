@@ -15,6 +15,7 @@ POSE_TAGS: list[str] = [
 # Module 2: generate_prompt_variants
 # ---------------------------------------------------------------------------
 
+
 def generate_prompt_variants(subject_description: str) -> list[str]:
     """Create three stylistically distinct prompt variants.
 
@@ -74,6 +75,7 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
 # Module 3: evaluate_realism
 # ---------------------------------------------------------------------------
 
+
 def evaluate_realism(prompt: str) -> tuple[int, str]:
     """Assign a success probability and explanation for cinematic realism."""
     score = 100
@@ -102,18 +104,23 @@ def evaluate_realism(prompt: str) -> tuple[int, str]:
     # Bonus: 35mm or 50mm lens in outdoor or studio scene
     if any(lens in prompt for lens in ["35mm", "50mm"]):
         score += 3
-        notes.append("Lens choice well-aligned with cinematic norms for this environment.")
+        notes.append(
+            "Lens choice well-aligned with cinematic norms for this environment."
+        )
 
     # Final adjustment to stay in 0–100 range
     score = max(50, min(score, 99))
 
-    explanation = "; ".join(notes) if notes else "Well-balanced cinematic configuration."
+    explanation = (
+        "; ".join(notes) if notes else "Well-balanced cinematic configuration."
+    )
     return score, explanation
 
 
 # ---------------------------------------------------------------------------
 # Module 1: tri_prompt_engine (depends on modules 2 and 3)
 # ---------------------------------------------------------------------------
+
 
 def tri_prompt_engine(subject_description: str) -> dict:
     """Generate and rank three cinematic prompt variants."""
@@ -122,11 +129,13 @@ def tri_prompt_engine(subject_description: str) -> dict:
 
     for prompt in prompt_variants:
         realism, notes = evaluate_realism(prompt)
-        evaluations.append({
-            "prompt": prompt,
-            "success": realism,
-            "notes": notes,
-        })
+        evaluations.append(
+            {
+                "prompt": prompt,
+                "success": realism,
+                "notes": notes,
+            }
+        )
 
     evaluations.sort(key=lambda x: x["success"], reverse=True)
     top_prompt = evaluations[0]["prompt"]
@@ -140,6 +149,7 @@ def tri_prompt_engine(subject_description: str) -> dict:
 # ---------------------------------------------------------------------------
 # Module 4: fuse_pose_lighting_camera
 # ---------------------------------------------------------------------------
+
 
 def fuse_pose_lighting_camera(
     pose_tag: str,
@@ -164,10 +174,14 @@ def fuse_pose_lighting_camera(
 
     lens_choice = "50mm f/2.0" if "studio" in lighting_mode else "85mm f/1.4"
     environment = (
-        "sunlit alley with textured walls" if lighting_mode == "deakins" else "neutral seamless studio backdrop"
+        "sunlit alley with textured walls"
+        if lighting_mode == "deakins"
+        else "neutral seamless studio backdrop"
     )
     shadow_quality = (
-        "feathered, low-intensity" if lighting_mode == "studio" else "natural hard edge falloff"
+        "feathered, low-intensity"
+        if lighting_mode == "studio"
+        else "natural hard edge falloff"
     )
 
     return (
@@ -187,6 +201,7 @@ def fuse_pose_lighting_camera(
 # ---------------------------------------------------------------------------
 # Module 5: generate_pose_prompt
 # ---------------------------------------------------------------------------
+
 
 def generate_pose_prompt(pose_tag: str) -> str:
     """Generate a standalone cinematic prompt from a pose tag."""
@@ -240,6 +255,7 @@ def generate_pose_prompt(pose_tag: str) -> str:
 # Module 6: apply_deakins_lighting
 # ---------------------------------------------------------------------------
 
+
 def apply_deakins_lighting(prompt: str) -> str:
     """Augment a cinematic prompt with Deakins-style lighting."""
     deakins_block = (
@@ -260,6 +276,7 @@ def apply_deakins_lighting(prompt: str) -> str:
 # ---------------------------------------------------------------------------
 # Module 7: prompt_orchestrator
 # ---------------------------------------------------------------------------
+
 
 def prompt_orchestrator(
     pose_tag: str | None = None,
@@ -292,9 +309,13 @@ def prompt_orchestrator(
     return {
         "final_prompt": final.strip(),
         "base_mode": (
-            "pose_only" if pose_tag and not subject_description else
-            "description_only" if subject_description and not pose_tag else
-            "hybrid_fusion"
+            "pose_only"
+            if pose_tag and not subject_description
+            else (
+                "description_only"
+                if subject_description and not pose_tag
+                else "hybrid_fusion"
+            )
         ),
         "components_used": components,
     }

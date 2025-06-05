@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# sora_prompt_builder.sh — Unified prompt generation CLI
-# Requires: Python ≥3.9 with functions loaded via promptlib.py
+# Author: 4ndr0666
 # shellcheck disable=SC2034
-
 set -euo pipefail
 IFS=$'\n\t'
+# ====================== // SORA PROMPT BUILDER //
+## Description:Unified prompt generation CLI
+## Requires: Python ≥3.9 with functions loaded via promptlib.py
+# -----------------------------------------
+
+## Help
 
 usage() {
 	printf '%s\n' "Usage: $0 --pose <pose_tag> | --desc <description> [--deakins] [--copy] [--dry-run]"
@@ -19,6 +23,8 @@ usage() {
 	exit 1
 }
 
+## Global Constants
+
 POSE=""
 DESC=""
 USE_DEAKINS=0
@@ -27,46 +33,47 @@ DRY_RUN=0
 INTERACTIVE=0
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --pose)
-      POSE="$2"
-      shift 2
-      ;;
-    --desc)
-      DESC="$2"
-      shift 2
-      ;;
-    --deakins)
-      USE_DEAKINS=1
-      shift
-      ;;
-    --copy)
-      COPY_FLAG=1
-      shift
-      ;;
-    --dry-run)
-      DRY_RUN=1
-      shift
-      ;;
-    --interactive)
-      INTERACTIVE=1
-      shift
-      ;;
-    --help)
-      usage
-      ;;
-    *)
-      usage
-      ;;
-  esac
+	case "$1" in
+	--pose)
+		POSE="$2"
+		shift 2
+		;;
+	--desc)
+		DESC="$2"
+		shift 2
+		;;
+	--deakins)
+		USE_DEAKINS=1
+		shift
+		;;
+	--copy)
+		COPY_FLAG=1
+		shift
+		;;
+	--dry-run)
+		DRY_RUN=1
+		shift
+		;;
+	--interactive)
+		INTERACTIVE=1
+		shift
+		;;
+	--help)
+		usage
+		;;
+	*)
+		usage
+		;;
+	esac
 done
 
 if [[ $INTERACTIVE -eq 0 && -z "$POSE" && -z "$DESC" ]]; then
-  usage
+	usage
 fi
 
 if [[ $INTERACTIVE -eq 1 ]]; then
-  FINAL_OUTPUT=$(python3 - "$USE_DEAKINS" <<'PYEOF'
+	FINAL_OUTPUT=$(
+		python3 - "$USE_DEAKINS" <<'PYEOF'
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.styles import Style
@@ -99,17 +106,18 @@ print('────────────────────────�
 print(f"🎛️  Base Mode: {result['base_mode']}")
 print(f"🔧 Components Used: {', '.join(result['components_used'])}")
 PYEOF
-  )
-  printf '%s\n' "$FINAL_OUTPUT"
-  if [[ $COPY_FLAG -eq 1 ]]; then
-    if command -v wl-copy >/dev/null 2>&1; then
-      printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-      printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
-    else
-      printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
-    fi
-  fi
-  exit 0
+	)
+	printf '%s\n' "$FINAL_OUTPUT"
+	if [[ $COPY_FLAG -eq 1 ]]; then
+		if command -v wl-copy >/dev/null 2>&1; then
+			printf '%s\n' "$FINAL_OUTPUT" | wl-copy
+			printf '%s\n' "📋 Prompt copied to clipboard via wl-copy."
+		else
+			printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
+		fi
+	fi
+fi
+exit 0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
