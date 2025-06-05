@@ -3,20 +3,62 @@
 
 from __future__ import annotations
 
-# Canonical pose tags used across prompting functions
+# -----------------------------------------------------------------------------
+# Module 0: Expanded POSE_TAGS (≈45 tags, pulled from Pose_prompting.pdf)
+# -----------------------------------------------------------------------------
 POSE_TAGS: list[str] = [
     "leaning_forward",
     "crouching",
     "one_knee_up",
     "looking_back_seductively",
     "sitting_on_heels",
+    "arms_crossed",
+    "hands_in_pockets",
+    "walking_toward_camera",
+    "jumping",
+    "running",
+    "arms_raised",
+    "sitting_crosslegged",
+    "lying_down",
+    "hands_on_hips",
+    "kneeling",
+    "twisting_shoulder",
+    "tilted_head",
+    "looking_up",
+    "looking_down",
+    "leaning_back",
+    "bending_sideways",
+    "hands_in_air",
+    "resting_chin_on_hand",
+    "side_profile",
+    "three_quarter_profile",
+    "back_to_camera",
+    "over_shoulder_glance",
+    "arms_above_head",
+    "backbend",
+    "hand_on_knee",
+    "hand_on_chest",
+    "hand_on_waist",
+    "crossed_legs_stand",
+    "splayed_legs",
+    "squat",
+    "lunge",
+    "leg_stretched",
+    "bend_forward",
+    "bend_backward",
+    "lean_left",
+    "lean_right",
+    "lean_forward_knee",
+    "lunge_forward",
+    "hands_on_ground",
+    "hugging_self",
+    "covering_face",
+    "shielding_eyes"
 ]
 
-# ---------------------------------------------------------------------------
-# Module 2: generate_prompt_variants
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
+# Module 1: generate_prompt_variants
+# -----------------------------------------------------------------------------
 def generate_prompt_variants(subject_description: str) -> list[str]:
     """Create three stylistically distinct prompt variants.
 
@@ -27,7 +69,6 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
         List of three complete prompt candidates.
     """
     base = subject_description.lower()
-
     variants: list[str] = []
 
     # — Variant 1: Close-up + macro detail + Deakins light —
@@ -72,11 +113,9 @@ def generate_prompt_variants(subject_description: str) -> list[str]:
     return variants
 
 
-# ---------------------------------------------------------------------------
-# Module 3: evaluate_realism
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
+# Module 2: evaluate_realism
+# -----------------------------------------------------------------------------
 def evaluate_realism(prompt: str) -> tuple[int, str]:
     """Assign a success probability and explanation for cinematic realism."""
     score = 100
@@ -112,17 +151,13 @@ def evaluate_realism(prompt: str) -> tuple[int, str]:
     # Final adjustment to stay in 0–100 range
     score = max(50, min(score, 99))
 
-    explanation = (
-        "; ".join(notes) if notes else "Well-balanced cinematic configuration."
-    )
+    explanation = "; ".join(notes) if notes else "Well-balanced cinematic configuration."
     return score, explanation
 
 
-# ---------------------------------------------------------------------------
-# Module 1: tri_prompt_engine (depends on modules 2 and 3)
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
+# Module 3: tri_prompt_engine (depends on modules 1 and 2)
+# -----------------------------------------------------------------------------
 def tri_prompt_engine(subject_description: str) -> dict:
     """Generate and rank three cinematic prompt variants."""
     prompt_variants = generate_prompt_variants(subject_description)
@@ -147,11 +182,9 @@ def tri_prompt_engine(subject_description: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Module 4: fuse_pose_lighting_camera
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
 def fuse_pose_lighting_camera(
     pose_tag: str,
     lighting_mode: str = "deakins",
@@ -166,6 +199,48 @@ def fuse_pose_lighting_camera(
         "crouching": "Model crouches low with poised tension, heels slightly lifted.",
         "sitting_on_heels": "Subject rests neatly on heels, upright spine and soft shoulders.",
         "looking_back_seductively": "Model glances over their shoulder, expression unreadable yet inviting.",
+        "arms_crossed": "Arms crossed over chest, gaze forward with determined expression.",
+        "hands_in_pockets": "Hands rest casually in pockets, shoulders relaxed, gaze steady.",
+        "walking_toward_camera": "Model walks confidently toward the camera, stride measured.",
+        "jumping": "Subject in mid-air jump, legs tucked slightly, expression dynamic.",
+        "running": "Athlete runs toward camera, full stride and intense focus.",
+        "arms_raised": "Arms raised overhead, body stretched, expression triumphant.",
+        "sitting_crosslegged": "Model sits cross-legged, back straight, hands resting on knees.",
+        "lying_down": "Subject lies on back, arms softly outstretched, gaze upward.",
+        "hands_on_hips": "Hands rest on hips, body weight shifted to one leg, confident stance.",
+        "kneeling": "Kneels on one or both knees, posture upright, gaze forward.",
+        "twisting_shoulder": "Torso twisted, shoulder turned toward camera, gaze over opposite shoulder.",
+        "tilted_head": "Head tilted slightly to one side, subtle smile.",
+        "looking_up": "Gazes upward with a hopeful expression, chin lifted.",
+        "looking_down": "Gazes downward with a contemplative expression.",
+        "leaning_back": "Leans back against an invisible surface, arms crossed casually.",
+        "bending_sideways": "Torso bends sideways, arm extended along body, dynamic curve.",
+        "hands_in_air": "Both hands lifted in the air, fingers splayed, dynamic pose.",
+        "resting_chin_on_hand": "Chin rests on hand, elbow on knee or hip, pensive look.",
+        "side_profile": "Shows a clean side-profile, head turned exactly 90°, gaze forward.",
+        "three_quarter_profile": "Three-quarter angle to camera, revealing facial features and depth.",
+        "back_to_camera": "Back facing camera, head turned partially to reveal profile.",
+        "over_shoulder_glance": "Glances over shoulder, eyes toward camera, subtle expression.",
+        "arms_above_head": "Arms stretched above head, body elongated, expression serene.",
+        "backbend": "Performs a backbend with chest open and arms reaching back.",
+        "hand_on_knee": "One hand resting on knee, opposite leg bent, casual stance.",
+        "hand_on_chest": "Hand placed gently on chest, gaze forward, emotional connection.",
+        "hand_on_waist": "Hand on waist, elbow pointed out, confident pose.",
+        "crossed_legs_stand": "Stands with legs crossed at ankles, arms relaxed by sides.",
+        "splayed_legs": "Stands with legs apart, hands on hips, power stance.",
+        "squat": "Performs a low squat, knees bent deeply, eyes focused.",
+        "lunge": "Executes a forward lunge, back leg straight, front knee bent.",
+        "leg_stretched": "One leg stretched forward, body leaning slightly, dynamic stretch.",
+        "bend_forward": "Bends forward at waist, arms hanging toward ground, hair falling.",
+        "bend_backward": "Bends backward at waist, arms lifted overhead, open chest.",
+        "lean_left": "Leans body to the left, right foot planted firmly, relaxed expression.",
+        "lean_right": "Leans body to the right, left foot planted firmly, relaxed expression.",
+        "lean_forward_knee": "Leans forward on one knee, opposite leg extended, intensity in eyes.",
+        "lunge_forward": "Lunges forward aggressively, torso low, arms braced forward.",
+        "hands_on_ground": "Both hands placed on ground, body in plank-like position.",
+        "hugging_self": "Arms wrapped around torso, slight lean inward, cozy vibe.",
+        "covering_face": "One hand covering part of face, eyes peeking through, mysterious.",
+        "shielding_eyes": "Hand raised to forehead to shield eyes, gaze into distance."
     }
 
     lighting_profiles = {
@@ -185,9 +260,13 @@ def fuse_pose_lighting_camera(
         else "natural hard edge falloff"
     )
 
+    pose_description = pose_map.get(
+        pose_tag, "Subject holds a grounded, balanced pose."
+    )
+
     return (
         f"> {{\n"
-        f"    {pose_map.get(pose_tag, 'Subject holds a grounded, balanced pose.')}\n"
+        f"    {pose_description}\n"
         f"    Lighting: {lighting_profiles[lighting_mode]}.\n"
         f"    Lens: {lens_choice}, shallow depth of field.\n"
         f"    Camera: [{', '.join(movement_tags)}].\n"
@@ -199,11 +278,9 @@ def fuse_pose_lighting_camera(
     )
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Module 5: generate_pose_prompt
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
 def generate_pose_prompt(pose_tag: str) -> str:
     """Generate a standalone cinematic prompt from a pose tag."""
     pose_lookup = {
@@ -232,6 +309,216 @@ def generate_pose_prompt(pose_tag: str) -> str:
             "50mm f/2.0",
             "[static shot]",
         ),
+        "arms_crossed": (
+            "Arms crossed over chest, gaze forward with determined expression.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hands_in_pockets": (
+            "Hands rest casually in pockets, shoulders relaxed, gaze steady.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "walking_toward_camera": (
+            "Model walks confidently toward the camera, stride measured.",
+            "50mm f/2.0, moderate focus",
+            "[tracking shot]",
+        ),
+        "jumping": (
+            "Subject in mid-air jump, legs tucked slightly, expression dynamic.",
+            "85mm f/1.8",
+            "[push in]",
+        ),
+        "running": (
+            "Athlete runs toward camera, full stride and intense focus.",
+            "85mm f/1.8",
+            "[tracking shot]",
+        ),
+        "arms_raised": (
+            "Arms raised overhead, body stretched, expression triumphant.",
+            "50mm f/2.0",
+            "[push in]",
+        ),
+        "sitting_crosslegged": (
+            "Model sits cross-legged, back straight, hands resting on knees.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lying_down": (
+            "Subject lies on back, arms softly outstretched, gaze upward.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hands_on_hips": (
+            "Hands rest on hips, body weight shifted to one leg, confident stance.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "kneeling": (
+            "Kneels on one or both knees, posture upright, gaze forward.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "twisting_shoulder": (
+            "Torso twisted, shoulder turned toward camera, gaze over opposite shoulder.",
+            "85mm f/1.8",
+            "[push in]",
+        ),
+        "tilted_head": (
+            "Head tilted slightly to one side, subtle smile.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "looking_up": (
+            "Gazes upward with a hopeful expression, chin lifted.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "looking_down": (
+            "Gazes downward with a contemplative expression.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "leaning_back": (
+            "Leans back against an invisible surface, arms crossed casually.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "bending_sideways": (
+            "Torso bends sideways, arm extended along body, dynamic curve.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hands_in_air": (
+            "Both hands lifted in the air, fingers splayed, dynamic pose.",
+            "50mm f/2.0",
+            "[push in]",
+        ),
+        "resting_chin_on_hand": (
+            "Chin rests on hand, elbow on knee or hip, pensive look.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "side_profile": (
+            "Shows a clean side-profile, head turned exactly 90°, gaze forward.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "three_quarter_profile": (
+            "Three-quarter angle to camera, revealing facial features and depth.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "back_to_camera": (
+            "Back facing camera, head turned partially to reveal profile.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "over_shoulder_glance": (
+            "Glances over shoulder, eyes toward camera, subtle expression.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "arms_above_head": (
+            "Arms stretched above head, body elongated, expression serene.",
+            "50mm f/2.0",
+            "[push in]",
+        ),
+        "backbend": (
+            "Performs a backbend with chest open and arms reaching back.",
+            "50mm f/2.0",
+            "[push in]",
+        ),
+        "hand_on_knee": (
+            "One hand resting on knee, opposite leg bent, casual stance.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hand_on_chest": (
+            "Hand placed gently on chest, gaze forward, emotional connection.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hand_on_waist": (
+            "Hand on waist, elbow pointed out, confident pose.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "crossed_legs_stand": (
+            "Stands with legs crossed at ankles, arms relaxed by sides.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "splayed_legs": (
+            "Stands with legs apart, hands on hips, power stance.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "squat": (
+            "Performs a low squat, knees bent deeply, eyes focused.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lunge": (
+            "Executes a forward lunge, back leg straight, front knee bent.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "leg_stretched": (
+            "One leg stretched forward, body leaning slightly, dynamic stretch.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "bend_forward": (
+            "Bends forward at waist, arms hanging toward ground, hair falling.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "bend_backward": (
+            "Bends backward at waist, arms lifted overhead, open chest.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lean_left": (
+            "Leans body to the left, right foot planted firmly, relaxed expression.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lean_right": (
+            "Leans body to the right, left foot planted firmly, relaxed expression.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lean_forward_knee": (
+            "Leans forward on one knee, opposite leg extended, intensity in eyes.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "lunge_forward": (
+            "Lunges forward aggressively, torso low, arms braced forward.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hands_on_ground": (
+            "Both hands placed on ground, body in plank-like position.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "hugging_self": (
+            "Arms wrapped around torso, slight lean inward, cozy vibe.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "covering_face": (
+            "One hand covering part of face, eyes peeking through, mysterious.",
+            "50mm f/2.0",
+            "[static shot]",
+        ),
+        "shielding_eyes": (
+            "Hand raised to forehead to shield eyes, gaze into distance.",
+            "50mm f/2.0",
+            "[static shot]",
+        )
     }
 
     if pose_tag not in pose_lookup:
@@ -242,21 +529,19 @@ def generate_pose_prompt(pose_tag: str) -> str:
     return (
         f"> {{\n"
         f"    {description}\n"
-        "    Lighting: soft backlight at 120°, with faint warm edge glow.\n"
+        f"    Lighting: soft backlight at 120°, with faint warm edge glow.\n"
         f"    Lens: {lens}.\n"
         f"    Camera: {movement}.\n"
-        "    Environment: minimalist neutral background with gentle shadow gradient.\n"
-        "    Detail: Preserve collarbone contour, shadow curvature, and fabric drape.\n"
-        "    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
-        "}"
+        f"    Environment: minimalist neutral background with gentle shadow gradient.\n"
+        f"    Detail: Preserve collarbone contour, shadow curvature, and fabric drape.\n"
+        f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
+        f"}}"
     )
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Module 6: apply_deakins_lighting
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
 def apply_deakins_lighting(prompt: str) -> str:
     """Augment a cinematic prompt with Deakins-style lighting."""
     deakins_block = (
@@ -274,11 +559,9 @@ def apply_deakins_lighting(prompt: str) -> str:
     return f"{updated.strip()}\n{deakins_block.strip()}\n*Note: Deakins lighting augmentation applied for cinematic realism.*"
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Module 7: prompt_orchestrator
-# ---------------------------------------------------------------------------
-
-
+# -----------------------------------------------------------------------------
 def prompt_orchestrator(
     pose_tag: str | None = None,
     subject_description: str | None = None,
