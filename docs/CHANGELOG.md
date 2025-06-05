@@ -10,3 +10,4 @@
 - Added --help support to sora_prompt_builder.sh.
 - Fixed shebang in promptlib.py and corrected interactive exit logic in sora_prompt_builder.sh.
 - Interactive mode in sora_prompt_builder.sh now reads from /dev/tty and reports missing prompt_toolkit.
+- Fixed interactive output handling to prevent 'responds_to_cpr' errors with prompt_toolkit.

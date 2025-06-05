@@ -5,3 +5,4 @@ Updated sora_prompt_builder.sh to support --copy, --dry-run, and --help flags wh
 Introduced an interactive mode leveraging prompt_toolkit for autocompleted pose selection and a custom color scheme.
 Added --dry-run support to sora_prompt_builder.sh for previewing the Python command before execution.
 Interactive mode now reads from `/dev/tty` and reports missing `prompt_toolkit` instead of raising an EOF error.
+Interactive output handling fixed to prevent `responds_to_cpr` errors when using prompt_toolkit.
