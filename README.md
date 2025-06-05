@@ -28,6 +28,7 @@ This repository provides utilities for generating cinematic pose prompts for ima
 ```
 
 This mode offers autocompletion for pose tags and copies the final prompt to the clipboard when `--copy` is supplied.
+Interactive mode requires the optional `prompt_toolkit` Python package and must be run from a terminal. If `prompt_toolkit` is missing, the script will exit with an explanatory message.
 
 ### Library Functions
 
