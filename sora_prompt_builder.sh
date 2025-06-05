@@ -72,8 +72,8 @@ if [[ $INTERACTIVE -eq 0 && -z "$POSE" && -z "$DESC" ]]; then
 fi
 
 if [[ $INTERACTIVE -eq 1 ]]; then
-	FINAL_OUTPUT=$(
-		python3 - "$USE_DEAKINS" <<'PYEOF'
+        FINAL_OUTPUT=$(
+                python3 - "$USE_DEAKINS" <<'PYEOF'
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.styles import Style
@@ -115,9 +115,9 @@ PYEOF
 		else
 			printf '%s\n' "⚠️  wl-copy not installed. Skipping clipboard copy."
 		fi
-	fi
+        fi
+        exit 0
 fi
-exit 0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
