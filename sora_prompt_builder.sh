@@ -75,6 +75,10 @@ if [[ $INTERACTIVE -eq 1 ]]; then
         FINAL_OUTPUT=$(
                 python3 - "$USE_DEAKINS" <<'PYEOF'
 import os
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from promptlib import prompt_orchestrator, POSE_TAGS
 import sys
 
 try:
