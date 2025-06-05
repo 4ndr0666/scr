@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Prompt generation library for cinematic pose workflows."""
 
 from __future__ import annotations
