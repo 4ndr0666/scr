@@ -14,3 +14,5 @@
 - Improved interactive session to use prompt_toolkit\x27s create_input/create_output for stable TTY handling.
 
 - Corrected create_input invocation for interactive mode.
+- Added optional backup flag and improved VPN detection in ufw.sh; checks ExpressVPN DNS.
+- Added ExpressVPN DNS firewall rules with automatic backup/restore hooks.

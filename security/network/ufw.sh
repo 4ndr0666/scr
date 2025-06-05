@@ -51,6 +51,7 @@ declare -i SILENT=0
 declare -i DRY_RUN=0
 declare -i VPN_FLAG=0
 declare -i JD_FLAG=0
+declare -i BACKUP_FLAG=0
 
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly LOG_DIR="$HOME/.local/share/logs"
@@ -61,6 +62,10 @@ readonly CRON_JOB_FILE="/etc/cron.d/ufw_backup"
 readonly BACKUP_DIR="/etc/ufw/backups"
 readonly UFW_DEFAULTS_FILE="/etc/default/ufw"
 readonly SSH_PORT="22" # Standard SSH port
+readonly RESOLV_FILE="/etc/resolv.conf"
+readonly RESOLV_BACKUP="/etc/resolv.conf.expressvpn-orig"
+
+declare -a VPN_DNS_SERVERS=()
 
 declare -g PRIMARY_IF=""
 declare -g VPN_IFACES="" # Space-separated string of VPN interface names
@@ -140,6 +145,89 @@ register_tmp_dir() {
 	fi
 }
 
+backup_file() {
+	local src="$1"
+	local dest_dir="$2"
+	local ts dest
+
+	if [[ -z "$src" || -z "$dest_dir" ]]; then
+		log "ERROR" "backup_file requires source and destination"
+		return 1
+	fi
+
+	if [[ ! -f "$src" ]]; then
+		log "WARN" "File $src not found to backup."
+		return 1
+	fi
+
+	ts=$(date +"%Y%m%d_%H%M%S")
+	dest="$dest_dir/$(basename "$src").bak_$ts"
+
+	run_cmd_dry mkdir -p "$dest_dir" || return 1
+
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		cp "$src" "$dest" || {
+			log "ERROR" "Failed to backup $src"
+			return 1
+		}
+		chmod --reference="$src" "$dest" || log "WARN" "Failed to copy permissions to $dest"
+	else
+		log "NOTE" "Dry-run: Would copy $src to $dest"
+	fi
+	log "OK" "Backup created: $dest"
+	return 0
+}
+
+backup_resolv_conf() {
+	if [[ -f "$RESOLV_FILE" && ! -f "$RESOLV_BACKUP" ]]; then
+		run_cmd_dry cp "$RESOLV_FILE" "$RESOLV_BACKUP" &&
+			log "OK" "Backed up $RESOLV_FILE to $RESOLV_BACKUP"
+	fi
+}
+
+restore_resolv_conf() {
+	if [[ -f "$RESOLV_BACKUP" ]]; then
+		run_cmd_dry cp "$RESOLV_BACKUP" "$RESOLV_FILE" &&
+			log "OK" "Restored $RESOLV_FILE from backup"
+	else
+		log "WARN" "No DNS backup found at $RESOLV_BACKUP"
+	fi
+}
+
+parse_dns_servers() {
+	VPN_DNS_SERVERS=()
+	if [[ -f "$RESOLV_FILE" ]]; then
+		mapfile -t VPN_DNS_SERVERS < <(grep -E "^nameserver" "$RESOLV_FILE" | awk '{print $2}')
+		log "INFO" "Parsed DNS servers: ${VPN_DNS_SERVERS[*]:-none}"
+	fi
+}
+
+apply_dns_rules() {
+	if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+		log "WARN" "No DNS servers available for rule creation"
+		return 1
+	fi
+	local dns_rules=()
+	if detect_vpn_interfaces; then
+		read -r -a vpn_iface_array <<<"$VPN_IFACES"
+	else
+		vpn_iface_array=("$PRIMARY_IF")
+	fi
+	for DNS_IP in "${VPN_DNS_SERVERS[@]}"; do
+		for VPN_IF in "${vpn_iface_array[@]}"; do
+			dns_rules+=("allow out on $VPN_IF to $DNS_IP port 53 proto udp comment 'VPN DNS'")
+			dns_rules+=("allow out on $VPN_IF to $DNS_IP port 53 proto tcp comment 'VPN DNS'")
+		done
+	done
+	dns_rules+=("deny out to any port 53 comment 'Block other DNS'")
+	for rule in "${dns_rules[@]}"; do
+		if validate_ufw_rule $rule; then
+			run_cmd_dry ufw $rule || log "WARN" "Failed DNS rule: $rule"
+		fi
+	done
+	return 0
+}
+
 ## DRY RUN WRAPPER
 
 run_cmd_dry() {
@@ -181,6 +269,7 @@ usage() {
 	echo "  --vpn             : Configure VPN-specific firewall rules (killswitch)."
 	echo "                    Requires VPN connection to be active for port detection."
 	echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
+	echo "  --backup         : Create backups before modifying config files."
 	echo "  --silent          : Suppress console output (logs only)."
 	echo "  --dry-run         : Simulate actions without making changes."
 	echo "  --help, -h        : Show this help message."
@@ -252,8 +341,7 @@ set_immutable() {
 check_dependencies() {
 	log "INFO" "Checking required dependencies..."
 	local deps=(ufw ss awk grep sed systemctl ip sysctl tee)
-	# Add chattr/lsattr to dependencies only if they are available
-	command -v lsattr >/dev/null 2>&1 && command -v chattr >/dev/null 2>&1 && deps+=(lsattr chattr)
+	local optional_deps=(lsattr chattr)
 
 	local missing=()
 	for cmd in "${deps[@]}"; do
@@ -262,13 +350,17 @@ check_dependencies() {
 		fi
 	done
 
+	for opt in "${optional_deps[@]}"; do
+		command -v "$opt" >/dev/null 2>&1 || log "WARN" "Optional dependency missing: $opt"
+	done
+
 	if [[ ${#missing[@]} -eq 0 ]]; then
 		log "OK" "All required dependencies satisfied."
 		return 0
 	else
 		log "ERROR" "Missing dependencies: ${missing[*]}"
 		echo -e "$ERROR Missing dependencies: ${missing[*]}" >&2
-		return 1 # Indicate failure
+		return 1
 	fi
 }
 
@@ -276,9 +368,12 @@ check_dependencies() {
 
 detect_primary_interface() {
 	log "INFO" "Detecting primary network interface..."
-	# Get the interface used for the default route to a public IP (8.8.8.8)
+	# Prefer default route lookup that doesn't rely on external reachability
 	local detected_if
-	detected_if=$(ip route get 8.8.8.8 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}' || true)
+	detected_if=$(ip -4 route show default | awk '{print $5; exit}' || true)
+	if [[ -z "$detected_if" ]]; then
+		detected_if=$(ip route get 8.8.8.8 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}' || true)
+	fi
 
 	if [[ -z "$detected_if" ]]; then
 		log "ERROR" "Unable to detect primary interface. Network might be down or routing is unusual."
@@ -292,9 +387,9 @@ detect_primary_interface() {
 
 detect_vpn_interfaces() {
 	log "INFO" "Detecting VPN interfaces (tun, ppp)..."
-	# Use ip -o link show to get interfaces of type tun or ppp, extract names
+	# Use ip -o link show and match interface names starting with tun or ppp
 	local detected_ifaces_str
-	detected_ifaces_str=$(ip -o link show type tun,ppp | awk -F': ' '{print $2}' | xargs || true)
+	detected_ifaces_str=$(ip -o link show | awk -F': ' '$2 ~ /^(tun|ppp)/ {print $2}' | xargs || true)
 
 	if [[ -z "$detected_ifaces_str" ]]; then
 		VPN_IFACES=""
@@ -322,9 +417,8 @@ detect_vpn_port() {
 
 	for VPN_IF in "${vpn_iface_array[@]}"; do
 		log "INFO" "Checking for active connections on interface $VPN_IF..."
-		detected_port=$(ss -tunap state established \
-			"( sport = :443 or dport = :443 or sport = :1194 or dport = :1194 or sport = :500 or dport = :500 or sport = :4500 or dport = :4500 )" |
-			grep " $VPN_IF" | awk '{print $5}' | awk -F: '{print $NF}' | head -n1 || true) # Use " $VPN_IF" to match whole word
+		detected_port=$(ss -tunap state established dev "$VPN_IF" |
+			awk '{print $5}' | awk -F: '{print $NF}' | grep -Eo "^[0-9]+" | head -n1 || true)
 
 		if [[ -n "$detected_port" && "$detected_port" =~ ^[0-9]+$ ]]; then
 			VPN_PORT="$detected_port"
@@ -337,6 +431,25 @@ detect_vpn_port() {
 	log "WARN" "No active VPN connection found on common ports/interfaces. Defaulting VPN port to $VPN_PORT."
 	log "WARN" "If your VPN uses a different port or is not active, the killswitch rules may not work correctly."
 	return 1 # Indicate detection failed, fallback used
+}
+
+check_resolv_conf() {
+	log "INFO" "Checking $RESOLV_FILE for ExpressVPN DNS settings..."
+	if grep -q "ExpressVPN" "$RESOLV_FILE" 2>/dev/null; then
+		parse_dns_servers
+		if pgrep -x expressvpn >/dev/null 2>&1; then
+			backup_resolv_conf
+			log "OK" "ExpressVPN DNS entries detected and client running."
+			return 0
+		else
+			log "WARN" "ExpressVPN DNS present but client not running. Restoring DNS."
+			restore_resolv_conf
+			return 1
+		fi
+	else
+		log "INFO" "ExpressVPN DNS not detected."
+		return 1
+	fi
 }
 
 ## ARGUMENT PARSER
@@ -352,6 +465,10 @@ parse_args() {
 		--jdownloader)
 			JD_FLAG=1
 			log "INFO" "--jdownloader enabled."
+			;;
+		--backup)
+			BACKUP_FLAG=1
+			log "INFO" "Backup mode enabled."
 			;;
 		--silent)
 			SILENT=1
@@ -534,6 +651,11 @@ net.ipv6.conf.default.accept_source_route=0
 		log "ERROR" "Could not create /etc/sysctl.d/"
 		return 1
 	}
+	if [[ "$BACKUP_FLAG" -eq 1 ]]; then
+		backup_file "$SYSCTL_UFW_FILE" "$BACKUP_DIR" || log "WARN" "Failed to backup $SYSCTL_UFW_FILE"
+	else
+		log "INFO" "Backup flag not set. Skipping backup of $SYSCTL_UFW_FILE."
+	fi
 
 	# Remove immutable flag before writing if chattr is available
 	command -v chattr >/dev/null 2>&1 && remove_immutable "$SYSCTL_UFW_FILE" || true
@@ -676,6 +798,10 @@ configure_ufw() {
 		done
 	fi
 
+	if check_resolv_conf; then
+		apply_dns_rules || log "WARN" "Failed to apply DNS rules"
+	fi
+
 	log "INFO" "Adding all configured rules..."
 
 	for rule_spec in "${ALL_RULES[@]}"; do
@@ -690,6 +816,11 @@ configure_ufw() {
 
 	log "INFO" "Disabling IPv6 in $UFW_DEFAULTS_FILE..."
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
+		if [[ "$BACKUP_FLAG" -eq 1 ]]; then
+			backup_file "$UFW_DEFAULTS_FILE" "$BACKUP_DIR" || log "WARN" "Failed to backup $UFW_DEFAULTS_FILE"
+		else
+			log "INFO" "Backup flag not set. Skipping backup of $UFW_DEFAULTS_FILE."
+		fi
 		if grep -q "^IPV6=yes" "$UFW_DEFAULTS_FILE"; then
 			run_cmd_dry sed -i.bak 's/^IPV6=yes/IPV6=no/' "$UFW_DEFAULTS_FILE"
 			if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -768,6 +899,8 @@ validate_ufw_rule() {
 
 final_verification() {
 	log "CAT" "Performing final verification..."
+
+	check_resolv_conf
 
 	[[ "$SILENT" -eq 0 ]] && echo -e "\n${CYAN}### UFW Status ###${RESET}"
 	log "INFO" "--- UFW Status ---"
