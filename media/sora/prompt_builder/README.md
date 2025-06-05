@@ -1,6 +1,6 @@
-# Cinematic Prompt Tools
+# AI Image To Video Prompt Builder
 
-This repository provides utilities for generating cinematic pose prompts for image and video models.
+A wrapper to assist with building a tailored prompt from aggregated data specifically for the uesrs AI platform.
 
 ## Components
 
@@ -39,4 +39,3 @@ from promptlib import prompt_orchestrator
 result = prompt_orchestrator(pose_tag="crouching")
 print(result["final_prompt"])
 ```
-
