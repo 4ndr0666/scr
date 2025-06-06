@@ -241,15 +241,21 @@ with tty_in, tty_out:
         f"}}"
     ])
 
-    final = "\n".join(lines)
+        final = "\n".join(lines)
     print(final)
 PYEOF
 	)"
+
+	if [[ $USE_DEAKINS -eq 1 ]]; then
+		DEAKINS_NOTE="*Note: Deakins lighting augmentation applied for cinematic realism.*"
+		FINAL_OUTPUT=$(printf '%s\n' "$FINAL_OUTPUT" | sed '/Deakins lighting augmentation applied for cinematic realism\./d')
+	fi
 
 	# Display & auto-copy
 	echo "─────────────────────────────────────"
 	echo "🎬 Final Prompt:"
 	printf '%s\n' "$FINAL_OUTPUT"
+	[[ $USE_DEAKINS -eq 1 ]] && echo "$DEAKINS_NOTE"
 	echo "─────────────────────────────────────"
 	echo "🎛️  Builder Mode: standard"
 	if [[ $USE_DEAKINS -eq 1 ]]; then
