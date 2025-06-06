@@ -225,6 +225,8 @@ with tty_in, tty_out:
     # If Deakins‐mode, insert the Deakins block here; else insert lighting+shadow
     if use_deakins_flag:
         for dl in build_deakins_block():
+            if "Deakins lighting augmentation" in dl:
+                continue
             lines.append(f"    {dl}")
     else:
         lines.append(f"    {lighting_line}")
@@ -241,7 +243,7 @@ with tty_in, tty_out:
         f"}}"
     ])
 
-        final = "\n".join(lines)
+    final = "\n".join(lines)
     print(final)
 PYEOF
 	)"
