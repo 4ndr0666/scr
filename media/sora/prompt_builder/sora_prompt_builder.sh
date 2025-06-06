@@ -9,18 +9,16 @@ IFS=$'\n\t'
 ## Requires: Python ≥3.9 with promptlib.py and plugin_loader.py
 # -----------------------------------------
 
-# ────────────────────────────────────────────────────────────────────────────
-#  Color & Status Constants
-# ────────────────────────────────────────────────────────────────────────────
+##  Color & Status Constants
+
 OK="$(tput setaf 2)[OK]$(tput sgr0)"
 ERROR="$(tput setaf 1)[ERROR]$(tput sgr0)"
 WARN="$(tput setaf 1)[WARN]$(tput sgr0)"
 INFO="$(tput setaf 4)[INFO]$(tput sgr0)"
 CAT="$(tput setaf 6)[ACTION]$(tput sgr0)"   # Cyan primary highlight
 
-# ────────────────────────────────────────────────────────────────────────────
-# Usage / Help
-# ────────────────────────────────────────────────────────────────────────────
+## Usage / Help
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [--interactive] [--deakins] [--copy] [--plugin <file.md>]
@@ -45,23 +43,23 @@ EOF
     exit 1
 }
 
-# ────────────────────────────────────────────────────────────────────────────
-# Global Variables & Defaults
-# ────────────────────────────────────────────────────────────────────────────
+## Global Variables & Defaults
+
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 USE_DEAKINS=0
 COPY_FLAG=0
 DRY_RUN=0
 INTERACTIVE=0
 PLUGIN_FILES=()
 
-# Constants for validation
+## Constants for validation
+
 readonly MAX_DURATION=10
 readonly RESO_REGEX='^[0-9]{3,4}p$'
-BAD_WORDS_REGEX='(sexual|porn|gore|torture|rape|beheading|extremist|hate|terror|celebrity|trademark|copyright|defamation|harassment|self-harm|medical_advice)'
+BAD_WORDS_REGEX='(sexual|porn|gore|torture|rape|beheading|extremist|hate|terror|trademark|copyright|defamation|harassment|self-harm|medical_advice)'
 
-# =============================================================================
-# Argument Parsing
-# =============================================================================
+## Argument Parsing
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --deakins)
@@ -94,9 +92,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# =============================================================================
-# Step 1: Interactive “Prompt Builder” Mode (enforced)
-# =============================================================================
+## Step 1: Interactive “Prompt Builder” Mode (enforced)
+
 if [[ $INTERACTIVE -eq 1 ]]; then
     FINAL_OUTPUT="$(python3 - "$USE_DEAKINS" <<'PYEOF'
 import sys
@@ -265,16 +262,14 @@ PYEOF
     exit 0
 fi
 
-# =============================================================================
-# Step 2: Validate that at least one of --interactive or --plugin is provided
-# =============================================================================
+## Step 2: Validate that at least one of --interactive or --plugin is provided
+
 if [[ $INTERACTIVE -eq 0 && ${#PLUGIN_FILES[@]} -eq 0 ]]; then
     usage
 fi
 
-# =============================================================================
-# Step 3: Load Prompts via plugin_loader.py if any --plugin flags provided
-# =============================================================================
+## Step 3: Load Prompts via plugin_loader.py if any --plugin flags provided
+
 declare -a PROMPTS=()
 
 for file in "${PLUGIN_FILES[@]}"; do
@@ -288,16 +283,14 @@ for file in "${PLUGIN_FILES[@]}"; do
         PROMPTS+=("$block")
     done < <(python3 plugin_loader.py "$file")
 done
-# =============================================================================
-# Step 4: If no plugin-loaded prompts (and interactive already handled), exit
-# =============================================================================
+## Step 4: If no plugin-loaded prompts (and interactive already handled), exit
+
 if [[ ${#PROMPTS[@]} -eq 0 ]]; then
     exit 0
 fi
 
-# =============================================================================
-# Step 5: fzf‐Based Selection of Loaded Plugin Prompts
-# =============================================================================
+## Step 5: fzf‐Based Selection of Loaded Plugin Prompts
+
 mapfile -t TITLES < <(
     for p in "${PROMPTS[@]}"; do
         # Use first non-empty line of each block as a title (strip leading/trailing quotes if present)
@@ -325,9 +318,8 @@ fi
 
 prompt="${PROMPTS[$idx]}"
 
-# =============================================================================
-# Step 6: Validation (camera tags, forbidden terms, duration, resolution)
-# =============================================================================
+## Step 6: Validation (camera tags, forbidden terms, duration, resolution)
+
 warn() { printf "%s %s\n" "$WARN" "$1" >&2; }
 
 # camera tag presence
@@ -362,9 +354,7 @@ else
     (( num > 1080 )) && warn "Resolution ${reso} exceeds 1080p cap."
 fi
 
-# =============================================================================
-# Step 7: Append Standard Notes, Attachments, Post-Generation Operation
-# =============================================================================
+## Step 7: Append Standard Notes, Attachments, Post-Generation Operation
 
 # Always append the standard note inside the braces if not already present
 if ! grep -q "\*Note: cinematic references must be interpreted within each platform’s current capabilities\.\*" <<< "$prompt"; then
@@ -387,9 +377,8 @@ ops=(Re-cut Remix Blend Loop Stabilize ColorGrade Skip)
 post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="${CAT} Post-gen op? " --height=12 --border)
 [[ $post != Skip && -n $post ]] && prompt+=$'\n'"POST_GEN_OP: $post"
 
-# =============================================================================
-# Step 8: Final Payload Preview & Clipboard Copy
-# =============================================================================
+## Step 8: Final Payload Preview & Clipboard Copy
+
 payload="# === // SORA //\n\n$prompt"
 
 if command -v bat >/dev/null 2>&1; then
