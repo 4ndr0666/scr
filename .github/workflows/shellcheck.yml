@@ -25,18 +25,14 @@ jobs:
           reviewdog_flags: '-fail-level=warning'
 
   shfmt:
-    name: Shell Fomatting
+    name: Shell Formatting
     runs-on: ubuntu-latest
     needs: shellcheck
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-<<<<<<< HEAD
-=======
-
       - name: Run shfmt
         uses: reviewdog/action-shfmt@v1
         with:
           shfmt_flags: '-i 4 -ci'
           reviewdog_flags: '-fail-level=warning'
->>>>>>> 809df32 (chore: enforce shellcheck)
