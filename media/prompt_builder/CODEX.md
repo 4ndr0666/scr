@@ -826,3 +826,141 @@ class HailuoDirectorPrompt:
 * [ ] **End-to-End:** Pass a constructed prompt to the actual Hailuo/Director model and confirm the subject animates per description.
 * [ ] **Regression:** Future additions to option sets must never break backward compatibility or canonical mapping.
 
+
+---
+
+# **Addendum: Dynamic Genre/Action Sequence Plugin Loader Specification**
+
+---
+
+## 1. **Objective**
+
+Enable safe, runtime expansion of genre-to-action sequence mappings by loading external YAML/JSON plugin files, ensuring the system is always extensible **without code modification**.
+Empower any stakeholder (developer, designer, domain expert, or AI agent) to add or customize cinematic genres and associated action templates via well-formed plugin files.
+
+---
+
+## 2. **Plugin Loader Requirements**
+
+* All plugins must reside in a dedicated directory at the project root, e.g., `/genres/` or `/prompt_plugins/`.
+* Plugins may be in `.yml`, `.yaml`, or `.json` format, each representing a single genre/action mapping.
+* Each file **must** contain:
+
+  * A `genre` key (lowercase, no spaces or special characters except hyphen/underscore).
+  * An `actions` key containing a non-empty list of action sequence strings.
+* Loader must:
+
+  * Aggregate all genre/action lists into a single merged mapping at runtime.
+  * Extend existing genres, never overwrite or truncate canonical templates.
+  * Ignore and log any malformed plugin files; never halt processing due to a plugin error.
+  * Be idempotent and callable any number of times without side effects.
+
+---
+
+## 3. **Canonical Example: Genre Plugin File**
+
+**YAML Example (`genres/fantasy-monster.yml`):**
+
+```yaml
+genre: fantasy-monster
+actions:
+  - "Giant monster rises from the ground, lets out a roar, then stomps forward, crushing debris."
+  - "Dragon soars overhead, circles once, then lands and breathes fire."
+```
+
+**JSON Example (`genres/daily-rituals.json`):**
+
+```json
+{
+  "genre": "daily-rituals",
+  "actions": [
+    "Subject wakes up, stretches arms, yawns, and gets out of bed.",
+    "Subject brushes teeth, rinses mouth, then looks in the mirror and smiles."
+  ]
+}
+```
+
+---
+
+## 4. **Python Loader Implementation**
+
+Place in your `promptlib.py`, `plugins.py`, or a dedicated loader module:
+
+```python
+import os
+import glob
+import yaml
+import json
+
+def load_genre_plugins(plugin_dir="genres"):
+    """Loads/merges all YAML/JSON genre plugins from the given directory into a dict."""
+    plugin_map = {}
+    for file in glob.glob(os.path.join(plugin_dir, "*.yml")) + glob.glob(os.path.join(plugin_dir, "*.yaml")):
+        with open(file, "r", encoding="utf-8") as f:
+            doc = yaml.safe_load(f)
+            genre = doc.get("genre")
+            actions = doc.get("actions", [])
+            if genre and actions:
+                plugin_map.setdefault(genre, []).extend(actions)
+    for file in glob.glob(os.path.join(plugin_dir, "*.json")):
+        with open(file, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+            genre = doc.get("genre")
+            actions = doc.get("actions", [])
+            if genre and actions:
+                plugin_map.setdefault(genre, []).extend(actions)
+    return plugin_map
+
+def merge_action_genres(base_map, plugin_map):
+    """Returns a merged genre->actions map (base + plugin overrides/appends)."""
+    merged = dict(base_map)
+    for genre, actions in plugin_map.items():
+        if genre in merged:
+            merged[genre].extend(actions)
+        else:
+            merged[genre] = actions
+    return merged
+
+# Usage in project initialization:
+#   1. Load base ACTION_SEQUENCE_GENRE_MAP (from canonical source)
+#   2. plugin_map = load_genre_plugins('genres')
+#   3. action_genre_map = merge_action_genres(ACTION_SEQUENCE_GENRE_MAP, plugin_map)
+```
+
+* **Requires `pyyaml` for YAML support.**
+  `pip install pyyaml` (ensure in your setup script).
+
+---
+
+## 5. **Sample Plugin Test (bats)**
+
+Add to `0-tests/test-genre-plugin-loader.bats`:
+
+```bash
+#!/usr/bin/env bats
+
+@test "Plugin loader merges plugins with canonical map" {
+  mkdir -p genres
+  cat >genres/fantasy-monster.yml <<EOF
+genre: fantasy-monster
+actions:
+  - "Monster emerges from cave, looks around, and roars."
+EOF
+  python3 -c '
+import promptlib
+base = {"fantasy": ["Hero acts heroically."]}
+plugin = promptlib.load_genre_plugins("genres")
+merged = promptlib.merge_action_genres(base, plugin)
+assert "fantasy-monster" in merged and merged["fantasy-monster"]
+  '
+}
+```
+
+---
+
+## 6. **CI/CD Pipeline (Optional Future Enhancement)**
+
+* Add a linting/validation step for plugin files using [yamllint](https://yamllint.readthedocs.io/) or a Python schema validator.
+* Fail the build if any plugin is malformed or duplicates a genre name without extension.
+
+---
