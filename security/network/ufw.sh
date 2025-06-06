@@ -51,7 +51,7 @@ declare -i JD_FLAG=0
 declare -i BACKUP_FLAG=0
 
 readonly SCRIPT_NAME="$(basename "$0")"
-readonly LOG_DIR="$HOME/.local/share/logs"
+readonly LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
 readonly LOG_FILE="$LOG_DIR/ufw.log"
 readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-ufw-custom.conf"
 readonly BACKUP_DIR="/etc/ufw/backups"
