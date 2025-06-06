@@ -12,6 +12,7 @@
 - Interactive mode in sora_prompt_builder.sh now reads from /dev/tty and reports missing prompt_toolkit.
 - Fixed interactive output handling to prevent 'responds_to_cpr' errors with prompt_toolkit.
 - Improved interactive session to use prompt_toolkit\x27s create_input/create_output for stable TTY handling.
+- Removed obsolete AUR helper function and cleaned up scripts/setup_dependencies.sh.
 
 - Corrected create_input invocation for interactive mode.
 - Added optional backup flag and improved VPN detection in ufw.sh; checks ExpressVPN DNS.
