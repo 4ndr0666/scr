@@ -12,7 +12,7 @@ All prompt logic, options, and blocks are battle-tested for photorealism and cre
   Aggregates all pose, lighting, lens, camera, environment, shadow, micro-detail, and policy blocks.  
   All block-building and orchestration functions included.
 
-- **sora_prompt_builder.sh**  
+- **prompts.sh**  
   Modern CLI for live, variable-driven prompt creation using `promptlib.py`.  
   Features interactive mode, plugin/markdown library loading, validation, and clipboard copying.
 
@@ -36,15 +36,15 @@ All prompt logic, options, and blocks are battle-tested for photorealism and cre
 
 ## CLI Quick-Reference
 
-| Command                                     | Description                                                   |
-|----------------------------------------------|---------------------------------------------------------------|
-| `./sora_prompt_builder.sh --interactive`     | Launch full interactive prompt builder (autocompletion)       |
-| `./sora_prompt_builder.sh --deakins`         | Add Deakins-style lighting to interactive prompt              |
-| `./sora_prompt_builder.sh --plugin FILE.md`  | Load plugin markdown (legacy/interactive prompt selection)    |
-| `./sora_prompt_builder.sh --help`            | Show help/usage                                               |
+| Command                                 | Description                                                     |
+|------------------------------------------|-----------------------------------------------------------------|
+| `./prompts.sh --interactive`             | Launch full interactive prompt builder (autocompletion)         |
+| `./prompts.sh --deakins`                 | Add Deakins-style lighting to interactive prompt                |
+| `./prompts.sh --plugin FILE.md`          | Load plugin markdown (legacy/interactive prompt selection)      |
+| `./prompts.sh --help`                    | Show help/usage                                                 |
 
 **Tip:** Combine flags for best workflow, e.g.:
-`./sora_prompt_builder.sh --interactive --deakins`
+`./prompts.sh --interactive --deakins`
 
 ---
 
@@ -53,13 +53,14 @@ All prompt logic, options, and blocks are battle-tested for photorealism and cre
 ### Interactive Prompt Builder
 
 ```bash
-./sora_prompt_builder.sh --interactive
+./prompts.sh --interactive
 ````
 
-Options:
+**Options:**
 
 * `--deakins` — Insert Deakins-style lighting/mood blocks
 * `--plugin <file.md>` — Use plugin prompt library for selection
+* `--copy` — Copy prompt to clipboard with `wl-copy` (if available)
 
 All menus feature autocompletion. Interactive mode requires `prompt_toolkit` and a real terminal.
 
@@ -68,7 +69,7 @@ All menus feature autocompletion. Interactive mode requires `prompt_toolkit` and
 ### Generate a Prompt from Plugin
 
 ```bash
-./sora_prompt_builder.sh --plugin plugins/prompts1.md
+./prompts.sh --plugin plugins/prompts1.md
 ```
 
 Choose a prompt from the plugin library using fzf/fuzzy search. The prompt is copied automatically if `wl-copy` is available.
@@ -132,7 +133,7 @@ Extend your prompt library by creating markdown plugins (see `plugins/`).
 **How to load your plugin:**
 
 ```bash
-./sora_prompt_builder.sh --plugin plugins/my_custom_prompts.md --interactive
+./prompts.sh --plugin plugins/my_custom_prompts.md --interactive
 ```
 
 All valid quoted blocks are available for selection, with deduplication and validation.
