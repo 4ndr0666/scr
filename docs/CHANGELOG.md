@@ -19,3 +19,7 @@
 - Added optional backup flag and improved VPN detection in ufw.sh; checks ExpressVPN DNS.
 - Added ExpressVPN DNS firewall rules with automatic backup/restore hooks.
 - Updated cleanup loops in ufw.sh to use run_cmd_dry and added dry-run verification test.
+- Defined CAMERA_MOVE_TAGS via promptlib in sora_prompt_builder.sh and fixed PYTHONPATH export.
+- Revised plugin_loader.py to use context managers for file reading.
+- Added unit tests for plugin_loader and promptlib.
+- Clipboard copying is now automatic; the --copy flag was removed and prompts are sanitized before being copied.

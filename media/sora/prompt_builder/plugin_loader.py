@@ -27,11 +27,12 @@ CATEGORY_KEYS: Dict[str, str] = {
     "lighting": "lighting",
     "lens": "lens",
     "camera_move": "camera_move",
-    "camera": "camera_move",        # allow "camera" alias
+    "camera": "camera_move",  # allow "camera" alias
     "environment": "environment",
     "shadow": "shadow",
     "detail": "detail",
 }
+
 
 def load_prompt_plugin_categorized(path: Path) -> Dict[str, List[str]]:
     """
@@ -52,53 +53,59 @@ def load_prompt_plugin_categorized(path: Path) -> Dict[str, List[str]]:
       - ValueError if EOF reached while inside a quoted block (unterminated).
     """
     categorized: Dict[str, List[str]] = {
-        "pose": [], "lighting": [], "lens": [],
-        "camera_move": [], "environment": [], "shadow": [],
-        "detail": [], "uncategorized": []
+        "pose": [],
+        "lighting": [],
+        "lens": [],
+        "camera_move": [],
+        "environment": [],
+        "shadow": [],
+        "detail": [],
+        "uncategorized": [],
     }
 
     current_category = "uncategorized"
     inside_block = False
     block_lines: List[str] = []
 
-    for raw_line in path.open(encoding="utf-8", errors="ignore"):
-        line = raw_line.rstrip("\n")
+    with path.open(encoding="utf-8", errors="ignore") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip("\n")
 
-        # Detect heading (only if not inside a block)
-        heading_match = re.match(r"^##\s*(\w+)", line)
-        if heading_match and not inside_block:
-            key = heading_match.group(1).lower()
-            current_category = CATEGORY_KEYS.get(key, "uncategorized")
-            continue
+            # Detect heading (only if not inside a block)
+            heading_match = re.match(r"^##\s*(\w+)", line)
+            if heading_match and not inside_block:
+                key = heading_match.group(1).lower()
+                current_category = CATEGORY_KEYS.get(key, "uncategorized")
+                continue
 
-        # Detect start of quoted block (line begins with optional whitespace then ")
-        if re.match(r'^\s*".*', line) and not inside_block:
-            inside_block = True
-            stripped = line.lstrip().lstrip('"')
-            # Check if single-line block (also ends with ")
-            if re.match(r'.*"\s*$', line) and len(line) > 1:
-                stripped = stripped.rstrip('"').rstrip()
-                categorized[current_category].append(stripped.strip())
-                inside_block = False
-                block_lines = []
-            else:
-                block_lines = [stripped]
-            continue
+            # Detect start of quoted block (line begins with optional whitespace then ")
+            if re.match(r'^\s*".*', line) and not inside_block:
+                inside_block = True
+                stripped = line.lstrip().lstrip('"')
+                # Check if single-line block (also ends with ")
+                if re.match(r'.*"\s*$', line) and len(line) > 1:
+                    stripped = stripped.rstrip('"').rstrip()
+                    categorized[current_category].append(stripped.strip())
+                    inside_block = False
+                    block_lines = []
+                else:
+                    block_lines = [stripped]
+                continue
 
-        # If inside a quoted block
-        if inside_block:
-            # Check if line ends with a closing quote
-            if re.match(r'.*"\s*$', line):
-                stripped = line.rstrip().rstrip('"').rstrip()
-                block_lines.append(stripped)
-                categorized[current_category].append("\n".join(block_lines).strip())
-                inside_block = False
-                block_lines = []
-            else:
-                block_lines.append(line)
-            continue
+            # If inside a quoted block
+            if inside_block:
+                # Check if line ends with a closing quote
+                if re.match(r'.*"\s*$', line):
+                    stripped = line.rstrip().rstrip('"').rstrip()
+                    block_lines.append(stripped)
+                    categorized[current_category].append("\n".join(block_lines).strip())
+                    inside_block = False
+                    block_lines = []
+                else:
+                    block_lines.append(line)
+                continue
 
-        # Lines outside blocks and headings are ignored
+            # Lines outside blocks and headings are ignored
 
     # After loop, ensure no unterminated block remains
     if inside_block:
@@ -116,6 +123,7 @@ def load_prompt_plugin_categorized(path: Path) -> Dict[str, List[str]]:
 
     return categorized
 
+
 def load_prompt_plugin_legacy(path: Path) -> List[str]:
     """
     Legacy loader: ignore categories. Return a list of all quoted blocks (content only),
@@ -125,30 +133,31 @@ def load_prompt_plugin_legacy(path: Path) -> List[str]:
     inside_block = False
     block_lines: List[str] = []
 
-    for raw_line in path.open(encoding="utf-8", errors="ignore"):
-        line = raw_line.rstrip("\n")
-        if re.match(r'^\s*".*', line) and not inside_block:
-            inside_block = True
-            stripped = line.lstrip().lstrip('"')
-            # Single-line block?
-            if re.match(r'.*"\s*$', line) and len(line) > 1:
-                stripped = stripped.rstrip('"').rstrip()
-                blocks.append(stripped.strip())
-                inside_block = False
-            else:
-                block_lines = [stripped]
-            continue
+    with path.open(encoding="utf-8", errors="ignore") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip("\n")
+            if re.match(r'^\s*".*', line) and not inside_block:
+                inside_block = True
+                stripped = line.lstrip().lstrip('"')
+                # Single-line block?
+                if re.match(r'.*"\s*$', line) and len(line) > 1:
+                    stripped = stripped.rstrip('"').rstrip()
+                    blocks.append(stripped.strip())
+                    inside_block = False
+                else:
+                    block_lines = [stripped]
+                continue
 
-        if inside_block:
-            if re.match(r'.*"\s*$', line):
-                stripped = line.rstrip().rstrip('"').rstrip()
-                block_lines.append(stripped)
-                blocks.append("\n".join(block_lines).strip())
-                inside_block = False
-                block_lines = []
-            else:
-                block_lines.append(line)
-            continue
+            if inside_block:
+                if re.match(r'.*"\s*$', line):
+                    stripped = line.rstrip().rstrip('"').rstrip()
+                    block_lines.append(stripped)
+                    blocks.append("\n".join(block_lines).strip())
+                    inside_block = False
+                    block_lines = []
+                else:
+                    block_lines.append(line)
+                continue
 
     if inside_block:
         raise ValueError(f"Unterminated quoted block in plugin: {path}")
@@ -161,6 +170,7 @@ def load_prompt_plugin_legacy(path: Path) -> List[str]:
             seen.add(b)
             deduped.append(b)
     return deduped
+
 
 def main():
     """
@@ -175,6 +185,7 @@ def main():
       - Otherwise: print all quoted blocks legacy-style, null-delimited.
     """
     import argparse
+
     parser = argparse.ArgumentParser(
         description="Load and categorize prompt blocks from Markdown plugin files."
     )
@@ -182,18 +193,23 @@ def main():
         "--json", action="store_true", help="Output categorized blocks as JSON"
     )
     parser.add_argument(
-        "--yaml", action="store_true", help="Output categorized blocks as YAML (requires PyYAML)"
+        "--yaml",
+        action="store_true",
+        help="Output categorized blocks as YAML (requires PyYAML)",
     )
-    parser.add_argument(
-        "plugins", nargs="+", help="Paths to plugin Markdown files"
-    )
+    parser.add_argument("plugins", nargs="+", help="Paths to plugin Markdown files")
     args = parser.parse_args()
 
     # Initialize merged categories
     merged_categories: Dict[str, List[str]] = {
-        "pose": [], "lighting": [], "lens": [],
-        "camera_move": [], "environment": [], "shadow": [],
-        "detail": [], "uncategorized": []
+        "pose": [],
+        "lighting": [],
+        "lens": [],
+        "camera_move": [],
+        "environment": [],
+        "shadow": [],
+        "detail": [],
+        "uncategorized": [],
     }
 
     # Load and merge each plugin file
