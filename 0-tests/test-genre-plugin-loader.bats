@@ -17,3 +17,20 @@ assert "fantasy-monster" in merged and merged["fantasy-monster"]
 PY
 	[ "$status" -eq 0 ]
 }
+
+@test "Loading identical plugins twice deduplicates actions" {
+	mkdir -p genres
+	cat >genres/dup1.json <<EOF
+{
+  "genre": "repeat",
+  "actions": ["roar loudly"]
+}
+EOF
+	cp genres/dup1.json genres/dup2.json
+	run env PYTHONPATH="media/prompt_builder" python3 - <<'PY'
+import promptlib
+plugin = promptlib.load_genre_plugins("genres")
+assert plugin.get("repeat") == ["roar loudly"]
+PY
+	[ "$status" -eq 0 ]
+}
