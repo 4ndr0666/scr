@@ -316,7 +316,7 @@ net.ipv4.udp_wmem_min=8192
 	[[ "$has_cake_module" -eq 1 ]] && SYSCTL_CONTENT+="net.core.default_qdisc=cake\n" || SYSCTL_CONTENT+="# net.core.default_qdisc=cake (Skipped: sch_cake module not found)\n"
 	[[ "$has_bbr_module" -eq 1 ]] && SYSCTL_CONTENT+="net.ipv4.tcp_congestion_control=bbr\n" || SYSCTL_CONTENT+="# net.ipv4.tcp_congestion_control=bbr (Skipped: tcp_bbr module not found)\n"
 	SYSCTL_CONTENT+="
-vm.swappiness=133
+vm.swappiness=60
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1
 net.ipv6.conf.lo.disable_ipv6=1
@@ -341,10 +341,20 @@ net.ipv6.conf.default.accept_source_route=0
 		log "NOTE" "Dry-run: Would write sysctl config to $SYSCTL_UFW_FILE."
 		[[ "$SILENT" -eq 0 ]] && echo -e "$SYSCTL_CONTENT"
 	fi
-	command -v chattr >/dev/null 2>&1 && set_immutable "$SYSCTL_UFW_FILE" || true
-	run_cmd_dry sysctl --system || { log "WARN" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."; return 1; }
-	log "OK" "Sysctl configuration applied."
-	return 0
+        command -v chattr >/dev/null 2>&1 && set_immutable "$SYSCTL_UFW_FILE" || true
+        if [[ "$DRY_RUN" -eq 0 ]]; then
+                run_cmd_dry sysctl --system || { log "ERROR" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."; return 1; }
+                local current_swappiness
+                current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || { log "ERROR" "Unable to read vm.swappiness"; return 1; }
+                if [[ "$current_swappiness" -ne 60 ]]; then
+                        log "ERROR" "Expected vm.swappiness 60 but found $current_swappiness"
+                        return 1
+                fi
+        else
+                log "NOTE" "Dry-run: Would apply sysctl settings and verify swappiness."
+        fi
+        log "OK" "Sysctl configuration applied."
+        return 0
 }
 
 configure_ufw() {
