@@ -35,7 +35,7 @@ CATEGORY_KEYS: Dict[str, str] = {
 
 
 def load_prompt_plugin_categorized(path: Path) -> Dict[str, List[str]]:
-    """
+    r"""
     Read a Markdown plugin file at `path` and extract quoted blocks under headings.
 
     Returns a dict mapping category → list of prompt-block strings.
