@@ -1,3 +1,3 @@
-- Treat all scripts as system-critical; avoid modifications without explicit approval.
+- These are all part of a custom suite I wrote called "4ndr0tools". They cover various aspects of system admin.
+- Treat all scripts as system-critical; avoid modifications without explicit approval and document all changes in the CHANGELOG.md file in this dir. Create one if not exists.
 - Maintain compatibility with Arch Linux; ensure scripts do not introduce dependencies outside the Arch repositories.
-- Document any changes to scripts in the CHANGELOG.md file within this directory.
