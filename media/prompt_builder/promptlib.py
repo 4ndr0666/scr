@@ -484,6 +484,9 @@ def load_genre_plugins(plugin_dir: str = "genres") -> Dict[str, List[str]]:
             actions = doc.get("actions", [])
             if genre and actions:
                 plugin_map.setdefault(str(genre), []).extend(list(actions))
+    # Deduplicate each genre's action list while preserving order
+    for genre, actions in plugin_map.items():
+        plugin_map[genre] = _dedupe_preserve_order(actions)
     return plugin_map
 
 
