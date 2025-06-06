@@ -54,7 +54,7 @@ DRY_RUN=0
 INTERACTIVE=0
 PLUGIN_FILES=()
 
-# Constants reused from promptlib for validation
+# Constants for validation
 readonly MAX_DURATION=10
 readonly RESO_REGEX='^[0-9]{3,4}p$'
 BAD_WORDS_REGEX='(sexual|porn|gore|torture|rape|beheading|extremist|hate|terror|celebrity|trademark|copyright|defamation|harassment|self-harm|medical_advice)'
@@ -108,7 +108,14 @@ from promptlib import (
     ENVIRONMENT_OPTIONS,
     SHADOW_OPTIONS,
     DETAIL_PROMPTS,
-    generate_pose_prompt
+    build_pose_block,
+    build_lighting_block,
+    build_shadow_block,
+    build_lens_block,
+    build_camera_block,
+    build_environment_block,
+    build_detail_block,
+    build_deakins_block
 )
 
 # prompt_toolkit imports
@@ -150,100 +157,86 @@ with tty_in, tty_out:
     # 1) Pose selection
     pose = session.prompt(
         "Pose Tag: ",
-        completer=WordCompleter(POSE_TAGS, ignore_case=True),
+        completer=WordCompleter(POSE_TAGS, ignore_case=True, match_middle=True),
         style=style,
     )
+    pose_line = build_pose_block(pose).splitlines()[1].strip()
 
     # 2) Lighting selection
     lighting = session.prompt(
         "Lighting (choose one): ",
-        completer=WordCompleter(LIGHTING_OPTIONS, ignore_case=True),
+        completer=WordCompleter(LIGHTING_OPTIONS, ignore_case=True, match_middle=True),
         style=style,
     )
+    lighting_line = build_lighting_block(lighting)
 
-    # 3) Lens selection
-    lens = session.prompt(
-        "Lens (choose one): ",
-        completer=WordCompleter(LENS_OPTIONS, ignore_case=True),
-        style=style,
-    )
-
-    # 4) Camera movement selection
-    camera_move = session.prompt(
-        "Camera Movement Tags (comma-separated): ",
-        completer=WordCompleter(CAMERA_OPTIONS, ignore_case=True),
-        style=style,
-    )
-
-    # 5) Environment selection
-    environment = session.prompt(
-        "Environment (choose one): ",
-        completer=WordCompleter(ENVIRONMENT_OPTIONS, ignore_case=True),
-        style=style,
-    )
-
-    # 6) Shadow quality selection
+    # 3) Shadow selection
     shadow = session.prompt(
         "Shadow Quality (choose one): ",
-        completer=WordCompleter(SHADOW_OPTIONS, ignore_case=True),
+        completer=WordCompleter(SHADOW_OPTIONS, ignore_case=True, match_middle=True),
         style=style,
     )
+    shadow_line = build_shadow_block(shadow)
+
+    # 4) Lens selection
+    lens = session.prompt(
+        "Lens (choose one): ",
+        completer=WordCompleter(LENS_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+    lens_line = build_lens_block(lens)
+
+    # 5) Camera movement selection
+    camera_move_input = session.prompt(
+        "Camera Movement Tags (comma-separated): ",
+        completer=WordCompleter(CAMERA_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+    camera_tags = [m.strip() for m in camera_move_input.split(",") if m.strip()]
+    camera_line = build_camera_block(camera_tags)
+
+    # 6) Environment selection
+    environment = session.prompt(
+        "Environment (choose one): ",
+        completer=WordCompleter(ENVIRONMENT_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+    environment_line = build_environment_block(environment)
 
     # 7) Detail emphasis selection
     detail = session.prompt(
         "Micro-detail Focus (choose one): ",
-        completer=WordCompleter(DETAIL_PROMPTS, ignore_case=True),
+        completer=WordCompleter(DETAIL_PROMPTS, ignore_case=True, match_middle=True),
         style=style,
     )
+    detail_line = build_detail_block(detail)
 
-    # Build prompt components from pose
-    pose_block = generate_pose_prompt(pose)
-    pose_lines = pose_block.splitlines()
-    description_line = pose_lines[1].strip()  # second line holds the pose description
+    # Assemble the final block
+    lines = [
+        f"> {{",
+        f"    {pose_line}",
+    ]
 
-    movements = ", ".join([m.strip() for m in camera_move.split(",")])
-
-    # If not Deakins, insert user-selected lighting/shadow
-    if not use_deakins_flag:
-        final = (
-            f"> {{\n"
-            f"    {description_line}\n"
-            f"    Lighting: {lighting}.\n"
-            f"    Lens: {lens}.\n"
-            f"    Camera: [{movements}].\n"
-            f"    Environment: {environment}.\n"
-            f"    Shadow Quality: {shadow}.\n"
-            f"    Detail: {detail}.\n"
-            f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*\n"
-            f"}}"
-        )
+    # If Deakins‐mode, insert the Deakins block here; else insert lighting+shadow
+    if use_deakins_flag:
+        for dl in build_deakins_block():
+            lines.append(f"    {dl}")
     else:
-        # Deakins-style lighting block (override)
-        deakins_lines = [
-            "Lighting: golden-hour sunlight piercing from 35° camera-left, casting long shadows with soft core and hard edge.",
-            "Shadow Quality: layered, directional, with visible ambient falloff.",
-            "Atmosphere: subtle haze; background underexposed to emphasize midtone structure.",
-            "Color: natural warmth with desaturated blacks and high contrast in skin zones.",
-            "*Note: Deakins lighting augmentation applied for cinematic realism.*"
-        ]
-        final = (
-            f"> {{\n"
-            f"    {description_line}\n"
-            f"    {deakins_lines[0]}\n"
-            f"    {deakins_lines[1]}\n"
-            f"    {deakins_lines[2]}\n"
-            f"    {deakins_lines[3]}\n"
-            f"    Lens: {lens}.\n"
-            f"    Camera: [{movements}].\n"
-            f"    Environment: {environment}.\n"
-            f"    Detail: {detail}.\n"
-            f"    {deakins_lines[4]}\n"
-            f"}}"
-        )
+        lines.append(f"    {lighting_line}")
+        lines.append(f"    {shadow_line}")
 
-    # Output only the final prompt block
+    # Common lines
+    lines.extend([
+        f"    {lens_line}",
+        f"    {camera_line}",
+        f"    {environment_line}",
+        f"    {detail_line}",
+        f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*",
+        f"}}"
+    ])
+
+    final = "\n".join(lines)
     print(final)
-
 PYEOF
 )"
 
@@ -254,9 +247,9 @@ PYEOF
     echo "─────────────────────────────────────"
     echo "🎛️  Builder Mode: standard"
     if [[ $USE_DEAKINS -eq 1 ]]; then
-        echo "🔧 Components Used: pose, deakins_lighting, lens, camera, environment, detail"
+        echo "🔧 Components Used: pose, deakins_lighting, shadow, lens, camera, environment, detail"
     else
-        echo "🔧 Components Used: pose, lighting, lens, camera, environment, shadow, detail"
+        echo "🔧 Components Used: pose, lighting, shadow, lens, camera, environment, detail"
     fi
 
     # Auto-copy if requested
@@ -290,24 +283,24 @@ for file in "${PLUGIN_FILES[@]}"; do
         exit 1
     fi
 
-    # Read null-delimited prompt blocks from Python loader
+    # Legacy loading: grab null‐delimited blocks
     while IFS= read -r -d '' block; do
         PROMPTS+=("$block")
     done < <(python3 plugin_loader.py "$file")
 done
 # =============================================================================
-# Step 4: If no plugin-loaded prompts, exit (interactive handled everything)
+# Step 4: If no plugin-loaded prompts (and interactive already handled), exit
 # =============================================================================
 if [[ ${#PROMPTS[@]} -eq 0 ]]; then
     exit 0
 fi
 
 # =============================================================================
-# Step 5: fzf-Based Selection of Loaded Plugin Prompts
+# Step 5: fzf‐Based Selection of Loaded Plugin Prompts
 # =============================================================================
 mapfile -t TITLES < <(
     for p in "${PROMPTS[@]}"; do
-        # Use first non-empty line as a title (stripped of leading/trailing quotes)
+        # Use first non-empty line of each block as a title (strip leading/trailing quotes if present)
         echo "$p" | sed -n '1s/^"\{0,1\}//;s/"$//;p;'
     done
 )
@@ -358,7 +351,7 @@ dur=0
 [[ -n $dur_line ]] && dur=${dur_line##*:}
 (( dur > MAX_DURATION )) && warn "Duration ${dur}s exceeds ${MAX_DURATION}s limit."
 
-# resolution ≤ 1080p
+# resolution ≤1080p
 reso_line=$(grep -Eo '^Resolution:[[:space:]]*[0-9]{3,4}p' <<< "$prompt" || true)
 if [[ -z $reso_line ]]; then
     warn "No Resolution: field."
@@ -372,9 +365,13 @@ fi
 # =============================================================================
 # Step 7: Append Standard Notes, Attachments, Post-Generation Operation
 # =============================================================================
-prompt+=$'\n'"*Note: cinematic references must be interpreted within each platform’s current capabilities.*"
 
-# Attach files if flags used (image/video/storyboard)
+# Always append the standard note inside the braces if not already present
+if ! grep -q "\*Note: cinematic references must be interpreted within each platform’s current capabilities\.\*" <<< "$prompt"; then
+    prompt+=$'\n'"*Note: cinematic references must be interpreted within each platform’s current capabilities.*"
+fi
+
+# Attach files if flags used (image/video/storyboard) – placeholder for future
 for kv in "${ATTACH[@]:-}"; do
     key=${kv%%=*}
     path=${kv#*=}
@@ -385,7 +382,7 @@ for kv in "${ATTACH[@]:-}"; do
     esac
 done
 
-# Post-generation operation menu
+# Post‐generation operation menu
 ops=(Re-cut Remix Blend Loop Stabilize ColorGrade Skip)
 post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="${CAT} Post-gen op? " --height=12 --border)
 [[ $post != Skip && -n $post ]] && prompt+=$'\n'"POST_GEN_OP: $post"
@@ -396,6 +393,7 @@ post=$(printf '%s\n' "${ops[@]}" | fzf --prompt="${CAT} Post-gen op? " --height=
 payload="# === // SORA //\n\n$prompt"
 
 if command -v bat >/dev/null 2>&1; then
+    # Use bat for syntax‐highlighted Markdown preview
     printf '%b\n' "$payload" | bat --language=md --style=plain --paging=always
 else
     printf '%b\n' "$payload" | less -R

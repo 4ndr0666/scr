@@ -2,77 +2,249 @@
 """
 plugin_loader.py
 
-Reads a Markdown file (e.g. plugins/prompts1.md) and extracts every top-level
-quoted prompt block (i.e. blocks that start with a line beginning with `"` and
-end with a line that is exactly `"`). Prints each prompt block as a null-
-delimited string (for safe Bash ingestion).
+Load and categorize prompt blocks from Markdown "plugin" files.
 
 Usage:
-    python3 plugin_loader.py path/to/plugins/prompts1.md
+    python3 plugin_loader.py [--json | --yaml] plugin1.md plugin2.md ...
 
-Output:
-    <prompt1>\0<prompt2>\0...<promptN>\0
+Outputs (default): Null-delimited quoted blocks (legacy behavior).
+Outputs (--json): A JSON object: { category: [block1, block2, ...], ... }
+Outputs (--yaml): A YAML object (requires PyYAML installed).
+
+Categories recognized (case-insensitive):
+    pose, lighting, lens, camera_move, environment, shadow, detail
+Any block under an unrecognized heading is placed into "uncategorized".
 """
 
 import sys
-from pathlib import Path
 import re
+import json
+from pathlib import Path
+from typing import Dict, List
 
-def load_prompt_plugin(path: Path) -> list[str]:
+CATEGORY_KEYS: Dict[str, str] = {
+    "pose": "pose",
+    "lighting": "lighting",
+    "lens": "lens",
+    "camera_move": "camera_move",
+    "camera": "camera_move",        # allow "camera" alias
+    "environment": "environment",
+    "shadow": "shadow",
+    "detail": "detail",
+}
+
+def load_prompt_plugin_categorized(path: Path) -> Dict[str, List[str]]:
     """
-    Parse the Markdown file at 'path' and return a list of prompt blocks.
-    A 'prompt block' is any multiline segment that:
-      - Starts on a line whose first character is a double-quote:    ^"
-      - Ends on a line whose entire content is a single double-quote: ^"$
-      - All lines in-between are part of the block, preserving newlines.
+    Read a Markdown plugin file at `path` and extract quoted blocks under headings.
+
+    Returns a dict mapping category → list of prompt-block strings.
+
+    Quoted block syntax:
+      - Begins with a line starting with a double-quote (")
+      - Ends with a line ending with a double-quote (")
+      - Everything between (including newlines) is the block body (quotes stripped)
+
+    Headings syntax:
+      - A line matching r"^##\s*(\w+)", where \1 (lowercased) is looked up in CATEGORY_KEYS.
+      - If no valid heading appears before a quoted block, it goes into "uncategorized".
+
+    Raises:
+      - ValueError if EOF reached while inside a quoted block (unterminated).
     """
-    text = path.read_text(encoding="utf-8")
-    prompts: list[str] = []
+    categorized: Dict[str, List[str]] = {
+        "pose": [], "lighting": [], "lens": [],
+        "camera_move": [], "environment": [], "shadow": [],
+        "detail": [], "uncategorized": []
+    }
 
-    lines = text.splitlines()
-    in_block = False
-    current_block = []
+    current_category = "uncategorized"
+    inside_block = False
+    block_lines: List[str] = []
 
-    for line in lines:
-        # Detect start of a block
-        if not in_block and line.startswith('"'):
-            in_block = True
-            # strip only the leading quote
-            current_block.append(line[1:])
+    for raw_line in path.open(encoding="utf-8", errors="ignore"):
+        line = raw_line.rstrip("\n")
+
+        # Detect heading (only if not inside a block)
+        heading_match = re.match(r"^##\s*(\w+)", line)
+        if heading_match and not inside_block:
+            key = heading_match.group(1).lower()
+            current_category = CATEGORY_KEYS.get(key, "uncategorized")
             continue
 
-        # Detect end of a block (line that is exactly a single quote)
-        if in_block and line.strip() == '"':
-            in_block = False
-            prompts.append("\n".join(current_block))
-            current_block = []
+        # Detect start of quoted block (line begins with optional whitespace then ")
+        if re.match(r'^\s*".*', line) and not inside_block:
+            inside_block = True
+            stripped = line.lstrip().lstrip('"')
+            # Check if single-line block (also ends with ")
+            if re.match(r'.*"\s*$', line) and len(line) > 1:
+                stripped = stripped.rstrip('"').rstrip()
+                categorized[current_category].append(stripped.strip())
+                inside_block = False
+                block_lines = []
+            else:
+                block_lines = [stripped]
             continue
 
-        # Accumulate lines if in_block
-        if in_block:
-            current_block.append(line)
+        # If inside a quoted block
+        if inside_block:
+            # Check if line ends with a closing quote
+            if re.match(r'.*"\s*$', line):
+                stripped = line.rstrip().rstrip('"').rstrip()
+                block_lines.append(stripped)
+                categorized[current_category].append("\n".join(block_lines).strip())
+                inside_block = False
+                block_lines = []
+            else:
+                block_lines.append(line)
+            continue
 
-    return prompts
+        # Lines outside blocks and headings are ignored
 
+    # After loop, ensure no unterminated block remains
+    if inside_block:
+        raise ValueError(f"Unterminated quoted block in plugin: {path}")
+
+    # Deduplicate each category while preserving order
+    for cat, blocks in categorized.items():
+        seen = set()
+        deduped: List[str] = []
+        for b in blocks:
+            if b not in seen:
+                seen.add(b)
+                deduped.append(b)
+        categorized[cat] = deduped
+
+    return categorized
+
+def load_prompt_plugin_legacy(path: Path) -> List[str]:
+    """
+    Legacy loader: ignore categories. Return a list of all quoted blocks (content only),
+    to be printed null-delimited when called from sora_prompt_builder.sh.
+    """
+    blocks: List[str] = []
+    inside_block = False
+    block_lines: List[str] = []
+
+    for raw_line in path.open(encoding="utf-8", errors="ignore"):
+        line = raw_line.rstrip("\n")
+        if re.match(r'^\s*".*', line) and not inside_block:
+            inside_block = True
+            stripped = line.lstrip().lstrip('"')
+            # Single-line block?
+            if re.match(r'.*"\s*$', line) and len(line) > 1:
+                stripped = stripped.rstrip('"').rstrip()
+                blocks.append(stripped.strip())
+                inside_block = False
+            else:
+                block_lines = [stripped]
+            continue
+
+        if inside_block:
+            if re.match(r'.*"\s*$', line):
+                stripped = line.rstrip().rstrip('"').rstrip()
+                block_lines.append(stripped)
+                blocks.append("\n".join(block_lines).strip())
+                inside_block = False
+                block_lines = []
+            else:
+                block_lines.append(line)
+            continue
+
+    if inside_block:
+        raise ValueError(f"Unterminated quoted block in plugin: {path}")
+
+    # Deduplicate all blocks while preserving order
+    seen = set()
+    deduped: List[str] = []
+    for b in blocks:
+        if b not in seen:
+            seen.add(b)
+            deduped.append(b)
+    return deduped
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} path/to/plugin.md", file=sys.stderr)
-        sys.exit(1)
+    """
+    CLI entry point for plugin_loader.py.
 
-    plugin_path = Path(sys.argv[1])
-    if not plugin_path.is_file():
-        print(f"Error: File not found: {plugin_path}", file=sys.stderr)
-        sys.exit(1)
+    Usage:
+      plugin_loader.py [--json | --yaml] plugin1.md plugin2.md ...
 
-    blocks = load_prompt_plugin(plugin_path)
-    for block in blocks:
-        # Print each block followed by a NUL terminator
-        sys.stdout.write(block)
+    Outputs:
+      - With --json: print a JSON object {category: [blocks], ...}
+      - With --yaml: print a YAML representation (requires PyYAML)
+      - Otherwise: print all quoted blocks legacy-style, null-delimited.
+    """
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Load and categorize prompt blocks from Markdown plugin files."
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output categorized blocks as JSON"
+    )
+    parser.add_argument(
+        "--yaml", action="store_true", help="Output categorized blocks as YAML (requires PyYAML)"
+    )
+    parser.add_argument(
+        "plugins", nargs="+", help="Paths to plugin Markdown files"
+    )
+    args = parser.parse_args()
+
+    # Initialize merged categories
+    merged_categories: Dict[str, List[str]] = {
+        "pose": [], "lighting": [], "lens": [],
+        "camera_move": [], "environment": [], "shadow": [],
+        "detail": [], "uncategorized": []
+    }
+
+    # Load and merge each plugin file
+    for plugin_path in args.plugins:
+        path = Path(plugin_path)
+        if not path.is_file():
+            print(f"[ERROR] Plugin file not found: {path}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            categorized = load_prompt_plugin_categorized(path)
+        except ValueError as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
+
+        for cat, blocks in categorized.items():
+            merged_categories[cat].extend(blocks)
+
+    # Deduplicate merged lists again
+    for cat, blocks in merged_categories.items():
+        seen = set()
+        deduped: List[str] = []
+        for b in blocks:
+            if b not in seen:
+                seen.add(b)
+                deduped.append(b)
+        merged_categories[cat] = deduped
+
+    # Handle JSON output
+    if args.json:
+        print(json.dumps(merged_categories, indent=2))
+        sys.exit(0)
+
+    # Handle YAML output
+    if args.yaml:
+        try:
+            import yaml  # PyYAML
+        except ModuleNotFoundError:
+            print("[ERROR] PyYAML is required for --yaml output", file=sys.stderr)
+            sys.exit(1)
+        print(yaml.dump(merged_categories, sort_keys=False))
+        sys.exit(0)
+
+    # Legacy behavior: print all blocks null-delimited
+    legacy_blocks: List[str] = []
+    for blocks in merged_categories.values():
+        legacy_blocks.extend(blocks)
+
+    for b in legacy_blocks:
+        sys.stdout.write(b)
         sys.stdout.write("\0")
-
-    # Exit (number of blocks is inferred by Bash through its reading logic)
-    sys.exit(0)
 
 
 if __name__ == "__main__":
