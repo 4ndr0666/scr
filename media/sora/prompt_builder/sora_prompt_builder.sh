@@ -21,19 +21,17 @@ CAT="$(tput setaf 6)[ACTION]$(tput sgr0)" # Cyan primary highlight
 
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") [--interactive] [--deakins] [--copy] [--plugin <file.md>]
+Usage: $(basename "$0") [--interactive] [--deakins] [--plugin <file.md>]
 
 Examples:
   $(basename "$0") --interactive
   $(basename "$0") --interactive --deakins
   $(basename "$0") --plugin plugins/prompts1.md
-  $(basename "$0") --interactive --plugin plugins/prompts1.md --copy
 
 Options:
   --interactive Launch the interactive prompt builder (recommended).
   --deakins     Apply Deakins-style lighting augmentation to the final prompt.
   --plugin      Load a Markdown prompt-pack plugin (extracts quoted blocks).
-  --copy        Copy final prompt to clipboard if wl-copy exists.
   --help        Show this help message and exit.
 
 Note: 
@@ -48,7 +46,6 @@ EOF
 PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 export PYTHONPATH
 USE_DEAKINS=0
-COPY_FLAG=0
 DRY_RUN=0
 INTERACTIVE=0
 PLUGIN_FILES=()
@@ -75,10 +72,6 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--deakins)
 		USE_DEAKINS=1
-		shift
-		;;
-	--copy)
-		COPY_FLAG=1
 		shift
 		;;
 	--dry-run)
@@ -264,14 +257,12 @@ PYEOF
 		echo "🔧 Components Used: pose, lighting, shadow, lens, camera, environment, detail"
 	fi
 
-	# Auto-copy if requested
-	if [[ $COPY_FLAG -eq 1 ]]; then
-		if command -v wl-copy >/dev/null 2>&1; then
-			printf '%s\n' "$FINAL_OUTPUT" | wl-copy
-			echo "${OK} Prompt copied to clipboard via wl-copy."
-		else
-			echo "${WARN} wl-copy not installed. Skipping clipboard copy."
-		fi
+	if command -v wl-copy >/dev/null 2>&1; then
+		CLEAN_COPY=$(printf '%s\n' "$FINAL_OUTPUT" | sed '1d;$d')
+		printf '%s\n' "$CLEAN_COPY" | wl-copy
+		echo "${OK} Prompt copied to clipboard via wl-copy."
+	else
+		echo "${WARN} wl-copy not installed. Skipping clipboard copy."
 	fi
 
 	exit 0
@@ -403,11 +394,9 @@ else
 	printf '%b\n' "$payload" | less -R
 fi
 
-if [[ $COPY_FLAG -eq 1 ]]; then
-	if command -v wl-copy >/dev/null 2>&1; then
-		printf '%b\n' "$payload" | wl-copy
-		echo "${OK} Prompt copied to clipboard via wl-copy."
-	else
-		echo "${WARN} wl-copy not installed; skipping clipboard copy."
-	fi
+if command -v wl-copy >/dev/null 2>&1; then
+	printf '%b\n' "$payload" | wl-copy
+	echo "${OK} Prompt copied to clipboard via wl-copy."
+else
+	echo "${WARN} wl-copy not installed; skipping clipboard copy."
 fi

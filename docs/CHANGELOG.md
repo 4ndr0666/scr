@@ -22,3 +22,4 @@
 - Defined CAMERA_MOVE_TAGS via promptlib in sora_prompt_builder.sh and fixed PYTHONPATH export.
 - Revised plugin_loader.py to use context managers for file reading.
 - Added unit tests for plugin_loader and promptlib.
+- Clipboard copying is now automatic; the --copy flag was removed and prompts are sanitized before being copied.
