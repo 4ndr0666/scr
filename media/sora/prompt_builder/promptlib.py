@@ -22,16 +22,53 @@ from typing import List, Dict, Tuple, Optional
 # ==============================================================================
 POSE_TAGS: List[str] = [
     # Human pose lexicon (aggregated from Pose_prompting.pdf + session)
-    "leaning_forward", "crouching", "one_knee_up", "looking_back_seductively", "sitting_on_heels",
-    "arms_crossed", "hands_in_pockets", "walking_toward_camera", "jumping", "running",
-    "arms_raised", "sitting_crosslegged", "lying_down", "hands_on_hips", "kneeling",
-    "twisting_shoulder", "tilted_head", "looking_up", "looking_down", "leaning_back",
-    "bending_sideways", "hands_in_air", "resting_chin_on_hand", "side_profile", "three_quarter_profile",
-    "back_to_camera", "over_shoulder_glance", "arms_above_head", "backbend", "hand_on_knee",
-    "hand_on_chest", "hand_on_waist", "crossed_legs_stand", "splayed_legs", "squat",
-    "lunge", "leg_stretched", "bend_forward", "bend_backward", "lean_left",
-    "lean_right", "lean_forward_knee", "lunge_forward", "hands_on_ground", "hugging_self",
-    "covering_face", "shielding_eyes"
+    "leaning_forward",
+    "crouching",
+    "one_knee_up",
+    "looking_back_seductively",
+    "sitting_on_heels",
+    "arms_crossed",
+    "hands_in_pockets",
+    "walking_toward_camera",
+    "jumping",
+    "running",
+    "arms_raised",
+    "sitting_crosslegged",
+    "lying_down",
+    "hands_on_hips",
+    "kneeling",
+    "twisting_shoulder",
+    "tilted_head",
+    "looking_up",
+    "looking_down",
+    "leaning_back",
+    "bending_sideways",
+    "hands_in_air",
+    "resting_chin_on_hand",
+    "side_profile",
+    "three_quarter_profile",
+    "back_to_camera",
+    "over_shoulder_glance",
+    "arms_above_head",
+    "backbend",
+    "hand_on_knee",
+    "hand_on_chest",
+    "hand_on_waist",
+    "crossed_legs_stand",
+    "splayed_legs",
+    "squat",
+    "lunge",
+    "leg_stretched",
+    "bend_forward",
+    "bend_backward",
+    "lean_left",
+    "lean_right",
+    "lean_forward_knee",
+    "lunge_forward",
+    "hands_on_ground",
+    "hugging_self",
+    "covering_face",
+    "shielding_eyes",
 ]
 
 POSE_DESCRIPTIONS: Dict[str, str] = {
@@ -82,18 +119,37 @@ POSE_DESCRIPTIONS: Dict[str, str] = {
     "hands_on_ground": "Both hands placed on ground, body in plank-like position.",
     "hugging_self": "Arms wrapped around torso, slight lean inward, cozy vibe.",
     "covering_face": "One hand covering part of face, eyes peeking through, mysterious.",
-    "shielding_eyes": "Hand raised to forehead to shield eyes, gaze into distance."
+    "shielding_eyes": "Hand raised to forehead to shield eyes, gaze into distance.",
 }
 
 # ==============================================================================
 # 2. CAMERA MOVEMENT TAGS (fully canonical from camera_movements.pdf + session)
 # ==============================================================================
 CAMERA_MOVE_TAGS: List[str] = [
-    "[push in]", "[pull out]", "[pan left]", "[pan right]", "[tilt up]", "[tilt down]",
-    "[truck left]", "[truck right]", "[pedestal up]", "[pedestal down]",
-    "[zoom in]", "[zoom out]", "[tracking shot]", "[static shot]", "[handheld]",
-    "[arc]", "[crane]", "[jib]", "[steadicam]", "[dolly]", "[whip pan]", "[roll]",
-    "[bird’s eye view]", "[over-the-shoulder]"
+    "[push in]",
+    "[pull out]",
+    "[pan left]",
+    "[pan right]",
+    "[tilt up]",
+    "[tilt down]",
+    "[truck left]",
+    "[truck right]",
+    "[pedestal up]",
+    "[pedestal down]",
+    "[zoom in]",
+    "[zoom out]",
+    "[tracking shot]",
+    "[static shot]",
+    "[handheld]",
+    "[arc]",
+    "[crane]",
+    "[jib]",
+    "[steadicam]",
+    "[dolly]",
+    "[whip pan]",
+    "[roll]",
+    "[bird’s eye view]",
+    "[over-the-shoulder]",
 ]
 # Flat list of tags without brackets for autocompletion
 CAMERA_OPTIONS: List[str] = [t.strip("[]") for t in CAMERA_MOVE_TAGS]
@@ -116,21 +172,21 @@ LIGHTING_OPTIONS: List[str] = [
     "Natural window light from left, soft fill from right",
     "High-key studio strobes, soft shadow control",
     "Continuous LED panel with heavy diffusion, frontal",
-    "Balanced three-point lighting: key at 45°, fill, back/hair light"
+    "Balanced three-point lighting: key at 45°, fill, back/hair light",
 ]
 
 # Dictionary for preset references (optional)
 LIGHTING_PROFILES: Dict[str, str] = {
-    "golden_hour":        "golden-hour sunlight from 35° camera-left; warm color haze",
-    "rembrandt":          "Rembrandt key light at 45° camera-left with triangular cheek shadow; soft fill opposite",
-    "butterfly":          "Butterfly key overhead with soft fill under nose; symmetrical, minimal shadows",
-    "softbox_45_135":     "softbox key light at 45° camera-right; bounce fill at 135° camera-left; soft, controlled shadows",
-    "beauty_dish":        "beauty dish key at 30° camera-right; rim light at 120° left; crisp highlights",
-    "ring_light":         "ring light frontal with minimal shadows; even, soft illumination",
-    "profoto_key":        "Profoto beauty dish at 30° right; two strip softboxes at 90° sides; moderate contrast",
-    "practical_headlight":"practical car headlight back-rim; 6500K LED key 60° camera-right through 1/4-grid",
-    "diffused_skylight":  "diffused skylight with bounce fill at 45°; airy, soft edge shadows",
-    "hard_sun":           "hard sun 35° camera-left; high-contrast midtone separation; silver bounce fill 45° right"
+    "golden_hour": "golden-hour sunlight from 35° camera-left; warm color haze",
+    "rembrandt": "Rembrandt key light at 45° camera-left with triangular cheek shadow; soft fill opposite",
+    "butterfly": "Butterfly key overhead with soft fill under nose; symmetrical, minimal shadows",
+    "softbox_45_135": "softbox key light at 45° camera-right; bounce fill at 135° camera-left; soft, controlled shadows",
+    "beauty_dish": "beauty dish key at 30° camera-right; rim light at 120° left; crisp highlights",
+    "ring_light": "ring light frontal with minimal shadows; even, soft illumination",
+    "profoto_key": "Profoto beauty dish at 30° right; two strip softboxes at 90° sides; moderate contrast",
+    "practical_headlight": "practical car headlight back-rim; 6500K LED key 60° camera-right through 1/4-grid",
+    "diffused_skylight": "diffused skylight with bounce fill at 45°; airy, soft edge shadows",
+    "hard_sun": "hard sun 35° camera-left; high-contrast midtone separation; silver bounce fill 45° right",
 }
 
 # ==============================================================================
@@ -148,17 +204,17 @@ LENS_OPTIONS: List[str] = [
     # More cross-refs
     "85mm f/1.8, shallow focus",
     "85mm f/1.4, shallow DoF",
-    "50mm f/2.0, moderate DoF"
+    "50mm f/2.0, moderate DoF",
 ]
 LENS_PRESETS: Dict[str, str] = {
-    "35mm_f2.8":        "35mm f/2.8, deep focus, wide-angle",
-    "50mm_f1.4":        "50mm f/1.4, standard prime, very shallow DoF",
-    "50mm_f2.0":        "50mm f/2.0, standard prime, moderate DoF",
-    "85mm_f1.4":        "85mm f/1.4, telephoto portrait, shallow DoF",
+    "35mm_f2.8": "35mm f/2.8, deep focus, wide-angle",
+    "50mm_f1.4": "50mm f/1.4, standard prime, very shallow DoF",
+    "50mm_f2.0": "50mm f/2.0, standard prime, moderate DoF",
+    "85mm_f1.4": "85mm f/1.4, telephoto portrait, shallow DoF",
     "100mm_macro_f2.8": "100mm macro f/2.8, extreme close-up, shallow DoF",
-    "40mm_anamorphic":  "40mm anamorphic T2.2, cinematic squeeze, shallow DoF",
-    "90mm_f4":          "90mm f/4, moderate telephoto, mid-depth DoF",
-    "100mm_macro_f5.6": "100mm macro f/5.6, fine detail, medium DoF"
+    "40mm_anamorphic": "40mm anamorphic T2.2, cinematic squeeze, shallow DoF",
+    "90mm_f4": "90mm f/4, moderate telephoto, mid-depth DoF",
+    "100mm_macro_f5.6": "100mm macro f/5.6, fine detail, medium DoF",
 }
 
 # ==============================================================================
@@ -175,7 +231,7 @@ ENVIRONMENT_OPTIONS: List[str] = [
     "studio with seamless mid-gray backdrop",
     "dark industrial set",
     "café interior",
-    "minimalist neutral background with gentle shadow gradient"
+    "minimalist neutral background with gentle shadow gradient",
 ]
 
 # ==============================================================================
@@ -189,7 +245,7 @@ SHADOW_OPTIONS: List[str] = [
     "minimal shadows, very soft",
     "moody hard rim",
     "defined Rembrandt triangle under eye",
-    "subtle gradient with smooth transition"
+    "subtle gradient with smooth transition",
 ]
 
 # ==============================================================================
@@ -205,29 +261,44 @@ DETAIL_PROMPTS: List[str] = [
     "Accentuate bead of sweat highlights and skin sheen",
     "Showcase texture of denim or leather surfaces",
     "Emphasize dust or particles in light rays",
-    "Reveal fine lines and natural skin blemishes"
+    "Reveal fine lines and natural skin blemishes",
 ]
 
 # ==============================================================================
 # 8. SUBJECT-REFERENCE RULES (Hailuo compliance, deduped)
 # ==============================================================================
 SUBJECT_REFERENCE_RULES: Dict[str, str] = {
-    "face_count":    "exactly one full, unobstructed face",
-    "lighting":      "even, diffused light to avoid facial shadows",
-    "resolution":    "minimum 512×512 px, maximum 20 MB file size",
+    "face_count": "exactly one full, unobstructed face",
+    "lighting": "even, diffused light to avoid facial shadows",
+    "resolution": "minimum 512×512 px, maximum 20 MB file size",
     "tags_required": "age_group, gender_designation (e.g., adult, female/male/neutral)",
-    "orientation":   "frontal or slight 3/4 angle; no extreme side profiles",
-    "expression":    "neutral expression; no occlusions like sunglasses or masks"
+    "orientation": "frontal or slight 3/4 angle; no extreme side profiles",
+    "expression": "neutral expression; no occlusions like sunglasses or masks",
 }
 
 # ==============================================================================
 # 9. POLICY-FORBIDDEN TERMS (full union of all lists)
 # ==============================================================================
 POLICY_FORBIDDEN_TERMS: List[str] = [
-    "sexual", "porn", "gore", "torture", "rape", "beheading",
-    "extremist", "hate", "terror", "celebrity", "trademark", "copyright",
-    "threat", "defamation", "harassment", "self-harm", "medical_advice"
+    "sexual",
+    "porn",
+    "gore",
+    "torture",
+    "rape",
+    "beheading",
+    "extremist",
+    "hate",
+    "terror",
+    "celebrity",
+    "trademark",
+    "copyright",
+    "threat",
+    "defamation",
+    "harassment",
+    "self-harm",
+    "medical_advice",
 ]
+
 
 # ==============================================================================
 # 10. Utility: Strict Policy Filter (idempotent)
@@ -245,6 +316,7 @@ def policy_filter(text: str, strict: bool = False) -> bool:
             return False
     return True
 
+
 # ==============================================================================
 # 11. Utility: Prompt Chaining (with idempotent deduplication)
 # ==============================================================================
@@ -261,11 +333,13 @@ def chain_prompts(prompts: List[str]) -> str:
             seen.add(p)
     return "\n\n".join(deduped)
 
+
 # ==============================================================================
 
 # ==============================================================================
 # 12. Block-building functions (canonical, no placeholders)
 # ==============================================================================
+
 
 def build_pose_block(pose_tag: str) -> str:
     """
@@ -292,6 +366,7 @@ def build_pose_block(pose_tag: str) -> str:
         raise ValueError(f"Pose block for '{pose_tag}' violates policy.")
     return block
 
+
 def build_lighting_block(lighting_choice: str) -> str:
     """
     Return a 'Lighting: ...' line with trailing period.
@@ -302,6 +377,7 @@ def build_lighting_block(lighting_choice: str) -> str:
     if not policy_filter(line):
         raise ValueError("Lighting block contains forbidden content.")
     return line
+
 
 def build_shadow_block(shadow_choice: str) -> str:
     """
@@ -314,6 +390,7 @@ def build_shadow_block(shadow_choice: str) -> str:
         raise ValueError("Shadow block contains forbidden content.")
     return line
 
+
 def build_lens_block(lens_choice: str) -> str:
     """
     Return a 'Lens: ...' line with trailing period.
@@ -324,6 +401,7 @@ def build_lens_block(lens_choice: str) -> str:
     if not policy_filter(line):
         raise ValueError("Lens block contains forbidden content.")
     return line
+
 
 def build_camera_block(camera_tags: List[str]) -> str:
     """
@@ -338,6 +416,7 @@ def build_camera_block(camera_tags: List[str]) -> str:
         raise ValueError("Camera block contains forbidden content.")
     return line
 
+
 def build_environment_block(environment_choice: str) -> str:
     """
     Return an 'Environment: ...' line with trailing period.
@@ -348,6 +427,7 @@ def build_environment_block(environment_choice: str) -> str:
     if not policy_filter(line):
         raise ValueError("Environment block contains forbidden content.")
     return line
+
 
 def build_detail_block(detail_choice: str) -> str:
     """
@@ -360,9 +440,11 @@ def build_detail_block(detail_choice: str) -> str:
         raise ValueError("Detail block contains forbidden content.")
     return line
 
+
 # ==============================================================================
 # 13. Deakins/Alpha/advanced augmentation blocks
 # ==============================================================================
+
 
 def build_deakins_block() -> List[str]:
     """
@@ -373,12 +455,13 @@ def build_deakins_block() -> List[str]:
         "Shadow Quality: layered, directional, with visible ambient falloff.",
         "Atmosphere: subtle haze; background underexposed to emphasize midtone structure.",
         "Color: natural warmth with desaturated blacks and high contrast in skin zones.",
-        "*Note: Deakins lighting augmentation applied for cinematic realism.*"
+        "*Note: Deakins lighting augmentation applied for cinematic realism.*",
     ]
     for line in block:
         if not policy_filter(line):
             raise ValueError("Deakins block contains forbidden content.")
     return block
+
 
 def alpha_template(subject: str, style: str, freq: int = 1) -> str:
     """
@@ -392,9 +475,11 @@ def alpha_template(subject: str, style: str, freq: int = 1) -> str:
         f"}}"
     )
 
+
 # ==============================================================================
 # 14. Realism and tri-prompt logic (battle-tested best practices)
 # ==============================================================================
+
 
 def generate_prompt_variants(subject_description: str) -> List[str]:
     """
@@ -437,6 +522,7 @@ def generate_prompt_variants(subject_description: str) -> List[str]:
     )
     return variants
 
+
 def evaluate_realism(prompt: str) -> Tuple[int, str]:
     """
     Score and annotate a prompt for Sora/Hailuo realism and platform fit.
@@ -452,15 +538,20 @@ def evaluate_realism(prompt: str) -> Tuple[int, str]:
     if "[static shot]" in prompt and "golden-hour" in prompt:
         score += 4
         notes.append("Static frame with Deakins lighting is highly realistic.")
-    if "microexpression" in prompt and ("handheld" in prompt or "dolly" in prompt or "tracking" in prompt):
+    if "microexpression" in prompt and (
+        "handheld" in prompt or "dolly" in prompt or "tracking" in prompt
+    ):
         score -= 5
         notes.append("Camera motion may compromise fidelity of fine facial details.")
     if any(lens_key in prompt for lens_key in ["35mm", "50mm"]):
         score += 3
         notes.append("Lens choice well-aligned with cinematic norms.")
     score = max(50, min(score, 99))
-    explanation = "; ".join(notes) if notes else "Well-balanced cinematic configuration."
+    explanation = (
+        "; ".join(notes) if notes else "Well-balanced cinematic configuration."
+    )
     return score, explanation
+
 
 def tri_prompt_engine(subject_description: str) -> Dict[str, object]:
     """
@@ -475,14 +566,16 @@ def tri_prompt_engine(subject_description: str) -> Dict[str, object]:
     top_prompt = evaluations[0]["prompt"]
     return {"ranked_prompts": evaluations, "selected": top_prompt}
 
+
 # ==============================================================================
 # 15. Fusion/orchestration logic (full, production mode)
 # ==============================================================================
 
+
 def fuse_pose_lighting_camera(
     pose_tag: str,
     lighting_mode: str = "deakins",
-    movement_tags: Optional[List[str]] = None
+    movement_tags: Optional[List[str]] = None,
 ) -> str:
     """
     Fuse a full prompt from pose, lighting, and camera movement.
@@ -516,6 +609,7 @@ def fuse_pose_lighting_camera(
     )
     return block
 
+
 def apply_deakins_lighting(prompt: str) -> str:
     """
     Augment prompt with Deakins lighting (removes any prior Lighting, Shadow Quality, Atmosphere, Color lines).
@@ -534,10 +628,11 @@ def apply_deakins_lighting(prompt: str) -> str:
                 result_lines.append(f"    {dl}")
     return "\n".join(result_lines)
 
+
 def prompt_orchestrator(
     pose_tag: Optional[str] = None,
     subject_description: Optional[str] = None,
-    use_deakins: bool = False
+    use_deakins: bool = False,
 ) -> Dict[str, object]:
     """
     Master prompt generator: picks best block/fusion mode.
@@ -556,7 +651,7 @@ def prompt_orchestrator(
         final = fuse_pose_lighting_camera(
             pose_tag=pose_tag,
             lighting_mode="deakins" if use_deakins else "studio",
-            movement_tags=["arc", "dolly left"] if use_deakins else ["static shot"]
+            movement_tags=["arc", "dolly left"] if use_deakins else ["static shot"],
         )
     if use_deakins and final:
         components.append("deakins_lighting")
@@ -571,27 +666,49 @@ def prompt_orchestrator(
     return {
         "final_prompt": final.strip(),
         "base_mode": base_mode,
-        "components_used": components
+        "components_used": components,
     }
+
 
 # ==============================================================================
 # __all__ for linting and import clarity
 # ==============================================================================
 __all__ = [
-    "POSE_TAGS", "POSE_DESCRIPTIONS", "CAMERA_MOVE_TAGS", "CAMERA_OPTIONS",
-    "LIGHTING_OPTIONS", "LIGHTING_PROFILES", "LENS_OPTIONS", "LENS_PRESETS",
-    "ENVIRONMENT_OPTIONS", "SHADOW_OPTIONS", "DETAIL_PROMPTS",
-    "SUBJECT_REFERENCE_RULES", "POLICY_FORBIDDEN_TERMS",
-    "policy_filter", "chain_prompts", "build_pose_block", "build_lighting_block",
-    "build_shadow_block", "build_lens_block", "build_camera_block",
-    "build_environment_block", "build_detail_block", "build_deakins_block",
-    "alpha_template", "generate_prompt_variants", "evaluate_realism",
-    "tri_prompt_engine", "fuse_pose_lighting_camera", "apply_deakins_lighting",
-    "prompt_orchestrator"
+    "POSE_TAGS",
+    "POSE_DESCRIPTIONS",
+    "CAMERA_MOVE_TAGS",
+    "CAMERA_OPTIONS",
+    "LIGHTING_OPTIONS",
+    "LIGHTING_PROFILES",
+    "LENS_OPTIONS",
+    "LENS_PRESETS",
+    "ENVIRONMENT_OPTIONS",
+    "SHADOW_OPTIONS",
+    "DETAIL_PROMPTS",
+    "SUBJECT_REFERENCE_RULES",
+    "POLICY_FORBIDDEN_TERMS",
+    "policy_filter",
+    "chain_prompts",
+    "build_pose_block",
+    "build_lighting_block",
+    "build_shadow_block",
+    "build_lens_block",
+    "build_camera_block",
+    "build_environment_block",
+    "build_detail_block",
+    "build_deakins_block",
+    "alpha_template",
+    "generate_prompt_variants",
+    "evaluate_realism",
+    "tri_prompt_engine",
+    "fuse_pose_lighting_camera",
+    "apply_deakins_lighting",
+    "prompt_orchestrator",
 ]
 # ==============================================================================
 # 16. Final validation, idempotency checks, and documentation (PRODUCTION READY)
 # ==============================================================================
+
 
 def _dedupe_preserve_order(seq: List[str]) -> List[str]:
     """Remove duplicates in a list while preserving order."""
@@ -602,6 +719,7 @@ def _dedupe_preserve_order(seq: List[str]) -> List[str]:
             deduped.append(x)
             seen.add(x)
     return deduped
+
 
 # Idempotent deduplication of all exposed list constants at import
 POSE_TAGS[:] = _dedupe_preserve_order(POSE_TAGS)
@@ -631,10 +749,13 @@ if __name__ == "__main__":
     print("promptlib.py — Production Sanity Test")
     # Check idempotency and list content
     for name, arr in [
-        ("POSE_TAGS", POSE_TAGS), ("CAMERA_MOVE_TAGS", CAMERA_MOVE_TAGS),
-        ("LIGHTING_OPTIONS", LIGHTING_OPTIONS), ("LENS_OPTIONS", LENS_OPTIONS),
-        ("ENVIRONMENT_OPTIONS", ENVIRONMENT_OPTIONS), ("SHADOW_OPTIONS", SHADOW_OPTIONS),
-        ("DETAIL_PROMPTS", DETAIL_PROMPTS)
+        ("POSE_TAGS", POSE_TAGS),
+        ("CAMERA_MOVE_TAGS", CAMERA_MOVE_TAGS),
+        ("LIGHTING_OPTIONS", LIGHTING_OPTIONS),
+        ("LENS_OPTIONS", LENS_OPTIONS),
+        ("ENVIRONMENT_OPTIONS", ENVIRONMENT_OPTIONS),
+        ("SHADOW_OPTIONS", SHADOW_OPTIONS),
+        ("DETAIL_PROMPTS", DETAIL_PROMPTS),
     ]:
         print(f"[{name}] {len(arr)} unique items.")
         if not arr or len(arr) != len(set(arr)):
