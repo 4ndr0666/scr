@@ -4,7 +4,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# ====================== // SORA PROMPT BUILDER //
+# ====================== // PROMPTS.SH //
 ## Description: Unified prompt generation CLI
 ## Requires: Python ≥3.9 with promptlib.py and plugin_loader.py
 # -----------------------------------------
@@ -34,7 +34,7 @@ Options:
   --plugin      Load a Markdown prompt-pack plugin (extracts quoted blocks).
   --help        Show this help message and exit.
 
-Note: 
+Note:
   • CLI mode (e.g. --pose <tag> or --desc <text>) is a future TODO.
   • For full parameter autocompletion and ease of use, run --interactive.
 EOF
