@@ -25,6 +25,9 @@ To ensure long-term maintainability, clarity, and correctness, all contributions
 - Prioritize local scoping, strict error handling, and complete path resolution.
 - Always lint using ShellCheck where applicable. Adhere to XDG Base Directory Specification for file paths.
 - Automation must minimize user intervention while safeguarding system integrity.
+- All files must be cleaned of CODEX merge artifacts before any commit or pull request merge.
+- Use the utility: `0-tests/codex-merge-clean.sh <file ...>` to ensure no `<<<<<<<<<<<<<<<<<<<CODEX_`, `=========================`, or `>>>>>>>>>>>>>>>>>Main` blocks remain.
+- Run this tool after CODEX-assisted merges, and before lint, test, or commit stages.
 
 ---
 
@@ -60,6 +63,19 @@ For each script or multi-function revision:
 2. Compare with the original to ensure alignment.
 3. If a gross mismatch exists, retry up to 3 times before erroring.
 4. Defer to human input only with a concise numerical decision list.
+5. Before commit or PR merge, run `0-tests/codex-merge-clean.sh` on all changed files to remove leftover merge annotations. Reject any revision where these remain present.
+
+# === OPTIONAL PRE-COMMIT HOOK ===
+#
+##!/usr/bin/env bash
+#set -e
+## Auto-clean all files staged for commit
+#
+#for f in $(git diff --cached --name-only); do
+#    [ -f "$f" ] && 0-tests/codex-merge-clean.sh "$f"
+#done
+#git add .
+# ------------------------------------
 
 > *“Automation reduces toil, but people are still accountable. Adding new toil needs a very strong justification.”*
 
@@ -69,6 +85,7 @@ All revisions should favor **robust automation**, eliminating fragile assumption
 
 ## Organizational Logic
 
+- `0-tests/`: testing + diagnostics/ codex utilities
 - `4ndr0tools/`: core bootstrap + customization.
 - `install/`: self-contained package/system installers.
 - `maintain/`: automation for backups, cleanup, system hygiene.
@@ -98,6 +115,6 @@ All revisions should favor **robust automation**, eliminating fragile assumption
 ## AI Behavior
 
 - Only make changes to scripts explicitly named or listed in the task prompt.
-- For multi-file changes, maintain a clear changelog in `docs/CHANGELOG.md`.
+- For multi-file changes, maintain a clear changelog in `0-tests/CHANGELOG.md`.
 - Write `task_outcome.md` to summarize any multi-step operations for review.
 - Never bypass dry-run, lint, or policy enforcement unless explicitly disabled.
