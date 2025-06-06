@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # Version: 1.1.0
 # Author: 4ndr0666
 
@@ -44,7 +43,12 @@ fi
 
 ## Debugging
 
-[[ "${DEBUG:-0}" -eq 1 ]] && set -x && DEBUG_LOG() { echo "[DEBUG] $*"; } || DEBUG_LOG() { :; }
+if [[ ${DEBUG:-0} -eq 1 ]]; then
+	set -x
+	DEBUG_LOG() { printf '[DEBUG] %s\n' "$*"; }
+else
+	DEBUG_LOG() { :; }
+fi
 
 ### Configure
 
@@ -54,17 +58,27 @@ INFO "Configuring system..."
 if ! ./configure --preinstall; then
 	BUG "Issues detected. Attempting to repair..."
 	sleep 1
-	./configure --repair || {
+	if ./configure --repair; then
+		GLOW "System repaired!"
+	else
 		BUG "Could not repair system..."
-	}
-	exit 1
-	GLOW "System repaired!"
+		exit 1
+	fi
 fi
 
 ## Immutability
 
-unlock() { [[ -e $1 ]] && sudo chattr -i "$1" 2>/dev/null || true; }
-lock() { [[ -e $1 ]] && sudo chattr +i "$1" 2>/dev/null || true; }
+unlock() {
+	if [[ -e $1 ]]; then
+		sudo chattr -i "$1" 2>/dev/null || true
+	fi
+}
+
+lock() {
+	if [[ -e $1 ]]; then
+		sudo chattr +i "$1" 2>/dev/null || true
+	fi
+}
 
 ## XDG compliance (or fall back)
 
