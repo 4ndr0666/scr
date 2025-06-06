@@ -9,9 +9,7 @@ from plugin_loader import (
     load_prompt_plugin_legacy,
 )
 
-PLUGIN = (
-    Path(__file__).resolve().parents[1] / "../prompt_parser/plugins/prompts1.md"
-).resolve()
+PLUGIN = (Path(__file__).resolve().parents[1] / "plugins/prompts1.md").resolve()
 
 
 class PluginLoaderTest(unittest.TestCase):

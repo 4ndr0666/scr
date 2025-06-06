@@ -14,8 +14,16 @@ No placeholders. No missing or redundant values. Immediate drop-in for Sora work
 """
 
 from __future__ import annotations
+import os
+import glob
+import json
 import re
 from typing import List, Dict, Tuple, Optional
+
+try:
+    import yaml  # PyYAML for plugin loading
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    yaml = None
 
 # ==============================================================================
 # 1. POSE TAGS & DESCRIPTIONS (fully aggregated and deduplicated)
@@ -265,7 +273,123 @@ DETAIL_PROMPTS: List[str] = [
 ]
 
 # ==============================================================================
-# 8. SUBJECT-REFERENCE RULES (Hailuo compliance, deduped)
+# 8. ACTION SEQUENCE GENRE MAP (canonical, extensible)
+# ==============================================================================
+ACTION_SEQUENCE_GENRE_MAP: Dict[str, List[str]] = {
+    "general": [
+        "Subject walks forward, pauses, turns to look over left shoulder, then continues walking.",
+        "Subject stands still, then raises right arm to wave, smiles warmly, and lowers arm.",
+        "Subject sits down on chair, crosses legs, adjusts posture, and looks at camera.",
+        "Subject crouches low, then leaps energetically into the air, arms raised overhead, lands softly, and regains posture.",
+        "Subject stands, stretches arms above head, then relaxes and places hands in pockets.",
+        "Subject tilts head to right, looks down, then slowly lifts chin to meet the viewer’s gaze.",
+        "Subject walks toward camera, stops, crosses arms, and shifts weight to one leg.",
+        "Subject spins in place, lets hair flow outward, then faces forward again.",
+        "Subject sits cross-legged, shifts posture, and adjusts hair behind ear.",
+        "Subject steps sideways to left, then quickly returns to original position.",
+    ],
+    "expressive": [
+        "Subject starts neutral, breaks into a broad smile, then laughs gently.",
+        "Subject raises left eyebrow, winks, then resumes a calm expression.",
+        "Subject’s eyes open wide in surprise, then narrow into a playful squint.",
+        "Subject closes eyes briefly, then opens and looks up toward the ceiling.",
+        "Subject shrugs shoulders, tilts head, then gives a slight nod.",
+    ],
+    "fashion": [
+        "Model transitions through three classic runway poses: hand on hip, splayed legs, then crossed arms stance.",
+        "Model stands with arms at sides, lifts left arm to touch head, then lowers and places hand on waist.",
+        "Model leans against invisible wall, shifts weight, then pushes off and walks toward camera.",
+        "Model turns slowly to display profile, then spins back to face camera, striking a confident pose.",
+        "Model walks down imaginary runway, stops, places hand on chest, then turns and walks away.",
+    ],
+    "sports": [
+        "Athlete starts in crouched position, bursts forward in a sprint, slows down, and comes to a stop.",
+        "Subject performs a slow squat, stands up, then flexes both arms upward in a victory gesture.",
+        "Subject bounces lightly in place, performs a jumping jack, then lands and catches breath.",
+        "Subject stretches right leg forward, reaches down to touch toes, then stands upright and shakes out arms.",
+        "Subject jumps to catch an invisible ball, lands, and pumps fist in triumph.",
+    ],
+    "corporate": [
+        "Subject stands tall, adjusts collar, gives a confident nod, then gestures with open palm toward viewer.",
+        "Subject holds up branded product, smiles, turns product to show label, then lowers hand.",
+        "Subject taps chest where logo is visible, gives thumbs up, then folds arms across chest.",
+        "Subject stands with hands clasped, gestures with right hand while speaking, then returns to neutral posture.",
+        "Subject points upward, then to side, as if presenting key message, and smiles.",
+    ],
+    "cinematic": [
+        "Character walks through door, pauses in uncertainty, then steps forward with resolve.",
+        "Character looks left and right, frowns, then sighs and sits on nearby bench.",
+        "Character clutches chest in surprise, steps back, then breathes deeply and regains composure.",
+        "Character waves at someone off-screen, then looks down sadly and walks away.",
+        "Character leans in to listen, reacts with surprise, then laughs and claps hands.",
+    ],
+    "fantasy": [
+        "Hero draws invisible sword, takes battle stance, swings, then sheathes weapon with flourish.",
+        "Adventurer leaps over obstacle, lands in crouch, looks around, then dashes forward.",
+        "Character casts imaginary spell with sweeping arm motion, then lowers arms and looks satisfied.",
+        "Explorer shields eyes from bright light, points to distant object, then begins walking in that direction.",
+        "Knight kneels, bows head in respect, rises, and raises sword in salute.",
+    ],
+    "horror": [
+        "Subject turns suddenly to look behind, widens eyes in fear, then steps backward cautiously.",
+        "Character holds breath, leans forward as if listening, then exhales in relief.",
+        "Subject covers mouth in shock, drops hand, then glances nervously side to side.",
+        "Subject shivers, hugs arms around torso, then backs slowly away from camera.",
+        "Character steps into shadow, glances over shoulder, then disappears from view.",
+    ],
+    "romance": [
+        "Subject places hand over heart, looks down shyly, then smiles and looks up with hope.",
+        "Couple holds hands, leans heads together, then laughs and pulls apart gently.",
+        "Subject blows a kiss, winks, then turns away with a playful smile.",
+        "Subject draws invisible heart in air, grins, then makes eye contact with camera.",
+        "Two subjects embrace, one rests head on other’s shoulder, then both relax and release.",
+    ],
+    "documentary": [
+        "Subject walks through park, stops to tie shoe, then continues walking.",
+        "Subject checks wristwatch, shrugs, then sits on nearby bench.",
+        "Subject reads book, glances up to camera, smiles, and returns to reading.",
+        "Subject picks up coffee cup, takes a sip, then sets cup down and sighs contentedly.",
+        "Subject rides bicycle in place, stops, waves, then dismounts.",
+    ],
+    "dance": [
+        "Dancer spins gracefully, extends right arm upward, then bows at end of routine.",
+        "Performer claps to music, steps side to side, then finishes with jazz hands.",
+        "Singer holds microphone, sways with rhythm, then gestures to audience.",
+        "Dancer leaps, lands in low lunge, then springs up and twirls.",
+        "Performer bows, stands tall, then gestures in gratitude.",
+    ],
+    "animation": [
+        "Child jumps up and down repeatedly, arms waving in excitement.",
+        "Animated character skips in a circle, giggles, then waves both hands in air.",
+        "Cartoon subject spins, falls down, then pops up with a smile.",
+        "Puppy runs in, chases tail, then sits and wags tail happily.",
+        "Teddy bear waves, dances side to side, then sits down and claps paws.",
+    ],
+    "environment": [
+        "Subject stands as wind blows hair and fabric, shields eyes, then turns into breeze.",
+        "Subject stands in falling rain, lifts face upward, then spins in delight.",
+        "Subject walks through fog, reaches out as if to touch mist, then withdraws hand.",
+        "Subject squints in bright sunlight, puts on sunglasses, then smiles at camera.",
+        "Subject holds umbrella, twirls it, then steps forward as rain increases.",
+    ],
+    "group": [
+        "Three subjects walk in line, middle one gestures to side, all laugh together.",
+        "Two people shake hands, step back, then give thumbs up.",
+        "Group huddles together, breaks apart, then turns to face camera.",
+        "Four friends high five in unison, then disperse in different directions.",
+        "Duo stands back to back, turns, then walks away separately.",
+    ],
+    "professional": [
+        "Subject sits at table, gestures with left hand while speaking, then nods at end.",
+        "Subject points at chart, explains with animated hands, then smiles confidently.",
+        "Host introduces themselves, waves, then invites viewer to follow with a gesture.",
+        "Subject holds up finger to make a point, then lowers hand and resumes speaking.",
+        "Presenter walks on stage, gestures to audience, then bows and steps aside.",
+    ],
+}
+
+# ==============================================================================
+# 9. SUBJECT-REFERENCE RULES (Hailuo compliance, deduped)
 # ==============================================================================
 SUBJECT_REFERENCE_RULES: Dict[str, str] = {
     "face_count": "exactly one full, unobstructed face",
@@ -277,7 +401,7 @@ SUBJECT_REFERENCE_RULES: Dict[str, str] = {
 }
 
 # ==============================================================================
-# 9. POLICY-FORBIDDEN TERMS (full union of all lists)
+# 10. POLICY-FORBIDDEN TERMS (full union of all lists)
 # ==============================================================================
 POLICY_FORBIDDEN_TERMS: List[str] = [
     "sexual",
@@ -301,7 +425,7 @@ POLICY_FORBIDDEN_TERMS: List[str] = [
 
 
 # ==============================================================================
-# 10. Utility: Strict Policy Filter (idempotent)
+# 11. Utility: Strict Policy Filter (idempotent)
 # ==============================================================================
 def policy_filter(text: str, strict: bool = False) -> bool:
     """
@@ -318,7 +442,7 @@ def policy_filter(text: str, strict: bool = False) -> bool:
 
 
 # ==============================================================================
-# 11. Utility: Prompt Chaining (with idempotent deduplication)
+# 12. Utility: Prompt Chaining (with idempotent deduplication)
 # ==============================================================================
 def chain_prompts(prompts: List[str]) -> str:
     """
@@ -335,9 +459,49 @@ def chain_prompts(prompts: List[str]) -> str:
 
 
 # ==============================================================================
+# 13. Genre plugin loader utilities
+# ==============================================================================
+
+def load_genre_plugins(plugin_dir: str = "genres") -> Dict[str, List[str]]:
+    """Loads all YAML/JSON genre plugins from ``plugin_dir`` into a mapping."""
+    plugin_map: Dict[str, List[str]] = {}
+    yaml_paths = glob.glob(os.path.join(plugin_dir, "*.yml")) + glob.glob(
+        os.path.join(plugin_dir, "*.yaml")
+    )
+    for path in yaml_paths:
+        with open(path, "r", encoding="utf-8") as f:
+            if not yaml:
+                continue
+            doc = yaml.safe_load(f) or {}
+            genre = doc.get("genre")
+            actions = doc.get("actions", [])
+            if genre and actions:
+                plugin_map.setdefault(str(genre), []).extend(list(actions))
+    for path in glob.glob(os.path.join(plugin_dir, "*.json")):
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+            genre = doc.get("genre")
+            actions = doc.get("actions", [])
+            if genre and actions:
+                plugin_map.setdefault(str(genre), []).extend(list(actions))
+    return plugin_map
+
+
+def merge_action_genres(base_map: Dict[str, List[str]], plugin_map: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """Return a merged genre→actions map (base + plugin overrides/appends)."""
+    merged: Dict[str, List[str]] = {k: list(v) for k, v in base_map.items()}
+    for genre, actions in plugin_map.items():
+        if genre in merged:
+            merged[genre].extend(actions)
+        else:
+            merged[genre] = list(actions)
+    return merged
+
 
 # ==============================================================================
-# 12. Block-building functions (canonical, no placeholders)
+
+# ==============================================================================
+# 13. Block-building functions (canonical, no placeholders)
 # ==============================================================================
 
 
@@ -441,8 +605,52 @@ def build_detail_block(detail_choice: str) -> str:
     return line
 
 
+def build_hailuo_prompt(
+    subject: str,
+    age_tag: str,
+    gender_tag: str,
+    action_sequence: str,
+    camera_moves: List[str],
+    lighting: str,
+    lens: str,
+    environment: str,
+    detail: str,
+) -> str:
+    """Return a Hailuo/Director Model-compliant prompt block."""
+    if not all(
+        [subject.strip(), age_tag.strip(), gender_tag.strip(), action_sequence.strip(), lighting.strip(), lens.strip(), environment.strip(), detail.strip()]
+    ) or not camera_moves:
+        raise ValueError("All parameters must be non-empty")
+    for move in camera_moves:
+        if move not in CAMERA_OPTIONS:
+            raise ValueError(f"Invalid camera move: {move}")
+    if lighting not in LIGHTING_OPTIONS:
+        raise ValueError("Invalid lighting option")
+    if lens not in LENS_OPTIONS:
+        raise ValueError("Invalid lens option")
+    if environment not in ENVIRONMENT_OPTIONS:
+        raise ValueError("Invalid environment option")
+    if detail not in DETAIL_PROMPTS:
+        raise ValueError("Invalid detail option")
+    camera_str = ", ".join(camera_moves)
+    return (
+        f"> {{\n"
+        f"    Subject: {subject.strip()}.\n"
+        f"    Age: {age_tag}; Gender: {gender_tag}.\n"
+        f"    Action Sequence: {action_sequence}\n"
+        f"    Lighting: {lighting}.\n"
+        f"    Lens: {lens}.\n"
+        f"    Camera: [{camera_str}].\n"
+        f"    Environment: {environment}.\n"
+        f"    Detail: {detail}.\n"
+        f"    Reference: single unobstructed face, neutral expression unless animated, even facial lighting, minimum 512×512 px, maximum 20 MB file size.\n"
+        f"    *Note: Strict Hailuo/Director model compliance: animated subject, subject-reference enforced, all camera moves in brackets, all tags explicit.*\n"
+        f"}}"
+    )
+
+
 # ==============================================================================
-# 13. Deakins/Alpha/advanced augmentation blocks
+# 14. Deakins/Alpha/advanced augmentation blocks
 # ==============================================================================
 
 
@@ -477,7 +685,7 @@ def alpha_template(subject: str, style: str, freq: int = 1) -> str:
 
 
 # ==============================================================================
-# 14. Realism and tri-prompt logic (battle-tested best practices)
+# 15. Realism and tri-prompt logic (battle-tested best practices)
 # ==============================================================================
 
 
@@ -568,7 +776,7 @@ def tri_prompt_engine(subject_description: str) -> Dict[str, object]:
 
 
 # ==============================================================================
-# 15. Fusion/orchestration logic (full, production mode)
+# 16. Fusion/orchestration logic (full, production mode)
 # ==============================================================================
 
 
@@ -706,7 +914,7 @@ __all__ = [
     "prompt_orchestrator",
 ]
 # ==============================================================================
-# 16. Final validation, idempotency checks, and documentation (PRODUCTION READY)
+# 17. Final validation, idempotency checks, and documentation (PRODUCTION READY)
 # ==============================================================================
 
 
