@@ -74,8 +74,8 @@ cleanup() {
 	else
 		log "INFO" "Script exited normally"
 	fi
-	for f in "${TMP_FILES[@]:-}"; do [[ -e "$f" ]] && rm -f "$f" || true; done
-	for d in "${TMP_DIRS[@]:-}"; do [[ -d "$d" ]] && rm -rf "$d" || true; done
+       for f in "${TMP_FILES[@]:-}"; do [[ -e "$f" ]] && run_cmd_dry rm -f "$f" || true; done
+       for d in "${TMP_DIRS[@]:-}"; do [[ -d "$d" ]] && run_cmd_dry rm -rf "$d" || true; done
 	exit "$status"
 }
 trap cleanup EXIT ERR INT TERM HUP
