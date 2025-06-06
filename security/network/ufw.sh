@@ -158,16 +158,17 @@ apply_dns_rules() {
 }
 
 usage() {
-	echo "Usage: $SCRIPT_NAME [options]"
-	echo ""
-	echo "Options:"
-	echo "  --vpn             : Connect ExpressVPN and apply VPN+DNS+UFW rules."
-	echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
-	echo "  --backup          : Create backups before modifying config files."
-	echo "  --silent          : Suppress console output (logs only)."
-	echo "  --dry-run         : Simulate actions without making changes."
-	echo "  --help, -h        : Show this help message."
-	exit 0
+        local exit_status="${1:-0}"
+        echo "Usage: $SCRIPT_NAME [options]"
+        echo ""
+        echo "Options:"
+        echo "  --vpn             : Connect ExpressVPN and apply VPN+DNS+UFW rules."
+        echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
+        echo "  --backup          : Create backups before modifying config files."
+        echo "  --silent          : Suppress console output (logs only)."
+        echo "  --dry-run         : Simulate actions without making changes."
+        echo "  --help, -h        : Show this help message."
+        exit "$exit_status"
 }
 
 is_immutable() {
@@ -253,11 +254,11 @@ parse_args() {
 		--backup) BACKUP_FLAG=1; log "INFO" "Backup mode enabled." ;;
 		--silent) SILENT=1; log "INFO" "Silent mode enabled." ;;
 		--dry-run) DRY_RUN=1; log "INFO" "Dry-run mode enabled." ;;
-		--help | -h) usage ;;
-		*) log "ERROR" "Unknown option: $1"; usage ;;
-		esac
-		shift
-	done
+                --help | -h) usage ;;
+                *) log "ERROR" "Unknown option: $1"; usage 1 ;;
+                esac
+                shift
+        done
 }
 
 expressvpn_connect() {
