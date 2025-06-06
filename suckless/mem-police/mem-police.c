@@ -107,7 +107,10 @@ static void daemonize(void) {
     if (pid > 0) exit(EXIT_SUCCESS);
 
     umask(0);
-    chdir("/");
+    if (chdir("/") != 0) {
+        perror("chdir");
+        exit(EXIT_FAILURE);
+    }
 
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
@@ -115,10 +118,17 @@ static void daemonize(void) {
 
     int fd = open("/dev/null", O_RDWR | O_CLOEXEC, 0);
     if (fd != -1) {
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
+        if (dup2(fd, STDIN_FILENO) < 0 ||
+            dup2(fd, STDOUT_FILENO) < 0 ||
+            dup2(fd, STDERR_FILENO) < 0) {
+            perror("dup2");
+            if (fd > STDERR_FILENO) close(fd);
+            exit(EXIT_FAILURE);
+        }
         if (fd > STDERR_FILENO) close(fd);
+    } else {
+        perror("open /dev/null");
+        exit(EXIT_FAILURE);
     }
 }
 
