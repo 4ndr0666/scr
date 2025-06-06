@@ -418,15 +418,26 @@ net.ipv6.conf.default.accept_source_route=0
 			log "ERROR" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."
 			return 1
 		}
-		local current_swappiness
-		current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
-			log "ERROR" "Unable to read vm.swappiness"
-			return 1
-		}
-		if [[ "$current_swappiness" -ne 60 ]]; then
-			log "ERROR" "Expected vm.swappiness 60 but found $current_swappiness"
-			return 1
-		fi
+                local current_swappiness
+                current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
+                        log "ERROR" "Unable to read vm.swappiness"
+                        return 1
+                }
+                if [[ "$current_swappiness" -ne 60 ]]; then
+                        log "WARN" "Detected vm.swappiness $current_swappiness; resetting to 60"
+                        run_cmd_dry sysctl -w vm.swappiness=60 || {
+                                log "ERROR" "Failed to set vm.swappiness to 60"
+                                return 1
+                        }
+                        current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
+                                log "ERROR" "Unable to read vm.swappiness after reset"
+                                return 1
+                        }
+                        if [[ "$current_swappiness" -ne 60 ]]; then
+                                log "ERROR" "vm.swappiness remains $current_swappiness after reset"
+                                return 1
+                        fi
+                fi
 	else
 		log "NOTE" "Dry-run: Would apply sysctl settings and verify swappiness."
 	fi

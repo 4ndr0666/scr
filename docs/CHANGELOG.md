@@ -1,5 +1,6 @@
 # Changelog
 ## [Unreleased]
+- Fixed swappiness validation in ufw.sh to automatically reset vm.swappiness to 60 when misconfigured.
 - Add ffx-cli.sh script providing process, merge, looperang, speed, and probe commands.
 - Implement promptlib.py library and sora_prompt_builder.sh CLI for pose-based prompt generation.
 - Update shellcheck workflow to fail on warnings.
