@@ -40,12 +40,11 @@ All prompt logic, options, and blocks are battle-tested for photorealism and cre
 |----------------------------------------------|---------------------------------------------------------------|
 | `./sora_prompt_builder.sh --interactive`     | Launch full interactive prompt builder (autocompletion)       |
 | `./sora_prompt_builder.sh --deakins`         | Add Deakins-style lighting to interactive prompt              |
-| `./sora_prompt_builder.sh --copy`            | Copy output prompt to clipboard (needs `wl-copy`)             |
 | `./sora_prompt_builder.sh --plugin FILE.md`  | Load plugin markdown (legacy/interactive prompt selection)    |
 | `./sora_prompt_builder.sh --help`            | Show help/usage                                               |
 
-**Tip:** Combine flags for best workflow, e.g.:  
-`./sora_prompt_builder.sh --interactive --deakins --copy`
+**Tip:** Combine flags for best workflow, e.g.:
+`./sora_prompt_builder.sh --interactive --deakins`
 
 ---
 
@@ -60,7 +59,6 @@ All prompt logic, options, and blocks are battle-tested for photorealism and cre
 Options:
 
 * `--deakins` — Insert Deakins-style lighting/mood blocks
-* `--copy`    — Copy prompt to clipboard via `wl-copy`
 * `--plugin <file.md>` — Use plugin prompt library for selection
 
 All menus feature autocompletion. Interactive mode requires `prompt_toolkit` and a real terminal.
@@ -73,7 +71,7 @@ All menus feature autocompletion. Interactive mode requires `prompt_toolkit` and
 ./sora_prompt_builder.sh --plugin plugins/prompts1.md
 ```
 
-Choose a prompt from the plugin library using fzf/fuzzy search. Copy with `--copy` as needed.
+Choose a prompt from the plugin library using fzf/fuzzy search. The prompt is copied automatically if `wl-copy` is available.
 
 ---
 
