@@ -23,3 +23,4 @@
 - Revised plugin_loader.py to use context managers for file reading.
 - Added unit tests for plugin_loader and promptlib.
 - Clipboard copying is now automatic; the --copy flag was removed and prompts are sanitized before being copied.
+- Fixed interactive clipboard output to strip indentation and add blank line before standard note.

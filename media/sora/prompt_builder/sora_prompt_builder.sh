@@ -236,6 +236,7 @@ with tty_in, tty_out:
         f"    {camera_line}",
         f"    {environment_line}",
         f"    {detail_line}",
+        "",
         f"    *Note: cinematic references must be interpreted within each platform’s current capabilities.*",
         f"}}"
     ])
@@ -258,7 +259,7 @@ PYEOF
 	fi
 
 	if command -v wl-copy >/dev/null 2>&1; then
-		CLEAN_COPY=$(printf '%s\n' "$FINAL_OUTPUT" | sed '1d;$d')
+		CLEAN_COPY=$(printf '%s\n' "$FINAL_OUTPUT" | sed '1d;$d;s/^\s\{4\}//;s/[[:space:]]*$//')
 		printf '%s\n' "$CLEAN_COPY" | wl-copy
 		echo "${OK} Prompt copied to clipboard via wl-copy."
 	else
