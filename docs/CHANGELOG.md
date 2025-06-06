@@ -16,3 +16,4 @@
 - Corrected create_input invocation for interactive mode.
 - Added optional backup flag and improved VPN detection in ufw.sh; checks ExpressVPN DNS.
 - Added ExpressVPN DNS firewall rules with automatic backup/restore hooks.
+- Updated cleanup loops in ufw.sh to use run_cmd_dry and added dry-run verification test.

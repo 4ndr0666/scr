@@ -74,8 +74,17 @@ cleanup() {
 	else
 		log "INFO" "Script exited normally"
 	fi
-       for f in "${TMP_FILES[@]:-}"; do [[ -e "$f" ]] && run_cmd_dry rm -f "$f" || true; done
-       for d in "${TMP_DIRS[@]:-}"; do [[ -d "$d" ]] && run_cmd_dry rm -rf "$d" || true; done
+	for f in "${TMP_FILES[@]:-}"; do
+		if [[ -e "$f" ]]; then
+			run_cmd_dry rm -f "$f" || true
+		fi
+	done
+
+	for d in "${TMP_DIRS[@]:-}"; do
+		if [[ -d "$d" ]]; then
+			run_cmd_dry rm -rf "$d" || true
+		fi
+	done
 	exit "$status"
 }
 trap cleanup EXIT ERR INT TERM HUP
@@ -85,20 +94,23 @@ log() {
 	timestamp=$(date +"%Y-%m-%d %H:%M:%S")
 	echo "$timestamp [$level] : $message" >>"$LOG_FILE"
 	[[ "$SILENT" -eq 0 ]] && case "$level" in
-		ERROR) echo -e "$ERROR $message" >&2 ;;
-		OK) echo -e "$OK $message" ;;
-		INFO) echo -e "$INFO $message" ;;
-		WARN) echo -e "$WARN $message" >&2 ;;
-		NOTE) echo -e "$NOTE $message" ;;
-		CAT) echo -e "$CAT $message" ;;
-		*) echo "$timestamp [$level] : $message" ;;
+	ERROR) echo -e "$ERROR $message" >&2 ;;
+	OK) echo -e "$OK $message" ;;
+	INFO) echo -e "$INFO $message" ;;
+	WARN) echo -e "$WARN $message" >&2 ;;
+	NOTE) echo -e "$NOTE $message" ;;
+	CAT) echo -e "$CAT $message" ;;
+	*) echo "$timestamp [$level] : $message" ;;
 	esac
 }
 
 run_cmd_dry() {
 	local CMD=("$@") cmd_string="${CMD[*]}"
 	log "INFO" "Attempting command: $cmd_string"
-	if [[ "$DRY_RUN" -eq 1 ]]; then log "NOTE" "Dry-run: Would execute: $cmd_string"; return 0; fi
+	if [[ "$DRY_RUN" -eq 1 ]]; then
+		log "NOTE" "Dry-run: Would execute: $cmd_string"
+		return 0
+	fi
 	local status=0
 	if [[ "$SILENT" -eq 1 ]]; then "${CMD[@]}" >/dev/null 2>&1 || status=$?; else "${CMD[@]}" || status=$?; fi
 	[[ "$status" -ne 0 ]] && log "ERROR" "Command failed: $cmd_string (status $status)" || log "OK" "Command succeeded: $cmd_string"
@@ -113,7 +125,10 @@ backup_file() {
 	dest="$dest_dir/$(basename "$src").bak_$ts"
 	run_cmd_dry mkdir -p "$dest_dir" || return 1
 	if [[ "$DRY_RUN" -eq 0 ]]; then
-		cp "$src" "$dest" || { log "ERROR" "Failed to backup $src"; return 1; }
+		cp "$src" "$dest" || {
+			log "ERROR" "Failed to backup $src"
+			return 1
+		}
 		chmod --reference="$src" "$dest" || log "WARN" "Failed to copy permissions to $dest"
 	else
 		log "NOTE" "Dry-run: Would copy $src to $dest"
@@ -158,27 +173,45 @@ apply_dns_rules() {
 }
 
 usage() {
-        local exit_status="${1:-0}"
-        echo "Usage: $SCRIPT_NAME [options]"
-        echo ""
-        echo "Options:"
-        echo "  --vpn             : Connect ExpressVPN and apply VPN+DNS+UFW rules."
-        echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
-        echo "  --backup          : Create backups before modifying config files."
-        echo "  --silent          : Suppress console output (logs only)."
-        echo "  --dry-run         : Simulate actions without making changes."
-        echo "  --help, -h        : Show this help message."
-        exit "$exit_status"
+	local exit_status="${1:-0}"
+	echo "Usage: $SCRIPT_NAME [options]"
+	echo ""
+	echo "Options:"
+	echo "  --vpn             : Connect ExpressVPN and apply VPN+DNS+UFW rules."
+	echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
+	echo "  --backup          : Create backups before modifying config files."
+	echo "  --silent          : Suppress console output (logs only)."
+	echo "  --dry-run         : Simulate actions without making changes."
+	echo "  --help, -h        : Show this help message."
+	exit "$exit_status"
 }
 
 is_immutable() {
 	local file="$1"
 	[[ ! -f "$file" ]] && log "WARN" "File not found for immutable check: $file" && return 1
-	command -v lsattr >/dev/null 2>&1 || { log "WARN" "'lsattr' not found. Cannot check immutable flag for $file."; return 2; }
-	lsattr "$file" 2>/dev/null | grep -q '^....i' && log "INFO" "File is immutable: $file" && return 0 || { log "INFO" "File is not immutable: $file"; return 1; }
+	command -v lsattr >/dev/null 2>&1 || {
+		log "WARN" "'lsattr' not found. Cannot check immutable flag for $file."
+		return 2
+	}
+	lsattr "$file" 2>/dev/null | grep -q '^....i' && log "INFO" "File is immutable: $file" && return 0 || {
+		log "INFO" "File is not immutable: $file"
+		return 1
+	}
 }
-remove_immutable() { command -v chattr >/dev/null 2>&1 || { log "WARN" "'chattr' not found. Cannot remove immutable flag."; return 1; }; [[ -f "$1" ]] && is_immutable "$1" && run_cmd_dry chattr -i "$1"; }
-set_immutable() { command -v chattr >/dev/null 2>&1 || { log "WARN" "'chattr' not found. Cannot set immutable flag."; return 1; }; [[ -f "$1" ]] && ! is_immutable "$1" && run_cmd_dry chattr +i "$1"; }
+remove_immutable() {
+	command -v chattr >/dev/null 2>&1 || {
+		log "WARN" "'chattr' not found. Cannot remove immutable flag."
+		return 1
+	}
+	[[ -f "$1" ]] && is_immutable "$1" && run_cmd_dry chattr -i "$1"
+}
+set_immutable() {
+	command -v chattr >/dev/null 2>&1 || {
+		log "WARN" "'chattr' not found. Cannot set immutable flag."
+		return 1
+	}
+	[[ -f "$1" ]] && ! is_immutable "$1" && run_cmd_dry chattr +i "$1"
+}
 
 check_dependencies() {
 	log "INFO" "Checking required dependencies..."
@@ -187,7 +220,11 @@ check_dependencies() {
 	local missing=()
 	for cmd in "${deps[@]}"; do command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd"); done
 	for opt in "${optional_deps[@]}"; do command -v "$opt" >/dev/null 2>&1 || log "WARN" "Optional dependency missing: $opt"; done
-	[[ ${#missing[@]} -eq 0 ]] && log "OK" "All required dependencies satisfied." && return 0 || { log "ERROR" "Missing dependencies: ${missing[*]}"; echo -e "$ERROR Missing dependencies: ${missing[*]}" >&2; return 1; }
+	[[ ${#missing[@]} -eq 0 ]] && log "OK" "All required dependencies satisfied." && return 0 || {
+		log "ERROR" "Missing dependencies: ${missing[*]}"
+		echo -e "$ERROR Missing dependencies: ${missing[*]}" >&2
+		return 1
+	}
 }
 
 detect_primary_interface() {
@@ -214,7 +251,10 @@ detect_vpn_interfaces() {
 detect_vpn_port() {
 	log "INFO" "Attempting to detect VPN port..."
 	VPN_PORT=""
-	if ! detect_vpn_interfaces; then log "INFO" "No VPN interfaces found, skipping VPN port detection."; return 1; fi
+	if ! detect_vpn_interfaces; then
+		log "INFO" "No VPN interfaces found, skipping VPN port detection."
+		return 1
+	fi
 	local detected_port=""
 	read -r -a vpn_iface_array <<<"$VPN_IFACES"
 	for VPN_IF in "${vpn_iface_array[@]}"; do
@@ -249,26 +289,50 @@ parse_args() {
 	log "INFO" "Parsing arguments: $*"
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-		--vpn) VPN_FLAG=1; log "INFO" "--vpn enabled." ;;
-		--jdownloader) JD_FLAG=1; log "INFO" "--jdownloader enabled." ;;
-		--backup) BACKUP_FLAG=1; log "INFO" "Backup mode enabled." ;;
-		--silent) SILENT=1; log "INFO" "Silent mode enabled." ;;
-		--dry-run) DRY_RUN=1; log "INFO" "Dry-run mode enabled." ;;
-                --help | -h) usage ;;
-                *) log "ERROR" "Unknown option: $1"; usage 1 ;;
-                esac
-                shift
-        done
+		--vpn)
+			VPN_FLAG=1
+			log "INFO" "--vpn enabled."
+			;;
+		--jdownloader)
+			JD_FLAG=1
+			log "INFO" "--jdownloader enabled."
+			;;
+		--backup)
+			BACKUP_FLAG=1
+			log "INFO" "Backup mode enabled."
+			;;
+		--silent)
+			SILENT=1
+			log "INFO" "Silent mode enabled."
+			;;
+		--dry-run)
+			DRY_RUN=1
+			log "INFO" "Dry-run mode enabled."
+			;;
+		--help | -h) usage ;;
+		*)
+			log "ERROR" "Unknown option: $1"
+			usage 1
+			;;
+		esac
+		shift
+	done
 }
 
 expressvpn_connect() {
 	log "CAT" "Connecting ExpressVPN"
-	run_cmd_dry expressvpn connect || { log "ERROR" "ExpressVPN connection failed"; exit 1; }
+	run_cmd_dry expressvpn connect || {
+		log "ERROR" "ExpressVPN connection failed"
+		exit 1
+	}
 }
 
 expressvpn_disconnect() {
 	log "CAT" "Disconnecting ExpressVPN"
-	run_cmd_dry expressvpn disconnect || { log "ERROR" "ExpressVPN disconnect failed"; exit 1; }
+	run_cmd_dry expressvpn disconnect || {
+		log "ERROR" "ExpressVPN disconnect failed"
+		exit 1
+	}
 }
 
 configure_sysctl() {
@@ -332,43 +396,67 @@ net.ipv6.conf.default.accept_source_route=0
 	else
 		SYSCTL_CONTENT+="# No VPN interfaces detected to disable IPv6 on.\n"
 	fi
-	run_cmd_dry mkdir -p /etc/sysctl.d/ || { log "ERROR" "Could not create /etc/sysctl.d/"; return 1; }
+	run_cmd_dry mkdir -p /etc/sysctl.d/ || {
+		log "ERROR" "Could not create /etc/sysctl.d/"
+		return 1
+	}
 	[[ "$BACKUP_FLAG" -eq 1 ]] && backup_file "$SYSCTL_UFW_FILE" "$BACKUP_DIR"
 	command -v chattr >/dev/null 2>&1 && remove_immutable "$SYSCTL_UFW_FILE" || true
 	if [[ "$DRY_RUN" -eq 0 ]]; then
-		echo -e "$SYSCTL_CONTENT" | tee "$SYSCTL_UFW_FILE" >/dev/null || { log "ERROR" "Failed to write $SYSCTL_UFW_FILE"; return 1; }
+		echo -e "$SYSCTL_CONTENT" | tee "$SYSCTL_UFW_FILE" >/dev/null || {
+			log "ERROR" "Failed to write $SYSCTL_UFW_FILE"
+			return 1
+		}
 		log "OK" "$SYSCTL_UFW_FILE written successfully."
 	else
 		log "NOTE" "Dry-run: Would write sysctl config to $SYSCTL_UFW_FILE."
 		[[ "$SILENT" -eq 0 ]] && echo -e "$SYSCTL_CONTENT"
 	fi
-        command -v chattr >/dev/null 2>&1 && set_immutable "$SYSCTL_UFW_FILE" || true
-        if [[ "$DRY_RUN" -eq 0 ]]; then
-                run_cmd_dry sysctl --system || { log "ERROR" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."; return 1; }
-                local current_swappiness
-                current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || { log "ERROR" "Unable to read vm.swappiness"; return 1; }
-                if [[ "$current_swappiness" -ne 60 ]]; then
-                        log "ERROR" "Expected vm.swappiness 60 but found $current_swappiness"
-                        return 1
-                fi
-        else
-                log "NOTE" "Dry-run: Would apply sysctl settings and verify swappiness."
-        fi
-        log "OK" "Sysctl configuration applied."
-        return 0
+	command -v chattr >/dev/null 2>&1 && set_immutable "$SYSCTL_UFW_FILE" || true
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		run_cmd_dry sysctl --system || {
+			log "ERROR" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."
+			return 1
+		}
+		local current_swappiness
+		current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
+			log "ERROR" "Unable to read vm.swappiness"
+			return 1
+		}
+		if [[ "$current_swappiness" -ne 60 ]]; then
+			log "ERROR" "Expected vm.swappiness 60 but found $current_swappiness"
+			return 1
+		fi
+	else
+		log "NOTE" "Dry-run: Would apply sysctl settings and verify swappiness."
+	fi
+	log "OK" "Sysctl configuration applied."
+	return 0
 }
 
 configure_ufw() {
 	log "CAT" "Configuring UFW firewall rules..."
 	[[ -n "${SSH_CLIENT:-}" || -n "${SSH_TTY:-}" ]] && log "WARN" "Detected SSH session. If not using port $SSH_PORT, you will disconnect!" && sleep 3
-	run_cmd_dry ufw --force reset || { log "ERROR" "Failed to reset UFW."; return 1; }
+	run_cmd_dry ufw --force reset || {
+		log "ERROR" "Failed to reset UFW."
+		return 1
+	}
 	log "OK" "UFW reset complete."
-	run_cmd_dry ufw limit in on "$PRIMARY_IF" to any port "$SSH_PORT" proto tcp comment "Limit SSH" || { log "ERROR" "Failed to re-add SSH rule."; return 1; }
+	run_cmd_dry ufw limit in on "$PRIMARY_IF" to any port "$SSH_PORT" proto tcp comment "Limit SSH" || {
+		log "ERROR" "Failed to re-add SSH rule."
+		return 1
+	}
 	log "OK" "SSH rule on port $SSH_PORT re-added."
-	run_cmd_dry ufw default deny incoming || { log "ERROR" "Failed to set default incoming policy."; return 1; }
+	run_cmd_dry ufw default deny incoming || {
+		log "ERROR" "Failed to set default incoming policy."
+		return 1
+	}
 	local default_outgoing_policy="allow"
 	if [[ "$VPN_FLAG" -eq 1 ]] && detect_vpn_interfaces; then default_outgoing_policy="deny"; fi
-	run_cmd_dry ufw default "$default_outgoing_policy" outgoing || { log "ERROR" "Failed to set default outgoing policy."; return 1; }
+	run_cmd_dry ufw default "$default_outgoing_policy" outgoing || {
+		log "ERROR" "Failed to set default outgoing policy."
+		return 1
+	}
 	log "OK" "Default policies set: Incoming=deny, Outgoing=$default_outgoing_policy."
 	local ALL_RULES=("allow 80/tcp" "allow 443/tcp")
 	if [[ "$JD_FLAG" -eq 1 ]]; then
@@ -413,7 +501,10 @@ configure_ufw() {
 	if [[ "$DRY_RUN" -eq 0 ]]; then ufw_status_output=$(ufw status verbose 2>/dev/null || true); fi
 	if ! echo "$ufw_status_output" | grep -q "Status: active"; then
 		log "NOTE" "UFW not active. Enabling now..."
-		run_cmd_dry ufw --force enable || { log "ERROR" "Failed to enable UFW."; return 1; }
+		run_cmd_dry ufw --force enable || {
+			log "ERROR" "Failed to enable UFW."
+			return 1
+		}
 		log "OK" "UFW enabled."
 	else
 		log "OK" "UFW is already active."
@@ -422,7 +513,10 @@ configure_ufw() {
 	if [[ "$DRY_RUN" -eq 0 ]]; then
 		local final_ufw_status
 		final_ufw_status=$(ufw status verbose 2>/dev/null || true)
-		if ! echo "$final_ufw_status" | grep -q "Status: active"; then log "ERROR" "UFW is not active after configuration."; return 1; fi
+		if ! echo "$final_ufw_status" | grep -q "Status: active"; then
+			log "ERROR" "UFW is not active after configuration."
+			return 1
+		fi
 		log "OK" "UFW is active and configured."
 	else
 		log "NOTE" "Dry-run: Skipping final UFW status validation."
@@ -471,24 +565,45 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 log "OK" "Running with root privileges."
 log "INFO" "Setting up log directory and file..."
-mkdir -p "$LOG_DIR" || { echo -e "$ERROR Could not create log directory: $LOG_DIR" >&2; exit 1; }
-touch "$LOG_FILE" || { echo -e "$ERROR Could not create log file: $LOG_FILE" >&2; exit 1; }
-chmod 600 "$LOG_FILE" || { echo -e "$ERROR Could not set permissions on log file: $LOG_FILE" >&2; exit 1; }
+mkdir -p "$LOG_DIR" || {
+	echo -e "$ERROR Could not create log directory: $LOG_DIR" >&2
+	exit 1
+}
+touch "$LOG_FILE" || {
+	echo -e "$ERROR Could not create log file: $LOG_FILE" >&2
+	exit 1
+}
+chmod 600 "$LOG_FILE" || {
+	echo -e "$ERROR Could not set permissions on log file: $LOG_FILE" >&2
+	exit 1
+}
 log "OK" "Log directory and file setup complete: $LOG_FILE"
 
 log "CAT" "Starting system hardening script: $SCRIPT_NAME"
 parse_args "$@"
-if ! check_dependencies; then log "ERROR" "Dependency check failed. Exiting."; exit 1; fi
-if ! detect_primary_interface; then log "ERROR" "Primary interface detection failed. Exiting."; exit 1; fi
+if ! check_dependencies; then
+	log "ERROR" "Dependency check failed. Exiting."
+	exit 1
+fi
+if ! detect_primary_interface; then
+	log "ERROR" "Primary interface detection failed. Exiting."
+	exit 1
+fi
 
 # === VPN logic integration (unified) ===
 if [[ "$VPN_FLAG" -eq 1 ]]; then
 	if ! pgrep -x expressvpn >/dev/null 2>&1; then expressvpn_connect; fi
 fi
 if ! configure_sysctl; then log "WARN" "Sysctl configuration encountered issues."; fi
-if ! configure_ufw; then log "ERROR" "UFW configuration failed. Exiting."; exit 1; fi
+if ! configure_ufw; then
+	log "ERROR" "UFW configuration failed. Exiting."
+	exit 1
+fi
 # If VPN flag is not set and expressvpn is running, disconnect and cleanup DNS
-if [[ "$VPN_FLAG" -eq 0 ]] && pgrep -x expressvpn >/dev/null 2>&1; then expressvpn_disconnect; restore_resolv_conf; fi
+if [[ "$VPN_FLAG" -eq 0 ]] && pgrep -x expressvpn >/dev/null 2>&1; then
+	expressvpn_disconnect
+	restore_resolv_conf
+fi
 
 final_verification
 echo "" # newline for cleaner output
