@@ -73,13 +73,16 @@ run_ffmpeg() {
 	local infile="$1" outfile="$2" filters="$3"
 	local cmd=(ffmpeg -y -i "$infile")
 	[ -n "$filters" ] && cmd+=(-vf "$filters")
-	cmd+=("$outfile")
+	cmd+=(-progress pipe:1 "$outfile")
 	if [ "$DRY_RUN" -eq 1 ]; then
 		printf '%q ' "${cmd[@]}" && echo
 		return
 	fi
 	printf '%bRunning ffmpeg...%b\n' "$CYAN" "$RESET"
-	"${cmd[@]}" -progress pipe:1 2>&1 | tee -a "$LOGFILE" | grep -m1 'out_time=' || error_exit "ffmpeg failed"
+	"${cmd[@]}" 2>&1 | tee -a "$LOGFILE"
+	local status
+	status=${PIPESTATUS[0]}
+	[ "$status" -eq 0 ] || error_exit "ffmpeg failed"
 }
 
 main() {
