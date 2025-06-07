@@ -39,6 +39,12 @@ class CanonicalParamLoader:
             "environment": list(getattr(self.module, "ENVIRONMENT_OPTIONS", [])),
             "shadow": list(getattr(self.module, "SHADOW_OPTIONS", [])),
             "detail": list(getattr(self.module, "DETAIL_PROMPTS", [])),
+            "age_group": list(getattr(self.module, "AGE_GROUP_OPTIONS", [])),
+            "gender": list(getattr(self.module, "GENDER_OPTIONS", [])),
+            "orientation": list(getattr(self.module, "ORIENTATION_OPTIONS", [])),
+            "expression": list(getattr(self.module, "EXPRESSION_OPTIONS", [])),
+            "shot_framing": list(getattr(self.module, "SHOT_FRAMING_OPTIONS", [])),
+            "action_sequence": list(getattr(self.module, "ACTION_SEQUENCE_OPTIONS", [])),
         }
         self._record_mtimes()
 
@@ -84,10 +90,13 @@ class CanonicalParamLoader:
             "subject",
             "age_tag",
             "gender_tag",
+            "orientation",
+            "expression",
             "action_sequence",
             "camera_moves",
             "lighting",
             "lens",
+            "shot_framing",
             "environment",
             "shadow",
             "detail",
@@ -97,10 +106,16 @@ class CanonicalParamLoader:
                 raise ValueError(f"Missing required parameter: {field}")
         if not self.validate_param("camera_move", data["camera_moves"]):
             raise ValueError("Invalid camera moves")
+        if not self.validate_param("orientation", data["orientation"]):
+            raise ValueError("Invalid orientation option")
+        if not self.validate_param("expression", data["expression"]):
+            raise ValueError("Invalid expression option")
         if not self.validate_param("lighting", data["lighting"]):
             raise ValueError("Invalid lighting option")
         if not self.validate_param("lens", data["lens"]):
             raise ValueError("Invalid lens option")
+        if not self.validate_param("shot_framing", data["shot_framing"]):
+            raise ValueError("Invalid shot framing option")
         if not self.validate_param("environment", data["environment"]):
             raise ValueError("Invalid environment option")
         if not self.validate_param("shadow", data["shadow"]):
@@ -112,10 +127,13 @@ class CanonicalParamLoader:
             subject=data["subject"],
             age_tag=data["age_tag"],
             gender_tag=data["gender_tag"],
+            orientation=data["orientation"],
+            expression=data["expression"],
             action_sequence=data["action_sequence"],
             camera_moves=list(data["camera_moves"]),
             lighting=data["lighting"],
             lens=data["lens"],
+            shot_framing=data["shot_framing"],
             environment=data["environment"],
             detail=data["detail"],
         )

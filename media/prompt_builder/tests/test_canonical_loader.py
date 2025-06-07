@@ -23,10 +23,13 @@ class CanonicalLoaderTest(unittest.TestCase):
             "subject": "hero",
             "age_tag": "adult",
             "gender_tag": "male",
+            "orientation": self.loader.get_param_options("orientation")[0],
+            "expression": self.loader.get_param_options("expression")[0],
             "action_sequence": "runs forward",
             "camera_moves": [self.loader.get_param_options("camera_move")[0]],
             "lighting": self.loader.get_param_options("lighting")[0],
             "lens": self.loader.get_param_options("lens")[0],
+            "shot_framing": self.loader.get_param_options("shot_framing")[0],
             "environment": self.loader.get_param_options("environment")[0],
             "shadow": self.loader.get_param_options("shadow")[0],
             "detail": self.loader.get_param_options("detail")[0],
@@ -34,6 +37,7 @@ class CanonicalLoaderTest(unittest.TestCase):
         block = self.loader.assemble_prompt_block(data)
         self.assertIn("Subject: hero", block)
         self.assertIn("Action Sequence: runs forward", block)
+        self.assertIn("Orientation", block)
 
 
 if __name__ == "__main__":
