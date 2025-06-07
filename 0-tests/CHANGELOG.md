@@ -6,3 +6,5 @@
 - Implemented CanonicalParamLoader with hot reload and new tests.
 - Improved media/ffx: added dependency checks, corrected audio option flags,
   and enhanced dry-run output.
+- Added ffx-vidline.sh combining vidline features with multi-filter support and dry-run option.
+- Improved ffx-vidline.sh ffmpeg status handling to catch failures correctly.
