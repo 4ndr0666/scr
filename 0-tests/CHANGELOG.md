@@ -8,3 +8,4 @@
   and enhanced dry-run output.
 - Added ffx-vidline.sh combining vidline features with multi-filter support and dry-run option.
 - Improved ffx-vidline.sh ffmpeg status handling to catch failures correctly.
+- Fixed choose_file prompt so command substitution returns only the path.

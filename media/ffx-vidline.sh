@@ -37,7 +37,7 @@ unique_output_name() {
 }
 
 choose_file() {
-	printf '%bSelect input video:%b\n' "$CYAN" "$RESET"
+	printf '%bSelect input video:%b\n' "$CYAN" "$RESET" >&2
 	local f
 	f="$(fzf)" || return 1
 	[ -f "$f" ] || error_exit "Invalid file selected"
