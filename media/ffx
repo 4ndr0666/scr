@@ -28,20 +28,42 @@ ADV_PIX_FMT="yuv420p"
 ADV_CRF="18"
 
 log() { [ "$VERBOSE" = true ] && printf '%s\n' "$*"; }
-run() { if [ "$DRY_RUN" = true ]; then printf '[dry-run] %s\n' "$*"; else eval "$@"; fi; }
+run() {
+	if [ "$DRY_RUN" = true ]; then
+		printf '[dry-run]'
+		printf ' %q' "$@"
+		printf '\n'
+	else
+		"$@"
+	fi
+}
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 absolute_path() { readlink -f "$1" 2>/dev/null || echo "$1"; }
+check_deps() {
+	for cmd in ffmpeg ffprobe; do
+		command_exists "$cmd" || {
+			printf '%s not found in PATH\n' "$cmd"
+			exit 1
+		}
+	done
+}
 get_default_filename() {
-	local base suf ext f n 
-	base="${1:-out}" 
-	suf="${2:-tmp}" 
-	ext="${3:-mp4}" 
-	n=1 
+	local base suf ext f n
+	base="${1:-out}"
+	suf="${2:-tmp}"
+	ext="${3:-mp4}"
+	n=1
 	f="${base}_${suf}.${ext}"
 	while [ -e "$f" ]; do f="${base}_${suf}_$((n++)).${ext}"; done
 	printf '%s' "$f"
 }
-audio_opts() { [ "$KEEP_AUDIO" = true ] && printf '--c:a copy' || printf '--an'; }
+audio_opts() {
+	if [ "$KEEP_AUDIO" = true ]; then
+		printf '%s %s' '-c:a' 'copy'
+	else
+		printf '%s' '-an'
+	fi
+}
 
 advanced_prompt() {
 	if [ "$ADVANCED" = true ]; then
@@ -100,6 +122,7 @@ cmd_process() {
 	height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nokey=1:noprint_wrappers=1 "$input")
 	local vf="fps=$forced_fps"
 	[ "${height:-0}" -gt 1080 ] && vf="scale=-2:1080,$vf"
+	# shellcheck disable=SC2046
 	run ffmpeg -y -fflags +genpts -i "$input" -vf "$vf" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output"
 	log "Processed -> $output"
 }
@@ -139,7 +162,8 @@ cmd_merge() {
 			rm -rf "$tmpdir"
 			exit 1
 		}
-		local temp="$tmpdir/$(basename "$f").mp4"
+		local temp
+		temp="$tmpdir/$(basename "$f").mp4"
 		run ffmpeg -y -fflags +genpts -i "$f" -r "$forced_fps" -c copy "$temp" || run ffmpeg -y -i "$f" -r "$forced_fps" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" -an "$temp"
 		printf "file '%s'\n" "$(absolute_path "$temp")" >>"$tmplist"
 	done
@@ -167,9 +191,12 @@ cmd_looperang() {
 	fwd="$tmpdir/fwd.mp4"
 	rev="$tmpdir/rev.mp4"
 	list="$tmpdir/list.txt"
+	# shellcheck disable=SC2046
 	run ffmpeg -y -i "$input" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$fwd"
+	# shellcheck disable=SC2046
 	run ffmpeg -y -i "$input" -vf reverse -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$rev"
 	printf "file '%s'\nfile '%s'\n" "$fwd" "$rev" >"$list"
+	# shellcheck disable=SC2046
 	run ffmpeg -y -f concat -safe 0 -i "$list" -c copy "$output" || run ffmpeg -y -f concat -safe 0 -i "$list" -c:v "$ADV_CODEC" -qp 0 -preset medium -pix_fmt "$ADV_PIX_FMT" $(audio_opts) "$output"
 	rm -rf "$tmpdir"
 	log "Looperang -> $output"
@@ -191,6 +218,7 @@ cmd_speed() {
 	[ -z "$output" ] && output="$(get_default_filename "${input%.*}" speed "$ADV_CONTAINER")"
 	local vf="setpts=${factor}*PTS"
 	$INTERP && vf="minterpolate=fps=$fps,$vf"
+	# shellcheck disable=SC2046
 	run ffmpeg -y -i "$input" -filter:v "$vf" -r "$fps" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium $(audio_opts) -pix_fmt "$ADV_PIX_FMT" "$output"
 	log "Speed -> $output"
 }
@@ -226,6 +254,7 @@ main() {
 		show_help
 		exit 1
 	}
+	check_deps
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		-A | --advanced)

@@ -4,3 +4,5 @@
 - Added genre plugin loader tests for promptlib (test-genre-plugin-loader.bats).
 
 - Implemented CanonicalParamLoader with hot reload and new tests.
+- Improved media/ffx: added dependency checks, corrected audio option flags,
+  and enhanced dry-run output.
