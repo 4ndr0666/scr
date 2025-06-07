@@ -113,6 +113,12 @@ from promptlib import (
     ENVIRONMENT_OPTIONS,
     SHADOW_OPTIONS,
     DETAIL_PROMPTS,
+    AGE_GROUP_OPTIONS,
+    GENDER_OPTIONS,
+    ORIENTATION_OPTIONS,
+    EXPRESSION_OPTIONS,
+    SHOT_FRAMING_OPTIONS,
+    ACTION_SEQUENCE_OPTIONS,
     build_pose_block,
     build_lighting_block,
     build_shadow_block,
@@ -159,7 +165,35 @@ with tty_in, tty_out:
         output=create_output(tty_out),
     )
 
-    # 1) Pose selection
+    # 1) Age group selection
+    age = session.prompt(
+        "Age Group: ",
+        completer=WordCompleter(AGE_GROUP_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+
+    # 2) Gender selection
+    gender = session.prompt(
+        "Gender: ",
+        completer=WordCompleter(GENDER_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+
+    # 3) Orientation selection
+    orientation = session.prompt(
+        "Orientation: ",
+        completer=WordCompleter(ORIENTATION_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+
+    # 4) Expression selection
+    expression = session.prompt(
+        "Expression: ",
+        completer=WordCompleter(EXPRESSION_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+
+    # 5) Pose selection
     pose = session.prompt(
         "Pose Tag: ",
         completer=WordCompleter(POSE_TAGS, ignore_case=True, match_middle=True),
@@ -167,7 +201,15 @@ with tty_in, tty_out:
     )
     pose_line = build_pose_block(pose).splitlines()[1].strip()
 
-    # 2) Lighting selection
+    # 6) Action sequence selection
+    action_sequence = session.prompt(
+        "Action Sequence: ",
+        completer=WordCompleter(ACTION_SEQUENCE_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+    action_line = f"Action Sequence: {action_sequence}"
+
+    # 7) Lighting selection
     lighting = session.prompt(
         "Lighting (choose one): ",
         completer=WordCompleter(LIGHTING_OPTIONS, ignore_case=True, match_middle=True),
@@ -175,7 +217,7 @@ with tty_in, tty_out:
     )
     lighting_line = build_lighting_block(lighting)
 
-    # 3) Shadow selection
+    # 8) Shadow selection
     shadow = session.prompt(
         "Shadow Quality (choose one): ",
         completer=WordCompleter(SHADOW_OPTIONS, ignore_case=True, match_middle=True),
@@ -183,7 +225,7 @@ with tty_in, tty_out:
     )
     shadow_line = build_shadow_block(shadow)
 
-    # 4) Lens selection
+    # 9) Lens selection
     lens = session.prompt(
         "Lens (choose one): ",
         completer=WordCompleter(LENS_OPTIONS, ignore_case=True, match_middle=True),
@@ -191,7 +233,7 @@ with tty_in, tty_out:
     )
     lens_line = build_lens_block(lens)
 
-    # 5) Camera movement selection
+    # 10) Camera movement selection
     camera_move_input = session.prompt(
         "Camera Movement Tags (comma-separated): ",
         completer=WordCompleter(CAMERA_OPTIONS, ignore_case=True, match_middle=True),
@@ -200,7 +242,15 @@ with tty_in, tty_out:
     camera_tags = [m.strip() for m in camera_move_input.split(",") if m.strip()]
     camera_line = build_camera_block(camera_tags)
 
-    # 6) Environment selection
+    # 11) Shot framing selection
+    shot = session.prompt(
+        "Camera Shot/Framing: ",
+        completer=WordCompleter(SHOT_FRAMING_OPTIONS, ignore_case=True, match_middle=True),
+        style=style,
+    )
+    shot_line = f"Shot/Framing: {shot}."
+
+    # 12) Environment selection
     environment = session.prompt(
         "Environment (choose one): ",
         completer=WordCompleter(ENVIRONMENT_OPTIONS, ignore_case=True, match_middle=True),
@@ -208,7 +258,7 @@ with tty_in, tty_out:
     )
     environment_line = build_environment_block(environment)
 
-    # 7) Detail emphasis selection
+    # 13) Detail emphasis selection
     detail = session.prompt(
         "Micro-detail Focus (choose one): ",
         completer=WordCompleter(DETAIL_PROMPTS, ignore_case=True, match_middle=True),
@@ -220,6 +270,8 @@ with tty_in, tty_out:
     lines = [
         f"> {{",
         f"    {pose_line}",
+        f"    Age: {age}; Gender: {gender}; Orientation: {orientation}; Expression: {expression}.",
+        f"    {action_line}",
     ]
 
     # If Deakins‐mode, insert the Deakins block here; else insert lighting+shadow
@@ -236,6 +288,7 @@ with tty_in, tty_out:
     lines.extend([
         f"    {lens_line}",
         f"    {camera_line}",
+        f"    {shot_line}",
         f"    {environment_line}",
         f"    {detail_line}",
         "",
@@ -261,9 +314,9 @@ PYEOF
 	echo "─────────────────────────────────────"
 	echo "🎛️  Builder Mode: standard"
 	if [[ $USE_DEAKINS -eq 1 ]]; then
-		echo "🔧 Components Used: pose, deakins_lighting, shadow, lens, camera, environment, detail"
+		echo "🔧 Components Used: pose, deakins_lighting, shadow, lens, camera, framing, environment, detail"
 	else
-		echo "🔧 Components Used: pose, lighting, shadow, lens, camera, environment, detail"
+		echo "🔧 Components Used: pose, lighting, shadow, lens, camera, framing, environment, detail"
 	fi
 
 	if command -v wl-copy >/dev/null 2>&1; then

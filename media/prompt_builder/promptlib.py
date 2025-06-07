@@ -163,6 +163,43 @@ CAMERA_MOVE_TAGS: List[str] = [
 CAMERA_OPTIONS: List[str] = [t.strip("[]") for t in CAMERA_MOVE_TAGS]
 
 # ==============================================================================
+# 3. SUBJECT & SHOT PARAMETERS (age, gender, orientation, expression, framing)
+# ==============================================================================
+AGE_GROUP_OPTIONS: List[str] = ["adult", "teen", "child", "elderly"]
+GENDER_OPTIONS: List[str] = ["male", "female", "neutral"]
+ORIENTATION_OPTIONS: List[str] = ["frontal", "3/4 left", "3/4 right"]
+EXPRESSION_OPTIONS: List[str] = ["neutral", "animated (described in action sequence)"]
+SHOT_FRAMING_OPTIONS: List[str] = [
+    "Close-Up (CU)",
+    "Medium Shot (MS)",
+    "Wide Shot (WS)",
+    "High Angle Shot",
+    "Low Angle Shot",
+    "Bird’s Eye View",
+    "Dutch Angle",
+    "Over-the-Shoulder (OTS)",
+    "Macro / Extreme CU",
+    "Three-Quarter Angle",
+    "Full Shot",
+    "Establishing Shot",
+    "Point of View (POV)",
+    "Cowboy Shot",
+    "Upper Body Shot",
+    "Overhead Shot",
+    "Top-Down View",
+    "Straight-On",
+    "Hero View",
+    "Side View",
+    "Back View",
+    "From Below",
+    "From Behind",
+    "Wide Angle View",
+    "Fisheye View",
+    "Selfie",
+    "Bilaterally Symmetrical",
+]
+
+# ==============================================================================
 # 3. LIGHTING OPTIONS (fully cross-referenced from all files)
 # ==============================================================================
 LIGHTING_OPTIONS: List[str] = [
@@ -388,6 +425,11 @@ ACTION_SEQUENCE_GENRE_MAP: Dict[str, List[str]] = {
     ],
 }
 
+# Flat list of all action sequences for autocompletion
+ACTION_SEQUENCE_OPTIONS: List[str] = []
+for _genre, _seqs in ACTION_SEQUENCE_GENRE_MAP.items():
+    ACTION_SEQUENCE_OPTIONS.extend(_seqs)
+
 # ==============================================================================
 # 9. SUBJECT-REFERENCE RULES (Hailuo compliance, deduped)
 # ==============================================================================
@@ -612,16 +654,31 @@ def build_hailuo_prompt(
     subject: str,
     age_tag: str,
     gender_tag: str,
+    orientation: str,
+    expression: str,
     action_sequence: str,
     camera_moves: List[str],
     lighting: str,
     lens: str,
+    shot_framing: str,
     environment: str,
     detail: str,
 ) -> str:
     """Return a Hailuo/Director Model-compliant prompt block."""
     if not all(
-        [subject.strip(), age_tag.strip(), gender_tag.strip(), action_sequence.strip(), lighting.strip(), lens.strip(), environment.strip(), detail.strip()]
+        [
+            subject.strip(),
+            age_tag.strip(),
+            gender_tag.strip(),
+            orientation.strip(),
+            expression.strip(),
+            action_sequence.strip(),
+            lighting.strip(),
+            lens.strip(),
+            shot_framing.strip(),
+            environment.strip(),
+            detail.strip(),
+        ]
     ) or not camera_moves:
         raise ValueError("All parameters must be non-empty")
     for move in camera_moves:
@@ -631,6 +688,12 @@ def build_hailuo_prompt(
         raise ValueError("Invalid lighting option")
     if lens not in LENS_OPTIONS:
         raise ValueError("Invalid lens option")
+    if orientation not in ORIENTATION_OPTIONS:
+        raise ValueError("Invalid orientation option")
+    if expression not in EXPRESSION_OPTIONS:
+        raise ValueError("Invalid expression option")
+    if shot_framing not in SHOT_FRAMING_OPTIONS:
+        raise ValueError("Invalid shot framing option")
     if environment not in ENVIRONMENT_OPTIONS:
         raise ValueError("Invalid environment option")
     if detail not in DETAIL_PROMPTS:
@@ -639,11 +702,12 @@ def build_hailuo_prompt(
     return (
         f"> {{\n"
         f"    Subject: {subject.strip()}.\n"
-        f"    Age: {age_tag}; Gender: {gender_tag}.\n"
+        f"    Age: {age_tag}; Gender: {gender_tag}; Orientation: {orientation}; Expression: {expression}.\n"
         f"    Action Sequence: {action_sequence}\n"
         f"    Lighting: {lighting}.\n"
         f"    Lens: {lens}.\n"
         f"    Camera: [{camera_str}].\n"
+        f"    Shot/Framing: {shot_framing}.\n"
         f"    Environment: {environment}.\n"
         f"    Detail: {detail}.\n"
         f"    Reference: single unobstructed face, neutral expression unless animated, even facial lighting, minimum 512×512 px, maximum 20 MB file size.\n"
@@ -889,6 +953,12 @@ __all__ = [
     "POSE_DESCRIPTIONS",
     "CAMERA_MOVE_TAGS",
     "CAMERA_OPTIONS",
+    "AGE_GROUP_OPTIONS",
+    "GENDER_OPTIONS",
+    "ORIENTATION_OPTIONS",
+    "EXPRESSION_OPTIONS",
+    "SHOT_FRAMING_OPTIONS",
+    "ACTION_SEQUENCE_OPTIONS",
     "LIGHTING_OPTIONS",
     "LIGHTING_PROFILES",
     "LENS_OPTIONS",
@@ -941,6 +1011,12 @@ LENS_OPTIONS[:] = _dedupe_preserve_order(LENS_OPTIONS)
 ENVIRONMENT_OPTIONS[:] = _dedupe_preserve_order(ENVIRONMENT_OPTIONS)
 SHADOW_OPTIONS[:] = _dedupe_preserve_order(SHADOW_OPTIONS)
 DETAIL_PROMPTS[:] = _dedupe_preserve_order(DETAIL_PROMPTS)
+AGE_GROUP_OPTIONS[:] = _dedupe_preserve_order(AGE_GROUP_OPTIONS)
+GENDER_OPTIONS[:] = _dedupe_preserve_order(GENDER_OPTIONS)
+ORIENTATION_OPTIONS[:] = _dedupe_preserve_order(ORIENTATION_OPTIONS)
+EXPRESSION_OPTIONS[:] = _dedupe_preserve_order(EXPRESSION_OPTIONS)
+SHOT_FRAMING_OPTIONS[:] = _dedupe_preserve_order(SHOT_FRAMING_OPTIONS)
+ACTION_SEQUENCE_OPTIONS[:] = _dedupe_preserve_order(ACTION_SEQUENCE_OPTIONS)
 POLICY_FORBIDDEN_TERMS[:] = _dedupe_preserve_order(POLICY_FORBIDDEN_TERMS)
 
 # Main docstring and user guidance
