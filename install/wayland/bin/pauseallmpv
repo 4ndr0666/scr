@@ -1,10 +1,39 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-# You might notice all mpv commands are aliased to have this input-ipc-server
-# thing. That's just for this particular command, which allows us to pause
-# every single one of them with one command! This is bound to super + shift + p
-# (with other things) by default and is used in some other places.
+# pauseallmpv
+# Pauses all running mpv instances by sending a pause command over their
+# IPC sockets found in /tmp/mpvSockets.
 
-for i in $(ls /tmp/mpvSockets/*); do
-	echo '{ "command": ["set_property", "pause", true] }' | socat - "$i";
+set -euo pipefail
+
+usage() {
+	printf 'Usage: %s [--dry-run] [--help]\n' "${0##*/}"
+}
+
+dry_run=0
+while [ $# -gt 0 ]; do
+	case $1 in
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--dry-run)
+		dry_run=1
+		;;
+	*)
+		printf 'Unknown option: %s\n' "$1" >&2
+		usage >&2
+		exit 1
+		;;
+	esac
+	shift
+done
+
+for sock in /tmp/mpvSockets/*; do
+	[ -S "$sock" ] || continue
+	if [ "$dry_run" -eq 1 ]; then
+		printf 'Would pause mpv via socket %s\n' "$sock"
+	else
+		printf '{ "command": ["set_property", "pause", true] }' | socat - "$sock"
+	fi
 done
