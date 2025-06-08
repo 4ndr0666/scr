@@ -12,3 +12,4 @@
 - Updated pauseallmpv with help and dry-run; removed ls iteration.
 
 - Refactored utilities/iso/makeiso.sh with modular functions, help and dry-run support.
+- Added bkp-unified.sh combining backup methods with config and ISO support.
