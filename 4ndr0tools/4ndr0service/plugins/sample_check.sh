@@ -13,26 +13,26 @@ IFS=$'\n\t'
 # scripts might call.
 
 plugin_sample_check() {
-    echo "Running sample_check plugin..."
-    local found_conflict=""
-    # Example: check if alias to 'ls' is overriding system calls, etc.
-    if alias | grep -q 'alias ls='; then
-        echo "Warning: user has an alias for 'ls'. This might cause confusion."
-        found_conflict="ls"
-    fi
+	echo "Running sample_check plugin..."
+	local found_conflict=""
+	# Example: check if alias to 'ls' is overriding system calls, etc.
+	if alias | grep -q 'alias ls='; then
+		echo "Warning: user has an alias for 'ls'. This might cause confusion."
+		found_conflict="ls"
+	fi
 
-    # Another example: ensure $USER is set (it usually is, but just demonstration):
-    if [[ -z "${USER:-}" ]]; then
-        echo "Error: USER variable not set."
-        # You might decide to fix or just warn
-    fi
+	# Another example: ensure $USER is set (it usually is, but just demonstration):
+	if [[ -z "${USER:-}" ]]; then
+		echo "Error: USER variable not set."
+		# You might decide to fix or just warn
+	fi
 
-    # Could run more checks or fixes here...
-    if [[ -z "$found_conflict" ]]; then
-        echo "No conflicting aliases found by sample_check plugin."
-    fi
+	# Could run more checks or fixes here...
+	if [[ -z "$found_conflict" ]]; then
+		echo "No conflicting aliases found by sample_check plugin."
+	fi
 
-    echo "sample_check plugin done."
+	echo "sample_check plugin done."
 }
 
 # Optionally auto-run if you like, or let the user call plugin_sample_check from
