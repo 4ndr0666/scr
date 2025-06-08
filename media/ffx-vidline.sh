@@ -254,16 +254,6 @@ show_menu() {
             14) args+=(--color-correct) ;;
             15)
                 local c r
-                read -r -p "Crop params: " c
-                read -r -p "Resize params: " r
-                args+=(--crop-resize "$c" "$r")
-                ;;
-            16)
-                read -r -p "Enter rotation: " choice
-                args+=(--rotate "$choice")
-                ;;
-            17)
-                read -r -p "Enter h or v: " choice
                 args+=(--flip "$choice")
                 ;;
             *)
