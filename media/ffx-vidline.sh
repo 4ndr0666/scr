@@ -117,7 +117,6 @@ parse_args() {
                 filters+=("unsharp=5:5:-1.5:5:5:-1.5")
                 ;;
             --removegrain)
-                [ $# -lt 2 ] && error_exit "--removegrain requires a type value"
                 [[ $2 =~ ^[0-9]+$ ]] || error_exit "--removegrain type must be numeric"
                 filters+=("removegrain=$2")
                 shift
@@ -158,7 +157,6 @@ parse_args() {
                 shift
                 ;;
             --convert)
-                [ $# -lt 2 ] && error_exit "--convert requires a format string"
                 [[ $2 =~ ^[A-Za-z0-9]+$ ]] || error_exit "--convert format must be alphanumeric"
                 format="$2"
                 shift
@@ -211,23 +209,10 @@ parse_args() {
 
 show_menu() {
     printf '%bNo operations provided. Select from menu (d to done, q to quit):%b\n' "$CYAN" "$RESET"
-    printf ' 1) fps <val>          Set frame rate\n'
-    printf ' 2) deflicker          Deflicker\n'
-    printf ' 3) dedot              Dedot\n'
-    printf ' 4) dehalo             Dehalo\n'
-    printf ' 5) removegrain <t>    Type 1,2,17,22\n'
-    printf ' 6) deband <params>    Deband params\n'
-    printf ' 7) sharpen            Sharpen\n'
-    printf ' 8) scale              Super resolution\n'
-    printf ' 9) deshake            Deshake\n'
-    printf '10) edge-detect        Edge detection\n'
-    printf '11) slo-mo <factor>    e.g., 2 for half speed\n'
-    printf '12) speed-up <factor>  e.g., 2 for double speed\n'
-    printf '13) convert <fmt>      mp4|mkv|webm\n'
-    printf '14) color-correct      Basic EQ\n'
-    printf '15) crop-resize <c> <r> Example: 640:480:0:0 1280:960\n'
-    printf '16) rotate <deg>       90, 180, -90\n'
-    printf '17) flip <h|v>         h or v\n'
+    printf ' 1) fps\n 2) deflicker\n 3) dedot\n 4) dehalo\n 5) removegrain\n'
+    printf ' 6) deband\n 7) sharpen\n 8) scale\n 9) deshake\n10) edge-detect\n'
+    printf '11) slo-mo\n12) speed-up\n13) convert\n14) color-correct\n15) crop-resize\n'
+    printf '16) rotate\n17) flip\n'
     local choice
     local -a args=()
     while true; do
@@ -243,11 +228,11 @@ show_menu() {
             3) args+=(--dedot) ;;
             4) args+=(--dehalo) ;;
             5)
-                read -r -p "Enter removegrain type (e.g., 1,2,17,22): " choice
+                read -r -p "Enter type: " choice
                 args+=(--removegrain "$choice")
                 ;;
             6)
-                read -r -p "Enter deband params (e.g., range=16:r=4:d=4:t=4): " choice
+                read -r -p "Enter params: " choice
                 args+=(--deband "$choice")
                 ;;
             7) args+=(--sharpen) ;;
@@ -255,30 +240,20 @@ show_menu() {
             9) args+=(--deshake) ;;
             10) args+=(--edge-detect) ;;
             11)
-                read -r -p "Enter slo-mo factor (e.g., 2): " choice
+                read -r -p "Enter slo-mo factor: " choice
                 args+=(--slo-mo "$choice")
                 ;;
             12)
-                read -r -p "Enter speed up factor (e.g., 2): " choice
+                read -r -p "Enter speed up factor: " choice
                 args+=(--speed-up "$choice")
                 ;;
             13)
-                read -r -p "Enter format (mp4|mkv|webm): " choice
+                read -r -p "Enter format: " choice
                 args+=(--convert "$choice")
                 ;;
             14) args+=(--color-correct) ;;
             15)
                 local c r
-                read -r -p "Crop params (e.g., 640:480:0:0): " c
-                read -r -p "Resize params (e.g., 1280:960): " r
-                args+=(--crop-resize "$c" "$r")
-                ;;
-            16)
-                read -r -p "Enter rotation degrees (90, 180, -90): " choice
-                args+=(--rotate "$choice")
-                ;;
-            17)
-                read -r -p "Enter flip direction (h or v): " choice
                 args+=(--flip "$choice")
                 ;;
             *)
