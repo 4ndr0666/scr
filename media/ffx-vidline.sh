@@ -51,23 +51,23 @@ display_help() {
     cat << EOF2
 Usage: ${0##*/} [--dry-run] [operations] [file]
 Operations:
-  --fps <val>           Set output frame rate
-  --deflicker           Deflicker
-  --dedot               Dedot
-  --dehalo              Dehalo
-  --removegrain <t>     Removegrain type <t>
-  --deband <params>     Deband with params
-  --sharpen             Sharpen
-  --scale               Super resolution 2x
-  --deshake             Deshake
-  --edge-detect         Edge detection
-  --slo-mo <factor>     Slow motion by factor
-  --speed-up <factor>   Speed up by factor
-  --convert <format>    Output container format
-  --color-correct       Basic color correction
-  --crop-resize <c> <r> Crop then resize
-  --rotate <deg>        Rotate 90,180,-90
-  --flip <h|v>          Flip horizontally or vertically
+  --fps <val>             Set output frame rate
+  --deflicker             Deflicker
+  --dedot                 Dedot
+  --dehalo                Dehalo
+  --removegrain <t>       Removegrain type <t> (common: 1,2,17,22)
+  --deband <params>       Deband with params (e.g., "range=16:r=4:d=4:t=4")
+  --sharpen               Sharpen
+  --scale                 Super resolution 2x
+  --deshake               Deshake
+  --edge-detect           Edge detection
+  --slo-mo <factor>       Slow motion factor (e.g., 2 for half speed)
+  --speed-up <factor>     Speed up factor (e.g., 2 for double speed)
+  --convert <format>      Output container format (mp4|mkv|webm)
+  --color-correct         Basic color correction
+  --crop-resize <c> <r>   Crop then resize ("640:480:0:0" "1280:960")
+  --rotate <deg>          Rotate by 90, 180, or -90 degrees
+  --flip <h|v>            Flip horizontally (h) or vertically (v)
   -h, --help            Show this help
 If no operations are provided an interactive menu will be shown.
 EOF2
@@ -117,7 +117,7 @@ parse_args() {
                 filters+=("unsharp=5:5:-1.5:5:5:-1.5")
                 ;;
             --removegrain)
-                [ $# -lt 2 ] && error_exit "--removegrain requires a type value"
+                [[ $2 =~ ^[0-9]+$ ]] || error_exit "--removegrain type must be numeric"
                 filters+=("removegrain=$2")
                 shift
                 ;;
@@ -157,7 +157,7 @@ parse_args() {
                 shift
                 ;;
             --convert)
-                [ $# -lt 2 ] && error_exit "--convert requires a format string"
+                [[ $2 =~ ^[A-Za-z0-9]+$ ]] || error_exit "--convert format must be alphanumeric"
                 format="$2"
                 shift
                 ;;
