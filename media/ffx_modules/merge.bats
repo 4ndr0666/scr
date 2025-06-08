@@ -1,9 +1,36 @@
 #!/usr/bin/env bats
 
-load '/usr/lib/bats/bats-support/load'
-load '/usr/lib/bats/bats-assert/load'
+# Resolve bats libraries from local or system paths
+support_load=""
+assert_load=""
+for p in "$BATS_TEST_DIRNAME/bats-support/load" "$BATS_TEST_DIRNAME/bats-support/load.bash" \
+         "$BATS_TEST_DIRNAME/../bats-support/load" "$BATS_TEST_DIRNAME/../bats-support/load.bash" \
+         "/usr/lib/bats/bats-support/load" "/usr/lib/bats/bats-support/load.bash"; do
+  if [ -f "$p" ]; then
+    support_load="$p"
+    break
+  fi
+done
+for p in "$BATS_TEST_DIRNAME/bats-assert/load" "$BATS_TEST_DIRNAME/bats-assert/load.bash" \
+         "$BATS_TEST_DIRNAME/../bats-assert/load" "$BATS_TEST_DIRNAME/../bats-assert/load.bash" \
+         "/usr/lib/bats/bats-assert/load" "/usr/lib/bats/bats-assert/load.bash"; do
+  if [ -f "$p" ]; then
+    assert_load="$p"
+    break
+  fi
+done
+
+if [ -n "$support_load" ] && [ -n "$assert_load" ]; then
+  load "$support_load"
+  load "$assert_load"
+else
+  skip_all=true
+fi
 
 setup() {
+  if [ "${skip_all:-false}" = true ]; then
+    skip "bats-support or bats-assert not available"
+  fi
   # Create temp dir for dummy files
   TMPDIR=$(mktemp -d)
   testpath="$TMPDIR/test_merge"
@@ -16,6 +43,9 @@ setup() {
 }
 
 teardown() {
+  if [ "${skip_all:-false}" = true ]; then
+    return
+  fi
   rm -rf "$TMPDIR"
 }
 
