@@ -8,7 +8,7 @@
   "actions": ["Monster emerges from cave, looks around, and roars."]
 }
 EOF2
-	run env PYTHONPATH="media/prompt_builder" python3 - <<'PY'
+        run env PYTHONPATH="$BATS_TEST_DIRNAME/../media/prompt_builder" python3 - <<'PY'
 import promptlib
 base = {"fantasy": ["Hero acts heroically."]}
 plugin = promptlib.load_genre_plugins("genres")
@@ -27,10 +27,16 @@ PY
 }
 EOF
 	cp genres/dup1.json genres/dup2.json
-	run env PYTHONPATH="media/prompt_builder" python3 - <<'PY'
+        run env PYTHONPATH="$BATS_TEST_DIRNAME/../media/prompt_builder" python3 - <<'PY'
 import promptlib
 plugin = promptlib.load_genre_plugins("genres")
 assert plugin.get("repeat") == ["roar loudly"]
 PY
-	[ "$status" -eq 0 ]
+        [ "$status" -eq 0 ]
+}
+
+@test "plugin_loader CLI outputs JSON" {
+        run python3 "$BATS_TEST_DIRNAME/../media/prompt_builder/plugin_loader.py" --json "$BATS_TEST_DIRNAME/../media/prompt_builder/plugins/prompts1.md"
+        [ "$status" -eq 0 ]
+        [[ "$output" == \{* ]]
 }
