@@ -346,10 +346,15 @@ for file in "${PLUGIN_FILES[@]}"; do
 		exit 1
 	fi
 
-	# Legacy loading: grab null‐delimited blocks
+	# Legacy loading: grab null-delimited blocks
 	while IFS= read -r -d '' block; do
 		PROMPTS+=("$block")
 	done < <(python3 plugin_loader.py "$file")
+	status=${PIPESTATUS[0]}
+	if [[ $status -ne 0 ]]; then
+		echo "${ERROR} Failed to load plugin: $file" >&2
+		exit "$status"
+	fi
 done
 ## Step 4: If no plugin-loaded prompts (and interactive already handled), exit
 

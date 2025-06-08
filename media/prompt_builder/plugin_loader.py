@@ -262,6 +262,8 @@ def main():
         sys.stdout.write(b)
         sys.stdout.write("\0")
 
+    sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
