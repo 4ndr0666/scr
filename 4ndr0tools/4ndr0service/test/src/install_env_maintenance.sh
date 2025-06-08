@@ -14,16 +14,16 @@ ensure_dir "$SYSTEMD_USER_DIR"
 
 # Copy or symlink units
 install_unit() {
-    local src="$1"
-    local dest="$SYSTEMD_USER_DIR/$(basename "$src")"
-    cp -f "$src" "$dest"
-    echo "Installed $dest"
+	local src="$1"
+	local dest="$SYSTEMD_USER_DIR/$(basename "$src")"
+	cp -f "$src" "$dest"
+	echo "Installed $dest"
 }
 
 # Install units
 for unit in "$PKG_PATH/systemd/user/"*; do
-    [ -e "$unit" ] || continue
-    install_unit "$unit"
+	[ -e "$unit" ] || continue
+	install_unit "$unit"
 done
 
 echo "Reloading systemd user units..."
