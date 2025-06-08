@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# ffx-vidline.sh -- simple ffmpeg filter wrapper
+#
+# Functions: 9
+# Lines: ~330
+
 set -euo pipefail
 
-# Color codes
+# --- Constants ---
 GREEN='\033[0;32m'
 CYAN='\033[36m'
 RED='\033[0;31m'
