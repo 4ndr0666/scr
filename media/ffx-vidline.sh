@@ -214,11 +214,11 @@ parse_args() {
 
 # ── Interactive menu ───────────────────────────────────────────
 show_menu() {
-	printf '%bMenu (d=done, q=quit)%b\n' "$CYAN" "$RESET" >&2
-	printf ' 1) fps\n 2) deflicker\n 3) dedot\n 4) dehalo\n' >&2
-	printf ' 5) removegrain\n 6) deband\n 7) sharpen\n 8) scale\n' >&2
-	printf ' 9) deshake\n10) edge-detect\n11) slo-mo\n12) speed-up\n' >&2
-	printf '13) convert\n14) color-correct\n15) crop-resize\n16) rotate\n17) flip\n' >&2
+	printf '%bMenu (d=done, q=quit)%b\n' "$CYAN" "$RESET"
+	printf ' 1) fps\n 2) deflicker\n 3) dedot\n 4) dehalo\n'
+	printf ' 5) removegrain\n 6) deband\n 7) sharpen\n 8) scale\n'
+	printf ' 9) deshake\n10) edge-detect\n11) slo-mo\n12) speed-up\n'
+	printf '13) convert\n14) color-correct\n15) crop-resize\n16) rotate\n17) flip\n'
 	local choice
 	local -a args=()
 	while true; do
@@ -228,30 +228,21 @@ show_menu() {
 		d) break ;;
 		1)
 			read -r -p "FPS value: " val
-			if [[ $val =~ ^[0-9]+$ ]]; then
-				args+=(--fps "$val")
-			else
-				printf '%bInvalid FPS%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ $val =~ ^[0-9]+$ ]] && args+=(--fps "$val") ||
+				printf '%bInvalid FPS%b\n' "$RED" "$RESET"
 			;;
 		2) args+=(--deflicker) ;;
 		3) args+=(--dedot) ;;
 		4) args+=(--dehalo) ;;
 		5)
 			read -r -p "removegrain type: " t
-			if [[ $t =~ ^[0-9]+$ ]]; then
-				args+=(--removegrain "$t")
-			else
-				printf '%bInvalid type%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ $t =~ ^[0-9]+$ ]] && args+=(--removegrain "$t") ||
+				printf '%bInvalid type%b\n' "$RED" "$RESET"
 			;;
 		6)
 			read -r -p "deband params: " p
-			if [[ -n $p ]]; then
-				args+=(--deband "$p")
-			else
-				printf '%bParams required%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ -n $p ]] && args+=(--deband "$p") ||
+				printf '%bParams required%b\n' "$RED" "$RESET"
 			;;
 		7) args+=(--sharpen) ;;
 		8) args+=(--scale) ;;
@@ -259,27 +250,21 @@ show_menu() {
 		10) args+=(--edge-detect) ;;
 		11)
 			read -r -p "slo-mo factor: " f
-			if [[ $f =~ ^[0-9]+(\.[0-9]+)?$ ]] && (($(bc -l <<<"$f>0"))); then
-				args+=(--slo-mo "$f")
-			else
-				printf '%bInvalid factor%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ $f =~ ^[0-9]+(\.[0-9]+)?$ && $(bc -l <<<"$f>0") -eq 1 ]] &&
+				args+=(--slo-mo "$f") ||
+				printf '%bInvalid factor%b\n' "$RED" "$RESET"
 			;;
 		12)
 			read -r -p "speed-up factor: " f
-			if [[ $f =~ ^[0-9]+(\.[0-9]+)?$ ]] && (($(bc -l <<<"$f>0"))); then
-				args+=(--speed-up "$f")
-			else
-				printf '%bInvalid factor%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ $f =~ ^[0-9]+(\.[0-9]+)?$ && $(bc -l <<<"$f>0") -eq 1 ]] &&
+				args+=(--speed-up "$f") ||
+				printf '%bInvalid factor%b\n' "$RED" "$RESET"
 			;;
 		13)
 			read -r -p "format: " fmt
-			if [[ $fmt =~ ^[A-Za-z0-9]+$ ]]; then
-				args+=(--convert "$fmt")
-			else
-				printf '%bInvalid format%b\n' "$RED" "$RESET" >&2
-			fi
+			[[ $fmt =~ ^[A-Za-z0-9]+$ ]] &&
+				args+=(--convert "$fmt") ||
+				printf '%bInvalid format%b\n' "$RED" "$RESET"
 			;;
 		14) args+=(--color-correct) ;;
 		15)
@@ -288,22 +273,20 @@ show_menu() {
 			if [[ -n $c && -n $s ]]; then
 				args+=(--crop-resize "$c" "$s")
 			else
-				printf '%bCrop & scale required%b\n' "$RED" "$RESET" >&2
+				printf '%bCrop & scale required%b\n' "$RED" "$RESET"
 			fi
 			;;
 		16)
 			read -r -p "degrees (90/180/-90): " d
 			case $d in 90 | 180 | -90) args+=(--rotate "$d") ;;
-			*) printf '%bInvalid degrees%b\n' "$RED" "$RESET" >&2 ;;
-			esac
+			*) printf '%bInvalid degrees%b\n' "$RED" "$RESET" ;; esac
 			;;
 		17)
 			read -r -p "flip h|v: " dir
 			case $dir in h | v) args+=(--flip "$dir") ;;
-			*) printf '%bInvalid dir%b\n' "$RED" "$RESET" >&2 ;;
-			esac
+			*) printf '%bInvalid dir%b\n' "$RED" "$RESET" ;; esac
 			;;
-		*) printf '%bInvalid choice%b\n' "$RED" "$RESET" >&2 ;;
+		*) printf '%bInvalid choice%b\n' "$RED" "$RESET" ;;
 		esac
 	done
 	printf '%s\n' "${args[@]}"
