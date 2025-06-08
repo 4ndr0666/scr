@@ -66,6 +66,7 @@ Operations:
   --rotate <deg>        Rotate 90,180,-90
   --flip <h|v>          Flip horizontally or vertically
   -h, --help            Show this help
+If no operations are provided an interactive menu will be shown.
 EOF2
 }
 
@@ -85,12 +86,7 @@ run_ffmpeg() {
 	[ "$status" -eq 0 ] || error_exit "ffmpeg failed"
 }
 
-main() {
-	check_deps
-	DRY_RUN=0
-	declare -a filters=()
-	local format="mp4" INPUT_FILE=""
-
+parse_args() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--dry-run) DRY_RUN=1 ;;
@@ -153,10 +149,97 @@ main() {
 			esac
 			shift
 			;;
-		*) if [ -z "$INPUT_FILE" ]; then INPUT_FILE="$1"; else error_exit "Unknown arg $1"; fi ;;
+		*)
+			if [ -z "$INPUT_FILE" ]; then
+				INPUT_FILE="$1"
+			else
+				error_exit "Unknown arg $1"
+			fi
+			;;
 		esac
 		shift
 	done
+}
+
+show_menu() {
+	printf '%bNo operations provided. Select from menu (d to done, q to quit):%b\n' "$CYAN" "$RESET"
+	printf ' 1) fps\n 2) deflicker\n 3) dedot\n 4) dehalo\n 5) removegrain\n'
+	printf ' 6) deband\n 7) sharpen\n 8) scale\n 9) deshake\n10) edge-detect\n'
+	printf '11) slo-mo\n12) speed-up\n13) convert\n14) color-correct\n15) crop-resize\n'
+	printf '16) rotate\n17) flip\n'
+	local choice
+	local -a args=()
+	while true; do
+		read -r -p "Choice: " choice
+		case "$choice" in
+		q) exit 0 ;;
+		d) break ;;
+		1)
+			read -r -p "Enter fps value: " choice
+			args+=(--fps "$choice")
+			;;
+		2) args+=(--deflicker) ;;
+		3) args+=(--dedot) ;;
+		4) args+=(--dehalo) ;;
+		5)
+			read -r -p "Enter type: " choice
+			args+=(--removegrain "$choice")
+			;;
+		6)
+			read -r -p "Enter params: " choice
+			args+=(--deband "$choice")
+			;;
+		7) args+=(--sharpen) ;;
+		8) args+=(--scale) ;;
+		9) args+=(--deshake) ;;
+		10) args+=(--edge-detect) ;;
+		11)
+			read -r -p "Enter slo-mo factor: " choice
+			args+=(--slo-mo "$choice")
+			;;
+		12)
+			read -r -p "Enter speed up factor: " choice
+			args+=(--speed-up "$choice")
+			;;
+		13)
+			read -r -p "Enter format: " choice
+			args+=(--convert "$choice")
+			;;
+		14) args+=(--color-correct) ;;
+		15)
+			local c r
+			read -r -p "Crop params: " c
+			read -r -p "Resize params: " r
+			args+=(--crop-resize "$c" "$r")
+			;;
+		16)
+			read -r -p "Enter rotation: " choice
+			args+=(--rotate "$choice")
+			;;
+		17)
+			read -r -p "Enter h or v: " choice
+			args+=(--flip "$choice")
+			;;
+		*)
+			printf '%bInvalid choice%b\n' "$RED" "$RESET"
+			;;
+		esac
+	done
+	printf '%s\n' "${args[@]}"
+}
+
+main() {
+	check_deps
+	DRY_RUN=0
+	declare -a filters=()
+	local format="mp4" INPUT_FILE=""
+
+	parse_args "$@"
+
+	if [ ${#filters[@]} -eq 0 ]; then
+		mapfile -t _menu_args < <(show_menu)
+		parse_args "${_menu_args[@]}"
+	fi
 
 	if [ -z "$INPUT_FILE" ]; then
 		INPUT_FILE=$(choose_file) || exit 1
