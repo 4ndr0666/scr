@@ -90,3 +90,9 @@ Thumbs.db
 *.flv
 *.webp
 .codex-venv/
+
+# Test artifacts
+0-tests/genres/dup1.json
+0-tests/genres/dup2.json
+0-tests/genres/fantasy-monster.json
+0-tests/testfile
