@@ -1,250 +1,170 @@
-#!/bin/bash
-##
-##  makeiso.sh is a script to prep releng from archiso,
-##  to create a duplicate installable .iso of the users Arch Linux install.
-##
-##  makeiso.sh must be run as su within /home/<username>/makeiso/releng/
-##
-##  This alpha testing version does not have the installer placed into releng yet.
-##  Dependency handling has not been implemented yet. You must do it manually.
-##
-##  makeiso dependencies: sudo archiso pacaur
-##
-##  makeiso.2014-10-8
-##
-#################################################################################################
+#!/usr/bin/env bash
 
-#-------------------------------------------------------------------------------------------------
-# Set L to current working directory (location of script)
-#-------------------------------------------------------------------------------------------------
-L=$(pwd)
+set -euo pipefail
+IFS=$'\n\t'
 
-#---------------------------------------------------------------
-# Tee all terminal output to log
-#---------------------------------------------------------------
-exec > >(tee -a "${L}/makeiso.log")
-exec 2> >(tee -a "${L}/makeiso.log" >&2)
+LOG_DIR="${XDG_DATA_HOME:-"$HOME/.local/share"}/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/makeiso.log"
 
-#------------------------
-# Print message to user
-#------------------------
-echo
-echo " Checking if archiso, pacaur, sudo are installed and running as root"
+SCRIPT_DIR=$(pwd)
+WORKDIR="${SCRIPT_DIR}/airootfs/makeiso"
 
-#-------------------------------
-# Check if archiso is installed
-#-------------------------------
-archiso_installed() {
-	command -v build.sh >/dev/null
+DRY_RUN=0
+
+run_cmd() {
+	if ((DRY_RUN)); then
+		printf '[DRY-RUN] %q ' "$@"
+		printf '\n'
+	else
+		"$@"
+	fi
 }
 
-if ! archiso_installed; then
-	echo " ERROR: archiso needs to be installed before running makeiso" 1>&2
-	exit 1
-fi
+run_cmd_sudo() {
+	if ((DRY_RUN)); then
+		printf '[DRY-RUN] sudo -u %q ' "$REAL_USER"
+		printf '%q ' "$@"
+		printf '\n'
+	else
+		sudo -u "$REAL_USER" "$@"
+	fi
+}
 
-#--------------------------------
-# Check that pacaur is installed
-#--------------------------------
-PI=$(pacman -Q pacaur 2>/dev/null || :)
-if [[ "$PI" != pacaur* ]]; then
-	echo " ERROR: pacaur needs to be installed before running makeiso" 1>&2
-	exit 1
-fi
+show_help() {
+	cat <<'EOT'
+Usage: makeiso.sh [--dry-run] [--help]
+Create an installable Arch Linux ISO based on the current system.
+EOT
+}
 
-#------------------------------
-# Check that sudo is installed
-#------------------------------
-SI=$(pacman -Q sudo 2>/dev/null || :)
-if [[ "$SI" != sudo* ]]; then
-	echo " ERROR: sudo needs to be installed before running makeiso" 1>&2
-	exit 1
-fi
+parse_args() {
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+		--dry-run)
+			DRY_RUN=1
+			;;
+		--help)
+			show_help
+			exit 0
+			;;
+		*)
+			printf 'Unknown option: %s\n' "$1" >&2
+			show_help
+			exit 1
+			;;
+		esac
+		shift
+	done
+}
 
-#---------------------------------------------------------------------------------
-# Check if running as root and user su'd to root rather than open a root terminal
-#---------------------------------------------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-	echo " ERROR: This script must be run as root" 1>&2
-	exit 1
-fi
+require_root() {
+	if [[ $EUID -ne 0 ]]; then
+		printf 'Error: run as root\n' >&2
+		exit 1
+	fi
+	if [[ ${SUDO_USER:-$USER} == root ]]; then
+		printf 'Error: invoke with sudo or su from a user account\n' >&2
+		exit 1
+	fi
+}
 
-if [[ $USER == root ]]; then
-	echo " ERROR: Running as root, but \$USER also = root. Need to su to root from a user terminal so \$USER = your username" 1>&2
-	exit 1
-fi
+check_dependencies() {
+	local deps=(build.sh pacaur cower sudo)
+	for dep in "${deps[@]}"; do
+		if ! command -v "$dep" >/dev/null 2>&1; then
+			printf 'Error: %s is required\n' "$dep" >&2
+			exit 1
+		fi
+	done
+}
 
-#--------------------------------------------------------
-# Create directories and file for the following command
-#--------------------------------------------------------
-mkdir -p "${L}/airootfs/makeiso/packages"
-touch "${L}/airootfs/makeiso/packages/packages"
+cleanup() {
+	rm -rf "$TMP_DIR"
+}
 
-#------------------------
-# Print message to user
-#------------------------
-echo
-echo " Script is running as $(whoami) and passed dependency checks"
-echo
-echo " Querying pacman to make a list of std repo packages to install"
+list_packages() {
+	run_cmd mkdir -p "$WORKDIR/packages"
+	pacman -Qenq >"$WORKDIR/packages/packages"
 
-#-------------------------------------------------------------------------------------------------------------
-# Query pacman for explicitly installed std repo packages
-#-------------------------------------------------------------------------------------------------------------
-pacman -Qenq >"${L}/airootfs/makeiso/packages/packages"
+	pacman -Qmq >"$TMP_DIR/pacman-Qmq"
+	mapfile -t aur_pkgs <"$TMP_DIR/pacman-Qmq"
+	for pkg in "${aur_pkgs[@]}"; do
+		if ! cower -sq "$pkg" >/dev/null 2>&1; then
+			printf '%s\n' "$pkg" >>"$TMP_DIR/noaur"
+		fi
+	done
+	comm -3 "$TMP_DIR/pacman-Qmq" "$TMP_DIR/noaur" >"$TMP_DIR/aur"
+	run_cmd cp "$TMP_DIR/aur" "$WORKDIR/packages/aur"
+}
 
-#--------------------------------------------------------
-# Create directories and files for AUR package listing
-#--------------------------------------------------------
-mkdir -p /tmp/makeiso
-touch /tmp/makeiso/pacman-Qmq
+copy_user_configs() {
+	local user_home="/home/$REAL_USER"
+	run_cmd mkdir -p "$WORKDIR/configs/home/$REAL_USER"
+	run_cmd cp "$user_home"/.[a-zA-Z0-9]* "$WORKDIR/configs/home/$REAL_USER/"
+	run_cmd cp -R "$user_home/.config" "$WORKDIR/configs/home/$REAL_USER/.config"
+}
 
-#------------------------
-# Print message to user
-#------------------------
-echo
-echo " Working... to make a list of buildable AUR installed packages"
-echo
+copy_modified_configs() {
+	pacman -Qii | awk '/^MODIFIED/ {print $2}' >"$TMP_DIR/rtmodconfig.list"
+	run_cmd mkdir -p "$WORKDIR/configs/rootconfigs"
+	run_cmd cp "$TMP_DIR/rtmodconfig.list" "$WORKDIR/configs/rtmodconfig.list"
+	run_cmd xargs -a "$TMP_DIR/rtmodconfig.list" cp -t "$WORKDIR/configs/rootconfigs/"
+}
 
-#----------------------------------------------------------------------------------
-# Query pacman for installed foreign packages
-#----------------------------------------------------------------------------------
-pacman -Qmq >/tmp/makeiso/pacman-Qmq
+build_aur_packages() {
+	run_cmd mkdir -p "$TMP_DIR/AUR"
+	export PKGDEST="$TMP_DIR/AUR"
+	if [ -f "/home/$REAL_USER/.bashrc" ]; then
+		# shellcheck disable=SC1090,SC1091
+		source "/home/$REAL_USER/.bashrc"
+	fi
+	run_cmd_sudo pacaur --noconfirm --noedit -m "$(cat "$TMP_DIR/aur")"
+	run_cmd cp -R "$TMP_DIR/AUR" "$WORKDIR/packages/AUR"
+}
 
-#----------------------------------------------------------------------
-# Identify packages not available in AUR, list them, then filter
-#----------------------------------------------------------------------
-set -x
-for pkg in $(pacman -Qmq); do
-	cower -sq "$pkg" &>>/tmp/makeiso/null || printf '%s\n' "$pkg" >>/tmp/makeiso/noaur
-done
-set +x
-echo
+prompt_build() {
+	printf 'Enter y to proceed with build.sh or n to exit.\n'
+	while true; do
+		read -r -p 'Are you ready to run build.sh (will create the ISO)? [y/n] ' yn
+		case $yn in
+		[Yy]*)
+			run_cmd ./build.sh -v
+			break
+			;;
+		[Nn]*)
+			break
+			;;
+		*)
+			printf 'Enter y (yes) or n (no).\n'
+			;;
+		esac
+	done
+}
 
-#-----------------------------------------------------------------------
-# Create a list of AUR packages to build (pacman-Qmq minus noaur)
-#-----------------------------------------------------------------------
-comm -3 /tmp/makeiso/pacman-Qmq /tmp/makeiso/noaur >/tmp/makeiso/aur
+main() {
+	parse_args "$@"
+	exec > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2)
 
-#------------------------------------------------------------------------
-# Prepare directory for prebuilt AUR packages
-#------------------------------------------------------------------------
-mkdir -p /tmp/makeiso/AUR
-chmod -R 777 /tmp/makeiso
+	require_root
+	check_dependencies
 
-#-------------------------------------------------------
-# Copy filtered AUR package list into releng
-#-------------------------------------------------------
-cp /tmp/makeiso/aur "${L}/airootfs/makeiso/packages/aur"
+	REAL_USER=${SUDO_USER:-$USER}
+	TMP_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/makeiso.XXXX")
+	trap cleanup EXIT
 
-#------------------------
-# Print lists to user
-#------------------------
-echo " Below is a list of official repo packages that will be installed later"
-echo
-cat "${L}/airootfs/makeiso/packages/packages"
-echo
-echo " Below is a list of AUR packages that will be built and installed."
-echo
-cat /tmp/makeiso/aur
-echo
-echo " Completed gathering installed packages information"
-echo
+	list_packages
+	copy_user_configs
+	copy_modified_configs
+	build_aur_packages
 
-#---------------------------------------------------------
-# Copy user dotfiles and configs into releng
-#---------------------------------------------------------
-mkdir -p "${L}/airootfs/makeiso/configs/home/${USER}"
-echo
-echo " Copying user configuration files and directories"
-echo
-cp /home/"${USER}"/.[a-zA-Z0-9]* "${L}/airootfs/makeiso/configs/home/${USER}/"
-cp -R /home/"${USER}"/.config/ "${L}/airootfs/makeiso/configs/home/${USER}/.config/"
+	printf 'Below is a list of official repo packages that will be installed later\n'
+	cat "$WORKDIR/packages/packages"
+	printf '\nBelow is a list of AUR packages that will be built and installed.\n'
+	cat "$TMP_DIR/aur"
+	printf '\nCompleted gathering installed packages information\n'
 
-#----------------------------------------
-# Prepare list of modified system config files
-#----------------------------------------
-mkdir -p /tmp/makeiso
-pacman -Qii | awk '/^MODIFIED/ {print $2}' >/tmp/makeiso/rtmodconfig.list
+	prompt_build
+}
 
-echo
-echo " Copying system configuration files that have been modified"
-echo
-cat /tmp/makeiso/rtmodconfig.list
-
-#--------------------------------------------------------
-# Copy modified system configs into releng
-#--------------------------------------------------------
-mkdir -p "${L}/airootfs/makeiso/configs/rootconfigs"
-cp /tmp/makeiso/rtmodconfig.list "${L}/airootfs/makeiso/configs/rtmodconfig.list"
-xargs -a /tmp/makeiso/rtmodconfig.list cp -t "${L}/airootfs/makeiso/configs/rootconfigs/"
-
-#------------------------
-# Prepare to pre-build AUR packages
-#------------------------
-echo
-echo " Preparing to pre-build AUR packages"
-
-#------------------------------------------------------------
-# Set destination for makepkg and source user environment
-#------------------------------------------------------------
-export PKGDEST=/tmp/makeiso/AUR
-if [ -f "/home/$USER/.bashrc" ]; then
-	# shellcheck disable=SC1090,SC1091
-	source "/home/$USER/.bashrc"
-fi
-
-#-------------------------------------------------------------
-# Build AUR packages as non-root user
-#-------------------------------------------------------------
-sudo -u "${USER}" bash <<'BUILD_AUR'
-if [ -f "/home/$USER/.bashrc" ]; then
-    # shellcheck disable=SC1091
-    source "/home/$USER/.bashrc"
-fi
-export PKGDEST=/tmp/makeiso/AUR
-
-echo
-echo " Script is now running as $USER to build AUR packages"
-echo " AUR package destination $PKGDEST"
-echo
-pacaur --noconfirm --noedit -m "$(</tmp/makeiso/aur)"
-BUILD_AUR
-
-#-------------------------------------------------------------
-# Copy prebuilt AUR packages into releng
-#-------------------------------------------------------------
-cp -R /tmp/makeiso/AUR "${L}/airootfs/makeiso/packages/AUR"
-
-echo
-echo " Script back to running as $(whoami) to copy AUR packages to releng"
-echo " AUR package destination ${L}/airootfs/makeiso/packages/AUR"
-echo
-echo " Successfully completed running the makeiso script"
-echo
-echo " The makeiso.sh script has finished running. Everything that was printed to this terminal resides within ${L}/makeiso.log for review."
-echo " All necessary files, directories, and AUR packages are in ${L}/airootfs/makeiso/."
-echo " Temporary build artifacts remain in /tmp/makeiso/."
-echo
-
-#----------------------------------------------------------
-# Prompt user to run build.sh to create the ISO
-#----------------------------------------------------------
-echo " Enter y to proceed with build.sh or n to exit."
-echo
-while true; do
-	read -r -p " Are you ready to run build.sh (will create the ISO)? [y/n] " yn
-	case $yn in
-	[Yy]*)
-		./build.sh -v
-		break
-		;;
-	[Nn]*)
-		clear
-		exit
-		;;
-	*)
-		echo " Enter y (yes) or n (no)."
-		;;
-	esac
-done
+main "$@"
