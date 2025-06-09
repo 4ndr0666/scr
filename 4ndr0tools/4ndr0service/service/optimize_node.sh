@@ -7,8 +7,17 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Establish root path for sourcing and configuration
-PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Establish PKG_PATH and source common utilities
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+if [ -f "$SCRIPT_DIR/../common.sh" ]; then
+	PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
+	PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+else
+	echo "Error: Could not determine package path for optimize_node.sh" >&2
+	exit 1
+fi
+export PKG_PATH
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 

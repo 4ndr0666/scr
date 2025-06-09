@@ -28,6 +28,12 @@ source "$PKG_PATH/settings_functions.sh"
 source "$PKG_PATH/manage_files.sh"
 source "$PKG_PATH/test/src/verify_environment.sh"
 
+# Set the plugins directory, defaulting to the bundled plugins folder
+plugins_dir="${PLUGINS_DIR:-$PKG_PATH/plugins}"
+
+# User interface mode (cli or dialog)
+USER_INTERFACE="${USER_INTERFACE:-cli}"
+
 load_plugins() {
 	if [[ ! -d "$plugins_dir" ]]; then
 		log_warn "Plugins directory '$plugins_dir' not found. Skipping."
