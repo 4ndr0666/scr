@@ -9,19 +9,8 @@ IFS=$'\n\t'
 
 # Establish PKG_PATH and source common utilities
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
-if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
-	if [ -f "$SCRIPT_DIR/../common.sh" ]; then
-		PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-	elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
-		PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-	else
-		echo "Error: Could not determine package path for optimize_node.sh" >&2
-		exit 1
-	fi
-fi
-export PKG_PATH
-# shellcheck source=../common.sh
-source "$PKG_PATH/common.sh"
+source "$SCRIPT_DIR/../common.sh"
+ensure_pkg_path
 
 # Define XDG-compliant paths for nvm
 export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"

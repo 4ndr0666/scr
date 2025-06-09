@@ -9,21 +9,10 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ### Constants
-# Determine PKG_PATH dynamically for both direct and sourced use
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
-if [ -f "$SCRIPT_DIR/common.sh" ]; then
-	PKG_PATH="$SCRIPT_DIR"
-elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
-	PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
-	PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-else
-	echo "Error: Could not determine package path." >&2
-	exit 1
-fi
-export PKG_PATH
+source "$SCRIPT_DIR/common.sh"
+ensure_pkg_path
 
-source "$PKG_PATH/common.sh"
 source "$PKG_PATH/settings_functions.sh"
 source "$PKG_PATH/manage_files.sh"
 source "$PKG_PATH/test/src/verify_environment.sh"
