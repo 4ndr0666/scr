@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# shellcheck disable=SC1090
 set -euo pipefail
 IFS=$'\n\t'
 # =========================== // BKUP.SH //
@@ -11,347 +10,489 @@ IFS=$'\n\t'
 
 ## Global Constants
 
-declare BACKUP_DIR_DEFAULT="/Nas/Backups/backups"
-declare LOG_FILE_NAME_DEFAULT="bkup.log"
-[[ ! -f "$LOG_FILE_NAME_DEFAULT" ]] || touch "$LOG_FILE_NAME_DEFAULT"
-declare LOCK_FILE_DEFAULT="${XDG_RUNTIME_DIR:-/tmp}/bkup.lock"
-declare KEEP_DAYS_DEFAULT="2"
-declare TAR_COMPRESS_DEFAULT="zstd" # gzip | bzip2 | xz | zstd | none
-declare TAR_OPTS_DEFAULT=""         # extra user flags for tar
-
-## Config
-
-declare CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bkup.conf"
-create_default_conf() {
-	local config_dir
-	config_dir="$(dirname "$CONFIG_FILE")"
-
-	if [[ -f "$CONFIG_FILE" ]]; then
-		return 0 # File exists, nothing to do
-	fi
-
-	if ! mkdir -p "$config_dir"; then
-		echo "ERROR: Cannot create configuration directory: $config_dir" >&2
-		exit 1
-	fi
-
-	if cat >"$CONFIG_FILE" <<EOF; then
-###############################################################################
-# bkup.conf — generated $(date -u '+%F %T') UTC
-###############################################################################
-# BACKUP_DIR="${BACKUP_DIR_DEFAULT}"
-
-# LOG_FILE="\${BACKUP_DIR}/${LOG_FILE_NAME_DEFAULT}"
-
-# LOCK_FILE="${LOCK_FILE_DEFAULT}"
-
-# KEEP_DAYS=${KEEP_DAYS_DEFAULT}
-
-# TAR_COMPRESS="${TAR_COMPRESS_DEFAULT}"
-
-# TAR_OPTS="${TAR_OPTS_DEFAULT}"
-
-###############################################################################
-EOF
-		if ! chmod 600 "$CONFIG_FILE"; then
-			echo "WARNING: Failed to set permissions on $CONFIG_FILE" >&2
-		fi
-		echo "[bkup] Created default config at $CONFIG_FILE"
-	else
-		echo "ERROR: Cannot write default configuration file: $CONFIG_FILE" >&2
-		exit 1
-	fi
-}
-
-create_default_conf
-if [[ -f "$CONFIG_FILE" ]]; then
-	if ! source "$CONFIG_FILE"; then
-		echo "ERROR: Invalid configuration file: $CONFIG_FILE" >&2
-		exit 1
-	fi
-fi
-
-## Effective Settings
-
-declare BACKUP_DIR="${BACKUP_DIR:-$BACKUP_DIR_DEFAULT}"
-declare LOG_FILE="${LOG_FILE:-${BACKUP_DIR}/${LOG_FILE_NAME_DEFAULT}}"
-declare LOCK_FILE="${LOCK_FILE:-$LOCK_FILE_DEFAULT}"
-declare KEEP_DAYS="${KEEP_DAYS:-$KEEP_DAYS_DEFAULT}"
-declare TAR_COMPRESS="${TAR_COMPRESS:-$TAR_COMPRESS_DEFAULT}"
-declare TAR_OPTS="${TAR_OPTS:-$TAR_OPTS_DEFAULT}"
-
-## Compression Flag and Suffix
-
-declare TAR_SUFFIX TAR_COMPRESS_FLAG
-case "$TAR_COMPRESS" in
-gzip | gz)
-	TAR_COMPRESS_FLAG="-z"
-	TAR_SUFFIX=".tar.gz"
-	;;
-bzip2 | bz2)
-	TAR_COMPRESS_FLAG="-j"
-	TAR_SUFFIX=".tar.bz2"
-	;;
-xz)
-	TAR_COMPRESS_FLAG="-J"
-	TAR_SUFFIX=".tar.xz"
-	;;
-zstd | zst)
-	# Check if tar supports --zstd directly, otherwise use -I zstd
-	if tar --help 2>&1 | grep -q -- '--zstd'; then
-		TAR_COMPRESS_FLAG="--zstd"
-	else
-		TAR_COMPRESS_FLAG="-I zstd"
-	fi
-	TAR_SUFFIX=".tar.zst"
-	;;
-none)
-	TAR_COMPRESS_FLAG=""
-	TAR_SUFFIX=".tar"
-	;;
-*)
-	echo "ERROR: Unsupported TAR_COMPRESS value: '$TAR_COMPRESS'" >&2
-	exit 1
-	;;
-esac
-
-declare -a TAR_BASE_ARGS=("-c" "-f")
-declare -a _cf_array=()
-if [[ -n "$TAR_COMPRESS_FLAG" ]]; then
-	# Use read -r -a to safely split the flag string into an array
-	read -r -a _cf_array <<<"$TAR_COMPRESS_FLAG"
-	TAR_BASE_ARGS+=("${_cf_array[@]}")
-fi
-
-declare -a _u_array=()
-if [[ -n "$TAR_OPTS" ]]; then
-	# Use read -r -a to safely split user options into an array
-	read -r -a _u_array <<<"$TAR_OPTS"
-	TAR_BASE_ARGS+=("${_u_array[@]}")
-fi
-
-declare -a required_dirs=("$BACKUP_DIR" "$(dirname "$LOCK_FILE")")
-for d in "${required_dirs[@]}"; do
-	if ! mkdir -p "$d"; then
-		echo "ERROR: Cannot create required directory: $d" >&2
-		exit 1
-	fi
-done
-
-if ! touch "$LOG_FILE"; then
-	echo "ERROR: Cannot write to log file: $LOG_FILE" >&2
-	exit 1
-fi
+declare -r BACKUP_DIR_DEFAULT="$HOME/Backups"
+declare -r LOG_FILE_NAME_DEFAULT="bkup.log"
+declare -r LOCK_FILE_DEFAULT="/tmp/bkup.lock" # Changed to /tmp for user-level script simplicity
+declare -r KEEP_COPIES_DEFAULT="2"
+declare -r TAR_COMPRESS_DEFAULT="zstd"
+declare -r TAR_OPTS_DEFAULT=""
+declare -r CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bkup.json"
+declare BACKUP_DIR
+declare LOG_FILE
+declare LOCK_FILE
+declare KEEP_COPIES
+declare TAR_COMPRESS
+declare TAR_OPTS
+declare -a SOURCES # Array to hold backup source paths
 
 ## Logging
 
 log() {
-	local level=$1 # INFO, WARN, ERROR
-	local message=$2
-	# Use printf for consistent formatting and append to log file
+	local level="$1"
+	local message="$2"
+	# Use printf for controlled formatting, append to log file
 	printf '%s [%5s] %s\n' "$(date -u '+%F %T')" "$level" "$message" >>"$LOG_FILE"
 }
 
-## Archive
+## Error
 
-archive_one() {
-	local src=$1 # Source path to archive
-	local base stamp archive_path
+err() {
+	local message="$1"
+	log ERROR "$message"
+	# Print to stderr for immediate user feedback
+	echo "ERROR: $message" >&2
+}
 
-	if [[ ! -e "$src" ]]; then
-		log WARN "Skipping missing source: $src"
-		return 0 # Not an error if source is missing, just skip
+## Info
+
+info() {
+	local message="$1"
+	log INFO "$message"
+	# Print to stderr for immediate user feedback
+	echo "INFO: $message" >&2
+}
+
+## Directories
+
+ensure_dirs() {
+	local dir
+	for dir in "$@"; do
+		# Check if directory exists, create if not
+		if [[ ! -d "$dir" ]]; then
+			if ! mkdir -p "$dir"; then
+				err "Failed to create directory: $dir"
+				exit 1
+			fi
+			info "Created directory: $dir"
+		fi
+		# Check if directory is writable
+		if [[ ! -w "$dir" ]]; then
+			err "Directory not writable: $dir"
+			exit 1
+		fi
+	done
+}
+
+## Log File
+
+setup_logfile() {
+	# Ensure the parent directory of the log file exists
+	ensure_dirs "$(dirname "$LOG_FILE")"
+	# Touch the log file to create it if it doesn't exist
+	if ! touch "$LOG_FILE"; then
+		err "Cannot create or write to log file: $LOG_FILE"
+		exit 1
+	fi
+	# Ensure the log file is writable (redundant after touch if dir is writable, but safe)
+	if [[ ! -w "$LOG_FILE" ]]; then
+		err "Log file not writable: $LOG_FILE"
+		exit 1
+	fi
+}
+
+## Configuration
+
+write_config() {
+	local out_file="$CONFIG_FILE"
+	local default_source="$HOME/.config/BraveSoftware"
+
+	ensure_dirs "$(dirname "$out_file")"
+
+	cat >"$out_file" <<EOF
+{
+  "backup_directory": "$BACKUP_DIR_DEFAULT",
+  "keep_copies": $KEEP_COPIES_DEFAULT,
+  "compression": "$TAR_COMPRESS_DEFAULT",
+  "tar_opts": "$TAR_OPTS_DEFAULT",
+  "sources": [
+    "$default_source"
+  ]
+}
+EOF
+	# Set restrictive permissions on the config file
+	chmod 600 "$out_file"
+	info "Created default config: $out_file"
+}
+
+## Setup
+
+interactive_setup() {
+	local bd kc cmp opts
+	local -a srcs=()
+	local p
+
+	echo "=== bkup.sh :: Initial Configuration ==="
+
+	# Prompt for backup directory, use default if empty
+	read -rp "Backup output directory [$BACKUP_DIR_DEFAULT]: " bd
+	bd="${bd:-$BACKUP_DIR_DEFAULT}"
+
+	# Prompt for number of copies, use default if empty
+	read -rp "How many archive copies to keep per source? [$KEEP_COPIES_DEFAULT]: " kc
+	kc="${kc:-$KEEP_COPIES_DEFAULT}"
+
+	# Basic validation for keep_copies
+	if ! [[ "$kc" =~ ^[0-9]+$ ]]; then
+		err "Invalid number for keep_copies: $kc. Using default: $KEEP_COPIES_DEFAULT"
+		kc="$KEEP_COPIES_DEFAULT"
 	fi
 
-	base=$(basename "$src")
-	stamp=$(date -u +%Y%m%dT%H%M%SZ)
-	archive_path="$BACKUP_DIR/${base}-${stamp}${TAR_SUFFIX}"
-	log INFO "Archiving '$src' to '$(basename "$archive_path")'"
-	local -a tar_cmd=("${TAR_BASE_ARGS[@]}" "$archive_path" "-C" "$(dirname "$src")" "$base")
+	if ((kc < 0)); then
+		err "keep_copies cannot be negative: $kc. Using default: $KEEP_COPIES_DEFAULT"
+		kc="$KEEP_COPIES_DEFAULT"
+	fi
 
-	if ! tar "${tar_cmd[@]}" >>"$LOG_FILE" 2>&1; then
-		log ERROR "tar failed for '$src'. See log for details."
-		# Attempt to remove the partial archive file
-		if [[ -f "$archive_path" ]]; then
-			if ! rm -f "$archive_path"; then
-				log ERROR "Failed to remove partial archive file: $archive_path"
+	read -rp "Compression (gzip|bzip2|xz|zstd|none) [$TAR_COMPRESS_DEFAULT]: " cmp
+	cmp="${cmp:-$TAR_COMPRESS_DEFAULT}"
+
+	case "${cmp,,}" in
+	gzip | gz | bzip2 | bz2 | xz | zstd | zst | none) ;; # Valid
+	*)
+		err "Unsupported compression method: $cmp. Using default: $TAR_COMPRESS_DEFAULT"
+		cmp="$TAR_COMPRESS_DEFAULT"
+		;;
+	esac
+
+	read -rp "Extra tar options (leave blank for default): " opts
+	opts="${opts:-$TAR_OPTS_DEFAULT}"
+
+	echo "Enter absolute paths to back up (one per line, blank to finish):"
+	while :; do
+		read -rp "> " p
+		[[ -z "$p" ]] && break # Exit loop if input is empty
+		if [[ ! -e "$p" ]]; then
+			echo "Warning: Path '$p' does not exist. Add anyway? (y/n)"
+			read -rp "[y/n]: " add_anyway
+			[[ "${add_anyway,,}" != "y" ]] && continue
+		fi
+		srcs+=("$p") # Add path to array
+	done
+
+	if ((${#srcs[@]} == 0)); then
+		info "No sources entered. Adding default source: $HOME/.config/BraveSoftware"
+		srcs+=("$HOME/.config/BraveSoftware")
+	fi
+
+	ensure_dirs "$(dirname "$CONFIG_FILE")"
+	{
+		echo '{'
+		printf '  "backup_directory": "%s",\n' "${bd}"
+		printf '  "keep_copies": %s,\n' "${kc}"
+		printf '  "compression": "%s",\n' "${cmp}"
+		printf '  "tar_opts": "%s",\n' "${opts}"
+		echo '  "sources": ['
+		local i
+		for ((i = 0; i < ${#srcs[@]}; i++)); do
+			printf '    "%s"%s\n' "${srcs[i]}" "$([[ $((i + 1)) -lt ${#srcs[@]} ]] && echo "," || echo "")"
+		done
+		echo '  ]'
+		echo '}'
+	} >"$CONFIG_FILE"
+
+	chmod 600 "$CONFIG_FILE"
+	info "Wrote configuration to $CONFIG_FILE"
+}
+
+load_config() {
+	local config_content
+	if ! config_content=$(cat "$CONFIG_FILE" 2>/dev/null); then
+		err "Could not read config file: $CONFIG_FILE. Using defaults."
+		BACKUP_DIR="$BACKUP_DIR_DEFAULT"
+		KEEP_COPIES="$KEEP_COPIES_DEFAULT"
+		TAR_COMPRESS="$TAR_COMPRESS_DEFAULT"
+		TAR_OPTS="$TAR_OPTS_DEFAULT"
+		SOURCES=("$HOME/.config/BraveSoftware") # Default source if config read fails
+		return 1                                # Indicate that config loading failed
+	fi
+
+	BACKUP_DIR=$(jq -r '.backup_directory // ""' <<<"$config_content" 2>/dev/null)
+	KEEP_COPIES=$(jq -r '.keep_copies // ""' <<<"$config_content" 2>/dev/null)
+	TAR_COMPRESS=$(jq -r '.compression // ""' <<<"$config_content" 2>/dev/null)
+	TAR_OPTS=$(jq -r '.tar_opts // ""' <<<"$config_content" 2>/dev/null)
+
+	[[ -z "$BACKUP_DIR" ]] && BACKUP_DIR="$BACKUP_DIR_DEFAULT"
+	[[ -z "$KEEP_COPIES" ]] && KEEP_COPIES="$KEEP_COPIES_DEFAULT"
+	[[ -z "$TAR_COMPRESS" ]] && TAR_COMPRESS="$TAR_COMPRESS_DEFAULT"
+	[[ -z "$TAR_OPTS" ]] && TAR_OPTS="$TAR_OPTS_DEFAULT"
+
+	if ! jq -r '.sources[] // ""' <<<"$config_content" 2>/dev/null | mapfile -t SOURCES; then
+		err "Could not load sources from config. Using default source."
+		SOURCES=("$HOME/.config/BraveSoftware")
+	fi
+
+	if ((${#SOURCES[@]} == 0)); then
+		info "No sources found in config. Using default source."
+		SOURCES=("$HOME/.config/BraveSoftware")
+	fi
+
+	if ! [[ "$KEEP_COPIES" =~ ^[0-9]+$ ]]; then
+		err "Invalid keep_copies value in config: $KEEP_COPIES. Using default: $KEEP_COPIES_DEFAULT"
+		KEEP_COPIES="$KEEP_COPIES_DEFAULT"
+	fi
+
+	if ((KEEP_COPIES < 0)); then
+		err "keep_copies cannot be negative in config: $KEEP_COPIES. Using default: $KEEP_COPIES_DEFAULT"
+		KEEP_COPIES="$KEEP_COPIES_DEFAULT"
+	fi
+
+	case "${TAR_COMPRESS,,}" in
+	gzip | gz | bzip2 | bz2 | xz | zstd | zst | none) ;; # Valid
+	*)
+		err "Unsupported compression method in config: $TAR_COMPRESS. Using default: $TAR_COMPRESS_DEFAULT"
+		TAR_COMPRESS="$TAR_COMPRESS_DEFAULT"
+		;;
+	esac
+	info "Configuration loaded from $CONFIG_FILE"
+}
+
+archive_one() {
+	local src="$1"
+	local base stamp archive_path tar_flag tar_suffix
+	local -a tar_args=()
+	local -a tar_opts_array=()
+	if [[ ! -e "$src" ]]; then
+		err "Missing source: $src"
+		return 1
+	fi
+	base=$(basename "$src")
+	stamp=$(date -u +%Y%m%dT%H%M%S) # UTC timestamp
+	case "${TAR_COMPRESS,,}" in
+	gzip | gz)
+		tar_flag="-z"
+		tar_suffix=".tar.gz"
+		;;
+	bzip2 | bz2)
+		tar_flag="-j"
+		tar_suffix=".tar.bz2"
+		;;
+	xz)
+		tar_flag="-J"
+		tar_suffix=".tar.xz"
+		;;
+	zstd | zst)
+		if tar --help 2>&1 | grep -q -- '--zstd'; then
+			tar_flag="--zstd"
+		else
+			if command -v zstd >/dev/null 2>&1; then
+				tar_flag="-I zstd"
+			else
+				err "zstd command not found for compression. Using no compression."
+				tar_flag=""
+				TAR_COMPRESS="none" # Update variable for logging/pruning consistency
 			fi
+		fi
+		tar_suffix=".tar.zst"
+		;;
+	none)
+		tar_flag=""
+		tar_suffix=".tar"
+		;;
+	*) # Should not happen if load_config validates, but as a fallback
+		err "Unsupported compression: $TAR_COMPRESS. Using no compression."
+		tar_flag=""
+		tar_suffix=".tar"
+		TAR_COMPRESS="none" # Update variable
+		;;
+	esac
+
+	archive_path="$BACKUP_DIR/${base}-${stamp}${tar_suffix}"
+	tar_args+=("-c")                                # Create archive
+	tar_args+=("-f" "$archive_path")                # Output file
+	[[ -n "$tar_flag" ]] && tar_args+=("$tar_flag") # Add compression flag if not none
+
+	if [[ -n "$TAR_OPTS" ]]; then
+		read -ra tar_opts_array <<<"$TAR_OPTS"
+		tar_args+=("${tar_opts_array[@]}")
+	fi
+
+	tar_args+=("-C" "$(dirname "$src")" "$(basename "$src")")
+	log INFO "Archiving $src -> $archive_path (Compression: $TAR_COMPRESS)"
+
+	if ! tar "${tar_args[@]}" >>"$LOG_FILE" 2>&1; then
+		err "tar failed for $src. See log for details."
+		if [[ -f "$archive_path" ]]; then
+			rm -f "$archive_path"
+			log INFO "Removed incomplete archive: $archive_path"
 		fi
 		return 1 # Indicate failure
 	fi
-	log INFO "Successfully created archive: $(basename "$archive_path")"
+
+	log INFO "Archive complete: $archive_path"
 	return 0 # Indicate success
 }
 
 ## Prune
 
-prune() {
-	local dry_run=$1 # true or false
-	local -a find_args=("$BACKUP_DIR" -maxdepth 1 -type f -name "*${TAR_SUFFIX}" -mtime "+$KEEP_DAYS")
+prune_archives() {
+	local src_base="$1"
+	local pattern="$BACKUP_DIR/${src_base}-.tar" # Pattern for archives of this source
+	local -a files=()                            # Array to hold files found
+	local num_to_prune file
 
-	if [[ "$dry_run" == true ]]; then
-		log INFO "DRY RUN: Files older than $KEEP_DAYS days that would be pruned:"
-		if find "${find_args[@]}" -print 2>>"$LOG_FILE" | while IFS= read -r f; do
-			log INFO " (would delete) $(basename "$f")"
-		done; then
-			: # Do nothing, loop handles logging
+	# Use find to get files matching the pattern, print modification time and path, sort by time (oldest first)
+	# -maxdepth 1: only look in the backup directory itself
+	# -type f: ensure we only consider files (not directories)
+	# -printf "%T@ %p\n": print modification time (seconds since epoch) and path, separated by space
+	# sort -n: sort numerically based on the timestamp (oldest first)
+	# mapfile -t: read sorted lines into the 'files' array
+	if ! find "$BACKUP_DIR" -maxdepth 1 -type f -name "$(basename "$src_base")-.tar" -printf "%T@ %p\n" 2>/dev/null | sort -n | mapfile -t files; then
+		# If find/sort/mapfile fails (e.g., no files found, which is not an error), mapfile might fail.
+		# Check if files array is empty after the command.
+		if ((${#files[@]} == 0)); then
+			log INFO "No archives found for pruning pattern: $pattern"
+			return 0 # No files to prune is not an error
 		else
-			log ERROR "DRY RUN: find encountered errors during prune check. See log for details."
-			return 1 # Indicate find error
-		fi
-	else
-		local tmp_file
-		tmp_file=$(mktemp) || {
-			log ERROR "Failed to create temporary file for prune list."
-			return 1 # Indicate mktemp failure
-		}
-
-		log INFO "Pruning archives older than $KEEP_DAYS days..."
-		if find "${find_args[@]}" -print -delete >"$tmp_file" 2>>"$LOG_FILE"; then
-			local deleted_count
-			deleted_count=$(wc -l <"$tmp_file")
-
-			if ((deleted_count > 0)); then
-				while IFS= read -r f; do
-					log INFO "Pruned $(basename "$f")"
-				done <"$tmp_file"
-			else
-				log INFO "No archives found to prune."
-			fi
-		else
-			log ERROR "find encountered errors during prune operation. See log for details."
-			if [[ -f "$tmp_file" ]]; then
-				if ! rm -f "$tmp_file"; then
-					log ERROR "Failed to remove temp file after find error: $tmp_file"
-				fi
-			fi
-			return 1 # Indicate find failure
-		fi
-
-		if [[ -f "$tmp_file" ]]; then
-			if ! rm -f "$tmp_file"; then
-				log ERROR "Failed to remove temporary file: $tmp_file"
-				return 1 # Indicate rm failure
-			fi
+			err "Failed to list or sort archives for pruning pattern: $pattern"
+			return 1 # Indicate failure
 		fi
 	fi
-	return 0 # Indicate success
+
+	if ((${#files[@]} > KEEP_COPIES)); then
+		num_to_prune=$((${#files[@]} - KEEP_COPIES))
+		log INFO "Found ${#files[@]} archives for ${src_base}, keeping ${KEEP_COPIES}. Pruning ${num_to_prune} oldest."
+
+		for file_entry in "${files[@]:0:num_to_prune}"; do
+			file="${file_entry#* }"
+			if [[ -f "$file" ]]; then # Double check it's a file before removing
+				if rm -f "$file"; then
+					log INFO "Pruned old archive: $file"
+				else
+					err "Failed to prune archive: $file"
+				fi
+			fi
+		done
+	else
+		log INFO "Found ${#files[@]} archives for ${src_base}, keeping ${KEEP_COPIES}. No pruning needed."
+	fi
 }
 
 ## Help
 
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") [OPTIONS] PATH…
+bkup.sh - Universal backup and pruning tool (single script, config-driven)
 
-Archives each PATH into \$BACKUP_DIR as <name>-<UTCstamp>${TAR_SUFFIX}
-then removes archives older than \$KEEP_DAYS days.
+USAGE:
+  bkup.sh [PATH ...]
+    (Backs up all specified paths provided as command-line arguments)
 
-Options:
-  -h, --help     Show this help message and exit.
-  -n, --dry-run  Show actions without writing archives or deleting files.
-  --             Treat all subsequent arguments as paths, even if they start with '-'.
+  bkup.sh
+    (Backs up all paths listed in the configuration file)
 
-Current settings:
-  BACKUP_DIR   = $BACKUP_DIR
-  LOG_FILE     = $LOG_FILE
-  LOCK_FILE    = $LOCK_FILE
-  KEEP_DAYS    = $KEEP_DAYS
-  TAR_COMPRESS = $TAR_COMPRESS
-  TAR_OPTS     = $TAR_OPTS
+  bkup.sh --setup
+    (Interactive configuration wizard, creates or overwrites \$CONFIG_FILE)
+
+  bkup.sh --help
+    (Show this message and exit)
+
+  bkup.sh --show-config
+    (Show the content of the configuration file, if it exists)
+
+  bkup.sh --config
+    (Alias for --setup)
+
+  bkup.sh --dry-run [PATH ...]
+    (Process arguments and config but do not perform tar or rm actions)
+
+Cron Example (run hourly):
+  0     /path/to/bkup.sh
+
+Config file: $CONFIG_FILE
+Log file: Determined by config or default (\$BACKUP_DIR/\$LOG_FILE_NAME_DEFAULT)
+Lock file: Determined by default (\$LOCK_FILE_DEFAULT)
 EOF
 }
 
 ## Args
 
-declare DRYRUN=false
-declare -a PATHS=()
-
-while (($# > 0)); do
-	case "$1" in
-	-h | --help)
+main() {
+	local dryrun=false
+	case "${1:-}" in
+	--help)
 		usage
 		exit 0
 		;;
+	--setup | --config)
+		interactive_setup
+		exit 0
+		;;
+	--show-config)
+		if [[ -f "$CONFIG_FILE" ]]; then
+			echo "--- Configuration File: $CONFIG_FILE ---"
+			cat "$CONFIG_FILE"
+			echo "----------------------------------------"
+		else
+			echo "Configuration file not found: $CONFIG_FILE"
+			echo "Run 'bkup.sh --setup' to create one."
+		fi
+		exit 0
+		;;
 	-n | --dry-run)
-		DRYRUN=true
-		shift
-		;;
-	--)
-		shift         # Consume '--'
-		PATHS+=("$@") # Add all remaining arguments as paths
-		break         # Stop processing options
-		;;
-	-*)
-		# Handle unknown options
-		echo "ERROR: Unknown option: $1" >&2
-		usage >&2
-		exit 1
-		;;
-	*)
-		# Handle positional arguments (paths)
-		PATHS+=("$1")
-		shift
+		dryrun=true
+		info "Dry run mode enabled. No files will be archived or pruned."
+		shift # Remove --dry-run from arguments
 		;;
 	esac
-done
-
-if ((${#PATHS[@]} == 0)); then
-	echo "ERROR: No paths provided to archive." >&2
-	usage >&2
-	exit 1
-fi
-
-## Lock and Execute
-
-exec 200>"$LOCK_FILE"
-if ! flock -n 200; then
-	echo "INFO: Another instance of $(basename "$0") is already running. Exiting." >&2
-	exit 0 # Exit with 0 as per convention for "already running"
-fi
-
-if [[ "$DRYRUN" == false ]]; then
-	log INFO "Run begin: targets='${PATHS[*]}'"
-fi
-
-declare errs=0 # Counter for errors during archive/prune
-if [[ "$DRYRUN" == true ]]; then
-	printf 'DRY RUN: Would archive the following paths to %s:\n' "$BACKUP_DIR"
-	printf '  %s\n' "${PATHS[@]}"
-	# Perform dry run prune check
-	if ! prune true; then
-		errs=1 # Mark as error
+	if [[ ! -f "$CONFIG_FILE" ]]; then
+		info "Config file not found. Creating default config."
+		write_config
 	fi
-else
-	# Perform actual archiving
-	for p in "${PATHS[@]}"; do
-		archive_one "$p" || ((errs++)) # Increment error count if archive_one fails
-	done
-
-	# Perform actual pruning
-	if ! prune false; then
-		((errs++)) # Increment error count if prune fails
+	load_config
+	LOG_FILE="${BACKUP_DIR}/${LOG_FILE_NAME_DEFAULT}"
+	LOCK_FILE="${LOCK_FILE_DEFAULT}"
+	ensure_dirs "$BACKUP_DIR" "$(dirname "$LOCK_FILE")"
+	setup_logfile
+	exec 200>"$LOCK_FILE"
+	if ! flock -n 200; then
+		info "Another run in progress (lock file $LOCK_FILE exists). Exiting."
+		exit 0 # Exit gracefully if locked
 	fi
-
-	# Log the final status
-	if ((errs > 0)); then
-		log ERROR "Run completed with $errs error(s)."
-		echo "ERROR: Run completed with $errs error(s). See log file for details." >&2
-		exit 1 # Exit with error status
+	log INFO "Lock acquired: $LOCK_FILE"
+	local -a to_backup=()
+	if (($# > 0)); then
+		to_backup=("$@")
+		info "Using command-line arguments as sources: ${to_backup[*]}"
 	else
-		log INFO "Run complete."
-		exit 0 # Exit successfully
+		to_backup=("${SOURCES[@]}")
+		info "Using sources from config file: ${to_backup[*]}"
 	fi
-fi
-
-if [[ "$DRYRUN" == true ]]; then
-	if ((errs > 0)); then
-		echo "ERROR: Dry run encountered errors. See log file for details." >&2
+	if ((${#to_backup[@]} == 0)); then
+		err "No paths to backup specified via command-line or config file."
+		usage >&2 # Print usage to stderr
 		exit 1
-	else
-		echo "Dry run completed successfully." >&2 # Inform user on stderr
-		exit 0
 	fi
-fi
+	log INFO "Backup run started. Targets: ${to_backup[*]}"
+	local fails=0
+	local src_path
+	for src_path in "${to_backup[@]}"; do
+		if [[ ! -e "$src_path" ]]; then
+			err "Source path does not exist, skipping: $src_path"
+			((fails++))
+			continue # Skip to the next source
+		fi
+		if ! $dryrun; then
+			if ! archive_one "$src_path"; then
+				((fails++))
+				continue # Skip pruning if archiving failed
+			fi
+		else
+			info "Dry run: Would archive $src_path"
+		fi
+		if ! $dryrun; then
+			prune_archives "$(basename "$src_path")"
+		else
+			info "Dry run: Would prune archives for $(basename "$src_path")"
+		fi
+	done
+	if ((fails > 0)); then
+		err "Backup run completed with $fails error(s)."
+		log ERROR "Backup run completed with $fails error(s)."
+		exit 1 # Exit with non-zero status on failure
+	else
+		log INFO "Backup run complete."
+		info "Backup run complete."
+		exit 0 # Exit with zero status on success
+	fi
+}
 
-exit 0
+main "$@"
