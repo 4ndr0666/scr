@@ -13,3 +13,4 @@
 
 - Refactored utilities/iso/makeiso.sh with modular functions, help and dry-run support.
 - Added bkp-unified.sh combining backup methods with config and ISO support.
+- Consolidated PKG_PATH detection into ensure_pkg_path in common.sh and updated dependent scripts.
