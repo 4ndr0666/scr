@@ -13,6 +13,7 @@ IFS=$'\n\t'
 
 declare BACKUP_DIR_DEFAULT="/Nas/Backups/backups"
 declare LOG_FILE_NAME_DEFAULT="bkup.log"
+[[ ! -f "$LOG_FILE_NAME_DEFAULT" ]] || touch "$LOG_FILE_NAME_DEFAULT"
 declare LOCK_FILE_DEFAULT="${XDG_RUNTIME_DIR:-/tmp}/bkup.lock"
 declare KEEP_DAYS_DEFAULT="2"
 declare TAR_COMPRESS_DEFAULT="zstd" # gzip | bzip2 | xz | zstd | none
