@@ -10,6 +10,7 @@ IFS=$'\n\t'
 
 ### Constants
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+
 source "$SCRIPT_DIR/common.sh"
 ensure_pkg_path
 
