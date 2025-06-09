@@ -6,6 +6,15 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+check_jq() {
+	if ! command -v jq >/dev/null 2>&1; then
+		printf 'Error: jq is required but not installed.\n' >&2
+		exit 1
+	fi
+}
+
+check_jq
+
 # Determine PKG_PATH for module base
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 if [ -f "$SCRIPT_DIR/../../common.sh" ]; then
