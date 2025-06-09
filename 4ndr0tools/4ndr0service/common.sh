@@ -3,7 +3,6 @@
 # File: common.sh
 set -euo pipefail
 IFS=$'\n\t'
-
 ensure_pkg_path() {
         if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
                 local caller="${BASH_SOURCE[1]:-${BASH_SOURCE[0]:-$0}}"
@@ -23,7 +22,6 @@ ensure_pkg_path() {
         fi
         export PKG_PATH
 }
-
 ensure_pkg_path
 
 expand_path() {

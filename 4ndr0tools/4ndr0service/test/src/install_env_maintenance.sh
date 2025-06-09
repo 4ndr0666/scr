@@ -15,6 +15,7 @@ ensure_dir "$SYSTEMD_USER_DIR"
 # Install verify_environment.sh into ~/.local/bin for unit invocation
 LOCAL_BIN="$HOME/.local/bin"
 ensure_dir "$LOCAL_BIN"
+
 if install -Dm755 "$PKG_PATH/test/src/verify_environment.sh" \
 	"$LOCAL_BIN/verify_environment.sh"; then
 	echo "Installed $LOCAL_BIN/verify_environment.sh"
