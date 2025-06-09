@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily 4ndr0service environment verification
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=env_maintenance.service
+
+[Install]
+WantedBy=timers.target
