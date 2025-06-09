@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+# ============================ // ALACRITTY //
+## Description: Enhanced Alacritty Launch Script with 
+#               Fallback Configuration and Error Handling
+# ------------------------------
+
+## Constants
+CONFIG="$HOME/.config/wayfire/alacritty/alacritty.toml"
+#shellart="$HOME/.local/bin/shellart.sh"
+
+## Fullscreen/Float
+if [ "$1" == "-f" ]; then
+	alacritty --class 'alacritty-float,alacritty-float' --config-file "$CONFIG"
+elif [ "$1" == "-F" ]; then
+	alacritty --class 'alacritty-fullscreen,alacritty-fullscreen' --config-file "$CONFIG" \
+			  -o window.startup_mode="'Fullscreen'" \
+			  window.padding.x=30 window.padding.y=30 \
+			  window.opacity=0.95 font.size=14
+else
+	alacritty --config-file "$CONFIG" ${@}
+fi

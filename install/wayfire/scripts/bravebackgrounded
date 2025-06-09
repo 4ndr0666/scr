@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# File: ~/.config/wayfire/scripts/bravebeta
+# Minimal overhead version
+
+/usr/bin/brave-beta --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
+	--enable-features=FluentOverlayScrollbar,IsolatedWebApps,ToastRefinements \
+	--disable-crash-reporter=,brave,brave-beta \
+	--disable-background-networking \
+	--disable-component-extensions-with-background-pages & echo $! > /tmp/brave-beta.pid
