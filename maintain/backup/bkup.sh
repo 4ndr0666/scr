@@ -13,14 +13,7 @@ IFS=$'\n\t'
 
 declare BACKUP_DIR_DEFAULT="/Nas/Backups/backups"
 declare LOG_FILE_NAME_DEFAULT="bkup.log"
-
-if [[ $EUID -eq 0 ]]; then
-	LOCK_FILE_DEFAULT="/var/lock/bkup.lock"
-else
-	LOCK_FILE_DEFAULT="${XDG_RUNTIME_DIR:-/tmp}/bkup.lock"
-fi
-readonly LOCK_FILE_DEFAULT
-
+declare LOCK_FILE_DEFAULT="${XDG_RUNTIME_DIR:-/tmp}/bkup.lock"
 declare KEEP_DAYS_DEFAULT="2"
 declare TAR_COMPRESS_DEFAULT="zstd" # gzip | bzip2 | xz | zstd | none
 declare TAR_OPTS_DEFAULT=""         # extra user flags for tar
