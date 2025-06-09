@@ -9,222 +9,255 @@ IFS=$'\n\t'
 ## Usage:       sudo install -m755 bkup.sh /usr/local/bin/bkup.sh
 # ----------------------------------------------------------------
 
-## Configuration (env > ~/.config > built-in defaults)
+## Global Constants
 
-CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bkup.conf"
-[[ -f $CONFIG_FILE ]] && source "$CONFIG_FILE"
-write_default_config() {
-	local cfg="$CONFIG_FILE"
+declare BACKUP_DIR_DEFAULT="/Nas/Backups/bkup"
+declare LOG_FILE_NAME_DEFAULT="bkup.log"
+declare LOCK_FILE_DEFAULT="/var/lock/bkup.lock"
+declare KEEP_DAYS_DEFAULT="7"
+declare TAR_COMPRESS_DEFAULT="zstd" # gzip | bzip2 | xz | zstd | none
+declare TAR_OPTS_DEFAULT=""         # extra user flags for tar
 
-	[[ -f $cfg ]] && return 0
+## Config
 
-	local cfgdir
-	cfgdir=$(dirname "$cfg")
-
-	if ! mkdir -p "$cfgdir"; then
-		echo "ERROR: Cannot create config directory: $cfgdir" >&2
-		return 1
-	fi
-
-	# Tight umask so we end up with 600 even if chmod below fails
+declare CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bkup.conf"
+create_default_conf() {
+	[[ -f $CONFIG_FILE ]] && return 0
+	local dir
+	dir="$(dirname "$CONFIG_FILE")"
+	mkdir -p "$dir" || {
+		echo "ERROR: cannot create $dir"
+		exit 1
+	}
 	umask 177
-
-	# Write template
-	local now
-	now=$(date -u '+%F %T')
-	cat >"$cfg" <<EOF
-#
-# Default bkup.conf - generated automatically on $now UTC
-#
-
-# === Global Constants === #
-# BACKUP_LOCATION="/Nas/Backups/backups"
-# LOG_FILE="/var/log/bkup.log"
-# LOCK_FILE="/var/lock/bkup.lock"
-
-# === Pruning Schedule === #
-# KEEP_DAYS=7
-
-# === Directories to exclude from backup === #
-# EXCLUDES=(
-#   # "/srv/bigdata"
-# )
-
-# === Directories to exclude for the restore === #
-
-# RESTORE_EXCLUDES=(
-#   # "/boot"
-# )
+	cat >"$CONFIG_FILE" <<EOF
+###############################################################################
+# bkup.conf — generated $(date -u '+%F %T') UTC
+###############################################################################
+# BACKUP_DIR="${BACKUP_DIR_DEFAULT}"
+# LOG_FILE="\${BACKUP_DIR}/${LOG_FILE_NAME_DEFAULT}"
+# LOCK_FILE="${LOCK_FILE_DEFAULT}"
+# KEEP_DAYS=${KEEP_DAYS_DEFAULT}
+# TAR_COMPRESS="${TAR_COMPRESS_DEFAULT}"
+# TAR_OPTS="${TAR_OPTS_DEFAULT}"
+###############################################################################
 EOF
-	chmod 600 "$cfg" # enforce owner-read/write only
-	echo "[bkup] Created default config at $cfg"
+	chmod 600 "$CONFIG_FILE"
+	echo "[bkup] Created default config at $CONFIG_FILE"
 }
 
-BACKUP_LOCATION="${BACKUP_LOCATION:-/Nas/Backups/backups}"
-LOG_FILE="${LOG_FILE:-/var/log/bkup.log}"
-LOCK_FILE="${LOCK_FILE:-/var/lock/bkup.lock}"
-KEEP_DAYS="${KEEP_DAYS:-7}"
+create_default_conf
+# shellcheck disable=SC1090
+if [[ -f $CONFIG_FILE ]]; then
+	source "$CONFIG_FILE" || {
+		echo "ERROR: invalid $CONFIG_FILE"
+		exit 1
+	}
+fi
 
-## Exclusions for BACKUP
+## Effective Settings
 
-declare -a EXCLUDES_DEFAULT=(
-	"/swapfile" "/lost+found"
-	"/proc" "/sys" "/dev" "/run" "/tmp"
-	"/mnt" "/media"
-	"/var/tmp" "/var/run" "/var/lock"
-	"$BACKUP_LOCATION"
-)
-declare -a EXCLUDES=("${EXCLUDES[@]:-${EXCLUDES_DEFAULT[@]}}")
+declare BACKUP_DIR="${BACKUP_DIR:-$BACKUP_DIR_DEFAULT}"
+declare LOG_FILE="${LOG_FILE:-${BACKUP_DIR}/${LOG_FILE_NAME_DEFAULT}}"
+declare LOCK_FILE="${LOCK_FILE:-$LOCK_FILE_DEFAULT}"
+declare KEEP_DAYS="${KEEP_DAYS:-$KEEP_DAYS_DEFAULT}"
+declare TAR_COMPRESS="${TAR_COMPRESS:-$TAR_COMPRESS_DEFAULT}"
+declare TAR_OPTS="${TAR_OPTS:-$TAR_OPTS_DEFAULT}"
 
-## Stricter exclusions for RESTORE
+## Compression Flag and Suffix
 
-declare -a RESTORE_EXCLUDES_DEFAULT=(
-	"${EXCLUDES_DEFAULT[@]}"
-	"/boot" "/etc/fstab" "/etc/mtab"
-)
-declare -a RESTORE_EXCLUDES=("${RESTORE_EXCLUDES[@]:-${RESTORE_EXCLUDES_DEFAULT[@]}}")
+declare TAR_SUFFIX TAR_COMPRESS_FLAG
+case "$TAR_COMPRESS" in
+gzip | gz)
+	TAR_COMPRESS_FLAG="-z"
+	TAR_SUFFIX=".tar.gz"
+	;;
+bzip2 | bz2)
+	TAR_COMPRESS_FLAG="-j"
+	TAR_SUFFIX=".tar.bz2"
+	;;
+xz)
+	TAR_COMPRESS_FLAG="-J"
+	TAR_SUFFIX=".tar.xz"
+	;;
+zstd | zst)
+	if tar --help 2>&1 | grep -q -- '--zstd'; then
+		TAR_COMPRESS_FLAG="--zstd"
+	else
+		TAR_COMPRESS_FLAG="-I zstd"
+	fi
+	TAR_SUFFIX=".tar.zst"
+	;;
+none)
+	TAR_COMPRESS_FLAG=""
+	TAR_SUFFIX=".tar"
+	;;
+*)
+	echo "ERROR: unsupported TAR_COMPRESS '$TAR_COMPRESS'"
+	exit 1
+	;;
+esac
 
-## Dirs and Permissions
+# build base tar arg array
+declare -a TAR_BASE_ARGS=("-c" "-f")
+[[ -n $TAR_COMPRESS_FLAG ]] && read -r -a _cf <<<"$TAR_COMPRESS_FLAG" && TAR_BASE_ARGS+=("${_cf[@]}")
+if [[ -n $TAR_OPTS ]]; then
+	read -r -a _u <<<"$TAR_OPTS"
+	TAR_BASE_ARGS+=("${_u[@]}")
+fi
 
-declare -a DIRS_TO_CREATE=(
-	"$BACKUP_LOCATION"
-	"$(dirname "$LOG_FILE")"
-	"$(dirname "$LOCK_FILE")"
-)
-for dir in "${DIRS_TO_CREATE[@]}"; do
-	mkdir -p "$dir" || {
-		echo "ERROR: Failed to create directory '$dir'; aborting." >&2
+## FS Prep
+
+for d in "$BACKUP_DIR" "$(dirname "$LOCK_FILE")"; do
+	mkdir -p "$d" || {
+		echo "ERROR: cannot create $d"
 		exit 1
 	}
 done
-
-# Root-only permission tightening
-if [[ $EUID -eq 0 ]]; then
-	[[ -f $CONFIG_FILE ]] && chmod 600 "$CONFIG_FILE"
-	touch "$LOG_FILE" "$LOCK_FILE"
-	chmod 640 "$LOG_FILE" # world-readable logs are rarely needed; adjust if so
-	chmod 600 "$LOCK_FILE"
-fi
+touch "$LOG_FILE" || {
+	echo "ERROR: cannot write $LOG_FILE"
+	exit 1
+}
 
 ## Logging
 
-log() {
-	printf '%s [%5s] %s\n' "$(date -u '+%F %T')" "$1" "$2" | tee -a "$LOG_FILE"
-}
+log() { printf '%s [%5s] %s\n' "$(date -u '+%F %T')" "$1" "$2" >>"$LOG_FILE"; }
 
-## Backup
+## Archive
 
-do_backup() {
-	log INFO "Starting rsync mirror → $BACKUP_LOCATION"
-	local tmp_excl
-	tmp_excl=$(mktemp /tmp/bkup-excludes.XXXXXX)
-	trap 'rm -f "$tmp_excl"' EXIT TERM INT HUP
-	if ((${#EXCLUDES[@]})); then
-		printf '%s\n' "${EXCLUDES[@]}" >"$tmp_excl"
-	else
-		: >"$tmp_excl"
+archive_one() {
+	local src=$1 base stamp archive_path
+	[[ -e $src ]] || {
+		log WARN "Skip missing $src"
+		return 0
+	}
+	base=$(basename "$src")
+	stamp=$(date -u +%Y%m%dT%H%M%SZ)
+	archive_path="$BACKUP_DIR/${base}-${stamp}${TAR_SUFFIX}"
+	log INFO "Archiving $src → $(basename "$archive_path")"
+	local -a cmd=("${TAR_BASE_ARGS[@]}" "$archive_path" "-C" "$(dirname "$src")" "$base")
+	if ! tar "${cmd[@]}" >>"$LOG_FILE" 2>&1; then
+		log ERROR "tar failed for $src"
+		rm -f "$archive_path"
+		return 1
 	fi
-
-	if rsync -aAXH --numeric-ids --delete \
-		--info=stats2,progress2 \
-		--exclude-from="$tmp_excl" \
-		/ "$BACKUP_LOCATION/"; then
-		date -u +%FT%TZ >"$BACKUP_LOCATION/verified_backup.lock"
-		log INFO "Backup completed successfully."
-	else
-		log ERROR "Rsync reported errors (exit $?)."
-		exit 1
-	fi
+	log INFO "Created $(basename "$archive_path")"
 }
 
 ## Prune
 
-do_prune() {
-	log INFO "Pruning *top-level* files older than $KEEP_DAYS days in $BACKUP_LOCATION"
-	local tmp_list
-	tmp_list=$(mktemp)
-	find "$BACKUP_LOCATION" -maxdepth 1 -type f -mtime "+$KEEP_DAYS" \
-		! -name 'verified_backup.lock' -print -delete >"$tmp_list"
-	find "$BACKUP_LOCATION" -maxdepth 1 -name 'verified_backup.lock' \
-		-mtime "+$KEEP_DAYS" -print -delete >>"$tmp_list"
-	local count
-	count=$(wc -l <"$tmp_list")
-	if ((count > 0)); then
-		log INFO "Pruned $count file(s):"
-		tee -a cat "$LOG_FILE" <"$tmp_list"
+prune() {
+	local dry=$1
+	shift
+	local -a find_args=("$BACKUP_DIR" -maxdepth 1 -type f -name "*${TAR_SUFFIX}" -mtime "+$KEEP_DAYS")
+	if [[ $dry == true ]]; then
+		log INFO "DRY RUN: files older than $KEEP_DAYS days:"
+		find "${find_args[@]}" -print 2>>"$LOG_FILE" | while IFS= read -r f; do
+			log INFO " (would delete) $(basename "$f")"
+		done
 	else
-		log INFO "Nothing to prune."
-	fi
-	rm -f "$tmp_list"
-}
-
-## Restore
-
-do_restore() {
-	log WARN "!!! DANGER: Restoring to LIVE / — no --delete, but still risky !!!"
-	[[ -f $BACKUP_LOCATION/verified_backup.lock ]] ||
-		{
-			log ERROR "No backup marker; aborting restore."
-			exit 1
-		}
-
-	local tmp_excl
-	tmp_excl=$(mktemp /tmp/bkup-restore-exc.XXXXXX)
-	trap 'rm -f "$tmp_excl"' EXIT TERM INT HUP
-	if ((${#RESTORE_EXCLUDES[@]})); then
-		printf '%s\n' "${RESTORE_EXCLUDES[@]}" >"$tmp_excl"
-	else
-		: >"$tmp_excl"
-	fi
-
-	if rsync -aAXH --numeric-ids --info=stats2,progress2 \
-		--exclude-from="$tmp_excl" \
-		"$BACKUP_LOCATION/" /; then
-		log INFO "Restore finished (excluded paths untouched). Review before reboot."
-	else
-		log ERROR "Restore failed (exit $?)."
-		exit 1
+		local tmp
+		tmp=$(mktemp)
+		if find "${find_args[@]}" -print -delete >"$tmp" 2>>"$LOG_FILE"; then
+			local cnt
+			cnt=$(wc -l <"$tmp")
+			if ((cnt)); then
+				while IFS= read -r f; do
+					log INFO "Pruned $(basename "$f")"
+				done <"$tmp"
+			else
+				log INFO "No archives to prune"
+			fi
+		else
+			log ERROR "find prune encountered errors"
+			rm -f "$tmp"
+			return 1
+		fi
+		rm -f "$tmp"
 	fi
 }
 
 ## Help
 
-show_help() {
+usage() {
 	cat <<EOF
-Usage: $(basename "$0") [backup|prune|restore|help]
+Usage: $(basename "$0") [OPTIONS] PATH…
 
-Commands
-  backup   Mirror / → \$BACKUP_LOCATION (default)
-  prune    Delete *top-level* files older than \$KEEP_DAYS in \$BACKUP_LOCATION
-  restore  ***DANGEROUS*** rsync \$BACKUP_LOCATION/ → /   (NO --delete)
-  help     Show this message
+Archives each PATH into \$BACKUP_DIR as <name>-<UTCstamp>${TAR_SUFFIX}
+then removes archives older than \$KEEP_DAYS days.
+
+Options
+  -h, --help     Show this help
+  -n, --dry-run  Show actions without writing archives or deleting files
 
 Current settings
-  BACKUP_LOCATION = $BACKUP_LOCATION
-  KEEP_DAYS       = $KEEP_DAYS
-  LOG_FILE        = $LOG_FILE (permissions: $(stat -c %a "$LOG_FILE"))
-  LOCK_FILE       = $LOCK_FILE
-  CONFIG_FILE     = $CONFIG_FILE
-
-Restore notes
-  • Excluded paths (\${RESTORE_EXCLUDES[@]}) are NOT overwritten.
-  • Best practice: boot from rescue media & restore onto an unmounted root fs.
+  BACKUP_DIR   = $BACKUP_DIR
+  LOG_FILE     = $LOG_FILE
+  LOCK_FILE    = $LOCK_FILE
+  KEEP_DAYS    = $KEEP_DAYS
+  TAR_COMPRESS = $TAR_COMPRESS
+  TAR_OPTS     = $TAR_OPTS
 EOF
 }
 
-## Lock & Main Entry Point
+## Args
+
+DRYRUN=false
+declare -a PATHS=()
+while (($#)); do
+	case $1 in
+	-h | --help)
+		usage
+		exit 0
+		;;
+	-n | --dry-run)
+		DRYRUN=true
+		shift
+		;;
+	--)
+		shift
+		PATHS+=("$@")
+		break
+		;;
+	-*)
+		echo "ERROR: unknown option $1" >&2
+		usage >&2
+		exit 1
+		;;
+	*)
+		PATHS+=("$1")
+		shift
+		;;
+	esac
+done
+((${#PATHS[@]})) || {
+	echo "ERROR: no paths given" >&2
+	usage >&2
+	exit 1
+}
+
+## Lock and Execute
 
 exec 200>"$LOCK_FILE"
 flock -n 200 || {
-	log WARN "Another instance running; exiting."
+	echo "INFO: another instance is running; exiting" >&2
 	exit 0
 }
 
-case "${1:-backup}" in
-backup) do_backup ;;
-prune) do_prune ;;
-restore) do_restore ;;
-help | *) show_help ;;
-esac
+$DRYRUN || log INFO "Run begin: targets=${PATHS[*]}"
 
-log INFO "Script finished."
+if $DRYRUN; then
+	printf 'DRY RUN: would archive to %s:\n' "$BACKUP_DIR"
+	printf '  %s\n' "${PATHS[@]}"
+	prune true
+else
+	errs=0
+	for p in "${PATHS[@]}"; do archive_one "$p" || ((errs++)); done
+	prune false || ((errs++))
+	if ((errs)); then
+		log ERROR "Run completed with $errs error(s)"
+		exit 1
+	fi
+	log INFO "Run complete"
+fi
+exit 0
