@@ -1,0 +1,9 @@
+[Unit]
+Description=Run 4ndr0service environment verification
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/verify_environment.sh --fix
+
+[Install]
+WantedBy=default.target
