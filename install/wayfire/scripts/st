@@ -1,0 +1,18 @@
+#!/bin/sh
+# Author: 4ndr0666
+# ============================== // ST //
+
+# ============================== // ST // 
+COMMAND="st"
+
+if [ "$1" == "-f" ]; then
+    # Launch ST in floating mode with a specific class or geometry
+    $COMMAND -n 'st-float' -g 120x24
+elif [ "$1" == "-F" ]; then
+    # Launch ST in fullscreen mode with specific padding, opacity, or font size
+    $COMMAND -n 'st-fullscreen' -f 'Sans:pixelsize=10' \
+             -e bash -c 'printf "\e[8;50;150t" && exec bash'
+else
+    # Launch ST with default settings
+    $COMMAND
+fi

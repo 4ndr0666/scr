@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# bravebeta.sh
+# Purpose: Launch Brave Beta under Wayland with minimal overhead.
+# Best Practice: Keep Brave in the foreground to allow proper resource
+#                tracking via systemd-run or systemd services.
+#
+# Usage Example:
+#   systemd-run --user --unit=brave-beta \
+#     -p MemoryAccounting=1 -p MemoryMax=1G \
+#     ~/.config/wayfire/scripts/bravebeta.sh
+
+# Replace the shell with Brave Beta (foreground execution)
+exec /usr/bin/brave-beta \
+  --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
+  --disable-crash-reporter=,beta \
+  --num-raster-threads=0 \
+  --disable-accelerated-video-decode \
+  --disable-gpu-compositing \
+  --enable-features=UsesOzonePlatform,AllowLegacyMV2Extensions,BraveGoogleSignInPermission,BraveFallbackDoHProvider,ExtensionsManifestV2,FluentOverlayScrollbar,HistoryMoreSearchResults,IsolatedWebApps,ToastRefinements,WaylandPerSurfaceScale,WaylandTextInputV3,WaylandUiScale \
+  --disable-features=AIChat,AIChatContextMenuRewriteInPlace,AIChatHistory,AIPromptAPIForWebPlatform,AIRewriter,AIRewriterAPI,AISummarizationAPI,AIWriterAPI,AllowAllSitesToInitiateMirroring,AllowedToFallbackToCustomNotificationAd,BraveNewsCardPeek,BraveNewFeedUpdate 

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+
+# ================= // WALLPAPER //
+### Desc: Sets Wallpaper in Wayfire
+
+## Dir
+WALLPAPER='/home/andro/Wallpapers/file 1024x768_000381.jpg'
+
+## Swaybg
+swaybg --output '*' --mode fill --image "$WALLPAPER"

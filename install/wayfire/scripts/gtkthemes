@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+# ====================== // GTKTHEMES //
+## Description: Sets GTK Themes, Icons, Cursor and Fonts
+#
+
+## Constants
+THEME='Nightfox-Dark-Carbon'
+ICONS='Colorful-Dark-Icons'
+FONT='Noto Sans 9'
+CURSOR='Breeze_Hacked'
+SCHEMA='gsettings set org.gnome.desktop.interface'
+
+apply_themes () {
+	${SCHEMA} gtk-theme "$THEME"
+	${SCHEMA} icon-theme "$ICONS"
+	${SCHEMA} cursor-theme "$CURSOR"
+	${SCHEMA} font-name "$FONT"
+}
+
+apply_themes
