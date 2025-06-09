@@ -8,5 +8,5 @@ RASI="$DIR/rofi/launcher.rasi"
 
 # Run
 rofi \
-    -show drun \
-	-theme ${RASI}
+	-show drun \
+	-theme "${RASI}"

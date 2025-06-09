@@ -7,8 +7,8 @@
 CONFIG="$HOME/.config/wayfire/wofi/config"
 STYLE="$HOME/.config/wayfire/wofi/style.css"
 
-if [[ ! `pidof wofi` ]]; then
-	wofi --show drun --prompt 'Search Applications' --conf ${CONFIG} --style ${STYLE}
+if [[ ! $(pidof wofi) ]]; then
+	wofi --show drun --prompt 'Search Applications' --conf "${CONFIG}" --style "${STYLE}"
 else
 	pkill wofi
 fi

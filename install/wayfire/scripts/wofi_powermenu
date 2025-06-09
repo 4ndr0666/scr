@@ -10,7 +10,7 @@ STYLE="$HOME/.config/wayfire/wofi/style.css"
 
 ## Wofi Command
 wofi_command="wofi --show dmenu \
-			--conf ${CONFIG} --style ${STYLE} \
+                        --conf ${CONFIG} --style ${STYLE} \
 			--width=300 --height=205 \
 			--cache-file=/dev/null \
 			--hide-scroll --no-actions \
@@ -26,58 +26,54 @@ suspend=" Sleep"
 logout=" Logout"
 
 # Ask for confirmation
-cdialog () {
+cdialog() {
 	yad --title='Confirm?' --borders=15 --center --fixed --undecorated --button=Yes:0 --button=No:1 --text="Are you sure?" --text-align=center
 }
 
 # Variable passed to rofi
-open_menu () {
+open_menu() {
 	options="$lock\n$suspend\n$logout\n$reboot\n$shutdown"
 
 	chosen="$(echo -e "$options" | $wofi_command --prompt "UP - $uptime")"
 	case $chosen in
-		$shutdown)
-			cdialog
-			if [[ "$?" == 0 ]]; then
-				systemctl poweroff
-			else
-				exit
-			fi
-			;;
-		$reboot)
-			cdialog
-			if [[ "$?" == 0 ]]; then
-				systemctl reboot
-			else
-				exit
-			fi
-			;;
-		$lock)
+	"$shutdown")
+		if cdialog; then
+			systemctl poweroff
+		else
+			exit
+		fi
+		;;
+	"$reboot")
+		if cdialog; then
+			systemctl reboot
+		else
+			exit
+		fi
+		;;
+	"$lock")
+		~/.config/wayfire/scripts/lockscreen
+		;;
+	"$suspend")
+		if cdialog; then
+			mpc -q pause
+			pulsemixer --mute
 			~/.config/wayfire/scripts/lockscreen
-			;;
-		$suspend)
-			cdialog
-			if [[ "$?" == 0 ]]; then
-				mpc -q pause
-				pulsemixer --mute
-				~/.config/wayfire/scripts/lockscreen
-				systemctl suspend
-			else
-				exit
-			fi
-			;;
-		$logout)
-			cdialog
-			if [[ "$?" == 0 ]]; then
-				killall wayfire
-			else
-				exit
-			fi
-			;;
+			systemctl suspend
+		else
+			exit
+		fi
+		;;
+	"$logout")
+		if cdialog; then
+			killall wayfire
+		else
+			exit
+		fi
+		;;
 	esac
 }
 
-if [[ ! `pidof wofi` ]]; then
+if [[ ! $(pidof wofi) ]]; then
 	open_menu
 else
 	pkill wofi
