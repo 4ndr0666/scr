@@ -32,7 +32,7 @@ source "$PKG_PATH/test/src/verify_environment.sh"
 plugins_dir="${PLUGINS_DIR:-$PKG_PATH/plugins}"
 
 # User interface mode (cli or dialog)
-USER_INTERFACE="${USER_INTERFACE:-cli}"
+: "${USER_INTERFACE:=cli}"
 
 load_plugins() {
 	if [[ ! -d "$plugins_dir" ]]; then
