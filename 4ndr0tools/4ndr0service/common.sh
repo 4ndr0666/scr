@@ -5,20 +5,21 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Dynamically determine the package base path (PKG_PATH) if not already set
-if [ -z "${PKG_PATH:-}" ]; then
+if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
 	SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
-	if [ -f "$SCRIPT_DIR/common.sh" ]; then
-		PKG_PATH="$SCRIPT_DIR"
-	elif [ -f "$SCRIPT_DIR/../common.sh" ]; then
-		PKG_PATH="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-	elif [ -f "$SCRIPT_DIR/../../common.sh" ]; then
-		PKG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-	else
+	while [[ "$SCRIPT_DIR" != "/" ]]; do
+		if [[ -f "$SCRIPT_DIR/common.sh" ]]; then
+			PKG_PATH="$SCRIPT_DIR"
+			break
+		fi
+		SCRIPT_DIR="$(dirname "$SCRIPT_DIR")"
+	done
+	if [[ -z "${PKG_PATH:-}" ]]; then
 		echo "Error: Could not determine package base path." >&2
 		exit 1
 	fi
-	export PKG_PATH
 fi
+export PKG_PATH
 
 expand_path() {
 	local raw="$1"
