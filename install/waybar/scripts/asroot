@@ -7,4 +7,4 @@ DIR="$HOME/.config/wayfire"
 export SUDO_ASKPASS="$DIR"/scripts/rofi_askpass
 
 # execute the application
-sudo -E -A $1
+sudo -E -A "$1"

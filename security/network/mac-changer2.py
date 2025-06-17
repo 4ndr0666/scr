@@ -11,6 +11,7 @@ import shutil
 # 1. Privilege escalation / root check
 ###############################################################################
 
+
 def ensure_root():
     """
     If not running as root, attempt to re-run via sudo.
@@ -18,15 +19,17 @@ def ensure_root():
     if os.geteuid() != 0:
         try:
             print("[*] Attempting to escalate privileges via sudo...")
-            subprocess.check_call(['sudo', sys.executable] + sys.argv)
+            subprocess.check_call(["sudo", sys.executable] + sys.argv)
             sys.exit(0)
         except subprocess.CalledProcessError as e:
             print(f"[-] Error escalating privileges: {e}")
             sys.exit(e.returncode)
 
+
 ###############################################################################
 # 2. Basic command helpers
 ###############################################################################
+
 
 def safe_cmd(cmd_list):
     """
@@ -36,6 +39,7 @@ def safe_cmd(cmd_list):
     ret = subprocess.call(cmd_list)
     if ret != 0:
         sys.exit(f"[-] Command '{' '.join(cmd_list)}' failed with code {ret}")
+
 
 def run_cmd(cmd_list):
     """
@@ -47,9 +51,11 @@ def run_cmd(cmd_list):
     except subprocess.CalledProcessError as e:
         return (e.returncode, e.output.decode("utf-8", errors="replace"))
 
+
 ###############################################################################
 # 3. chattr helper (lock/unlock) that ignores unsupported errors
 ###############################################################################
+
 
 def chattr_set_immutable(path, enable=True):
     """
@@ -66,9 +72,11 @@ def chattr_set_immutable(path, enable=True):
         else:
             sys.exit(f"[-] chattr {flag} on {path} failed: {out.strip()}")
 
+
 ###############################################################################
 # 4. MAC address generation and retrieval
 ###############################################################################
+
 
 def generate_random_mac():
     """
@@ -79,18 +87,24 @@ def generate_random_mac():
     rest = [random.randint(0x00, 0xFF) for _ in range(5)]
     return ":".join(f"{x:02x}" for x in [first_octet] + rest)
 
+
 def get_current_mac(interface):
     """
     Retrieves the current MAC of the interface using ip link.
     """
     try:
-        out = subprocess.check_output(["ip", "link", "show", interface]).decode("utf-8").lower()
+        out = (
+            subprocess.check_output(["ip", "link", "show", interface])
+            .decode("utf-8")
+            .lower()
+        )
         match = re.search(r"link/ether\s+([0-9a-f:]{17})", out)
         if match:
             return match.group(1)
     except Exception as ex:
         print(f"[-] Could not retrieve MAC for {interface}: {ex}")
     return None
+
 
 def change_mac_ephemeral(interface, new_mac):
     """
@@ -101,9 +115,11 @@ def change_mac_ephemeral(interface, new_mac):
     safe_cmd(["ip", "link", "set", interface, "address", new_mac])
     safe_cmd(["ip", "link", "set", interface, "up"])
 
+
 ###############################################################################
 # 5. .nmconnection file manipulation
 ###############################################################################
+
 
 def get_connection_id(nm_file):
     """
@@ -131,6 +147,7 @@ def get_connection_id(nm_file):
             if k.strip().lower() == "id":
                 return v.strip()
     return None
+
 
 def update_nm_file_mac(src_file, dest_file, new_mac):
     """
@@ -185,9 +202,11 @@ def update_nm_file_mac(src_file, dest_file, new_mac):
         print(f"[-] Could not write to {dest_file}: {ex}")
         return False
 
+
 ###############################################################################
 # 6. Memorize and restore original MAC and .nmconnection file
 ###############################################################################
+
 
 def memorize_original_mac(interface):
     """
@@ -204,6 +223,7 @@ def memorize_original_mac(interface):
         except Exception as ex:
             print(f"[-] Could not store original MAC: {ex}")
 
+
 def backup_nm_file(nm_file):
     """
     Creates a backup of the nm_file as nm_file.bak if it doesn't already exist.
@@ -218,6 +238,7 @@ def backup_nm_file(nm_file):
             print(f"[-] Could not backup {nm_file}: {ex}")
     else:
         print(f"[*] Backup already exists: {bak_file}")
+
 
 def restore_nm_file(nm_file):
     """
@@ -235,6 +256,7 @@ def restore_nm_file(nm_file):
     except Exception as ex:
         print(f"[-] Could not restore {nm_file}: {ex}")
         return False
+
 
 def restore_interface_mac(interface):
     """
@@ -255,9 +277,11 @@ def restore_interface_mac(interface):
     except Exception as ex:
         print(f"[-] Could not restore interface MAC: {ex}")
 
+
 ###############################################################################
 # 7. Main flows: apply new MAC (ephemeral & persistent) or restore
 ###############################################################################
+
 
 def apply_new_mac(interface, nm_file, new_mac, persistent=False):
     """
@@ -296,6 +320,7 @@ def apply_new_mac(interface, nm_file, new_mac, persistent=False):
     else:
         print("[*] Ephemeral change applied; you can restore later with --restore.")
 
+
 def restore_original(interface, nm_file):
     """
     Restores the original nm_file from backup and resets the interface MAC.
@@ -309,9 +334,11 @@ def restore_original(interface, nm_file):
             print("[-] Could not determine connection ID from restored file.")
     restore_interface_mac(interface)
 
+
 ###############################################################################
 # 8. New Feature: Config File Generation
 ###############################################################################
+
 
 def generate_config_file():
     """
@@ -320,11 +347,17 @@ def generate_config_file():
     """
     config_path = "/etc/NetworkManager/mac-changer.conf"
     if os.path.isfile(config_path):
-        overwrite = input(f"[?] Config file {config_path} exists. Overwrite? [y/N]: ").strip().lower()
+        overwrite = (
+            input(f"[?] Config file {config_path} exists. Overwrite? [y/N]: ")
+            .strip()
+            .lower()
+        )
         if overwrite != "y":
             print("[*] Keeping existing config file.")
             return
-    default_mac = input("Enter default persistent MAC (or leave empty to use current persistent value): ").strip()
+    default_mac = input(
+        "Enter default persistent MAC (or leave empty to use current persistent value): "
+    ).strip()
     content = (
         "# mac-changer configuration file\n"
         "# This file is used by mac-changer for persistent MAC address settings\n\n"
@@ -339,9 +372,11 @@ def generate_config_file():
     except Exception as ex:
         sys.exit(f"[-] Failed to write config file: {ex}")
 
+
 ###############################################################################
 # 9. New Feature: Install Renamer Startup Script
 ###############################################################################
+
 
 def install_renamer_script():
     """
@@ -350,7 +385,11 @@ def install_renamer_script():
     """
     script_path = "/usr/local/bin/iface-renamer.sh"
     if os.path.isfile(script_path):
-        overwrite = input(f"[?] Startup script {script_path} exists. Overwrite? [y/N]: ").strip().lower()
+        overwrite = (
+            input(f"[?] Startup script {script_path} exists. Overwrite? [y/N]: ")
+            .strip()
+            .lower()
+        )
         if overwrite != "y":
             print("[*] Keeping existing startup script.")
             return
@@ -387,30 +426,67 @@ fi
     except Exception as ex:
         sys.exit(f"[-] Failed to install renamer script: {ex}")
 
+
 ###############################################################################
 # 10. Command-line parsing and main entry
 ###############################################################################
 
+
 def get_arguments():
-    usage = ("Usage: %prog [options]\n\n"
-             "This script changes the MAC address of a network interface using NetworkManager.\n"
-             "Options allow ephemeral changes, persistent updates, and restoration.\n"
-             "Additionally, you can generate a config file or install a startup renamer script.")
+    usage = (
+        "Usage: %prog [options]\n\n"
+        "This script changes the MAC address of a network interface using NetworkManager.\n"
+        "Options allow ephemeral changes, persistent updates, and restoration.\n"
+        "Additionally, you can generate a config file or install a startup renamer script."
+    )
     parser = optparse.OptionParser(usage=usage)
-    parser.add_option("-i", "--interface", dest="interface",
-                      help="Network interface (e.g. enp2s0)")
-    parser.add_option("-m", "--mac", dest="new_mac",
-                      help="New MAC address. If omitted (and not restoring), a random MAC is generated.")
-    parser.add_option("-f", "--file", dest="nm_file",
-                      help="Path to the .nmconnection file (default: '/etc/NetworkManager/system-connections/Ethernet connection 1.nmconnection')")
-    parser.add_option("-r", "--restore", action="store_true", dest="restore",
-                      default=False, help="Restore original MAC and configuration.")
-    parser.add_option("-p", "--persistent", action="store_true", dest="persistent",
-                      default=False, help="Make the change persistent across reboots.")
-    parser.add_option("-g", "--gen-config", action="store_true", dest="gen_config",
-                      default=False, help="Generate configuration file at /etc/NetworkManager/mac-changer.conf")
-    parser.add_option("-R", "--install-renamer", action="store_true", dest="install_renamer",
-                      default=False, help="Install interface renamer startup script at /usr/local/bin/iface-renamer.sh")
+    parser.add_option(
+        "-i", "--interface", dest="interface", help="Network interface (e.g. enp2s0)"
+    )
+    parser.add_option(
+        "-m",
+        "--mac",
+        dest="new_mac",
+        help="New MAC address. If omitted (and not restoring), a random MAC is generated.",
+    )
+    parser.add_option(
+        "-f",
+        "--file",
+        dest="nm_file",
+        help="Path to the .nmconnection file (default: '/etc/NetworkManager/system-connections/Ethernet connection 1.nmconnection')",
+    )
+    parser.add_option(
+        "-r",
+        "--restore",
+        action="store_true",
+        dest="restore",
+        default=False,
+        help="Restore original MAC and configuration.",
+    )
+    parser.add_option(
+        "-p",
+        "--persistent",
+        action="store_true",
+        dest="persistent",
+        default=False,
+        help="Make the change persistent across reboots.",
+    )
+    parser.add_option(
+        "-g",
+        "--gen-config",
+        action="store_true",
+        dest="gen_config",
+        default=False,
+        help="Generate configuration file at /etc/NetworkManager/mac-changer.conf",
+    )
+    parser.add_option(
+        "-R",
+        "--install-renamer",
+        action="store_true",
+        dest="install_renamer",
+        default=False,
+        help="Install interface renamer startup script at /usr/local/bin/iface-renamer.sh",
+    )
     opts, _ = parser.parse_args()
 
     # If no options provided, show help.
@@ -419,11 +495,14 @@ def get_arguments():
         sys.exit(1)
 
     if not opts.nm_file:
-        opts.nm_file = "/etc/NetworkManager/system-connections/Ethernet connection 1.nmconnection"
+        opts.nm_file = (
+            "/etc/NetworkManager/system-connections/Ethernet connection 1.nmconnection"
+        )
     if not opts.restore and not opts.new_mac:
         opts.new_mac = generate_random_mac()
         print(f"[+] No --mac provided; generated random MAC: {opts.new_mac}")
     return opts
+
 
 def main():
     ensure_root()
@@ -441,7 +520,10 @@ def main():
     if opts.restore:
         restore_original(opts.interface, opts.nm_file)
     else:
-        apply_new_mac(opts.interface, opts.nm_file, opts.new_mac, persistent=opts.persistent)
+        apply_new_mac(
+            opts.interface, opts.nm_file, opts.new_mac, persistent=opts.persistent
+        )
+
 
 if __name__ == "__main__":
     main()

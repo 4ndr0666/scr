@@ -2,16 +2,20 @@ import subprocess
 import requests
 from bs4 import BeautifulSoup
 
+
 # Function to extract stream URL from the website
 def extract_stream_url(twitch_url):
-    response = requests.get("http://pwn.sh/tools/getstream.html", params={"url": twitch_url})
+    response = requests.get(
+        "http://pwn.sh/tools/getstream.html", params={"url": twitch_url}
+    )
     soup = BeautifulSoup(response.content, "html.parser")
     stream_url_input = soup.find("input", {"id": "stream_url"})
     if stream_url_input:
-        stream_url = stream_url_input['value']
+        stream_url = stream_url_input["value"]
         return stream_url
     else:
         return None
+
 
 # Prompt user for the Twitch video URL
 twitch_url = input("Enter the Twitch video URL: ")
@@ -24,4 +28,6 @@ if extracted_url:
     command = f"yt-dlp {extracted_url}"
     subprocess.run(command, shell=True)
 else:
-    print("Failed to extract the stream URL. Please check the Twitch video URL and try again.")
+    print(
+        "Failed to extract the stream URL. Please check the Twitch video URL and try again."
+    )

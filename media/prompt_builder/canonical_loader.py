@@ -27,6 +27,7 @@ class CanonicalParamLoader:
         """Load or reload ``promptlib`` and update parameter mappings."""
         if self.module is None:
             import promptlib  # type: ignore
+
             self.module = promptlib
         else:
             self.module = importlib.reload(self.module)
@@ -44,7 +45,9 @@ class CanonicalParamLoader:
             "orientation": list(getattr(self.module, "ORIENTATION_OPTIONS", [])),
             "expression": list(getattr(self.module, "EXPRESSION_OPTIONS", [])),
             "shot_framing": list(getattr(self.module, "SHOT_FRAMING_OPTIONS", [])),
-            "action_sequence": list(getattr(self.module, "ACTION_SEQUENCE_OPTIONS", [])),
+            "action_sequence": list(
+                getattr(self.module, "ACTION_SEQUENCE_OPTIONS", [])
+            ),
         }
         self._record_mtimes()
 
@@ -54,7 +57,14 @@ class CanonicalParamLoader:
         for root, _dirs, files in os.walk(self.library_dir):
             for name in files:
                 path = Path(root) / name
-                if path.suffix.lower() in {".md", ".txt", ".json", ".yml", ".yaml", ".py"}:
+                if path.suffix.lower() in {
+                    ".md",
+                    ".txt",
+                    ".json",
+                    ".yml",
+                    ".yaml",
+                    ".py",
+                }:
                     try:
                         self.mtimes[path] = path.stat().st_mtime
                     except FileNotFoundError:
@@ -139,7 +149,9 @@ class CanonicalParamLoader:
         )
 
 
-def load_canonical_params(library_dir: str = "media/prompt_builder") -> CanonicalParamLoader:
+def load_canonical_params(
+    library_dir: str = "media/prompt_builder",
+) -> CanonicalParamLoader:
     """Convenience function returning a loader instance."""
     return CanonicalParamLoader(library_dir)
 

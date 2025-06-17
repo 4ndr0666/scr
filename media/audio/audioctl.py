@@ -3,26 +3,34 @@
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 
 LOG_FILE = "/var/log/audio_troubleshooting.log"
 BACKUP_DIR = "/var/recover"
 CONFIG_FILES = [
-    "~/.config/pulse/default.pa", "~/.config/mpv/mpv.conf",
-    "~/.mplayer/config", "/etc/modprobe.d/alsa-base.conf", "/etc/modules-load.d/"
+    "~/.config/pulse/default.pa",
+    "~/.config/mpv/mpv.conf",
+    "~/.mplayer/config",
+    "/etc/modprobe.d/alsa-base.conf",
+    "/etc/modules-load.d/",
 ]
-REQUIRED_MODULES = ["snd_hda_intel", "snd_hda_codec_realtek", "snd_intel_dspcfg", "snd_pcm"]
+REQUIRED_MODULES = [
+    "snd_hda_intel",
+    "snd_hda_codec_realtek",
+    "snd_intel_dspcfg",
+    "snd_pcm",
+]
 
 # --- // Auto-escalate privileges if not running as root
 if os.geteuid() != 0:
     try:
         print("Attempting to escalate privileges...")
-        subprocess.check_call(['sudo', sys.executable] + sys.argv)
+        subprocess.check_call(["sudo", sys.executable] + sys.argv)
         sys.exit()
     except subprocess.CalledProcessError as e:
         print(f"Error escalating privileges: {e}")
         sys.exit(e.returncode)
+
 
 # Function to log messages
 def log_message(message, level="INFO"):
@@ -34,28 +42,35 @@ def log_message(message, level="INFO"):
     except PermissionError as e:
         print(f"[ERROR] Permission denied when writing to log file: {e}")
 
+
 # Function to execute shell commands and handle errors
 def execute_command(command, sudo=False):
     try:
         if sudo:
             command = "sudo " + command
-        result = subprocess.run(command, check=True, shell=True, capture_output=True, text=True)
+        result = subprocess.run(
+            command, check=True, shell=True, capture_output=True, text=True
+        )
         log_message(f"Command executed successfully: {command}")
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         log_message(f"Error running command '{command}': {e}", level="ERROR")
         return None
 
+
 # Function to verify if a kernel module is loaded
 def verify_module(module):
     """Check if a kernel module is loaded."""
-    result = subprocess.run(f"lsmod | grep {module}", shell=True, capture_output=True, text=True)
+    result = subprocess.run(
+        f"lsmod | grep {module}", shell=True, capture_output=True, text=True
+    )
     if result.returncode == 0:
         log_message(f"Module {module} is loaded.")
         return True
     else:
         log_message(f"Module {module} is not loaded.", level="WARNING")
         return False
+
 
 # Function to load required kernel modules
 def load_kernel_modules():
@@ -70,41 +85,45 @@ def load_kernel_modules():
                 log_message(f"Module {module} loaded successfully.")
     log_message("Module loading process completed.")
 
+
 # Function to create modprobe configuration for automatic module loading
 def create_modprobe_config():
     """Create a modprobe configuration file to ensure automatic loading of modules."""
     config_file = "/etc/modprobe.d/sound.conf"
     try:
         with open(config_file, "w") as conf:
-            conf.write("""
+            conf.write(
+                """
 # Ensure snd_hda_intel and related modules are loaded after boot
 install snd_hda_intel /sbin/modprobe --ignore-install snd_hda_intel && /sbin/modprobe snd_intel_dspcfg
 install snd_hda_codec_realtek /sbin/modprobe --ignore-install snd_hda_codec_realtek && /sbin/modprobe snd_pcm
-            """)
+            """
+            )
         log_message(f"Modprobe configuration written to {config_file}")
     except PermissionError as e:
         log_message(f"Failed to write modprobe configuration: {e}", level="ERROR")
 
+
 # Function to restart audio services (PipeWire or PulseAudio)
 def restart_audio_services():
     """Restart the active audio service (PipeWire or PulseAudio)."""
-    services = {
-        "pipewire": ["pipewire", "wireplumber"],
-        "pulseaudio": ["pulseaudio"]
-    }
+    services = {"pipewire": ["pipewire", "wireplumber"], "pulseaudio": ["pulseaudio"]}
 
     for service in services.keys():
         result = execute_command(f"systemctl --user is-active {service}")
         if result == "active":
             log_message(f"{service} is active. Restarting services...")
             for subservice in services[service]:
-                if execute_command(f"systemctl --user restart {subservice}", sudo=False):
+                if execute_command(
+                    f"systemctl --user restart {subservice}", sudo=False
+                ):
                     log_message(f"Restarted {subservice} successfully.")
                 else:
                     log_message(f"Failed to restart {subservice}.", level="ERROR")
             return  # Exit after restarting the active service
 
     log_message("Neither PipeWire nor PulseAudio is running.", level="WARNING")
+
 
 # Function to test audio output
 def test_audio_output():
@@ -119,6 +138,7 @@ def test_audio_output():
     else:
         log_message("Audio test failed.", level="ERROR")
         return False
+
 
 # Function to check and install system updates
 def check_for_updates():
@@ -137,6 +157,7 @@ def check_for_updates():
     else:
         log_message("No updates available. The system is up to date.")
 
+
 # Function to back up configuration files before and after changes
 def backup_config_files(stage="pre"):
     """Back up configuration files before and after changes."""
@@ -152,21 +173,31 @@ def backup_config_files(stage="pre"):
             execute_command(f"sudo cp -r {config_file} {backup_stage_dir}", sudo=True)
             log_message(f"Backed up {config_file}")
         else:
-            log_message(f"Config file {config_file} not found. Skipping.", level="WARNING")
+            log_message(
+                f"Config file {config_file} not found. Skipping.", level="WARNING"
+            )
+
 
 # Function to restore configuration files from the most recent backup
 def restore_config_files():
     """Restore configuration files from the most recent backup."""
-    backups = sorted([f for f in os.listdir(BACKUP_DIR) if "post_backup" in f], reverse=True)
+    backups = sorted(
+        [f for f in os.listdir(BACKUP_DIR) if "post_backup" in f], reverse=True
+    )
     if not backups:
-        log_message("No recent backup found. Cannot restore configuration.", level="ERROR")
+        log_message(
+            "No recent backup found. Cannot restore configuration.", level="ERROR"
+        )
         return
     latest_backup = f"{BACKUP_DIR}/{backups[0]}"
     log_message(f"Restoring configuration files from {latest_backup}")
     for config_file in os.listdir(latest_backup):
         original_location = os.path.basename(config_file)
-        execute_command(f"sudo cp -r {latest_backup}/{config_file} {original_location}", sudo=True)
+        execute_command(
+            f"sudo cp -r {latest_backup}/{config_file} {original_location}", sudo=True
+        )
         log_message(f"Restored {original_location}")
+
 
 # Function to rebuild initramfs (if mkinitcpio or dracut is detected)
 def rebuild_initramfs():
@@ -178,7 +209,11 @@ def rebuild_initramfs():
         log_message("Detected dracut. Rebuilding initramfs...")
         execute_command("sudo dracut --force", sudo=True)
     else:
-        log_message("Neither mkinitcpio nor dracut detected. Cannot rebuild initramfs.", level="ERROR")
+        log_message(
+            "Neither mkinitcpio nor dracut detected. Cannot rebuild initramfs.",
+            level="ERROR",
+        )
+
 
 # Function to install missing dependencies
 def install_missing_dependencies(dependencies):
@@ -191,27 +226,39 @@ def install_missing_dependencies(dependencies):
             if not execute_command(f"sudo pacman -S --needed {dep}", sudo=True):
                 log_message(f"Failed to install {dep}", level="ERROR")
 
+
 # Function to enhance the selected audio service
 def enhance_audio_service():
     """Enhance the selected audio service by offering packages for installation."""
     services = {
-        "pipewire": ["pipewire-alsa", "pipewire-pulse", "pipewire-jack", "wireplumber", "helvum", "qjackctl"],
-        "pulseaudio": ["pavucontrol", "pulseaudio-ctl", "pulsemixer"]
+        "pipewire": [
+            "pipewire-alsa",
+            "pipewire-pulse",
+            "pipewire-jack",
+            "wireplumber",
+            "helvum",
+            "qjackctl",
+        ],
+        "pulseaudio": ["pavucontrol", "pulseaudio-ctl", "pulsemixer"],
     }
-    
+
     active_service = None
     if execute_command("systemctl --user is-active pipewire") == "active":
         active_service = "pipewire"
     elif execute_command("systemctl --user is-active pulseaudio") == "active":
         active_service = "pulseaudio"
-    
+
     if active_service:
         log_message(f"Enhancing the {active_service} service...")
         packages = services[active_service]
         for package in packages:
             install_missing_dependencies([package])
     else:
-        log_message("Neither PipeWire nor PulseAudio is running. Cannot offer enhancements.", level="WARNING")
+        log_message(
+            "Neither PipeWire nor PulseAudio is running. Cannot offer enhancements.",
+            level="WARNING",
+        )
+
 
 # Function to create a custom SystemD service for loading modules
 def create_systemd_service():
@@ -230,28 +277,31 @@ ExecStart=/sbin/modprobe snd_hda_intel snd_intel_dspcfg snd_hda_codec_realtek sn
 WantedBy=multi-user.target
 """
     try:
-        with open(service_file, 'w') as service:
+        with open(service_file, "w") as service:
             service.write(service_content)
-        execute_command(f"sudo systemctl enable load-sound-modules.service")
+        execute_command("sudo systemctl enable load-sound-modules.service")
         log_message(f"SystemD service {service_file} created and enabled.")
     except PermissionError as e:
         log_message(f"Failed to create SystemD service: {e}", level="ERROR")
+
 
 # Function to manually select the audio service (PipeWire or PulseAudio)
 def select_audio_service():
     """Manually select and configure audio service (PipeWire or PulseAudio)."""
     log_message("Selecting and configuring audio service...")
-    
+
     choice = input("Choose audio service:\n1. PipeWire\n2. PulseAudio\nEnter 1 or 2: ")
-    
-    if choice == '1':
+
+    if choice == "1":
         # Install and configure PipeWire
         log_message("Configuring PipeWire...")
-        install_missing_dependencies(["pipewire", "pipewire-alsa", "pipewire-pulse", "wireplumber"])
+        install_missing_dependencies(
+            ["pipewire", "pipewire-alsa", "pipewire-pulse", "wireplumber"]
+        )
         execute_command("systemctl --user disable pulseaudio.service --now", sudo=True)
         execute_command("systemctl --user enable --now pipewire wireplumber", sudo=True)
         log_message("PipeWire configured successfully.")
-    elif choice == '2':
+    elif choice == "2":
         # Install and configure PulseAudio
         log_message("Configuring PulseAudio...")
         install_missing_dependencies(["pulseaudio", "pavucontrol"])
@@ -260,6 +310,7 @@ def select_audio_service():
         log_message("PulseAudio configured successfully.")
     else:
         log_message("Invalid choice. No changes made.", level="ERROR")
+
 
 # Function to restart PulseAudio with custom default.pa handling
 def restart_pulseaudio_with_backup():
@@ -280,11 +331,12 @@ def restart_pulseaudio_with_backup():
     else:
         log_message(f"{default_pa} not found. No changes made.", level="WARNING")
 
+
 # Function to run full automated troubleshooting
 def run_automated_troubleshooting():
     """Run the full automated troubleshooting process."""
     log_message("Running full automated troubleshooting process...")
-    
+
     # Check and load kernel modules
     load_kernel_modules()
 
@@ -302,6 +354,7 @@ def run_automated_troubleshooting():
 
     log_message("Automated troubleshooting process completed.")
 
+
 # Function to install and invoke needrestart for handling reboots or service restarts
 def install_needrestart():
     """Install and run needrestart for managing system reboots after updates."""
@@ -312,14 +365,20 @@ def install_needrestart():
         elif execute_command("command -v paru"):
             execute_command("paru -S --noconfirm needrestart")
         else:
-            log_message("[ERROR] AUR helper not found. Please install needrestart manually.", level="ERROR")
+            log_message(
+                "[ERROR] AUR helper not found. Please install needrestart manually.",
+                level="ERROR",
+            )
             return
     else:
         log_message("needrestart is already installed.")
-    
+
     # Run needrestart
-    log_message("Running needrestart to check for reboot or service restart requirements...")
+    log_message(
+        "Running needrestart to check for reboot or service restart requirements..."
+    )
     execute_command("sudo needrestart")
+
 
 # Interactive main menu
 def main_menu():
@@ -346,39 +405,40 @@ def main_menu():
         print("=" * 50)
         choice = input("Select an option: ")
 
-        if choice == '1':
+        if choice == "1":
             load_kernel_modules()
-        elif choice == '2':
+        elif choice == "2":
             restart_audio_services()
-        elif choice == '3':
+        elif choice == "3":
             test_audio_output()
-        elif choice == '4':
+        elif choice == "4":
             create_modprobe_config()
-        elif choice == '5':
+        elif choice == "5":
             check_for_updates()
-        elif choice == '6':
+        elif choice == "6":
             backup_config_files()
-        elif choice == '7':
+        elif choice == "7":
             restore_config_files()
-        elif choice == '8':
+        elif choice == "8":
             rebuild_initramfs()
-        elif choice == '9':
+        elif choice == "9":
             install_needrestart()
-        elif choice == '10':
+        elif choice == "10":
             enhance_audio_service()
-        elif choice == '11':
+        elif choice == "11":
             create_systemd_service()
-        elif choice == '12':
+        elif choice == "12":
             run_automated_troubleshooting()
-        elif choice == '13':
+        elif choice == "13":
             select_audio_service()
-        elif choice == '14':
+        elif choice == "14":
             restart_pulseaudio_with_backup()
-        elif choice == '15':
+        elif choice == "15":
             log_message("Exiting the tool.")
             sys.exit(0)
         else:
             log_message("Invalid selection, please try again.", level="WARNING")
+
 
 # Run the tool
 if __name__ == "__main__":

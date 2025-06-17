@@ -4,7 +4,10 @@ import subprocess
 import logging
 import json
 
-logging.basicConfig(filename='permissions_fix.log', level=logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(
+    filename="permissions_fix.log", level=logging.INFO, format="%(asctime)s %(message)s"
+)
+
 
 def run_command(command):
     """
@@ -21,6 +24,7 @@ def run_command(command):
     except subprocess.CalledProcessError as e:
         logging.error(f"Command '{e.cmd}' failed with error: {e.stderr.strip()}")
         raise
+
 
 def parse_acl_file(filename):
     """
@@ -50,7 +54,11 @@ def parse_acl_file(filename):
             entry["owner"] = line.split(": ", 1)[1].strip()
         elif line.startswith("# group:"):
             entry["group"] = line.split(": ", 1)[1].strip()
-        elif line.startswith("user::") or line.startswith("group::") or line.startswith("other::"):
+        elif (
+            line.startswith("user::")
+            or line.startswith("group::")
+            or line.startswith("other::")
+        ):
             if not entry:
                 logging.warning("ACL entry missing file information.")
                 continue
@@ -67,6 +75,7 @@ def parse_acl_file(filename):
 
     return entries
 
+
 def backup_permissions(acl_entries, backup_file):
     """
     Backup permissions to a JSON file.
@@ -75,10 +84,11 @@ def backup_permissions(acl_entries, backup_file):
         acl_entries (list): List of dictionaries representing ACL entries.
         backup_file (str): Path to the backup JSON file.
     """
-    with open(backup_file, 'w') as f:
+    with open(backup_file, "w") as f:
         json.dump(acl_entries, f)
 
     print(f"Permissions backed up to {backup_file}.")
+
 
 def restore_permissions(acl_entries):
     """
@@ -118,7 +128,11 @@ def restore_permissions(acl_entries):
             process = run_command(["stat", "-c", "%A", filepath])
             if process:
                 current_permissions = process.stdout.strip()
-                expected_permissions = entry["user_permissions"] + entry["group_permissions"] + entry["other_permissions"]
+                expected_permissions = (
+                    entry["user_permissions"]
+                    + entry["group_permissions"]
+                    + entry["other_permissions"]
+                )
                 if current_permissions != expected_permissions:
                     run_command(["chmod", expected_permissions, filepath])
                     logging.info(f"Permissions fixed for {filepath}")
@@ -126,6 +140,7 @@ def restore_permissions(acl_entries):
             logging.error(f"Failed to change permissions for {filepath}. Error: {e}")
 
     print("Permissions and ownership check and fix complete.")
+
 
 def audit_permissions(acl_entries):
     """
@@ -166,11 +181,17 @@ def audit_permissions(acl_entries):
             process = run_command(["stat", "-c", "%A", filepath])
             if process:
                 current_permissions = process.stdout.strip()
-                expected_permissions = entry["user_permissions"] + entry["group_permissions"] + entry["other_permissions"]
+                expected_permissions = (
+                    entry["user_permissions"]
+                    + entry["group_permissions"]
+                    + entry["other_permissions"]
+                )
                 if current_permissions != expected_permissions:
                     discrepancies.append(f"Permissions for {filepath} are incorrect.")
         except Exception as e:
-            logging.error(f"Error while checking permissions for {filepath}. Error: {e}")
+            logging.error(
+                f"Error while checking permissions for {filepath}. Error: {e}"
+            )
 
     print("Audit complete.")
     if discrepancies:
@@ -180,11 +201,13 @@ def audit_permissions(acl_entries):
     else:
         print("No discrepancies found.")
 
+
 def pacman_fix_permissions():
     """
     Run pacman-fix-permissions command.
     """
     run_command(["sudo", "pacman-fix-permissions"])
+
 
 def sanitize_path(path):
     """
@@ -197,6 +220,7 @@ def sanitize_path(path):
         The sanitized file path.
     """
     return os.path.normpath(path)
+
 
 if __name__ == "__main__":
     acl_file = input("Enter the path to the ACL file (e.g., standardpermissions.acl): ")
@@ -218,7 +242,9 @@ if __name__ == "__main__":
             choice = input("By your command: ")
 
             if choice.lower() in ["1", "backup permissions"]:
-                backup_file = input("Enter the name of the backup file (permissions will be saved in JSON format): ")
+                backup_file = input(
+                    "Enter the name of the backup file (permissions will be saved in JSON format): "
+                )
                 backup_permissions(acl_entries, backup_file)
             elif choice.lower() in ["2", "restore permissions"]:
                 restore_permissions(acl_entries)

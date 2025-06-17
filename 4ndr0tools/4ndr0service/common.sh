@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 # shellcheck disable=all
-# File: common.sh
 set -euo pipefail
 IFS=$'\n\t'
+# ================= // COMMON.SH//
+
 ensure_pkg_path() {
-        if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
-                local caller="${BASH_SOURCE[1]:-${BASH_SOURCE[0]:-$0}}"
-                local script_dir
-                script_dir="$(cd -- "$(dirname -- "$caller")" && pwd -P)"
-                while [[ "$script_dir" != "/" ]]; do
-                        if [[ -f "$script_dir/common.sh" ]]; then
-                                PKG_PATH="$script_dir"
-                                break
-                        fi
-                        script_dir="$(dirname "$script_dir")"
-                done
-                if [[ -z "${PKG_PATH:-}" ]]; then
-                        echo "Error: Could not determine package base path." >&2
-                        return 1
-                fi
-        fi
-        export PKG_PATH
+	if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
+		local caller="${BASH_SOURCE[1]:-${BASH_SOURCE[0]:-$0}}"
+		local script_dir
+		script_dir="$(cd -- "$(dirname -- "$caller")" && pwd -P)"
+		while [[ "$script_dir" != "/" ]]; do
+			if [[ -f "$script_dir/common.sh" ]]; then
+				PKG_PATH="$script_dir"
+				break
+			fi
+			script_dir="$(dirname "$script_dir")"
+		done
+		if [[ -z "${PKG_PATH:-}" ]]; then
+			echo "Error: Could not determine package base path." >&2
+			return 1
+		fi
+	fi
+	export PKG_PATH
 }
+
 ensure_pkg_path
 
 expand_path() {

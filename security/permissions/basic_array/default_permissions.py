@@ -1,10 +1,12 @@
-
 #!/usr/bin/env python3
 import os
 import subprocess
 import logging
 
-logging.basicConfig(filename='permissions_fix.log', level=logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(
+    filename="permissions_fix.log", level=logging.INFO, format="%(asctime)s %(message)s"
+)
+
 
 def run_command(command):
     try:
@@ -12,6 +14,7 @@ def run_command(command):
     except subprocess.CalledProcessError as e:
         logging.error(f"Command '{e.cmd}' failed with error: {e.stderr.strip()}")
         raise
+
 
 def main():
     if os.geteuid() != 0:
@@ -39,7 +42,6 @@ def main():
         ("/usr/local/bin", "755", "root:root"),
         ("/var", "755", "root:root"),
         ("/usr/lib/python3.10/site-packages", "755", "root:root"),
-
     ]
 
     for directory, expected_permissions, expected_ownership in directories:
@@ -58,6 +60,7 @@ def main():
             logging.info(f"Ownership fixed for directory: {directory}")
 
     print("Directory permissions and ownership check and fix complete.")
+
 
 if __name__ == "__main__":
     main()

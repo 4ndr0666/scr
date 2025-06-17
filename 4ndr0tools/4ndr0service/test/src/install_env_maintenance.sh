@@ -15,6 +15,7 @@ ensure_dir "$SYSTEMD_USER_DIR"
 # Install verify_environment.sh into ~/.local/bin for unit invocation
 LOCAL_BIN="$HOME/.local/bin"
 ensure_dir "$LOCAL_BIN"
+<<<<<<< HEAD
 
 if install -Dm755 "$PKG_PATH/test/src/verify_environment.sh" \
 	"$LOCAL_BIN/verify_environment.sh"; then
@@ -22,6 +23,11 @@ if install -Dm755 "$PKG_PATH/test/src/verify_environment.sh" \
 else
 	echo "Warning: failed to install verify_environment.sh" >&2
 fi
+=======
+cp -f "$PKG_PATH/test/src/verify_environment.sh" "$LOCAL_BIN/verify_environment.sh"
+chmod +x "$LOCAL_BIN/verify_environment.sh"
+echo "Installed $LOCAL_BIN/verify_environment.sh"
+>>>>>>> 4e8d685 (Fix executable mode)
 
 # Copy or symlink units
 install_unit() {

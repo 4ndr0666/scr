@@ -6,9 +6,11 @@ import sys
 import argparse
 import textwrap
 
+
 def install_scrapy():
     """Install Scrapy and required dependencies."""
     subprocess.check_call([sys.executable, "-m", "pip", "install", "scrapy"])
+
 
 def create_project(project_name):
     """Create a new Scrapy project."""
@@ -16,14 +18,15 @@ def create_project(project_name):
         os.makedirs(project_name)
     subprocess.run(["scrapy", "startproject", project_name])
 
+
 def define_spider(spider_name, project_name, start_url):
     """Define a spider using provided variables."""
-    spiders_dir = os.path.join(project_name, project_name, 'spiders')
+    spiders_dir = os.path.join(project_name, project_name, "spiders")
     os.makedirs(spiders_dir, exist_ok=True)
-    spider_file_path = os.path.join(spiders_dir, f'{spider_name.lower()}.py')
-    
-    allowed_domain = start_url.split('/')[2]
-    
+    spider_file_path = os.path.join(spiders_dir, f"{spider_name.lower()}.py")
+
+    allowed_domain = start_url.split("/")[2]
+
     spider_code = f"""
 import scrapy
 from scrapy.exceptions import CloseSpider
@@ -63,14 +66,16 @@ class {spider_name}(scrapy.Spider):
         image_name = url.split('/')[-1].split('.')[0]
         return image_name.strip().replace('_', ' ').replace('-', ' ').capitalize()
     """
-    
-    with open(spider_file_path, 'w') as spider_file:
+
+    with open(spider_file_path, "w") as spider_file:
         spider_file.write(textwrap.dedent(spider_code))
+
 
 def configure_settings(project_name):
     """Modify settings.py based on user input."""
-    settings_file_path = os.path.join(project_name, project_name, 'settings.py')
-    settings_append = textwrap.dedent("""
+    settings_file_path = os.path.join(project_name, project_name, "settings.py")
+    settings_append = textwrap.dedent(
+        """
         # Custom Settings
         ITEM_PIPELINES = {
             'scrapy.pipelines.images.ImagesPipeline': 1,
@@ -86,10 +91,14 @@ def configure_settings(project_name):
                           'AppleWebKit/537.36 (KHTML, like Gecko) '
                           'Chrome/58.0.3029.110 Safari/537.3'
         }
-    """.format(project_name=project_name))
-    
-    with open(settings_file_path, 'a') as settings_file:
+    """.format(
+            project_name=project_name
+        )
+    )
+
+    with open(settings_file_path, "a") as settings_file:
         settings_file.write(settings_append)
+
 
 def update_items_py(project_name):
     """Update items.py with the necessary item fields."""
@@ -103,9 +112,10 @@ class {project_name.capitalize()}Item(scrapy.Item):
     page_url = scrapy.Field()
     timestamp = scrapy.Field()
     """
-    items_path = os.path.join(project_name, project_name, 'items.py')
-    with open(items_path, 'w') as items_file:
+    items_path = os.path.join(project_name, project_name, "items.py")
+    with open(items_path, "w") as items_file:
         items_file.write(textwrap.dedent(items_code))
+
 
 def update_middlewares_py(project_name):
     """Update middlewares.py with enhanced middleware functions."""
@@ -153,9 +163,10 @@ class {project_name.capitalize()}DownloaderMiddleware:
     def spider_opened(self, spider):
         spider.logger.info(f"Spider opened: {{spider.name}}")
     """
-    middlewares_path = os.path.join(project_name, project_name, 'middlewares.py')
-    with open(middlewares_path, 'w') as middlewares_file:
+    middlewares_path = os.path.join(project_name, project_name, "middlewares.py")
+    with open(middlewares_path, "w") as middlewares_file:
         middlewares_file.write(textwrap.dedent(middlewares_code))
+
 
 def update_pipelines_py(project_name):
     """Update pipelines.py with enhanced pipeline functions."""
@@ -192,9 +203,10 @@ class {project_name.capitalize()}ImagesPipeline(ImagesPipeline):
             raise DropItem(f"Failed to download images for {{item}}")
         return item
     """
-    pipelines_path = os.path.join(project_name, project_name, 'pipelines.py')
-    with open(pipelines_path, 'w') as pipelines_file:
+    pipelines_path = os.path.join(project_name, project_name, "pipelines.py")
+    with open(pipelines_path, "w") as pipelines_file:
         pipelines_file.write(textwrap.dedent(pipelines_code))
+
 
 def review_scrapy_cfg(project_name):
     """Review and enhance scrapy.cfg for proper project setup."""
@@ -208,9 +220,10 @@ loglevel = INFO
 output_format = jsonlines
 output_dir = output
     """
-    cfg_path = os.path.join(project_name, 'scrapy.cfg')
-    with open(cfg_path, 'w') as cfg_file:
+    cfg_path = os.path.join(project_name, "scrapy.cfg")
+    with open(cfg_path, "w") as cfg_file:
         cfg_file.write(textwrap.dedent(cfg_code))
+
 
 def setup_pyproject_toml(project_name):
     """Setup pyproject.toml with the necessary dependencies."""
@@ -231,17 +244,23 @@ pillow = "^10.4.0"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
     """
-    toml_path = os.path.join(project_name, 'pyproject.toml')
-    with open(toml_path, 'w') as toml_file:
+    toml_path = os.path.join(project_name, "pyproject.toml")
+    with open(toml_path, "w") as toml_file:
         toml_file.write(textwrap.dedent(toml_content))
+
 
 def parse_arguments():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Automate the creation of a Scrapy project for image crawling.")
-    parser.add_argument('image_url', help='The start image URL for the spider.')
-    parser.add_argument('--project', help='Name of the Scrapy project.', required=True)
-    parser.add_argument('--spider', help='Name of the spider class.', default='ImageSpider')
+    parser = argparse.ArgumentParser(
+        description="Automate the creation of a Scrapy project for image crawling."
+    )
+    parser.add_argument("image_url", help="The start image URL for the spider.")
+    parser.add_argument("--project", help="Name of the Scrapy project.", required=True)
+    parser.add_argument(
+        "--spider", help="Name of the spider class.", default="ImageSpider"
+    )
     return parser.parse_args()
+
 
 def setup_project():
     """Setup the entire Scrapy project by parsing arguments and calling setup functions in sequence."""
@@ -264,6 +283,7 @@ def setup_project():
     setup_pyproject_toml(project_name)
 
     print(f"Project '{project_name}' setup complete.")
+
 
 if __name__ == "__main__":
     setup_project()

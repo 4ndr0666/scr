@@ -9,7 +9,6 @@ Requirements:
     - jdupes installed on the system (https://github.com/jbruchon/jdupes)
 """
 
-import os
 import sys
 import logging
 import subprocess
@@ -19,15 +18,14 @@ from pathlib import Path
 # -------------------------------------------------------------------
 # Configure Logging
 # -------------------------------------------------------------------
-LOG_FORMAT = (
-    "%(asctime)s - %(levelname)s - %(message)s"
-)
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(
     format=LOG_FORMAT,
     level=logging.INFO,
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
 
 # -------------------------------------------------------------------
 # Utility Functions
@@ -91,7 +89,7 @@ def find_and_move_duplicates(
         move (bool): Whether to move the duplicates or only list them
         duplicates_dir (str): Subdirectory name or absolute path for duplicates
         recurse (bool): If True, will use jdupes in recursive mode (-r)
-        sort_mode (str): Sorting option for jdupes (e.g. 'name', 'size'...). 
+        sort_mode (str): Sorting option for jdupes (e.g. 'name', 'size'...).
         quick (bool): If True, adds quick option (-Q) to jdupes for hashing.
 
     Returns:
@@ -166,7 +164,7 @@ def find_and_move_duplicates(
             dest = dup_target.joinpath(src.name)
             # If a conflict might exist, incorporate a datetime-named folder:
             if dest.exists():
-                # If an item with that name already exists, 
+                # If an item with that name already exists,
                 # create a new time-based subdirectory to avoid collisions
                 subdir_name = datetime.datetime.now().strftime(
                     "duplicates_%Y%m%d_%H%M%S"
@@ -219,11 +217,11 @@ def main():
     # Adjust as needed or parse additional CLI arguments for dynamic usage
     found_dups = find_and_move_duplicates(
         target_dir=target_dir,
-        move=True,                 # True: actually move duplicates
-        duplicates_dir="duplicates", 
-        recurse=False,            # set True to recurse subdirs
-        sort_mode="name",         # 'name' or 'size'
-        quick=False,              # 'False' means no quick hashing
+        move=True,  # True: actually move duplicates
+        duplicates_dir="duplicates",
+        recurse=False,  # set True to recurse subdirs
+        sort_mode="name",  # 'name' or 'size'
+        quick=False,  # 'False' means no quick hashing
     )
 
     if found_dups:
