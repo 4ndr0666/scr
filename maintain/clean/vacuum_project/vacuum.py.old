@@ -28,6 +28,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
+
 # Spinner context manager
 @contextmanager
 def spinning_spinner(symbols="|/-\\", speed=0.1):
@@ -67,11 +68,13 @@ FAILURE = "❌"
 INFO = "➡️"
 WARNING = "⚠️"
 
+
 def format_message(message, color):
     """
     Format a message with the given color and bold text.
     """
     return f"{BOLD}{color}{message}{NC}"
+
 
 def log_and_print(message, level="info"):
     """
@@ -87,14 +90,13 @@ def log_and_print(message, level="info"):
     else:
         logging.info(f"Unhandled log level: {level}. Message: {message}")
 
+
 def execute_command(command, error_message=None):
     """
     Execute a shell command and log the output or error.
     """
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
         logging.info(result.stdout)
         if result.stderr:
             logging.error(result.stderr)
@@ -108,6 +110,7 @@ def execute_command(command, error_message=None):
         log_message = error_message or f"Command execution failed with error: {str(e)}"
         log_and_print(format_message(log_message, RED), "error")
         return None
+
 
 def prompt_with_timeout(prompt: str, timeout: int = 30, default: str = "Q") -> str:
     """
@@ -130,6 +133,7 @@ def prompt_with_timeout(prompt: str, timeout: int = 30, default: str = "Q") -> s
         log_and_print(f"{FAILURE} Error reading input: {str(e)}", "error")
         return default
 
+
 def confirm_deletion(file_or_dir):
     """
     Ask for confirmation before deletion.
@@ -138,6 +142,7 @@ def confirm_deletion(file_or_dir):
         f"Do you really want to delete {file_or_dir}? [y/N]: ", timeout=10, default="n"
     ).lower()
     return confirm == "y"
+
 
 def process_dep_scan_log(log_file):
     """
@@ -156,11 +161,14 @@ def process_dep_scan_log(log_file):
                         if "missing dependency" in line:
                             dependency = line.split(": ")[1].strip()
                             install_missing_dependency(dependency)
-            log_and_print(f"{SUCCESS} Dependency scan log processing completed.", "info")
+            log_and_print(
+                f"{SUCCESS} Dependency scan log processing completed.", "info"
+            )
         except IOError as e:
             log_and_print(f"{FAILURE} Error reading dependency scan log: {e}", "error")
     else:
         log_and_print(f"{FAILURE} Dependency scan log file not found.", "error")
+
 
 def fix_permissions(file_path):
     """
@@ -182,11 +190,14 @@ def fix_permissions(file_path):
                 | stat.S_IROTH
                 | stat.S_IXOTH,
             )
-            log_and_print(f"{INFO} Fixed permissions for directory: {file_path}", "info")
+            log_and_print(
+                f"{INFO} Fixed permissions for directory: {file_path}", "info"
+            )
     except OSError as e:
         log_and_print(
             f"{FAILURE} Error fixing permissions for {file_path}: {e}", "error"
         )
+
 
 def install_missing_dependency(dependency):
     """
@@ -195,12 +206,11 @@ def install_missing_dependency(dependency):
     log_and_print(
         f"{INFO} Attempting to install missing dependency: {dependency}", "info"
     )
-    if execute_command(
-        ["pacman", "-Qi", dependency], "Dependency check failed"
-    ) is None:
-        result = execute_command(
-            ["sudo", "pacman", "-Sy", "--noconfirm", dependency]
-        )
+    if (
+        execute_command(["pacman", "-Qi", dependency], "Dependency check failed")
+        is None
+    ):
+        result = execute_command(["sudo", "pacman", "-Sy", "--noconfirm", dependency])
         if result:
             log_and_print(
                 f"{SUCCESS} Successfully installed missing dependency: {dependency}",
@@ -213,6 +223,7 @@ def install_missing_dependency(dependency):
             )
     else:
         log_and_print(f"{INFO} Dependency {dependency} is already installed.", "info")
+
 
 def manage_cron_job(log_file):
     """
@@ -284,6 +295,7 @@ def manage_cron_job(log_file):
                 f"{FAILURE} Error managing cron jobs: {e.stderr.strip()}", "error"
             )
 
+
 def update_cron_jobs(new_crons):
     """
     Update the system cron jobs with the new entries.
@@ -298,6 +310,7 @@ def update_cron_jobs(new_crons):
     finally:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
 
 def remove_broken_symlinks(log_file):
     """
@@ -319,16 +332,22 @@ def remove_broken_symlinks(log_file):
             log_and_print(f"{SUCCESS} No broken symbolic links found.", "info")
             return
 
-        log_and_print(f"{INFO} Found {len(broken_links)} broken symbolic links:", "info")
+        log_and_print(
+            f"{INFO} Found {len(broken_links)} broken symbolic links:", "info"
+        )
         for link in broken_links:
             print(link)
 
         confirm = prompt_with_timeout(
-            "Do you want to remove these broken symbolic links? [y/N]: ", timeout=15, default="n"
+            "Do you want to remove these broken symbolic links? [y/N]: ",
+            timeout=15,
+            default="n",
         ).lower()
 
         if confirm != "y":
-            log_and_print(f"{INFO} Broken symbolic link removal aborted by user.", "info")
+            log_and_print(
+                f"{INFO} Broken symbolic link removal aborted by user.", "info"
+            )
             return
 
         for link in broken_links:
@@ -341,7 +360,10 @@ def remove_broken_symlinks(log_file):
         log_and_print(f"{SUCCESS} Broken symbolic links removed.", "info")
 
     except Exception as e:
-        log_and_print(f"{FAILURE} Error searching for broken symbolic links: {str(e)}", "error")
+        log_and_print(
+            f"{FAILURE} Error searching for broken symbolic links: {str(e)}", "error"
+        )
+
 
 def clean_old_kernels(log_file):
     """
@@ -350,9 +372,11 @@ def clean_old_kernels(log_file):
     log_and_print(f"{INFO} Cleaning up old kernel images...", "info")
     with spinning_spinner():
         try:
-            explicitly_installed = subprocess.check_output(
-                ["pacman", "-Qeq"], text=True
-            ).strip().split("\n")
+            explicitly_installed = (
+                subprocess.check_output(["pacman", "-Qeq"], text=True)
+                .strip()
+                .split("\n")
+            )
             current_kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
             current_kernel_version = current_kernel.split("-")[0]
             kernels_to_remove = []
@@ -387,6 +411,7 @@ def clean_old_kernels(log_file):
         except subprocess.CalledProcessError as e:
             log_and_print(f"{FAILURE} Error: {e.stderr.strip()}", "error")
 
+
 def vacuum_journalctl(log_file):
     """
     Vacuum journalctl logs older than 1 day, providing detailed output.
@@ -409,6 +434,7 @@ def vacuum_journalctl(log_file):
                 f"{FAILURE} Error: Failed to vacuum journalctl: {e.stderr.strip()}",
                 "error",
             )
+
 
 def clear_cache(log_file):
     """
@@ -458,6 +484,7 @@ def clear_cache(log_file):
                     "error",
                 )
 
+
 def update_font_cache(log_file):
     """
     Update the font cache, logging success or failure.
@@ -481,6 +508,7 @@ def update_font_cache(log_file):
                 "error",
             )
 
+
 def clear_trash(log_file):
     """
     Clear the user's trash directory.
@@ -500,6 +528,7 @@ def clear_trash(log_file):
             log_and_print(f"{INFO} Trash directory does not exist.", "info")
     except Exception as e:
         log_and_print(f"{FAILURE} Error clearing trash: {str(e)}", "error")
+
 
 def optimize_databases(log_file):
     """
@@ -584,8 +613,10 @@ def optimize_databases(log_file):
                 "error",
             )
 
+
 def is_interactive():
     return sys.stdin.isatty()
+
 
 def clean_package_cache(log_file):
     """
@@ -595,7 +626,9 @@ def clean_package_cache(log_file):
     try:
         if is_interactive():
             confirm = prompt_with_timeout(
-                "Do you want to proceed with cleaning the package cache? [Y/n]: ", timeout=15, default="Y"
+                "Do you want to proceed with cleaning the package cache? [Y/n]: ",
+                timeout=15,
+                default="Y",
             )
             if confirm:
                 confirm = confirm.strip().lower()
@@ -606,10 +639,17 @@ def clean_package_cache(log_file):
                 log_and_print(f"{INFO} Package cache cleaning aborted by user.", "info")
                 return
         else:
-            log_and_print(f"{INFO} Running in non-interactive mode. Proceeding with cleaning.", "info")
+            log_and_print(
+                f"{INFO} Running in non-interactive mode. Proceeding with cleaning.",
+                "info",
+            )
 
         cache_dir = "/var/cache/pacman/pkg/"
-        temp_files = [f for f in os.listdir(cache_dir) if f.endswith('.aria2') or f.startswith('download-')]
+        temp_files = [
+            f
+            for f in os.listdir(cache_dir)
+            if f.endswith(".aria2") or f.startswith("download-")
+        ]
         for temp_file in temp_files:
             temp_file_path = os.path.join(cache_dir, temp_file)
             if os.path.isfile(temp_file_path):
@@ -625,9 +665,13 @@ def clean_package_cache(log_file):
             log_and_print(f"{SUCCESS} Package cache cleaned.", "info")
         else:
             logging.error(result.stderr)
-            log_and_print(f"{FAILURE} Error cleaning package cache: {result.stderr.strip()}", "error")
+            log_and_print(
+                f"{FAILURE} Error cleaning package cache: {result.stderr.strip()}",
+                "error",
+            )
     except Exception as e:
         log_and_print(f"{FAILURE} Error cleaning package cache: {str(e)}", "error")
+
 
 def clean_aur_dir(log_file):
     """
@@ -669,7 +713,9 @@ def clean_aur_dir(log_file):
                     try:
                         os.remove(f)
                     except OSError as e:
-                        log_and_print(f"{FAILURE} Error deleting file {f}: {e}", "error")
+                        log_and_print(
+                            f"{FAILURE} Error deleting file {f}: {e}", "error"
+                        )
 
             log_and_print(f"{SUCCESS} AUR directory cleaned.", "info")
         except subprocess.CalledProcessError as e:
@@ -677,6 +723,7 @@ def clean_aur_dir(log_file):
                 f"{FAILURE} Error: Failed to clean AUR directory: {e.stderr.strip()}",
                 "error",
             )
+
 
 def handle_pacnew_pacsave(log_file):
     """
@@ -756,6 +803,7 @@ def handle_pacnew_pacsave(log_file):
         except Exception as ex:
             log_and_print(f"{FAILURE} Unexpected error: {str(ex)}", "error")
 
+
 def verify_installed_packages(log_file):
     """
     Verify installed packages for missing files and automatically reinstall them,
@@ -780,9 +828,7 @@ def verify_installed_packages(log_file):
             return
 
         with spinning_spinner():
-            result = subprocess.run(
-                command, capture_output=True, text=True
-            )
+            result = subprocess.run(command, capture_output=True, text=True)
             output = result.stdout + result.stderr
             lines = output.strip().split("\n")
             missing_packages = set()
@@ -797,7 +843,9 @@ def verify_installed_packages(log_file):
                         missing_packages.add(pkg_name)
 
             if not missing_packages:
-                log_and_print(f"{SUCCESS} No packages with missing files found.", "info")
+                log_and_print(
+                    f"{SUCCESS} No packages with missing files found.", "info"
+                )
                 return
 
             logging.info("Packages with missing files:\n" + "\n".join(details))
@@ -808,7 +856,7 @@ def verify_installed_packages(log_file):
             )
 
             confirm = prompt_with_timeout(
-                f"Do you want to reinstall these packages to restore missing files? [y/N]: ",
+                "Do you want to reinstall these packages to restore missing files? [y/N]: ",
                 timeout=15,
                 default="n",
             ).lower()
@@ -819,9 +867,16 @@ def verify_installed_packages(log_file):
 
             log_and_print(f"{INFO} Updating keyrings before reinstallation...", "info")
             keyring_update = subprocess.run(
-                ["sudo", "pacman", "-Sy", "archlinux-keyring", "chaotic-keyring", "--noconfirm"],
+                [
+                    "sudo",
+                    "pacman",
+                    "-Sy",
+                    "archlinux-keyring",
+                    "chaotic-keyring",
+                    "--noconfirm",
+                ],
                 capture_output=True,
-                text=True
+                text=True,
             )
             if keyring_update.returncode != 0:
                 logging.error(keyring_update.stderr)
@@ -853,54 +908,72 @@ def verify_installed_packages(log_file):
                 log_and_print(f"{INFO} Reinstalling AUR packages...", "info")
                 reinstall_aur_packages(aur_packages, aur_helper)
             elif aur_packages:
-                log_and_print(f"{FAILURE} AUR packages detected but no AUR helper found.", "error")
-                log_and_print(f"Please install an AUR helper like 'yay' or 'paru'.", "error")
+                log_and_print(
+                    f"{FAILURE} AUR packages detected but no AUR helper found.", "error"
+                )
+                log_and_print(
+                    "Please install an AUR helper like 'yay' or 'paru'.", "error"
+                )
 
-        log_and_print(f"{SUCCESS} Package verification and reinstallation completed.", "info")
+        log_and_print(
+            f"{SUCCESS} Package verification and reinstallation completed.", "info"
+        )
 
     except Exception as e:
         log_and_print(f"{FAILURE} Unexpected error: {str(e)}", "error")
+
 
 def detect_aur_helper():
     """
     Detect available AUR helper.
     """
-    aur_helpers = ['yay', 'paru', 'trizen']
+    aur_helpers = ["yay", "paru", "trizen"]
     for helper in aur_helpers:
         if shutil.which(helper):
             log_and_print(f"{INFO} AUR helper detected: {helper}", "info")
             return helper
     return None
 
+
 def is_aur_package(package):
     """
     Check if a package is an AUR package.
     """
-    result = subprocess.run(['pacman', '-Si', package], capture_output=True, text=True)
-    if 'error: package' in result.stdout.lower():
+    result = subprocess.run(["pacman", "-Si", package], capture_output=True, text=True)
+    if "error: package" in result.stdout.lower():
         return True
     else:
         return False
+
 
 def reinstall_aur_packages(packages, aur_helper):
     """
     Reinstall AUR packages using the specified AUR helper.
     """
     for pkg in packages:
-        log_and_print(f"{INFO} Reinstalling AUR package {pkg} using {aur_helper}...", "info")
+        log_and_print(
+            f"{INFO} Reinstalling AUR package {pkg} using {aur_helper}...", "info"
+        )
         command = f"{aur_helper} -S {pkg} --noconfirm"
-        child = pexpect.spawn(command, encoding='utf-8', timeout=600)
+        child = pexpect.spawn(command, encoding="utf-8", timeout=600)
 
         try:
-            child.logfile = open(log_file_path, 'a')
+            child.logfile = open(log_file_path, "a")
             child.expect(pexpect.EOF)
             child.close()
             if child.exitstatus == 0:
-                log_and_print(f"{SUCCESS} AUR package {pkg} reinstalled successfully.", "info")
+                log_and_print(
+                    f"{SUCCESS} AUR package {pkg} reinstalled successfully.", "info"
+                )
             else:
-                log_and_print(f"{FAILURE} Failed to reinstall AUR package {pkg}.", "error")
+                log_and_print(
+                    f"{FAILURE} Failed to reinstall AUR package {pkg}.", "error"
+                )
         except Exception as e:
-            log_and_print(f"{FAILURE} Error reinstalling AUR package {pkg}: {str(e)}", "error")
+            log_and_print(
+                f"{FAILURE} Error reinstalling AUR package {pkg}: {str(e)}", "error"
+            )
+
 
 def reinstall_packages_pexpect(packages, max_retries=3):
     """
@@ -910,36 +983,44 @@ def reinstall_packages_pexpect(packages, max_retries=3):
         success = False
         retries = 0
         while not success and retries < max_retries:
-            log_and_print(f"{INFO} Reinstalling {pkg} (Attempt {retries+1}/{max_retries})...", "info")
+            log_and_print(
+                f"{INFO} Reinstalling {pkg} (Attempt {retries+1}/{max_retries})...",
+                "info",
+            )
             command = f"sudo pacman -S {pkg} --noconfirm --needed"
-            child = pexpect.spawn(command, encoding='utf-8', timeout=300)
+            child = pexpect.spawn(command, encoding="utf-8", timeout=300)
 
             try:
                 while True:
-                    index = child.expect([
-                        pexpect.EOF,
-                        pexpect.TIMEOUT,
-                        r':: Import PGP key .* \[Y/n\]',
-                        r':: Replace .* \[Y/n\]',
-                        r':: Proceed with installation\? \[Y/n\]',
-                        r':: (.*) exists in filesystem',
-                        r'error: .*',
-                    ])
+                    index = child.expect(
+                        [
+                            pexpect.EOF,
+                            pexpect.TIMEOUT,
+                            r":: Import PGP key .* \[Y/n\]",
+                            r":: Replace .* \[Y/n\]",
+                            r":: Proceed with installation\? \[Y/n\]",
+                            r":: (.*) exists in filesystem",
+                            r"error: .*",
+                        ]
+                    )
                     if index == 0:  # EOF
                         break
                     elif index == 1:  # TIMEOUT
                         log_and_print(f"{FAILURE} Reinstallation timed out.", "error")
                         break
                     elif index == 2:  # Import PGP key
-                        child.sendline('y')
+                        child.sendline("y")
                     elif index == 3:  # Replace package
-                        child.sendline('y')
+                        child.sendline("y")
                     elif index == 4:  # Proceed with installation
-                        child.sendline('y')
+                        child.sendline("y")
                     elif index == 5:  # File exists in filesystem
                         file_conflict = child.match.group(1)
-                        log_and_print(f"{INFO} Overwriting conflicting file: {file_conflict}", "info")
-                        child.sendline('y')
+                        log_and_print(
+                            f"{INFO} Overwriting conflicting file: {file_conflict}",
+                            "info",
+                        )
+                        child.sendline("y")
                     elif index == 6:  # Error
                         error_msg = child.after.strip()
                         logging.error(error_msg)
@@ -950,51 +1031,72 @@ def reinstall_packages_pexpect(packages, max_retries=3):
                 child.close()
                 if child.exitstatus == 0:
                     success = True
-                    log_and_print(f"{SUCCESS} Package {pkg} reinstalled successfully.", "info")
+                    log_and_print(
+                        f"{SUCCESS} Package {pkg} reinstalled successfully.", "info"
+                    )
                     logging.info(child.before)
                 else:
-                    logging.error(child.before + (child.after if child.after else ''))
+                    logging.error(child.before + (child.after if child.after else ""))
                     retries += 1
             except Exception as e:
                 logging.error(str(e))
                 retries += 1
 
         if not success:
-            log_and_print(f"{FAILURE} Failed to reinstall {pkg} after {max_retries} attempts.", "error")
+            log_and_print(
+                f"{FAILURE} Failed to reinstall {pkg} after {max_retries} attempts.",
+                "error",
+            )
+
 
 def handle_pacman_errors(error_msg):
     """
     Handle common pacman errors during package installation.
     """
-    if "key could not be looked up remotely" in error_msg or "signature is unknown trust" in error_msg:
+    if (
+        "key could not be looked up remotely" in error_msg
+        or "signature is unknown trust" in error_msg
+    ):
         log_and_print(f"{INFO} Keyring issue detected. Updating keyrings...", "info")
         subprocess.run(
-            ["sudo", "pacman", "-Sy", "archlinux-keyring", "chaotic-keyring", "--noconfirm"],
+            [
+                "sudo",
+                "pacman",
+                "-Sy",
+                "archlinux-keyring",
+                "chaotic-keyring",
+                "--noconfirm",
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
 
     if "exists in filesystem" in error_msg:
-        files = re.findall(r'[\s]([^\s]+) exists in filesystem', error_msg)
+        files = re.findall(r"[\s]([^\s]+) exists in filesystem", error_msg)
         if files:
-            overwrite_files = ','.join(files)
-            log_and_print(f"{INFO} Overwriting conflicting files: {overwrite_files}", "info")
+            overwrite_files = ",".join(files)
+            log_and_print(
+                f"{INFO} Overwriting conflicting files: {overwrite_files}", "info"
+            )
             subprocess.run(
                 ["sudo", "pacman", "-S", "--overwrite", overwrite_files, "--noconfirm"],
                 capture_output=True,
-                text=True
+                text=True,
             )
 
     if "error: duplicated database entry" in error_msg:
-        duplicated_entries = re.findall(r"error: duplicated database entry '([^']+)'", error_msg)
+        duplicated_entries = re.findall(
+            r"error: duplicated database entry '([^']+)'", error_msg
+        )
         if duplicated_entries:
             for entry in duplicated_entries:
                 log_and_print(f"{INFO} Removing duplicated entry: {entry}", "info")
                 subprocess.run(
                     ["sudo", "pacman", "-Rdd", entry, "--noconfirm"],
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
+
 
 def check_failed_cron_jobs(log_file):
     """
@@ -1012,7 +1114,8 @@ def check_failed_cron_jobs(log_file):
         ]
         if failed_jobs:
             log_and_print(
-                f"{FAILURE} Failed cron jobs detected. Review logs for details.", "error"
+                f"{FAILURE} Failed cron jobs detected. Review logs for details.",
+                "error",
             )
             for job in failed_jobs:
                 log_and_print(job, "error")
@@ -1029,7 +1132,10 @@ def check_failed_cron_jobs(log_file):
         else:
             log_and_print(f"{SUCCESS} No failed cron jobs detected.", "info")
     except subprocess.CalledProcessError:
-        log_and_print(f"{INFO} No failed cron jobs detected or logs not accessible.", "info")
+        log_and_print(
+            f"{INFO} No failed cron jobs detected or logs not accessible.", "info"
+        )
+
 
 def clear_docker_images(log_file):
     """
@@ -1046,7 +1152,10 @@ def clear_docker_images(log_file):
                 "error",
             )
     else:
-        log_and_print(f"{INFO} Docker is not installed. Skipping Docker image cleanup.", "info")
+        log_and_print(
+            f"{INFO} Docker is not installed. Skipping Docker image cleanup.", "info"
+        )
+
 
 def clear_temp_folder(log_file):
     """
@@ -1065,6 +1174,7 @@ def clear_temp_folder(log_file):
                 f"{FAILURE} Error: Failed to clear the temporary folder: {e.stderr.strip()}",
                 "error",
             )
+
 
 def check_rmshit_script(log_file=None):
     """
@@ -1150,10 +1260,9 @@ def check_rmshit_script(log_file=None):
                     shutil.rmtree(expanded_path)
                     log_and_print(f"{INFO} Deleted directory: {expanded_path}", "info")
             except OSError as e:
-                log_and_print(
-                    f"{FAILURE} Error deleting {expanded_path}: {e}", "error"
-                )
+                log_and_print(f"{FAILURE} Error deleting {expanded_path}: {e}", "error")
     log_and_print(f"{SUCCESS} Unnecessary files cleaned up.", "info")
+
 
 def remove_old_ssh_known_hosts(log_file):
     """
@@ -1163,7 +1272,7 @@ def remove_old_ssh_known_hosts(log_file):
     if os.path.isfile(ssh_known_hosts_file):
         log_and_print(f"{INFO} Removing old SSH known hosts entries...", "info")
         try:
-            with open(ssh_known_hosts_file, 'r') as file:
+            with open(ssh_known_hosts_file, "r") as file:
                 lines = file.readlines()
             new_lines = []
             for line in lines:
@@ -1173,7 +1282,7 @@ def remove_old_ssh_known_hosts(log_file):
                 if not is_host_reachable(host):
                     continue
                 new_lines.append(line)
-            with open(ssh_known_hosts_file, 'w') as file:
+            with open(ssh_known_hosts_file, "w") as file:
                 file.writelines(new_lines)
             log_and_print(f"{SUCCESS} Old SSH known hosts entries cleaned.", "info")
         except Exception as e:
@@ -1184,15 +1293,17 @@ def remove_old_ssh_known_hosts(log_file):
     else:
         log_and_print(f"{INFO} No SSH known hosts file found. Skipping.", "info")
 
+
 def is_host_reachable(host):
     """
     Check if a host is reachable.
     """
     try:
-        subprocess.run(['ping', '-c', '1', '-W', '1', host], stdout=subprocess.DEVNULL)
+        subprocess.run(["ping", "-c", "1", "-W", "1", host], stdout=subprocess.DEVNULL)
         return True
     except Exception:
         return False
+
 
 def remove_orphan_vim_undo_files(log_file):
     """
@@ -1209,13 +1320,15 @@ def remove_orphan_vim_undo_files(log_file):
                         try:
                             os.remove(os.path.join(root, file))
                             log_and_print(
-                                f"{SUCCESS} Removed orphan Vim undo file: {file}", "info"
+                                f"{SUCCESS} Removed orphan Vim undo file: {file}",
+                                "info",
                             )
                         except OSError as e:
                             log_and_print(
                                 f"{FAILURE} Error: Failed to remove orphan Vim undo file: {e}",
                                 "error",
                             )
+
 
 def force_log_rotation(log_file):
     """
@@ -1230,6 +1343,7 @@ def force_log_rotation(log_file):
             f"{FAILURE} Error: Failed to force log rotation: {e.stderr.strip()}",
             "error",
         )
+
 
 def configure_zram(log_file):
     """
@@ -1254,9 +1368,7 @@ def configure_zram(log_file):
 
             log_and_print(f"Setting up {zram_device} as swap...", "info")
             subprocess.run(["sudo", "mkswap", zram_device], check=True)
-            subprocess.run(
-                ["sudo", "swapon", zram_device, "-p", "32767"], check=True
-            )
+            subprocess.run(["sudo", "swapon", zram_device, "-p", "32767"], check=True)
 
             log_and_print(
                 f"{SUCCESS} ZRam configured successfully on {zram_device} with size {mem_total} bytes.",
@@ -1266,6 +1378,7 @@ def configure_zram(log_file):
             log_and_print(f"{FAILURE} Error configuring ZRam: {str(e)}", "error")
     else:
         log_and_print(f"{FAILURE} ZRam not available. Please install zramctl.", "error")
+
 
 def check_zram_configuration(log_file):
     """
@@ -1297,9 +1410,12 @@ def check_zram_configuration(log_file):
             configure_zram(log_file)
 
     except subprocess.CalledProcessError as e:
-        log_and_print(f"{FAILURE} Error while checking ZRam configuration: {e}", "error")
+        log_and_print(
+            f"{FAILURE} Error while checking ZRam configuration: {e}", "error"
+        )
     except Exception as ex:
         log_and_print(f"{FAILURE} Unexpected error: {str(ex)}", "error")
+
 
 def adjust_swappiness(log_file):
     """
@@ -1318,6 +1434,7 @@ def adjust_swappiness(log_file):
             "error",
         )
 
+
 def clear_system_cache(log_file):
     """
     Clear PageCache, dentries, and inodes.
@@ -1333,6 +1450,7 @@ def clear_system_cache(log_file):
             f"{FAILURE} Error: Failed to clear system cache: {e.stderr.strip()}",
             "error",
         )
+
 
 def disable_unused_services(log_file):
     """
@@ -1357,11 +1475,14 @@ def disable_unused_services(log_file):
 
             if status_result.returncode == 0:
                 subprocess.run(["sudo", "systemctl", "disable", "--now", service])
-                log_and_print(f"{SUCCESS} {service} has been disabled and stopped.", "info")
+                log_and_print(
+                    f"{SUCCESS} {service} has been disabled and stopped.", "info"
+                )
             else:
                 log_and_print(f"{INFO} {service} is already disabled.", "info")
         except Exception as e:
             log_and_print(f"{FAILURE} Error disabling {service}: {str(e)}", "error")
+
 
 def check_and_restart_systemd_units(log_file):
     """
@@ -1389,6 +1510,7 @@ def check_and_restart_systemd_units(log_file):
             "error",
         )
 
+
 def security_audit(log_file):
     """
     Perform a security audit to identify potential vulnerabilities.
@@ -1403,7 +1525,9 @@ def security_audit(log_file):
             log_and_print(f"{INFO} Open ports and listening services logged.", "info")
         else:
             logging.error(result.stderr)
-            log_and_print(f"{FAILURE} Error checking open ports: {result.stderr.strip()}", "error")
+            log_and_print(
+                f"{FAILURE} Error checking open ports: {result.stderr.strip()}", "error"
+            )
 
         lynis_path = shutil.which("lynis")
         if lynis_path:
@@ -1412,32 +1536,55 @@ def security_audit(log_file):
             lynis_result = subprocess.run(lynis_cmd, capture_output=True, text=True)
             if lynis_result.returncode == 0:
                 logging.info("Lynis scan results:\n" + lynis_result.stdout)
-                log_and_print(f"{INFO} Lynis security scan completed. Results logged.", "info")
+                log_and_print(
+                    f"{INFO} Lynis security scan completed. Results logged.", "info"
+                )
             else:
                 logging.error(lynis_result.stderr)
-                log_and_print(f"{FAILURE} Error running Lynis: {lynis_result.stderr.strip()}", "error")
+                log_and_print(
+                    f"{FAILURE} Error running Lynis: {lynis_result.stderr.strip()}",
+                    "error",
+                )
         else:
-            log_and_print(f"{INFO} Lynis not installed. Skipping vulnerability scan.", "info")
-            log_and_print(f"Install Lynis with 'sudo pacman -S lynis' to enable this feature.", "info")
+            log_and_print(
+                f"{INFO} Lynis not installed. Skipping vulnerability scan.", "info"
+            )
+            log_and_print(
+                "Install Lynis with 'sudo pacman -S lynis' to enable this feature.",
+                "info",
+            )
 
-        log_and_print(f"{INFO} Checking for package updates and security patches...", "info")
-        update_result = subprocess.run(["sudo", "pacman", "-Syuw", "--noconfirm"], capture_output=True, text=True)
+        log_and_print(
+            f"{INFO} Checking for package updates and security patches...", "info"
+        )
+        update_result = subprocess.run(
+            ["sudo", "pacman", "-Syuw", "--noconfirm"], capture_output=True, text=True
+        )
         if update_result.returncode == 0:
             logging.info(update_result.stdout)
             log_and_print(f"{SUCCESS} Package database synchronized.", "info")
-            upgrade_result = subprocess.run(["checkupdates"], capture_output=True, text=True)
+            upgrade_result = subprocess.run(
+                ["checkupdates"], capture_output=True, text=True
+            )
             if upgrade_result.returncode == 0 and upgrade_result.stdout.strip():
                 updates = upgrade_result.stdout.strip()
                 logging.info("Packages to update:\n" + updates)
-                log_and_print(f"{WARNING} Updates are available. Please consider updating your system.", "warning")
+                log_and_print(
+                    f"{WARNING} Updates are available. Please consider updating your system.",
+                    "warning",
+                )
             else:
                 log_and_print(f"{SUCCESS} All packages are up to date.", "info")
         else:
             logging.error(update_result.stderr)
-            log_and_print(f"{FAILURE} Error updating package database: {update_result.stderr.strip()}", "error")
+            log_and_print(
+                f"{FAILURE} Error updating package database: {update_result.stderr.strip()}",
+                "error",
+            )
 
     except Exception as e:
         log_and_print(f"{FAILURE} Error during security audit: {str(e)}", "error")
+
 
 def manage_users_and_groups(log_file):
     """
@@ -1456,7 +1603,7 @@ def manage_users_and_groups(log_file):
             "3) Remove User from Group",
             "4) Apply Standard Group Preset",
             "5) Check and Enable Wheel Group in Sudoers",
-            "6) Exit"
+            "6) Exit",
         ]
         for option in options:
             print(option)
@@ -1467,67 +1614,128 @@ def manage_users_and_groups(log_file):
             username = input("Enter username: ").strip()
             if username:
                 try:
-                    groups = subprocess.check_output(["id", "-nG", username], text=True).strip()
+                    groups = subprocess.check_output(
+                        ["id", "-nG", username], text=True
+                    ).strip()
                     log_and_print(f"{INFO} Groups for {username}: {groups}", "info")
                 except subprocess.CalledProcessError as e:
-                    log_and_print(f"{FAILURE} Error retrieving groups for {username}: {e}", "error")
+                    log_and_print(
+                        f"{FAILURE} Error retrieving groups for {username}: {e}",
+                        "error",
+                    )
             else:
                 log_and_print(f"{FAILURE} Username cannot be empty.", "error")
 
         elif choice == "2":
             username = input("Enter username: ").strip()
             if username:
-                result = subprocess.run(["cut", "-d:", "-f1", "/etc/group"], capture_output=True, text=True)
+                result = subprocess.run(
+                    ["cut", "-d:", "-f1", "/etc/group"], capture_output=True, text=True
+                )
                 if result.returncode == 0:
-                    all_groups = result.stdout.strip().split('\n')
-                    selected_groups = select_items_from_list(all_groups, "Select group(s) to add user to:")
+                    all_groups = result.stdout.strip().split("\n")
+                    selected_groups = select_items_from_list(
+                        all_groups, "Select group(s) to add user to:"
+                    )
                     if selected_groups:
                         for group in selected_groups:
-                            subprocess.run(["sudo", "usermod", "-aG", group, username], check=False)
-                        log_and_print(f"{SUCCESS} {username} added to groups: {', '.join(selected_groups)}", "info")
+                            subprocess.run(
+                                ["sudo", "usermod", "-aG", group, username], check=False
+                            )
+                        log_and_print(
+                            f"{SUCCESS} {username} added to groups: {', '.join(selected_groups)}",
+                            "info",
+                        )
                     else:
                         log_and_print(f"{INFO} No groups selected.", "info")
                 else:
-                    log_and_print(f"{FAILURE} Error retrieving groups: {result.stderr.strip()}", "error")
+                    log_and_print(
+                        f"{FAILURE} Error retrieving groups: {result.stderr.strip()}",
+                        "error",
+                    )
             else:
                 log_and_print(f"{FAILURE} Username cannot be empty.", "error")
 
         elif choice == "3":
             username = input("Enter username: ").strip()
             if username:
-                groups = subprocess.check_output(["id", "-nG", username], text=True).strip().split()
+                groups = (
+                    subprocess.check_output(["id", "-nG", username], text=True)
+                    .strip()
+                    .split()
+                )
                 if groups:
-                    selected_groups = select_items_from_list(groups, "Select group(s) to remove user from:")
+                    selected_groups = select_items_from_list(
+                        groups, "Select group(s) to remove user from:"
+                    )
                     if selected_groups:
                         for group in selected_groups:
-                            subprocess.run(["sudo", "gpasswd", "-d", username, group], check=False)
-                        log_and_print(f"{SUCCESS} {username} removed from groups: {', '.join(selected_groups)}", "info")
+                            subprocess.run(
+                                ["sudo", "gpasswd", "-d", username, group], check=False
+                            )
+                        log_and_print(
+                            f"{SUCCESS} {username} removed from groups: {', '.join(selected_groups)}",
+                            "info",
+                        )
                     else:
                         log_and_print(f"{INFO} No groups selected.", "info")
                 else:
-                    log_and_print(f"{INFO} User {username} is not a member of any groups.", "info")
+                    log_and_print(
+                        f"{INFO} User {username} is not a member of any groups.", "info"
+                    )
             else:
                 log_and_print(f"{FAILURE} Username cannot be empty.", "error")
 
         elif choice == "4":
             username = input("Enter username: ").strip()
             if username:
-                standard_groups = ["adm", "users", "disk", "wheel", "cdrom", "audio", "video", "usb", "optical", "storage", "scanner", "lp", "network", "power"]
+                standard_groups = [
+                    "adm",
+                    "users",
+                    "disk",
+                    "wheel",
+                    "cdrom",
+                    "audio",
+                    "video",
+                    "usb",
+                    "optical",
+                    "storage",
+                    "scanner",
+                    "lp",
+                    "network",
+                    "power",
+                ]
                 for group in standard_groups:
-                    subprocess.run(["sudo", "usermod", "-aG", group, username], check=False)
-                log_and_print(f"{SUCCESS} Applied standard group preset to {username}.", "info")
+                    subprocess.run(
+                        ["sudo", "usermod", "-aG", group, username], check=False
+                    )
+                log_and_print(
+                    f"{SUCCESS} Applied standard group preset to {username}.", "info"
+                )
             else:
                 log_and_print(f"{FAILURE} Username cannot be empty.", "error")
 
         elif choice == "5":
-            with open('/etc/sudoers', 'r') as sudoers_file:
+            with open("/etc/sudoers", "r") as sudoers_file:
                 sudoers_content = sudoers_file.read()
-            if '%wheel ALL=(ALL) ALL' not in sudoers_content:
+            if "%wheel ALL=(ALL) ALL" not in sudoers_content:
                 log_and_print(f"{INFO} Enabling 'wheel' group in sudoers...", "info")
-                subprocess.run(['sudo', 'bash', '-c', 'echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers'], check=False)
-                log_and_print(f"{SUCCESS} 'wheel' group has been enabled in sudoers.", "info")
+                subprocess.run(
+                    [
+                        "sudo",
+                        "bash",
+                        "-c",
+                        'echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers',
+                    ],
+                    check=False,
+                )
+                log_and_print(
+                    f"{SUCCESS} 'wheel' group has been enabled in sudoers.", "info"
+                )
             else:
-                log_and_print(f"{INFO} 'wheel' group is already enabled in sudoers.", "info")
+                log_and_print(
+                    f"{INFO} 'wheel' group is already enabled in sudoers.", "info"
+                )
 
         elif choice == "6":
             log_and_print(f"{INFO} Exiting user and group management.", "info")
@@ -1539,16 +1747,19 @@ def manage_users_and_groups(log_file):
     except Exception as e:
         log_and_print(f"{FAILURE} Error managing users/groups: {str(e)}", "error")
 
+
 def select_items_from_list(items, prompt):
     """
     Allow the user to select items from a list.
     """
     try:
-        if shutil.which('fzf'):
-            fzf_command = ['fzf', '-m', '--prompt', prompt]
-            result = subprocess.run(fzf_command, input='\n'.join(items), capture_output=True, text=True)
+        if shutil.which("fzf"):
+            fzf_command = ["fzf", "-m", "--prompt", prompt]
+            result = subprocess.run(
+                fzf_command, input="\n".join(items), capture_output=True, text=True
+            )
             if result.returncode == 0:
-                selected_items = result.stdout.strip().split('\n')
+                selected_items = result.stdout.strip().split("\n")
                 return selected_items
             else:
                 return []
@@ -1556,9 +1767,13 @@ def select_items_from_list(items, prompt):
             print(prompt)
             for idx, item in enumerate(items, 1):
                 print(f"{idx}) {item}")
-            selections = input("Enter the numbers of the items to select (comma-separated): ").strip()
+            selections = input(
+                "Enter the numbers of the items to select (comma-separated): "
+            ).strip()
             if selections:
-                indices = [int(s) - 1 for s in selections.split(',') if s.strip().isdigit()]
+                indices = [
+                    int(s) - 1 for s in selections.split(",") if s.strip().isdigit()
+                ]
                 selected_items = [items[i] for i in indices if 0 <= i < len(items)]
                 return selected_items
             else:
@@ -1567,44 +1782,53 @@ def select_items_from_list(items, prompt):
         log_and_print(f"{FAILURE} Error selecting items: {str(e)}", "error")
         return []
 
+
 def configure_firewall(log_file):
     """
     Configure firewall settings using UFW.
     """
     log_and_print(f"{INFO} Configuring firewall settings...", "info")
     try:
-        if not shutil.which('ufw'):
-            log_and_print(f"{FAILURE} UFW is not installed. Install it with 'sudo pacman -S ufw'.", "error")
+        if not shutil.which("ufw"):
+            log_and_print(
+                f"{FAILURE} UFW is not installed. Install it with 'sudo pacman -S ufw'.",
+                "error",
+            )
             return
 
         confirm_reset = prompt_with_timeout(
-            "Do you want to reset UFW to default settings? [y/N]: ", timeout=15, default="n"
+            "Do you want to reset UFW to default settings? [y/N]: ",
+            timeout=15,
+            default="n",
         ).lower()
-        if confirm_reset == 'y':
-            subprocess.run(['sudo', 'ufw', 'reset'], check=False)
+        if confirm_reset == "y":
+            subprocess.run(["sudo", "ufw", "reset"], check=False)
             log_and_print(f"{INFO} UFW settings reset to default.", "info")
 
-        subprocess.run(['sudo', 'ufw', 'default', 'deny', 'incoming'], check=False)
-        subprocess.run(['sudo', 'ufw', 'default', 'allow', 'outgoing'], check=False)
-        log_and_print(f"{INFO} Set default policies: deny incoming, allow outgoing.", "info")
+        subprocess.run(["sudo", "ufw", "default", "deny", "incoming"], check=False)
+        subprocess.run(["sudo", "ufw", "default", "allow", "outgoing"], check=False)
+        log_and_print(
+            f"{INFO} Set default policies: deny incoming, allow outgoing.", "info"
+        )
 
         ssh_confirm = prompt_with_timeout(
             "Do you want to allow SSH connections? [Y/n]: ", timeout=15, default="Y"
         ).lower()
-        if ssh_confirm != 'n':
-            subprocess.run(['sudo', 'ufw', 'allow', 'ssh'], check=False)
+        if ssh_confirm != "n":
+            subprocess.run(["sudo", "ufw", "allow", "ssh"], check=False)
             log_and_print(f"{INFO} SSH connections allowed.", "info")
         else:
-            subprocess.run(['sudo', 'ufw', 'deny', 'ssh'], check=False)
+            subprocess.run(["sudo", "ufw", "deny", "ssh"], check=False)
             log_and_print(f"{INFO} SSH connections denied.", "info")
 
-        subprocess.run(['sudo', 'ufw', '--force', 'enable'], check=False)
+        subprocess.run(["sudo", "ufw", "--force", "enable"], check=False)
         log_and_print(f"{SUCCESS} UFW enabled.", "info")
 
-        subprocess.run(['sudo', 'ufw', 'status', 'verbose'], check=False)
+        subprocess.run(["sudo", "ufw", "status", "verbose"], check=False)
 
     except Exception as e:
         log_and_print(f"{FAILURE} Error configuring firewall: {str(e)}", "error")
+
 
 def monitor_system_logs(log_file):
     """
@@ -1612,7 +1836,9 @@ def monitor_system_logs(log_file):
     """
     log_and_print(f"{INFO} Monitoring system logs...", "info")
     try:
-        result = subprocess.run(["journalctl", "-p", "3", "-xb"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["journalctl", "-p", "3", "-xb"], capture_output=True, text=True
+        )
         errors = result.stdout.strip()
         if errors:
             log_and_print(f"{INFO} System errors found:", "info")
@@ -1623,28 +1849,40 @@ def monitor_system_logs(log_file):
     except Exception as e:
         log_and_print(f"{FAILURE} Error monitoring system logs: {str(e)}", "error")
 
+
 def generate_system_report(log_file):
     """
     Generate a detailed report of system information.
     """
     log_and_print(f"{INFO} Generating system information report...", "info")
     try:
-        if shutil.which('neofetch'):
+        if shutil.which("neofetch"):
             subprocess.run(["neofetch"], check=False)
         else:
-            log_and_print(f"{INFO} 'neofetch' is not installed. Install it with 'sudo pacman -S neofetch'.", "info")
-            uname_result = subprocess.run(["uname", "-a"], capture_output=True, text=True)
+            log_and_print(
+                f"{INFO} 'neofetch' is not installed. Install it with 'sudo pacman -S neofetch'.",
+                "info",
+            )
+            uname_result = subprocess.run(
+                ["uname", "-a"], capture_output=True, text=True
+            )
             print(uname_result.stdout)
-            lsb_result = subprocess.run(["lsb_release", "-a"], capture_output=True, text=True)
+            lsb_result = subprocess.run(
+                ["lsb_release", "-a"], capture_output=True, text=True
+            )
             print(lsb_result.stdout)
 
-        if shutil.which('lshw'):
+        if shutil.which("lshw"):
             log_and_print(f"{INFO} Hardware Information:", "info")
             subprocess.run(["sudo", "lshw", "-short"], check=False)
         else:
-            log_and_print(f"{INFO} 'lshw' is not installed. Install it with 'sudo pacman -S lshw'.", "info")
+            log_and_print(
+                f"{INFO} 'lshw' is not installed. Install it with 'sudo pacman -S lshw'.",
+                "info",
+            )
     except Exception as e:
         log_and_print(f"{FAILURE} Error generating system report: {str(e)}", "error")
+
 
 def run_all_tasks(log_file):
     """
@@ -1654,7 +1892,10 @@ def run_all_tasks(log_file):
         try:
             menu_options[key]()
         except KeyError as e:
-            log_and_print(format_message(f"Error executing task {key}: {e}", RED), "error")
+            log_and_print(
+                format_message(f"Error executing task {key}: {e}", RED), "error"
+            )
+
 
 # Define menu options with partial
 menu_options = {
@@ -1692,6 +1933,7 @@ menu_options = {
     "0": partial(run_all_tasks, log_file_path),
 }
 
+
 # Main Menu
 def main():
     """
@@ -1699,32 +1941,62 @@ def main():
     """
     while True:
         os.system("clear")
-        print(f"===================================================================")
-        print(f"    ================= {GREEN}// System Maintenance Menu //{NC} =================")
         print("===================================================================")
-        print(f"{GREEN}1{NC}) Process Dependency Log              {GREEN}17{NC}) Clean Unnecessary Files")
-        print(f"{GREEN}2{NC}) Manage Cron Jobs                   {GREEN}18{NC}) Remove Old SSH Known Hosts")
-        print(f"{GREEN}3{NC}) Remove Broken Symlinks             {GREEN}19{NC}) Remove Orphan Vim Undo Files")
-        print(f"{GREEN}4{NC}) Clean Old Kernels                  {GREEN}20{NC}) Force Log Rotation")
-        print(f"{GREEN}5{NC}) Vacuum Journalctl                  {GREEN}21{NC}) Configure ZRam")
-        print(f"{GREEN}6{NC}) Clear Cache                        {GREEN}22{NC}) Check ZRam Configuration")
-        print(f"{GREEN}7{NC}) Update Font Cache                  {GREEN}23{NC}) Adjust Swappiness")
-        print(f"{GREEN}8{NC}) Clear Trash                        {GREEN}24{NC}) Clear System Cache")
-        print(f"{GREEN}9{NC}) Optimize Databases                 {GREEN}25{NC}) Disable Unused Services")
-        print(f"{GREEN}10{NC}) Clean Package Cache               {GREEN}26{NC}) Fix Systemd Units")
-        print(f"{GREEN}11{NC}) Clean AUR Directory               {GREEN}27{NC}) Perform Security Audit")
-        print(f"{GREEN}12{NC}) Handle Pacnew and Pacsave Files   {GREEN}28{NC}) Manage Users and Groups")
-        print(f"{GREEN}13{NC}) Verify Installed Packages         {GREEN}29{NC}) Configure Firewall")
-        print(f"{GREEN}14{NC}) Check Failed Cron Jobs            {GREEN}30{NC}) Monitor System Logs")
-        print(f"{GREEN}15{NC}) Clear Docker Images               {GREEN}31{NC}) Generate System Report")
+        print(
+            f"    ================= {GREEN}// System Maintenance Menu //{NC} ================="
+        )
+        print("===================================================================")
+        print(
+            f"{GREEN}1{NC}) Process Dependency Log              {GREEN}17{NC}) Clean Unnecessary Files"
+        )
+        print(
+            f"{GREEN}2{NC}) Manage Cron Jobs                   {GREEN}18{NC}) Remove Old SSH Known Hosts"
+        )
+        print(
+            f"{GREEN}3{NC}) Remove Broken Symlinks             {GREEN}19{NC}) Remove Orphan Vim Undo Files"
+        )
+        print(
+            f"{GREEN}4{NC}) Clean Old Kernels                  {GREEN}20{NC}) Force Log Rotation"
+        )
+        print(
+            f"{GREEN}5{NC}) Vacuum Journalctl                  {GREEN}21{NC}) Configure ZRam"
+        )
+        print(
+            f"{GREEN}6{NC}) Clear Cache                        {GREEN}22{NC}) Check ZRam Configuration"
+        )
+        print(
+            f"{GREEN}7{NC}) Update Font Cache                  {GREEN}23{NC}) Adjust Swappiness"
+        )
+        print(
+            f"{GREEN}8{NC}) Clear Trash                        {GREEN}24{NC}) Clear System Cache"
+        )
+        print(
+            f"{GREEN}9{NC}) Optimize Databases                 {GREEN}25{NC}) Disable Unused Services"
+        )
+        print(
+            f"{GREEN}10{NC}) Clean Package Cache               {GREEN}26{NC}) Fix Systemd Units"
+        )
+        print(
+            f"{GREEN}11{NC}) Clean AUR Directory               {GREEN}27{NC}) Perform Security Audit"
+        )
+        print(
+            f"{GREEN}12{NC}) Handle Pacnew and Pacsave Files   {GREEN}28{NC}) Manage Users and Groups"
+        )
+        print(
+            f"{GREEN}13{NC}) Verify Installed Packages         {GREEN}29{NC}) Configure Firewall"
+        )
+        print(
+            f"{GREEN}14{NC}) Check Failed Cron Jobs            {GREEN}30{NC}) Monitor System Logs"
+        )
+        print(
+            f"{GREEN}15{NC}) Clear Docker Images               {GREEN}31{NC}) Generate System Report"
+        )
         print(f"{GREEN}16{NC}) Clear Temp Folder                 {GREEN}Q{NC}) Quit")
         print(f"{GREEN}0{NC}) Run All Tasks")
 
         print(f"{GREEN}By your command:{NC}")
 
-        command = prompt_with_timeout(
-            "Enter your choice: ", timeout=30, default="Q"
-        )
+        command = prompt_with_timeout("Enter your choice: ", timeout=30, default="Q")
 
         if command:
             command = command.strip().upper()
@@ -1737,11 +2009,16 @@ def main():
             try:
                 menu_options[command]()
             except Exception as e:
-                log_and_print(format_message(f"Error executing option: {e}", RED), "error")
+                log_and_print(
+                    format_message(f"Error executing option: {e}", RED), "error"
+                )
         else:
-            log_and_print(format_message("Invalid choice. Please try again.", RED), "error")
+            log_and_print(
+                format_message("Invalid choice. Please try again.", RED), "error"
+            )
 
         input("Press Enter to continue...")
+
 
 if __name__ == "__main__":
     main()

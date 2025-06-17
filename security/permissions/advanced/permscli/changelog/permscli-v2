@@ -7,7 +7,10 @@ import itertools
 import threading
 import time
 
-logging.basicConfig(filename='permissions_fix.log', level=logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(
+    filename="permissions_fix.log", level=logging.INFO, format="%(asctime)s %(message)s"
+)
+
 
 def run_command(command):
     """
@@ -25,6 +28,7 @@ def run_command(command):
         logging.error(f"Command '{e.cmd}' failed with error: {e.stderr.strip()}")
         raise
 
+
 def check_pacman_fix_permissions():
     """
     Check if pacman-fix-permissions is installed, and install it if not.
@@ -39,6 +43,7 @@ def check_pacman_fix_permissions():
         except subprocess.CalledProcessError as e:
             print(f"Failed to install pacman-fix-permissions: {e.stderr.strip()}")
             exit(1)
+
 
 def parse_acl_file(filename):
     """
@@ -68,7 +73,11 @@ def parse_acl_file(filename):
             entry["owner"] = line.split(": ", 1)[1].strip()
         elif line.startswith("# group:"):
             entry["group"] = line.split(": ", 1)[1].strip()
-        elif line.startswith("user::") or line.startswith("group::") or line.startswith("other::"):
+        elif (
+            line.startswith("user::")
+            or line.startswith("group::")
+            or line.startswith("other::")
+        ):
             if not entry:
                 logging.warning("ACL entry missing file information.")
                 continue
@@ -85,6 +94,7 @@ def parse_acl_file(filename):
 
     return entries
 
+
 def backup_permissions(acl_entries, backup_file):
     """
     Backup permissions to a JSON file.
@@ -93,10 +103,11 @@ def backup_permissions(acl_entries, backup_file):
         acl_entries (list): List of dictionaries representing ACL entries.
         backup_file (str): Path to the backup JSON file.
     """
-    with open(backup_file, 'w') as f:
+    with open(backup_file, "w") as f:
         json.dump(acl_entries, f)
 
     print(f"Permissions backed up to {backup_file}.")
+
 
 def restore_permissions(acl_entries):
     """
@@ -136,7 +147,11 @@ def restore_permissions(acl_entries):
             process = run_command(["stat", "-c", "%A", filepath])
             if process:
                 current_permissions = process.stdout.strip()
-                expected_permissions = entry["user_permissions"] + entry["group_permissions"] + entry["other_permissions"]
+                expected_permissions = (
+                    entry["user_permissions"]
+                    + entry["group_permissions"]
+                    + entry["other_permissions"]
+                )
                 if current_permissions != expected_permissions:
                     run_command(["chmod", expected_permissions, filepath])
                     logging.info(f"Permissions fixed for {filepath}")
@@ -144,6 +159,7 @@ def restore_permissions(acl_entries):
             logging.error(f"Failed to change permissions for {filepath}. Error: {e}")
 
     print("Permissions and ownership check and fix complete.")
+
 
 def audit_permissions(acl_entries):
     """
@@ -183,11 +199,17 @@ def audit_permissions(acl_entries):
             process = run_command(["stat", "-c", "%A", filepath])
             if process:
                 current_permissions = process.stdout.strip()
-                expected_permissions = entry["user_permissions"] + entry["group_permissions"] + entry["other_permissions"]
+                expected_permissions = (
+                    entry["user_permissions"]
+                    + entry["group_permissions"]
+                    + entry["other_permissions"]
+                )
                 if current_permissions != expected_permissions:
                     discrepancies.append(f"Permissions for {filepath} are incorrect.")
         except Exception as e:
-            logging.error(f"Error while checking permissions for {filepath}. Error: {e}")
+            logging.error(
+                f"Error while checking permissions for {filepath}. Error: {e}"
+            )
 
     print("Audit complete.")
     if discrepancies:
@@ -199,6 +221,7 @@ def audit_permissions(acl_entries):
     else:
         print("No discrepancies found.")
 
+
 def pacman_fix_permissions():
     """
     Run pacman-fix-permissions command.
@@ -208,6 +231,7 @@ def pacman_fix_permissions():
         print("pacman-fix-permissions executed successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Failed to run pacman-fix-permissions: {e.stderr.strip()}")
+
 
 def sanitize_path(path):
     """
@@ -221,6 +245,7 @@ def sanitize_path(path):
     """
     return os.path.normpath(path)
 
+
 def show_spinner(func):
     """
     Display a spinner while a function is running.
@@ -228,14 +253,14 @@ def show_spinner(func):
     Args:
         func (function): The function to run.
     """
-    spinner = itertools.cycle(['-', '/', '|', '\\'])
+    spinner = itertools.cycle(["-", "/", "|", "\\"])
     done = False
 
     def spin():
         while not done:
-            print(f'\r{next(spinner)}', end='', flush=True)
+            print(f"\r{next(spinner)}", end="", flush=True)
             time.sleep(0.1)
-        print('\r ', end='', flush=True)
+        print("\r ", end="", flush=True)
 
     t = threading.Thread(target=spin)
     t.start()
@@ -246,12 +271,15 @@ def show_spinner(func):
         done = True
         t.join()
 
+
 if __name__ == "__main__":
     check_pacman_fix_permissions()
 
     acl_file = input("Enter the path to the ACL file (default: select with fzf): ")
     if not acl_file:
-        acl_file = subprocess.run(["fzf"], capture_output=True, text=True).stdout.strip()
+        acl_file = subprocess.run(
+            ["fzf"], capture_output=True, text=True
+        ).stdout.strip()
 
     if not os.path.exists(acl_file):
         print("The specified ACL file does not exist.")
@@ -270,7 +298,9 @@ if __name__ == "__main__":
             choice = input("By your command: ")
 
             if choice.lower() in ["1", "backup permissions"]:
-                backup_file = input("Enter the name of the backup file (permissions will be saved in JSON format): ")
+                backup_file = input(
+                    "Enter the name of the backup file (permissions will be saved in JSON format): "
+                )
                 show_spinner(lambda: backup_permissions(acl_entries, backup_file))
             elif choice.lower() in ["2", "restore permissions"]:
                 show_spinner(lambda: restore_permissions(acl_entries))

@@ -2,7 +2,7 @@
 """
 main.py
 
-Main entry point for the image enumeration script. 
+Main entry point for the image enumeration script.
 Handles user interaction, command-line arguments, and calls enumerator.py for the core logic.
 
 Dependencies:
@@ -15,6 +15,7 @@ import sys
 import argparse
 import enumerator  # Local import from enumerator.py
 
+
 def show_help():
     """
     Display usage instructions for this script.
@@ -23,7 +24,9 @@ def show_help():
     print("")
     print("Options:")
     print("  -h, --help            Show this help message and exit")
-    print("  -u <URL>              Enumerate images starting at the specified image URL")
+    print(
+        "  -u <URL>              Enumerate images starting at the specified image URL"
+    )
     print("  -m, --menu            Launch interactive menu")
     print("")
     print("Examples:")
@@ -43,7 +46,9 @@ def menu_mode():
 
         choice = input("Enter choice: ").strip()
         if choice == "1":
-            url = input("Enter an image URL (with numeric portion, e.g., 39.jpg): ").strip()
+            url = input(
+                "Enter an image URL (with numeric portion, e.g., 39.jpg): "
+            ).strip()
             if url:
                 enumerator.auto_enumerate_images(url)
         elif choice == "2":
@@ -52,7 +57,9 @@ def menu_mode():
             print("Goodbye.")
             sys.exit(0)
         else:
-            enumerator.color_print("Unrecognized choice. Please try again.", enumerator.LIGHT_RED)
+            enumerator.color_print(
+                "Unrecognized choice. Please try again.", enumerator.LIGHT_RED
+            )
 
 
 def main():
@@ -61,8 +68,15 @@ def main():
     """
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("-h", "--help", action="store_true", help="Show help message")
-    parser.add_argument("-m", "--menu", action="store_true", help="Launch interactive menu")
-    parser.add_argument("-u", metavar="URL", type=str, help="Enumerate images starting at the given image URL")
+    parser.add_argument(
+        "-m", "--menu", action="store_true", help="Launch interactive menu"
+    )
+    parser.add_argument(
+        "-u",
+        metavar="URL",
+        type=str,
+        help="Enumerate images starting at the given image URL",
+    )
     args = parser.parse_args()
 
     # If no arguments, launch the menu

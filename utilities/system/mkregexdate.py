@@ -42,31 +42,31 @@ class DateTimeFormatter:
     """Handles formatting of date and time based on user-selected formats."""
 
     PREDEFINED_STYLES = {
-        '1': ('YYYY-MM-DD', '%Y-%m-%d'),
-        '2': ('MM/DD/YYYY', '%m/%d/%Y'),
-        '3': ('DD/MM/YYYY', '%d/%m/%Y'),
-        '4': ('DD.MM.YYYY', '%d.%m.%Y'),
+        "1": ("YYYY-MM-DD", "%Y-%m-%d"),
+        "2": ("MM/DD/YYYY", "%m/%d/%Y"),
+        "3": ("DD/MM/YYYY", "%d/%m/%Y"),
+        "4": ("DD.MM.YYYY", "%d.%m.%Y"),
     }
 
     TIME_FORMATS = {
-        '1': ('12-Hour Format', '%I:%M %p'),
-        '2': ('24-Hour Format', '%H:%M'),
-        '3': ('24-Hour with Seconds', '%H:%M:%S'),
-        '4': ('Short 12-Hour', '%I:%M%p'),
+        "1": ("12-Hour Format", "%I:%M %p"),
+        "2": ("24-Hour Format", "%H:%M"),
+        "3": ("24-Hour with Seconds", "%H:%M:%S"),
+        "4": ("Short 12-Hour", "%I:%M%p"),
     }
 
     DATE_COMPONENTS = {
-        'Year': ['%Y', '%y'],
-        'Month': ['%m', '%b', '%B'],
-        'Day': ['%d', '%-d'],
-        'Weekday': ['%A', '%a'],
+        "Year": ["%Y", "%y"],
+        "Month": ["%m", "%b", "%B"],
+        "Day": ["%d", "%-d"],
+        "Weekday": ["%A", "%a"],
     }
 
     TIME_COMPONENTS = {
-        'Hour': ['%H', '%I'],
-        'Minute': ['%M'],
-        'Second': ['%S'],
-        'AM/PM': ['%p'],
+        "Hour": ["%H", "%I"],
+        "Minute": ["%M"],
+        "Second": ["%S"],
+        "AM/PM": ["%p"],
     }
 
     def __init__(self):
@@ -77,7 +77,7 @@ class DateTimeFormatter:
     def detect_ui_tool(self):
         """Detects available UI tool: currently focuses on terminal-based UI."""
         # For simplicity and minimalism, we focus on terminal-based UI.
-        return 'terminal'
+        return "terminal"
 
     def list_styles_terminal(self):
         """Lists predefined styles in terminal and prompts user to select."""
@@ -92,7 +92,7 @@ class DateTimeFormatter:
             choice = input("\nEnter the style number (1-5): ").strip()
             if choice in self.PREDEFINED_STYLES:
                 return self.PREDEFINED_STYLES[choice][1]
-            elif choice == '5':
+            elif choice == "5":
                 return self.build_custom_format()
             else:
                 print("Invalid choice. Please select a valid style number (1-5).")
@@ -110,14 +110,14 @@ class DateTimeFormatter:
             choice = input("\nEnter the time format number (1-5): ").strip()
             if choice in self.TIME_FORMATS:
                 return self.TIME_FORMATS[choice][1]
-            elif choice == '5':
+            elif choice == "5":
                 return self.build_custom_time_format()
             else:
                 print("Invalid choice. Please select a valid time format number (1-5).")
 
     def list_styles(self):
         """Delegates style selection based on available UI tool."""
-        if self.ui_tool == 'terminal':
+        if self.ui_tool == "terminal":
             return self.list_styles_terminal()
         # Placeholder for other UI tools like 'fzf' or 'yad'
         else:
@@ -125,7 +125,7 @@ class DateTimeFormatter:
 
     def list_time_formats(self):
         """Delegates time format selection based on available UI tool."""
-        if self.ui_tool == 'terminal':
+        if self.ui_tool == "terminal":
             return self.list_time_formats_terminal()
         # Placeholder for other UI tools like 'fzf' or 'yad'
         else:
@@ -147,7 +147,9 @@ class DateTimeFormatter:
             print("  0) Skip this component")
 
             while True:
-                choice = input(f"Choose {component} format (1-{len(options)} or 0 to skip): ").strip()
+                choice = input(
+                    f"Choose {component} format (1-{len(options)} or 0 to skip): "
+                ).strip()
                 if choice.isdigit():
                     choice = int(choice)
                     if 1 <= choice <= len(options):
@@ -160,9 +162,9 @@ class DateTimeFormatter:
 
         if not format_str:
             print("No date components selected. Using default '%Y-%m-%d'")
-            return '%Y-%m-%d'
+            return "%Y-%m-%d"
 
-        print(f"\nFinal Date Format String: \"{format_str}\"")
+        print(f'\nFinal Date Format String: "{format_str}"')
         return format_str
 
     def build_custom_time_format(self):
@@ -181,7 +183,9 @@ class DateTimeFormatter:
             print("  0) Skip this component")
 
             while True:
-                choice = input(f"Choose {component} format (1-{len(options)} or 0 to skip): ").strip()
+                choice = input(
+                    f"Choose {component} format (1-{len(options)} or 0 to skip): "
+                ).strip()
                 if choice.isdigit():
                     choice = int(choice)
                     if 1 <= choice <= len(options):
@@ -194,9 +198,9 @@ class DateTimeFormatter:
 
         if not format_str:
             print("No time components selected. Using default '%H:%M:%S'")
-            return '%H:%M:%S'
+            return "%H:%M:%S"
 
-        print(f"\nFinal Time Format String: \"{format_str}\"")
+        print(f'\nFinal Time Format String: "{format_str}"')
         return format_str
 
     def display_preview(self, format_str):
@@ -210,26 +214,26 @@ class DateTimeFormatter:
 
     def create_box(self, text):
         """Creates a box around the given text."""
-        lines = text.split('\n')
+        lines = text.split("\n")
         max_length = max(len(line) for line in lines)
-        border = '+' + '-' * (max_length + 2) + '+'
+        border = "+" + "-" * (max_length + 2) + "+"
         boxed_text = [border]
         for line in lines:
             boxed_text.append(f"| {line.ljust(max_length)} |")
         boxed_text.append(border)
-        return '\n'.join(boxed_text)
+        return "\n".join(boxed_text)
 
     def parse_input_datetime(self, date_str, time_str):
         """Parses user input into a datetime object using multiple formats."""
         datetime_formats = [
-            '%Y-%m-%d %H:%M',
-            '%Y-%m-%d %I:%M %p',
-            '%m/%d/%Y %H:%M',
-            '%m/%d/%Y %I:%M %p',
-            '%d/%m/%Y %H:%M',
-            '%d/%m/%Y %I:%M %p',
-            '%d.%m.%Y %H:%M',
-            '%d.%m.%Y %I:%M %p',
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %I:%M %p",
+            "%m/%d/%Y %H:%M",
+            "%m/%d/%Y %I:%M %p",
+            "%d/%m/%Y %H:%M",
+            "%d/%m/%Y %I:%M %p",
+            "%d.%m.%Y %H:%M",
+            "%d.%m.%Y %I:%M %p",
         ]
         combined = f"{date_str} {time_str}"
         for fmt in datetime_formats:
@@ -242,8 +246,8 @@ class DateTimeFormatter:
     def copy_to_clipboard(self, text):
         """Copies the given text to the clipboard using wl-copy."""
         try:
-            if shutil.which('wl-copy'):
-                process = subprocess.Popen(['wl-copy'], stdin=subprocess.PIPE)
+            if shutil.which("wl-copy"):
+                process = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
                 process.communicate(text.encode())
             else:
                 print("wl-copy not found. Please install wl-clipboard package.")
@@ -259,17 +263,19 @@ class DateTimeFormatter:
 
         box = self.create_box(combined_formatted)
         print(f"\nFormatted Date and Time:\n{CYAN}{box}{RESET}")
-        print(f"Date Format String: \"{self.date_format}\"")
-        print(f"Time Format String: \"{self.time_format}\"")
-        print(f"Combined Format String: \"{combined_format}\"")
+        print(f'Date Format String: "{self.date_format}"')
+        print(f'Time Format String: "{self.time_format}"')
+        print(f'Combined Format String: "{combined_format}"')
 
     def custom_format_preview(self, dt):
         """Allows users to experiment with custom format strings in real-time."""
         print("\n### Custom Format Preview ###")
         print("Type 'exit' to quit the preview.\n")
         while True:
-            user_fmt = input("Enter a custom format string (or type 'exit' to quit): ").strip()
-            if user_fmt.lower() == 'exit':
+            user_fmt = input(
+                "Enter a custom format string (or type 'exit' to quit): "
+            ).strip()
+            if user_fmt.lower() == "exit":
                 break
             try:
                 preview = dt.strftime(user_fmt)
@@ -290,9 +296,13 @@ class DateTimeFormatter:
         self.time_format = self.list_time_formats()
 
         self.preview_format(dt)
-        formatted_output = f"{dt.strftime(self.date_format)} {dt.strftime(self.time_format)}"
+        formatted_output = (
+            f"{dt.strftime(self.date_format)} {dt.strftime(self.time_format)}"
+        )
         self.copy_to_clipboard(formatted_output)
-        print(f"\n{CYAN}The formatted date and time have been copied to your clipboard.{RESET}")
+        print(
+            f"\n{CYAN}The formatted date and time have been copied to your clipboard.{RESET}"
+        )
         self.custom_format_preview(dt)
 
     def run_non_interactive(self, date_str, time_str, date_format_key, time_format_key):
@@ -305,7 +315,7 @@ class DateTimeFormatter:
 
         # Handle date format
         if date_format_key:
-            if date_format_key == '5':
+            if date_format_key == "5":
                 date_format = self.build_custom_format()
             elif date_format_key in self.PREDEFINED_STYLES:
                 date_format = self.PREDEFINED_STYLES[date_format_key][1]
@@ -313,11 +323,11 @@ class DateTimeFormatter:
                 print(f"Invalid date format key: {date_format_key}")
                 sys.exit(1)
         else:
-            date_format = '%Y-%m-%d'  # Default format
+            date_format = "%Y-%m-%d"  # Default format
 
         # Handle time format
         if time_format_key:
-            if time_format_key == '5':
+            if time_format_key == "5":
                 time_format = self.build_custom_time_format()
             elif time_format_key in self.TIME_FORMATS:
                 time_format = self.TIME_FORMATS[time_format_key][1]
@@ -325,7 +335,7 @@ class DateTimeFormatter:
                 print(f"Invalid time format key: {time_format_key}")
                 sys.exit(1)
         else:
-            time_format = '%H:%M:%S'  # Default format
+            time_format = "%H:%M:%S"  # Default format
 
         formatted_date = dt.strftime(date_format)
         formatted_time = dt.strftime(time_format)
@@ -334,22 +344,28 @@ class DateTimeFormatter:
 
         box = self.create_box(combined_formatted)
         print(f"\nFormatted Date and Time:\n{CYAN}{box}{RESET}")
-        print(f"Date Format String: \"{date_format}\"")
-        print(f"Time Format String: \"{time_format}\"")
-        print(f"Combined Format String: \"{combined_format}\"")
+        print(f'Date Format String: "{date_format}"')
+        print(f'Time Format String: "{time_format}"')
+        print(f'Combined Format String: "{combined_format}"')
 
         self.copy_to_clipboard(combined_formatted)
-        print(f"\n{CYAN}The formatted date and time have been copied to your clipboard.{RESET}")
+        print(
+            f"\n{CYAN}The formatted date and time have been copied to your clipboard.{RESET}"
+        )
 
     def run(self, args):
         """Executes the formatter workflow based on provided arguments."""
         if args.date and args.time:
-            self.run_non_interactive(args.date, args.time, args.date_format, args.time_format)
+            self.run_non_interactive(
+                args.date, args.time, args.date_format, args.time_format
+            )
         else:
             # Interactive mode with current date and time
-            current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-            current_time = datetime.datetime.now().strftime('%H:%M')
-            print(f"\nUsing current date and time: {CYAN}{current_date} {current_time}{RESET}")
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            current_time = datetime.datetime.now().strftime("%H:%M")
+            print(
+                f"\nUsing current date and time: {CYAN}{current_date} {current_time}{RESET}"
+            )
             self.run_interactive(current_date, current_time)
 
 
@@ -358,12 +374,22 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Custom Date and Time Formatter with Clipboard Integration"
     )
-    parser.add_argument('--date', type=str, help='Date string (e.g., "2023-12-31")')
-    parser.add_argument('--time', type=str, help='Time string (e.g., "23:59" or "11:59 PM")')
-    parser.add_argument('--date-format', type=str, choices=['1', '2', '3', '4', '5'],
-                        help='Desired date format number (1-5)')
-    parser.add_argument('--time-format', type=str, choices=['1', '2', '3', '4', '5'],
-                        help='Desired time format number (1-5)')
+    parser.add_argument("--date", type=str, help='Date string (e.g., "2023-12-31")')
+    parser.add_argument(
+        "--time", type=str, help='Time string (e.g., "23:59" or "11:59 PM")'
+    )
+    parser.add_argument(
+        "--date-format",
+        type=str,
+        choices=["1", "2", "3", "4", "5"],
+        help="Desired date format number (1-5)",
+    )
+    parser.add_argument(
+        "--time-format",
+        type=str,
+        choices=["1", "2", "3", "4", "5"],
+        help="Desired time format number (1-5)",
+    )
     return parser.parse_args()
 
 

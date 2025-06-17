@@ -8,8 +8,9 @@
 
 # ================================ // USER_MANAGEMENT_CLI.PY
 import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GdkPixbuf
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
 import re
 import os
 import sys
@@ -19,57 +20,73 @@ import locale
 import argparse
 
 # Initialize gettext for internationalization
-locale.setlocale(locale.LC_ALL, '')
+locale.setlocale(locale.LC_ALL, "")
 gettext.bindtextdomain("user-management", "/usr/share/locale")
 gettext.textdomain("user-management")
 _ = gettext.gettext
 
 ## STRINGS
-NOTICE_REMOVE = _("Notice!\n\
+NOTICE_REMOVE = _(
+    "Notice!\n\
 All of the user's files will remain in their \n\
 home directory unless 'Completely Remove' is checked.\n\
 Even so, it is recommended that the\n\
-files be backed up!")
-NOTICE_RECOVER = _("Notice!\n\
+files be backed up!"
+)
+NOTICE_RECOVER = _(
+    "Notice!\n\
 A user can only be recovered if the user\n\
-has not been completely removed!")
-WARNING_REPAIR = _("Warning!\n\
+has not been completely removed!"
+)
+WARNING_REPAIR = _(
+    "Warning!\n\
 Attempting a user repair may restore more\n\
 programs to original settings than you intend!\n\
-It is highly recommended that you first back up all files in your home directory.")
+It is highly recommended that you first back up all files in your home directory."
+)
+
 
 class ErrorDialog(Gtk.MessageDialog):
     def __init__(self, error_message):
-        super().__init__(transient_for=None,
-                         flags=0,
-                         message_type=Gtk.MessageType.ERROR,
-                         buttons=Gtk.ButtonsType.OK,
-                         text=_("User-Management Error"))
+        super().__init__(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("User-Management Error"),
+        )
         self.format_secondary_text(error_message)
         self.run()
         self.destroy()
 
+
 class SuccessDialog(Gtk.MessageDialog):
     def __init__(self, success_message):
-        super().__init__(transient_for=None,
-                         flags=0,
-                         message_type=Gtk.MessageType.INFO,
-                         buttons=Gtk.ButtonsType.OK,
-                         text=_("Success"))
+        super().__init__(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Success"),
+        )
         self.format_secondary_text(success_message)
         self.run()
         self.destroy()
 
+
 class WarningDialog(Gtk.MessageDialog):
     def __init__(self, warning_message):
-        super().__init__(transient_for=None,
-                         flags=0,
-                         message_type=Gtk.MessageType.WARNING,
-                         buttons=Gtk.ButtonsType.OK,
-                         text=_("Warning"))
+        super().__init__(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Warning"),
+        )
         self.format_secondary_text(warning_message)
         self.run()
         self.destroy()
+
 
 class UserManager:
     """
@@ -86,11 +103,13 @@ class UserManager:
             subprocess.run(cmd, check=True)
 
             # Set the user's password securely
-            proc = subprocess.Popen(['passwd', username],
-                                    stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    text=True)
+            proc = subprocess.Popen(
+                ["passwd", username],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             stdout, stderr = proc.communicate(input=f"{password}\n{password}\n")
             if proc.returncode != 0:
                 raise subprocess.CalledProcessError(proc.returncode, cmd, stderr)
@@ -126,14 +145,18 @@ class UserManager:
     def change_password(username, password):
         try:
             # Change the user's password securely
-            proc = subprocess.Popen(['passwd', username],
-                                    stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    text=True)
+            proc = subprocess.Popen(
+                ["passwd", username],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             stdout, stderr = proc.communicate(input=f"{password}\n{password}\n")
             if proc.returncode != 0:
-                raise subprocess.CalledProcessError(proc.returncode, ['passwd', username], stderr)
+                raise subprocess.CalledProcessError(
+                    proc.returncode, ["passwd", username], stderr
+                )
 
             return True, _("Password updated successfully.")
         except subprocess.CalledProcessError as e:
@@ -149,14 +172,18 @@ class UserManager:
             subprocess.run(cmd, check=True)
 
             # Set the user's password securely
-            proc = subprocess.Popen(['passwd', username],
-                                    stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    text=True)
+            proc = subprocess.Popen(
+                ["passwd", username],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             stdout, stderr = proc.communicate(input=f"{password}\n{password}\n")
             if proc.returncode != 0:
-                raise subprocess.CalledProcessError(proc.returncode, ['passwd', username], stderr)
+                raise subprocess.CalledProcessError(
+                    proc.returncode, ["passwd", username], stderr
+                )
 
             return True, _("User recovered successfully.")
         except subprocess.CalledProcessError as e:
@@ -184,6 +211,7 @@ class UserManager:
             return False, _("Failed to repair user: ") + e.stderr.strip()
         except Exception as e:
             return False, _("An unexpected error occurred: ") + str(e)
+
 
 class PasswordManagerUI:
     def __init__(self):
@@ -251,11 +279,15 @@ class PasswordManagerUI:
         button_box.set_margin_bottom(5)
         vbox.pack_start(button_box, False, False, 0)
 
-        apply_button = self.create_icon_button(_("Apply"), "dialog-ok", _("Apply password change"))
+        apply_button = self.create_icon_button(
+            _("Apply"), "dialog-ok", _("Apply password change")
+        )
         apply_button.connect("clicked", self.apply_password)
         button_box.pack_start(apply_button, True, True, 0)
 
-        close_button = self.create_icon_button(_("Close"), "dialog-close", _("Close window"))
+        close_button = self.create_icon_button(
+            _("Close"), "dialog-close", _("Close window")
+        )
         close_button.connect("clicked", lambda w: Gtk.main_quit())
         button_box.pack_start(close_button, True, True, 0)
 
@@ -273,8 +305,8 @@ class PasswordManagerUI:
         try:
             with open("/etc/passwd", "r") as f:
                 for line in f:
-                    if re.search(r':x:\d{3,}:', line):
-                        username = line.split(':')[0]
+                    if re.search(r":x:\d{3,}:", line):
+                        username = line.split(":")[0]
                         self.user_combobox.append_text(username)
         except Exception as e:
             ErrorDialog(_("Failed to read /etc/passwd: ") + str(e))
@@ -288,7 +320,7 @@ class PasswordManagerUI:
         password1 = self.pass_entry1.get_text()
         password2 = self.pass_entry2.get_text()
 
-        if ' ' in password1:
+        if " " in password1:
             ErrorDialog(_("The password cannot contain spaces"))
             return
         elif not password1:
@@ -303,6 +335,7 @@ class PasswordManagerUI:
             SuccessDialog(message)
         else:
             ErrorDialog(message)
+
 
 class AddUserUI:
     def __init__(self):
@@ -406,7 +439,9 @@ class AddUserUI:
         apply_button.connect("clicked", self.apply_new_user)
         button_box.pack_start(apply_button, True, True, 0)
 
-        close_button = self.create_icon_button(_("Close"), "dialog-close", _("Close window"))
+        close_button = self.create_icon_button(
+            _("Close"), "dialog-close", _("Close window")
+        )
         close_button.connect("clicked", lambda w: Gtk.main_quit())
         button_box.pack_start(close_button, True, True, 0)
 
@@ -436,7 +471,7 @@ class AddUserUI:
         password2 = self.pass_entry2.get_text()
         shell = self.shell_combobox.get_active_text()
 
-        if ' ' in username:
+        if " " in username:
             ErrorDialog(_("The username cannot contain spaces"))
             return
         elif not username:
@@ -446,7 +481,7 @@ class AddUserUI:
             ErrorDialog(_("You need to choose a shell"))
             return
 
-        if ' ' in password1:
+        if " " in password1:
             ErrorDialog(_("The password cannot contain spaces"))
             return
         elif not password1:
@@ -464,13 +499,22 @@ class AddUserUI:
         # Handle login options
         if self.default_login_cb.get_active():
             # Notify user to manually set default user
-            WarningDialog(_("Setting a default user requires manual configuration of your display manager."))
+            WarningDialog(
+                _(
+                    "Setting a default user requires manual configuration of your display manager."
+                )
+            )
 
         if self.auto_login_cb.get_active():
             # Notify user to manually enable automatic login
-            WarningDialog(_("Enabling automatic login requires manual configuration of your display manager."))
+            WarningDialog(
+                _(
+                    "Enabling automatic login requires manual configuration of your display manager."
+                )
+            )
 
         SuccessDialog(message)
+
 
 class UserRepairUI:
     def __init__(self):
@@ -546,7 +590,9 @@ class UserRepairUI:
         items_box.pack_start(self.jwm_cb, False, False, 0)
 
         self.specify_save_entry = Gtk.Entry()
-        self.specify_save_entry.set_placeholder_text(_("Enter specific configs to save (separated by |)"))
+        self.specify_save_entry.set_placeholder_text(
+            _("Enter specific configs to save (separated by |)")
+        )
         items_box.pack_start(self.specify_save_entry, False, False, 0)
 
         # Buttons
@@ -557,11 +603,15 @@ class UserRepairUI:
         button_box.set_margin_bottom(5)
         vbox.pack_start(button_box, False, False, 0)
 
-        apply_button = self.create_icon_button(_("Apply"), "edit-undo", _("Repair user"))
+        apply_button = self.create_icon_button(
+            _("Apply"), "edit-undo", _("Repair user")
+        )
         apply_button.connect("clicked", self.apply_repair)
         button_box.pack_start(apply_button, True, True, 0)
 
-        close_button = self.create_icon_button(_("Close"), "dialog-close", _("Close window"))
+        close_button = self.create_icon_button(
+            _("Close"), "dialog-close", _("Close window")
+        )
         close_button.connect("clicked", lambda w: Gtk.main_quit())
         button_box.pack_start(close_button, True, True, 0)
 
@@ -579,8 +629,8 @@ class UserRepairUI:
         try:
             with open("/etc/passwd", "r") as f:
                 for line in f:
-                    if re.search(r':x:\d{3,}:', line):
-                        username = line.split(':')[0]
+                    if re.search(r":x:\d{3,}:", line):
+                        username = line.split(":")[0]
                         self.user_combobox.append_text(username)
         except Exception as e:
             ErrorDialog(_("Failed to read /etc/passwd: ") + str(e))
@@ -608,8 +658,12 @@ class UserRepairUI:
         save_list = self.specify_save_entry.get_text().strip()
 
         # Validate save_list
-        if save_list and not re.match(r'^([\w\.\|-]+)$', save_list):
-            ErrorDialog(_("The list of configs must be empty or contain valid config identifiers separated by |"))
+        if save_list and not re.match(r"^([\w\.\|-]+)$", save_list):
+            ErrorDialog(
+                _(
+                    "The list of configs must be empty or contain valid config identifiers separated by |"
+                )
+            )
             return
 
         success, message = UserManager.repair_user(user, skip_items, save_list)
@@ -617,6 +671,7 @@ class UserRepairUI:
             SuccessDialog(message)
         else:
             ErrorDialog(message)
+
 
 class RemoveUserUI:
     def __init__(self):
@@ -677,11 +732,15 @@ class RemoveUserUI:
         button_box.set_margin_bottom(5)
         vbox.pack_start(button_box, False, False, 0)
 
-        apply_button = self.create_icon_button(_("Apply"), "list-remove", _("Remove user"))
+        apply_button = self.create_icon_button(
+            _("Apply"), "list-remove", _("Remove user")
+        )
         apply_button.connect("clicked", self.apply_remove)
         button_box.pack_start(apply_button, True, True, 0)
 
-        close_button = self.create_icon_button(_("Close"), "dialog-close", _("Close window"))
+        close_button = self.create_icon_button(
+            _("Close"), "dialog-close", _("Close window")
+        )
         close_button.connect("clicked", lambda w: Gtk.main_quit())
         button_box.pack_start(close_button, True, True, 0)
 
@@ -699,8 +758,8 @@ class RemoveUserUI:
         try:
             with open("/etc/passwd", "r") as f:
                 for line in f:
-                    if re.search(r':x:\d{3,}:', line):
-                        username = line.split(':')[0]
+                    if re.search(r":x:\d{3,}:", line):
+                        username = line.split(":")[0]
                         self.user_combobox.append_text(username)
         except Exception as e:
             ErrorDialog(_("Failed to read /etc/passwd: ") + str(e))
@@ -718,6 +777,7 @@ class RemoveUserUI:
             SuccessDialog(message)
         else:
             ErrorDialog(message)
+
 
 class RecoverUserUI:
     def __init__(self):
@@ -791,11 +851,15 @@ class RecoverUserUI:
         button_box.set_margin_bottom(5)
         vbox.pack_start(button_box, False, False, 0)
 
-        apply_button = self.create_icon_button(_("Apply"), "edit-redo", _("Recover user"))
+        apply_button = self.create_icon_button(
+            _("Apply"), "edit-redo", _("Recover user")
+        )
         apply_button.connect("clicked", self.apply_recover)
         button_box.pack_start(apply_button, True, True, 0)
 
-        close_button = self.create_icon_button(_("Close"), "dialog-close", _("Close window"))
+        close_button = self.create_icon_button(
+            _("Close"), "dialog-close", _("Close window")
+        )
         close_button.connect("clicked", lambda w: Gtk.main_quit())
         button_box.pack_start(close_button, True, True, 0)
 
@@ -814,14 +878,14 @@ class RecoverUserUI:
         password1 = self.pass_entry1.get_text()
         password2 = self.pass_entry2.get_text()
 
-        if ' ' in user:
+        if " " in user:
             ErrorDialog(_("The username cannot contain spaces"))
             return
         elif not user:
             ErrorDialog(_("You need to enter a username"))
             return
 
-        if ' ' in password1:
+        if " " in password1:
             ErrorDialog(_("The password cannot contain spaces"))
             return
         elif not password1:
@@ -839,13 +903,22 @@ class RecoverUserUI:
         # Handle login options
         if self.default_login_cb.get_active():
             # Notify user to manually set default user
-            WarningDialog(_("Setting a default user requires manual configuration of your display manager."))
+            WarningDialog(
+                _(
+                    "Setting a default user requires manual configuration of your display manager."
+                )
+            )
 
         if self.auto_login_cb.get_active():
             # Notify user to manually enable automatic login
-            WarningDialog(_("Enabling automatic login requires manual configuration of your display manager."))
+            WarningDialog(
+                _(
+                    "Enabling automatic login requires manual configuration of your display manager."
+                )
+            )
 
         SuccessDialog(message)
+
 
 class NotebookApp:
     def __init__(self):
@@ -864,23 +937,34 @@ class NotebookApp:
 
         # Password Manager Tab
         password_manager = PasswordManagerUI()
-        notebook.append_page(password_manager.frame, self.create_tab_label("dialog-password", _("Password Manager")))
+        notebook.append_page(
+            password_manager.frame,
+            self.create_tab_label("dialog-password", _("Password Manager")),
+        )
 
         # Add User Tab
         add_user = AddUserUI()
-        notebook.append_page(add_user.frame, self.create_tab_label("list-add", _("Add User")))
+        notebook.append_page(
+            add_user.frame, self.create_tab_label("list-add", _("Add User"))
+        )
 
         # User Repair Tab
         user_repair = UserRepairUI()
-        notebook.append_page(user_repair.frame, self.create_tab_label("edit-undo", _("Repair User")))
+        notebook.append_page(
+            user_repair.frame, self.create_tab_label("edit-undo", _("Repair User"))
+        )
 
         # Remove User Tab
         remove_user = RemoveUserUI()
-        notebook.append_page(remove_user.frame, self.create_tab_label("list-remove", _("Remove User")))
+        notebook.append_page(
+            remove_user.frame, self.create_tab_label("list-remove", _("Remove User"))
+        )
 
         # Recover User Tab
         recover_user = RecoverUserUI()
-        notebook.append_page(recover_user.frame, self.create_tab_label("edit-redo", _("Recover User")))
+        notebook.append_page(
+            recover_user.frame, self.create_tab_label("edit-redo", _("Recover User"))
+        )
 
         self.window.show_all()
 
@@ -894,45 +978,81 @@ class NotebookApp:
         box.show_all()
         return box
 
+
 def parse_cli_arguments():
     parser = argparse.ArgumentParser(
-        description=_("User Management Tool: Add, remove, recover users and manage passwords.")
+        description=_(
+            "User Management Tool: Add, remove, recover users and manage passwords."
+        )
     )
-    subparsers = parser.add_subparsers(dest='command', help=_("Available commands"))
+    subparsers = parser.add_subparsers(dest="command", help=_("Available commands"))
 
     # Add User
-    parser_add = subparsers.add_parser('add', help=_("Add a new user"))
-    parser_add.add_argument('username', type=str, help=_("Username of the new user"))
-    parser_add.add_argument('password', type=str, help=_("Password for the new user"))
-    parser_add.add_argument('--shell', type=str, default='/bin/bash', help=_("Default shell for the new user"))
+    parser_add = subparsers.add_parser("add", help=_("Add a new user"))
+    parser_add.add_argument("username", type=str, help=_("Username of the new user"))
+    parser_add.add_argument("password", type=str, help=_("Password for the new user"))
+    parser_add.add_argument(
+        "--shell",
+        type=str,
+        default="/bin/bash",
+        help=_("Default shell for the new user"),
+    )
 
     # Remove User
-    parser_remove = subparsers.add_parser('remove', help=_("Remove an existing user"))
-    parser_remove.add_argument('username', type=str, help=_("Username of the user to remove"))
-    parser_remove.add_argument('--complete', action='store_true', help=_("Completely remove user and their home directory"))
+    parser_remove = subparsers.add_parser("remove", help=_("Remove an existing user"))
+    parser_remove.add_argument(
+        "username", type=str, help=_("Username of the user to remove")
+    )
+    parser_remove.add_argument(
+        "--complete",
+        action="store_true",
+        help=_("Completely remove user and their home directory"),
+    )
 
     # Change Password
-    parser_chpass = subparsers.add_parser('change-password', help=_("Change a user's password"))
-    parser_chpass.add_argument('username', type=str, help=_("Username of the user"))
-    parser_chpass.add_argument('password', type=str, help=_("New password for the user"))
+    parser_chpass = subparsers.add_parser(
+        "change-password", help=_("Change a user's password")
+    )
+    parser_chpass.add_argument("username", type=str, help=_("Username of the user"))
+    parser_chpass.add_argument(
+        "password", type=str, help=_("New password for the user")
+    )
 
     # Recover User
-    parser_recover = subparsers.add_parser('recover', help=_("Recover a removed user"))
-    parser_recover.add_argument('username', type=str, help=_("Username of the user to recover"))
-    parser_recover.add_argument('password', type=str, help=_("New password for the user"))
-    parser_recover.add_argument('--shell', type=str, default='/bin/bash', help=_("Default shell for the recovered user"))
+    parser_recover = subparsers.add_parser("recover", help=_("Recover a removed user"))
+    parser_recover.add_argument(
+        "username", type=str, help=_("Username of the user to recover")
+    )
+    parser_recover.add_argument(
+        "password", type=str, help=_("New password for the user")
+    )
+    parser_recover.add_argument(
+        "--shell",
+        type=str,
+        default="/bin/bash",
+        help=_("Default shell for the recovered user"),
+    )
 
     # Repair User
-    parser_repair = subparsers.add_parser('repair', help=_("Repair a user account"))
-    parser_repair.add_argument('username', type=str, help=_("Username of the user to repair"))
-    parser_repair.add_argument('--skip', type=str, nargs='*', help=_("Items to skip during repair"))
-    parser_repair.add_argument('--save', type=str, help=_("Specific configs to save, separated by |"))
+    parser_repair = subparsers.add_parser("repair", help=_("Repair a user account"))
+    parser_repair.add_argument(
+        "username", type=str, help=_("Username of the user to repair")
+    )
+    parser_repair.add_argument(
+        "--skip", type=str, nargs="*", help=_("Items to skip during repair")
+    )
+    parser_repair.add_argument(
+        "--save", type=str, help=_("Specific configs to save, separated by |")
+    )
 
     return parser.parse_args()
 
+
 def execute_cli_command(args):
-    if args.command == 'add':
-        success, message = UserManager.add_user(args.username, args.password, args.shell)
+    if args.command == "add":
+        success, message = UserManager.add_user(
+            args.username, args.password, args.shell
+        )
         if success:
             print(_("User added successfully."))
             sys.exit(0)
@@ -940,7 +1060,7 @@ def execute_cli_command(args):
             print(message, file=sys.stderr)
             sys.exit(1)
 
-    elif args.command == 'remove':
+    elif args.command == "remove":
         success, message = UserManager.remove_user(args.username, args.complete)
         if success:
             print(_("User removal completed successfully."))
@@ -949,7 +1069,7 @@ def execute_cli_command(args):
             print(message, file=sys.stderr)
             sys.exit(1)
 
-    elif args.command == 'change-password':
+    elif args.command == "change-password":
         success, message = UserManager.change_password(args.username, args.password)
         if success:
             print(_("Password updated successfully."))
@@ -958,8 +1078,10 @@ def execute_cli_command(args):
             print(message, file=sys.stderr)
             sys.exit(1)
 
-    elif args.command == 'recover':
-        success, message = UserManager.recover_user(args.username, args.password, args.shell)
+    elif args.command == "recover":
+        success, message = UserManager.recover_user(
+            args.username, args.password, args.shell
+        )
         if success:
             print(_("User recovered successfully."))
             sys.exit(0)
@@ -967,7 +1089,7 @@ def execute_cli_command(args):
             print(message, file=sys.stderr)
             sys.exit(1)
 
-    elif args.command == 'repair':
+    elif args.command == "repair":
         skip_items = args.skip if args.skip else []
         save_list = args.save
         success, message = UserManager.repair_user(args.username, skip_items, save_list)
@@ -981,6 +1103,7 @@ def execute_cli_command(args):
         print(_("No valid command provided. Use -h for help."), file=sys.stderr)
         sys.exit(1)
 
+
 def main():
     # Parse CLI arguments
     args = parse_cli_arguments()
@@ -991,11 +1114,13 @@ def main():
     else:
         # Ensure the script is run as root
         if os.geteuid() != 0:
-            dialog = Gtk.MessageDialog(transient_for=None,
-                                       flags=0,
-                                       message_type=Gtk.MessageType.ERROR,
-                                       buttons=Gtk.ButtonsType.OK,
-                                       text=_("You MUST be root to use this application!"))
+            dialog = Gtk.MessageDialog(
+                transient_for=None,
+                flags=0,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text=_("You MUST be root to use this application!"),
+            )
             dialog.format_secondary_text(_("Please run the application as root."))
             dialog.run()
             dialog.destroy()
@@ -1005,6 +1130,7 @@ def main():
         app = NotebookApp()
         Gtk.main()
         return 0
+
 
 if __name__ == "__main__":
     main()

@@ -51,10 +51,10 @@ from time import sleep
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt
-from rich.progress import Progress
 
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -64,14 +64,14 @@ console = Console()
 ###############################################################################
 # LOGGING & DIRECTORIES
 ###############################################################################
-log_dir = os.path.expanduser('~/dirmaid_logs')
+log_dir = os.path.expanduser("~/dirmaid_logs")
 os.makedirs(log_dir, exist_ok=True)
-log_file_path = os.path.join(log_dir, 'dirmaid_extended.log')
+log_file_path = os.path.join(log_dir, "dirmaid_extended.log")
 
 logging.basicConfig(
     filename=log_file_path,
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
 ###############################################################################
@@ -85,14 +85,14 @@ DEFAULT_CONFIG = {
             "text",
             "application/pdf",
             "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ],
         "Archives": [
             "application/zip",
             "application/x-rar-compressed",
             "application/x-7z-compressed",
             "application/gzip",
-            "application/x-tar"
+            "application/x-tar",
         ],
     },
     "extensions": {
@@ -104,34 +104,29 @@ DEFAULT_CONFIG = {
         ".rar": "Archives",
         ".7z": "Archives",
         ".tar": "Archives",
-        ".tar.gz": "Archives"
+        ".tar.gz": "Archives",
     },
     "hierarchy": {
         "Media": {
-            "Images": [
-                "image/jpeg", "image/png", "image/gif", "image/webp"
-            ],
-            "Videos": [
-                "video/mp4", "video/x-matroska"
-            ]
+            "Images": ["image/jpeg", "image/png", "image/gif", "image/webp"],
+            "Videos": ["video/mp4", "video/x-matroska"],
         },
         "Documents": {
             "WordDocs": [
                 "application/msword",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ],
-            "PDFs": [
-                "application/pdf"
-            ]
-        }
-    }
+            "PDFs": ["application/pdf"],
+        },
+    },
 }
 
 CONFIG = {
     "categories": dict(DEFAULT_CONFIG["categories"]),
     "extensions": dict(DEFAULT_CONFIG["extensions"]),
-    "hierarchy": dict(DEFAULT_CONFIG["hierarchy"])
+    "hierarchy": dict(DEFAULT_CONFIG["hierarchy"]),
 }
+
 
 ###############################################################################
 # DEPENDENCY AUTO-INSTALL
@@ -144,8 +139,10 @@ def check_and_install_dependencies():
     pacman_bin = shutil.which("pacman")
 
     if not arch_release.exists() and not pacman_bin:
-        console.print("[bold red]Not an Arch-based system (or no pacman). "
-                      "Please install dependencies manually.[/bold red]")
+        console.print(
+            "[bold red]Not an Arch-based system (or no pacman). "
+            "Please install dependencies manually.[/bold red]"
+        )
         return
 
     sys_packages = [("jdupes", "jdupes"), ("unrar", "unrar"), ("bsdtar", "libarchive")]
@@ -162,8 +159,11 @@ def check_and_install_dependencies():
         try:
             __import__(pkg)
         except ImportError:
-            console.print(f"[bold yellow]Installing Python package: {pkg}[/bold yellow]")
+            console.print(
+                f"[bold yellow]Installing Python package: {pkg}[/bold yellow]"
+            )
             subprocess.run(["pip", "install", pkg])
+
 
 ###############################################################################
 # CONFIG SETUP
@@ -184,15 +184,17 @@ def init_config_file():
     user_cats = {}
     for cat in default_cats:
         choice = Prompt.ask(f"Enable '{cat}'? (y/n)", default="y")
-        if choice.lower().startswith('y'):
+        if choice.lower().startswith("y"):
             user_cats[cat] = DEFAULT_CONFIG["categories"].get(cat, [])
 
     # Build a basic 'categories' map
     final_categories = user_cats if user_cats else CONFIG["categories"]
 
-    console.print("\n[bold cyan]Enable advanced hierarchical structure for images/docs? (y/n)[/bold cyan]")
+    console.print(
+        "\n[bold cyan]Enable advanced hierarchical structure for images/docs? (y/n)[/bold cyan]"
+    )
     adv_choice = Prompt.ask("Your choice", default="n")
-    if adv_choice.lower().startswith('y'):
+    if adv_choice.lower().startswith("y"):
         final_hierarchy = DEFAULT_CONFIG["hierarchy"]
     else:
         final_hierarchy = {}
@@ -200,12 +202,13 @@ def init_config_file():
     final_conf = {
         "categories": final_categories,
         "extensions": CONFIG["extensions"],
-        "hierarchy": final_hierarchy
+        "hierarchy": final_hierarchy,
     }
 
     with config_path.open("w", encoding="utf-8") as f:
         json.dump(final_conf, f, indent=2)
     console.print(f"[bold green]Config created at: {config_path}[/bold green]")
+
 
 def load_config_from_file(config_path):
     global CONFIG
@@ -223,7 +226,9 @@ def load_config_from_file(config_path):
             with p.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         else:
-            console.print(f"[bold red]Unsupported config format or missing PyYAML: {p}[/bold red]")
+            console.print(
+                f"[bold red]Unsupported config format or missing PyYAML: {p}[/bold red]"
+            )
             return
     except Exception as e:
         console.print(f"[bold red]Error parsing config: {e}[/bold red]")
@@ -234,6 +239,7 @@ def load_config_from_file(config_path):
             CONFIG[key].update(data[key])
     console.print("[bold green]Config loaded & merged successfully![/bold green]")
 
+
 ###############################################################################
 # DUPLICATE & COLLISION LOGIC
 ###############################################################################
@@ -241,7 +247,7 @@ def generate_file_hash(file_path):
     BUF_SIZE = 65536
     sha256 = hashlib.sha256()
     try:
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             while True:
                 chunk = f.read(BUF_SIZE)
                 if not chunk:
@@ -252,19 +258,25 @@ def generate_file_hash(file_path):
         logging.error(f"Hash error on {file_path}: {e}")
         return None
 
+
 def handle_duplicates_conflict(file_path, existing_file):
     """
-    Prompt user for how to handle a discovered collision. 
+    Prompt user for how to handle a discovered collision.
     Options => rename new, move new to ~/Duplicates, remove new, skip.
     Default => move new to ~/Duplicates after 15s no response.
     """
-    console.print(f"[bold yellow]Collision detected:[/bold yellow]\n  Original: {existing_file}\n  New: {file_path}")
-    console.print("[R]ename / [M]ove => ~/Duplicates / [D]elete new / [S]kip (default M after 15s)")
+    console.print(
+        f"[bold yellow]Collision detected:[/bold yellow]\n  Original: {existing_file}\n  New: {file_path}"
+    )
+    console.print(
+        "[R]ename / [M]ove => ~/Duplicates / [D]elete new / [S]kip (default M after 15s)"
+    )
     from threading import Timer
+
     user_decision = {}
 
     def timeout():
-        user_decision['choice'] = 'M'
+        user_decision["choice"] = "M"
         console.print("[bold yellow]Defaulting to Move => ~/Duplicates[/bold yellow]")
 
     t = Timer(15.0, timeout)
@@ -272,19 +284,19 @@ def handle_duplicates_conflict(file_path, existing_file):
     choice = Prompt.ask("Choice", default="M")
     t.cancel()
 
-    if choice.upper() == 'R':
+    if choice.upper() == "R":
         short_hash = (generate_file_hash(file_path) or "nodigest")[:8]
         new_name = f"{Path(file_path).stem}_{short_hash}{Path(file_path).suffix}"
         new_path = Path(file_path).parent / new_name
         return new_path
-    elif choice.upper() == 'D':
+    elif choice.upper() == "D":
         try:
             Path(file_path).unlink()
             console.print("[bold red]New file removed.[/bold red]")
         except Exception as e:
             console.print(f"[bold red]Remove error: {e}[/bold red]")
         return None
-    elif choice.upper() == 'S':
+    elif choice.upper() == "S":
         console.print("[bold yellow]Skipping...[/bold yellow]")
         return None
     else:
@@ -292,6 +304,7 @@ def handle_duplicates_conflict(file_path, existing_file):
         duplicates_dir.mkdir(exist_ok=True)
         new_path = duplicates_dir / Path(file_path).name
         return new_path
+
 
 def dry_run(action, source, destination=None, extra=None):
     msg = f"DRY-RUN => {action}: {source}"
@@ -302,10 +315,11 @@ def dry_run(action, source, destination=None, extra=None):
     console.print(f"[bold cyan]{msg}[/bold cyan]")
     logging.info(msg)
 
+
 def find_and_handle_duplicates(directory):
     """
-    Uses jdupes to find duplicates, then prompts user for conflict resolution 
-    for each discovered set. 
+    Uses jdupes to find duplicates, then prompts user for conflict resolution
+    for each discovered set.
     """
     dir_path = Path(directory)
     if not dir_path.is_dir():
@@ -313,10 +327,10 @@ def find_and_handle_duplicates(directory):
         return
 
     try:
-        cmd = ['jdupes', '-r', '-n', '-A', '-m', str(dir_path)]
+        cmd = ["jdupes", "-r", "-n", "-A", "-m", str(dir_path)]
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if proc.returncode == 0 and proc.stdout:
-            lines = proc.stdout.strip().split('\n')
+            lines = proc.stdout.strip().split("\n")
             duplicates_blocks = []
             block = []
             for line in lines:
@@ -332,7 +346,7 @@ def find_and_handle_duplicates(directory):
             for block in duplicates_blocks:
                 if len(block) <= 1:
                     continue
-                console.print(f"[bold green]Duplicate set found:[/bold green]")
+                console.print("[bold green]Duplicate set found:[/bold green]")
                 for f in block:
                     console.print(f"  {f}")
                 base_file = Path(block[0])
@@ -346,9 +360,15 @@ def find_and_handle_duplicates(directory):
                         except Exception as e:
                             console.print(f"[bold red]Rename error: {e}[/bold red]")
         else:
-            console.print("[bold yellow]No duplicates or none found by jdupes.[/bold yellow]")
+            console.print(
+                "[bold yellow]No duplicates or none found by jdupes.[/bold yellow]"
+            )
     except FileNotFoundError:
-        console.print("[bold red]jdupes not installed. Install or implement fallback approach.[/bold red]")
+        console.print(
+            "[bold red]jdupes not installed. Install or implement fallback approach.[/bold red]"
+        )
+
+
 ###############################################################################
 # HIERARCHICAL CATEGORIZATION & ORGANIZATION
 ###############################################################################
@@ -360,9 +380,10 @@ def hierarchical_path(mime_type):
     for top_level, sub_dict in h.items():
         for sub_level, mimes in sub_dict.items():
             if mime_type in mimes:
-                suffix = mime_type.split('/')[-1].upper()
+                suffix = mime_type.split("/")[-1].upper()
                 return f"{top_level}/{sub_level}/{suffix}"
     return "Others"
+
 
 def categorize_file(file_path, strategy="type"):
     """
@@ -387,6 +408,7 @@ def categorize_file(file_path, strategy="type"):
     ext = Path(file_path).suffix.lower()
     return CONFIG["extensions"].get(ext, "Others")
 
+
 def organize(directory, strategy, simulate=False):
     dir_path = Path(directory)
     if not dir_path.is_dir():
@@ -399,8 +421,9 @@ def organize(directory, strategy, simulate=False):
     else:
         organize_category(dir_path, strategy, simulate)
 
+
 def organize_alphabet(dir_path, simulate):
-    for f in dir_path.glob('*.*'):
+    for f in dir_path.glob("*.*"):
         if f.is_file():
             letter = f.stem[0].upper()
             target = dir_path / letter
@@ -426,11 +449,12 @@ def organize_alphabet(dir_path, simulate):
     else:
         console.print("[bold yellow]DRY-RUN: Alphabet done.[/bold yellow]")
 
+
 def organize_date(dir_path, simulate):
-    for f in dir_path.glob('*.*'):
+    for f in dir_path.glob("*.*"):
         if f.is_file():
             mtime = f.stat().st_mtime
-            date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+            date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
             target = dir_path / date_str
             if simulate:
                 dry_run("MOVE", f, target)
@@ -454,8 +478,9 @@ def organize_date(dir_path, simulate):
     else:
         console.print("[bold yellow]DRY-RUN: Date done.[/bold yellow]")
 
+
 def organize_category(dir_path, strategy, simulate):
-    for f in dir_path.glob('*.*'):
+    for f in dir_path.glob("*.*"):
         if f.is_file():
             cat = categorize_file(str(f), strategy)
             if not cat:
@@ -486,23 +511,25 @@ def organize_category(dir_path, strategy, simulate):
     else:
         console.print("[bold yellow]DRY-RUN: Category done.[/bold yellow]")
 
+
 def extract_archive(file_path, target_directory):
     try:
-        if file_path.endswith('.zip'):
-            with zipfile.ZipFile(file_path, 'r') as z:
+        if file_path.endswith(".zip"):
+            with zipfile.ZipFile(file_path, "r") as z:
                 z.extractall(target_directory)
-        elif any(file_path.endswith(x) for x in ['.tar.gz', '.tgz', '.tar']):
-            with tarfile.open(file_path, 'r:*') as t:
+        elif any(file_path.endswith(x) for x in [".tar.gz", ".tgz", ".tar"]):
+            with tarfile.open(file_path, "r:*") as t:
                 t.extractall(target_directory)
-        elif file_path.endswith('.7z'):
-            with py7zr.SevenZipFile(file_path, 'r') as z7:
+        elif file_path.endswith(".7z"):
+            with py7zr.SevenZipFile(file_path, "r") as z7:
                 z7.extractall(target_directory)
-        elif file_path.endswith('.rar'):
-            with rarfile.RarFile(file_path, 'r') as rr:
+        elif file_path.endswith(".rar"):
+            with rarfile.RarFile(file_path, "r") as rr:
                 rr.extractall(target_directory)
         logging.info(f"Extracted => {file_path}")
     except Exception as e:
         console.print(f"[bold red]Extraction error: {e}[/bold red]")
+
 
 ###############################################################################
 # FLATTEN & CLEANUP
@@ -538,12 +565,15 @@ def flatten_directory(directory, simulate=False):
     else:
         console.print("[bold yellow]DRY-RUN flatten done.[/bold yellow]")
 
+
 def remove_empty_subdirectories(directory, simulate=False):
     d = Path(directory)
     if not d.is_dir():
         console.print(f"[bold red]Invalid directory => {directory}[/bold red]")
         return
-    empties = sorted([p for p in d.rglob('*') if p.is_dir() and not any(p.iterdir())], reverse=True)
+    empties = sorted(
+        [p for p in d.rglob("*") if p.is_dir() and not any(p.iterdir())], reverse=True
+    )
     for e in empties:
         if simulate:
             dry_run("DELETE_DIR", e)
@@ -554,6 +584,7 @@ def remove_empty_subdirectories(directory, simulate=False):
             except Exception as ex:
                 console.print(f"[red]Removal error: {ex}[/red]")
 
+
 ###############################################################################
 # BATCH RENAME
 ###############################################################################
@@ -563,17 +594,14 @@ def batch_rename(directory, pattern="{original_name}", simulate=False):
         console.print(f"[bold red]Invalid directory => {directory}[/bold red]")
         return
     counter = 1
-    for f in d.glob('*.*'):
+    for f in d.glob("*.*"):
         if f.is_file():
             mtime = f.stat().st_mtime
-            date_str = datetime.fromtimestamp(mtime).strftime('%Y%m%d')
+            date_str = datetime.fromtimestamp(mtime).strftime("%Y%m%d")
             ext = f.suffix
             orig = f.stem
             new_name = pattern.format(
-                original_name=orig,
-                ext=ext,
-                date=date_str,
-                counter=counter
+                original_name=orig, ext=ext, date=date_str, counter=counter
             )
             counter += 1
             new_path = d / new_name
@@ -595,6 +623,7 @@ def batch_rename(directory, pattern="{original_name}", simulate=False):
                     except Exception as e:
                         console.print(f"[red]Rename error: {e}[/red]")
 
+
 ###############################################################################
 # SHOW TIPS
 ###############################################################################
@@ -604,10 +633,15 @@ def show_tips():
     console.print("   chmod +x script.sh => Make file executable")
     console.print("   chmod 755 mydir => rwxr-xr-x\n")
     console.print("2) [bold]Handy One-Liners[/bold]:")
-    console.print("   find /path -name '*.zip' -exec ./dirmaid_extended.py {} \\;  => For each .zip, pass to script.")
-    console.print("   find /path -empty -type d -exec rmdir {} \\; => Remove all empty directories.")
+    console.print(
+        "   find /path -name '*.zip' -exec ./dirmaid_extended.py {} \\;  => For each .zip, pass to script."
+    )
+    console.print(
+        "   find /path -empty -type d -exec rmdir {} \\; => Remove all empty directories."
+    )
     console.print("\nPress Enter to return.")
     input()
+
 
 ###############################################################################
 # MAIN MENU
@@ -615,7 +649,9 @@ def show_tips():
 def main_menu():
     check_and_install_dependencies()
     console.clear()
-    console.print("[bold magenta]DirMaid Extended (Revamped)[/bold magenta]", justify="center")
+    console.print(
+        "[bold magenta]DirMaid Extended (Revamped)[/bold magenta]", justify="center"
+    )
 
     tbl = Table(show_header=True, header_style="bold blue")
     tbl.add_column("Option", style="dim", width=3)
@@ -635,35 +671,43 @@ def main_menu():
     console.print(f"[bold cyan]Dry-Run Mode: {status}[/bold cyan]")
     choice = Prompt.ask("[bold green]Select an option[/bold green]", default="1")
 
-    if choice == '1':
+    if choice == "1":
         directory = Prompt.ask("[bold cyan]Directory to organize[/bold cyan]")
-        strategy = Prompt.ask("[bold cyan]Strategy[/bold cyan]", choices=["alphabet","date","type","hierarchical"], default="type")
+        strategy = Prompt.ask(
+            "[bold cyan]Strategy[/bold cyan]",
+            choices=["alphabet", "date", "type", "hierarchical"],
+            default="type",
+        )
         organize(directory, strategy, simulate=main_menu.dry_run)
-    elif choice == '2':
+    elif choice == "2":
         d = Prompt.ask("[bold cyan]Directory to check duplicates[/bold cyan]")
         find_and_handle_duplicates(d)
-    elif choice == '3':
+    elif choice == "3":
         d = Prompt.ask("[bold cyan]Directory to flatten[/bold cyan]")
         flatten_directory(d, simulate=main_menu.dry_run)
-    elif choice == '4':
+    elif choice == "4":
         d = Prompt.ask("[bold cyan]Directory to remove empty subdirs[/bold cyan]")
         remove_empty_subdirectories(d, simulate=main_menu.dry_run)
-    elif choice == '5':
+    elif choice == "5":
         d = Prompt.ask("[bold cyan]Directory for batch rename[/bold cyan]")
-        pat = Prompt.ask("[bold cyan]Rename pattern[/bold cyan]", default="{original_name}{ext}")
+        pat = Prompt.ask(
+            "[bold cyan]Rename pattern[/bold cyan]", default="{original_name}{ext}"
+        )
         batch_rename(d, pat, simulate=main_menu.dry_run)
-    elif choice == '6':
-        subc = Prompt.ask("[I]nit new config or [L]oad existing?", choices=["I","L"], default="I")
-        if subc.upper() == 'I':
+    elif choice == "6":
+        subc = Prompt.ask(
+            "[I]nit new config or [L]oad existing?", choices=["I", "L"], default="I"
+        )
+        if subc.upper() == "I":
             init_config_file()
         else:
             path_ = Prompt.ask("Path to config file")
             load_config_from_file(path_)
-    elif choice == '7':
+    elif choice == "7":
         show_tips()
-    elif choice.upper() == 'T':
+    elif choice.upper() == "T":
         main_menu.dry_run = not main_menu.dry_run
-    elif choice.upper() == 'Q':
+    elif choice.upper() == "Q":
         console.print("[bold red]Exiting...[/bold red]")
         return
     else:
@@ -671,6 +715,7 @@ def main_menu():
 
     sleep(2)
     main_menu()
+
 
 main_menu.dry_run = False
 

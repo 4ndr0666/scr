@@ -21,6 +21,7 @@ console = Console()
 # Default presets folder
 PRESETS_DIR = Path(__file__).parent / "presets"
 
+
 def load_presets():
     presets = {}
     if not PRESETS_DIR.is_dir():
@@ -34,6 +35,7 @@ def load_presets():
         except Exception as e:
             console.print(f"[bold red]Failed loading preset {f.name}: {e}[/bold red]")
     return presets
+
 
 def create_structure(base_path, structure, dry_run=True):
     for item in structure.get("directories", []):
@@ -53,8 +55,12 @@ def create_structure(base_path, structure, dry_run=True):
             path.touch(exist_ok=True)
             console.print(f"[green]Created file:[/green] {path}")
 
+
 def main():
-    console.print("[bold magenta]SCAFFOLD[/bold magenta] - Minimal Project Directory Setup", justify="center")
+    console.print(
+        "[bold magenta]SCAFFOLD[/bold magenta] - Minimal Project Directory Setup",
+        justify="center",
+    )
 
     presets = load_presets()
 
@@ -69,7 +75,7 @@ def main():
     choice = Prompt.ask("\nSelect preset number", default="1")
 
     try:
-        selected_key = list(presets.keys())[int(choice)-1]
+        selected_key = list(presets.keys())[int(choice) - 1]
     except (IndexError, ValueError):
         console.print("[bold red]Invalid choice. Exiting.[/bold red]")
         sys.exit(1)
@@ -88,7 +94,10 @@ def main():
         if proceed.lower().startswith("y"):
             create_structure(target_path, structure, dry_run=False)
         else:
-            console.print("[bold yellow]Dry-run completed. No changes made.[/bold yellow]")
+            console.print(
+                "[bold yellow]Dry-run completed. No changes made.[/bold yellow]"
+            )
+
 
 if __name__ == "__main__":
     main()

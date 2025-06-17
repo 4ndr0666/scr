@@ -504,6 +504,7 @@ def chain_prompts(prompts: List[str]) -> str:
 # 13. Genre plugin loader utilities
 # ==============================================================================
 
+
 def load_genre_plugins(plugin_dir: str = "genres") -> Dict[str, List[str]]:
     """Loads all YAML/JSON genre plugins from ``plugin_dir`` into a mapping."""
     plugin_map: Dict[str, List[str]] = {}
@@ -532,7 +533,9 @@ def load_genre_plugins(plugin_dir: str = "genres") -> Dict[str, List[str]]:
     return plugin_map
 
 
-def merge_action_genres(base_map: Dict[str, List[str]], plugin_map: Dict[str, List[str]]) -> Dict[str, List[str]]:
+def merge_action_genres(
+    base_map: Dict[str, List[str]], plugin_map: Dict[str, List[str]]
+) -> Dict[str, List[str]]:
     """Return a merged genre→actions map (base + plugin overrides/appends)."""
     merged: Dict[str, List[str]] = {k: list(v) for k, v in base_map.items()}
     for genre, actions in plugin_map.items():
@@ -665,21 +668,24 @@ def build_hailuo_prompt(
     detail: str,
 ) -> str:
     """Return a Hailuo/Director Model-compliant prompt block."""
-    if not all(
-        [
-            subject.strip(),
-            age_tag.strip(),
-            gender_tag.strip(),
-            orientation.strip(),
-            expression.strip(),
-            action_sequence.strip(),
-            lighting.strip(),
-            lens.strip(),
-            shot_framing.strip(),
-            environment.strip(),
-            detail.strip(),
-        ]
-    ) or not camera_moves:
+    if (
+        not all(
+            [
+                subject.strip(),
+                age_tag.strip(),
+                gender_tag.strip(),
+                orientation.strip(),
+                expression.strip(),
+                action_sequence.strip(),
+                lighting.strip(),
+                lens.strip(),
+                shot_framing.strip(),
+                environment.strip(),
+                detail.strip(),
+            ]
+        )
+        or not camera_moves
+    ):
         raise ValueError("All parameters must be non-empty")
     for move in camera_moves:
         if move not in CAMERA_OPTIONS:

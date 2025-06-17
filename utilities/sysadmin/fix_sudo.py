@@ -3,8 +3,10 @@ import os
 import sys
 import subprocess
 
+
 def is_root():
     return os.geteuid() == 0
+
 
 def main():
     sudo_binary = "/usr/bin/sudo"
@@ -23,11 +25,12 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
 
+
 if __name__ == "__main__":
     if not is_root():
         try:
             # Attempt to restart the script with sudo
-            subprocess.check_call(['sudo', sys.executable] + sys.argv)
+            subprocess.check_call(["sudo", sys.executable] + sys.argv)
         except subprocess.CalledProcessError as e:
             print(f"Script failed to restart with sudo: {e}")
     else:

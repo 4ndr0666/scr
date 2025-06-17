@@ -18,15 +18,16 @@ import requests
 # -------------------------
 RESET_COLOR = "\033[0m"
 LIGHT_GREEN = "\033[1;32m"
-LIGHT_RED   = "\033[1;31m"
-ORANGE      = "\033[0;33m"
-CYAN        = "\033[0;36m"
-WHITE       = "\033[0m"
+LIGHT_RED = "\033[1;31m"
+ORANGE = "\033[0;33m"
+CYAN = "\033[0;36m"
+WHITE = "\033[0m"
 
 # Maximum lookahead
 MAX_LOOKAHEAD = 999
 # Consecutive 404 threshold
 CONSECUTIVE_404_THRESHOLD = 5
+
 
 # -------------------------
 # Helper Functions
@@ -45,8 +46,8 @@ def get_status_code(url):
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/58.0.3029.110 Safari/537.3"
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/58.0.3029.110 Safari/537.3"
     }
     try:
         response = requests.head(url, headers=headers, timeout=5)
@@ -82,7 +83,7 @@ def build_url_sequence(base_url, start_num, end_num, width=2):
             r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
             f"{new_num_str}.\\2",
             base_url,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
         urls.append(new_url)
     return urls
@@ -114,7 +115,7 @@ def check_urls_in_sequence(url_list):
     color_print(
         f"\n[Summary] {success} OK | {redirected} Redirected | {errors} Broken "
         f"(out of {total} total)",
-        WHITE
+        WHITE,
     )
     return success, redirected, errors
 
@@ -125,14 +126,18 @@ def auto_enumerate_images(base_url):
     encountering CONSECUTIVE_404_THRESHOLD errors in each direction.
     Finally, build the list of discovered images and check their statuses.
     """
-    filename = base_url.split('/')[-1]
+    filename = base_url.split("/")[-1]
     numeric_value = extract_numeric_portion(filename)
     if numeric_value is None:
-        color_print("No numeric portion found in URL filename; cannot enumerate.", LIGHT_RED)
+        color_print(
+            "No numeric portion found in URL filename; cannot enumerate.", LIGHT_RED
+        )
         return
 
     # Determine zero-padding width based on the discovered portion
-    match_width = re.search(r"(\d+)\.(?:jpg|jpeg|png|gif|bmp)$", filename, re.IGNORECASE)
+    match_width = re.search(
+        r"(\d+)\.(?:jpg|jpeg|png|gif|bmp)$", filename, re.IGNORECASE
+    )
     width = len(match_width.group(1)) if match_width else 2
 
     # We'll track discovered indexes in a set to handle out-of-order findings
@@ -147,7 +152,7 @@ def auto_enumerate_images(base_url):
             r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
             f"{str(current).zfill(width)}.\\2",
             base_url,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
         sc = get_status_code(test_url)
         if 200 <= sc <= 299:
@@ -165,7 +170,7 @@ def auto_enumerate_images(base_url):
             r"(\d+)\.(jpg|jpeg|png|gif|bmp)$",
             f"{str(current).zfill(width)}.\\2",
             base_url,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
         sc = get_status_code(test_url)
         if 200 <= sc <= 299:
@@ -180,7 +185,9 @@ def auto_enumerate_images(base_url):
     max_found = max(found_nums)
     url_list = build_url_sequence(base_url, min_found, max_found, width=width)
 
-    color_print(f"Enumerated {len(url_list)} images from {min_found} to {max_found}:", CYAN)
+    color_print(
+        f"Enumerated {len(url_list)} images from {min_found} to {max_found}:", CYAN
+    )
     check_urls_in_sequence(url_list)
 
 
