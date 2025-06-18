@@ -8,30 +8,32 @@ TESTS      := merge_test.bats
 
 all: help
 
-install:
-	@echo "Installing $(SCRIPT) to $(INSTALLDIR)"
+install: # Install the script to the system
+	@echo "📦 Installing $(SCRIPT) to $(INSTALLDIR)..."
 	@chmod +x $(SCRIPT)
 	@sudo cp -f $(SCRIPT) $(INSTALLDIR)/
-	@echo "✅ Installed!"
+	@echo "✅ Installed successfully!"
 
-uninstall:
-	@echo "Removing $(INSTALLDIR)/$(SCRIPT)"
+uninstall: # Remove the installed script
+	@echo "🗑️  Removing $(INSTALLDIR)/$(SCRIPT)..."
 	@sudo rm -f $(INSTALLDIR)/$(SCRIPT)
-	@echo "🗑️  Uninstalled."
+	@echo "✅ Uninstalled successfully!"
 
-test:
+test: # Run BATS tests
 	@echo "🧪 Running BATS tests..."
 	@bats $(TESTS)
 
-lint:
+lint: # Run shellcheck on the script
 	@echo "🔍 Running shellcheck..."
 	@shellcheck $(SCRIPT)
 
-clean:
+clean: # Remove temporary and output files
 	@echo "🧹 Cleaning up temp files..."
-	@rm -rf *.tmp *.log *.mp4 tmp/
+	@rm -f *.tmp *.log *.mp4
+	@rm -rf tmp/
+	@echo "✅ Cleaned."
 
-help:
+help: # Show this help message
 	@echo "FFX Project Makefile"
 	@echo "===================="
 	@echo "make install      Install ffx to $(INSTALLDIR)"
