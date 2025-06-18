@@ -8,17 +8,10 @@ set -eu
 #    Compiles and installs mem-police
 # -----------------------------------
 
-## Auto-escalate
-
+# Auto-escalate
 [ "$(id -u)" -eq 0 ] || exec sudo sh "$0" "$@"
 
-## Colors
-
-case "${COLORTERM:-}" in
-  truecolor|24bit) ;; 
-  *) export COLORTERM="24bit" ;;
-esac
-
+# Colors
 if command -v tput >/dev/null && [ -t 1 ]; then
     GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
     BUG()  { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
@@ -29,27 +22,25 @@ else
     INFO() { printf '[..] %s\n' "$*"; }
 fi
 
-## Compile
-
 INFO "Compiling mem-police..."
 if cc -O2 -std=c11 -Wall -Wextra -pedantic \
      -D_POSIX_C_SOURCE=200809L \
      -o mem-police mem-police.c
 then
     GLOW "Compilation succeeded"
-    echo ""
 else
     BUG  "Compilation failed"
     exit 1
 fi
 
-## Install (requires root)
-
 INFO "Installing to /usr/local/bin..."
 if install -m755 mem-police /usr/local/bin/; then
     GLOW "mem-police installed successfully."
     echo ""
-    printf '%s\n' "Start mem-police with [→]$(tput setaf 4)  sudo sh -c 'mem-police 2>&1 | tee /var/log/mem-police.log' &$(tput sgr0)"
+    printf '%s\n' "Start mem-police as root with:
+$(tput setaf 4)  /usr/local/bin/mem-police &$(tput sgr0)
+or for logging:
+$(tput setaf 4)  sudo sh -c '/usr/local/bin/mem-police 2>&1 | tee /var/log/mem-police.log' &$(tput sgr0)"
 else
     BUG  "Installation failed."
     exit 1
