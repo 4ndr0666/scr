@@ -1,0 +1,42 @@
+# FFX Project Makefile
+
+SCRIPT     := ffx
+INSTALLDIR := /usr/local/bin
+TESTS      := merge_test.bats
+
+.PHONY: all install uninstall test lint clean help
+
+all: help
+
+install:
+	@echo "Installing $(SCRIPT) to $(INSTALLDIR)"
+	@chmod +x $(SCRIPT)
+	@sudo cp -f $(SCRIPT) $(INSTALLDIR)/
+	@echo "✅ Installed!"
+
+uninstall:
+	@echo "Removing $(INSTALLDIR)/$(SCRIPT)"
+	@sudo rm -f $(INSTALLDIR)/$(SCRIPT)
+	@echo "🗑️  Uninstalled."
+
+test:
+	@echo "🧪 Running BATS tests..."
+	@bats $(TESTS)
+
+lint:
+	@echo "🔍 Running shellcheck..."
+	@shellcheck $(SCRIPT)
+
+clean:
+	@echo "🧹 Cleaning up temp files..."
+	@rm -rf *.tmp *.log *.mp4 tmp/
+
+help:
+	@echo "FFX Project Makefile"
+	@echo "===================="
+	@echo "make install      Install ffx to $(INSTALLDIR)"
+	@echo "make uninstall    Remove installed ffx"
+	@echo "make test         Run all BATS tests"
+	@echo "make lint         Run shellcheck on ffx"
+	@echo "make clean        Remove temp/output files"
+	@echo "make help         Show this help"
