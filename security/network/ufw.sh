@@ -360,17 +360,25 @@ parse_args() {
 
 expressvpn_connect() {
 	log "CAT" "Connecting ExpressVPN"
+	if ! command -v expressvpn >/dev/null 2>&1; then
+		log "ERROR" "expressvpn command not found"
+		return 1
+	fi
 	run_cmd_dry expressvpn connect || {
 		log "ERROR" "ExpressVPN connection failed"
-		exit 1
+		return 1
 	}
 }
 
 expressvpn_disconnect() {
 	log "CAT" "Disconnecting ExpressVPN"
+	if ! command -v expressvpn >/dev/null 2>&1; then
+		log "ERROR" "expressvpn command not found"
+		return 1
+	fi
 	run_cmd_dry expressvpn disconnect || {
 		log "ERROR" "ExpressVPN disconnect failed"
-		exit 1
+		return 1
 	}
 }
 
@@ -647,7 +655,11 @@ fi
 
 # === VPN logic integration (unified) ===
 if [[ "$VPN_FLAG" -eq 1 ]]; then
-	if ! pgrep -x expressvpn >/dev/null 2>&1; then expressvpn_connect; fi
+	if pgrep -x expressvpn >/dev/null 2>&1; then
+		log "INFO" "ExpressVPN already running."
+	else
+		expressvpn_connect || log "WARN" "VPN connection failed"
+	fi
 fi
 if ! configure_sysctl; then log "WARN" "Sysctl configuration encountered issues."; fi
 if ! configure_ufw; then
@@ -656,7 +668,7 @@ if ! configure_ufw; then
 fi
 # If VPN flag is not set and expressvpn is running, disconnect and cleanup DNS
 if [[ "$VPN_FLAG" -eq 0 ]] && pgrep -x expressvpn >/dev/null 2>&1; then
-	expressvpn_disconnect
+	expressvpn_disconnect || log "WARN" "VPN disconnect failed"
 	restore_resolv_conf
 fi
 
