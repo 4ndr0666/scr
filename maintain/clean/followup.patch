@@ -1,0 +1,99 @@
+*** Begin Patch
+*** Update File: vacuum.py
+@@
+-from contextlib import contextmanager
+-from pathlib import Path
+-from typing import Callable, List
++from contextlib import contextmanager
++from pathlib import Path
++from typing import Callable, List
++import re                               # ← needed by several helpers
+@@
+-UNSAFE_DELETE_PATHS: list[str] = ["/", "/srv", "/boot", "/etc", "/usr", "/bin", "/var"]
++UNSAFE_DELETE_PATHS: list[str] = ["/", "/srv", "/boot", "/etc", "/usr", "/bin", "/var"]
+*** End Patch
+PATCH
+
+patch -p1 <<'PATCH'
+*** Begin Patch
+*** Update File: vacuum.py
+@@
+-        backup = (
+-            Path(DEFAULT_LOG_DIR)
+-            / f"services_backup_{datetime.now():%Y%m%d_%H%M%S}.txt"
+-        )
+-        backup.write_text("Previously enabled services:\n")
++        backup = LOG_BASE_DIR / f"services_backup_{datetime.datetime.now():%Y%m%d_%H%M%S}.txt"
++        backup.write_text("Previously enabled services:\n")
+@@
+-                backup.write_text(svc + "\n", append=True)
++                with backup.open("a") as fh:
++                    fh.write(svc + "\n")
+*** End Patch
+PATCH
+
+patch -p1 <<'PATCH'
+*** Begin Patch
+*** Update File: vacuum.py
+@@
+-    from pathlib import Path
+-
+     aur_dir = aur_dir or os.path.expanduser("~/aur")
+*** End Patch
+PATCH
+
+patch -p1 <<'PATCH'
+*** Begin Patch
+*** Update File: vacuum.py
+@@
+-    pkgs = {warn_re.search(ln).group(1) for ln in lines if warn_re.search(ln)}
++    pkgs = {warn_re.search(ln).group(1) for ln in lines if warn_re.search(ln)}
++
++# ------------------------------------------------------------------+
++# Helper: is this package in an official Arch repo?                 +
++# ------------------------------------------------------------------+
++def is_official_package(pkg: str) -> bool:
++    cp = execute_command(["pacman", "-Si", pkg], check=False)
++    if cp.returncode != 0:
++        return False
++    for ln in cp.stdout.splitlines():
++        if ln.startswith("Repository"):
++            repo = ln.split(":", 1)[1].strip().lower()
++            return repo in {"core", "extra", "community", "multilib"}
++    return False
+*** End Patch
+PATCH
+
+patch -p1 <<'PATCH'
+*** Begin Patch
+*** Update File: vacuum.py
+@@
+     for g in selected:
+@@
+         execute_command(["sudo", *cmd], check=False)
+ 
++# --------------------------------------------------------------+
++# Minimal list-selector (uses **fzf** if available).            +
++# --------------------------------------------------------------+
++def select_items_from_list(items: list[str], prompt_msg: str) -> list[str]:
++    if not items:
++        return []
++    if shutil.which("fzf"):
++        proc = subprocess.run(
++            ["fzf", "-m", "--prompt", prompt_msg],
++            input="\n".join(items),
++            text=True,
++            capture_output=True,
++        )
++        return proc.stdout.strip().splitlines() if proc.returncode == 0 else []
++    # fallback numeric list
++    for i, it in enumerate(items, 1):
++        print(f"{i:>2}) {it}")
++    sel = input(prompt_msg).strip()
++    try:
++        idx = [int(x)-1 for x in sel.replace(",", " ").split() if x.isdigit()]
++        return [items[i] for i in idx if 0 <= i < len(items)]
++    except ValueError:
++        return []
++
+*** End Patch
