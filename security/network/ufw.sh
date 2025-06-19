@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=all
 # Author: 4ndr0666
 set -euo pipefail
 # ================= // UFW.SH //
@@ -16,13 +15,8 @@ if command -v tput >/dev/null 2>&1; then
 	INFO="$(tput setaf 4)[INFO]$(tput sgr0)"
 	WARN="$(tput setaf 1)[WARN]$(tput sgr0)"
 	CAT="$(tput setaf 6)[ACTION]$(tput sgr0)"
-	MAGENTA="$(tput setaf 5)"
-	ORANGE="$(tput setaf 214)"
 	WARNING="$(tput setaf 1)"
-	YELLOW="$(tput setaf 3)"
 	GREEN="$(tput setaf 2)"
-	BLUE="$(tput setaf 4)"
-	SKY_BLUE="$(tput setaf 6)"
 	CYAN="$(tput setaf 6)"
 	RESET="$(tput sgr0)"
 else
@@ -32,13 +26,8 @@ else
 	INFO="[INFO]"
 	WARN="[WARN]"
 	CAT="[ACTION]"
-	MAGENTA=""
-	ORANGE=""
 	WARNING=""
-	YELLOW=""
 	GREEN=""
-	BLUE=""
-	SKY_BLUE=""
 	CYAN=""
 	RESET=""
 fi
@@ -50,7 +39,8 @@ declare -i VPN_FLAG=0
 declare -i JD_FLAG=0
 declare -i BACKUP_FLAG=0
 
-readonly SCRIPT_NAME="$(basename "$0")"
+SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME
 readonly LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
 readonly LOG_FILE="$LOG_DIR/ufw.log"
 readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-ufw-custom.conf"
@@ -92,35 +82,52 @@ trap cleanup EXIT ERR INT TERM HUP
 log() {
 	local level="$1" message="$2" timestamp
 	timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-	echo "$timestamp [$level] : $message" >>"$LOG_FILE"
-	[[ "$SILENT" -eq 0 ]] && case "$level" in
-	ERROR) echo -e "$ERROR $message" >&2 ;;
-	OK) echo -e "$OK $message" ;;
-	INFO) echo -e "$INFO $message" ;;
-	WARN) echo -e "$WARN $message" >&2 ;;
-	NOTE) echo -e "$NOTE $message" ;;
-	CAT) echo -e "$CAT $message" ;;
-	*) echo "$timestamp [$level] : $message" ;;
-	esac
+	printf '%s [%s] : %s\n' "$timestamp" "$level" "$message" >>"$LOG_FILE"
+	if [[ "$SILENT" -eq 0 ]]; then
+		case "$level" in
+		ERROR) printf '%b %s\n' "$ERROR" "$message" >&2 ;;
+		OK) printf '%b %s\n' "$OK" "$message" ;;
+		INFO) printf '%b %s\n' "$INFO" "$message" ;;
+		WARN) printf '%b %s\n' "$WARN" "$message" >&2 ;;
+		NOTE) printf '%b %s\n' "$NOTE" "$message" ;;
+		CAT) printf '%b %s\n' "$CAT" "$message" ;;
+		*) printf '%s [%s] : %s\n' "$timestamp" "$level" "$message" ;;
+		esac
+	fi
 }
 
 run_cmd_dry() {
-	local CMD=("$@") cmd_string="${CMD[*]}"
+	local CMD=("$@")
+	local cmd_string="${CMD[*]}"
 	log "INFO" "Attempting command: $cmd_string"
 	if [[ "$DRY_RUN" -eq 1 ]]; then
 		log "NOTE" "Dry-run: Would execute: $cmd_string"
 		return 0
 	fi
 	local status=0
-	if [[ "$SILENT" -eq 1 ]]; then "${CMD[@]}" >/dev/null 2>&1 || status=$?; else "${CMD[@]}" || status=$?; fi
-	[[ "$status" -ne 0 ]] && log "ERROR" "Command failed: $cmd_string (status $status)" || log "OK" "Command succeeded: $cmd_string"
+	if [[ "$SILENT" -eq 1 ]]; then
+		"${CMD[@]}" >/dev/null 2>&1 || status=$?
+	else
+		"${CMD[@]}" || status=$?
+	fi
+	if [[ "$status" -ne 0 ]]; then
+		log "ERROR" "Command failed: $cmd_string (status $status)"
+	else
+		log "OK" "Command succeeded: $cmd_string"
+	fi
 	return "$status"
 }
 
 backup_file() {
 	local src="$1" dest_dir="$2" ts dest
-	[[ -z "$src" || -z "$dest_dir" ]] && log "ERROR" "backup_file requires source and destination" && return 1
-	[[ ! -f "$src" ]] && log "WARN" "File $src not found to backup." && return 1
+	if [[ -z "$src" || -z "$dest_dir" ]]; then
+		log "ERROR" "backup_file requires source and destination"
+		return 1
+	fi
+	if [[ ! -f "$src" ]]; then
+		log "WARN" "File $src not found to backup."
+		return 1
+	fi
 	ts=$(date +"%Y%m%d_%H%M%S")
 	dest="$dest_dir/$(basename "$src").bak_$ts"
 	run_cmd_dry mkdir -p "$dest_dir" || return 1
@@ -138,19 +145,34 @@ backup_file() {
 }
 
 backup_resolv_conf() {
-	[[ -f "$RESOLV_FILE" && ! -f "$RESOLV_BACKUP" ]] && run_cmd_dry cp "$RESOLV_FILE" "$RESOLV_BACKUP" && log "OK" "Backed up $RESOLV_FILE to $RESOLV_BACKUP"
+	if [[ -f "$RESOLV_FILE" && ! -f "$RESOLV_BACKUP" ]]; then
+		run_cmd_dry cp "$RESOLV_FILE" "$RESOLV_BACKUP" &&
+			log "OK" "Backed up $RESOLV_FILE to $RESOLV_BACKUP"
+	fi
 }
 restore_resolv_conf() {
-	[[ -f "$RESOLV_BACKUP" ]] && run_cmd_dry cp "$RESOLV_BACKUP" "$RESOLV_FILE" && log "OK" "Restored $RESOLV_FILE from backup" || log "INFO" "No DNS backup found at $RESOLV_BACKUP"
+	if [[ -f "$RESOLV_BACKUP" ]]; then
+		run_cmd_dry cp "$RESOLV_BACKUP" "$RESOLV_FILE" &&
+			log "OK" "Restored $RESOLV_FILE from backup"
+	else
+		log "INFO" "No DNS backup found at $RESOLV_BACKUP"
+	fi
 }
 
 parse_dns_servers() {
 	VPN_DNS_SERVERS=()
-	[[ -f "$RESOLV_FILE" ]] && mapfile -t VPN_DNS_SERVERS < <(grep -E "^nameserver" "$RESOLV_FILE" | awk '{print $2}') && log "INFO" "Parsed DNS servers: ${VPN_DNS_SERVERS[*]:-none}"
+	if [[ -f "$RESOLV_FILE" ]]; then
+		mapfile -t VPN_DNS_SERVERS < <(grep -E "^nameserver" "$RESOLV_FILE" | awk '{print $2}')
+		log "INFO" "Parsed DNS servers: ${VPN_DNS_SERVERS[*]:-none}"
+	fi
 }
 
+# shellcheck disable=SC2120,SC2119
 apply_dns_rules() {
-	[[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]] && log "WARN" "No DNS servers available for rule creation" && return 1
+	if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+		log "WARN" "No DNS servers available for rule creation"
+		return 1
+	fi
 	local dns_rules=()
 	if detect_vpn_interfaces; then
 		read -r -a vpn_iface_array <<<"$VPN_IFACES"
@@ -165,8 +187,9 @@ apply_dns_rules() {
 	done
 	dns_rules+=("deny out to any port 53 comment 'Block other DNS'")
 	for rule in "${dns_rules[@]}"; do
-		if validate_ufw_rule $rule; then
-			run_cmd_dry ufw $rule || log "WARN" "Failed DNS rule: $rule"
+		if validate_ufw_rule "$rule"; then
+			eval set -- "$rule"
+			run_cmd_dry ufw "$@" || log "WARN" "Failed DNS rule: $rule"
 		fi
 	done
 	return 0
@@ -188,15 +211,21 @@ usage() {
 
 is_immutable() {
 	local file="$1"
-	[[ ! -f "$file" ]] && log "WARN" "File not found for immutable check: $file" && return 1
+	if [[ ! -f "$file" ]]; then
+		log "WARN" "File not found for immutable check: $file"
+		return 1
+	fi
 	command -v lsattr >/dev/null 2>&1 || {
 		log "WARN" "'lsattr' not found. Cannot check immutable flag for $file."
 		return 2
 	}
-	lsattr "$file" 2>/dev/null | grep -q '^....i' && log "INFO" "File is immutable: $file" && return 0 || {
+	if lsattr "$file" 2>/dev/null | grep -q '^....i'; then
+		log "INFO" "File is immutable: $file"
+		return 0
+	else
 		log "INFO" "File is not immutable: $file"
 		return 1
-	}
+	fi
 }
 remove_immutable() {
 	command -v chattr >/dev/null 2>&1 || {
@@ -218,21 +247,33 @@ check_dependencies() {
 	local deps=(ufw ss awk grep sed systemctl ip sysctl tee)
 	local optional_deps=(lsattr chattr expressvpn)
 	local missing=()
-	for cmd in "${deps[@]}"; do command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd"); done
-	for opt in "${optional_deps[@]}"; do command -v "$opt" >/dev/null 2>&1 || log "WARN" "Optional dependency missing: $opt"; done
-	[[ ${#missing[@]} -eq 0 ]] && log "OK" "All required dependencies satisfied." && return 0 || {
+	for cmd in "${deps[@]}"; do
+		command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+	done
+	for opt in "${optional_deps[@]}"; do
+		command -v "$opt" >/dev/null 2>&1 || log "WARN" "Optional dependency missing: $opt"
+	done
+	if [[ ${#missing[@]} -eq 0 ]]; then
+		log "OK" "All required dependencies satisfied."
+		return 0
+	else
 		log "ERROR" "Missing dependencies: ${missing[*]}"
-		echo -e "$ERROR Missing dependencies: ${missing[*]}" >&2
+		printf '%b Missing dependencies: %s%b\n' "$ERROR" "${missing[*]}" "$RESET" >&2
 		return 1
-	}
+	fi
 }
 
 detect_primary_interface() {
 	log "INFO" "Detecting primary network interface..."
 	local detected_if
 	detected_if=$(ip -4 route show default | awk '{print $5; exit}' || true)
-	[[ -z "$detected_if" ]] && detected_if=$(ip route get 8.8.8.8 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}' || true)
-	[[ -z "$detected_if" ]] && log "ERROR" "Unable to detect primary interface. Network might be down or routing is unusual." && return 1
+	if [[ -z "$detected_if" ]]; then
+		detected_if=$(ip route get 8.8.8.8 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}' || true)
+	fi
+	if [[ -z "$detected_if" ]]; then
+		log "ERROR" "Unable to detect primary interface. Network might be down or routing is unusual."
+		return 1
+	fi
 	PRIMARY_IF="$detected_if"
 	log "OK" "Primary interface detected: $PRIMARY_IF"
 	return 0
@@ -401,7 +442,9 @@ net.ipv6.conf.default.accept_source_route=0
 		return 1
 	}
 	[[ "$BACKUP_FLAG" -eq 1 ]] && backup_file "$SYSCTL_UFW_FILE" "$BACKUP_DIR"
-	command -v chattr >/dev/null 2>&1 && remove_immutable "$SYSCTL_UFW_FILE" || true
+	if command -v chattr >/dev/null 2>&1; then
+		remove_immutable "$SYSCTL_UFW_FILE" || true
+	fi
 	if [[ "$DRY_RUN" -eq 0 ]]; then
 		echo -e "$SYSCTL_CONTENT" | tee "$SYSCTL_UFW_FILE" >/dev/null || {
 			log "ERROR" "Failed to write $SYSCTL_UFW_FILE"
@@ -412,32 +455,34 @@ net.ipv6.conf.default.accept_source_route=0
 		log "NOTE" "Dry-run: Would write sysctl config to $SYSCTL_UFW_FILE."
 		[[ "$SILENT" -eq 0 ]] && echo -e "$SYSCTL_CONTENT"
 	fi
-	command -v chattr >/dev/null 2>&1 && set_immutable "$SYSCTL_UFW_FILE" || true
+	if command -v chattr >/dev/null 2>&1; then
+		set_immutable "$SYSCTL_UFW_FILE" || true
+	fi
 	if [[ "$DRY_RUN" -eq 0 ]]; then
 		run_cmd_dry sysctl --system || {
 			log "ERROR" "Failed to apply sysctl settings. Check $SYSCTL_UFW_FILE for errors."
 			return 1
 		}
-                local current_swappiness
-                current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
-                        log "ERROR" "Unable to read vm.swappiness"
-                        return 1
-                }
-                if [[ "$current_swappiness" -ne 60 ]]; then
-                        log "WARN" "Detected vm.swappiness $current_swappiness; resetting to 60"
-                        run_cmd_dry sysctl -w vm.swappiness=60 || {
-                                log "ERROR" "Failed to set vm.swappiness to 60"
-                                return 1
-                        }
-                        current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
-                                log "ERROR" "Unable to read vm.swappiness after reset"
-                                return 1
-                        }
-                        if [[ "$current_swappiness" -ne 60 ]]; then
-                                log "ERROR" "vm.swappiness remains $current_swappiness after reset"
-                                return 1
-                        fi
-                fi
+		local current_swappiness
+		current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
+			log "ERROR" "Unable to read vm.swappiness"
+			return 1
+		}
+		if [[ "$current_swappiness" -ne 60 ]]; then
+			log "WARN" "Detected vm.swappiness $current_swappiness; resetting to 60"
+			run_cmd_dry sysctl -w vm.swappiness=60 || {
+				log "ERROR" "Failed to set vm.swappiness to 60"
+				return 1
+			}
+			current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
+				log "ERROR" "Unable to read vm.swappiness after reset"
+				return 1
+			}
+			if [[ "$current_swappiness" -ne 60 ]]; then
+				log "ERROR" "vm.swappiness remains $current_swappiness after reset"
+				return 1
+			fi
+		fi
 	else
 		log "NOTE" "Dry-run: Would apply sysctl settings and verify swappiness."
 	fi
@@ -445,6 +490,7 @@ net.ipv6.conf.default.accept_source_route=0
 	return 0
 }
 
+# shellcheck disable=SC2120,SC2119
 configure_ufw() {
 	log "CAT" "Configuring UFW firewall rules..."
 	[[ -n "${SSH_CLIENT:-}" || -n "${SSH_TTY:-}" ]] && log "WARN" "Detected SSH session. If not using port $SSH_PORT, you will disconnect!" && sleep 3
@@ -498,7 +544,10 @@ configure_ufw() {
 		restore_resolv_conf
 	fi
 	for rule_spec in "${ALL_RULES[@]}"; do
-		if validate_ufw_rule $rule_spec; then run_cmd_dry ufw $rule_spec || log "WARN" "Failed to add rule: $rule_spec"; fi
+		if validate_ufw_rule "$rule_spec"; then
+			eval set -- "$rule_spec"
+			run_cmd_dry ufw "$@" || log "WARN" "Failed to add rule: $rule_spec"
+		fi
 	done
 	log "OK" "All configured rules processed."
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
@@ -538,9 +587,9 @@ configure_ufw() {
 
 validate_ufw_rule() {
 	local rule="$*"
-	[[ "$rule" =~ ^allow\ [0-9]+/(tcp|udp) ]] && return 0
-	[[ "$rule" =~ ^(allow|deny)\ (in|out)\ on\ [a-zA-Z0-9]+\ to\ any\ port\ [0-9]+(\ proto\ (tcp|udp))? ]] && return 0
-	[[ "$rule" =~ ^allow\ out\ on\ [a-zA-Z0-9]+\ comment\  ]] && return 0
+	[[ "$rule" =~ ^allow[[:space:]][0-9]+/(tcp|udp)$ ]] && return 0
+	[[ "$rule" =~ ^(allow|deny)[[:space:]](in|out)[[:space:]]on[[:space:]][A-Za-z0-9]+[[:space:]]to[[:space:]](any|[0-9./]+)[[:space:]]port[[:space:]][0-9]+([[:space:]]proto[[:space:]](tcp|udp))?([[:space:]]comment[[:space:]].*)?$ ]] && return 0
+	[[ "$rule" =~ ^allow[[:space:]]out[[:space:]]on[[:space:]][A-Za-z0-9]+[[:space:]]comment[[:space:]].*$ ]] && return 0
 	return 1
 }
 
@@ -570,24 +619,23 @@ final_verification() {
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
-	log "INFO" "Not running as root. Escalating to sudo..."
-	echo -e "$WARNING💀WARNING💀 - escalating to root (sudo)...$RESET" >&2
+	printf '%b%s%b\n' "$WARNING" '💀WARNING💀 - escalating to root (sudo)...' "$RESET" >&2
 	exec sudo "$0" "$@"
 fi
-log "OK" "Running with root privileges."
-log "INFO" "Setting up log directory and file..."
+
 mkdir -p "$LOG_DIR" || {
-	echo -e "$ERROR Could not create log directory: $LOG_DIR" >&2
+	printf '%b Could not create log directory: %s%b\n' "$ERROR" "$LOG_DIR" "$RESET" >&2
 	exit 1
 }
 touch "$LOG_FILE" || {
-	echo -e "$ERROR Could not create log file: $LOG_FILE" >&2
+	printf '%b Could not create log file: %s%b\n' "$ERROR" "$LOG_FILE" "$RESET" >&2
 	exit 1
 }
 chmod 600 "$LOG_FILE" || {
-	echo -e "$ERROR Could not set permissions on log file: $LOG_FILE" >&2
+	printf '%b Could not set permissions on log file: %s%b\n' "$ERROR" "$LOG_FILE" "$RESET" >&2
 	exit 1
 }
+log "OK" "Running with root privileges."
 log "OK" "Log directory and file setup complete: $LOG_FILE"
 
 log "CAT" "Starting system hardening script: $SCRIPT_NAME"
