@@ -14,3 +14,9 @@
 - Refactored utilities/iso/makeiso.sh with modular functions, help and dry-run support.
 - Added bkp-unified.sh combining backup methods with config and ISO support.
 - Consolidated PKG_PATH detection into ensure_pkg_path in common.sh and updated dependent scripts.
+- Refined security/network/ufw.sh with improved logging, rule validation, quoting, and re-enabled ShellCheck.
+- Fixed ufw.sh rule execution by parsing quoted rules correctly and handling ShellCheck warnings.
+- Cleaned merge artifacts in ufw.sh and ensured executable permissions
+- Ensured ufw.sh cleaned via codex-merge-clean and executable bit restored
+
+- Enhanced ufw.sh: early log setup, improved rule parsing, arrays for ufw commands, and refined regex.
