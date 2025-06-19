@@ -7,3 +7,4 @@ Enhanced pauseallmpv with option parsing and strict mode.
 Added bkp-unified.sh consolidating backup scripts with dry-run and ISO support.
 Enhanced ufw.sh: fixed logging setup, improved rule validation and quoting, switched to printf, enabled ShellCheck.
 Corrected ufw.sh rule handling to parse quoted arguments properly and silenced minor ShellCheck warnings.
+Removed merge artifacts and verified ufw.sh script permissions.
