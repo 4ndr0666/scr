@@ -1,86 +1,103 @@
-# AGENTS.md
+### `AGENTS.md`
 
-This "scr" repository hosts the scripts I use on my personal Arch machine.
+```markdown
+# AGENTS Policy & Run-book
+_One source of truth for every human or automated agent interacting with this
+repository.  If a rule conflicts with local `CODEX.md` files, **this file wins.**_
 
 ---
 
-## File Tree Structure 
+## 1  Goals & Guarantees
+| Goal | Guarantee |
+|------|-----------|
+| **Safety** | No action can destroy data, bypass tests, or ship merge artefacts. |
+| **Reproducibility** | All tasks are logged, deterministic, and XDG-compliant. |
+| **Traceability** | Every change – even one-line edits – is linked to a test, changelog entry, and task-outcome note. |
 
-- `0-tests/`: testing + diagnostics/ codex utilities
-- `4ndr0tools/`: core bootstrap + customization.
-- `install/`: self-contained package/system installers.
-- `maintain/`: automation for backups, cleanup, system hygiene.
-- `media/`: FFMPEG/media manipulation (lossless-first).
-- `security/`: handles permissions, gpg, networking and firewalls.
-- `systemd/`: Arch-based unit management. Usee `systemctl --user` unless root required.
-- `utilities/`: custom scripts for sysadmin tasks grouped by domain (`build`, `chroot`, etc.).
+---
 
-### General Enforcement
+## 2  Scope & Permissions
+1. **Default read-only.** Agents must request scope explicitly.  
+2. **Recursive rules**  
+   * If a _directory_ is named, the entire subtree is in scope.  
+   * If a _glob_ is used (`*.sh`), only matching paths inside the given scope are touched.
 
-- Eliminate the potential for error by removing the human aspect; ensure the tasks you need done are handled via one-liners, functions or scripts and not by manual human input. 
-- Never use placeholders, half-measures, or omitted code lines. Provide all functional logic end-to-end.
-- Prioritize local scoping, strict error handling, and complete path resolution.
-- Always lint using ShellCheck where applicable. Adhere to XDG Base Directory Specification for file paths.
-- Automation must minimize user intervention while safeguarding system integrity.
-- All files must be cleaned of CODEX merge artifacts before any commit or pull request merge.
-- Use the utility: `0-tests/codex-merge-clean.sh <file ...>` to ensure no `<<<<<<<<<<<<<<<<<<<CODEX_`, `=========================`, or `>>>>>>>>>>>>>>>>>Main` blocks remain.
-- Run this tool after CODEX-assisted merges, and before lint, test, or commit stages.
+---
 
-## Code Directive 
+## 3  Environment Rules
+| Category | Rule |
+|----------|------|
+| **XDG** | Resolve `$XDG_*` variables first; _fallback_ to:<br>`$XDG_DATA_HOME → ~/.local/share`, etc. |
+| **Shell** | Target `bash` ≥ 5 or `zsh` ≥ 5 unless task states otherwise. |
+| **Temp files** | Create under `$XDG_RUNTIME_DIR` and auto-clean. |
 
-To ensure long-term maintainability, clarity, and correctness, all contributions and AI-assisted edits must ensure compliance with the following:
-- Use `printf` over `echo`, support non-interactive and piped use.
-- For scripts that modify system state, enforce `sudo` validation and log actions to `$XDG_DATA_HOME/logs/`.
-- All newly generated scripts must live in the appropriate category folder and be prefixed clearly (e.g., `ffx-*`, `exo-*`, `git-*`).
-- Every script must be modular, testable, and XDG-compliant.
-- Use `shellcheck` and `shfmt` on all shellscripts.
-- Prefer long-form flags (`--help`) and avoid short flags unless they follow industry convention.
-- All scripts must support `--help` and `--dry-run` where appropriate.
-- Avoid `&>` redirection. Use `>file 2>&1` consistently.
-- Validate all exports.
-- Avoid unbound or arbitrary variables—concretely assign all values.
+---
 
-## Validation Requirements
-
-Ensure all functions explicitly check:
-- Return status of critical commands
-- Input/output validations
-- File existence and permission conditions
-
-Ensure all functions are:
-- **Well-defined and fully implemented**
-- **Idempotent** and **accessible**
-- **Logically isolated** with explicit error capture
-- **Variable declarations separate from assignments**
-- **Free from ambiguity, newlines, extraneous input, or bad splitting**
-- **Free of cyclomatic complexity**, using clear flow constructs
-
-## Testing Instructions
-
-- Use `bats` or inline test harnesses where feasible.
-- Mock destructive commands in dry-run mode.
-- Ensure to execute the following pre-commit hook before a PR:
-
-```bash
-#!/usr/bin/env bash
-set -e
-for f in $(git diff --cached --name-only); do
-    [ -f "$f" ] && 0-tests/codex-merge-clean.sh "$f"
-done
-git add .
+## 4  Change-Management Pipeline
+1. **Dry-run + lint** (`shellcheck`, `shfmt -d`, `eslint`, or language-specific).  
+2. **Unit / bats / integration tests**  
+3. **`codex-merge-clean.sh`** – removes merge markers; fails build if any remain.  
+4. **Update `/0-tests/CHANGELOG.md`** – _every_ change (single-file included) with:  
 ```
 
-## Final Review Protocol
+yyyy-mm-dd • <file> • <±LOC> • <summary>
 
-For each script or multi-function revision:
-1. Count and disclose the number of functions and lines.
-2. Compare with the original to ensure alignment.
-3. If a gross mismatch exists, retry up to 3 times before erroring.
-4. Defer to human input only with a concise numerical decision list.
-5. Before commit or PR merge, you are required to execute "/scr/0-tests/codex-merge-clean.sh` on all changed files in order to remove leftover annotations and trailing garbage left behind after your modifications. Reject any revision where these remain present.
+````
+5. **Append outcome** to `/0-tests/task_outcome.md`.
 
-**Important Rules**:
-- You are only authorized to work with directories or files explicitly named or listed in the task prompt.
-- You are required to maintain a clear `/scr/0-tests/CHANGELOG.md` for multi-file changes. 
-- You are required to debrief the task outcome once it has been merged and maintain it at `/scr/0-tests/task_outcome.md`. 
-- You are not authorized to bypass dry-run, lint, or policy enforcement unless explicitly disabled.
+---
+
+## 5  Bypasses & Exceptions
+If a policy _must_ be bypassed (e.g. technical blocker):
+```text
+1. Add an inline `# AGENT-BYPASS:<reason>` comment.
+2. Record the rationale + affected lines in CHANGELOG.
+3. Summarise in task_outcome.md.
+````
+
+Automation halts until a human reviewer clears the entry.
+
+---
+
+## 6  Escalation Protocol
+
+When an agent cannot decide safely, it must:
+
+1. Stop further edits.
+2. Write a concise **numerical decision list** in `task_outcome.md`.
+3. Ping the human reviewer.
+
+---
+
+## 7  Test-Coverage Gaps
+
+If a script cannot be fully tested:
+
+* Document why in `task_outcome.md`.
+* Mark the code with `# NO-TEST:<reason>`.
+
+---
+
+## 8  Termination Conditions
+
+| Condition              | Action                                         |
+| ---------------------- | ---------------------------------------------- |
+| Merge artefacts remain | **Fail CI**, log offending files, abort merge. |
+| Lint / tests fail      | Same as above.                                 |
+| Undocumented bypass    | Reject commit, require escalation.             |
+
+---
+
+## 9  Quick Reference
+
+| Area         | Hard Rule                                     |
+| ------------ | --------------------------------------------- |
+| XDG fallback | Always provide `${VAR:-default}`              |
+| Glob / Dir   | Dir → recursive, Glob → explicit matches only |
+| Changelog    | *Every* commit, even 1-line                   |
+| Bypass       | Inline tag + logs + halt                      |
+| Escalation   | Numerical list in `task_outcome.md`           |
+| Merge clean  | Block on remaining artefacts                  |
+| Test gaps    | Document & annotate                           |
+
+````
