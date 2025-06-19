@@ -1,3 +1,0 @@
-bindsym print         exec /usr/share/sway/scripts/grimshot --notify save output
-bindsym Shift+print   exec /usr/share/sway/scripts/grimshot --notify copy area
-bindsym Control+print exec ~/.config/sway/scripts/screenshot.sh

@@ -1,7 +1,0 @@
-hide_search=true
-hide_scroll=true
-show=dmenu
-lines=6  # should be 5 but it needs one more for some reason
-columns=2
-# may have to adjust width and height, 25% looks nice for me
-width=25%
