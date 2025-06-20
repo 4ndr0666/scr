@@ -126,18 +126,19 @@ run_status_cmd() {
 apply_ufw_rule() {
 	local rule="$*"
 	if [[ "$UFW_SUPPORTS_COMMENT" -eq 0 ]]; then
-		rule="$(sed 's/ comment .*$//' <<<"$rule")"
+		rule="${rule// comment */}"
 	fi
-	run_cmd_dry ufw $rule
+	run_cmd_dry ufw "$rule"
 }
 
 detect_ufw_comment_support() {
 	if ufw --help 2>&1 | grep -q comment; then
 		UFW_SUPPORTS_COMMENT=1
+		log "OK" "UFW supports comments"
 	else
 		UFW_SUPPORTS_COMMENT=0
+		log "WARN" "UFW comments unsupported"
 	fi
-	[[ "$UFW_SUPPORTS_COMMENT" -eq 1 ]] && log "OK" "UFW supports comments" || log "WARN" "UFW comments unsupported"
 }
 
 show_status() {
