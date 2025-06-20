@@ -54,8 +54,10 @@ declare -a VPN_DNS_SERVERS=()
 declare -g PRIMARY_IF=""
 declare -g VPN_IFACES=""
 declare -g VPN_PORT=""
-declare -a TMP_DIRS=()
-declare -a TMP_FILES=()
+
+declare -i STATUS_FLAG=0
+declare -i SWAPPINESS_VAL=60
+declare -i UFW_SUPPORTS_COMMENT=1
 
 cleanup() {
 	local status=$?
@@ -64,17 +66,6 @@ cleanup() {
 	else
 		log "INFO" "Script exited normally"
 	fi
-	for f in "${TMP_FILES[@]:-}"; do
-		if [[ -e "$f" ]]; then
-			run_cmd_dry rm -f "$f" || true
-		fi
-	done
-
-	for d in "${TMP_DIRS[@]:-}"; do
-		if [[ -d "$d" ]]; then
-			run_cmd_dry rm -rf "$d" || true
-		fi
-	done
 	exit "$status"
 }
 trap cleanup EXIT ERR INT TERM HUP
@@ -116,6 +107,57 @@ run_cmd_dry() {
 		log "OK" "Command succeeded: $cmd_string"
 	fi
 	return "$status"
+}
+
+run_status_cmd() {
+	local desc="$1"
+	shift
+	log "INFO" "--- $desc ---"
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		local output
+		output=$("$@" 2>&1 || true)
+		[[ "$SILENT" -eq 0 ]] && echo "$output" | tee -a "$LOG_FILE" || echo "$output" >>"$LOG_FILE"
+	else
+		log "NOTE" "Dry-run: Would execute: $*"
+	fi
+	log "INFO" "--- End $desc ---"
+}
+
+apply_ufw_rule() {
+	local rule="$*"
+	if [[ "$UFW_SUPPORTS_COMMENT" -eq 0 ]]; then
+		rule="$(sed 's/ comment .*$//' <<<"$rule")"
+	fi
+	run_cmd_dry ufw $rule
+}
+
+detect_ufw_comment_support() {
+	if ufw --help 2>&1 | grep -q comment; then
+		UFW_SUPPORTS_COMMENT=1
+	else
+		UFW_SUPPORTS_COMMENT=0
+	fi
+	[[ "$UFW_SUPPORTS_COMMENT" -eq 1 ]] && log "OK" "UFW supports comments" || log "WARN" "UFW comments unsupported"
+}
+
+show_status() {
+	log "CAT" "Displaying firewall and VPN status..."
+	run_status_cmd "UFW Status" ufw status verbose
+	if command -v expressvpn >/dev/null 2>&1; then
+		run_status_cmd "ExpressVPN Status" expressvpn status
+	else
+		log "NOTE" "expressvpn not installed"
+	fi
+	if [[ -f "$SYSCTL_UFW_FILE" ]]; then
+		run_status_cmd "Sysctl Settings" cat "$SYSCTL_UFW_FILE"
+	else
+		log "NOTE" "$SYSCTL_UFW_FILE not found"
+	fi
+	if command -v resolvectl >/dev/null 2>&1; then
+		run_status_cmd "DNS per interface" resolvectl dns
+	else
+		run_status_cmd "resolv.conf" cat "$RESOLV_FILE"
+	fi
 }
 
 backup_file() {
@@ -187,7 +229,7 @@ apply_dns_rules() {
 	dns_rules+=("deny out to any port 53 comment 'Block other DNS'")
 	for rule in "${dns_rules[@]}"; do
 		if validate_ufw_rule "$rule"; then
-			run_cmd_dry ufw "$rule" || log "WARN" "Failed DNS rule: $rule"
+			apply_ufw_rule "$rule" || log "WARN" "Failed DNS rule: $rule"
 		fi
 	done
 	return 0
@@ -203,7 +245,15 @@ usage() {
 	echo "  --backup          : Create backups before modifying config files."
 	echo "  --silent          : Suppress console output (logs only)."
 	echo "  --dry-run         : Simulate actions without making changes."
+	echo "  --status          : Display current firewall/VPN status only."
+	echo "  --swappiness N    : Set vm.swappiness to N (default 60)."
 	echo "  --help, -h        : Show this help message."
+	echo ""
+	echo "Examples:"
+	echo "  $SCRIPT_NAME --vpn"
+	echo "  $SCRIPT_NAME --backup --dry-run"
+	echo "  $SCRIPT_NAME --jdownloader"
+	echo "  $SCRIPT_NAME --status"
 	exit "$exit_status"
 }
 
@@ -348,6 +398,20 @@ parse_args() {
 			DRY_RUN=1
 			log "INFO" "Dry-run mode enabled."
 			;;
+		--status)
+			STATUS_FLAG=1
+			log "INFO" "Status mode enabled."
+			;;
+		--swappiness)
+			if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then
+				SWAPPINESS_VAL="$2"
+				log "INFO" "Swappiness set to $SWAPPINESS_VAL"
+				shift
+			else
+				log "ERROR" "Invalid swappiness value: ${2:-}"
+				usage 1
+			fi
+			;;
 		--help | -h) usage ;;
 		*)
 			log "ERROR" "Unknown option: $1"
@@ -428,7 +492,7 @@ net.ipv4.udp_wmem_min=8192
 	[[ "$has_cake_module" -eq 1 ]] && SYSCTL_CONTENT+="net.core.default_qdisc=cake\n" || SYSCTL_CONTENT+="# net.core.default_qdisc=cake (Skipped: sch_cake module not found)\n"
 	[[ "$has_bbr_module" -eq 1 ]] && SYSCTL_CONTENT+="net.ipv4.tcp_congestion_control=bbr\n" || SYSCTL_CONTENT+="# net.ipv4.tcp_congestion_control=bbr (Skipped: tcp_bbr module not found)\n"
 	SYSCTL_CONTENT+="
-vm.swappiness=60
+vm.swappiness=$SWAPPINESS_VAL
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1
 net.ipv6.conf.lo.disable_ipv6=1
@@ -474,17 +538,17 @@ net.ipv6.conf.default.accept_source_route=0
 			log "ERROR" "Unable to read vm.swappiness"
 			return 1
 		}
-		if [[ "$current_swappiness" -ne 60 ]]; then
-			log "WARN" "Detected vm.swappiness $current_swappiness; resetting to 60"
-			run_cmd_dry sysctl -w vm.swappiness=60 || {
-				log "ERROR" "Failed to set vm.swappiness to 60"
+		if [[ "$current_swappiness" -ne $SWAPPINESS_VAL ]]; then
+			log "WARN" "Detected vm.swappiness $current_swappiness; resetting to $SWAPPINESS_VAL"
+			run_cmd_dry sysctl -w vm.swappiness=$SWAPPINESS_VAL || {
+				log "ERROR" "Failed to set vm.swappiness to $SWAPPINESS_VAL"
 				return 1
 			}
 			current_swappiness="$(sysctl -n vm.swappiness 2>/dev/null)" || {
 				log "ERROR" "Unable to read vm.swappiness after reset"
 				return 1
 			}
-			if [[ "$current_swappiness" -ne 60 ]]; then
+			if [[ "$current_swappiness" -ne $SWAPPINESS_VAL ]]; then
 				log "ERROR" "vm.swappiness remains $current_swappiness after reset"
 				return 1
 			fi
@@ -504,7 +568,7 @@ configure_ufw() {
 		return 1
 	}
 	log "OK" "UFW reset complete."
-	run_cmd_dry ufw limit in on "$PRIMARY_IF" to any port "$SSH_PORT" proto tcp comment "Limit SSH" || {
+	apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'" || {
 		log "ERROR" "Failed to re-add SSH rule."
 		return 1
 	}
@@ -550,7 +614,7 @@ configure_ufw() {
 	fi
 	for rule_spec in "${ALL_RULES[@]}"; do
 		if validate_ufw_rule "$rule_spec"; then
-			run_cmd_dry ufw "$rule_spec" || log "WARN" "Failed to add rule: $rule_spec"
+			apply_ufw_rule "$rule_spec" || log "WARN" "Failed to add rule: $rule_spec"
 		fi
 	done
 	log "OK" "All configured rules processed."
@@ -647,6 +711,11 @@ parse_args "$@"
 if ! check_dependencies; then
 	log "ERROR" "Dependency check failed. Exiting."
 	exit 1
+fi
+detect_ufw_comment_support
+if [[ "$STATUS_FLAG" -eq 1 ]]; then
+	show_status
+	exit 0
 fi
 if ! detect_primary_interface; then
 	log "ERROR" "Primary interface detection failed. Exiting."

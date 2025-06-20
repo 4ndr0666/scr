@@ -7,3 +7,4 @@ Enhanced pauseallmpv with option parsing and strict mode.
 Added bkp-unified.sh consolidating backup scripts with dry-run and ISO support.
 Enhanced ufw.sh: fixed logging setup, improved rule validation and quoting, switched to printf, enabled ShellCheck.
 Handled missing expressvpn command for --vpn flag in ufw.sh.
+Implemented status reporting, swappiness parameter, UFW comment detection, and removed unused temp arrays.

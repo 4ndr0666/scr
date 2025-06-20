@@ -16,3 +16,4 @@
 - Consolidated PKG_PATH detection into ensure_pkg_path in common.sh and updated dependent scripts.
 - Refined security/network/ufw.sh with improved logging, rule validation, quoting, and re-enabled ShellCheck.
 2025-06-19 • security/network/ufw.sh • +16/-4 • Handle missing expressvpn in --vpn flag
+2025-06-20 • security/network/ufw.sh • +91/-22 • Added --status flag, swappiness option, comment support detection, and cleaned tmp logic
