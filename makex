@@ -1,17 +1,46 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# =================== // MAKEX //
+
+# ================= // MAKEX //
+# Description: This script skips all .git files only 
+#              finding scripts that should be executable but arent 
+#              and makes them executable again.
+# Usage:       Modify the global constant "script_dir" with the 
+#              dir you need to run this on and execute.
+# ----------------------------------------------------
+
+# Global Constants
 
 script_dir="/home/git/clone/scr"
 scripts_found=false
 
+# Colors & Welcome
+
+OK="$(tput setaf 6)[EXECUTABLE]$(tput sgr0)"
+ERROR="$(tput setaf 1)[ERROR]$(tput sgr0)"
+clear
+echo -e "\e[35m
+███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
+████╗ ████║██╔══██╗██║ ██╔╝██╔════╝╚██╗██╔╝
+██╔████╔██║███████║█████╔╝ █████╗   ╚███╔╝ 
+██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗ 
+██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██╔╝ ██╗
+╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+\e[0m"
+echo -e "\e[35m
+Making your shit executable...
+\e[0m"
+sleep 2
+                                            
+# Main Entry Point
+
+clear
 while IFS= read -r script; do
 	scripts_found=true
 	chmod +x "$script"
-	echo "$script now executable!"	
-done < <(find "$script_dir" -type -f -exec script --mime-type {} + | grep -E 'script|executable')
-	
+	echo "${OK} $script"	
+done < <(find "$script_dir" \( -iname "*.sh" -or -perm -700 \) -type f "$script")
+ 	
 if [ "$scripts_found" = false ]; then
-	echo "No scripts found in $script_dir."
+	echo "${ERROR} No scripts found in $script_dir."
 fi
-	
