@@ -545,6 +545,13 @@ configure_ufw() {
 	run_cmd_dry ufw reload
 }
 
+## Final Verification
+final_verification() {
+    echo ""
+    echo "### Listening Ports ###"
+    ss -tunlp 
+}
+
 main() {
 	mkdir -p "$LOG_DIR"
 	touch "$LOG_FILE"
@@ -565,6 +572,7 @@ main() {
 	configure_sysctl
 	configure_ufw
 	restore_resolv_conf
+	final_verification
 }
 
 main "$@"
