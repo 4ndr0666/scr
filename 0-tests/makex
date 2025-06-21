@@ -1,46 +1,83 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Author: 4ndr0666
-
 # ================= // MAKEX //
-# Description: This script skips all .git files only 
-#              finding scripts that should be executable but arent 
-#              and makes them executable again.
-# Usage:       Modify the global constant "script_dir" with the 
-#              dir you need to run this on and execute.
+# Description: Make all scripts in a dir executable (except .git)
+# Usage:       makex.sh [DIR]   (default: current dir)
 # ----------------------------------------------------
 
-# Global Constants
+# Colors (POSIX)
+case "${COLORTERM}" in
+	truecolor | 24bit) ;;
+	*) export COLORTERM="24bit" ;;
+esac
 
-script_dir="/home/git/clone/scr"
-scripts_found=false
+if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+    GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
+    BUG()  { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
+    INFO() { printf '%s\n' "$(tput setaf 4)[➡️] $*$(tput sgr0)"; }
+    NF() { printf '%s\n' "$(tput setaf 1)0$(tput sgr0) files requiring executability."; } 
+else
+    GLOW() { printf '[OK] %s\n' "$*"; }
+    BUG()  { printf '[ERR] %s\n' "$*"; }
+    INFO() { printf '[INFO] %s\n' "$*"; }
+fi
 
-# Colors & Welcome
+# Welcome Message
+command -v clear >/dev/null 2>&1 && clear
 
-OK="$(tput setaf 6)[EXECUTABLE]$(tput sgr0)"
-ERROR="$(tput setaf 1)[ERROR]$(tput sgr0)"
-clear
-echo -e "\e[35m
-███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
+banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
 ████╗ ████║██╔══██╗██║ ██╔╝██╔════╝╚██╗██╔╝
 ██╔████╔██║███████║█████╔╝ █████╗   ╚███╔╝ 
 ██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗ 
 ██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██╔╝ ██╗
-╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
-\e[0m"
-echo -e "\e[35m
-Making your shit executable...
-\e[0m"
-sleep 2
-                                            
-# Main Entry Point
+╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"
 
-clear
-while IFS= read -r script; do
-	scripts_found=true
-	chmod +x "$script"
-	echo "${OK} $script"	
-done < <(find "$script_dir" \( -iname "*.sh" -or -perm -700 \) -type f "$script")
- 	
-if [ "$scripts_found" = false ]; then
-	echo "${ERROR} No scripts found in $script_dir."
+printf '\033[35m%s\033[0m\n' "$banner"
+printf '\n'
+
+# Typewriter function (POSIX sh, no bashisms)
+typewriter() {
+    msg="$1"
+    delay="${2:-0.025}"
+    i=1
+    while [ $i -le ${#msg} ]; do
+        printf "%s" "$(printf "%s" "$msg" | cut -c $i)"
+        sleep "$delay"
+        i=$((i + 1))
+    done
+    printf '\n'
+}
+
+typewriter "Chmod +x for that ass..."
+printf '\n'
+
+# Pause prompt (POSIX)
+pause_prompt() {
+    if command -v tput >/dev/null 2>&1; then
+        printf '%sPress any key to continue...%s\n' "$(tput setaf 6)" "$(tput sgr0)"
+    else
+        printf 'Press any key to continue...\n'
+    fi
+    oldstty=$(stty -g)
+    stty cbreak -echo
+    dd bs=1 count=1 2>/dev/null
+    stty "$oldstty"
+    printf '\n'
+}
+
+pause_prompt
+
+DIR="${1:-.}"
+results=$(find "$DIR" \
+    -type f \
+    ! -path "*/.git/*" \
+    \( -name "*.sh" -o -exec grep -q '^#!.*sh' {} \; \) \
+    ! -perm -u=x)
+
+if [ -n "$results" ]; then
+	printf '%s\n' "$results" | while IFS= read -r file; do
+    	chmod u+x "$file" && GLOW "$file"
+    done
+else
+	NF "" >&2
 fi
