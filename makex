@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+# =================== // MAKEX //
+
+script_dir="/home/git/clone/scr"
+scripts_found=false
+
+while IFS= read -r script; do
+	scripts_found=true
+	chmod +x "$script"
+	echo "$script now executable!"	
+done < <(find "$script_dir" -type -f -exec script --mime-type {} + | grep -E 'script|executable')
+	
+if [ "$scripts_found" = false ]; then
+	echo "No scripts found in $script_dir."
+fi
+	
