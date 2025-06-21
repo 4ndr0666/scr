@@ -15,11 +15,12 @@ if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
     GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
     BUG()  { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
     INFO() { printf '%s\n' "$(tput setaf 4)[➡️] $*$(tput sgr0)"; }
-    NF() { printf '%s\n' "$(tput setaf 1)0$(tput sgr0) files requiring executability."; } 
+    NF()   { printf '%s\n' "$(tput setaf 1)0$(tput sgr0) files requiring executability."; }
 else
     GLOW() { printf '[OK] %s\n' "$*"; }
     BUG()  { printf '[ERR] %s\n' "$*"; }
     INFO() { printf '[INFO] %s\n' "$*"; }
+    NF()   { printf '0 files requiring executability.\n'; }
 fi
 
 # Welcome Message
@@ -64,7 +65,6 @@ pause_prompt() {
     stty "$oldstty"
     printf '\n'
 }
-
 pause_prompt
 
 DIR="${1:-.}"
@@ -75,9 +75,9 @@ results=$(find "$DIR" \
     ! -perm -u=x)
 
 if [ -n "$results" ]; then
-	printf '%s\n' "$results" | while IFS= read -r file; do
-    	chmod u+x "$file" && GLOW "$file"
+    printf '%s\n' "$results" | while IFS= read -r file; do
+        chmod u+x "$file" && GLOW "$file"
     done
 else
-	NF "" >&2
+    NF >&2
 fi
