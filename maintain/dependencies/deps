@@ -59,7 +59,24 @@ TMP_DIR="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}"/deps.XXXXXX)"
 ALL_SYSTEM=false
 INTERACTIVE_MODE=false
 DRY_RUN=false
+SHOW_MATRIX=false
 
+# Arrays for ignore lists
+declare -a DEFAULT_IGNORE_PKGS=("wayland")
+declare -a CUSTOM_IGNORE_PKGS=()
+declare -a CUSTOM_IGNORE_GROUPS=()
+
+# Features list from both scripts for matrix output
+# shellcheck disable=SC2034
+declare -a FEATURES_DEPS=(
+    "dry-run support" "interactive mode" "pacman lock handling" \
+    "keyring fix" "dependency closure" "logging"
+)
+# shellcheck disable=SC2034
+declare -a FEATURES_BETA=(
+    "ignore packages" "ignore groups" "pactree resolution" \
+    "AUR support" "caching" "interactive prompts"
+)
 
 # Array to store target package list.
 declare -a PKGLIST
@@ -83,6 +100,33 @@ trap cleanup EXIT
 log_message() {
     local msg="$1"
     echo -e "$msg" | tee -a "$LOGFILE" 2>&1
+}
+
+###############################################################################
+# Function: feature_matrix
+# Description: Display a simple feature matrix comparing this script with
+#              deps-beta. This aids future refactoring efforts.
+###############################################################################
+feature_matrix() {
+    local -n list_a=$1
+    local -n list_b=$2
+    declare -A seen=()
+    local item
+    for item in "${list_a[@]}"; do
+        seen["$item"]="deps"
+    done
+    for item in "${list_b[@]}"; do
+        if [[ -n ${seen[$item]:-} ]]; then
+            seen["$item"]="both"
+        else
+            seen["$item"]="deps-beta"
+        fi
+    done
+    printf "%-25s | %s\n" "Feature" "Source"
+    printf -- '-------------------------+-----------\n'
+    for item in "${!seen[@]}"; do
+        printf "%-25s | %s\n" "$item" "${seen[$item]}"
+    done
 }
 
 ###############################################################################
@@ -301,6 +345,38 @@ is_in_official_repo() {
 }
 
 ###############################################################################
+# Function: is_ignored
+# Description: Return 0 if a package should be ignored based on ignore lists.
+###############################################################################
+declare -A PKG_GROUP_CACHE=()
+is_ignored() {
+    local pkg="$1"
+    local item groups
+
+    for item in "${DEFAULT_IGNORE_PKGS[@]}" "${CUSTOM_IGNORE_PKGS[@]}"; do
+        if [[ -n "$item" && "$pkg" == "$item" ]]; then
+            return 0
+        fi
+    done
+
+    groups="${PKG_GROUP_CACHE[$pkg]:-}"
+    if [[ -z "$groups" ]]; then
+        groups=$(pacman -Qi "$pkg" 2>/dev/null | awk -F':' '/^Groups/ {print $2}')
+        groups=${groups## } ; groups=${groups%% } # trim
+        PKG_GROUP_CACHE["$pkg"]="$groups"
+    fi
+
+    if [[ -n "$groups" ]]; then
+        for item in "${CUSTOM_IGNORE_GROUPS[@]}"; do
+            if [[ -n "$item" && " $groups " == *" $item "* ]]; then
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
+###############################################################################
 # Function: install_dependency
 # Description: Install a dependency via pacman (if in official repo) or via yay.
 ###############################################################################
@@ -354,7 +430,9 @@ compute_missing_dependencies() {
             read -r -a dep_array <<< "$(parse_dependencies "$deps_line")"
             for dep in "${dep_array[@]}"; do
                 resolved_dep=$(sanitize_and_resolve_dep_name "$dep")
-                all_deps["$resolved_dep"]=1
+                if ! is_ignored "$resolved_dep"; then
+                    all_deps["$resolved_dep"]=1
+                fi
             done
         fi
     done
@@ -362,7 +440,7 @@ compute_missing_dependencies() {
     local missing=()
     local key
     for key in "${!all_deps[@]}"; do
-        if ! is_installed "$key"; then
+        if ! is_installed "$key" && ! is_ignored "$key"; then
             missing+=("$key")
         fi
     done
@@ -417,12 +495,15 @@ process_dependency_closure() {
 ###############################################################################
 parse_arguments() {
     local opt
-    while getopts "nia:l:h" opt; do
+    while getopts "nia:l:k:g:m?h" opt; do
         case "$opt" in
             n) DRY_RUN=true ;;
             a) ALL_SYSTEM=true ;;
             i) INTERACTIVE_MODE=true ;;
             l) LOGFILE="$OPTARG" ;;
+            k) IFS=',' read -r -a CUSTOM_IGNORE_PKGS <<< "$OPTARG" ;;
+            g) IFS=',' read -r -a CUSTOM_IGNORE_GROUPS <<< "$OPTARG" ;;
+            m) SHOW_MATRIX=true ;;
             h) print_help ;;
             *) print_help ;;
         esac
@@ -447,6 +528,9 @@ Usage: $0 [OPTIONS] [package1 package2 ...]
   -a             Check & install missing dependencies for the entire system (default)
   -i             Enable interactive installation mode
   -n             Dry-run; show actions without executing
+  -k <pkgs>      Comma-separated packages to ignore
+  -g <groups>    Comma-separated groups to ignore
+  -m             Show feature matrix and exit
   -l <logfile>   Custom log file (default: ${DEFAULT_LOGFILE})
   -h             Display this help screen
 
@@ -464,6 +548,10 @@ EOF
 ###############################################################################
 main() {
     parse_arguments "$@"
+    if [ "$SHOW_MATRIX" = true ]; then
+        feature_matrix FEATURES_DEPS FEATURES_BETA
+        exit 0
+    fi
     log_message "INFO: Starting dependency checker..."
     check_requirements
     wait_for_pacman_lock
