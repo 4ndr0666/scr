@@ -11,3 +11,5 @@ Implemented status reporting, swappiness parameter, UFW comment detection, and r
 Added dry-run option and XDG temp dir to maintain/dependencies/deps; improved argument parsing.
 Tweaked deps-beta requirement check to avoid ShellCheck warning.
 Unified deps script with ignore lists and feature matrix.
+Added analysis for 4ndr0update utility suite.
+Expanded analysis for 4ndr0update with detailed rating and bug fixes.
