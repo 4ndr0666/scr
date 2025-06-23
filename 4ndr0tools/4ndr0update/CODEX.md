@@ -1,25 +1,31 @@
 # CODEX for "/4ndr0tools/4ndr0update"
 
-Below are several prompts for you to answer to yourself. This set of prompts will guide you through a detailed, multi-layered evaluation of the codebase, starting with a basic understanding of its purpose, followed by a comparison with ideal approaches, and finally, a rating base on advanced coding standards. By using these prompts in sequence, the analysis will cover effectiveness, potential improvements, rating, and an autonomic rework.
+1. **Consistent Quoting and Strict Mode**
+   - Enable `set -euo pipefail` in all shell scripts to catch failures early.
+   - Quote variable expansions to avoid word-splitting issues.  For example in
+     `main.sh`, `source $(pkg_path)/settings.sh` should be quoted: `source
+     "$(pkg_path)/settings.sh"`.
+2. **Remove Commented Code**
+   - `controller.sh` contains large commented blocks of legacy logic.  Removing
+     them would improve readability.
+3. **Fix Typographical Errors**
+   - In `service/settings.sh` the option `neovimn` should be `nvim`.
+4. **Improve Error Handling in `system_update`**
+   - `service/upgrade.sh` calls `retry_command sudo /usr/bin/pacman -Syyu` twice;
+     the first call is redundant.
+5. **Use Context Managers in Python**
+   - In `arch_news.py` open the RSS feed with `with urllib.request.urlopen(url)
+     as fh:` to ensure the handle is closed on failure.
+6. **Consider Integrating Logging**
+   - The shell utilities could log to a dedicated file similar to
+     `vacuum.py`.  This would aid troubleshooting.
+7. **Packaging and Distribution**
+   - Turning the suite into a single `pacman` package with systemd units for the
+     backup and update routines would simplify deployment on multiple systems.
+8. **Unit Tests**
+   - Currently there are no dedicated tests for the Bash helpers.  Adding Bats
+     tests (as used elsewhere in the repository) would help guard against
+     regressions.
 
-## How Would You Write The Code?
-
-**Prompt**: If you were to rewrite the codebase with the same goals in mind, how would you approach the problem? What changes would you make in terms of structure, design, or logic to improve performance, scalability, and maintainability?"
-
-### **Step 1: Grade the Code Using Advanced Coding Philosophies**
-
-**Prompt**: Based on revered coding philosophies and methods such as **modularity**, **scalability**, **performance optimization**, **error handling**, and **user experience**, rate the codebase on a scale from 1 to 10. A score of 10 represents code that is polished, optimized, and ready for production-level distribution. Provide reasoning for the rating you assigned and describe the criteria you used. 
-
-Consider the following:
-1. Does the code meet its intended purpose?
-2. How could the code be improved based on coding best practices?
-3. How does it compare to industry standards in terms of maintainability, performance, and usability?"
-
-### **Step 2: Provide Revision**:
-
-**Prompt**: 
-Provide your complete, fully functional, error free and production ready iteration of the codebase and all related files. 
-
-## **Directive Summary**:
-
-This set of prompts guides you through a detailed, multi-layered evaluation the codebase, starting with a basic understanding of its purpose, followed by a comparison with ideal approaches, and finally, a rating based on advanced coding standards. By using these prompts in sequence, the analysis will cover effectiveness, potential improvements, rating, and an autonomic rework.
+Overall ensure to check the utilities and functions in general with more rigorous error
+checking and consistent coding style.
