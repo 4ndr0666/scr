@@ -17,3 +17,6 @@
 - Refined security/network/ufw.sh with improved logging, rule validation, quoting, and re-enabled ShellCheck.
 2025-06-19 • security/network/ufw.sh • +16/-4 • Handle missing expressvpn in --vpn flag
 2025-06-20 • security/network/ufw.sh • +91/-22 • Added --status flag, swappiness option, comment support detection, and cleaned tmp logic
+2025-06-23 • maintain/dependencies/deps • +43/-27 • Added dry-run mode, XDG temp usage, and argument fixes
+2025-06-23 • maintain/dependencies/deps-beta • +1/-1 • Fix regex test for essential tools
+2025-06-23 • maintain/dependencies/deps • +93/-3 • Merge beta features, ignore lists, and feature matrix

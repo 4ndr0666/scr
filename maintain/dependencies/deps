@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # File: deps
 # Author: 4ndr0666 (Revised by Assistant)
@@ -15,8 +16,13 @@
 #               official repos and installs via pacman; otherwise, uses yay.
 #            5. Repeats the process until no new missing dependency is found.
 #
-#          If pacman database refresh fails due to GPGME errors, a fallback 
+#          If pacman database refresh fails due to GPGME errors, a fallback
 #          function repairs the keyring and databases.
+#
+# Dependencies: pacman, pactree, expac, git, reflector, setfacl,
+#               loginctl, lostfiles, yay.
+# Required permissions: must run as root due to package installation.
+# Recommended: run during off-peak hours to reduce system impact.
 #
 #          Temporary files are stored in a dedicated directory and cleaned up 
 #          via TRAP.
@@ -47,20 +53,34 @@ IFS=$'\n\t'
 DEFAULT_LOGFILE="${HOME}/.local/share/logs/dependency-checker.log"
 LOGFILE="${DEFAULT_LOGFILE}"
 PACMAN_LOCK="/var/lib/pacman/db.lck"
-TMP_DIR="$(mktemp -d)"
+# Create temp directory under XDG_RUNTIME_DIR when available
+TMP_DIR="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}"/deps.XXXXXX)"
 
 ALL_SYSTEM=false
 INTERACTIVE_MODE=false
+DRY_RUN=false
 
-# Custom ignore arrays (currently not integrated in dependency logic)
-declare -a CUSTOM_IGNORE_PKGS
-CUSTOM_IGNORE_PKGS=()
-declare -a CUSTOM_IGNORE_GROUPS
-CUSTOM_IGNORE_GROUPS=()
+SHOW_MATRIX=false
 
-# Arrays to store missing dependencies and target package list.
-declare -a MISSING_DEPS
-MISSING_DEPS=()
+# Arrays for ignore lists
+declare -a DEFAULT_IGNORE_PKGS=("wayland")
+declare -a CUSTOM_IGNORE_PKGS=()
+declare -a CUSTOM_IGNORE_GROUPS=()
+
+# Features list from both scripts for matrix output
+# shellcheck disable=SC2034
+declare -a FEATURES_DEPS=(
+    "dry-run support" "interactive mode" "pacman lock handling" \
+    "keyring fix" "dependency closure" "logging"
+)
+# shellcheck disable=SC2034
+declare -a FEATURES_BETA=(
+    "ignore packages" "ignore groups" "pactree resolution" \
+    "AUR support" "caching" "interactive prompts"
+)
+
+
+# Array to store target package list.
 declare -a PKGLIST
 PKGLIST=()
 
@@ -85,6 +105,33 @@ log_message() {
 }
 
 ###############################################################################
+# Function: feature_matrix
+# Description: Display a simple feature matrix comparing this script with
+#              deps-beta. This aids future refactoring efforts.
+###############################################################################
+feature_matrix() {
+    local -n list_a=$1
+    local -n list_b=$2
+    declare -A seen=()
+    local item
+    for item in "${list_a[@]}"; do
+        seen["$item"]="deps"
+    done
+    for item in "${list_b[@]}"; do
+        if [[ -n ${seen[$item]:-} ]]; then
+            seen["$item"]="both"
+        else
+            seen["$item"]="deps-beta"
+        fi
+    done
+    printf "%-25s | %s\n" "Feature" "Source"
+    printf -- '-------------------------+-----------\n'
+    for item in "${!seen[@]}"; do
+        printf "%-25s | %s\n" "$item" "${seen[$item]}"
+    done
+}
+
+###############################################################################
 # Function: check_requirements
 # Description: Verify required tools; auto-install any that are missing.
 ###############################################################################
@@ -105,6 +152,10 @@ check_requirements() {
         fi
         local retries i
         for tool in "${missing_tools[@]}"; do
+            if [ "$DRY_RUN" = true ]; then
+                log_message "DRY-RUN: pacman -S --needed --noconfirm $tool"
+                continue
+            fi
             retries=3
             for (( i = 1; i <= retries; i++ )); do
                 if pacman -S --needed --noconfirm "$tool" >/dev/null 2>&1; then
@@ -149,6 +200,11 @@ wait_for_pacman_lock() {
 ###############################################################################
 fix_pacman_keyring() {
     log_message "INFO: Attempting to fix pacman keyring and database issues..."
+    if [ "$DRY_RUN" = true ]; then
+        log_message "DRY-RUN: pacman -Sy archlinux-keyring --noconfirm"
+        log_message "DRY-RUN: pacman-key --init && pacman-key --populate"
+        return
+    fi
     if ! pacman -Sy archlinux-keyring --noconfirm >/dev/null 2>&1; then
         log_message "ERROR: Failed to update archlinux-keyring."
         exit 1
@@ -190,6 +246,10 @@ fix_pacman_keyring() {
 ###############################################################################
 refresh_pacman_databases() {
     log_message "INFO: Refreshing pacman database..."
+    if [ "$DRY_RUN" = true ]; then
+        log_message "DRY-RUN: pacman -Sy"
+        return
+    fi
     local output
     output=$(pacman -Sy --noconfirm 2>&1)
     local ret_code=$?
@@ -287,6 +347,38 @@ is_in_official_repo() {
 }
 
 ###############################################################################
+# Function: is_ignored
+# Description: Return 0 if a package should be ignored based on ignore lists.
+###############################################################################
+declare -A PKG_GROUP_CACHE=()
+is_ignored() {
+    local pkg="$1"
+    local item groups
+
+    for item in "${DEFAULT_IGNORE_PKGS[@]}" "${CUSTOM_IGNORE_PKGS[@]}"; do
+        if [[ -n "$item" && "$pkg" == "$item" ]]; then
+            return 0
+        fi
+    done
+
+    groups="${PKG_GROUP_CACHE[$pkg]:-}"
+    if [[ -z "$groups" ]]; then
+        groups=$(pacman -Qi "$pkg" 2>/dev/null | awk -F':' '/^Groups/ {print $2}')
+        groups=${groups## } ; groups=${groups%% } # trim
+        PKG_GROUP_CACHE["$pkg"]="$groups"
+    fi
+
+    if [[ -n "$groups" ]]; then
+        for item in "${CUSTOM_IGNORE_GROUPS[@]}"; do
+            if [[ -n "$item" && " $groups " == *" $item "* ]]; then
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
+###############################################################################
 # Function: install_dependency
 # Description: Install a dependency via pacman (if in official repo) or via yay.
 ###############################################################################
@@ -294,10 +386,18 @@ install_dependency() {
     local dep="$1"
     if is_in_official_repo "$dep"; then
         log_message "INFO: Installing $dep from official repositories..."
-        pacman -S --needed --noconfirm "$dep" >/dev/null 2>&1
+        if [ "$DRY_RUN" = true ]; then
+            log_message "DRY-RUN: pacman -S --needed --noconfirm $dep"
+        else
+            pacman -S --needed --noconfirm "$dep" >/dev/null 2>&1
+        fi
     else
         log_message "INFO: Installing $dep from AUR..."
-        yay -S --needed --noconfirm "$dep" >/dev/null 2>&1
+        if [ "$DRY_RUN" = true ]; then
+            log_message "DRY-RUN: yay -S --needed --noconfirm $dep"
+        else
+            yay -S --needed --noconfirm "$dep" >/dev/null 2>&1
+        fi
     fi
 }
 
@@ -332,7 +432,9 @@ compute_missing_dependencies() {
             read -r -a dep_array <<< "$(parse_dependencies "$deps_line")"
             for dep in "${dep_array[@]}"; do
                 resolved_dep=$(sanitize_and_resolve_dep_name "$dep")
-                all_deps["$resolved_dep"]=1
+                if ! is_ignored "$resolved_dep"; then
+                    all_deps["$resolved_dep"]=1
+                fi
             done
         fi
     done
@@ -340,7 +442,7 @@ compute_missing_dependencies() {
     local missing=()
     local key
     for key in "${!all_deps[@]}"; do
-        if ! is_installed "$key"; then
+        if ! is_installed "$key" && ! is_ignored "$key"; then
             missing+=("$key")
         fi
     done
@@ -357,9 +459,10 @@ process_dependency_closure() {
     local missing_deps_str
     while true; do
         log_message "INFO: Dependency closure iteration ${iteration}: scanning installed packages..."
-        update_installed_packages
-        # Use mapfile to read installed packages into PKGLIST array.
-        mapfile -t PKGLIST < "$TMP_DIR/installed_pkgs.txt"
+        if [ "$ALL_SYSTEM" = true ]; then
+            update_installed_packages
+            mapfile -t PKGLIST < "$TMP_DIR/installed_pkgs.txt"
+        fi
         missing_deps_str=$(compute_missing_dependencies)
         # Read missing_deps_str into an array.
         read -r -a missing_deps <<< "$missing_deps_str"
@@ -394,17 +497,15 @@ process_dependency_closure() {
 ###############################################################################
 parse_arguments() {
     local opt
-    while getopts "iak:g:l:h" opt; do
+    while getopts "nia:l:k:g:m?h" opt; do
         case "$opt" in
+            n) DRY_RUN=true ;;
             a) ALL_SYSTEM=true ;;
             i) INTERACTIVE_MODE=true ;;
-            k)
-                IFS=',' read -r -a CUSTOM_IGNORE_PKGS <<< "$OPTARG"
-                ;;
-            g)
-                IFS=',' read -r -a CUSTOM_IGNORE_GROUPS <<< "$OPTARG"
-                ;;
             l) LOGFILE="$OPTARG" ;;
+            k) IFS=',' read -r -a CUSTOM_IGNORE_PKGS <<< "$OPTARG" ;;
+            g) IFS=',' read -r -a CUSTOM_IGNORE_GROUPS <<< "$OPTARG" ;;
+            m) SHOW_MATRIX=true ;;
             h) print_help ;;
             *) print_help ;;
         esac
@@ -428,16 +529,17 @@ Usage: $0 [OPTIONS] [package1 package2 ...]
 
   -a             Check & install missing dependencies for the entire system (default)
   -i             Enable interactive installation mode
-  -k <packages>  Comma-separated list of packages to ignore (not implemented)
-  -g <groups>    Comma-separated list of groups to ignore (not implemented)
+  -n             Dry-run; show actions without executing
+  -k <pkgs>      Comma-separated packages to ignore
+  -g <groups>    Comma-separated groups to ignore
+  -m             Show feature matrix and exit
   -l <logfile>   Custom log file (default: ${DEFAULT_LOGFILE})
   -h             Display this help screen
 
 Examples:
   $0 -a
   $0 -i bat
-  $0 -k firefox,thunderbird bash
-  $0 -g base,extra python
+  $0 -n -a
 EOF
     exit 0
 }
@@ -447,11 +549,15 @@ EOF
 # Description: Main execution routine.
 ###############################################################################
 main() {
+    parse_arguments "$@"
+    if [ "$SHOW_MATRIX" = true ]; then
+        feature_matrix FEATURES_DEPS FEATURES_BETA
+        exit 0
+    fi
     log_message "INFO: Starting dependency checker..."
     check_requirements
     wait_for_pacman_lock
     refresh_pacman_databases
-    parse_arguments "$@"
     process_dependency_closure
     if [ "$INTERACTIVE_MODE" = true ] && [ -t 0 ]; then
         local resp
