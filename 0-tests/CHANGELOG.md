@@ -22,3 +22,5 @@
 2025-06-23 • maintain/dependencies/deps • +93/-3 • Merge beta features, ignore lists, and feature matrix
 2025-06-23 • 4ndr0tools/4ndr0update/ANALYSIS.md • +63/-0 • Add code review analysis of 4ndr0update
 2025-06-23 • 4ndr0tools/4ndr0update/ANALYSIS.md • +49/-63 • Expand review with rewrite approach and improvements
+2025-06-23 • 4ndr0tools/4ndr0update/* • +366/-365 • Apply strict mode, fix bugs, and clean dead code
+
