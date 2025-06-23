@@ -139,7 +139,7 @@ check_requirements() {
     # If only yay is missing, we log a warning but continue.
     local essential_missing=false
     for tool in "pacman" "pactree"; do
-        if [[ " ${missing_tools[*]} " =~ " ${tool} " ]]; then
+        if [[ " ${missing_tools[*]} " =~  ${tool} ]]; then
             essential_missing=true
             break
         fi

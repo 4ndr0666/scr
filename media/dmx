@@ -46,12 +46,13 @@ style = Style.from_dict(
 
 # --- Configuration Constants
 DEFAULT_CONFIG = {
-    "FFMPEG_SOURCES": os.path.expanduser("~/ffmpeg_sources"),
-    "FFMPEG_BUILD": os.path.expanduser("~/ffmpeg_build"),
-    "FFMPEG_BIN": os.path.expanduser("~/bin/ffmpeg"),
-    "FFPROBE_BIN": os.path.expanduser("~/bin/ffprobe"),
-    "MPV_BUILD_DIR": os.path.expanduser("~/mpv_build"),
-    "VSPIPE_BIN": "/usr/local/bin/vspipe",
+    # Input files you want read here. Example:
+    #    "FFMPEG_SOURCES": os.path.expanduser(""),
+    #    "FFMPEG_BUILD": os.path.expanduser(""),
+    "FFMPEG_BIN": os.path.expanduser("/usr/bin/ffmpeg"),
+    "FFPROBE_BIN": os.path.expanduser("/usr/bin/ffprobe"),
+    "MPV_BUILD_DIR": os.path.expanduser("/usr/bin/mpv"),
+    "VSPIPE_BIN": "/usr/bin/vspipe",
     "MAX_WORKERS": os.cpu_count(),
 }
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "dmx"
