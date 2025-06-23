@@ -55,7 +55,6 @@ dist-ssr
 ## C/C++/Rust/Go
 target/
 *.dll
-bin/
 *.o
 *.ko
 *.a
