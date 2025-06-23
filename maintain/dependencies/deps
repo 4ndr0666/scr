@@ -59,7 +59,6 @@ TMP_DIR="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}"/deps.XXXXXX)"
 ALL_SYSTEM=false
 INTERACTIVE_MODE=false
 DRY_RUN=false
-
 SHOW_MATRIX=false
 
 # Arrays for ignore lists
@@ -78,7 +77,6 @@ declare -a FEATURES_BETA=(
     "ignore packages" "ignore groups" "pactree resolution" \
     "AUR support" "caching" "interactive prompts"
 )
-
 
 # Array to store target package list.
 declare -a PKGLIST
