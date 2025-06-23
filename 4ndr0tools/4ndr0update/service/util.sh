@@ -1,9 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # shellcheck disable=all
+set -euo pipefail
 
 # Maximum retries for system commands
 MAX_RETRIES=3
-RETRY_DELAY=2  # seconds
+RETRY_DELAY=2 # seconds
 
 # Function to retry a command with a delay if it fails
 retry_command() {
@@ -12,7 +13,10 @@ retry_command() {
     local cmd="$*"
 
     until $cmd; do
-        ((retries--)) || { echo "Error: Command failed after $MAX_RETRIES attempts: $cmd"; return 1; }
+        ((retries--)) || {
+            echo "Error: Command failed after $MAX_RETRIES attempts: $cmd"
+            return 1
+        }
         echo "Retrying... ($retries attempts left)"
         sleep "$delay"
     done

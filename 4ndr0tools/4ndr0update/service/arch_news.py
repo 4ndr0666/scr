@@ -17,15 +17,14 @@ def clean_html(raw_html):
 def upgrade_alerts(last_upgrade=False):
 
     url = "https://www.archlinux.org/feeds/news/"
-    file = urllib.request.urlopen(url)
-    data = file.read()
-    file.close()
+    with urllib.request.urlopen(url) as fh:
+        data = fh.read()
 
     arch_news = xmltodict.parse(data)
 
     exit_code = 0
     for news_post in arch_news["rss"]["channel"]["item"]:
-        if last_upgrade == False or parse(news_post["pubDate"]).replace(
+        if not last_upgrade or parse(news_post["pubDate"]).replace(
             tzinfo=None
         ) >= parse(last_upgrade):
             exit_code = 1

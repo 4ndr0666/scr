@@ -1,9 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # shellcheck disable=all
+set -euo pipefail
 
 # Maximum retries for system commands
 MAX_RETRIES=3
-RETRY_DELAY=2  # seconds
+RETRY_DELAY=2 # seconds
 
 # Function to retry a command with a delay if it fails
 retry_command() {
@@ -12,7 +13,10 @@ retry_command() {
     local cmd="$*"
 
     until $cmd; do
-        ((retries--)) || { echo "Error: Command failed after $MAX_RETRIES attempts: $cmd"; exit 1; }
+        ((retries--)) || {
+            echo "Error: Command failed after $MAX_RETRIES attempts: $cmd"
+            exit 1
+        }
         echo "Retrying... ($retries attempts left)"
         sleep "$delay"
     done
@@ -23,34 +27,32 @@ configure_reflector() {
     read -r -p "Update Mirrorlist? [y/N]"
 
     if [[ "$REPLY" =~ [yY] ]]; then
-		reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
-		printf "✔️ Mirrorlist updated\n"
+        reflector --country "$MIRRORLIST_COUNTRY" --latest 200 --age 24 --sort rate --save /etc/pacman.d/mirrorlist
+        printf "✔️ Mirrorlist updated\n"
     fi
-    
-	if ! systemctl is-enabled reflector.timer > /dev/null 2>&1; then
-		sudo systemctl enable --now reflector.timer
-		printf "➡️ Checking Reflector Service...\n"
-	else
-    	printf "✔️ Already Enabled\n"
-	fi
-}
 
+    if ! systemctl is-enabled reflector.timer >/dev/null 2>&1; then
+        sudo systemctl enable --now reflector.timer
+        printf "➡️ Checking Reflector Service...\n"
+    else
+        printf "✔️ Already Enabled\n"
+    fi
+}
 
 system_update() {
     printf "\n➡️ Updating system\n"
-    retry_command sudo /usr/bin/pacman -Syyu
     if ! retry_command sudo /usr/bin/pacman -Syyu; then
         echo "❌ System update failed."
         return 1
     else
-    	printf "✔️ Update complete\n"
+        printf "✔️ Update complete\n"
     fi
 }
 
 # Function to check and install a package if it is missing
 ensure_package_installed() {
     local pkg="$1"
-    if ! pacman -Qs "$pkg" > /dev/null; then
+    if ! pacman -Qs "$pkg" >/dev/null; then
         printf "➡️ Installing $pkg "
         retry_command sudo pacman -S --noconfirm "$pkg"
     else
@@ -73,63 +75,62 @@ check_and_install_dependencies() {
 
 # Set up AUR directory using the chosen AUR helper (from settings.sh)
 aur_setup() {
-	printf "\n"
-	read -r -p "Do you want to setup the AUR package directory at $AUR_DIR? [y/N]"
-	if [[ "$REPLY" =~ [yY] ]]; then
-		printf "➡️ Setting up AUR package directory...\n"
-		if [[ ! -d "$AUR_DIR" ]]; then
-			mkdir -p "$AUR_DIR"
-			test -n "$SUDO_USER" && chown "$SUDO_USER" "$AUR_DIR"
-		fi
+    printf "\n"
+    read -r -p "Do you want to setup the AUR package directory at $AUR_DIR? [y/N]"
+    if [[ "$REPLY" =~ [yY] ]]; then
+        printf "➡️ Setting up AUR package directory...\n"
+        if [[ ! -d "$AUR_DIR" ]]; then
+            mkdir -p "$AUR_DIR"
+            test -n "$SUDO_USER" && chown "$SUDO_USER" "$AUR_DIR"
+        fi
 
-		chgrp "$1" "$AUR_DIR"
-		chmod g+ws "$AUR_DIR"
-		setfacl -d --set u::rwx,g::rx,o::rx "$AUR_DIR"
-		setfacl -m u::rwx,g::rwx,o::- "$AUR_DIR"
-		printf "...AUR package directory set up at $AUR_DIR\n"
-	fi
+        chgrp "$1" "$AUR_DIR"
+        chmod g+ws "$AUR_DIR"
+        setfacl -d --set u::rwx,g::rx,o::rx "$AUR_DIR"
+        setfacl -m u::rwx,g::rwx,o::- "$AUR_DIR"
+        printf "...AUR package directory set up at $AUR_DIR\n"
+    fi
 }
 
 rebuild_aur() {
-	AUR_DIR_GROUP="nobody"
-	test -n "$SUDO_USER" && AUR_DIR_GROUP="$SUDO_USER"
+    AUR_DIR_GROUP="nobody"
+    test -n "$SUDO_USER" && AUR_DIR_GROUP="$SUDO_USER"
 
-	if [[ -w "$AUR_DIR" ]] && sudo -u "$AUR_DIR_GROUP" test -w "$AUR_DIR"; then
-		printf "\n"
-		read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N]"
-		if [[ "$REPLY" =~ [yY] ]]; then
-			printf "➡️ Rebuilding AUR packages...\n"
-			if [[ -n "$(ls -A $AUR_DIR)" ]]; then
-				starting_dir="$(pwd)"
-				for aur_pkg in "$AUR_DIR"/*/; do
-					if [[ -d "$aur_pkg" ]]; then
-						if ! sudo -u "$AUR_DIR_GROUP" test -w "$aur_pkg"; then
-							chmod -R g+w "$aur_pkg"
-						fi
-						cd "$aur_pkg"
-						if [[ "$AUR_UPGRADE" == "true" ]]; then
-							git pull origin master
-						fi
-						source PKGBUILD
-						pacman -S --needed --asdeps "${depends[@]}" "${makedepends[@]}" --noconfirm
-						sudo -u "$AUR_DIR_GROUP" makepkg -fc --noconfirm
-						pacman -U "$(sudo -u $AUR_DIR_GROUP makepkg --packagelist)" --noconfirm
-					fi
-				done
-				cd "$starting_dir"
-				printf "Done rebuilding AUR packages\n"
-			else
-				printf "No AUR packages in $AUR_DIR\n"
-			fi
-		fi
-	else
-		printf "\nAUR package directory not set up"
-		aur_setup "$AUR_DIR_GROUP"
-	fi
+    if [[ -w "$AUR_DIR" ]] && sudo -u "$AUR_DIR_GROUP" test -w "$AUR_DIR"; then
+        printf "\n"
+        read -r -p "Do you want to rebuild the AUR packages in $AUR_DIR? [y/N]"
+        if [[ "$REPLY" =~ [yY] ]]; then
+            printf "➡️ Rebuilding AUR packages...\n"
+            if [[ -n "$(ls -A $AUR_DIR)" ]]; then
+                starting_dir="$(pwd)"
+                for aur_pkg in "$AUR_DIR"/*/; do
+                    if [[ -d "$aur_pkg" ]]; then
+                        if ! sudo -u "$AUR_DIR_GROUP" test -w "$aur_pkg"; then
+                            chmod -R g+w "$aur_pkg"
+                        fi
+                        cd "$aur_pkg"
+                        if [[ "$AUR_UPGRADE" == "true" ]]; then
+                            git pull origin master
+                        fi
+                        source PKGBUILD
+                        pacman -S --needed --asdeps "${depends[@]}" "${makedepends[@]}" --noconfirm
+                        sudo -u "$AUR_DIR_GROUP" makepkg -fc --noconfirm
+                        pacman -U "$(sudo -u $AUR_DIR_GROUP makepkg --packagelist)" --noconfirm
+                    fi
+                done
+                cd "$starting_dir"
+                printf "Done rebuilding AUR packages\n"
+            else
+                printf "No AUR packages in $AUR_DIR\n"
+            fi
+        fi
+    else
+        printf "\nAUR package directory not set up"
+        aur_setup "$AUR_DIR_GROUP"
+    fi
 }
 
 handle_pacfiles() {
-	printf "➡️ Checking for pacfiles\n"
-	pacdiff
+    printf "➡️ Checking for pacfiles\n"
+    pacdiff
 }
-
