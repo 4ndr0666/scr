@@ -1,0 +1,1252 @@
+#!/usr/bin/env bash
+#shellcheck disable=SC2207,SC2034,SC2046,SC2004,SC1009,SC1073,SC1078,SC1079,SC1036,SC1050,SC2317
+# Author: 4ndr0666
+set -euo pipefail
+# ========================== // FFX Script // ==========================
+
+## Constants
+
+default_config() {
+	ADVANCED_MODE=false
+	VERBOSE_MODE=false
+	BULK_MODE=false
+	REMOVE_AUDIO=false
+	CLEAN_META_DEFAULT=true
+	COMPOSITE_MODE=false
+	MAX_1080=false
+	INTERPOLATE=false
+	OUTPUT_DIR="$(pwd)"
+	SPECIFIC_FPS=""
+	PTS_FACTOR=""
+	ADV_CONTAINER="mp4"
+	ADV_RES="1920x1080"
+	ADV_FPS="60"
+	ADV_CODEC="libx264"
+}
+
+default_config
+
+## Basic CLI Argument Parser
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	-A) set -- "--advanced" "${@:2}" ;;
+	-v) set -- "--verbose" "${@:2}" ;;
+	-b) set -- "--bulk" "${@:2}" ;;
+	-an) set -- "--remove-audio" "${@:2}" ;;
+	-C) set -- "--composite" "${@:2}" ;;
+	-P) set -- "--max-1080" "${@:2}" ;;
+	-f) set -- "--fps" "${@:2}" ;;
+	-p) set -- "--pts" "${@:2}" ;;
+	-i) set -- "--interpolate" "${@:2}" ;;
+	esac
+
+	case "$1" in
+	--advanced) ADVANCED_MODE=true ;;
+	--verbose) VERBOSE_MODE=true ;;
+	--bulk) BULK_MODE=true ;;
+	--remove-audio) REMOVE_AUDIO=true ;;
+	--composite) COMPOSITE_MODE=true ;;
+	--max-1080) MAX_1080=true ;;
+	--interpolate) INTERPOLATE=true ;;
+	--output-dir)
+		OUTPUT_DIR="$2"
+		shift
+		;;
+	--fps)
+		SPECIFIC_FPS="$2"
+		shift
+		;;
+	--pts)
+		PTS_FACTOR="$2"
+		shift
+		;;
+	--container)
+		ADV_CONTAINER="$2"
+		shift
+		;;
+	--resolution)
+		ADV_RES="$2"
+		shift
+		;;
+	--codec)
+		ADV_CODEC="$2"
+		shift
+		;;
+	*)
+		echo "Unknown option: $1"
+		exit 1
+		;;
+	esac
+	shift
+done
+
+: "${OUTPUT_DIR:?}"
+
+## Advanced options
+
+ADV_PIX_FMT="yuv420p"
+ADV_CRF="18"
+ADV_BR="10M"
+ADV_MULTIPASS="false"
+
+## Non-global argument storage
+
+REMAINING_ARGS=()
+
+## TRAP and cleanup
+
+TEMP_FILES=()
+
+TEMP_DIRS=()
+
+register_temp_file() {
+	TEMP_FILES+=("$1")
+}
+
+register_temp_dir() {
+	TEMP_DIRS+=("$1")
+}
+
+cleanup_all() {
+	local f d
+	for f in "${TEMP_FILES[@]}"; do
+		[ -f "$f" ] && rm -f "$f"
+	done
+	for d in "${TEMP_DIRS[@]}"; do
+		[ -d "$d" ] && rm -rf "$d"
+	done
+}
+
+trap 'cleanup_all' EXIT INT TERM ERR
+
+## Logging and error
+
+verbose_log() {
+	if [ "$VERBOSE_MODE" = true ]; then
+		echo "[VERBOSE] $*"
+	fi
+}
+
+error_exit() {
+	echo "Error: $*" 1>&2
+
+	exit 1
+}
+
+## Redirect
+
+run_ffmpeg() {
+	if [ "$VERBOSE_MODE" = true ]; then
+		ffmpeg "$@"
+	else
+		ffmpeg "$@" >/dev/null 2>&1
+	fi
+}
+
+## Valitdate
+
+command_exists() {
+	command -v "$1" >/dev/null 2>&1
+}
+
+absolute_path() {
+	local in_path="$1"
+	if command_exists readlink; then
+		local abs
+		abs="$(readlink -f "$in_path" 2>/dev/null || true)"
+		if [ -n "$abs" ]; then
+			echo "$abs"
+		else
+			echo "$(pwd)/$in_path"
+		fi
+	else
+		echo "$(pwd)/$in_path"
+	fi
+}
+
+is_interlaced() {
+	local input="$1"
+	# Check if input video is interlaced
+	local interlaced
+	interlaced=$(ffprobe -v error -select_streams v:0 -show_entries stream=field_order \
+		-of default=noprint_wrappers=1:nokey=1 "$input" 2>/dev/null || echo "unknown")
+	case "$interlaced" in
+	tt | bb | tb | bt | bt_tb | bt_bt | tb_tb | tb_bt)
+		return 0
+		;; # Interlaced
+	*)
+		return 1
+		;; # Progressive or unknown
+	esac
+}
+
+get_deinterlace_filter() {
+	local input="$1"
+	if is_interlaced "$input"; then
+		echo "yadif=deint=interlaced"
+	else
+		echo "null"
+	fi
+}
+
+## Human readable
+
+bytes_to_human() {
+	local bytes="${1:-0}"
+	if [ "$bytes" -lt 1024 ] 2>/dev/null; then
+		echo "${bytes} B"
+	elif [ "$bytes" -lt 1048576 ] 2>/dev/null; then
+		printf "%.2f KiB" "$(bc -l <<<"${bytes}/1024")"
+	elif [ "$bytes" -lt 1073741824 ] 2>/dev/null; then
+		printf "%.2f MiB" "$(bc -l <<<"${bytes}/1048576")"
+	else
+		printf "%.2f GiB" "$(bc -l <<<"${bytes}/1073741824")"
+	fi
+}
+
+## Sanitize
+
+get_default_filename() {
+	local base="${1:-out}"
+	local suffix="${2:-tmp}"
+	local ext="${3:-mp4}"
+	local candidate="${base}_${suffix}.${ext}"
+	local counter=1
+	while [ -e "$candidate" ]; do
+		candidate="${base}_${suffix}_${counter}.${ext}"
+		counter=$((counter + 1))
+	done
+	echo "$candidate"
+}
+
+## Audio
+
+get_audio_opts_arr() {
+	if [ "$REMOVE_AUDIO" = true ]; then
+		echo "-an"
+	else
+		# Fallback to safe audio codec (aac) instead of raw copy
+		echo "-c:a aac -b:a 128k"
+	fi
+}
+
+## Dts
+
+check_dts_for_file() {
+	local file="$1"
+	local prev=""
+	local problem=0
+	while IFS= read -r line; do
+		# Only numeric lines matter
+		if ! [[ "$line" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+			continue
+		fi
+		if [ -n "$prev" ]; then
+			if [ "$(bc -l <<<"$line < $prev")" -eq 1 ]; then
+				echo "Non-monotonic DTS in '$file' (prev: $prev, curr: $line)" 1>&2
+				problem=1
+				break
+			fi
+		fi
+		prev="$line"
+	done < <(ffprobe -v error -select_streams v -show_entries frame=pkt_dts_time -of csv=p=0 "$file" 2>/dev/null)
+	return $problem
+}
+
+## Dts
+
+fix_dts() {
+	local file="$1"
+	local tmpf
+	tmpf="$(mktemp --suffix=.mp4)"
+	register_temp_file "$tmpf"
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+
+	### First attempt: copy video
+	if ! run_ffmpeg -y -fflags +genpts -i "$file" -c:v copy "${audio_opts[@]}" -movflags +faststart "$tmpf"; then
+		### fallback: re-encode
+		if ! run_ffmpeg -y -fflags +genpts -i "$file" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$tmpf"; then
+			echo "❌ fix_dts: Could not fix DTS for '$file'" >&2
+			rm -f "$tmpf"
+			return 1
+		fi
+	fi
+	echo "$tmpf"
+}
+
+ensure_dts_correct() {
+	local file="$1"
+	[ ! -f "$file" ] && error_exit "ensure_dts_correct: '$file' not found."
+
+	if ! check_dts_for_file "$file"; then
+		verbose_log "DTS issues found in '$file', attempting fix..."
+		local fixed
+		fixed="$(fix_dts "$file")" || return 1
+		[ -f "$fixed" ] || error_exit "DTS fix failed for '$file'."
+		echo "$fixed"
+	else
+		echo "$file"
+	fi
+}
+
+## Moov atom
+
+moov_fallback() {
+	local in_file="$1"
+	local out_file="$2"
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+
+	verbose_log "moov_fallback: Re-encoding to ensure valid moov atom."
+	if ! run_ffmpeg -y -i "$in_file" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" -movflags +faststart "$out_file"; then
+		error_exit "moov_fallback: Failed to create valid moov for '$in_file'"
+	fi
+}
+
+check_moov_atom() {
+	local file="$1"
+	if ! ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file" >/dev/null 2>&1; then
+		return 1
+	fi
+	return 0
+}
+
+## Metadata
+
+auto_clean() {
+	local file="$1"
+	[ -z "$file" ] && return 0
+	[ ! -f "$file" ] && return 0
+
+	local tmpf
+	tmpf="$(mktemp --suffix=.mp4)"
+	register_temp_file "$tmpf"
+
+	if run_ffmpeg -y -i "$file" -map_metadata -1 -c copy "$tmpf"; then
+		mv "$tmpf" "$file"
+		verbose_log "Auto-cleaned metadata in '$file'."
+	else
+		rm -f "$tmpf" 2>/dev/null || true
+		verbose_log "Auto-clean failed for '$file'; kept original."
+	fi
+}
+
+## Advanced prompting
+
+advanced_prompt() {
+	if [ "$ADVANCED_MODE" = true ]; then
+		echo "# --- // ADVANCED MODE //"
+		local cont
+		read -r -p "Container extension? [mp4/mkv/mov] (default=mp4): " cont
+		[ -z "$cont" ] && cont="mp4"
+		ADV_CONTAINER="$cont"
+
+		local r
+		read -r -p "Resolution? (e.g. 1920x1080) (default=1920x1080): " r
+		[ -z "$r" ] && r="1920x1080"
+		ADV_RES="$r"
+
+		local fpsin
+		read -r -p "Frame rate? [24/30/60/120] (default=60): " fpsin
+		[ -z "$fpsin" ] && fpsin="60"
+		ADV_FPS="$fpsin"
+
+		local choice
+		read -r -p "Codec choice? 1=libx264, 2=libx265 (default=1): " choice
+		if [ "$choice" = "2" ]; then
+			ADV_CODEC="libx265"
+		else
+			ADV_CODEC="libx264"
+		fi
+
+		local p_choice
+		read -r -p "Pixel format? 1=yuv420p, 2=yuv422p (default=1): " p_choice
+		if [ "$p_choice" = "2" ]; then
+			ADV_PIX_FMT="yuv422p"
+		else
+			ADV_PIX_FMT="yuv420p"
+		fi
+
+		local crfval
+		read -r -p "CRF value? (0=lossless, default=18): " crfval
+		[ -z "$crfval" ] && crfval="18"
+		ADV_CRF="$crfval"
+
+		local brval
+		read -r -p "Bitrate? (e.g. 10M, default=10M): " brval
+		[ -z "$brval" ] && brval="10M"
+		ADV_BR="$brval"
+
+		local mp_input
+		read -r -p "Enable multi-pass? (y/N): " mp_input
+		mp_input="$(echo "$mp_input" | tr '[:upper:]' '[:lower:]')"
+		if [ "$mp_input" = "y" ] || [ "$mp_input" = "yes" ]; then
+			ADV_MULTIPASS="true"
+		else
+			ADV_MULTIPASS="false"
+		fi
+
+		echo "Advanced: Container=$ADV_CONTAINER, Res=$ADV_RES, FPS=$ADV_FPS, Codec=$ADV_CODEC, PixFmt=$ADV_PIX_FMT, CRF=$ADV_CRF, BR=$ADV_BR, Multi=$ADV_MULTIPASS"
+	fi
+}
+
+## Probe
+
+cmd_probe() {
+	advanced_prompt
+	local input="${1:-}"
+
+	if [ -z "$input" ]; then
+		# If no file, optionally let user pick from fzf
+		if command_exists fzf; then
+			echo "➡️ No file provided. Launching fzf..."
+			input="$(fzf)"
+			[ -z "$input" ] && error_exit "No file selected."
+		else
+			error_exit "No input provided for probe."
+		fi
+	fi
+	[ ! -f "$input" ] && error_exit "File not found: $input"
+
+	local CYAN="\033[36m"
+	local RESET="\033[0m"
+	local sz hsz resolution fps duration
+	sz="$(stat -c '%s' "$input" 2>/dev/null || echo 0)"
+	hsz="$(bytes_to_human "$sz")"
+
+	resolution="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height \
+		-of csv=p=0:s=x "$input" 2>/dev/null || echo 'unknown')"
+
+	fps="$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate \
+		-of default=noprint_wrappers=1:nokey=1 "$input" 2>/dev/null || echo '0/0')"
+
+	duration="$(ffprobe -v error -show_entries format=duration \
+		-of default=noprint_wrappers=1:nokey=1 "$input" 2>/dev/null || echo 0)"
+
+	echo -e "${CYAN}# === // Ffx Probe //${RESET}"
+	echo
+	echo -e "${CYAN}File:${RESET} $input"
+	echo -e "${CYAN}Size:${RESET} $hsz"
+
+	local fps_head
+	fps_head="$(cut -d'/' -f1 <<<"$fps")"
+	if [[ "$fps_head" =~ ^[0-9]+$ ]] && [ "$fps_head" -gt 60 ]; then
+		echo "➡️ High FPS detected; consider processing."
+	fi
+
+	echo -e "${CYAN}--------------------------------${RESET}"
+	echo -e "${CYAN}Resolution:${RESET}   $resolution"
+	echo -e "${CYAN}FPS:${RESET}          $fps"
+	echo -e "${CYAN}Duration:${RESET}     ${duration}s"
+
+	# Prompt user if height > 1080
+	if [ "$resolution" != "unknown" ]; then
+		local width height
+		if IFS='x' read -r width height <<<"$resolution"; then
+			if [[ "$height" =~ ^[0-9]+$ ]] && [ "$height" -gt 1080 ]; then
+				local ans
+				read -r -p "Detected resolution ($resolution) is above 1080p. Process this file? (y/N): " ans
+				ans="$(echo "$ans" | tr '[:upper:]' '[:lower:]')"
+				if [ "$ans" = "y" ] || [ "$ans" = "yes" ]; then
+					cmd_process "$input"
+					exit 0
+				fi
+			fi
+		else
+			echo "❌ Error: Failed to parse resolution format: '$resolution'" >&2
+			exit 1
+		fi
+	fi
+}
+
+## Process
+
+cmd_process() {
+	advanced_prompt
+	local input="${1:-}"
+	local output="${2:-}"
+	local forced_fps="${3:-}"
+
+	[ -z "$input" ] && error_exit "'process' requires <input> [output] [fps]."
+	[ ! -s "$input" ] && error_exit "Input file is zero-length or not found: $input"
+
+	local base
+	base="$(basename "$input")"
+	local bare="${base%.*}"
+
+	if [ -z "$output" ]; then
+		output="$(get_default_filename "$bare" "processed" "$ADV_CONTAINER")"
+	fi
+
+	[ -n "$forced_fps" ] && ADV_FPS="$forced_fps"
+
+	local fixed_input
+	fixed_input="$(ensure_dts_correct "$input")" || error_exit "DTS fix failed for '$input'"
+
+	if [ "$MAX_1080" = true ]; then
+		local orig_height
+		orig_height="$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+			-of csv=p=0 "$fixed_input" 2>/dev/null || echo 0)"
+		if [[ "$orig_height" =~ ^[0-9]+$ ]] && [ "$orig_height" -gt 1080 ]; then
+			verbose_log "cmd_process: Forcing downscale to 1080p due to -P flag."
+			ADV_RES="1920x1080"
+		fi
+	fi
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+
+	local scale_filter="scale=${ADV_RES}:force_original_aspect_ratio=decrease"
+
+	local deinterlace_filter
+	deinterlace_filter="$(get_deinterlace_filter "$fixed_input")"
+
+	local full_filter
+	if [ "$deinterlace_filter" != "null" ]; then
+		full_filter="${deinterlace_filter},${scale_filter}"
+	else
+		full_filter="${scale_filter}"
+	fi
+
+	if [ "$ADV_MULTIPASS" = "true" ]; then
+		verbose_log "cmd_process: Two-pass encoding with CRF=$ADV_CRF, Bitrate=$ADV_BR"
+		if ! run_ffmpeg -y -i "$fixed_input" -vf "$full_filter" -r "$ADV_FPS" \
+			-c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 1 -an -f mp4 /dev/null; then
+			error_exit "Two-pass (pass 1) failed for '$input'"
+		fi
+		if ! run_ffmpeg -y -i "$fixed_input" -vf "$full_filter" -r "$ADV_FPS" \
+			-c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 2 "${audio_opts[@]}" \
+			-movflags +faststart "$output"; then
+			error_exit "Two-pass (pass 2) failed for '$input'"
+		fi
+	else
+		verbose_log "cmd_process: Single-pass CRF=$ADV_CRF"
+		if ! run_ffmpeg -y -i "$fixed_input" -vf "$full_filter" -r "$ADV_FPS" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" \
+			-movflags +faststart "$output"; then
+			error_exit "cmd_process: Re-encode failed."
+		fi
+	fi
+
+	if ! check_moov_atom "$output"; then
+		verbose_log "cmd_process: moov atom missing; fallback re-encode"
+		moov_fallback "$fixed_input" "$output"
+	fi
+
+	if ! check_moov_atom "$output"; then
+		error_exit "Process: moov atom is still missing in output: $output"
+	fi
+
+	auto_clean "$output"
+	echo "✔️ ➡️ Processed: $output"
+}
+
+## Composite Layout
+
+composite_group() {
+	local files=("$@")
+	local count="${#files[@]}"
+	[ "$count" -eq 0 ] && return 1
+
+	local c_file
+	c_file="$(mktemp --suffix=.mp4)"
+	register_temp_file "$c_file"
+
+	local w=1280
+	local h=720
+	if [ -n "${TARGET_WIDTH:-}" ] && [ -n "${TARGET_HEIGHT:-}" ]; then
+		w="$TARGET_WIDTH"
+		h="$TARGET_HEIGHT"
+	fi
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+
+	case "$count" in
+	1)
+		if ! run_ffmpeg -y -i "${files[0]}" -c copy "$c_file"; then
+			error_exit "composite_group: single copy failed."
+		fi
+		;;
+	2)
+		if ! run_ffmpeg -y -i "${files[0]}" -i "${files[1]}" \
+			-filter_complex "hstack=inputs=2, pad=${w}:${h}:((ow-iw)/2):((oh-ih)/2):black" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" \
+			"${audio_opts[@]}" "$c_file"; then
+			error_exit "composite_group: 2-input hstack failed."
+		fi
+		;;
+	3)
+		if ! run_ffmpeg -y -i "${files[0]}" -i "${files[1]}" -i "${files[2]}" \
+			-filter_complex "vstack=inputs=3" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" \
+			"${audio_opts[@]}" "$c_file"; then
+			error_exit "composite_group: 3-input vstack failed."
+		fi
+		;;
+	4)
+		if ! run_ffmpeg -y -i "${files[0]}" -i "${files[1]}" -i "${files[2]}" -i "${files[3]}" \
+			-filter_complex "[0:v][1:v]hstack=inputs=2[top]; [2:v][3:v]hstack=inputs=2[bottom]; [top][bottom]vstack=inputs=2" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" \
+			"${audio_opts[@]}" "$c_file"; then
+			error_exit "composite_group: 4-input stack failed."
+		fi
+		;;
+	*)
+		local rows=3
+		local cols=3
+		if [ "$count" -le 6 ]; then
+			rows=2
+			cols=3
+		fi
+		local single_w
+		single_w=$(printf "%.0f" "$(bc -l <<<"$w / $cols")")
+		local single_h
+		single_h=$(printf "%.0f" "$(bc -l <<<"$h / $rows")")
+		local layout=""
+		local i
+		for ((i = 0; i < count; i++)); do
+			local col=$((i % cols))
+			local row=$((i / cols))
+			local xx=$((col * single_w))
+			local yy=$((row * single_h))
+			if [ "$i" -eq 0 ]; then
+				layout="${xx}_${yy}"
+			else
+				layout="${layout}|${xx}_${yy}"
+			fi
+		done
+		if ! run_ffmpeg -y $(for ff in "${files[@]}"; do printf -- "-i %s " "$(absolute_path "$ff")"; done) \
+			-filter_complex "xstack=inputs=$count:layout=${layout}:fill=black" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" \
+			"${audio_opts[@]}" "$c_file"; then
+			error_exit "composite_group: xstack failed."
+		fi
+		;;
+	esac
+
+	if ! check_moov_atom "$c_file"; then
+		moov_fallback "${files[0]}" "$c_file"
+	fi
+
+	echo "$c_file"
+}
+
+## Merge
+
+cmd_merge() {
+	advanced_prompt
+	local files=()
+	local output=""
+	local forced_fps=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-o | --output)
+			output="$2"
+			shift 2
+			;;
+		-s | --fps)
+			forced_fps="$2"
+			shift 2
+			;;
+		*)
+			files+=("$1")
+			shift
+			;;
+		esac
+	done
+
+	if [ "${#files[@]}" -lt 2 ]; then
+		if command_exists fzf; then
+			echo "➡️ 'merge' requires >=2 files. Launching fzf multi-select..."
+			local sel
+			sel="$(fzf --multi)"
+			[ -z "$sel" ] && error_exit "No files selected for merge."
+			mapfile -t files < <(echo "$sel")
+		else
+			error_exit "'merge' requires >=2 files."
+		fi
+	fi
+
+	if [ -z "$output" ]; then
+		output="$(get_default_filename "output" "merged" "mp4")"
+	fi
+
+	local tf="$ADV_FPS"
+	[ -n "$forced_fps" ] && tf="$forced_fps"
+
+	local max_h=0
+	local heights=()
+
+	for ((i = 0; i < ${#files[@]}; i++)); do
+		local f="${files[$i]}"
+		[ ! -f "$f" ] && error_exit "File not found: $f"
+		local fixed
+		fixed="$(ensure_dts_correct "$f")" || error_exit "Cannot fix DTS: $f"
+		files[$i]="$fixed"
+
+		local h
+		h="$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$fixed" 2>/dev/null || echo 0)"
+		if [[ "$h" =~ ^[0-9]+$ ]] && [ "$h" -gt "$max_h" ]; then
+			max_h="$h"
+		fi
+		heights+=("$h")
+	done
+
+	export TARGET_HEIGHT="$max_h"
+	export TARGET_WIDTH
+	TARGET_WIDTH="$(bc <<<"$max_h * 16 / 9")"
+
+	verbose_log "merge: Target composite resolution = ${TARGET_WIDTH}x${TARGET_HEIGHT}, fps=$tf"
+
+	local preprocessed=()
+	for ((i = 0; i < ${#files[@]}; i++)); do
+		local f="${files[$i]}"
+		local tmpf
+		tmpf="$(mktemp --suffix=.mp4)"
+		register_temp_file "$tmpf"
+
+		local audio_opts
+		audio_opts=($(get_audio_opts_arr))
+
+		if ! run_ffmpeg -y -i "$f" -r "$tf" \
+			-vf "pad=${TARGET_WIDTH}:${TARGET_HEIGHT}:((ow-iw)/2):((oh-ih)/2):black" \
+			-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$tmpf"; then
+			error_exit "Preprocessing failed for '$f'"
+		fi
+
+		if ! check_moov_atom "$tmpf"; then
+			moov_fallback "$f" "$tmpf"
+		fi
+		preprocessed+=("$tmpf")
+	done
+
+	if [ "$COMPOSITE_MODE" = true ]; then
+		declare -A groups
+		declare -A group_map
+		for ((i = 0; i < ${#files[@]}; i++)); do
+			local h="${heights[$i]}"
+			groups["$h"]=$((${groups["$h"]:-0} + 1))
+			group_map["$h"]+="${preprocessed[$i]}|"
+		done
+
+		local final_segments=()
+		for h in "${!groups[@]}"; do
+			IFS='|' read -r -a arr <<<"${group_map[$h]}"
+			local valid=()
+			for x in "${arr[@]}"; do
+				[ -n "$x" ] && valid+=("$x")
+			done
+			if [ "${#valid[@]}" -gt 1 ]; then
+				local compf
+				compf="$(composite_group "${valid[@]}")" || error_exit "composite_group failed."
+				final_segments+=("$compf")
+			else
+				final_segments+=("${valid[@]}")
+			fi
+		done
+		[ "${#final_segments[@]}" -eq 0 ] && final_segments=("${preprocessed[@]}")
+
+		preprocessed=("${final_segments[@]}")
+	fi
+
+	local concat_list
+	concat_list="$(mktemp)"
+	register_temp_file "$concat_list"
+	: >"$concat_list"
+
+	for seg in "${preprocessed[@]}"; do
+		echo "file '$(absolute_path "$seg")'" >>"$concat_list"
+	done
+
+	if ! run_ffmpeg -y -avoid_negative_ts make_zero -f concat -safe 0 \
+		-i "$concat_list" -c copy "$output"; then
+		error_exit "Merge failed => $output"
+	fi
+
+	auto_clean "$output"
+	echo "✔️ ➡️ Merged: $output"
+}
+
+## Looperang (palindromic)
+
+cmd_looperang() {
+	advanced_prompt
+	local input1="${1:-}"
+	local output="${2:-}"
+
+	[ -z "$input1" ] && error_exit "looperang requires <input> [output]."
+	[ ! -f "$input1" ] && error_exit "File not found: $input1"
+
+	if [ -z "$output" ]; then
+		local b
+		b="$(basename "$input1")"
+		local bare="${b%.*}"
+		output="$(get_default_filename "$bare" "looperang" "mp4")"
+	fi
+
+	local fixed_input
+	fixed_input="$(ensure_dts_correct "$input1")" || error_exit "DTS fix failed for '$input1'"
+
+	local forward_dir
+	forward_dir="$(mktemp -d)"
+	register_temp_dir "$forward_dir"
+
+	if ! run_ffmpeg -y -i "$fixed_input" -qscale:v 2 "$forward_dir/frame-%06d.jpg"; then
+		error_exit "looperang: frame extraction failed."
+	fi
+
+	local count
+	count="$(find "$forward_dir" -type f -name 'frame-*.jpg' | wc -l)"
+	[ "$count" -eq 0 ] && error_exit "No frames extracted."
+
+	local reverse_dir
+	reverse_dir="$(mktemp -d)"
+	register_temp_dir "$reverse_dir"
+
+	local i=1
+	find "$forward_dir" -type f -name 'frame-*.jpg' | sort -r | while read -r frm; do
+		local newname
+		newname="$(printf '%s/frame-%06d.jpg' "$reverse_dir" "$i")"
+		cp "$frm" "$newname"
+		i=$((i + 1))
+	done
+
+	local fwd_temp rev_temp
+	fwd_temp="$(mktemp --suffix=.mp4)"
+	rev_temp="$(mktemp --suffix=.mp4)"
+	register_temp_file "$fwd_temp"
+	register_temp_file "$rev_temp"
+
+	local fps
+	fps="$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate \
+		-of csv=p=0 "$fixed_input" 2>/dev/null || echo "30")"
+
+	run_ffmpeg -y -framerate "$fps" -i "$forward_dir/frame-%06d.jpg" \
+		-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" "$fwd_temp" ||
+		error_exit "Forward segment build failed."
+
+	run_ffmpeg -y -framerate "$fps" -i "$reverse_dir/frame-%06d.jpg" \
+		-c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium -pix_fmt "$ADV_PIX_FMT" "$rev_temp" ||
+		error_exit "Reverse segment build failed."
+
+	local concat_list
+	concat_list="$(mktemp)"
+	register_temp_file "$concat_list"
+
+	echo "file '$(absolute_path "$fwd_temp")'" >>"$concat_list"
+	echo "file '$(absolute_path "$rev_temp")'" >>"$concat_list"
+
+	if ! run_ffmpeg -y -avoid_negative_ts make_zero -f concat -safe 0 \
+		-i "$concat_list" -c copy "$output"; then
+		error_exit "Looperang: concat failed."
+	fi
+
+	if ! check_moov_atom "$output"; then
+		moov_fallback "$fixed_input" "$output"
+	fi
+	if ! check_moov_atom "$output"; then
+		error_exit "Looperang: moov atom missing in final output."
+	fi
+
+	auto_clean "$output"
+	echo "✔️ ➡️ Looperang: $output"
+}
+
+## Slowmo
+
+cmd_slowmo() {
+	advanced_prompt
+	local input="${1:-}"
+	local output="${2:-}"
+	local factor="${3:-2}"
+
+	# If user specified -p / --pts, override
+	if [ -n "${PTS_FACTOR:-}" ]; then
+		factor="$PTS_FACTOR"
+	fi
+
+	[ -z "$input" ] && error_exit "slowmo requires <input> [output] [factor]."
+	[ ! -f "$input" ] && error_exit "File not found: $input"
+
+	if [ -z "$output" ]; then
+		local b
+		b="$(basename "$input")"
+		local bare="${b%.*}"
+		output="$(get_default_filename "$bare" "slowmo" "mp4")"
+	fi
+
+	local fps_val="60"
+	[ -n "$SPECIFIC_FPS" ] && fps_val="$SPECIFIC_FPS"
+
+	local filter
+	if [ "$INTERPOLATE" = true ]; then
+		# if user didn't pass -f fps, default to 120 for interpolation
+		if [ -z "$SPECIFIC_FPS" ]; then
+			fps_val="120"
+			verbose_log "No -f specified; defaulting interpolation to 120 FPS"
+		fi
+		filter="minterpolate=fps=${fps_val}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,setpts=${factor}*PTS"
+	else
+		filter="setpts=${factor}*PTS"
+	fi
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+
+	verbose_log "Applying slow motion factor=$factor, fps=$fps_val"
+
+	if [ "$ADV_MULTIPASS" = "true" ]; then
+		# two-pass
+		if ! run_ffmpeg -y -i "$input" -filter_complex "$filter,scale=-2:1080,fps=$fps_val" \
+			-r "$fps_val" -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 1 -an -f mp4 /dev/null; then
+			error_exit "Slowmo pass 1 failed."
+		fi
+		if ! run_ffmpeg -y -i "$input" -filter_complex "$filter,scale=-2:1080,fps=$fps_val" \
+			-r "$fps_val" -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 2 "${audio_opts[@]}" \
+			-movflags +faststart "$output"; then
+			error_exit "Slowmo pass 2 failed."
+		fi
+	else
+		if ! run_ffmpeg -y -i "$input" -filter_complex "$filter,scale=-2:1080,fps=$fps_val" \
+			-r "$fps_val" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$output"; then
+			error_exit "Slowmo: operation failed."
+		fi
+	fi
+
+	if ! check_moov_atom "$output"; then
+		moov_fallback "$input" "$output"
+	fi
+	if ! check_moov_atom "$output"; then
+		error_exit "Slowmo: moov atom missing in $output"
+	fi
+	auto_clean "$output"
+	echo "✔️ ➡️ Slow motion: $output"
+}
+
+## Fix
+
+cmd_fix() {
+	advanced_prompt
+	local input="${1:-}"
+	local output="${2:-}"
+
+	[ -z "$input" ] && error_exit "fix requires <input> <output>."
+
+	if [ "$BULK_MODE" = true ]; then
+		echo "➡️ Bulk fix: (f) for files or (d) for directory?"
+		local c
+		read -r c
+		if [ "$c" = "f" ]; then
+			if ! command_exists fzf; then
+				error_exit "fzf not installed; cannot do multi file selection."
+			fi
+			local fl
+			fl="$(fzf --multi)"
+			[ -z "$fl" ] && error_exit "No files selected."
+			local success_count=0
+			local failure_count=0
+			while IFS= read -r i; do
+				[ -f "$i" ] || continue
+				local bn out
+				bn="$(basename "$i")"
+				out="$(get_default_filename "${bn%.*}" "fix" "mp4")"
+				verbose_log "Fixing $i => $out"
+				local audio_opts
+				audio_opts=($(get_audio_opts_arr))
+				if run_ffmpeg -y -fflags +genpts -i "$i" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$out"; then
+					success_count=$((success_count + 1))
+				else
+					echo "❌ Fix failed for $i" >&2
+					failure_count=$((failure_count + 1))
+					continue
+				fi
+				auto_clean "$out"
+			done < <(echo "$fl")
+			echo "➡️ Bulk fix complete: ${success_count} successes, ${failure_count} failures."
+			return
+		elif [ "$c" = "d" ]; then
+			echo "➡️ Enter directory path for fix:"
+			local dir_path
+			read -r dir_path
+			[ ! -d "$dir_path" ] && error_exit "Invalid directory."
+			for f in "$dir_path"/*; do
+				[ -f "$f" ] || continue
+				local bn out
+				bn="$(basename "$f")"
+				out="$(get_default_filename "${bn%.*}" "fix" "mp4")"
+				verbose_log "Fixing $f => $out"
+				local audio_opts
+				audio_opts=($(get_audio_opts_arr))
+				if ! run_ffmpeg -y -fflags +genpts -i "$f" -c:v copy "${audio_opts[@]}" -movflags +faststart "$out"; then
+					run_ffmpeg -y -fflags +genpts -i "$f" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$out" || {
+						echo "❌ Fix failed for $f" >&2
+					}
+				fi
+				auto_clean "$out"
+			done
+			echo "➡️ Bulk fix complete."
+			return
+		fi
+	fi
+
+	[ ! -f "$input" ] && error_exit "File not found: $input"
+	[ -z "$output" ] && error_exit "fix requires <input> <output>."
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+	if ! run_ffmpeg -y -fflags +genpts -i "$input" -c:v copy "${audio_opts[@]}" -movflags +faststart "$output"; then
+		if ! run_ffmpeg -y -fflags +genpts -i "$input" -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset veryfast "${audio_opts[@]}" "$output"; then
+			error_exit "fix: final fallback failed for '$input'"
+		fi
+	fi
+	auto_clean "$output"
+	echo "✔️ ➡️ Fixed: $output"
+}
+
+## Clean
+
+cmd_cleanmeta() {
+	advanced_prompt
+	local input="${1:-}"
+	local output="${2:-}"
+
+	if [ -z "$input" ] || [ -z "$output" ]; then
+		if [ "$#" -eq 1 ]; then
+			output="$1"
+			if command_exists fzf; then
+				echo "No input provided. Launching fzf for clean..."
+				input="$(fzf)"
+				[ -z "$input" ] && error_exit "No file selected."
+			else
+				error_exit "'clean' requires <input> <output>."
+			fi
+		else
+			error_exit "'clean' requires <input> <output>."
+		fi
+	fi
+	[ ! -f "$input" ] && error_exit "File not found: $input"
+
+	if [ "$BULK_MODE" = true ]; then
+		echo "➡️ Bulk clean: (f) for files or (d) for directory?"
+		local c
+		read -r c
+		if [ "$c" = "f" ]; then
+			if ! command_exists fzf; then
+				error_exit "fzf not installed."
+			fi
+			local file_list
+			file_list="$(fzf --multi)"
+			[ -z "$file_list" ] && error_exit "No files selected."
+			local success_count=0
+			local failure_count=0
+			while IFS= read -r f; do
+				[ -f "$f" ] || continue
+				local bn
+				bn="$(basename "$f")"
+				local out
+				out="$(get_default_filename "${bn%.*}" "cleanmeta" "mp4")"
+				verbose_log "Cleaning metadata for $f => $out"
+				local audio_opts
+				audio_opts=($(get_audio_opts_arr))
+				if ! run_ffmpeg -y -i "$f" -map_metadata -1 -c:v copy "${audio_opts[@]}" -movflags +faststart "$out"; then
+					run_ffmpeg -y -i "$f" -map_metadata -1 -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$out" || {
+						echo "❌ Clean failed for $f" >&2
+						failure_count=$((failure_count + 1))
+						continue
+					}
+				fi
+			done < <(echo "$file_list")
+			echo "➡️ Bulk clean complete: ${success_count} successes, ${failure_count} failures."
+			return
+		elif [ "$c" = "d" ]; then
+			echo "➡️ Enter directory path for clean:"
+			local dir_path
+			read -r dir_path
+			[ ! -d "$dir_path" ] && error_exit "Invalid directory."
+			for f in "$dir_path"/*; do
+				[ -f "$f" ] || continue
+				local bn
+				bn="$(basename "$f")"
+				local out
+				out="$(get_default_filename "${bn%.*}" "cleanmeta" "mp4")"
+				local audio_opts
+				audio_opts=($(get_audio_opts_arr))
+				if ! run_ffmpeg -y -i "$f" -map_metadata -1 -c:v copy "${audio_opts[@]}" -movflags +faststart "$out"; then
+					run_ffmpeg -y -i "$f" -map_metadata -1 -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$out" || {
+						echo "❌ Clean failed for $f" >&2
+					}
+				fi
+			done
+			echo "➡️ Bulk clean complete."
+			return
+		else
+			error_exit "Invalid selection."
+		fi
+	fi
+
+	local audio_opts
+	audio_opts=($(get_audio_opts_arr))
+	if ! run_ffmpeg -y -i "$input" -map_metadata -1 -c:v copy "${audio_opts[@]}" -movflags +faststart "$output"; then
+		if ! run_ffmpeg -y -i "$input" -map_metadata -1 -c:v "$ADV_CODEC" -crf "$ADV_CRF" -preset medium "${audio_opts[@]}" "$output"; then
+			error_exit "clean: final fallback failed for '$input'"
+		fi
+	fi
+	auto_clean "$output"
+	echo "✔️ ➡️ Metadata cleaned: $output"
+}
+
+## Help
+
+display_usage() {
+	cat <<EOF
+Usage: ffx3 [global options] <command> [arguments]
+
+Global Options:
+  -A, --advanced         Enable advanced interactive options.
+  -v, --verbose          Enable verbose output (otherwise suppressed).
+  -b, --bulk             Enable bulk mode.
+  -an                    Remove audio track(s).
+  -C, --composite        Enable composite mode (merge sub-grouped).
+  -P, --max1080          Enforce max height of 1080p.
+  -o, --output <dir>     Specify output directory (default: current dir).
+  -f, --fps <val>        Force output FPS for certain commands.
+  -p, --pts <val>        Set slow-mo PTS factor.
+  -i, --interpolate      Enable motion interpolation for slowmo.
+
+Commands:
+  probe      [<input>]          Display file info (size, resolution, FPS, etc.).
+  process    <input> [output]   Downscale/re-encode a single file; optional forced FPS.
+  merge      [-o out] [-s fps] [files...]
+                                Merge multiple videos, optionally composite sub-groups.
+  looperang  <input> [output]   Create boomerang effect by reversing frames after forward pass.
+  slowmo     <input> [output] [factor]
+                                Apply slow-motion, optional interpolation if -i set.
+  fix        <input> <output>   Fix DTS/timestamp issues, optionally in bulk mode.
+  clean      <input> <output>   Remove non-essential metadata, optionally in bulk mode.
+  help                        Display this help information.
+EOF
+	exit 0
+}
+
+## Args
+
+parse_global_options() {
+	REMAINING_ARGS=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-A | --advanced)
+			ADVANCED_MODE=true
+			shift
+			;;
+		-v | --verbose)
+			VERBOSE_MODE=true
+			shift
+			;;
+		-b | --bulk)
+			BULK_MODE=true
+			shift
+			;;
+		-an)
+			REMOVE_AUDIO=true
+			shift
+			;;
+		-C | --composite)
+			COMPOSITE_MODE=true
+			shift
+			;;
+		-P | --max1080)
+			MAX_1080=true
+			shift
+			;;
+		-o | --output)
+			OUTPUT_DIR="$2"
+			shift 2
+			;;
+		-f | --fps)
+			SPECIFIC_FPS="$2"
+			shift 2
+			;;
+		-p | --pts)
+			PTS_FACTOR="$2"
+			shift 2
+			;;
+		-i | --interpolate)
+			INTERPOLATE=true
+			shift
+			;;
+		help)
+			# If user literally types "help" as a global arg
+			display_usage
+			;;
+		*)
+			REMAINING_ARGS+=("$1")
+			shift
+			;;
+		esac
+	done
+}
+
+## Main entry point
+
+main_dispatch() {
+	local cmd="$1"
+	shift || true
+
+	case "$cmd" in
+	help)
+		display_usage
+		;;
+	probe)
+		cmd_probe "$@"
+		;;
+	process)
+		cmd_process "$@"
+		;;
+	merge)
+		cmd_merge "$@"
+		;;
+	looperang)
+		cmd_looperang "$@"
+		;;
+	slowmo)
+		cmd_slowmo "$@"
+		;;
+	fix)
+		cmd_fix "$@"
+		;;
+	clean)
+		cmd_cleanmeta "$@"
+		;;
+	*)
+		echo "Unrecognized command: $cmd" 1>&2
+		display_usage
+
+		exit 1
+		;;
+	esac
+}
+
+main() {
+	if [ $# -lt 1 ]; then
+		display_usage
+	fi
+
+	# First parse out global flags
+	parse_global_options "$@"
+
+	if [ "${#REMAINING_ARGS[@]}" -lt 1 ]; then
+		display_usage
+	fi
+
+	local subcmd="${REMAINING_ARGS[0]}"
+	local -a sub_args=("${REMAINING_ARGS[@]:1}")
+
+	main_dispatch "$subcmd" "${sub_args[@]}"
+}
+
+main "$@"
