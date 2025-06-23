@@ -1,6 +1,18 @@
-## Secrets
-secrets.json
-*.env
+# Test artifacts
+0-tests/*
+
+## Logs and Runtime
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+*.log.*
+*.pid
+*.db
+logs
+*.log
 
 ## Editor and Shell
 .p10k.zsh
@@ -8,6 +20,8 @@ secrets.json
 .bash_history
 .zsh_history
 .vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
@@ -16,12 +30,6 @@ secrets.json
 *.swn
 *.~?
 *~
-
-## Logs and Runtime
-*.log
-*.log.*
-*.pid
-*.db
 
 ## Python caches
 .mypy_cache/
@@ -40,6 +48,9 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 .yarn/cache/
+dist
+dist-ssr
+*.local
 
 ## C/C++/Rust/Go
 target/
@@ -50,9 +61,6 @@ bin/
 *.a
 *.so
 *.exe
-
-## Vendor
-vendor/
 
 ## Operating‑system Noise
 .thumbnails/
@@ -67,6 +75,11 @@ Thumbs.db
 *.tmp*
 *.pyc
 *.part
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 ## Archives
 *.zip
@@ -78,6 +91,7 @@ Thumbs.db
 *.xz
 
 ## Large Media
+.codex-venv/
 *.webm
 *.iso
 *.img
@@ -89,10 +103,10 @@ Thumbs.db
 *.3gp
 *.flv
 *.webp
-.codex-venv/
 
-# Test artifacts
-0-tests/genres/dup1.json
-0-tests/genres/dup2.json
-0-tests/genres/fantasy-monster.json
-0-tests/testfile
+## Vendor
+vendor/
+
+## Secrets
+secrets.json
+*.env
