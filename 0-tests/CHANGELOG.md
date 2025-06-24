@@ -24,3 +24,4 @@
 2025-06-23 • 4ndr0tools/4ndr0update/ANALYSIS.md • +49/-63 • Expand review with rewrite approach and improvements
 2025-06-23 • 4ndr0tools/4ndr0update/* • +366/-365 • Apply strict mode, fix bugs, and clean dead code
 
+2025-06-24 • media/ffx_project/bin/ffxd • +129/-0 • Initial unified CLI skeleton
