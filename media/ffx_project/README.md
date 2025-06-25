@@ -1,61 +1,69 @@
-# Ffx Project — Minimalist, Idempotent Media Suite
+# ffxd — Unified XDG-Compliant Video Toolkit
 
-**ffxd** is a unified, XDG-compliant, POSIX shell toolkit for robust, lossless video merging, compositing, and repair.  
-It supports interactive advanced modes, batch automation, and a visually styled CLI with maximal idempotency and safety.
+**Author:** 4ndr0666  
+**Maintainer:** andrew+ffxd@yourdomain.com  
+**Last Updated:** 2024-06-24  
+**Version:** v4.0-alpha
+
+---
+
+## Project Overview
+
+ffxd is a minimalist, POSIX-compliant, XDG-respecting shell suite for robust, lossless video merging, grid composition, slow motion, boomerang effects, cleaning, and repair.  
+All commands use safe defaults, are idempotent, and provide rich logging and verbose output for power users and audit trails.
 
 ---
 
 ## Features
 
-- **Lossless-first pipeline** (`-qp 0` default)
-- **Automatic idempotent output naming**
-- **Fully automated composite grid layouts**
-- **Bulk/batch processing and repair**
-- **Interactive “advanced” mode with persistent config**
-- **Comprehensive global flags for all commands**
-- **XDG directory compliance** for config/cache/runtime
-- **Rich colored TUI and stepwise feedback**
+- Unified CLI with strict shell safety and argument validation
+- Lossless-first pipeline (e.g., process, merge with `-qp 0`)
+- Idempotent output file naming (auto-suffix; auto-increment pending)
+- Full XDG directory compliance (config, cache, temp)
+- Interactive “advanced” mode for granular control (pending, ticket #3)
+- Bulk processing, verbose and error logging
+- Clean, color-coded help output
 
 ---
 
 ## Requirements
 
-- ffmpeg (4.x+ recommended)
+- bash 5+
+- ffmpeg (4.x+)
 - ffprobe
-- POSIX-compatible shell (bash, zsh, dash)
 - mktemp, findutils
-- Optional: fzf (for interactive file selection)
+- Optional: fzf (for future interactive file picking)
 
 ---
 
 ## Usage
 
 ```sh
-# Merge (with optional composite grid if --composite is set)
-./ffxd merge [global options] file1 file2 ... [output.mp4]
+# Process video(s)
+./ffxd process [global options] file1.mp4 [file2 ...]
 
-# Lossless repair and normalization
-./ffxd process [global options] file.mp4
+# Merge multiple videos (lossless-first)
+./ffxd merge [global options] file1.mp4 file2.mp4 [fileN ...]
 
-# Create composite grid
-./ffxd composite [global options] file1 file2 ...
+# Composite grid
+./ffxd composite [global options] file1.mp4 file2.mp4 [up to 4, 9 support pending]
 
-# Boomerang effect (forward+reverse)
+# Boomerang effect
 ./ffxd looperang [global options] file.mp4
 
-# Slow-motion (with/without interpolation)
-./ffxd slowmo [global options] file.mp4
+# Slow-motion
+./ffxd slowmo [global options] file.mp4 -p 0.5
 
-# Repair timestamps, moov atom, and DTS
+# Fix duration/timestamp, force CFR
 ./ffxd fix [global options] file.mp4
 
-# Clean metadata
-./ffxd clean [global options] file.mp4
+# Clean runtime and cache
+./ffxd clean
 
-# Probe/inspect file
-./ffxd probe [global options] file.mp4
+# Probe file info
+./ffxd probe file.mp4
 
-# Help/usage
+# Help
 ./ffxd help
 ````
 
@@ -63,56 +71,57 @@ It supports interactive advanced modes, batch automation, and a visually styled 
 
 ## Global Options
 
-All commands support the following:
-
-| Short | Long          | Description                             |
-| ----- | ------------- | --------------------------------------- |
-| -a    | --advanced    | Interactive advanced prompt/config      |
-| -v    | --verbose     | Verbose/log FFmpeg output/status        |
-| -b    | --bulk        | Bulk processing (process, fix, clean)   |
-| -n    | --noaudio     | Remove all audio streams                |
-| -c    | --composite   | Composite (grid) output mode            |
-| -m    | --max1080     | Enforce maximum output height 1080p     |
-| -o    | --output-dir  | Custom output directory                 |
-| -f    | --fps         | Override/force specific frame rate      |
-| -p    | --pts         | Playback speed factor (slowmo, time fx) |
-| -i    | --interpolate | Enable motion interpolation             |
-
-**Idempotent output naming** is enforced; files never clobber unless `-y` is explicitly set.
+| Short | Long          | Description                                  |
+| ----- | ------------- | -------------------------------------------- |
+| -a    | --advanced    | Interactive advanced prompt (pending)        |
+| -v    | --verbose     | Verbose output/logging                       |
+| -b    | --bulk        | Bulk/batch process for 'process'             |
+| -n    | --noaudio     | Remove all audio streams                     |
+| -m    | --max1080     | Limit output to 1080p height                 |
+| -o    | --output-dir  | Output directory (default: cwd)              |
+| -f    | --fps         | Force output FPS                             |
+| -p    | --pts         | Set slowmo/speed factor                      |
+| -i    | --interpolate | Enable motion interpolation (requires --fps) |
 
 ---
 
-## Command Reference
+## Current Implementation Notes
 
-See `./ffxd help` or the in-script help for up-to-date option details and example usage.
+* All features and error logging are production-grade and copy/paste safe.
+* Output file names: `${basename}_processed.mp4`, `${basename}_merged.mp4`, etc.; auto-increment feature in progress.
+* Interactive advanced prompt and 5–9 input composite grid support are under active development (see work tickets).
+* Colorized, timestamped logs and advanced metadata scrubbing on the roadmap.
 
 ---
 
-## Project Structure
+## Escalated Work Tickets (as of 2024-06-24)
 
-```
-bin/
-  ffxd              # Unified CLI
-  ffxd-merge        # Standalone merge logic
-  ffxd-process      # Standalone process logic
-  ...
-docs/
-  README.md
-  coding_plan.md
-  ...
-test/
-  test_ffxd_cli.bats  # CLI/test matrix
-  ...
-```
+See [work ticket](#) in repo root or docs/ for real-time ticket matrix.
+
+* Output file idempotency/auto-increment
+* Composite grid generalization (up to 9)
+* Interactive advanced prompt
+* Function header/documentation coverage
+* Full CLI test matrix expansion
+
+---
+
+## Contributors & Contacts
+
+* **Primary Maintainer:** 4ndr0666 ([andrew+ffxd@yourdomain.com](mailto:andrew+ffxd@yourdomain.com))
+* **Review/Audit:** ChatGPT (OpenAI, audit completed 2024-06-24)
+* **Current status:** v4.0-alpha, live branch
 
 ---
 
 ## License
 
-MIT — see LICENSE file.
+MIT — See LICENSE for details.
 
 ---
 
-## Contact
+## Changelog
 
-Open PRs, issues, or email the maintainer for questions and collaboration.
+* **2024-06-24**: v4.0-alpha, all core commands implemented, code audit and real-world ticketing in place.
+* **2024-06-20**: XDG compliance finalized, global options expanded.
+* **2024-06-09**: Core shell skeleton, initial stubs and usage.
