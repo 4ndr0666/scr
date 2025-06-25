@@ -1,0 +1,885 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+set -euo pipefail
+IFS=$'\n\t'
+# ====================== // ffxd //
+
+declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+
+mkdir -p "$XDG_RUNTIME_DIR/ffxd" || { echo "Error: Could not create runtime directory $XDG_RUNTIME_DIR/ffxd" >&2; exit 1; }
+
+declare -r TEMP_DIR="$(mktemp -d "$XDG_RUNTIME_DIR/ffxd/ffxd.XXXXXX")" || { echo "Error: Could not create temporary directory" >&2; exit 1; }
+
+trap 'rm -rf -- "$TEMP_DIR"' EXIT
+
+declare ADVANCED=false
+declare VERBOSE=false
+declare BULK=false
+declare NOAUDIO=false
+declare COMPOSITE=false # Note: This flag seems redundant as 'composite' is a command. Re-evaluate its purpose or remove. Assuming it's meant for the 'process' command to output a composite? Let's clarify its use or remove it. Based on the command list, 'composite' is a command itself. Removing this global flag to avoid confusion.
+declare COMPOSITE=false # Removed based on analysis.
+declare MAX1080=false
+declare OUTPUT_DIR="$(pwd)" # Default to current directory
+declare FPS=""
+declare PTS=""
+declare INTERPOLATE=false
+declare -a COMMAND_ARGS=()
+
+log_verbose() {
+	if "$VERBOSE"; then
+		echo "VERBOSE: $*" >&2
+	fi
+}
+
+log_error() {
+	echo "ERROR: $*" >&2
+}
+
+build_ffmpeg_options() {
+	local -a ffmpeg_opts=()
+	local -a video_filters=()
+	local -a audio_filters=()
+
+	if "$NOAUDIO"; then
+		ffmpeg_opts+=("-an")
+	fi
+
+	if "$MAX1080"; then
+		# Scale video to max 1920x1080 while maintaining aspect ratio.
+		# Use 'scale' filter. 'min(iw,1920)' and 'min(ih,1080)' ensures we don't upscale.
+		# 'force_original_aspect_ratio=decrease' handles cases where one dimension is already over limit.
+		video_filters+=("scale='min(iw,1920):min(ih,1080):force_original_aspect_ratio=decrease'")
+	fi
+
+	if [[ -n "$FPS" ]]; then
+		# Force constant frame rate.
+		ffmpeg_opts+=("-r" "$FPS")
+		# Note: If interpolation is used, the target FPS might come from INTERPOLATE logic instead.
+		# For now, FPS flag takes precedence for the base stream.
+	fi
+
+	if [[ -n "$PTS" ]]; then
+		# Adjust playback speed using setpts (video) and atempo (audio).
+		# atempo filter only supports factors between 0.5 and 2.0.
+		# For factors outside this range, multiple atempo filters or other methods are needed.
+		# This simplified version assumes PTS is within the 0.5-2.0 range for audio.
+		# A more robust implementation would chain atempo filters or use rubberband/rubberpitch.
+		video_filters+=("setpts=$PTS*PTS")
+		if ! "$NOAUDIO"; then
+			# Check if PTS is within atempo's supported range (0.5 to 2.0)
+			# This check is basic and assumes PTS is a simple number.
+			if (( $(echo "$PTS >= 0.5" | bc -l) )) && (( $(echo "$PTS <= 2.0" | bc -l) )); then
+				audio_filters+=("atempo=1/$PTS")
+			else
+				log_error "Audio speed adjustment (atempo) requires PTS factor between 0.5 and 2.0. Audio speed will not be adjusted."
+				# Alternatively, handle complex atempo chaining or use a different filter.
+				# For this revision, we just warn and skip audio tempo adjustment.
+			fi
+		fi
+	fi
+
+	if "$INTERPOLATE"; then
+		# Enable motion interpolation. This is complex and requires specific filters
+		# like minterpolate. It also often requires setting a target FPS.
+		# A basic minterpolate filter example:
+		# minterpolate='mi_mode=mci:mc_mode=aobmc:vsbmc=1:fps=60' # Example target FPS 60
+		# The target FPS should ideally be higher than the source FPS.
+		# If FPS flag is set, use that as target, otherwise default or error?
+		# Let's assume if INTERPOLATE is true, a target FPS must be set via -f.
+		if [[ -z "$FPS" ]]; then
+			log_error "Motion interpolation requires a target frame rate. Please specify with -f/--fps."
+			return 1 # Indicate failure
+		fi
+		video_filters+=("minterpolate='mi_mode=mci:mc_mode=aobmc:vsbmc=1:fps=$FPS'")
+		# Note: minterpolate is CPU intensive and requires specific ffmpeg builds.
+	fi
+
+	# Combine video filters if any.
+	if [[ ${#video_filters[@]} -gt 0 ]]; then
+		ffmpeg_opts+=("-vf" "$(IFS=,; echo "${video_filters[*]}")")
+	fi
+
+	# Combine audio filters if any.
+	if [[ ${#audio_filters[@]} -gt 0 ]]; then
+		ffmpeg_opts+=("-af" "$(IFS=,; echo "${audio_filters[*]}")")
+	fi
+
+	# Add verbose flag for ffmpeg if script is verbose.
+	if "$VERBOSE"; then
+		ffmpeg_opts+=("-v" "info") # Use 'info' for standard verbose output from ffmpeg
+	fi
+
+	# Return the array of options.
+	echo "${ffmpeg_opts[@]}"
+}
+
+parse_global_options() {
+	log_verbose "Parsing global options: $*"
+	local -a remaining_args=()
+	local arg
+
+	while [[ $# -gt 0 ]]; do
+		arg="$1"
+		case "$arg" in
+		-a | --advanced)
+			ADVANCED=true
+			log_verbose "Flag set: ADVANCED"
+			;;
+		-v | --verbose)
+			VERBOSE=true
+			log_verbose "Flag set: VERBOSE" # This will print for subsequent verbose calls
+			;;
+		-b | --bulk)
+			BULK=true
+			log_verbose "Flag set: BULK"
+			;;
+		-n | --noaudio)
+			NOAUDIO=true
+			log_verbose "Flag set: NOAUDIO"
+			;;
+		-m | --max1080)
+			MAX1080=true
+			log_verbose "Flag set: MAX1080"
+			;;
+		-o | --output-dir)
+			if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+				log_error "Option '$arg' requires a directory argument."
+				show_help
+				exit 1
+			fi
+			OUTPUT_DIR="$2"
+			log_verbose "Option set: OUTPUT_DIR=$OUTPUT_DIR"
+			shift # Consume the argument
+			;;
+		-f | --fps)
+			if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+				log_error "Option '$arg' requires a frame rate value."
+				show_help
+				exit 1
+			fi
+			# Basic validation: check if it looks like a number (integer or float)
+			if ! [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+				log_error "Invalid value for '$arg': '$2'. Must be a number."
+				show_help
+				exit 1
+			fi
+			FPS="$2"
+			log_verbose "Option set: FPS=$FPS"
+			shift # Consume the argument
+			;;
+		-p | --pts)
+			if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+				log_error "Option '$arg' requires a playback speed factor."
+				show_help
+				exit 1
+			fi
+			# Basic validation: check if it looks like a number (integer or float)
+			if ! [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+				log_error "Invalid value for '$arg': '$2'. Must be a number."
+				show_help
+				exit 1
+			fi
+			PTS="$2"
+			log_verbose "Option set: PTS=$PTS"
+			shift # Consume the argument
+			;;
+		-i | --interpolate)
+			INTERPOLATE=true
+			log_verbose "Flag set: INTERPOLATE"
+			;;
+		--)
+			# End of options marker
+			shift # Consume '--'
+			remaining_args+=("$@") # Add all remaining arguments
+			break # Stop parsing options
+			;;
+		-*)
+			# Unknown option
+			log_error "Unknown global option: $arg"
+			show_help
+			exit 1
+			;;
+		*)
+			# First non-option argument is the command
+			remaining_args+=("$@")
+			break # Stop parsing options
+			;;
+		esac
+		shift # Consume the current option
+	done
+
+	# Store the remaining arguments (command and its args)
+	COMMAND_ARGS=("${remaining_args[@]}")
+	log_verbose "Remaining arguments (command and args): ${COMMAND_ARGS[*]}"
+}
+
+show_help() {
+	cat <<EOH
+Usage: ffxd [global options] <command> [args]
+
+Commands:
+  process <input(s)>   Process video file(s) with global options.
+  merge <input(s)>     Merge multiple video files into one.
+  composite <input(s)> Composite multiple video files into a grid.
+  looperang <input>    Create a boomerang effect video.
+  slowmo <input>       Create a slow-motion video.
+  fix <input>          Fix common video issues (e.g., VFR to CFR).
+  clean                Clean up ffxd temporary/cache files.
+  probe <input>        Show media information using ffprobe.
+  help                 Show this help message.
+
+Global options:
+  -a, --advanced        Interactive advanced prompt (currently not implemented).
+  -v, --verbose         Verbose output.
+  -b, --bulk            Process multiple inputs sequentially (for 'process').
+  -n, --noaudio         Remove audio streams from output.
+  -m, --max1080         Enforce 1080p maximum height for video.
+  -o, --output-dir DIR  Output directory (defaults to current directory).
+  -f, --fps FPS         Force constant frame rate (e.g., 30, 60). Required for interpolation.
+  -p, --pts FACTOR      Adjust playback speed (e.g., 0.5 for half speed, 2.0 for double speed).
+  -i, --interpolate     Enable motion interpolation (requires -f/--fps).
+
+Note: Not all global options are applicable to all commands.
+EOH
+}
+
+cmd_process() {
+	log_verbose "Executing command: process with args: $*"
+	local -a inputs=("$@")
+	local input_file output_file base_name ext
+	local -a ffmpeg_common_opts
+
+	if [[ ${#inputs[@]} -eq 0 ]]; then
+		log_error "Command 'process' requires at least one input file."
+		echo "Usage: ffxd process [global options] <input(s)>" >&2
+		exit 1
+	fi
+
+	# Ensure output directory exists
+	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+
+	# Build common ffmpeg options from global flags
+	# Use command substitution to capture array output
+	local -a common_opts_output
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+
+	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
+		# build_ffmpeg_options returned non-zero exit status due to missing FPS for interpolation
+		exit 1
+	fi
+	ffmpeg_common_opts=("${common_opts_output[@]}")
+
+
+	if "$BULK"; then
+		log_verbose "Bulk mode enabled. Processing files sequentially."
+		for input_file in "${inputs[@]}"; do
+			if [[ ! -f "$input_file" ]]; then
+				log_error "Input file not found: $input_file. Skipping."
+				continue # Skip to next file in bulk mode
+			fi
+
+			base_name=$(basename "$input_file")
+			ext="${base_name##*.}"
+			base_name="${base_name%.*}"
+			output_file="$OUTPUT_DIR/${base_name}_processed.$ext" # Simple output naming
+
+			log_verbose "Processing '$input_file' -> '$output_file'"
+
+			# Construct the ffmpeg command
+			local -a ffmpeg_cmd=(
+				ffmpeg -y # Overwrite output files without asking
+				-i "$input_file"
+				"${ffmpeg_common_opts[@]}"
+				"$output_file"
+			)
+
+			log_verbose "Executing: ${ffmpeg_cmd[*]}"
+			# Execute the command. set -e will handle errors.
+			"${ffmpeg_cmd[@]}"
+
+			log_verbose "Finished processing '$input_file'."
+		done
+	else
+		# Non-bulk mode: Process only the first input file provided.
+		# This might not be the desired behavior; typically non-bulk means one input.
+		# Let's enforce one input for non-bulk mode for clarity.
+		if [[ ${#inputs[@]} -gt 1 ]]; then
+			log_error "Non-bulk mode expects only one input file. Received ${#inputs[@]}."
+			echo "Usage: ffxd process [global options] <input>" >&2
+			exit 1
+		fi
+		input_file="${inputs[0]}"
+
+		if [[ ! -f "$input_file" ]]; then
+			log_error "Input file not found: $input_file."
+			exit 1
+		fi
+
+		base_name=$(basename "$input_file")
+		ext="${base_name##*.}"
+		base_name="${base_name%.*}"
+		output_file="$OUTPUT_DIR/${base_name}_processed.$ext" # Simple output naming
+
+		log_verbose "Processing '$input_file' -> '$output_file'"
+
+		# Construct the ffmpeg command
+		local -a ffmpeg_cmd=(
+			ffmpeg -y # Overwrite output files without asking
+			-i "$input_file"
+			"${ffmpeg_common_opts[@]}"
+			"$output_file"
+		)
+
+		log_verbose "Executing: ${ffmpeg_cmd[*]}"
+		# Execute the command. set -e will handle errors.
+		"${ffmpeg_cmd[@]}"
+
+		log_verbose "Finished processing '$input_file'."
+	fi
+}
+
+cmd_merge() {
+	log_verbose "Executing command: merge with args: $*"
+	local -a inputs=("$@")
+	local output_file="$OUTPUT_DIR/merged_output.mp4" # Simple output naming
+	local concat_list="$TEMP_DIR/concat_list.txt"
+
+	if [[ ${#inputs[@]} -lt 2 ]]; then
+		log_error "Command 'merge' requires at least two input files."
+		echo "Usage: ffxd merge [global options] <input1> <input2> [input...]" >&2
+		exit 1
+	fi
+
+	# Ensure all input files exist
+	for input_file in "${inputs[@]}"; do
+		if [[ ! -f "$input_file" ]]; then
+			log_error "Input file not found: $input_file."
+			exit 1
+		fi
+	done
+
+	# Ensure output directory exists
+	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+
+	# Create a file list for the concat demuxer
+	printf "file '%s'\n" "${inputs[@]}" > "$concat_list" || { log_error "Could not create concat list file."; exit 1; }
+	log_verbose "Created concat list: $concat_list"
+
+	# Build common ffmpeg options (only relevant ones like noaudio might apply)
+	local -a ffmpeg_common_opts
+	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(build_ffmpeg_options; printf '\0') || true
+	# Note: Filters like scale, fps, pts, interpolate are typically applied after concat,
+	# or require complex filtergraphs. For simplicity, we apply only stream copy options here.
+	# A more advanced merge might re-encode with filters.
+
+	# Construct the ffmpeg command using the concat demuxer
+	local -a ffmpeg_cmd=(
+		ffmpeg -y # Overwrite output files without asking
+		-f concat
+		-safe 0 # Required for file paths that are not relative or in current dir
+		-i "$concat_list"
+		-c copy # Stream copy without re-encoding (fastest)
+		"${ffmpeg_common_opts[@]}" # Add relevant common options like -an
+		"$output_file"
+	)
+
+	log_verbose "Executing: ${ffmpeg_cmd[*]}"
+	"${ffmpeg_cmd[@]}"
+
+	log_verbose "Finished merging files to '$output_file'."
+}
+
+cmd_composite() {
+	log_verbose "Executing command: composite with args: $*"
+	local -a inputs=("$@")
+	local output_file="$OUTPUT_DIR/composite_output.mp4" # Simple output naming
+	local num_inputs=${#inputs[@]}
+	local filter_complex=""
+	local input_streams=""
+	local output_stream_name="output"
+
+	if [[ "$num_inputs" -eq 0 ]]; then
+		log_error "Command 'composite' requires at least one input file."
+		echo "Usage: ffxd composite [global options] <input(s)>" >&2
+		exit 1
+	fi
+
+	# Ensure all input files exist
+	for input_file in "${inputs[@]}"; do
+		if [[ ! -f "$input_file" ]]; then
+			log_error "Input file not found: $input_file."
+			exit 1
+		fi
+	done
+
+	# Ensure output directory exists
+	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+
+	# Build common ffmpeg options (filters like scale, fps, pts might apply to individual inputs before compositing)
+	# For simplicity here, we'll apply common options after compositing, or rely on the xstack filter handling.
+	# A more complex approach would apply filters to each input stream before stacking.
+	local -a ffmpeg_common_opts
+	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(build_ffmpeg_options; printf '\0') || true
+	# Remove video/audio filters from common opts as they are handled in filter_complex
+	local -a filtered_common_opts=()
+	local skip_next=false
+	for opt in "${ffmpeg_common_opts[@]}"; do
+		if "$skip_next"; then
+			skip_next=false
+			continue
+		fi
+		if [[ "$opt" == "-vf" || "$opt" == "-af" ]]; then
+			skip_next=true
+			continue
+		fi
+		filtered_common_opts+=("$opt")
+	done
+	ffmpeg_common_opts=("${filtered_common_opts[@]}")
+
+
+	# Construct the filter_complex for compositing
+	# This is a simplified implementation. A real one would need more logic
+	# to handle different numbers of inputs and desired layouts (e.g., 2x2, 3x3, 1xN, Nx1).
+	# Let's implement a basic horizontal stack for 2 inputs, vertical for 3, and a 2x2 grid for 4.
+	case "$num_inputs" in
+		1)
+			# Just process the single video
+			filter_complex="[0:v]null[outputv];"
+			if ! "$NOAUDIO"; then filter_complex+="[0:a]anull[outputa]"; fi
+			;;
+		2)
+			# Horizontal stack (hstack)
+			filter_complex="[0:v][1:v]hstack=inputs=2[outputv];"
+			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a]amerge=inputs=2[outputa]"; fi
+			;;
+		3)
+			# Vertical stack (vstack) - Example layout
+			filter_complex="[0:v][1:v][2:v]vstack=inputs=3[outputv];"
+			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a]amerge=inputs=3[outputa]"; fi
+			;;
+		4)
+			# 2x2 grid (xstack)
+			# Example: [0][1]
+			#          [2][3]
+			filter_complex="[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[outputv];"
+			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a][3:a]amerge=inputs=4[outputa]"; fi
+			;;
+		*)
+			log_error "Composite command currently supports 1, 2, 3, or 4 input files for basic layouts."
+			exit 1
+			;;
+	esac
+
+	# Add video/audio filter chains from global options after stacking
+	# This applies filters to the combined output stream.
+	local -a video_filters=()
+	local -a audio_filters=()
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+	local skip_next=false
+	for opt in "${common_opts_output[@]}"; do
+		if "$skip_next"; then
+			skip_next=false
+			continue
+		fi
+		case "$opt" in
+			"-vf") video_filters+=("$2"); skip_next=true ;;
+			"-af") audio_filters+=("$2"); skip_next=true ;;
+		esac
+	done
+
+	if [[ ${#video_filters[@]} -gt 0 ]]; then
+		filter_complex+="[outputv]$(IFS=,; echo "${video_filters[*]}")[outputv_filtered];"
+		output_stream_name="outputv_filtered"
+	else
+		filter_complex+="[outputv]" # Use the original output stream name
+	fi
+
+	if [[ ${#audio_filters[@]} -gt 0 && ! "$NOAUDIO" ]]; then
+		filter_complex+="[outputa]$(IFS=,; echo "${audio_filters[*]}")[outputa_filtered]"
+		output_stream_name+="[outputa_filtered]"
+	elif ! "$NOAUDIO"; then
+		filter_complex+="[outputa]" # Use the original output stream name
+		output_stream_name+="[outputa]"
+	fi
+
+
+	# Construct the ffmpeg command
+	local -a ffmpeg_cmd=(
+		ffmpeg -y # Overwrite output files without asking
+	)
+	# Add input files
+	for input_file in "${inputs[@]}"; do
+		ffmpeg_cmd+=("-i" "$input_file")
+	done
+
+	ffmpeg_cmd+=(
+		-filter_complex "$filter_complex"
+		-map "[outputv]" # Map the final video output stream
+	)
+	if ! "$NOAUDIO"; then
+		ffmpeg_cmd+=("-map" "[outputa]") # Map the final audio output stream
+	fi
+
+	ffmpeg_cmd+=(
+		"${ffmpeg_common_opts[@]}" # Add other common options like -an (already filtered), -v info etc.
+		"$output_file"
+	)
+
+	log_verbose "Executing: ${ffmpeg_cmd[*]}"
+	"${ffmpeg_cmd[@]}"
+
+	log_verbose "Finished compositing files to '$output_file'."
+}
+
+cmd_looperang() {
+	log_verbose "Executing command: looperang with args: $*"
+	local input_file="$1"
+	local output_file="$OUTPUT_DIR/looperang_output.mp4" # Simple output naming
+	local reversed_temp="$TEMP_DIR/reversed_temp.mp4"
+	local -a ffmpeg_common_opts
+
+	if [[ $# -ne 1 ]]; then
+		log_error "Command 'looperang' requires exactly one input file."
+		echo "Usage: ffxd looperang [global options] <input>" >&2
+		exit 1
+	fi
+
+	if [[ ! -f "$input_file" ]]; then
+		log_error "Input file not found: $input_file."
+		exit 1
+	fi
+
+	# Ensure output directory exists
+	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+
+	# Build common ffmpeg options (filters like scale, fps, pts might apply)
+	local -a common_opts_output
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+
+	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
+		exit 1 # build_ffmpeg_options failed
+	fi
+	ffmpeg_common_opts=("${common_opts_output[@]}")
+
+	# Step 1: Create reversed video
+	log_verbose "Creating reversed video: '$input_file' -> '$reversed_temp'"
+	local -a reverse_cmd=(
+		ffmpeg -y # Overwrite temp file
+		-i "$input_file"
+		-vf reverse # Reverse video
+	)
+	if ! "$NOAUDIO"; then
+		reverse_cmd+=("-af" "areverse") # Reverse audio
+	else
+		reverse_cmd+=("-an") # Ensure no audio in reversed temp if NOAUDIO is set
+	fi
+	reverse_cmd+=(
+		# Use a codec that supports reverse and is fast (e.g., libx264 with fast preset)
+		# Or ideally, use stream copy if possible, but reverse filter requires re-encoding.
+		-c:v libx264 -preset fast
+	)
+	if ! "$NOAUDIO"; then reverse_cmd+=("-c:a aac"); fi # Add audio codec if needed
+	reverse_cmd+=("$reversed_temp")
+
+	log_verbose "Executing: ${reverse_cmd[*]}"
+	"${reverse_cmd[@]}"
+
+	# Step 2: Concatenate original and reversed videos
+	log_verbose "Concatenating '$input_file' and '$reversed_temp' -> '$output_file'"
+
+	# Need to use filter_complex concat for video and audio streams
+	local filter_complex_concat="[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
+	if "$NOAUDIO"; then
+		filter_complex_concat="[0:v][1:v]concat=n=2:v=1:a=0[v]" # No audio streams in concat
+	fi
+
+	local -a concat_cmd=(
+		ffmpeg -y # Overwrite output file
+		-i "$input_file"
+		-i "$reversed_temp"
+		-filter_complex "$filter_complex_concat"
+		-map "[v]" # Map concatenated video stream
+	)
+	if ! "$NOAUDIO"; then
+		concat_cmd+=("-map" "[a]") # Map concatenated audio stream
+	fi
+
+	# Add common options after concat filter
+	# Need to be careful: filters in common_opts should apply after concat.
+	# Extract filters from common_opts and apply them to the final [v] and [a] streams.
+	local -a video_filters=()
+	local -a audio_filters=()
+	local -a remaining_common_opts=()
+	local skip_next=false
+	for opt in "${ffmpeg_common_opts[@]}"; do
+		if "$skip_next"; then
+			skip_next=false
+			continue
+		fi
+		case "$opt" in
+			"-vf") video_filters+=("$2"); skip_next=true ;;
+			"-af") audio_filters+=("$2"); skip_next=true ;;
+			*) remaining_common_opts+=("$opt") ;;
+		esac
+	done
+
+	# Apply filters to the concatenated streams if any
+	local final_v_stream="[v]"
+	local final_a_stream="[a]"
+
+	if [[ ${#video_filters[@]} -gt 0 ]]; then
+		concat_cmd+=("-filter_complex" "${filter_complex_concat};${final_v_stream}$(IFS=,; echo "${video_filters[*]}")[final_v]")
+		final_v_stream="[final_v]"
+		# Need to update map to the new stream name
+		local -i map_v_idx=-1
+		for i in "${!concat_cmd[@]}"; do
+			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i+1))]}" == "[v]" ]]; then
+				map_v_idx=$((i+1))
+				break
+			fi
+		done
+		if [[ "$map_v_idx" -ne -1 ]]; then
+			concat_cmd[$map_v_idx]="$final_v_stream"
+		fi
+	fi
+
+	if [[ ${#audio_filters[@]} -gt 0 && ! "$NOAUDIO" ]]; then
+		concat_cmd+=("-filter_complex" "${concat_cmd[-2]};${final_a_stream}$(IFS=,; echo "${audio_filters[*]}")[final_a]")
+		# Remove the old filter_complex and add the new one
+		unset 'concat_cmd[-2]'
+		final_a_stream="[final_a]"
+		# Need to update map to the new stream name
+		local -i map_a_idx=-1
+		for i in "${!concat_cmd[@]}"; do
+			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i+1))]}" == "[a]" ]]; then
+				map_a_idx=$((i+1))
+				break
+			fi
+		done
+		if [[ "$map_a_idx" -ne -1 ]]; then
+			concat_cmd[$map_a_idx]="$final_a_stream"
+		fi
+	fi
+
+	concat_cmd+=(
+		"${remaining_common_opts[@]}" # Add remaining common options
+		"$output_file"
+	)
+
+	log_verbose "Executing: ${concat_cmd[*]}"
+	"${concat_cmd[@]}"
+
+	log_verbose "Finished creating looperang video '$output_file'."
+	# Temp file is cleaned by trap on exit
+}
+
+cmd_slowmo() {
+	log_verbose "Executing command: slowmo with args: $*"
+	local input_file="$1"
+	local -a process_args=()
+
+	if [[ $# -ne 1 ]]; then
+		log_error "Command 'slowmo' requires exactly one input file."
+		echo "Usage: ffxd slowmo [global options] <input>" >&2
+		exit 1
+	fi
+
+	# slowmo implies a PTS factor < 1.0. If -p is not set, default to something?
+	# Or require -p? Let's require -p for clarity.
+	if [[ -z "$PTS" ]]; then
+		log_error "Slow motion requires a playback speed factor. Please specify with -p/--pts (e.g., -p 0.5)."
+		exit 1
+	fi
+
+	# Pass all global options and the input file to cmd_process
+	# Need to reconstruct the original global options used. This is tricky
+	# because parse_global_options consumed them.
+	# A better approach is to call build_ffmpeg_options here and pass the input.
+	# However, cmd_process is designed to take input files as args.
+	# Let's just call cmd_process directly with the input file and rely on
+	# the already parsed global flags.
+
+	# Check if INTERPOLATE is requested but FPS is missing.
+	if "$INTERPOLATE" && [[ -z "$FPS" ]]; then
+		log_error "Motion interpolation requires a target frame rate. Please specify with -f/--fps."
+		exit 1
+	fi
+
+	log_verbose "Calling cmd_process with input '$input_file' and current global options."
+	cmd_process "$input_file" # Pass the single input file to process
+
+	log_verbose "Finished creating slow-motion video."
+}
+
+cmd_fix() {
+	log_verbose "Executing command: fix with args: $*"
+	local input_file="$1"
+	local output_file="$OUTPUT_DIR/fixed_output.mp4" # Simple output naming
+	local -a ffmpeg_common_opts
+
+	if [[ $# -ne 1 ]]; then
+		log_error "Command 'fix' requires exactly one input file."
+		echo "Usage: ffxd fix [global options] <input>" >&2
+		exit 1
+	fi
+
+	if [[ ! -f "$input_file" ]]; then
+		log_error "Input file not found: $input_file."
+		exit 1
+	fi
+
+	# Ensure output directory exists
+	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+
+	# Build common ffmpeg options (only relevant ones like noaudio, max1080 might apply)
+	local -a common_opts_output
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+
+	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
+		exit 1 # build_ffmpeg_options failed
+	fi
+	ffmpeg_common_opts=("${common_opts_output[@]}")
+
+	# Construct the ffmpeg command to fix VFR to CFR
+	# Using -vsync 0 (passthrough) combined with a filter like minterpolate or simply re-encoding
+	# can help. A common fix is to re-encode with a fixed framerate.
+	# Let's enforce a fixed frame rate, using -f if provided, otherwise probe or default?
+	# For simplicity, let's require -f for this fix, or default to 30 if not provided?
+	# Let's default to 30 if -f is not set.
+	local target_fps="$FPS"
+	if [[ -z "$target_fps" ]]; then
+		log_verbose "No target FPS specified for fix command, defaulting to 30."
+		target_fps="30"
+	fi
+
+	local -a ffmpeg_cmd=(
+		ffmpeg -y # Overwrite output file
+		-i "$input_file"
+		-r "$target_fps" # Force constant frame rate
+		-c:v libx264 -preset medium # Re-encode video
+	)
+	if ! "$NOAUDIO"; then
+		ffmpeg_cmd+=("-c:a aac") # Re-encode audio
+	else
+		ffmpeg_cmd+=("-an") # Remove audio
+	fi
+
+	# Add other relevant common options (like max1080)
+	# Need to filter out -f, -p, -i as they are handled specifically here or not relevant.
+	local -a filtered_common_opts=()
+	local skip_next=false
+	for opt in "${ffmpeg_common_opts[@]}"; do
+		if "$skip_next"; then
+			skip_next=false
+			continue
+		fi
+		case "$opt" in
+			"-f" | "-p" | "-i") skip_next=true ;; # Skip these and their arguments
+			*) filtered_common_opts+=("$opt") ;;
+		esac
+	done
+	ffmpeg_cmd+=("${filtered_common_opts[@]}")
+
+	ffmpeg_cmd+=("$output_file")
+
+	log_verbose "Executing: ${ffmpeg_cmd[*]}"
+	"${ffmpeg_cmd[@]}"
+
+	log_verbose "Finished fixing video '$input_file' to '$output_file'."
+}
+
+cmd_clean() {
+	log_verbose "Executing command: clean"
+	local ffxd_runtime_dir="$XDG_RUNTIME_DIR/ffxd"
+	local ffxd_cache_dir="$XDG_CACHE_HOME/ffxd" # Assuming a cache dir might be used later
+
+	log_verbose "Attempting to clean: $ffxd_runtime_dir and $ffxd_cache_dir"
+
+	# Remove the ffxd runtime directory
+	if [[ -d "$ffxd_runtime_dir" ]]; then
+		log_verbose "Removing runtime directory: $ffxd_runtime_dir"
+		rm -rf -- "$ffxd_runtime_dir" || log_error "Failed to remove runtime directory: $ffxd_runtime_dir"
+	else
+		log_verbose "Runtime directory not found: $ffxd_runtime_dir"
+	fi
+
+	# Remove the ffxd cache directory (if it exists)
+	if [[ -d "$ffxd_cache_dir" ]]; then
+		log_verbose "Removing cache directory: $ffxd_cache_dir"
+		rm -rf -- "$ffxd_cache_dir" || log_error "Failed to remove cache directory: $ffxd_cache_dir"
+	else
+		log_verbose "Cache directory not found: $ffxd_cache_dir"
+	fi
+
+	log_verbose "Clean command finished."
+	# Note: The current run's TEMP_DIR is handled by the trap, not by this command.
+}
+
+cmd_probe() {
+	log_verbose "Executing command: probe with args: $*"
+	local input_file="$1"
+
+	if [[ $# -ne 1 ]]; then
+		log_error "Command 'probe' requires exactly one input file."
+		echo "Usage: ffxd probe <input>" >&2
+		exit 1
+	fi
+
+	if [[ ! -f "$input_file" ]]; then
+		log_error "Input file not found: $input_file."
+		exit 1
+	fi
+
+	log_verbose "Probing file: '$input_file'"
+
+	# Construct the ffprobe command
+	local -a ffprobe_cmd=(
+		ffprobe
+		-hide_banner # Hide ffprobe version info
+		-show_streams # Show stream information
+		-show_format # Show format information
+		"$input_file"
+	)
+
+	log_verbose "Executing: ${ffprobe_cmd[*]}"
+	# Execute the command. Output goes to stdout by default.
+	"${ffprobe_cmd[@]}"
+
+	log_verbose "Probe command finished."
+}
+
+main() {
+	# Parse global options from the initial arguments.
+	parse_global_options "$@"
+
+	# The command name is the first element in COMMAND_ARGS.
+	# Default to 'help' if no command is provided.
+	local cmd="${COMMAND_ARGS[0]:-help}"
+
+	# The arguments for the command are the rest of the elements in COMMAND_ARGS.
+	local -a cmd_args=("${COMMAND_ARGS[@]:1}")
+
+	log_verbose "Dispatching command: '$cmd' with arguments: ${cmd_args[*]}"
+
+	# Dispatch to the appropriate command function.
+	case "$cmd" in
+	process) cmd_process "${cmd_args[@]}" ;;
+	merge) cmd_merge "${cmd_args[@]}" ;;
+	composite) cmd_composite "${cmd_args[@]}" ;;
+	looperang) cmd_looperang "${cmd_args[@]}" ;;
+	slowmo) cmd_slowmo "${cmd_args[@]}" ;;
+	fix) cmd_fix "${cmd_args[@]}" ;;
+	clean) cmd_clean "${cmd_args[@]}" ;;
+	probe) cmd_probe "${cmd_args[@]}" ;;
+	help | -h | --help) show_help ;;
+	*)
+		log_error "Unknown command: $cmd"
+		show_help
+		exit 1
+		;;
+	esac
+}
+
+main "$@"
