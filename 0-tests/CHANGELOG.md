@@ -25,3 +25,4 @@
 2025-06-23 • 4ndr0tools/4ndr0update/* • +366/-365 • Apply strict mode, fix bugs, and clean dead code
 
 2025-06-24 • media/ffx_project/bin/ffxd • +129/-0 • Initial unified CLI skeleton
+2025-06-25 • media/ffx_project/ffxd • +1052/-0 • Implement advanced prompt, auto-increment output, enhanced composite grid, clean options, and multi-stage atempo
