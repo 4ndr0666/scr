@@ -1,5 +1,6 @@
 #!/bin/bash
 # Author: 4ndr0666
+set -euo pipefail
 # ================= // MAKEX //
 ## Description: Ensure potential script files in a directory have user executable permission.
 #               Processes files ending in .sh or starting with a #!.*sh shebang,
@@ -8,55 +9,69 @@
 ## Usage:       makex.sh [DIR]   (default: current dir)
 # ----------------------------------------------------------------------------
 
+
 DEFAULT_DIR="."
 SHEBANG_PATTERN='^#!.*sh' # Pattern to match shebangs like #!/bin/sh, #!/usr/bin/env bash, etc.
 
-COLOR_GLOW=""
-COLOR_BUG=""
-COLOR_INFO=""
-COLOR_BANNER_START=""
-COLOR_RESET=""
+declare COLOR_GLOW=""
+declare COLOR_BUG=""
+declare COLOR_INFO=""
+declare COLOR_BANNER_START=""
+declare COLOR_RESET=""
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
-    # Define color codes using tput (simple assignment, not declare)
-    COLOR_GLOW="$(tput setaf 6)" # Cyan/Light Blue
-    COLOR_BUG="$(tput setaf 1)"  # Red
-    COLOR_INFO="$(tput setaf 4)" # Blue
-    COLOR_BANNER_START="$(tput setaf 5)" # Magenta
-    COLOR_RESET="$(tput sgr0)"
+    # Assign color codes using tput
+    COLOR_GLOW=$(tput setaf 6) # Cyan/Light Blue
+    COLOR_BUG=$(tput setaf 1)  # Red
+    COLOR_INFO=$(tput setaf 4) # Blue
+    COLOR_BANNER_START=$(tput setaf 5) # Magenta
+    COLOR_RESET=$(tput sgr0)
 fi
 
-GLOW() { printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$*" "$COLOR_RESET"; }
-BUG()  { printf '%s[❌] %s%s\n' "$COLOR_BUG" "$*" "$COLOR_RESET"; }
-INFO() { printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$*" "$COLOR_RESET"; }
+GLOW() {
+    # Use local for function-scoped variables
+    local message="$*"
+    printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$message" "$COLOR_RESET"
+}
+
+BUG() {
+    # Use local for function-scoped variables
+    local message="$*"
+    printf '%s[❌] %s%s\n' "$COLOR_BUG" "$message" "$COLOR_RESET" >&2 # Redirect errors to stderr
+}
+
+INFO() {
+    # Use local for function-scoped variables
+    local message="$*"
+    printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$message" "$COLOR_RESET"
+}
 
 pause_prompt() {
-    # Use local for function-scoped variable (valid in bash)
+    # Use local for function-scoped variables
     local oldstty
     GLOW "Press any key to continue..." # Use GLOW color for the prompt
-    oldstty=$(stty -g) # Save current stty settings
-    # Check if stty command succeeded before proceeding
-    if [ $? -ne 0 ]; then
-        BUG "Failed to save stty settings. Skipping pause." >&2
-        return 1 # Indicate failure
-    fi
-    stty cbreak -echo # Set cbreak mode and disable echo
-    # Check if stty command succeeded
-    if [ $? -ne 0 ]; then
-        BUG "Failed to set stty cbreak -echo. Skipping pause." >&2
-        stty "$oldstty" # Attempt to restore even on partial failure
+
+    # Save current stty settings and check exit status directly
+    if ! oldstty=$(stty -g); then
+        BUG "Failed to save stty settings. Skipping pause."
         return 1 # Indicate failure
     fi
 
-    # Read a single byte from stdin, discard output and errors
-    # Using dd is one way, read -n 1 is another common way in bash
-    dd bs=1 count=1 2>/dev/null
-    # Check if dd command succeeded (optional, as failure might just mean no input)
+    # Set cbreak mode and disable echo, check exit status directly
+    if ! stty cbreak -echo; then
+        BUG "Failed to set stty cbreak -echo. Skipping pause."
+        # Attempt to restore even on partial failure, suppressing errors
+        stty "$oldstty" >/dev/null 2>&1 || true # Use '|| true' to prevent set -e from exiting here
+        return 1 # Indicate failure
+    fi
 
-    stty "$oldstty" # Restore stty settings
-    # Check if stty command succeeded
-    if [ $? -ne 0 ]; then
-        BUG "Failed to restore stty settings." >&2
+    # Read a single byte from stdin silently and raw (do not interpret backslashes)
+    # SC2162 addressed by adding -r
+    read -r -n 1 -s
+
+    # Restore stty settings and check exit status directly
+    if ! stty "$oldstty"; then
+        BUG "Failed to restore stty settings."
         # Continue script execution, but report the error
     fi
     printf '\n' # Add a newline after the key press
@@ -65,7 +80,7 @@ pause_prompt() {
 
 command -v clear >/dev/null 2>&1 && clear
 
-banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
+declare banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
 ████╗ ████║██╔══██╗██║ ██╔╝██╔════╝╚██╗██╔╝
 ██╔████╔██║███████║█████╔╝ ██████╗   ╚███╔╝
 ██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗
@@ -80,33 +95,41 @@ printf '\n'
 
 pause_prompt
 
-DIR="${1:-$DEFAULT_DIR}"
+declare DIR="${1:-$DEFAULT_DIR}"
 
 if [ ! -d "$DIR" ]; then
-    BUG "Error: Directory '$DIR' not found or is not a directory." >&2
+    BUG "Error: Directory '$DIR' not found or is not a directory."
     exit 1 # Exit with an error status
 fi
 
 INFO "Searching for non-executable scripts in '$DIR'..."
 
-TEMP_FILE=$(mktemp) || { BUG "Failed to create temporary file." >&2; exit 1; }
+declare TEMP_FILE
+TEMP_FILE=$(mktemp)
+
+if ! [ -f "$TEMP_FILE" ]; then
+     BUG "Failed to create temporary file."
+     exit 1 # Exit with an error status
+fi
 
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-find "$DIR" \
+if ! find "$DIR" \
     -type f \
-    ! -path "/.git/" \
+    ! -path "$DIR/.git" -a ! -path "$DIR/.git/*" \
     \( -name "*.sh" -o -exec grep -q "$SHEBANG_PATTERN" {} \; \) \
     ! -perm -u=x \
-    -print0 > "$TEMP_FILE" || { BUG "Error occurred during file search." >&2; exit 1; }
+    -print0 > "$TEMP_FILE"; then
+    # find failed, report error and exit
+    BUG "Error occurred during file search."
+    exit 1
+fi
 
-files_found_by_find=0
+declare files_found_by_find=0
 
 while IFS= read -r -d '' file; do
     # Increment counter for each file read
     files_found_by_find=$((files_found_by_find + 1))
-    # Store the file path temporarily (e.g., in an array or process directly)
-    # For now, we just count. The main processing loop will read the file again.
 done < "$TEMP_FILE"
 
 if [ "$files_found_by_find" -eq 0 ]; then
@@ -115,15 +138,15 @@ if [ "$files_found_by_find" -eq 0 ]; then
     exit 0 # Exit successfully
 fi
 
-files_made_executable=0
-files_failed=0
+declare files_made_executable=0
+declare files_failed=0
 
 INFO "Processing $files_found_by_find file(s)..."
 
 while IFS= read -r -d '' file; do
     # Basic check for empty filename (should not happen with find -print0)
     if [ -z "$file" ]; then
-        BUG "Received empty filename from temporary file. Skipping." >&2
+        BUG "Received empty filename from temporary file. Skipping."
         continue # Skip to the next iteration
     fi
 
@@ -135,7 +158,7 @@ while IFS= read -r -d '' file; do
         files_made_executable=$((files_made_executable + 1))
     else
         # Report failure to standard error
-        BUG "Failed to make executable: '$file'" >&2
+        BUG "Failed to make executable: '$file'"
         files_failed=$((files_failed + 1))
         # Continue processing other files even if one fails
     fi
