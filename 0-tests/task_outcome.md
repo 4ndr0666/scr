@@ -16,3 +16,6 @@ Expanded analysis for 4ndr0update with detailed rating and bug fixes.
 Implemented Step 2 items: added strict mode, quoting fixes, removed dead code, fixed typos and duplicate commands.
 Created ffxd skeleton with global option parsing.
 Implemented major features from ffxd CODEX including advanced prompt, output idempotency, composite grid generalization, clean enhancements, and multi-stage atempo.
+
+1. Could not locate /media/dmx_project with AGENTS.md or CODEX.md.
+2. Escalating to human reviewer for clarification.
