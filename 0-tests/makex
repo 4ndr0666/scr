@@ -1,83 +1,160 @@
-#!/bin/sh
+#!/bin/bash
 # Author: 4ndr0666
 # ================= // MAKEX //
-# Description: Make all scripts in a dir executable (except .git)
-# Usage:       makex.sh [DIR]   (default: current dir)
-# ----------------------------------------------------
+## Description: Ensure potential script files in a directory have user executable permission.
+#               Processes files ending in .sh or starting with a #!.*sh shebang,
+#               excluding files within .git directories, and only attempts chmod
+#               on files that currently lack user executable permission.
+## Usage:       makex.sh [DIR]   (default: current dir)
+# ----------------------------------------------------------------------------
 
-# Colors (POSIX)
-case "${COLORTERM}" in
-	truecolor | 24bit) ;;
-	*) export COLORTERM="24bit" ;;
-esac
+DEFAULT_DIR="."
+SHEBANG_PATTERN='^#!.*sh' # Pattern to match shebangs like #!/bin/sh, #!/usr/bin/env bash, etc.
+
+COLOR_GLOW=""
+COLOR_BUG=""
+COLOR_INFO=""
+COLOR_BANNER_START=""
+COLOR_RESET=""
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
-    GLOW() { printf '%s\n' "$(tput setaf 6)[✔️] $*$(tput sgr0)"; }
-    BUG()  { printf '%s\n' "$(tput setaf 1)[❌] $*$(tput sgr0)"; }
-    INFO() { printf '%s\n' "$(tput setaf 4)[➡️] $*$(tput sgr0)"; }
-    NF()   { printf '%s\n' "$(tput setaf 1)0$(tput sgr0) files requiring executability."; }
-else
-    GLOW() { printf '[OK] %s\n' "$*"; }
-    BUG()  { printf '[ERR] %s\n' "$*"; }
-    INFO() { printf '[INFO] %s\n' "$*"; }
-    NF()   { printf '0 files requiring executability.\n'; }
+    # Define color codes using tput (simple assignment, not declare)
+    COLOR_GLOW="$(tput setaf 6)" # Cyan/Light Blue
+    COLOR_BUG="$(tput setaf 1)"  # Red
+    COLOR_INFO="$(tput setaf 4)" # Blue
+    COLOR_BANNER_START="$(tput setaf 5)" # Magenta
+    COLOR_RESET="$(tput sgr0)"
 fi
 
-# Welcome Message
+GLOW() { printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$*" "$COLOR_RESET"; }
+BUG()  { printf '%s[❌] %s%s\n' "$COLOR_BUG" "$*" "$COLOR_RESET"; }
+INFO() { printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$*" "$COLOR_RESET"; }
+
+pause_prompt() {
+    # Use local for function-scoped variable (valid in bash)
+    local oldstty
+    GLOW "Press any key to continue..." # Use GLOW color for the prompt
+    oldstty=$(stty -g) # Save current stty settings
+    # Check if stty command succeeded before proceeding
+    if [ $? -ne 0 ]; then
+        BUG "Failed to save stty settings. Skipping pause." >&2
+        return 1 # Indicate failure
+    fi
+    stty cbreak -echo # Set cbreak mode and disable echo
+    # Check if stty command succeeded
+    if [ $? -ne 0 ]; then
+        BUG "Failed to set stty cbreak -echo. Skipping pause." >&2
+        stty "$oldstty" # Attempt to restore even on partial failure
+        return 1 # Indicate failure
+    fi
+
+    # Read a single byte from stdin, discard output and errors
+    # Using dd is one way, read -n 1 is another common way in bash
+    dd bs=1 count=1 2>/dev/null
+    # Check if dd command succeeded (optional, as failure might just mean no input)
+
+    stty "$oldstty" # Restore stty settings
+    # Check if stty command succeeded
+    if [ $? -ne 0 ]; then
+        BUG "Failed to restore stty settings." >&2
+        # Continue script execution, but report the error
+    fi
+    printf '\n' # Add a newline after the key press
+    return 0 # Indicate success
+}
+
 command -v clear >/dev/null 2>&1 && clear
 
 banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
 ████╗ ████║██╔══██╗██║ ██╔╝██╔════╝╚██╗██╔╝
-██╔████╔██║███████║█████╔╝ █████╗   ╚███╔╝ 
-██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗ 
+██╔████╔██║███████║█████╔╝ ██████╗   ╚███╔╝
+██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗
 ██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██╔╝ ██╗
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"
 
-printf '\033[35m%s\033[0m\n' "$banner"
+printf '%s%s%s\n' "$COLOR_BANNER_START" "$banner" "$COLOR_RESET"
 printf '\n'
 
-# Typewriter function (POSIX sh, no bashisms)
-typewriter() {
-    msg="$1"
-    delay="${2:-0.025}"
-    i=1
-    while [ $i -le ${#msg} ]; do
-        printf "%s" "$(printf "%s" "$msg" | cut -c $i)"
-        sleep "$delay"
-        i=$((i + 1))
-    done
-    printf '\n'
-}
-
-typewriter "Chmod +x for that ass..."
+printf "Ensuring potential script files have user executable permission...\n"
 printf '\n'
 
-# Pause prompt (POSIX)
-pause_prompt() {
-    if command -v tput >/dev/null 2>&1; then
-        printf '%sPress any key to continue...%s\n' "$(tput setaf 6)" "$(tput sgr0)"
-    else
-        printf 'Press any key to continue...\n'
-    fi
-    oldstty=$(stty -g)
-    stty cbreak -echo
-    dd bs=1 count=1 2>/dev/null
-    stty "$oldstty"
-    printf '\n'
-}
 pause_prompt
 
-DIR="${1:-.}"
-results=$(find "$DIR" \
-    -type f \
-    ! -path "*/.git/*" \
-    \( -name "*.sh" -o -exec grep -q '^#!.*sh' {} \; \) \
-    ! -perm -u=x)
+DIR="${1:-$DEFAULT_DIR}"
 
-if [ -n "$results" ]; then
-    printf '%s\n' "$results" | while IFS= read -r file; do
-        chmod u+x "$file" && GLOW "$file"
-    done
+if [ ! -d "$DIR" ]; then
+    BUG "Error: Directory '$DIR' not found or is not a directory." >&2
+    exit 1 # Exit with an error status
+fi
+
+INFO "Searching for non-executable scripts in '$DIR'..."
+
+TEMP_FILE=$(mktemp) || { BUG "Failed to create temporary file." >&2; exit 1; }
+
+trap 'rm -f "$TEMP_FILE"' EXIT
+
+find "$DIR" \
+    -type f \
+    ! -path "/.git/" \
+    \( -name "*.sh" -o -exec grep -q "$SHEBANG_PATTERN" {} \; \) \
+    ! -perm -u=x \
+    -print0 > "$TEMP_FILE" || { BUG "Error occurred during file search." >&2; exit 1; }
+
+files_found_by_find=0
+
+while IFS= read -r -d '' file; do
+    # Increment counter for each file read
+    files_found_by_find=$((files_found_by_find + 1))
+    # Store the file path temporarily (e.g., in an array or process directly)
+    # For now, we just count. The main processing loop will read the file again.
+done < "$TEMP_FILE"
+
+if [ "$files_found_by_find" -eq 0 ]; then
+    GLOW "No files found requiring executable permission."
+    # The trap will clean up the temp file
+    exit 0 # Exit successfully
+fi
+
+files_made_executable=0
+files_failed=0
+
+INFO "Processing $files_found_by_find file(s)..."
+
+while IFS= read -r -d '' file; do
+    # Basic check for empty filename (should not happen with find -print0)
+    if [ -z "$file" ]; then
+        BUG "Received empty filename from temporary file. Skipping." >&2
+        continue # Skip to the next iteration
+    fi
+
+    INFO "Attempting to make executable: '$file'"
+    # Attempt to change permissions for the user owner
+    # Check exit status of chmod directly with if !
+    if chmod u+x "$file"; then
+        GLOW "Successfully made executable: '$file'"
+        files_made_executable=$((files_made_executable + 1))
+    else
+        # Report failure to standard error
+        BUG "Failed to make executable: '$file'" >&2
+        files_failed=$((files_failed + 1))
+        # Continue processing other files even if one fails
+    fi
+done < "$TEMP_FILE" # Read input for the while loop from the temporary file
+
+printf '\n' # Add a newline for clarity after the loop output
+
+INFO "Summary:"
+INFO "  Files found requiring executability: $files_found_by_find"
+INFO "  Files successfully made executable: $files_made_executable"
+
+if [ "$files_failed" -gt 0 ]; then
+    BUG "  Files failed to make executable: $files_failed"
+    # Exit with a non-zero status to indicate partial or complete failure
+    exit 1
 else
-    NF >&2
+    # Only report success if at least one file was found and none failed
+    if [ "$files_found_by_find" -gt 0 ]; then
+        GLOW "  All found files successfully made executable."
+    fi
+    exit 0 # Exit successfully
 fi
