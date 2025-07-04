@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 set -euo pipefail
-# ===================== // ffx-vidline.sh //
+# ================== // FFX-VIDLINE //
+## Description: A script to apply ffmpeg filters and
+#              operations via CLI or interactive menu.
+# ---------------------------------------
 
 ## Colors
 
