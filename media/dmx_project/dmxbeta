@@ -39,8 +39,8 @@ REQUIRED_TOOLS = [
 VIDEO_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"]
 MAX_WORKERS_DEFAULT = os.cpu_count() or 1  # Ensure at least 1 worker
 
-GREEN = "\033[0;36m"  # Made Cyan intentionally
-CYAN = "\033[0;36m"
+GREEN = "\033[38;2;21;255;255m"  # Made Cyan intentionally
+CYAN = "\033[38;2;21;255;255m"
 BOLD = "\033[1m"
 RED = "\033[0;31m"
 NC = "\033[0m"  # No Color
@@ -2615,7 +2615,7 @@ class VideoProcessor:
             )
             return None
 
-        print(f"{GREEN}#{NC} ===== VapourSynth Transformations =====")
+        print(f"{GREEN}#{NC} === // VapourSynth Transformations //")
         for idx, opt in enumerate(available_options, 1):
             print(f"{idx}. {opt}")
 
@@ -2624,7 +2624,7 @@ class VideoProcessor:
         while True:
             choice_input = prompt(
                 HTML(
-                    "<ansigreen>Select a transformation (or type 'Exit'): </ansigreen>"
+                    "Select a transformation (or type 'Exit'): "
                 ),
                 completer=completer,
                 style=style,
@@ -3263,7 +3263,7 @@ class UserInterface:
 
     def configure_binary_paths(self):
         """Provide the user with an option to specify binary paths and store them in the config file."""
-        print(f"{GREEN}#{NC} ===== Binary Paths Configuration =====")
+        print(f"{GREEN}#{NC} === // Binary Paths Configuration //")
         print(
             "This tool requires external binaries (ffmpeg, ffprobe, vspipe, mediainfo, fzf)."
         )
@@ -3352,7 +3352,7 @@ class UserInterface:
         completer = WordCompleter(menu_options, ignore_case=True)
 
         while True:
-            print(f"\n{CYAN}#{NC} ========= {CYAN}// DMX //{NC} =========\n")
+            print(f"\n{CYAN}#{NC} === {CYAN}// DMX //{NC}\n")
             choice = (
                 prompt(
                     HTML("<prompt>By your command: </prompt>"),
