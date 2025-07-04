@@ -2623,9 +2623,7 @@ class VideoProcessor:
 
         while True:
             choice_input = prompt(
-                HTML(
-                    "Select a transformation (or type 'Exit'): "
-                ),
+                HTML("Select a transformation (or type 'Exit'): "),
                 completer=completer,
                 style=style,
             ).strip()
@@ -3104,8 +3102,6 @@ class VideoProcessor:
             )
             print_warning("Cannot perform batch enhancement.")
             return
-
-
 
         # Construct a VapourSynth script that applies multiple transformations
         # Ensure variables used in SVPflow part are defined
