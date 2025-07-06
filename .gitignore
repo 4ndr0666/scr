@@ -109,3 +109,4 @@ vendor/
 ## Secrets
 secrets.json
 *.env
+urlscraper.py
