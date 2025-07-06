@@ -33,8 +33,10 @@ fi
 
 ## Theme
 
-"$HOME/.config/wayfire/theme/theme.sh" --default &
+"/home/andro/.config/wayfire/theme/theme.sh" --default &
 
-mem-police &
+## Mem-police
+
+sudo -b --user=root mem-police 
 
 exit 0
