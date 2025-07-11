@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: verify_environment.sh
 # Verifies/fixes environment for 4ndr0service Suite.
 # Usage: verify_environment.sh [--report] [--fix]
@@ -30,7 +29,10 @@ fi
 export PKG_PATH
 
 # shellcheck source=../../common.sh
+# shellcheck disable=SC1091
 source "$PKG_PATH/common.sh"
+# shellcheck source=./settings_functions.sh
+# shellcheck disable=SC1091
 source "$PKG_PATH/settings_functions.sh"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.local/share/4ndr0service/config.json}"
 create_config_if_missing

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: view/dialog.sh
 # Description: Dialog-based menu interface for 4ndr0service Suite.
 

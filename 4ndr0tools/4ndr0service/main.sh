@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: main.sh
 # Entry point for the 4ndr0service Suite.
 
@@ -11,11 +10,14 @@ IFS=$'\n\t'
 ### Constants
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$SCRIPT_DIR/common.sh"
 ensure_pkg_path
 
 # Source core modules
+# shellcheck source=4ndr0tools/4ndr0service/controller.sh
 source "$PKG_PATH/controller.sh"
+# shellcheck source=4ndr0tools/4ndr0service/manage_files.sh
 source "$PKG_PATH/manage_files.sh"
 
 ### Help

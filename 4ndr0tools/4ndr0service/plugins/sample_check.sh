@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: plugins/sample_check.sh
 # Description: A sample plugin that demonstrates a real, production-ready check.
 #   - In practice, you can create multiple plugins in this directory, each focusing

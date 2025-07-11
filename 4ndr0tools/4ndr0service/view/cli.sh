@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: view/cli.sh
 # Description: CLI menu interface for 4ndr0service Suite.
 
@@ -10,7 +9,8 @@ main_cli() {
 	PS3="Select: "
 	options=("Go" "Ruby" "Cargo" "Node.js" "Meson" "Python" "Electron" "Venv" "Audit" "Manage" "Settings" "Exit")
 
-	select opt in "${options[@]}"; do
+        # shellcheck disable=SC2034
+        select opt in "${options[@]}"; do
 		case $REPLY in
 		1) optimize_go_service ;;
 		2) optimize_ruby_service ;;

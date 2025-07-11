@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_nvm.sh
 # Description: Standalone NVM environment optimization (XDG-compliant).
 
@@ -7,8 +7,6 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Colors
-CYAN='\033[0;36m'
-YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
@@ -65,8 +63,11 @@ install_nvm_for_nvm_service() {
 	export PROVIDED_VERSION="" # avoid unbound in older nvm
 
 	set +u
-	[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed sourcing nvm.sh post-install."
-	[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" || handle_error "Failed sourcing nvm bash_completion."
+        # shellcheck disable=SC1091
+        # shellcheck disable=SC1091
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed sourcing nvm.sh post-install."
+        # shellcheck disable=SC1091
+        [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" || handle_error "Failed sourcing nvm bash_completion."
 	set -u
 
 	if command -v nvm &>/dev/null; then
@@ -93,7 +94,8 @@ optimize_nvm_service() {
 	export PROVIDED_VERSION=""
 
 	set +u
-	[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed to source NVM script."
+        # shellcheck disable=SC1091
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || handle_error "Failed to source NVM script."
 	set -u
 
 	echo "🔄 Installing latest LTS Node.js via NVM..."
