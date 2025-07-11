@@ -1,3 +1,0 @@
-- Prioritize the use of native Git commands; avoid introducing external Git wrappers.
-- Ensure that any history-rewriting scripts include safety checks and backups.
-- Validate all scripts against a test repository before applying to production repositories.

@@ -1,3 +1,0 @@
-- Security scripts must log all actions to a secure, tamper-evident log file.
-- Include rollback mechanisms for any changes made to system configurations.
-- Regularly update scripts to incorporate the latest security best practices.

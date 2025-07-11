@@ -1,3 +1,0 @@
-- Validate all systemd unit files using `systemd-analyze verify` before deployment.
-- Ensure that custom units do not conflict with existing system services.
-- Document the purpose and configuration of each unit file within the script comments.

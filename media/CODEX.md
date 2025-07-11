@@ -1,3 +1,0 @@
-- Ensure media processing scripts handle various formats gracefully, with clear error messages.
-- Optimize scripts for performance, especially when processing large files.
-- Maintain a consistent naming convention for output files to facilitate automation.
