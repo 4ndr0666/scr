@@ -7,6 +7,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Colors
+CYAN='\033[38;2;21;255;255m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
