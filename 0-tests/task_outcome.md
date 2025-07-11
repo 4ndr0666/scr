@@ -18,3 +18,4 @@ Created ffxd skeleton with global option parsing.
 Implemented major features from ffxd CODEX including advanced prompt, output idempotency, composite grid generalization, clean enhancements, and multi-stage atempo.
 Implemented DMX-101 batch enhance menu option
 Removed global shellcheck disable lines from 4ndr0service scripts and fixed lint warnings.
+Refined ffxd initialization: removed unused flag, ensured mktemp error handling, and formatted with shfmt.

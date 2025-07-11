@@ -28,3 +28,4 @@
 2025-06-25 • media/ffx_project/ffxd • +1052/-0 • Implement advanced prompt, auto-increment output, enhanced composite grid, clean options, and multi-stage atempo
 2025-07-03 • media/dmx_project/dmxbeta • +18/-8 • Add Batch Enhance UI handler
 2025-07-11 • 4ndr0tools/4ndr0service/* • +71/-70 • Remove global shellcheck disables and fix lint issues
+2025-07-11 • media/ffxd • +138/-70 • Format script, fix temp dir creation, remove COMPOSITE flag

@@ -8,9 +8,16 @@ declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 
-mkdir -p "$XDG_RUNTIME_DIR/ffxd" || { echo "Error: Could not create runtime directory $XDG_RUNTIME_DIR/ffxd" >&2; exit 1; }
+mkdir -p "$XDG_RUNTIME_DIR/ffxd" || {
+	echo "Error: Could not create runtime directory $XDG_RUNTIME_DIR/ffxd" >&2
+	exit 1
+}
 
-declare -r TEMP_DIR="$(mktemp -d "$XDG_RUNTIME_DIR/ffxd/ffxd.XXXXXX")" || { echo "Error: Could not create temporary directory" >&2; exit 1; }
+if ! TEMP_DIR=$(mktemp -d "$XDG_RUNTIME_DIR/ffxd/ffxd.XXXXXX"); then
+	echo "Error: Could not create temporary directory" >&2
+	exit 1
+fi
+declare -r TEMP_DIR
 
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
@@ -18,10 +25,8 @@ declare ADVANCED=false
 declare VERBOSE=false
 declare BULK=false
 declare NOAUDIO=false
-declare COMPOSITE=false # Note: This flag seems redundant as 'composite' is a command. Re-evaluate its purpose or remove. Assuming it's meant for the 'process' command to output a composite? Let's clarify its use or remove it. Based on the command list, 'composite' is a command itself. Removing this global flag to avoid confusion.
-declare COMPOSITE=false # Removed based on analysis.
 declare MAX1080=false
-declare OUTPUT_DIR="$(pwd)" # Default to current directory
+OUTPUT_DIR=$(pwd) # Default to current directory
 declare FPS=""
 declare PTS=""
 declare INTERPOLATE=false
@@ -70,7 +75,7 @@ build_ffmpeg_options() {
 		if ! "$NOAUDIO"; then
 			# Check if PTS is within atempo's supported range (0.5 to 2.0)
 			# This check is basic and assumes PTS is a simple number.
-			if (( $(echo "$PTS >= 0.5" | bc -l) )) && (( $(echo "$PTS <= 2.0" | bc -l) )); then
+			if (($(echo "$PTS >= 0.5" | bc -l))) && (($(echo "$PTS <= 2.0" | bc -l))); then
 				audio_filters+=("atempo=1/$PTS")
 			else
 				log_error "Audio speed adjustment (atempo) requires PTS factor between 0.5 and 2.0. Audio speed will not be adjusted."
@@ -98,12 +103,18 @@ build_ffmpeg_options() {
 
 	# Combine video filters if any.
 	if [[ ${#video_filters[@]} -gt 0 ]]; then
-		ffmpeg_opts+=("-vf" "$(IFS=,; echo "${video_filters[*]}")")
+		ffmpeg_opts+=("-vf" "$(
+			IFS=,
+			echo "${video_filters[*]}"
+		)")
 	fi
 
 	# Combine audio filters if any.
 	if [[ ${#audio_filters[@]} -gt 0 ]]; then
-		ffmpeg_opts+=("-af" "$(IFS=,; echo "${audio_filters[*]}")")
+		ffmpeg_opts+=("-af" "$(
+			IFS=,
+			echo "${audio_filters[*]}"
+		)")
 	fi
 
 	# Add verbose flag for ffmpeg if script is verbose.
@@ -191,9 +202,9 @@ parse_global_options() {
 			;;
 		--)
 			# End of options marker
-			shift # Consume '--'
+			shift                  # Consume '--'
 			remaining_args+=("$@") # Add all remaining arguments
-			break # Stop parsing options
+			break                  # Stop parsing options
 			;;
 		-*)
 			# Unknown option
@@ -258,19 +269,24 @@ cmd_process() {
 	fi
 
 	# Ensure output directory exists
-	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+	mkdir -p "$OUTPUT_DIR" || {
+		log_error "Could not create output directory: $OUTPUT_DIR"
+		exit 1
+	}
 
 	# Build common ffmpeg options from global flags
 	# Use command substitution to capture array output
 	local -a common_opts_output
-	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 
 	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
 		# build_ffmpeg_options returned non-zero exit status due to missing FPS for interpolation
 		exit 1
 	fi
 	ffmpeg_common_opts=("${common_opts_output[@]}")
-
 
 	if "$BULK"; then
 		log_verbose "Bulk mode enabled. Processing files sequentially."
@@ -361,15 +377,24 @@ cmd_merge() {
 	done
 
 	# Ensure output directory exists
-	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+	mkdir -p "$OUTPUT_DIR" || {
+		log_error "Could not create output directory: $OUTPUT_DIR"
+		exit 1
+	}
 
 	# Create a file list for the concat demuxer
-	printf "file '%s'\n" "${inputs[@]}" > "$concat_list" || { log_error "Could not create concat list file."; exit 1; }
+	printf "file '%s'\n" "${inputs[@]}" >"$concat_list" || {
+		log_error "Could not create concat list file."
+		exit 1
+	}
 	log_verbose "Created concat list: $concat_list"
 
 	# Build common ffmpeg options (only relevant ones like noaudio might apply)
 	local -a ffmpeg_common_opts
-	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 	# Note: Filters like scale, fps, pts, interpolate are typically applied after concat,
 	# or require complex filtergraphs. For simplicity, we apply only stream copy options here.
 	# A more advanced merge might re-encode with filters.
@@ -380,7 +405,7 @@ cmd_merge() {
 		-f concat
 		-safe 0 # Required for file paths that are not relative or in current dir
 		-i "$concat_list"
-		-c copy # Stream copy without re-encoding (fastest)
+		-c copy                    # Stream copy without re-encoding (fastest)
 		"${ffmpeg_common_opts[@]}" # Add relevant common options like -an
 		"$output_file"
 	)
@@ -415,13 +440,19 @@ cmd_composite() {
 	done
 
 	# Ensure output directory exists
-	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+	mkdir -p "$OUTPUT_DIR" || {
+		log_error "Could not create output directory: $OUTPUT_DIR"
+		exit 1
+	}
 
 	# Build common ffmpeg options (filters like scale, fps, pts might apply to individual inputs before compositing)
 	# For simplicity here, we'll apply common options after compositing, or rely on the xstack filter handling.
 	# A more complex approach would apply filters to each input stream before stacking.
 	local -a ffmpeg_common_opts
-	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a ffmpeg_common_opts < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 	# Remove video/audio filters from common opts as they are handled in filter_complex
 	local -a filtered_common_opts=()
 	local skip_next=false
@@ -438,45 +469,47 @@ cmd_composite() {
 	done
 	ffmpeg_common_opts=("${filtered_common_opts[@]}")
 
-
 	# Construct the filter_complex for compositing
 	# This is a simplified implementation. A real one would need more logic
 	# to handle different numbers of inputs and desired layouts (e.g., 2x2, 3x3, 1xN, Nx1).
 	# Let's implement a basic horizontal stack for 2 inputs, vertical for 3, and a 2x2 grid for 4.
 	case "$num_inputs" in
-		1)
-			# Just process the single video
-			filter_complex="[0:v]null[outputv];"
-			if ! "$NOAUDIO"; then filter_complex+="[0:a]anull[outputa]"; fi
-			;;
-		2)
-			# Horizontal stack (hstack)
-			filter_complex="[0:v][1:v]hstack=inputs=2[outputv];"
-			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a]amerge=inputs=2[outputa]"; fi
-			;;
-		3)
-			# Vertical stack (vstack) - Example layout
-			filter_complex="[0:v][1:v][2:v]vstack=inputs=3[outputv];"
-			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a]amerge=inputs=3[outputa]"; fi
-			;;
-		4)
-			# 2x2 grid (xstack)
-			# Example: [0][1]
-			#          [2][3]
-			filter_complex="[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[outputv];"
-			if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a][3:a]amerge=inputs=4[outputa]"; fi
-			;;
-		*)
-			log_error "Composite command currently supports 1, 2, 3, or 4 input files for basic layouts."
-			exit 1
-			;;
+	1)
+		# Just process the single video
+		filter_complex="[0:v]null[outputv];"
+		if ! "$NOAUDIO"; then filter_complex+="[0:a]anull[outputa]"; fi
+		;;
+	2)
+		# Horizontal stack (hstack)
+		filter_complex="[0:v][1:v]hstack=inputs=2[outputv];"
+		if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a]amerge=inputs=2[outputa]"; fi
+		;;
+	3)
+		# Vertical stack (vstack) - Example layout
+		filter_complex="[0:v][1:v][2:v]vstack=inputs=3[outputv];"
+		if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a]amerge=inputs=3[outputa]"; fi
+		;;
+	4)
+		# 2x2 grid (xstack)
+		# Example: [0][1]
+		#          [2][3]
+		filter_complex="[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[outputv];"
+		if ! "$NOAUDIO"; then filter_complex+="[0:a][1:a][2:a][3:a]amerge=inputs=4[outputa]"; fi
+		;;
+	*)
+		log_error "Composite command currently supports 1, 2, 3, or 4 input files for basic layouts."
+		exit 1
+		;;
 	esac
 
 	# Add video/audio filter chains from global options after stacking
 	# This applies filters to the combined output stream.
 	local -a video_filters=()
 	local -a audio_filters=()
-	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 	local skip_next=false
 	for opt in "${common_opts_output[@]}"; do
 		if "$skip_next"; then
@@ -484,26 +517,37 @@ cmd_composite() {
 			continue
 		fi
 		case "$opt" in
-			"-vf") video_filters+=("$2"); skip_next=true ;;
-			"-af") audio_filters+=("$2"); skip_next=true ;;
+		"-vf")
+			video_filters+=("$2")
+			skip_next=true
+			;;
+		"-af")
+			audio_filters+=("$2")
+			skip_next=true
+			;;
 		esac
 	done
 
 	if [[ ${#video_filters[@]} -gt 0 ]]; then
-		filter_complex+="[outputv]$(IFS=,; echo "${video_filters[*]}")[outputv_filtered];"
+		filter_complex+="[outputv]$(
+			IFS=,
+			echo "${video_filters[*]}"
+		)[outputv_filtered];"
 		output_stream_name="outputv_filtered"
 	else
 		filter_complex+="[outputv]" # Use the original output stream name
 	fi
 
 	if [[ ${#audio_filters[@]} -gt 0 && ! "$NOAUDIO" ]]; then
-		filter_complex+="[outputa]$(IFS=,; echo "${audio_filters[*]}")[outputa_filtered]"
+		filter_complex+="[outputa]$(
+			IFS=,
+			echo "${audio_filters[*]}"
+		)[outputa_filtered]"
 		output_stream_name+="[outputa_filtered]"
 	elif ! "$NOAUDIO"; then
 		filter_complex+="[outputa]" # Use the original output stream name
 		output_stream_name+="[outputa]"
 	fi
-
 
 	# Construct the ffmpeg command
 	local -a ffmpeg_cmd=(
@@ -552,11 +596,17 @@ cmd_looperang() {
 	fi
 
 	# Ensure output directory exists
-	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+	mkdir -p "$OUTPUT_DIR" || {
+		log_error "Could not create output directory: $OUTPUT_DIR"
+		exit 1
+	}
 
 	# Build common ffmpeg options (filters like scale, fps, pts might apply)
 	local -a common_opts_output
-	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 
 	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
 		exit 1 # build_ffmpeg_options failed
@@ -619,9 +669,15 @@ cmd_looperang() {
 			continue
 		fi
 		case "$opt" in
-			"-vf") video_filters+=("$2"); skip_next=true ;;
-			"-af") audio_filters+=("$2"); skip_next=true ;;
-			*) remaining_common_opts+=("$opt") ;;
+		"-vf")
+			video_filters+=("$2")
+			skip_next=true
+			;;
+		"-af")
+			audio_filters+=("$2")
+			skip_next=true
+			;;
+		*) remaining_common_opts+=("$opt") ;;
 		esac
 	done
 
@@ -630,13 +686,16 @@ cmd_looperang() {
 	local final_a_stream="[a]"
 
 	if [[ ${#video_filters[@]} -gt 0 ]]; then
-		concat_cmd+=("-filter_complex" "${filter_complex_concat};${final_v_stream}$(IFS=,; echo "${video_filters[*]}")[final_v]")
+		concat_cmd+=("-filter_complex" "${filter_complex_concat};${final_v_stream}$(
+			IFS=,
+			echo "${video_filters[*]}"
+		)[final_v]")
 		final_v_stream="[final_v]"
 		# Need to update map to the new stream name
 		local -i map_v_idx=-1
 		for i in "${!concat_cmd[@]}"; do
-			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i+1))]}" == "[v]" ]]; then
-				map_v_idx=$((i+1))
+			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i + 1))]}" == "[v]" ]]; then
+				map_v_idx=$((i + 1))
 				break
 			fi
 		done
@@ -646,15 +705,18 @@ cmd_looperang() {
 	fi
 
 	if [[ ${#audio_filters[@]} -gt 0 && ! "$NOAUDIO" ]]; then
-		concat_cmd+=("-filter_complex" "${concat_cmd[-2]};${final_a_stream}$(IFS=,; echo "${audio_filters[*]}")[final_a]")
+		concat_cmd+=("-filter_complex" "${concat_cmd[-2]};${final_a_stream}$(
+			IFS=,
+			echo "${audio_filters[*]}"
+		)[final_a]")
 		# Remove the old filter_complex and add the new one
 		unset 'concat_cmd[-2]'
 		final_a_stream="[final_a]"
 		# Need to update map to the new stream name
 		local -i map_a_idx=-1
 		for i in "${!concat_cmd[@]}"; do
-			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i+1))]}" == "[a]" ]]; then
-				map_a_idx=$((i+1))
+			if [[ "${concat_cmd[$i]}" == "-map" && "${concat_cmd[$((i + 1))]}" == "[a]" ]]; then
+				map_a_idx=$((i + 1))
 				break
 			fi
 		done
@@ -731,11 +793,17 @@ cmd_fix() {
 	fi
 
 	# Ensure output directory exists
-	mkdir -p "$OUTPUT_DIR" || { log_error "Could not create output directory: $OUTPUT_DIR"; exit 1; }
+	mkdir -p "$OUTPUT_DIR" || {
+		log_error "Could not create output directory: $OUTPUT_DIR"
+		exit 1
+	}
 
 	# Build common ffmpeg options (only relevant ones like noaudio, max1080 might apply)
 	local -a common_opts_output
-	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(build_ffmpeg_options; printf '\0') || true
+	IFS=$' \t\n' read -r -d '' -a common_opts_output < <(
+		build_ffmpeg_options
+		printf '\0'
+	) || true
 
 	if [[ ${#common_opts_output[@]} -eq 0 && "$INTERPOLATE" == "true" ]]; then
 		exit 1 # build_ffmpeg_options failed
@@ -757,7 +825,7 @@ cmd_fix() {
 	local -a ffmpeg_cmd=(
 		ffmpeg -y # Overwrite output file
 		-i "$input_file"
-		-r "$target_fps" # Force constant frame rate
+		-r "$target_fps"            # Force constant frame rate
 		-c:v libx264 -preset medium # Re-encode video
 	)
 	if ! "$NOAUDIO"; then
@@ -776,8 +844,8 @@ cmd_fix() {
 			continue
 		fi
 		case "$opt" in
-			"-f" | "-p" | "-i") skip_next=true ;; # Skip these and their arguments
-			*) filtered_common_opts+=("$opt") ;;
+		"-f" | "-p" | "-i") skip_next=true ;; # Skip these and their arguments
+		*) filtered_common_opts+=("$opt") ;;
 		esac
 	done
 	ffmpeg_cmd+=("${filtered_common_opts[@]}")
@@ -837,9 +905,9 @@ cmd_probe() {
 	# Construct the ffprobe command
 	local -a ffprobe_cmd=(
 		ffprobe
-		-hide_banner # Hide ffprobe version info
+		-hide_banner  # Hide ffprobe version info
 		-show_streams # Show stream information
-		-show_format # Show format information
+		-show_format  # Show format information
 		"$input_file"
 	)
 
