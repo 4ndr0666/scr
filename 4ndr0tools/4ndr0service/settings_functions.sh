@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: settings_functions.sh
 # Description: Functions to modify/manage settings for 4ndr0service Suite.
 

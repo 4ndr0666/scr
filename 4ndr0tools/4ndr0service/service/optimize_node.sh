@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: optimize_node.sh
 # Description: Node.js environment optimization for the 4ndr0service suite.
 # Ensures Node.js (via nvm) and global CLI tools are set up using XDG directories.
@@ -9,6 +8,7 @@ IFS=$'\n\t'
 
 # Establish PKG_PATH and source common utilities
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$SCRIPT_DIR/../common.sh"
 ensure_pkg_path
 
@@ -19,16 +19,16 @@ export NODE_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/node"
 
 # Ensure nvm is installed and loaded
 install_nvm() {
-	if [[ -s "$NVM_DIR/nvm.sh" ]]; then
-		# shellcheck disable=SC1090
-		source "$NVM_DIR/nvm.sh"
+        if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+                # shellcheck disable=SC1090,SC1091
+                source "$NVM_DIR/nvm.sh"
 		log_info "NVM loaded from $NVM_DIR/nvm.sh"
 		return 0
 	fi
 	log_info "NVM not found, installing via official installer..."
-	curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-	# shellcheck disable=SC1090
-	source "$NVM_DIR/nvm.sh"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        # shellcheck disable=SC1090,SC1091
+        source "$NVM_DIR/nvm.sh"
 	log_info "NVM installed and loaded."
 }
 
@@ -65,7 +65,9 @@ optimize_node_service() {
 	install_global_npm_tools
 
 	# Set NODE_PATH for globally installed node modules
-	export NODE_PATH="$(npm root -g)"
+        local global_node_path
+        global_node_path="$(npm root -g)"
+        export NODE_PATH="$global_node_path"
 
 	log_info "Node.js environment optimization complete."
 	log_info "Node: $(node --version 2>/dev/null || echo 'not found')"

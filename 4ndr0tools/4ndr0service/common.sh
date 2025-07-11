@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 set -euo pipefail
 IFS=$'\n\t'
 # ================= // COMMON.SH//

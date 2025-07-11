@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # File: manage_files.sh
 # Provides batch execution of services and optional backup steps.
 
@@ -10,6 +9,7 @@ IFS=$'\n\t'
 
 ### Constants
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$SCRIPT_DIR/common.sh"
 ensure_pkg_path
 
@@ -112,7 +112,8 @@ manage_files_main() {
 		"Optional Backups"
 		"Exit"
 	)
-	select opt in "${options[@]}"; do
+        # shellcheck disable=SC2034
+        select opt in "${options[@]}"; do
 		case "$REPLY" in
 		1) batch_execute_all ;;
 		2) batch_execute_all_parallel ;;

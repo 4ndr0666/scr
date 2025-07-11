@@ -17,3 +17,4 @@ Implemented Step 2 items: added strict mode, quoting fixes, removed dead code, f
 Created ffxd skeleton with global option parsing.
 Implemented major features from ffxd CODEX including advanced prompt, output idempotency, composite grid generalization, clean enhancements, and multi-stage atempo.
 Implemented DMX-101 batch enhance menu option
+Removed global shellcheck disable lines from 4ndr0service scripts and fixed lint warnings.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_ruby.sh
 # Description: Ruby environment optimization (XDG-compliant).
 
@@ -7,7 +7,6 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Colors
-CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m'
 

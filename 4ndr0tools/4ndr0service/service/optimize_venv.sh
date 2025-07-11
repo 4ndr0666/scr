@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_venv.sh
 # Description: Python venv & pipx optimization (XDG-compliant).
 
@@ -7,9 +7,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Colors
-CYAN='\033[0;36m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
@@ -69,7 +67,8 @@ optimize_venv_service() {
 		echo "Venv already exists at $VENV_PATH."
 	fi
 
-	source "$VENV_PATH/bin/activate" || handle_error "Failed activating venv."
+        # shellcheck disable=SC1091
+        source "$VENV_PATH/bin/activate" || handle_error "Failed activating venv."
 
 	pip install --upgrade pip || log "Warning: pip upgrade failed."
 

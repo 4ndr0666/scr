@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_cargo.sh
 # Description: Rust/Cargo environment optimization (XDG-compliant, Arch Linux).
 
@@ -7,9 +7,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Colors
-CYAN='\033[0;36m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
@@ -47,7 +45,8 @@ install_rustup() {
 	echo -e "${CYAN}📦 Installing rustup...${NC}"
 	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path ||
 		handle_error "rustup install failed."
-	[ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed sourcing rustup env."
+        # shellcheck disable=SC1091
+        [ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed sourcing rustup env."
 	log "rustup installed."
 }
 

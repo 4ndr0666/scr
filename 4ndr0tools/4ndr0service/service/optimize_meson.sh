@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_meson.sh
 # Description: Meson & Ninja build tools optimization (XDG-compliant).
 
@@ -8,6 +8,7 @@ IFS=$'\n\t'
 
 # Determine PKG_PATH and source common utilities
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$SCRIPT_DIR/../common.sh"
 ensure_pkg_path
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
+# shellcheck disable=SC2015
 # File: optimize_go.sh
 # Author: 4ndr0666
 # Date: 2024-11-24
@@ -8,7 +8,6 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m'
 
