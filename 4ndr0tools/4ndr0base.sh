@@ -1,313 +1,151 @@
 #!/usr/bin/env bash
-# shellcheck disable=all
 # Author: 4ndr0666
-# ============================== // 4NDR0BASE.SH //
-## Description: Quick setup script for basic requirements on a new machine.
+set -euo pipefail
+# ===================== // 4NDR0BASE.SH //
+## Description: Minimal Arch Linux Bootstrapper 
+#               with Pacman Keyring Repair.
 # ------------------------------------------------
-declare -r AUR_HELPER="yay"
 
-## Constants
+# Colors & Emoji:
+RC='\033[0m'; RED='\033[31m'; YELLOW='\033[33m'; CYAN='\033[36m'; GREEN='\033[32m'; BOLD='\033[1m'
+GOOD="✔️"; INFO="➡️"; ERROR_ICON="❌"; EXPLOSION="💥"
 
-
-## Colors
-declare -r RC='\033[0m'
-declare -r RED='\033[31m'
-declare -r YELLOW='\033[33m'
-declare -r CYAN='\033[36m'
-declare -r GREEN='\033[32m'
-declare -r BOLD='\033[1m'
-export RC RED YELLOW CYAN GREEN BOLD # Optional, printf %b handles escapes without export
-
-## Package Lists
-
-declare -ra PKGS_OFFICIAL=(
-    base-devel
-    debugedit
-    unzip
-    archlinux-keyring
-    github-cli
-    git-delta
-    exa
-    fd
-    micro
-    expac
-    bat
-    bash-completion
-    neovim
-    xorg-xhost
-    xclip
-    ripgrep
-    diffuse
-    fzf
-    zsh-syntax-highlighting
-    zsh-history-substring-search
-    zsh-autosuggestions
-    lsd
+# Package Lists:
+PKGS_OFFICIAL=(
+    base-devel debugedit unzip archlinux-keyring github-cli git-delta exa fd micro expac bat
+    bash-completion neovim xorg-xhost xclip ripgrep diffuse fzf zsh-syntax-highlighting
+    zsh-history-substring-search zsh-autosuggestions lsd pacman-contrib reflector
 )
-declare -ra PKGS_AUR=(
-	git-extras
-	pacdiff
-    sysz
-#    brave-beta-bin
-    bashmount-git
-    breeze-hacked-cursor-theme-git
-    lf-git
+PKGS_AUR=(
+    sysz bashmount-git breeze-hacked-cursor-theme-git lf-git
+    # brave-beta-bin
 )
+AUR_HELPER="yay"
+CHAOTIC_KEY_ID="3056513887B78AEB"
 
+# Logging & Error:
+print_step()  { printf "%b\n" "${BOLD}${CYAN}:: $*${RC}"; }
+success()     { printf "%b\n" "${GOOD} ${CYAN}$*${RC}"; }
+info()        { printf "%b\n" "${INFO} ${CYAN}$*${RC}"; }
+boom()        { printf "%b\n" "${EXPLOSION} $*${RC}"; }
+error()       { printf "%b\n" "${ERROR_ICON} ${RED}Error: $*${RC}" >&2; exit 1; }
 
-## Helpers
+# ---- Platform/Pre-flight ----
+check_command() { command -v "$1" >/dev/null 2>&1 || error "Missing command: $1"; }
+check_arch()    { grep -q "Arch" /etc/os-release || error "This script is for Arch Linux only."; }
 
-print_step() {
-    printf "%b\n" "${BOLD}${CYAN}:: $*${RC}"
-}
-
-error() {
-    printf "%b\n" "${RED}ERROR: $1${RC}" >&2
-    exit 1
-}
-
-check_command() {
-    local cmd="$1"
-    print_step "Checking for required command: $cmd..."
-    # Use >/dev/null 2>&1 instead of &>/dev/null as requested
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        error "Required command '$cmd' not found. Please install it before running this script."
+clear_pacman_lock() {
+    if fuser /var/lib/pacman/db.lck >/dev/null 2>&1; then
+        error "pacman is running (db.lck busy). Please close other pacman instances."
     fi
-    printf "%b\n" "${GREEN}  Command '$cmd' found.${RC}"
+    [ -f /var/lib/pacman/db.lck ] && sudo rm -f /var/lib/pacman/db.lck
 }
 
-check_arch() {
-    print_step "Checking if system is Arch Linux..."
-    if ! grep -q "Arch" /etc/os-release; then
-        error "This script is intended for Arch Linux only."
-    fi
-    printf "%b\n" "${GREEN}  System is Arch Linux.${RC}"
+update_mirrors() {
+    print_step "Refreshing keyrings, updating mirrors..."
+    sudo pacman -Sy --noconfirm archlinux-keyring pacman-mirrorlist reflector
+    sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist || true
+    sudo pacman -Syyu --noconfirm
 }
 
-## Chaotic AUR
+setup_chaotic_aur() {
+    print_step "Configuring Chaotic-AUR repository (if needed)..."
+    sudo pacman-key --recv-key "$CHAOTIC_KEY_ID" --keyserver keyserver.ubuntu.com || true
+    sudo pacman-key --lsign-key "$CHAOTIC_KEY_ID" || true
 
-setuprepos() {
-    print_step "Setting up Chaotic AUR repository..."
-
-    # Refresh Keyrings
-    printf "%b\n" "  Refreshing archlinux-keyring..."
-    # Added --noconfirm for consistency
-    sudo pacman --noconfirm -Sy archlinux-keyring || error "Failed to refresh archlinux-keyring."
-
-    # Import and sign Chaotic-AUR key
-    printf "%b\n" "  Importing and signing Chaotic-AUR key..."
-    # Ensure curl is available (checked at script start)
-    sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com || error "Failed to receive Chaotic-AUR key."
-    sudo pacman-key --lsign-key 3056513887B78AEB || error "Failed to sign Chaotic-AUR key."
-
-    # Install Chaotic-AUR keyring and mirrorlist
-    printf "%b\n" "  Installing Chaotic-AUR Keyring and Mirrorlist..."
-    # Ensure curl is available (checked at script start)
-    sudo pacman -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' --noconfirm || error "Failed to install Chaotic-AUR packages."
-
-    # Add Repo To pacman.conf if not already present
-    printf "%b\n" "  Adding Chaotic-AUR repo to pacman.conf..."
     if ! grep -q "^\[chaotic-aur\]" /etc/pacman.conf; then
-        # Corrected tee error handling: check tee's exit status directly
-        echo "[chaotic-aur]
-Include = /etc/pacman.d/mirrorlist-arch" | sudo tee -a /etc/pacman.conf || error "Failed to add Chaotic-AUR repo to pacman.conf."
-    else
-        printf "%b\n" "  Chaotic-AUR repo already exists in pacman.conf, skipping."
+        print_step "Adding Chaotic-AUR to pacman.conf"
+        echo -e "[chaotic-aur]\nInclude = /etc/pacman.d/mirrorlist-arch" | sudo tee -a /etc/pacman.conf >/dev/null
     fi
 
-    # Sync pacman databases
-    printf "%b\n" "  Syncing pacman databases..."
-    sudo pacman -Sy --noconfirm || error "Failed to sync pacman databases after adding Chaotic-AUR."
-
-    # Populate archlinux keys (good practice after sync)
-    printf "%b\n" "  Populating archlinux keys..."
-    sudo pacman-key --populate archlinux || error "Failed to populate archlinux keys."
-
-    printf "%b\n" "${GREEN}Chaotic AUR setup complete.${RC}"
+    sudo pacman -U --noconfirm \
+        'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+        'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' || fallback_keyfix "Chaotic-AUR keyring/mirrorlist install failed"
+    sudo pacman -Sy --noconfirm
+    sudo pacman-key --populate archlinux
 }
-
-## Nerd Font
-
-setupfont() {
-    print_step "Setting up Meslo Nerd Font..."
-    local font_dir="$HOME/.local/share/fonts" # Use lowercase for local vars
-    local font_zip="$font_dir/Meslo.zip"
-    local font_url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip"
-
-    # SC2155: Declare and assign separately
-    local font_installed_check # Declare first
-    # Check if font is already installed using fc-list
-    font_installed_check=$(fc-list | grep -i "Meslo") # Assign
-
-    if [ -n "$font_installed_check" ]; then
-        printf "%b\n" "${GREEN}  Meslo Nerd-fonts are already installed.${RC}"
-        return 0
-    fi
-
-    printf "%b\n" "  Meslo Nerd-fonts not found, installing..."
-
-    # Create font directory if it doesn't exist (-p is idempotent)
-    if [ ! -d "$font_dir" ]; then
-        printf "%b\n" "  Creating font directory: $font_dir"
-        mkdir -p "$font_dir" || error "Failed to create directory: $font_dir"
-    else
-        printf "%b\n" "  $font_dir exists, skipping creation."
-    fi
-
-    # Download the font zip file if it doesn't exist
-    if [ ! -f "$font_zip" ]; then
-        printf "%b\n" "  Downloading Meslo Nerd-fonts from $font_url..."
-        # Ensure curl is available (checked at script start)
-        curl -sSLo "$font_zip" "$font_url" || error "Failed to download Meslo Nerd-fonts from $font_url"
-    else
-        printf "%b\n" "  $font_zip already exists, skipping download."
-    fi
-
-    # Check if the zip file was successfully downloaded/exists before attempting unzip
-    if [ -f "$font_zip" ]; then
-        printf "%b\n" "  Unzipping Meslo Nerd-fonts..."
-        # Unzip into the font directory (-o overwrites existing files, idempotent)
-        # Ensure unzip is available (installed via PKGS_OFFICIAL)
-        unzip -o "$font_zip" -d "$font_dir" || error "Failed to unzip $font_zip"
-
-        # Remove the zip file after successful unzip
-        printf "%b\n" "  Removing zip file: $font_zip"
-        rm "$font_zip" || printf "%b\n" "${YELLOW}Warning: Failed to remove $font_zip${RC}\n" # Non-critical failure
-    else
-        # This case should ideally not be reached if set -e is active and download failed
-        error "Font zip file not found after download attempt."
-    fi
-
-    printf "%b\n" "  Rebuilding font cache..."
-    fc-cache -fv || error "Failed to rebuild font cache"
-
-    printf "%b\n" "${GREEN}Meslo Nerd-fonts installed.${RC}"
-}
-
-## Install Yay
-
-install_yay() {
-    print_step "Installing AUR helper ($AUR_HELPER)..."
-    # Check if yay is already installed
-    # Use >/dev/null 2>&1 instead of &>/dev/null as requested
-    if ! command -v "$AUR_HELPER" >/dev/null 2>&1; then
-        printf "%b\n" "  $AUR_HELPER not found, installing..."
-        local yay_tmp_dir="/tmp/$AUR_HELPER" # Use lowercase for local vars
-
-        printf "%b\n" "  Cloning $AUR_HELPER repository..."
-        # Ensure git is available (installed via PKGS_OFFICIAL)
-        git clone "https://aur.archlinux.org/$AUR_HELPER.git" "$yay_tmp_dir" || {
-            error "Failed to clone $AUR_HELPER repository."
-        }
-
-        printf "%b\n" "  Building and installing $AUR_HELPER..."
-        # Use pushd/popd with checks and redirect output
-        pushd "$yay_tmp_dir" > /dev/null || error "Failed to change directory to $yay_tmp_dir."
-        # Do NOT suppress makepkg output - it's crucial for debugging AUR build failures
-        # Ensure base-devel is installed (via PKGS_OFFICIAL)
-        # Run makepkg as the user, not root (important for AUR)
-        sudo -u "$USER" makepkg --noconfirm -si || {
-            local status=$? # Capture status before popd
-            popd > /dev/null || error "Failed to return to original directory."
-            error "Failed to build and install $AUR_HELPER. makepkg exited with status $status."
-        }
-        popd > /dev/null || error "Failed to return to original directory."
-
-        # Clean up the temporary directory
-        printf "%b\n" "  Cleaning up temporary directory $yay_tmp_dir..."
-        rm -rf "$yay_tmp_dir"
-
-        printf "%b\n" "${GREEN}$AUR_HELPER installed successfully.${RC}"
-    else
-        printf "%b\n" "${GREEN}  ($AUR_HELPER) is already installed.${RC}"
-    fi
-}
-
-## Pacman Pkgs
 
 install_official_pkgs() {
-    print_step "Installing official packages..."
-    # Check if list is empty
-    if [ ${#PKGS_OFFICIAL[@]} -eq 0 ]; then
-        printf "%b\n" "${YELLOW}  No official packages listed, skipping installation.${RC}"
-        return 0
+    print_step "Installing required official packages..."
+    sudo pacman -Sy --noconfirm
+    if ! sudo pacman -S --noconfirm --needed "${PKGS_OFFICIAL[@]}"; then
+        fallback_keyfix "Official package installation failed due to key issues"
+        sudo pacman -S --noconfirm --needed "${PKGS_OFFICIAL[@]}" || error "Official package install failed after key repair."
     fi
-
-    printf "%b\n" "  Packages: ${PKGS_OFFICIAL[*]}\n"
-    # Sync pacman databases first
-    sudo pacman -Sy --noconfirm || error "Failed to sync pacman databases before installing official packages."
-    # Install packages using --needed for idempotency
-    # Do NOT suppress pacman output - it's crucial for debugging installation failures
-    sudo pacman -S --noconfirm --needed "${PKGS_OFFICIAL[@]}" || error "Failed to install official packages."
-    printf "%b\n" "${GREEN}Official packages installed.${RC}"
 }
 
-## Yay Pkgs
+install_yay() {
+    print_step "Ensuring yay (AUR helper) is installed..."
+    if ! command -v "$AUR_HELPER" >/dev/null 2>&1; then
+        sudo pacman -S --noconfirm --needed git base-devel
+        git clone "https://aur.archlinux.org/$AUR_HELPER.git" "/tmp/$AUR_HELPER"
+        pushd "/tmp/$AUR_HELPER"
+        makepkg -si --noconfirm
+        popd
+        rm -rf "/tmp/$AUR_HELPER"
+    fi
+}
 
 install_aur_pkgs() {
-    print_step "Installing AUR packages using $AUR_HELPER..."
-    # Ensure yay is available before attempting to use it
-    # Use >/dev/null 2>&1 instead of &>/dev/null as requested
-    if ! command -v "$AUR_HELPER" >/dev/null 2>&1; then
-        error "$AUR_HELPER is not installed. Cannot install AUR packages."
+    print_step "Installing required AUR packages..."
+    if ! "$AUR_HELPER" -S --noconfirm --needed "${PKGS_AUR[@]}"; then
+        fallback_keyfix "AUR package installation failed due to key issues"
+        "$AUR_HELPER" -S --noconfirm --needed "${PKGS_AUR[@]}" || error "AUR package install failed after key repair."
     fi
-
-    # Check if AUR package list is empty
-    if [ ${#PKGS_AUR[@]} -eq 0 ]; then
-        printf "%b\n" "${YELLOW}  No AUR packages listed, skipping AUR installation.${RC}"
-        return 0
-    fi
-
-    printf "%b\n" "  Packages: ${PKGS_AUR[*]}\n"
-    # Install packages using --needed for idempotency
-    # Do NOT suppress yay output - it's crucial for debugging AUR build/installation failures
-    "$AUR_HELPER" -S --noconfirm --needed "${PKGS_AUR[@]}" || error "Failed to install AUR packages."
-    printf "%b\n" "${GREEN}AUR packages installed.${RC}"
 }
 
-## Post-installation tweaks
+# ---- Fallback Key Repair Routine ----
+fallback_keyfix() {
+    boom "Detected signature/keyring problem: $1"
+    info "Starting Pacman key fix routine..."
+    sleep 1
 
-setup_post_install() {
-    print_step "Performing post-installation tweaks..."
+    # Remove pacman DB and gnupg files
+    info "Removing /var/lib/pacman/sync/*..."
+    sudo rm -rf /var/lib/pacman/sync/*
+    info "Removing /etc/pacman.d/gnupg/*..."
+    sudo rm -rf /etc/pacman.d/gnupg/*
 
-    # Build bat cache
-    printf "%b\n" "  Building bat cache..."
-    # Check if bat is installed before trying to build cache
-    # Use >/dev/null 2>&1 instead of &>/dev/null as requested
-    if command -v bat >/dev/null 2>&1; then
-        bat cache --build || printf "%b\n" "${YELLOW}Warning: Failed to build bat cache.${RC}\n" # Non-critical failure
+    # Re-init pacman-key
+    info "Initializing pacman-key keyring..."
+    sudo pacman-key --init || error "Failed pacman-key --init"
+    info "Populating pacman-key with archlinux keys..."
+    sudo pacman-key --populate archlinux || error "Failed pacman-key --populate archlinux"
+
+    # Add fallback keyserver if missing
+    local gpg_conf="/etc/pacman.d/gnupg/gpg.conf"
+    local keyserver_line="keyserver hkp://keyserver.ubuntu.com:80"
+    info "Checking/Adding fallback keyserver to $gpg_conf..."
+    if [ -f "$gpg_conf" ]; then
+        if ! grep -q "^${keyserver_line}$" "$gpg_conf"; then
+            echo "$keyserver_line" | sudo tee -a "$gpg_conf" >/dev/null
+        fi
     else
-        printf "%b\n" "${YELLOW}Warning: bat not found, skipping bat cache build.${RC}\n"
+        echo "$keyserver_line" | sudo tee "$gpg_conf" >/dev/null
     fi
+    success "Fallback keyserver present in $gpg_conf."
 
-    # Add other post-install steps here if needed
+    # Sync and reinstall keyring
+    info "Syncing pacman databases..."
+    sudo pacman -Sy --quiet
+    info "Reinstalling archlinux-keyring..."
+    sudo pacman -S archlinux-keyring --noconfirm --quiet || error "Failed to reinstall archlinux-keyring"
 
-    printf "%b\n" "${GREEN}Post-installation tweaks complete.${RC}"
+    success "Pacman key repair complete. Retrying previous operation."
+    sleep 1
 }
-
-
-## Main Entry Point
 
 main() {
-    printf "%b\n" "Welcome ${CYAN}4ndr0666!${RC}"
-    sleep 1 # Cosmetic delay
-	printf "%b\n" "One second while I setup the machine up..."
-
-    # --- Initial Checks ---
+    print_step "Minimal Arch Package Bootstrapper :: 4ndr0666"
     check_arch
-    # Check for essential commands needed early
-    check_command "curl"
-    check_command "git" # Needed for yay install
-
-    # --- Setup Steps (Order matters based on dependencies) ---
-    setuprepos # Needs pacman, pacman-key, curl, tee
-    install_official_pkgs # Needs pacman, installs git, unzip, base-devel etc.
-    install_yay # Needs git (from base-devel)
-	setupfont # Needs curl, unzip (from official pkgs)
-    install_aur_pkgs # Needs yay
-    setup_post_install # Needs bat (from official pkgs)
-
-    printf "\n%b\n" "${GREEN}${BOLD}Machine is ready to go!${RC}"
+    for cmd in sudo git curl reflector; do check_command "$cmd"; done
+    clear_pacman_lock
+    update_mirrors
+    setup_chaotic_aur
+    install_official_pkgs
+    install_yay
+    install_aur_pkgs
+    print_step "${GREEN}${BOLD}All required packages installed successfully!${RC}"
 }
 
 main "$@"

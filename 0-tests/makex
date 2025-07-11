@@ -4,14 +4,13 @@ set -euo pipefail
 # ================= // MAKEX //
 ## Description: Ensure potential script files in a directory have user executable permission.
 #               Processes files ending in .sh or starting with a #!.*sh shebang,
-#               excluding files within .git directories, and only attempts chmod
-#               on files that currently lack user executable permission.
+#               excluding files within .git directories, README, .md, .txt, and only chmods
+#               files that currently lack user executable permission.
 ## Usage:       makex.sh [DIR]   (default: current dir)
 # ----------------------------------------------------------------------------
 
-
 DEFAULT_DIR="."
-SHEBANG_PATTERN='^#!.*sh' # Pattern to match shebangs like #!/bin/sh, #!/usr/bin/env bash, etc.
+SHEBANG_PATTERN='^#!.*\b(bash|sh|zsh|dash|ksh|ash)\b'
 
 declare COLOR_GLOW=""
 declare COLOR_BUG=""
@@ -20,164 +19,108 @@ declare COLOR_BANNER_START=""
 declare COLOR_RESET=""
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
-    # Assign color codes using tput
-    COLOR_GLOW=$(tput setaf 6) # Cyan/Light Blue
+    COLOR_GLOW=$(tput setaf 6) # Cyan
     COLOR_BUG=$(tput setaf 1)  # Red
     COLOR_INFO=$(tput setaf 4) # Blue
     COLOR_BANNER_START=$(tput setaf 5) # Magenta
     COLOR_RESET=$(tput sgr0)
 fi
 
-GLOW() {
-    # Use local for function-scoped variables
-    local message="$*"
-    printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$message" "$COLOR_RESET"
-}
-
-BUG() {
-    # Use local for function-scoped variables
-    local message="$*"
-    printf '%s[❌] %s%s\n' "$COLOR_BUG" "$message" "$COLOR_RESET" >&2 # Redirect errors to stderr
-}
-
-INFO() {
-    # Use local for function-scoped variables
-    local message="$*"
-    printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$message" "$COLOR_RESET"
-}
+GLOW() { local message="$*"; printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$message" "$COLOR_RESET"; }
+BUG()  { local message="$*"; printf '%s[❌] %s%s\n' "$COLOR_BUG" "$message" "$COLOR_RESET" >&2; }
+INFO() { local message="$*"; printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$message" "$COLOR_RESET"; }
 
 pause_prompt() {
-    # Use local for function-scoped variables
     local oldstty
-    GLOW "Press any key to continue..." # Use GLOW color for the prompt
-
-    # Save current stty settings and check exit status directly
-    if ! oldstty=$(stty -g); then
-        BUG "Failed to save stty settings. Skipping pause."
-        return 1 # Indicate failure
-    fi
-
-    # Set cbreak mode and disable echo, check exit status directly
-    if ! stty cbreak -echo; then
-        BUG "Failed to set stty cbreak -echo. Skipping pause."
-        # Attempt to restore even on partial failure, suppressing errors
-        stty "$oldstty" >/dev/null 2>&1 || true # Use '|| true' to prevent set -e from exiting here
-        return 1 # Indicate failure
-    fi
-
-    # Read a single byte from stdin silently and raw (do not interpret backslashes)
-    # SC2162 addressed by adding -r
+    GLOW "Press any key to continue..."
+    if ! oldstty=$(stty -g); then BUG "Failed to save stty settings."; return 1; fi
+    if ! stty cbreak -echo; then BUG "Failed to set stty cbreak -echo."; stty "$oldstty" >/dev/null 2>&1 || true; return 1; fi
     read -r -n 1 -s
-
-    # Restore stty settings and check exit status directly
-    if ! stty "$oldstty"; then
-        BUG "Failed to restore stty settings."
-        # Continue script execution, but report the error
-    fi
-    printf '\n' # Add a newline after the key press
-    return 0 # Indicate success
+    stty "$oldstty" || BUG "Failed to restore stty settings."
+    printf '\n'
 }
 
 command -v clear >/dev/null 2>&1 && clear
 
-declare banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
+banner="███╗   ███╗ █████╗ ██╗  ██╗███████╗██╗  ██╗
 ████╗ ████║██╔══██╗██║ ██╔╝██╔════╝╚██╗██╔╝
 ██╔████╔██║███████║█████╔╝ ██████╗   ╚███╔╝
 ██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝   ██╔██╗
 ██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██╔╝ ██╗
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"
 
-printf '%s%s%s\n' "$COLOR_BANNER_START" "$banner" "$COLOR_RESET"
-printf '\n'
-
-printf "Ensuring potential script files have user executable permission...\n"
-printf '\n'
+printf '%s%s%s\n\n' "$COLOR_BANNER_START" "$banner" "$COLOR_RESET"
+printf "Ensuring potential script files have user executable permission...\n\n"
 
 pause_prompt
 
-declare DIR="${1:-$DEFAULT_DIR}"
+DIR="${1:-$DEFAULT_DIR}"
 
 if [ ! -d "$DIR" ]; then
     BUG "Error: Directory '$DIR' not found or is not a directory."
-    exit 1 # Exit with an error status
+    exit 1
 fi
 
 INFO "Searching for non-executable scripts in '$DIR'..."
 
-declare TEMP_FILE
 TEMP_FILE=$(mktemp)
-
-if ! [ -f "$TEMP_FILE" ]; then
-     BUG "Failed to create temporary file."
-     exit 1 # Exit with an error status
-fi
-
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-if ! find "$DIR" \
+# Find all *.sh files AND any file (not in .git) with a valid shell shebang, excluding *.md, *.txt, *.README*, etc.
+find "$DIR" \
     -type f \
-    ! -path "$DIR/.git" -a ! -path "$DIR/.git/*" \
-    \( -name "*.sh" -o -exec grep -q "$SHEBANG_PATTERN" {} \; \) \
+    ! -path "*/.git/*" \
+    ! -name "*.md" \
+    ! -name "*.MD" \
+    ! -name "*.markdown" \
+    ! -name "*.txt" \
+    ! -name "*.TXT" \
+    ! -name "README" \
+    ! -name "README.md" \
+    ! -name "README.MD" \
+    ! -name "*.rst" \
+    \( -name "*.sh" -o -exec head -n 1 {} \; | grep -Eq "$SHEBANG_PATTERN" \) \
     ! -perm -u=x \
-    -print0 > "$TEMP_FILE"; then
-    # find failed, report error and exit
-    BUG "Error occurred during file search."
-    exit 1
-fi
+    -print0 > "$TEMP_FILE"
 
-declare files_found_by_find=0
-
+files_found_by_find=0
 while IFS= read -r -d '' file; do
-    # Increment counter for each file read
     files_found_by_find=$((files_found_by_find + 1))
 done < "$TEMP_FILE"
 
 if [ "$files_found_by_find" -eq 0 ]; then
     GLOW "No files found requiring executable permission."
-    # The trap will clean up the temp file
-    exit 0 # Exit successfully
+    exit 0
 fi
 
-declare files_made_executable=0
-declare files_failed=0
+files_made_executable=0
+files_failed=0
 
 INFO "Processing $files_found_by_find file(s)..."
 
 while IFS= read -r -d '' file; do
-    # Basic check for empty filename (should not happen with find -print0)
-    if [ -z "$file" ]; then
-        BUG "Received empty filename from temporary file. Skipping."
-        continue # Skip to the next iteration
+    # Recheck if it’s a valid shell script by extension or first line
+    if [[ "$file" =~ \.sh$ ]] || head -n 1 "$file" | grep -Eq "$SHEBANG_PATTERN"; then
+        INFO "Attempting to make executable: '$file'"
+        if chmod u+x "$file"; then
+            GLOW "Successfully made executable: '$file'"
+            files_made_executable=$((files_made_executable + 1))
+        else
+            BUG "Failed to make executable: '$file'"
+            files_failed=$((files_failed + 1))
+        fi
     fi
+done < "$TEMP_FILE"
 
-    INFO "Attempting to make executable: '$file'"
-    # Attempt to change permissions for the user owner
-    # Check exit status of chmod directly with if !
-    if chmod u+x "$file"; then
-        GLOW "Successfully made executable: '$file'"
-        files_made_executable=$((files_made_executable + 1))
-    else
-        # Report failure to standard error
-        BUG "Failed to make executable: '$file'"
-        files_failed=$((files_failed + 1))
-        # Continue processing other files even if one fails
-    fi
-done < "$TEMP_FILE" # Read input for the while loop from the temporary file
-
-printf '\n' # Add a newline for clarity after the loop output
-
+printf '\n'
 INFO "Summary:"
 INFO "  Files found requiring executability: $files_found_by_find"
 INFO "  Files successfully made executable: $files_made_executable"
 
 if [ "$files_failed" -gt 0 ]; then
     BUG "  Files failed to make executable: $files_failed"
-    # Exit with a non-zero status to indicate partial or complete failure
     exit 1
 else
-    # Only report success if at least one file was found and none failed
-    if [ "$files_found_by_find" -gt 0 ]; then
-        GLOW "  All found files successfully made executable."
-    fi
-    exit 0 # Exit successfully
+    [ "$files_found_by_find" -gt 0 ] && GLOW "  All found files successfully made executable."
+    exit 0
 fi
