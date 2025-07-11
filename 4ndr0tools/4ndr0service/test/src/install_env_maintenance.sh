@@ -23,6 +23,7 @@ else
 	echo "Warning: failed to install verify_environment.sh" >&2
 fi
 
+
 # Copy or symlink units
 install_unit() {
         local src="$1"
