@@ -34,7 +34,7 @@ install_ninja() {
 	fi
 }
 
-optimize_meson() {
+optimize_meson_service() {
 	log_info "🔧 Optimizing Meson & Ninja..."
 	install_meson
 	install_ninja
@@ -42,5 +42,5 @@ optimize_meson() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-	optimize_meson
+	optimize_meson_service
 fi
