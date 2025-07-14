@@ -1,0 +1,999 @@
+#!/bin/bash
+# Author: 4ndr0666
+# ====================== // AUDIOFIXER-BETA //
+## Description: Collection of tools and automation
+#               to repair sound issues on Arch.
+# ------------------------------------------
+
+declare -r LOG_FILE="/var/log/audiofixer.log"
+declare -r DEFAULT_TEST_SOUND_FILE="/usr/share/sounds/alsa/Front_Center.wav" # Requires alsa-utils
+
+declare -r RED='\033[0;31m'
+declare -r GREEN='\033[0;32m'
+declare -r YELLOW='\033[0;33m'
+declare -r BLUE='\033[0;34m'
+declare -r NC='\033[0m' # No Color
+
+declare -a packages_to_install=()
+declare -a audio_services_to_check=()
+
+LogActions() {
+	local message="$1"
+	# Use printf for consistent formatting and to handle potential '%' in message
+	printf '%s [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$message" | tee -a "$LOG_FILE" >/dev/null
+}
+
+log_error() {
+	local message="$1"
+	# Use printf for consistent formatting
+	printf '%s [ERROR] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$message" | tee -a "$LOG_FILE" >&2
+}
+CheckPrerequisites() {
+	LogActions "Checking for essential commands."
+	local commands=("pacman" "whiptail" "sudo" "systemctl" "aplay" "lsusb" "lspci" "lscpu" "lsmod" "modprobe" "git" "dunst" "playerctl" "top" "free" "df" "dirname" "mkdir" "touch" "chmod" "tee" "date" "printf" "grep" "awk" "read" "mv" "command")
+	local cmd
+	local missing_cmds=()
+
+	for cmd in "${commands[@]}"; do
+		if ! command -v "$cmd" >/dev/null 2>&1; then
+			missing_cmds+=("$cmd")
+		fi
+	done
+
+	if [[ ${#missing_cmds[@]} -gt 0 ]]; then
+		log_error "Essential commands missing: ${missing_cmds[*]}"
+		echo -e "${RED}Error: Essential commands are missing. Please ensure your system is complete.${NC}"
+		echo "Missing commands: ${missing_cmds[*]}"
+		exit 1
+	else
+		LogActions "All essential commands found."
+		return 0
+	fi
+}
+
+RebootSystem() {
+	LogActions "Prompting user for system reboot."
+	if whiptail --title "Reboot Required" --yesno "A system reboot is recommended or required for changes to take effect. Reboot now?" 10 60 3>&1 1>&2 2>&3; then
+		LogActions "User chose to reboot. Initiating reboot."
+		echo -e "${GREEN}Initiating system reboot...${NC}"
+		# Give whiptail time to close before rebooting
+		sleep 2
+		# Use 'exec' to replace the current shell process with 'sudo reboot'
+		# This avoids the script continuing after the reboot command is issued
+		exec sudo reboot
+	else
+		LogActions "User chose not to reboot."
+		echo -e "${YELLOW}Reboot postponed. Please reboot manually for changes to take effect.${NC}"
+	fi
+}
+
+InstallMissingDependencies() {
+	LogActions "Checking and installing missing dependencies: $*"
+	local packages=("$@")
+	local package
+	local packages_needed=()
+
+	if [[ ${#packages[@]} -eq 0 ]]; then
+		LogActions "No packages specified for installation."
+		return 0
+	fi
+
+	for package in "${packages[@]}"; do
+		LogActions "Checking if '$package' is installed..."
+		# Check if package is installed. Redirect stdout/stderr to /dev/null.
+		if ! pacman -Q "$package" >/dev/null 2>&1; then
+			LogActions "'$package' is not installed."
+			packages_needed+=("$package")
+		else
+			LogActions "'$package' is already installed."
+		fi
+	done
+
+	if [[ ${#packages_needed[@]} -gt 0 ]]; then
+		LogActions "Installing needed packages: ${packages_needed[*]}..."
+		echo -e "${YELLOW}Installing missing dependencies: ${packages_needed[*]}...${NC}"
+		# Use --noconfirm for whiptail context, --needed to skip already installed
+		# Redirect stdout to tee for logging, stderr to stderr
+		if pacman -S --noconfirm --needed "${packages_needed[@]}" | tee -a "$LOG_FILE"; then
+			LogActions "Dependencies installed successfully."
+			echo -e "${GREEN}Dependencies installed successfully.${NC}"
+			return 0
+		else
+			local install_status=$?
+			log_error "Failed to install dependencies: ${packages_needed[*]} (exit status $install_status)."
+			echo -e "${RED}Failed to install dependencies: ${packages_needed[*]}.${NC}"
+			whiptail --title "Dependency Install Failed" --msgbox "Failed to install required packages: ${packages_needed[*]}.\nPlease check logs ($LOG_FILE) and network connection." 10 70 3>&1 1>&2 2>&3
+			return 1
+		fi
+	else
+		LogActions "All required dependencies are already installed."
+		echo -e "${GREEN}All required dependencies are already installed.${NC}"
+		return 0
+	fi
+}
+
+PromptForInput() {
+	local prompt_message="$1"
+	local user_input
+	LogActions "Displaying interactive prompt: '$prompt_message'"
+
+	# Use 3>&1 1>&2 2>&3 to redirect whiptail output (input) to stdout
+	user_input=$(whiptail --inputbox "$prompt_message" 10 60 3>&1 1>&2 2>&3)
+	local exit_status=$?
+
+	# Output the captured input regardless of exit status, empty on cancel
+	printf "%s" "$user_input"
+
+	LogActions "Interactive prompt finished with exit status $exit_status."
+	if [[ $exit_status -ne 0 ]]; then
+		LogActions "Prompt cancelled by user."
+	fi
+
+	return "$exit_status" # Propagate whiptail exit status (0=OK, 1=Cancel)
+}
+
+CheckAudioServices() {
+	LogActions "Checking audio services status for user '$SUDO_USER'..."
+	local services=("$@")
+	local service
+	local all_services_ok=0 # Assume success initially
+
+	if [[ ${#services[@]} -eq 0 ]]; then
+		LogActions "No services specified for checking."
+		echo -e "${YELLOW}No specific audio services recommended for checking based on detection.${NC}"
+		return 0
+	fi
+
+	echo -e "${BLUE}Checking audio services for user '$SUDO_USER'...${NC}"
+
+	for service in "${services[@]}"; do
+		LogActions "Checking status of '$service'.service for user '$SUDO_USER'..."
+		# Check if service is active for the user
+		if sudo -u "$SUDO_USER" systemctl --user is-active --quiet "${service}.service"; then
+			echo -e "${GREEN}'$service'.service is running for user '$SUDO_USER'.${NC}"
+			LogActions "'$service'.service is running for user '$SUDO_USER'"
+		else
+			echo -e "${YELLOW}'$service'.service is not running for user '$SUDO_USER'. Attempting to start...${NC}"
+			LogActions "'$service'.service is not running for user '$SUDO_USER'. Attempting to start..."
+			# Attempt to start the service for the user
+			if sudo -u "$SUDO_USER" systemctl --user start "${service}.service"; then
+				LogActions "Attempted to start '$service'.service. Verifying status..."
+				# Give it a moment to start
+				sleep 1
+				if sudo -u "$SUDO_USER" systemctl --user is-active --quiet "${service}.service"; then
+					echo -e "${GREEN}'$service'.service started successfully for user '$SUDO_USER'.${NC}"
+					LogActions "'$service'.service started successfully for user '$SUDO_USER'."
+				else
+					log_error "Failed to verify '$service'.service started for user '$SUDO_USER'. Please check user's systemd journal (journalctl --user -u ${service}.service)."
+					echo -e "${RED}Failed to verify '$service'.service started for user '$SUDO_USER'.${NC}"
+					all_services_ok=1 # Mark failure
+				fi
+			else
+				local start_status=$?
+				log_error "Failed to start '$service'.service for user '$SUDO_USER' (exit status $start_status). Please check user's systemd journal."
+				echo -e "${RED}Failed to start '$service'.service for user '$SUDO_USER'.${NC}"
+				all_services_ok=1 # Mark failure
+			fi
+		fi
+	done
+
+	return "$all_services_ok"
+}
+
+VerifyUserSession() {
+	local expected_session_type="$1"
+	LogActions "Verifying user session type for user '$SUDO_USER'. Expected: '$expected_session_type'"
+
+	if [[ -z "$expected_session_type" ]]; then
+		LogActions "No expected session type provided for verification."
+		echo -e "${YELLOW}No expected session type provided for verification.${NC}"
+		return 0 # Cannot verify if no expectation is set
+	fi
+
+	local user_session_type
+	# Use printenv to get the variable from the user's environment
+	# Capture stdout and stderr separately to avoid mixing
+	user_session_type=$(sudo -u "$SUDO_USER" printenv XDG_SESSION_TYPE 2>"/dev/null")
+	local exit_status=$?
+
+	if [[ $exit_status -ne 0 ]]; then
+		log_error "Failed to get XDG_SESSION_TYPE for user '$SUDO_USER'. Command exited with status $exit_status."
+		echo -e "${RED}Failed to get user session type. Cannot verify.${NC}"
+		return 1
+	fi
+
+	if [[ "$user_session_type" == "$expected_session_type" ]]; then
+		echo -e "${GREEN}Session type is correct for user '$SUDO_USER': '$user_session_type'${NC}"
+		LogActions "Session type is correct for user '$SUDO_USER': '$user_session_type'"
+		return 0
+	else
+		echo -e "${YELLOW}Warning: Session type is incorrect for user '$SUDO_USER'. Expected: '$expected_session_type', Found: '$user_session_type'${NC}"
+		LogActions "Warning: Session type is incorrect for user '$SUDO_USER'. Expected: '$expected_session_type', Found: '$user_session_type'"
+		# Return non-zero to indicate a potential issue, but not a fatal error
+		return 1
+	fi
+}
+
+ConfigureAudioServices() {
+	local packages=("$@")
+	LogActions "Configuring audio services by installing packages: ${packages[*]}..."
+
+	if [[ ${#packages[@]} -eq 0 ]]; then
+		LogActions "No packages specified for installation during configuration."
+		echo -e "${YELLOW}No specific audio packages recommended for installation based on detection.${NC}"
+		return 0
+	fi
+
+	echo -e "${BLUE}Ensuring necessary audio packages are installed...${NC}"
+
+	# Use InstallMissingDependencies helper
+	InstallMissingDependencies "${packages[@]}"
+	local install_status=$?
+
+	if [[ $install_status -ne 0 ]]; then
+		log_error "Package installation failed during audio configuration."
+		return 1
+	fi
+
+	LogActions "Audio package configuration step completed."
+	return 0
+}
+
+RestartAudioServices() {
+	LogActions "Restarting audio services for user '$SUDO_USER'..."
+	local services=("$@")
+	local service
+	local restart_failed=0
+
+	if [[ ${#services[@]} -eq 0 ]]; then
+		LogActions "No services specified for restart."
+		echo -e "${YELLOW}No specific audio services recommended for restart based on detection.${NC}"
+		return 0
+	fi
+
+	echo -e "${BLUE}Restarting audio services for user '$SUDO_USER'...${NC}"
+
+	for service in "${services[@]}"; do
+		LogActions "Restarting '$service'.service..."
+		echo -e "${YELLOW}Restarting '$service'.service...${NC}"
+		# Attempt to restart the service for the user
+		if sudo -u "$SUDO_USER" systemctl --user restart "${service}.service"; then
+			LogActions "Attempted to restart '$service'.service. Verifying status..."
+			# Give it a moment to restart
+			sleep 2 # Increased sleep slightly for restart
+			if sudo -u "$SUDO_USER" systemctl --user is-active --quiet "${service}.service"; then
+				LogActions "'$service'.service restarted successfully for user '$SUDO_USER'."
+				echo -e "${GREEN}'$service'.service restarted successfully.${NC}"
+			else
+				log_error "Failed to verify '$service'.service restarted for user '$SUDO_USER'. Please check user's systemd journal (journalctl --user -u ${service}.service)."
+				echo -e "${RED}Failed to verify '$service'.service restarted for user '$SUDO_USER'.${NC}"
+				restart_failed=1
+			fi
+		else
+			local restart_status=$?
+			log_error "Failed to restart '$service'.service for user '$SUDO_USER' (exit status $restart_status). Please check user's systemd journal."
+			echo -e "${RED}Failed to restart '$service'.service for user '$SUDO_USER'.${NC}"
+			restart_failed=1
+		fi
+	done
+
+	return "$restart_failed"
+}
+
+TestAudioOutput() {
+	local user_test_sound="$1" # Allow overriding default via argument
+	local test_sound_file="$DEFAULT_TEST_SOUND_FILE"
+
+	LogActions "Preparing audio output test for user '$SUDO_USER'."
+
+	if [[ -n "$user_test_sound" && -f "$user_test_sound" ]]; then
+		test_sound_file="$user_test_sound"
+		LogActions "Using user-provided test sound file: '$test_sound_file'"
+	elif [[ ! -f "$test_sound_file" ]]; then
+		log_error "Default test sound file not found: '$test_sound_file'. Please provide a valid path or install alsa-utils."
+		whiptail --title "Audio Test Failed" --msgbox "Default test sound file not found: '$test_sound_file'.\nPlease provide a valid path or install alsa-utils (pacman -S alsa-utils)." 10 70 3>&1 1>&2 2>&3
+		return 1
+	else
+		LogActions "Using default test sound file: '$test_sound_file'"
+	fi
+
+	LogActions "Testing audio output for user '$SUDO_USER' with: '$test_sound_file'"
+	echo -e "${YELLOW}Attempting to play test sound for user '$SUDO_USER'...${NC}"
+	echo "Playing: '$test_sound_file'" # Inform user which file is being played
+
+	# Execute aplay as the target user. Redirect stdout to /dev/null to avoid clutter,
+	# let stderr go to the terminal (and log via tee in log_error if it fails).
+	if sudo -u "$SUDO_USER" aplay "$test_sound_file" >/dev/null; then
+		echo -e "${GREEN}Audio test completed successfully.${NC}"
+		LogActions "Audio test completed successfully."
+		whiptail --title "Audio Test Successful" --msgbox "Audio test completed successfully." 10 60 3>&1 1>&2 2>&3
+		return 0
+	else
+		local aplay_status=$?
+		echo -e "${RED}Audio test failed.${NC}"
+		log_error "Failed to play test audio: '$test_sound_file' for user '$SUDO_USER' (exit status $aplay_status)."
+		whiptail --title "Audio Test Failed" --msgbox "Failed to play test audio.\nPlease check your audio configuration and logs ($LOG_FILE)." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+}
+
+RestoreConfigFiles() {
+	LogActions "Restoring configuration files from backup for user '$SUDO_USER'..."
+	local config_files=("$@")
+	local config_file
+	local restore_failed=0
+
+	if [[ ${#config_files[@]} -eq 0 ]]; then
+		LogActions "No configuration files specified for restoration."
+		echo -e "${YELLOW}No specific configuration files specified for restoration.${NC}"
+		return 0
+	fi
+
+	echo -e "${BLUE}Attempting to restore configuration files from backups...${NC}"
+
+	for config_file in "${config_files[@]}"; do
+		# Construct the full path in the user's home directory
+		local full_path="$SUDO_HOME/$config_file"
+		local backup_path="$full_path.bak"
+		LogActions "Checking for backup: '$backup_path'"
+
+		if [[ -f "$backup_path" ]]; then
+			LogActions "Backup found for '$full_path'. Restoring..."
+			echo -e "${YELLOW}Restoring '$full_path' from backup...${NC}"
+			# Ensure the target directory exists before moving
+			local target_dir
+			target_dir=$(dirname "$full_path")
+			if ! mkdir -p "$target_dir"; then
+				log_error "Failed to create target directory '$target_dir' for restoration."
+				echo -e "${RED}Failed to create target directory '$target_dir'.${NC}"
+				restore_failed=1
+				continue # Skip restoration for this file
+			fi
+
+			# Use sudo -u to move the file as the target user
+			if sudo -u "$SUDO_USER" mv "$backup_path" "$full_path"; then
+				LogActions "Restored '$full_path' from '$backup_path'"
+				echo -e "${GREEN}Restored '$full_path'.${NC}"
+			else
+				local mv_status=$?
+				log_error "Failed to restore '$full_path' from '$backup_path' (exit status $mv_status)."
+				echo -e "${RED}Failed to restore '$full_path'.${NC}"
+				restore_failed=1
+			fi
+		else
+			LogActions "No backup found for '$full_path'"
+			echo -e "${YELLOW}No backup found for '$full_path'.${NC}"
+		fi
+	done
+
+	return "$restore_failed"
+}
+
+CheckForUpdates() {
+	LogActions "Checking for available package updates..."
+	echo -e "${YELLOW}Checking for available package updates...${NC}"
+
+	# Refresh package database quietly
+	LogActions "Refreshing package database..."
+	if ! pacman -Sy >/dev/null 2>&1; then
+		log_error "Failed to refresh package database. Check network connection or mirrorlist."
+		echo -e "${RED}Failed to refresh package database.${NC}"
+		whiptail --title "Update Check Failed" --msgbox "Failed to refresh package database.\nPlease check network connection or mirrorlist." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+	LogActions "Package database refreshed successfully."
+
+	local updates
+	# Check for upgradable packages. pacman -Qu returns 1 if updates are available, 0 otherwise.
+	# Capture stdout (the list of updates) and discard stderr.
+	updates=$(pacman -Qu 2>/dev/null)
+	local pacman_qu_status=$?
+
+	# pacman -Qu returns 0 for no updates, 1 for updates. Other non-zero are errors.
+	if [[ $pacman_qu_status -ne 0 && $pacman_qu_status -ne 1 ]]; then
+		log_error "Failed to check for package updates (pacman -Qu exited with $pacman_qu_status)."
+		echo -e "${RED}Failed to check for package updates.${NC}"
+		whiptail --title "Update Check Failed" --msgbox "Failed to check for package updates.\nPlease check logs ($LOG_FILE) and pacman output." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+
+	if [[ -n "$updates" ]]; then
+		LogActions "Updates are available."
+		echo -e "${YELLOW}Updates are available:${NC}"
+		echo "$updates"
+		if whiptail --title "Updates Available" --yesno "Updates are available:\n$updates\n\nWould you like to update now?" 15 70 3>&1 1>&2 2>&3; then
+			LogActions "User chose to update packages."
+			echo -e "${YELLOW}Updating packages...${NC}"
+			# Perform full system upgrade. Redirect stdout to tee for logging.
+			if pacman -Syu --noconfirm | tee -a "$LOG_FILE"; then
+				LogActions "Packages updated successfully."
+				echo -e "${GREEN}Packages updated successfully.${NC}"
+				whiptail --title "Update Successful" --msgbox "Packages updated successfully." 10 60 3>&1 1>&2 2>&3
+				return 0
+			else
+				local syu_status=$?
+				log_error "Failed to update packages (exit status $syu_status)."
+				echo -e "${RED}Failed to update packages.${NC}"
+				whiptail --title "Update Failed" --msgbox "Failed to update packages.\nPlease check logs ($LOG_FILE) for details." 10 60 3>&1 1>&2 2>&3
+				return 1
+			fi
+		else
+			LogActions "User postponed package update."
+			echo -e "${YELLOW}Package update postponed.${NC}"
+			whiptail --title "Update Postponed" --msgbox "Package update postponed." 10 60 3>&1 1>&2 2>&3
+			return 0 # Not an error, user chose to skip
+		fi
+	else
+		LogActions "No updates available."
+		echo -e "${GREEN}No updates available.${NC}"
+		whiptail --title "No Updates" --msgbox "No package updates available." 10 60 3>&1 1>&2 2>&3
+		return 0
+	fi
+}
+
+VerifyKernelModules() {
+	LogActions "Verifying kernel modules..."
+	local modules=("$@")
+	local module
+	local modules_failed_to_load=0
+
+	if [[ ${#modules[@]} -eq 0 ]]; then
+		LogActions "No kernel modules specified for verification."
+		echo -e "${YELLOW}No specific kernel modules recommended for verification based on detection.${NC}"
+		return 0
+	fi
+
+	echo -e "${BLUE}Verifying kernel modules...${NC}"
+
+	for module in "${modules[@]}"; do
+		LogActions "Checking if kernel module '$module' is loaded."
+		# Use ^ and space to match exact module name at the start of the line in lsmod output
+		if ! lsmod | grep -q "^$module "; then
+			LogActions "Kernel module '$module' not loaded. Attempting to load..."
+			echo -e "${YELLOW}Kernel module '$module' not loaded. Attempting to load...${NC}"
+			# modprobe requires root privileges (which the script has)
+			if modprobe "$module"; then
+				LogActions "Loaded kernel module: '$module'"
+				echo -e "${GREEN}Loaded kernel module: '$module'${NC}"
+			else
+				local modprobe_status=$?
+				log_error "Failed to load kernel module: '$module' (exit status $modprobe_status)."
+				echo -e "${RED}Failed to load kernel module: '$module'.${NC}"
+				modules_failed_to_load=1
+			fi
+		else
+			LogActions "Kernel module already loaded: '$module'"
+			echo -e "${GREEN}Kernel module already loaded: '$module'${NC}"
+		fi
+	done
+
+	return "$modules_failed_to_load"
+}
+
+MonitorSystemResources() {
+	LogActions "Monitoring system resources..."
+	echo -e "${BLUE}Gathering system resource information...${NC}"
+	local cpu_usage="N/A"
+	local ram_total="N/A"
+	local ram_used="N/A"
+	local ram_usage_percent="N/A"
+	local disk_usage_percent="N/A"
+
+	# Get CPU Usage (user + system)
+	# top -bn1 gets one batch, grep finds the CPU line, awk extracts user ($2) and system ($4) and sums them.
+	# Use process substitution to read from awk output
+	local cpu_line
+	cpu_line=$(top -bn1 2>/dev/null | grep "Cpu(s)")
+	if [[ -n "$cpu_line" ]]; then
+		# Split the line and sum user and system percentages
+		# Example line: %Cpu(s):  0.3 us,  0.3 sy,  0.0 ni, 99.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+		# Awk fields might vary slightly depending on top version/locale, but $2 and $4 are common for us/sy
+		cpu_usage=$(echo "$cpu_line" | awk '{print $2 + $4}')
+	fi
+
+	# Get RAM Usage (total and used in MB)
+	# free -m gets memory in MB, awk finds the Mem line, prints total ($2) and used ($3).
+	# read -r reads into variables, < <(...) uses process substitution for input.
+	local mem_line
+	mem_line=$(free -m 2>/dev/null | awk '/^Mem:/ {print $2, $3}')
+	if [[ -n "$mem_line" ]]; then
+		read -r ram_total ram_used <<<"$mem_line"
+	fi
+
+	# Calculate RAM usage percentage if total is a number greater than 0
+	if [[ "$ram_total" =~ ^[0-9]+$ && "$ram_total" -gt 0 && "$ram_used" =~ ^[0-9]+$ ]]; then
+		# Use awk for floating point calculation
+		ram_usage_percent=$(awk "BEGIN { printf \"%.1f\", ($ram_used / $ram_total) * 100 }")
+	fi
+
+	# Get Disk Usage for root partition (/)
+	# df -h / gets human-readable disk usage for /, awk finds the line with /, prints usage percentage ($5).
+	local disk_line
+	disk_line=$(df -h / 2>/dev/null | awk '/^\/dev\// {print $5}') # Match lines starting with /dev/
+	if [[ -n "$disk_line" ]]; then
+		disk_usage_percent="$disk_line"
+	fi
+
+	LogActions "CPU Usage: ${cpu_usage:-N/A}%" # Use :-N/A for display if variable is empty
+	LogActions "RAM Usage: ${ram_used:-N/A} MB / ${ram_total:-N/A} MB (${ram_usage_percent:-N/A}%)"
+	LogActions "Disk Usage (/): ${disk_usage_percent:-N/A}"
+
+	local msg="CPU Usage: ${cpu_usage:-N/A}%\nRAM Usage: ${ram_used:-N/A} MB / ${ram_total:-N/A} MB (${ram_usage_percent:-N/A}%)\nDisk Usage (/): ${disk_usage_percent:-N/A}"
+	echo -e "${BLUE}$msg${NC}"
+
+	whiptail --title "System Resources" --msgbox "$msg" 12 60 3>&1 1>&2 2>&3
+
+	return 0 # Resource monitoring is informative, doesn't fail the script flow
+}
+
+DetectSystemRequirements() {
+	LogActions "Detecting system hardware and requirements for user '$SUDO_USER'..."
+	echo -e "${BLUE}Detecting system hardware and requirements...${NC}"
+
+	# Clear previous detection results
+	packages_to_install=()
+	audio_services_to_check=()
+
+	# --- Hardware Detection ---
+
+	# Detect Bluetooth
+	LogActions "Checking for Bluetooth hardware..."
+	if lsusb 2>/dev/null | grep -qi 'Bluetooth'; then
+		LogActions "Bluetooth hardware detected."
+		packages_to_install+=("bluez" "bluez-utils")
+		# Bluetooth service is typically a system service, but user services like
+		# bluetooth.service (user) might be relevant for audio profiles.
+		# Let's stick to system-level bluez for now, user services are handled by audio system.
+		# audio_services_to_check+=("bluetooth") # bluetooth.service (user) - this is less common
+	else
+		LogActions "No Bluetooth hardware detected via lsusb."
+	fi
+
+	# Detect Intel GPU (often related to HDMI audio)
+	LogActions "Checking for Intel GPU..."
+	if lspci 2>/dev/null | grep -qi 'Intel.*Graphics'; then
+		LogActions "Intel GPU detected."
+		# These packages are for graphics, but sometimes related to audio issues via HDMI
+		packages_to_install+=("xf86-video-intel" "intel-media-driver")
+	else
+		LogActions "No Intel GPU detected via lspci."
+	fi
+
+	# Detect Virtualization (Hypervisor flag in lscpu output)
+	LogActions "Checking for virtualization (Hypervisor flag)..."
+	if lscpu 2>/dev/null | grep -qi 'Hypervisor'; then
+		LogActions "Virtualization detected (Hypervisor flag)."
+		# These packages are for virtualization, not directly audio, but included in original logic
+		packages_to_install+=("qemu" "libvirt" "virt-manager")
+		# Check/start libvirtd system service
+		LogActions "Checking libvirtd system service status..."
+		# systemctl requires root privileges (which the script has)
+		if ! systemctl is-active --quiet libvirtd.service; then
+			LogActions "libvirtd.service not running. Attempting to start..."
+			echo -e "${YELLOW}libvirtd.service not running. Attempting to start...${NC}"
+			if systemctl start libvirtd.service; then
+				LogActions "libvirtd.service started successfully."
+				echo -e "${GREEN}libvirtd.service started successfully.${NC}"
+			else
+				local libvirtd_status=$?
+				log_error "Failed to start libvirtd.service (exit status $libvirtd_status)."
+				echo -e "${RED}Failed to start libvirtd.service.${NC}"
+			fi
+		else
+			LogActions "libvirtd.service is running."
+			echo -e "${GREEN}libvirtd.service is running.${NC}"
+		fi
+	else
+		LogActions "No Hypervisor flag detected via lscpu."
+	fi
+
+	# --- Kernel Module Verification (Based on common audio hardware) ---
+	# Detect Intel HDA audio device and verify its kernel module
+	LogActions "Checking for Intel HDA audio device..."
+	if lspci 2>/dev/null | grep -qi 'Audio device.*Intel'; then
+		LogActions "snd_hda_intel audio device detected."
+		# VerifyKernelModules requires root, which the script has.
+		# This function logs its own actions/errors.
+		VerifyKernelModules "snd_hda_intel"
+	else
+		LogActions "No Intel HDA audio device detected via lspci."
+	fi
+	# Add checks for other common audio chips/modules if needed (e.g., snd_usb_audio, snd_soc_...)
+
+	# --- Audio System Detection (PipeWire vs PulseAudio) ---
+	LogActions "Detecting active audio system for user '$SUDO_USER'..."
+
+	local pipewire_active=false
+	local pulseaudio_active=false
+
+	# Check for PipeWire user service
+	LogActions "Checking for pipewire.service (user)..."
+	if sudo -u "$SUDO_USER" systemctl --user is-active --quiet pipewire.service 2>/dev/null; then
+		LogActions "pipewire.service (user) is active."
+		pipewire_active=true
+	else
+		LogActions "pipewire.service (user) is not active."
+	fi
+
+	# Check for PulseAudio user service
+	LogActions "Checking for pulseaudio.service (user)..."
+	if sudo -u "$SUDO_USER" systemctl --user is-active --quiet pulseaudio.service 2>/dev/null; then
+		LogActions "pulseaudio.service (user) is active."
+		pulseaudio_active=true
+	else
+		LogActions "pulseaudio.service (user) is not active."
+	fi
+
+	if $pipewire_active && ! $pulseaudio_active; then
+		LogActions "PipeWire detected as the active audio system for user '$SUDO_USER'."
+		echo -e "${GREEN}PipeWire detected.${NC}"
+		packages_to_install+=("pipewire" "pipewire-audio" "pipewire-pulse" "pipewire-alsa" "pipewire-jack" "wireplumber")
+		audio_services_to_check+=("pipewire" "wireplumber") # User services
+
+	elif $pulseaudio_active && ! $pipewire_active; then
+		LogActions "PulseAudio detected as the active audio system for user '$SUDO_USER'."
+		echo -e "${GREEN}PulseAudio detected.${NC}"
+		packages_to_install+=("pulseaudio" "pulseaudio-alsa" "pavucontrol")
+		audio_services_to_check+=("pulseaudio") # User service
+
+	elif $pipewire_active && $pulseaudio_active; then
+		# Both are active - this is a conflict!
+		log_error "Conflicting audio services detected: PipeWire and PulseAudio are both active for user '$SUDO_USER'."
+		echo -e "${RED}Conflicting audio services detected! Both PipeWire and PulseAudio are active.${NC}"
+		echo -e "${YELLOW}This often causes issues. You should typically only have one running.${NC}"
+		# Decide which one to recommend based on common Arch setups (PipeWire is default now)
+		# Or prompt the user? For now, assume PipeWire is desired and try to disable PulseAudio.
+		LogActions "Attempting to stop and disable conflicting PulseAudio user services."
+		echo -e "${YELLOW}Attempting to stop and disable conflicting PulseAudio user services...${NC}"
+		# Stop both service and socket units for the user
+		if sudo -u "$SUDO_USER" systemctl --user stop pulseaudio.service pulseaudio.socket 2>/dev/null; then
+			LogActions "PulseAudio user services stopped."
+			if sudo -u "$SUDO_USER" systemctl --user disable pulseaudio.service pulseaudio.socket 2>/dev/null; then
+				LogActions "PulseAudio user services disabled."
+				echo -e "${GREEN}PulseAudio user services stopped and disabled.${NC}"
+			else
+				log_error "Failed to disable PulseAudio user services."
+				echo -e "${RED}Failed to disable PulseAudio user services.${NC}"
+			fi
+		else
+			log_error "Failed to stop PulseAudio user services."
+			echo -e "${RED}Failed to stop PulseAudio user services.${NC}"
+		fi
+		# Now proceed assuming PipeWire is the desired system
+		packages_to_install+=("pipewire" "pipewire-audio" "pipewire-pulse" "pipewire-alsa" "pipewire-jack" "wireplumber")
+		audio_services_to_check+=("pipewire" "wireplumber") # User services
+
+	else
+		LogActions "Neither PipeWire nor PulseAudio user service detected as active for user '$SUDO_USER'."
+		echo -e "${YELLOW}Neither PipeWire nor PulseAudio user service detected as active.${NC}"
+		echo -e "${YELLOW}This may indicate a fundamental issue or a minimal setup.${NC}"
+		# If neither is running, maybe suggest installing PipeWire?
+		# For now, just log and continue. The script will rely on user input or other checks.
+		# packages_to_install+=("pipewire" "pipewire-audio" "pipewire-pulse" "pipewire-alsa" "pipewire-jack" "wireplumber")
+		# audio_services_to_check+=("pipewire" "wireplumber")
+	fi
+
+	# --- Kernel Version Check ---
+	LogActions "Checking kernel version consistency."
+	local running_kernel
+	running_kernel=$(uname -r)
+	local installed_kernel
+
+	# Get installed kernel version from pacman
+	# pacman -Q returns 0 on success, non-zero if package not found.
+	# Capture stdout, discard stderr.
+	installed_kernel=$(pacman -Q linux 2>/dev/null | awk '{print $2}')
+	local pacman_q_status=$?
+
+	if [[ $pacman_q_status -eq 0 && -n "$installed_kernel" && "$running_kernel" != "$installed_kernel" ]]; then
+		log_error "Kernel version mismatch detected. Running: '$running_kernel', Installed: '$installed_kernel'"
+		echo -e "${RED}Kernel version mismatch detected! Running: '$running_kernel', Installed: '$installed_kernel'${NC}"
+		echo -e "${YELLOW}This often requires a reboot after a kernel update.${NC}"
+		if whiptail --title "Kernel Mismatch" --yesno "Kernel version mismatch detected.\nRunning: $running_kernel\nInstalled: $installed_kernel\nThis often requires a reboot after an update.\n\nWould you like to attempt reinstalling the kernel packages? (Usually not necessary, a reboot is sufficient)" 15 70 3>&1 1>&2 2>&3; then
+			LogActions "User chose to reinstall kernel."
+			echo -e "${YELLOW}Attempting to reinstall kernel packages...${NC}"
+			# Reinstall kernel and headers. Redirect stdout to tee for logging.
+			if pacman -S --noconfirm linux linux-headers --needed | tee -a "$LOG_FILE"; then
+				LogActions "Kernel packages reinstalled successfully."
+				echo -e "${GREEN}Kernel packages reinstalled successfully. A reboot is required.${NC}"
+				whiptail --title "Kernel Reinstalled" --msgbox "Kernel packages reinstalled successfully.\nA reboot is required for changes to take effect." 10 60 3>&1 1>&2 2>&3
+				RebootSystem # Offer reboot after reinstall
+			else
+				local reinstall_status=$?
+				log_error "Failed to reinstall kernel packages (exit status $reinstall_status)."
+				echo -e "${RED}Failed to reinstall kernel packages.${NC}"
+				whiptail --title "Kernel Reinstall Failed" --msgbox "Failed to reinstall kernel packages.\nPlease check logs ($LOG_FILE) and pacman output." 10 60 3>&1 1>&2 2>&3
+			fi
+		else
+			LogActions "User chose not to reinstall kernel."
+			echo -e "${YELLOW}Kernel reinstall skipped. A reboot is likely required.${NC}"
+			whiptail --title "Kernel Mismatch" --msgbox "Kernel reinstall skipped.\nA reboot is likely required for changes to take effect." 10 60 3>&1 1>&2 2>&3
+			RebootSystem # Offer reboot even if not reinstalling
+		fi
+	elif [[ $pacman_q_status -ne 0 ]]; then
+		log_error "Failed to get installed kernel version (pacman -Q linux exited with $pacman_q_status)."
+		echo -e "${YELLOW}Could not determine installed kernel version. Cannot check for mismatch.${NC}"
+		LogActions "Could not determine installed kernel version."
+	else
+		LogActions "Kernel version is consistent: '$running_kernel'."
+		echo -e "${GREEN}Kernel version is consistent: '$running_kernel'.${NC}"
+	fi
+
+	LogActions "System hardware and requirements detection completed."
+	# The detected packages and services are now in the global arrays
+}
+
+InstallZvuchnoTheme() {
+	LogActions "Installing Zvuchno volume bar theme for user '$SUDO_USER'..."
+	echo -e "${BLUE}Installing Zvuchno volume bar theme...${NC}"
+	local zvuchno_repo="https://github.com/thekondor/zvuchno.git" # Add .git suffix for clarity
+	local install_dir="$SUDO_HOME/.config/zvuchno"
+
+	# Ensure git is installed
+	if ! InstallMissingDependencies "git"; then
+		log_error "Failed to install git, cannot clone Zvuchno."
+		whiptail --title "Zvuchno Install Failed" --msgbox "Failed to install 'git' dependency.\nPlease check logs ($LOG_FILE)." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+
+	# Clone the repository if it doesn't exist
+	if [[ ! -d "$install_dir" ]]; then
+		LogActions "Cloning Zvuchno repository '$zvuchno_repo' into '$install_dir'..."
+		echo -e "${YELLOW}Cloning Zvuchno repository...${NC}"
+		# Clone as the target user into their home directory
+		if sudo -u "$SUDO_USER" git clone "$zvuchno_repo" "$install_dir"; then
+			LogActions "Zvuchno repository cloned successfully."
+			echo -e "${GREEN}Zvuchno repository cloned successfully.${NC}"
+		else
+			local clone_status=$?
+			log_error "Failed to clone Zvuchno repository '$zvuchno_repo' (exit status $clone_status)."
+			whiptail --title "Zvuchno Install Failed" --msgbox "Failed to clone Zvuchno repository.\nPlease check logs ($LOG_FILE) and network connection." 10 60 3>&1 1>&2 2>&3
+			return 1
+		fi
+	else
+		LogActions "Zvuchno repository already cloned at '$install_dir'."
+		echo -e "${YELLOW}Zvuchno repository already cloned.${NC}"
+		# Optional: Pull latest changes if already cloned
+		# LogActions "Pulling latest changes for Zvuchno..."
+		# if sudo -u "$SUDO_USER" bash -c "cd \"$install_dir\" && git pull"; then
+		#     LogActions "Pulled latest changes for Zvuchno."
+		#     echo -e "${GREEN}Pulled latest changes for Zvuchno.${NC}"
+		# else
+		#     log_error "Failed to pull latest changes for Zvuchno."
+		#     echo -e "${RED}Failed to pull latest changes for Zvuchno.${NC}"
+		# fi
+	fi
+
+	# Ensure dunst and playerctl are installed (required by Zvuchno)
+	if ! InstallMissingDependencies "dunst" "playerctl"; then
+		log_error "Failed to install Zvuchno dependencies (dunst, playerctl)."
+		whiptail --title "Zvuchno Install Failed" --msgbox "Failed to install 'dunst' or 'playerctl' dependency.\nPlease check logs ($LOG_FILE)." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+
+	# Run the install script inside the cloned directory as the target user
+	if [[ -d "$install_dir" ]]; then
+		LogActions "Running Zvuchno install script from '$install_dir'..."
+		echo -e "${YELLOW}Running Zvuchno install script...${NC}"
+		# Execute the install script as the target user
+		# Ensure the script is executable first, although git clone should preserve this
+		if [[ -x "$install_dir/install.sh" ]]; then
+			if sudo -u "$SUDO_USER" bash -c "cd \"$install_dir\" && ./install.sh"; then
+				LogActions "Zvuchno theme install script completed."
+				echo -e "${GREEN}Zvuchno theme install script completed.${NC}"
+				whiptail --title "Zvuchno Theme" --msgbox "Zvuchno theme installed successfully.\nFollow the instructions in '$install_dir' to configure and use it." 12 60 3>&1 1>&2 2>&3
+				return 0
+			else
+				local install_script_status=$?
+				log_error "Failed to run Zvuchno install script (exit status $install_script_status)."
+				whiptail --title "Zvuchno Install Failed" --msgbox "Failed to run Zvuchno install script.\nPlease check logs ($LOG_FILE) for details." 10 60 3>&1 1>&2 2>&3
+				return 1
+			fi
+		else
+			log_error "Zvuchno install script '$install_dir/install.sh' not found or not executable."
+			whiptail --title "Zvuchno Install Failed" --msgbox "Zvuchno install script not found or not executable.\nPlease check the cloned repository." 10 60 3>&1 1>&2 2>&3
+			return 1
+		fi
+	else
+		log_error "Zvuchno install directory not found after clone attempt: '$install_dir'"
+		whiptail --title "Zvuchno Install Failed" --msgbox "Zvuchno install directory not found.\nRepository clone may have failed.\nPlease check logs ($LOG_FILE)." 10 60 3>&1 1>&2 2>&3
+		return 1
+	fi
+}
+
+if [[ $EUID -ne 0 ]]; then
+	echo -e "${RED}This script must be run as root using sudo.${NC}"
+	echo "Please run: sudo ./$(basename "$0")"
+	exit 1
+fi
+
+if [[ -z "$SUDO_USER" ]]; then
+	log_error "SUDO_USER environment variable is not set. Are you running this script directly or incorrectly with sudo?"
+	echo -e "${RED}Error: SUDO_USER environment variable is not set.${NC}"
+	echo "Please ensure you run this script using 'sudo ./$(basename "$0")'."
+	exit 1
+fi
+
+if [[ -z "$SUDO_HOME" ]]; then
+	LogActions "SUDO_HOME is not set. Attempting to find home directory for user '$SUDO_USER'."
+	SUDO_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+	if [[ -z "$SUDO_HOME" ]]; then
+		log_error "Could not determine home directory for user '$SUDO_USER'. getent passwd failed."
+		echo -e "${RED}Error: Could not determine home directory for user '$SUDO_USER'.${NC}"
+		echo "Please ensure the user '$SUDO_USER' exists and has a valid home directory."
+		exit 1
+	fi
+	LogActions "Determined SUDO_HOME for user '$SUDO_USER' as '$SUDO_HOME'."
+fi
+
+LOG_DIR=$(dirname "$LOG_FILE")
+if ! mkdir -p "$LOG_DIR"; then
+	echo -e "${RED}Error: Failed to create log directory '$LOG_DIR'. Check permissions.${NC}"
+	exit 1
+fi
+if ! touch "$LOG_FILE"; then
+	echo -e "${RED}Error: Failed to create log file '$LOG_FILE'. Check permissions.${NC}"
+	exit 1
+fi
+if ! chmod 640 "$LOG_FILE"; then
+	echo -e "${RED}Error: Failed to set permissions on log file '$LOG_FILE'.${NC}"
+	# Continue, but log might not be secure
+fi
+LogActions "Script started by user '$SUDO_USER' (effective user root)."
+LogActions "Logging to '$LOG_FILE'"
+LogActions "User's home directory detected as '$SUDO_HOME'."
+
+while true; do
+	CHOICE=$(whiptail --title "Audio Fixer Menu" --menu "Choose an action:" 20 78 12 \
+		"1" "Run Full Audio Diagnosis and Fix" \
+		"2" "Check for System Updates" \
+		"3" "Monitor System Resources" \
+		"4" "Verify Kernel Modules (e.g., snd_hda_intel)" \
+		"5" "Verify User Session Type (e.g., wayland, x11)" \
+		"6" "Restart Audio Services (User Session)" \
+		"7" "Test Audio Output (User Session)" \
+		"8" "Restore Configuration Files (from .bak in $SUDO_HOME)" \
+		"9" "Install Zvuchno Volume Theme (User Session)" \
+		"10" "View Log File" \
+		"11" "Reboot System" \
+		"12" "Exit" 3>&1 1>&2 2>&3)
+
+	exit_status=$?
+
+	if [[ $exit_status -ne 0 ]]; then
+		LogActions "Menu cancelled by user (exit status $exit_status)."
+		echo -e "${YELLOW}Menu cancelled. Exiting.${NC}"
+		break
+	fi
+
+	case "$CHOICE" in
+	1)
+		LogActions "User selected: Run Full Audio Diagnosis and Fix"
+		echo -e "${BLUE}Running full diagnosis and fix...${NC}"
+		MonitorSystemResources
+		CheckForUpdates             # Check updates early
+		DetectSystemRequirements    # Populates packages_to_install and audio_services_to_check
+		VerifyUserSession "wayland" # Example, could be x11 or configurable
+		# VerifyKernelModules is called by DetectSystemRequirements if relevant hardware is found
+		ConfigureAudioServices "${packages_to_install[@]}"
+		CheckAudioServices "${audio_services_to_check[@]}"
+		RestartAudioServices "${audio_services_to_check[@]}" # Restart after checks/installs
+		TestAudioOutput
+		echo -e "${GREEN}Full diagnosis and fix process completed.${NC}"
+		LogActions "Full diagnosis and fix process completed."
+		;;
+	2)
+		LogActions "User selected: Check for System Updates"
+		CheckForUpdates
+		;;
+	3)
+		LogActions "User selected: Monitor System Resources"
+		MonitorSystemResources
+		;;
+	4)
+		LogActions "User selected: Verify Kernel Modules"
+		local module_name
+		# Capture output of PromptForInput into module_name
+		module_name=$(PromptForInput "Enter kernel module name to verify (e.g., snd_hda_intel):")
+		local prompt_status=$?
+		if [[ $prompt_status -eq 0 && -n "$module_name" ]]; then
+			VerifyKernelModules "$module_name"
+		else
+			echo -e "${YELLOW}Kernel module verification skipped.${NC}"
+			LogActions "Kernel module verification skipped (no input or cancelled)."
+		fi
+		;;
+	5)
+		LogActions "User selected: Verify User Session Type"
+		local expected_type
+		# Capture output of PromptForInput into expected_type
+		expected_type=$(PromptForInput "Enter expected session type (e.g., wayland, x11):")
+		local prompt_status=$?
+		if [[ $prompt_status -eq 0 && -n "$expected_type" ]]; then
+			VerifyUserSession "$expected_type"
+		else
+			echo -e "${YELLOW}Session type verification skipped.${NC}"
+			LogActions "Session type verification skipped (no input or cancelled)."
+		fi
+		;;
+	6)
+		LogActions "User selected: Restart Audio Services"
+		local services_input
+		# Capture output of PromptForInput into services_input
+		services_input=$(PromptForInput "Enter audio service names to restart (space-separated, e.g., pipewire wireplumber):")
+		local prompt_status=$?
+		if [[ $prompt_status -eq 0 && -n "$services_input" ]]; then
+			# Convert space-separated string to array using read -a
+			IFS=' ' read -r -a services_to_restart <<<"$services_input"
+			RestartAudioServices "${services_to_restart[@]}"
+		else
+			echo -e "${YELLOW}Audio service restart skipped.${NC}"
+			LogActions "Audio service restart skipped (no input or cancelled)."
+		fi
+		;;
+	7)
+		LogActions "User selected: Test Audio Output"
+		local test_file_input
+		# Capture output of PromptForInput into test_file_input
+		test_file_input=$(PromptForInput "Enter path to a test sound file (optional, leave blank for default: $DEFAULT_TEST_SOUND_FILE):")
+		local prompt_status=$?
+		if [[ $prompt_status -eq 0 ]]; then
+			TestAudioOutput "$test_file_input" # Pass potentially empty string
+		else
+			echo -e "${YELLOW}Audio test skipped.${NC}"
+			LogActions "Audio test skipped (cancelled)."
+		fi
+		;;
+	8)
+		LogActions "User selected: Restore Configuration Files"
+		local files_input
+		# Capture output of PromptForInput into files_input
+		files_input=$(PromptForInput "Enter relative paths to config files to restore (space-separated, e.g., .config/pulse/daemon.conf):")
+		local prompt_status=$?
+		if [[ $prompt_status -eq 0 && -n "$files_input" ]]; then
+			# Convert space-separated string to array using read -a
+			IFS=' ' read -r -a files_to_restore <<<"$files_input"
+			RestoreConfigFiles "${files_to_restore[@]}"
+		else
+			echo -e "${YELLOW}Configuration file restoration skipped.${NC}"
+			LogActions "Configuration file restoration skipped (no input or cancelled)."
+		fi
+		;;
+	9)
+		LogActions "User selected: Install Zvuchno Volume Theme"
+		InstallZvuchnoTheme
+		;;
+	10)
+		LogActions "User selected: View Log File"
+		echo -e "${BLUE}Displaying log file: '$LOG_FILE'${NC}"
+		# Check if log file exists and is readable
+		if [[ -f "$LOG_FILE" && -r "$LOG_FILE" ]]; then
+			whiptail --title "Audio Fixer Log" --textbox "$LOG_FILE" 20 78 3>&1 1>&2 2>&3
+		else
+			log_error "Log file '$LOG_FILE' not found or not readable."
+			whiptail --title "Error" --msgbox "Log file '$LOG_FILE' not found or not readable." 10 60 3>&1 1>&2 2>&3
+		fi
+		;;
+	11)
+		LogActions "User selected: Reboot System"
+		RebootSystem
+		# If user chose to reboot, the script will be replaced by 'sudo reboot' via 'exec'.
+		# If they cancelled, the script continues the loop.
+		;;
+	12)
+		LogActions "User selected: Exit"
+		echo -e "${GREEN}Exiting.${NC}"
+		break
+		;;
+	*)
+		log_error "Invalid menu choice: '$CHOICE'"
+		whiptail --title "Invalid Choice" --msgbox "Invalid menu choice." 10 60 3>&1 1>&2 2>&3
+		;;
+	esac
+
+	# Optional: Add a pause or prompt before showing the menu again
+	# whiptail --msgbox "Press Enter to continue..." 10 60
+done
+
+LogActions "Script finished."
+exit 0
