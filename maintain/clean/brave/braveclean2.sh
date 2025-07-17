@@ -123,13 +123,19 @@ if_running() {
 perform_brave_cleanup() {
   local brave_dir dd
   brave_dir="$HOME/.config/BraveSoftware/Brave-Browser-Beta"
+
   if [[ ! -d "$brave_dir" ]]; then
     echo "Brave directory not found. Skipping additional Brave cleanup."
     return
   fi
-  echo "Performing additional Brave cleanup steps..."
-  cd "$brave_dir" || return
 
+  echo "Performing additional Brave cleanup steps..."
+
+  # Vacuuming SQlite databases
+  find "$HOME/.mozilla/" \( -name "*.sqlite" \) -execdir sqlite3 {} "vacuum" \;
+
+  # Brave Trash
+  cd "$brave_dir" || return 
   local dirs_to_remove=(
     component_crx_cache
     extensions_crx_cache
@@ -146,9 +152,11 @@ perform_brave_cleanup() {
       echo "Removed $dd"
     fi
   done
-  if [[ -d "Guest Profile" ]]; then
-    rm -rf "Guest Profile"/* && echo "Guest Profile cleaned."
-  fi
+
+  # Cleanup unnecessary files
+  rm -rf "Guest Profile"/*
+  rm -rf "$HOME/.cache/chromium"
+  rm -rf "$HOME/.local/share/Trash"  
 }
 
 vacuum_browsers() {
@@ -221,7 +229,8 @@ main() {
   fi
   vacuum_browsers
   perform_brave_cleanup
-  echo -e "\n${GRN}Cleaned all this shit up! Have fun...${RST}"
+  notify-send "Aight...your shit is now clean. Have fun!"
+#  echo -e "\n${GRN}Cleaned all this shit up! Have fun...${RST}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

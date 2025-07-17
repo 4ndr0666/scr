@@ -1,0 +1,11 @@
+#!/bin/bash
+#
+# Strips non-essential parts of PNG images using pngcrush
+#
+
+if [ "z$1" = "z" ] ; then
+    echo "Usage: $(basename "$0") file1.png"
+    exit 1
+fi
+
+pngcrush -q -rem gAMA -rem alla -rem text "$1" "$1.crushed" && mv "$1.crushed" "$1"
