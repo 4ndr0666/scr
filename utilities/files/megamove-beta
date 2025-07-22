@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# megamove.sh – move a batch of files (from a list or fzf) into a target dir
+# Author: 4ndr0666  |  Version: 1.0.0
+# ShellCheck clean: https://www.shellcheck.net
+
+set -euo pipefail
+IFS=$'\n\t'
+
+##############################################################################
+# Colour helpers (fallback to plain text on dumb terminals)
+##############################################################################
+if tput setaf 0 &>/dev/null; then
+  CYAN=$(tput setaf 6)  # ~#15FFFF
+  RESET=$(tput sgr0)
+else
+  CYAN=$'\033[1;36m'
+  RESET=$'\033[0m'
+fi
+
+##############################################################################
+usage() {
+  cat <<EOF
+Usage: ${0##*/} [--list FILE] [--src DIR] [--dst DIR] [--yes]
+  --list FILE   Text file containing one filename per line (may be bare names
+                or absolute paths). If omitted, an interactive fzf picker
+                is launched.
+  --src DIR     Directory tree to search when list entries are bare filenames
+                (default: \$PWD).
+  --dst DIR     Directory that will receive the files (default: ./_megamoved).
+  --yes | -y    Skip confirmation prompt (non-interactive / CI use).
+
+Exit codes:
+  0  All files moved successfully
+  1  User aborted at confirmation prompt
+  2  Argument / list-file error
+  3  fzf not installed (interactive mode needed it)
+  4  At least one mv failed
+EOF
+  exit 2
+}
+
+##############################################################################
+# Defaults
+##############################################################################
+src_dir="$PWD"
+dst_dir="${src_dir%/}/_megamoved"
+list_file=""
+auto_yes=false
+
+##############################################################################
+# Parse arguments
+##############################################################################
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --list) list_file=$2;        shift 2 ;;
+    --src)  src_dir=$2;          shift 2 ;;
+    --dst)  dst_dir=$2;          shift 2 ;;
+    --yes|-y) auto_yes=true;     shift   ;;
+    -h|--help) usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+mkdir -p "$dst_dir"
+tmpf=$(mktemp)
+trap 'rm -f "$tmpf"' EXIT
+
+##############################################################################
+# Build the list of absolute paths to move → $tmpf
+##############################################################################
+if [[ -n $list_file ]]; then
+  [[ -f $list_file ]] || { echo "ERROR: list file not found: $list_file" >&2; exit 2; }
+
+  while IFS= read -r entry || [[ -n $entry ]]; do
+    [[ -z $entry ]] && continue
+    if [[ $entry == /* ]]; then                # absolute path in list
+      [[ -f $entry ]] && printf '%s\n' "$entry"
+    else                                       # bare filename in list
+      # Use -quit (GNU find) to stop at first hit; duplicates removed later
+      find "$src_dir" -type f -name "$entry" -print -quit 2>/dev/null
+    fi
+  done < "$list_file" | sort -u >"$tmpf"
+
+else
+  command -v fzf >/dev/null 2>&1 || { echo "ERROR: fzf not installed." >&2; exit 3; }
+  find "$src_dir" -type f 2>/dev/null \
+      | fzf -i --cycle -e -m --tac --reverse \
+          --preview 'file --mime "{}" 2>/dev/null || echo N/A' \
+          --height=40% --border >"$tmpf"
+fi
+
+[[ -s $tmpf ]] || { echo "No files matched/selected – nothing to do."; exit 0; }
+
+total=$(wc -l <"$tmpf")
+echo -e "${CYAN}Ready to move $total file(s) → $dst_dir${RESET}"
+
+if ! \$auto_yes; then
+  read -r -p "Proceed? [y/N] " reply
+  [[ \$reply =~ ^[Yy]\$ ]] || { echo "Aborted."; exit 1; }
+fi
+
+##############################################################################
+# Move loop with live cyan counter
+##############################################################################
+ok=0 fail=0 idx=0
+while IFS= read -r file || [[ -n \$file ]]; do
+  [[ -z \$file ]] && continue
+  idx=\$((idx+1))
+  printf "${CYAN}[%d/%d] %s${RESET}\r" "\$idx" "\$total" "\${file##*/}"
+  if mv -n -- "\$file" "\$dst_dir/" 2>/dev/null; then
+    ok=\$((ok+1))
+  else
+    fail=\$((fail+1))
+  fi
+done < "\$tmpf"
+
+echo                          # newline after \r spinner
+echo -e "${CYAN}Finished – OK: \$ok | Fail: \$fail | Total: \$total${RESET}"
+exit \$(( fail > 0 ? 4 : 0 ))

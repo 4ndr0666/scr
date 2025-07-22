@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# One-shot megamove – moves ONLY the filenames in myfiles-to-move.txt
+# from anywhere under ~/Downloads into ~/Downloads/Mega_uploads
+# with a live cyan progress tracker
+
+set -uo pipefail                                # <- keep going even if one mv fails
+
+CYAN=$(tput setaf 6)        # #15FFFF-ish
+RESET=$(tput sgr0)
+
+src_dir="$HOME/Downloads"
+dst_dir="$src_dir/Mega_uploads"
+list_file="$src_dir/thelist.txt"        # <- the list you created earlier
+tmpf="$(mktemp)"
+trap 'rm -f "$tmpf"' EXIT
+
+mkdir -p "$dst_dir"
+
+# -------- build a UNIQUE list of full paths to move ----------
+while IFS= read -r name; do
+  [[ -z $name ]] && continue
+  # locate the file; suppress errors if not found
+  find "$src_dir" -type f -name "$name" -print 2>/dev/null
+done < "$list_file" | sort -u > "$tmpf"
+
+total=$(wc -l < "$tmpf")
+(( total == 0 )) && { echo "No matching files found."; exit 1; }
+
+echo -e "${CYAN}About to move $total file(s) → $dst_dir${RESET}"
+read -p "Proceed? [y/N] " ans
+[[ $ans =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
+
+success=0 fail=0 idx=0
+
+while IFS= read -r f; do
+  [[ -z $f ]] && continue
+  idx=$((idx+1))
+  printf "${CYAN}[%d/%d] %s${RESET}\r" "$idx" "$total" "$(basename "$f")"
+  if mv -n -- "$f" "$dst_dir/" 2>/dev/null; then
+    success=$((success+1))
+  else
+    fail=$((fail+1))
+  fi
+done < "$tmpf"
+
+echo                                       # newline after last carriage-return
+echo -e "${CYAN}Finished – OK: $success | Fail: $fail | Total: $total${RESET}"
