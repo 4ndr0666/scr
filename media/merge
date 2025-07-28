@@ -1,0 +1,142 @@
+#!/bin/sh
+# Author: 4ndr0666
+set -euo
+# ===================== // MERGE //
+## Description: Merges video files using ffmpeg.
+#               Handles temporary files securely with mktemp and trap.
+#               Attempts stream copy before re-encoding.
+#               Uses `qp 0` for lossless quality.
+# --------------------------------------------------------
+
+# === Dependencies ===
+
+for cmd in ffmpeg realpath; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+        echo "Error: Required command '$cmd' not found in PATH." >&2
+        exit 1
+    }
+done
+
+# === Help ===
+
+show_help() {
+	echo "Usage: $0 [OPTIONS] file1.mp4 file2.mp4 [...]" >&2
+	echo "Options:"
+	echo "  -o FILE       Set output filename."
+	echo "  -q            Use fast preset (crf=15) instead of lossless fallback."
+	echo "  -h, --help    Show this help message and exit."
+	echo "Default output filename: merged_$(date +%Y%m%d_%H%M%S).mp4" >&2
+}
+
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+MERGE_DIR="$XDG_CACHE_HOME/ffx"
+mkdir -p "$MERGE_DIR"
+
+TS=$(date +%Y%m%d_%H%M%S)
+DEFAULT_OUT_NAME="merged_${TS}.mp4"
+OUT_NAME="$DEFAULT_OUT_NAME"
+FAST_MODE=0
+
+# === Args ===
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o)
+		shift
+		[ -z "${1:-}" ] && {
+			echo "Error: -o requires a filename." >&2
+			show_help
+			exit 1
+		}
+		OUT_NAME="$1"
+		shift
+		;;
+	-q)
+		FAST_MODE=1
+		shift
+		;;
+	-h | --help)
+		show_help
+		exit 0
+		;;
+	--)
+		shift
+		break
+		;;
+	-*)
+		echo "Error: Unknown option '$1'" >&2
+		show_help
+		exit 1
+		;;
+	*) break ;;
+	esac
+done
+
+[ "$#" -lt 2 ] && {
+	echo "Error: At least two input files required." >&2
+	show_help
+	exit 1
+}
+
+[ -f "$OUT_NAME" ] && {
+	echo "Error: '$OUT_NAME' exists. Refusing to overwrite." >&2
+	exit 1
+}
+
+# === TMP & TRAP ===
+
+LIST_FILE=$(mktemp "$MERGE_DIR/merge_list.XXXXXX.txt") || {
+	echo "Error: Could not create list file." >&2
+	exit 1
+}
+cleanup() { rm -f "$LIST_FILE"; }
+trap cleanup EXIT INT TERM
+
+for f in "$@"; do
+	if [ -f "$f" ] && [ -r "$f" ]; then
+		abs_path=$(realpath "$f") || {
+			echo "Warning: Could not resolve '$f'." >&2
+			continue
+		}
+		esc=$(printf "%s" "$abs_path" | sed "s/'/''/g")
+		printf "file '%s'\n" "$esc" >>"$LIST_FILE" || {
+			echo "Error writing to list." >&2
+			exit 1
+		}
+	else
+		echo "Warning: Skipping '$f'." >&2
+	fi
+done
+
+[ ! -s "$LIST_FILE" ] && {
+	echo "Error: No valid input files." >&2
+	exit 1
+}
+
+# === FFMPEG stream copy ===
+
+echo "Attempting stream copy to '$OUT_NAME'..." >&2
+if ffmpeg -hide_banner -loglevel warning -f concat -safe 0 -i "$LIST_FILE" -c copy "$OUT_NAME"; then
+	echo "✅ Stream copy successful: $OUT_NAME" >&2
+	exit 0
+else
+	echo "⚠️  Stream copy failed. Re-encoding..." >&2
+fi
+
+# === FFMPEG Re-encode ===
+
+if [ "$FAST_MODE" -eq 1 ]; then
+	echo "Using fast preset with crf=15." >&2
+	VOPTS="-c:v libx264 -crf 15 -preset fast"
+else
+	echo "Using lossless encode with qp=0." >&2
+	VOPTS="-c:v libx264 -qp 0 -preset veryslow -pix_fmt yuv420p"
+fi
+
+if ffmpeg -hide_banner -loglevel warning -f concat -safe 0 -i "$LIST_FILE" $VOPTS -c:a flac "$OUT_NAME"; then
+	echo "✅ Re-encoded merge complete: $OUT_NAME" >&2
+	exit 0
+else
+	echo "❌ Re-encode failed." >&2
+	exit 1
+fi

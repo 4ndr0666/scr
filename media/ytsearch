@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# ytsearch – Dual-mode fzf-powered YouTube viewer + ytdlc frontend
+
+set -euo pipefail
+
+readonly CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/youtube-viewer/youtube_users.txt"
+readonly YTVIEWER="youtube-viewer"
+readonly PLAYER="mpv"
+readonly YTDLC="ytdlc"
+
+command -v fzf &>/dev/null || {
+	echo "❌ fzf not found"
+	exit 127
+}
+command -v "$YTVIEWER" &>/dev/null || {
+	echo "❌ youtube-viewer not found"
+	exit 127
+}
+[[ -f "$CONFIG" ]] || {
+	echo "❌ Local channel list not found: $CONFIG"
+	exit 1
+}
+
+SEARCH_QUERY=""
+RESULTS=""
+
+#── Mode 1: Interactive channel select + query ───────────────
+if [[ $# -eq 0 ]]; then
+	SELECTED_LINE=$(fzf --ansi --prompt="📺 Select a channel: " <"$CONFIG") || exit 1
+	CHANNEL_ID=$(cut -d' ' -f1 <<<"$SELECTED_LINE")
+	CHANNEL_NAME=$(cut -d' ' -f2- <<<"$SELECTED_LINE")
+	read -rp "🔍 Enter search query for '$CHANNEL_NAME': " SEARCH_QUERY
+	[[ -z "$SEARCH_QUERY" ]] && {
+		echo "❌ Empty search."
+		exit 2
+	}
+
+	echo -e "\n▶️  Searching in: \033[1;36m$CHANNEL_NAME\033[0m ($CHANNEL_ID)"
+	RESULTS=$("$YTVIEWER" --sv --author="$CHANNEL_NAME" "$SEARCH_QUERY" --no-interactive --results=10 | grep -v '^#')
+else
+	#── Mode 2: Global query across all channels ─────────────────
+	SEARCH_QUERY="$*"
+	echo -e "🌐 Searching all channels for: \033[1;33m$SEARCH_QUERY\033[0m\n"
+	while read -r ID NAME; do
+		OUT=$("$YTVIEWER" --sv --author="$NAME" $SEARCH_QUERY --results=2 --no-interactive 2>/dev/null | grep -v '^#') || continue
+		[[ -n "$OUT" ]] && RESULTS+=$'\n'"📺 $NAME ($ID)"$'\n'"$OUT"
+	done <"$CONFIG"
+fi
+
+#── Interactive result selection ──────────────────────────────
+SELECTED_VIDEO=$(echo "$RESULTS" | fzf --ansi --no-sort --prompt="🎬 Pick a video: " --preview='echo {}' --preview-window=down:3:wrap) || {
+	echo "❌ No video selected."
+	exit 3
+}
+
+VIDEO_ID=$(awk '{print $NF}' <<<"$SELECTED_VIDEO")
+VIDEO_URL="https://www.youtube.com/watch?v=$VIDEO_ID"
+
+#── Action prompt: play or download ──────────────────────────
+ACTION=$(printf "▶ Play in MPV\n💾 Download with ytdlc\n" | fzf --prompt="🚀 Action: ") || {
+	echo "❌ No action selected."
+	exit 4
+}
+
+case "$ACTION" in
+"▶ Play in MPV")
+	echo -e "\n🎧 Playing: $VIDEO_URL"
+	exec mpv "$VIDEO_URL"
+	;;
+"💾 Download with ytdlc")
+	echo -e "\n💾 Launching ytdlc: $VIDEO_URL"
+	exec "$YTDLC" -l "$VIDEO_URL"
+	;;
+esac

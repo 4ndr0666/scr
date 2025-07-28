@@ -1,277 +1,1034 @@
 #!/usr/bin/env bash
-# Author: 4ndr0666
+# ffxd-v2.5 — unified media toolkit (merge | process | composite | slowmo | looperang | clean | probe | help)
+# Using bash for advanced array features and regex matching.
+set -euo pipefail # Exit on error, unset variables, and pipefail for robust execution
 
-# ───────────────────────────────
-# ffxd — Modular, XDG-compliant, minimal FFmpeg video Swiss Army Knife
-# ───────────────────────────────
+# --- Colors and Utility Functions ---
 
-# Strict mode: exit on error, exit on unset variables, fail on pipe errors.
-set -euo pipefail
-
-# Set IFS to newline and tab only to prevent unexpected word splitting.
-IFS=$'\n\t'
-
-# ───────────────────────────────
-# XDG & Runtime Setup
-# ───────────────────────────────
-
-# XDG base directories (readonly)
-declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
-
-# Ensure the base runtime directory for ffxd temporary files exists.
-if ! mkdir -p "$XDG_RUNTIME_DIR/ffxd"; then
-	log_error "Could not create runtime directory $XDG_RUNTIME_DIR/ffxd"
-	exit 1
+# Define color codes based on tput availability
+if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
+	# SC2155: Declare and assign separately to avoid masking return values from tput.
+	CYAN="$(tput setaf 6)"; readonly CYAN
+	BOLD="$(tput bold)"; readonly BOLD
+	RED="$(tput setaf 1)"; readonly RED
+	YELLOW="$(tput setaf 3)"; readonly YELLOW
+	RESET="$(tput sgr0)"; readonly RESET
+else
+	# Fallback to no colors if tput not found or not a TTY
+	readonly CYAN="" BOLD="" RED="" YELLOW="" RESET=""
 fi
 
-# Create a unique temporary directory for the current script run.
-declare TEMP_DIR
-if ! TEMP_DIR="$(mktemp -d "$XDG_RUNTIME_DIR/ffxd/ffxd.XXXXXX")"; then
-	log_error "Could not create temporary directory"
+# say: Prints a success message to stdout with color and checkmark.
+# Note: Output is redirected to >/dev/tty to ensure progress messages are always
+# visible on the terminal, even if script's stdout is redirected.
+say() { printf '%b[✔️] %s%b\n' "${CYAN}${BOLD}" "$1" "${RESET}" >/dev/tty; }
+
+# warn: Prints a warning message to stderr with color and warning sign.
+warn() { printf '%b[⚠️] %s%b\n' "${YELLOW}" "$1" "${RESET}" >&2; }
+
+# die: Prints an error message to stderr with color and cross, then exits.
+die() {
+	printf '%b[❌] %s%b\n' "${RED}" "$1" "${RESET}" >&2
 	exit 1
-fi
-declare -r TEMP_DIR
+}
 
-# Auto-cleanup on script exit: remove the unique temporary directory and its contents.
-trap 'rm -rf -- "$TEMP_DIR"' EXIT
+# --- Directory Setup ---
+# Use XDG Base Directory Specification for configuration, cache, and runtime files.
+# Fallback to ~/.config, ~/.cache, /tmp if XDG variables are not set.
+: "${XDG_CONFIG_HOME:="$HOME/.config"}"
+: "${XDG_CACHE_HOME:="$HOME/.cache"}"
+: "${XDG_RUNTIME_DIR:="${TMPDIR:-/tmp}"}"
 
-# ───────────────────────────────
-# Globals and Defaults
-# ───────────────────────────────
+# Create a unique, session-specific run directory within XDG_RUNTIME_DIR.
+# This ensures a clean slate for each script execution, preventing stale files
+# or path interpretation issues from previous runs or other processes.
+RUN_DIR="$(mktemp -d -p "${XDG_RUNTIME_DIR}" "ffx4.XXXXXXXX")"
 
-declare ADVANCED=false      # Interactive advanced prompt (future feature)
-declare VERBOSE=false       # Enable verbose logging
-declare BULK=false          # Process multiple inputs sequentially
-declare NOAUDIO=false       # Remove audio streams from output
-declare MAX1080=false       # Limit maximum video height to 1080p
-declare OUTPUT_DIR          # Directory for output files
-OUTPUT_DIR="$(pwd)"         # Default output directory to current working directory
-declare FPS=""              # Target frame rate (e.g., 30, 60)
-declare PTS=""              # Playback speed factor (e.g., 0.5, 2.0)
-declare INTERPOLATE=false   # Enable motion interpolation (requires -f/--fps)
-declare -a COMMAND_ARGS=()  # Array to hold the parsed command and its arguments
+# Other directories remain fixed as they are meant for config/cache persistence.
+CFG_DIR="$XDG_CONFIG_HOME/ffx4"
+mkdir -p "$CFG_DIR" # Ensure config directory exists
 
-# ───────────────────────────────
-# Logging Functions
-# ───────────────────────────────
+CACHE_DIR="$XDG_CACHE_HOME/ffx4"
+mkdir -p "$CACHE_DIR" # Ensure cache directory exists
 
-log_verbose() {
-	local message="$*"
-	if "$VERBOSE"; then
-		echo "VERBOSE: $message" >&2
+# --- Temporary File Management ---
+declare -a TMPFILES=() # Array to track individual temporary files for cleanup
+
+# cleanup: Removes all temporary files and the session-specific run directory.
+cleanup() {
+	# Remove all individual temporary files tracked by TMPFILES array
+	for f in "${TMPFILES[@]}"; do
+		[ -e "$f" ] && rm -f "$f" # Check if file exists before attempting to remove
+	done
+
+	# The entire session-specific RUN_DIR is removed, which also cleans up
+	# ffmpeg 2-pass log files and any other temp files created within it.
+	if [ -d "$RUN_DIR" ]; then # Ensure directory exists before trying to remove
+		rm -rf "$RUN_DIR"
 	fi
 }
 
-log_error() {
-	local message="$*"
-	echo "ERROR: $message" >&2
+# Trap signals to ensure cleanup is performed on exit, interrupt, hangup, or termination.
+trap cleanup EXIT INT HUP TERM
+
+# mktemp_ffx: Creates a temporary file in RUN_DIR and adds it to TMPFILES for cleanup.
+# Argument: $1 - Optional suffix for the temporary file (e.g., ".mp4", ".txt"). Defaults to ".mp4".
+# Returns the absolute path to the created temporary file.
+mktemp_ffx() {
+	local suffix="${1:-.mp4}"
+	local f
+	f="$(mktemp -p "$RUN_DIR" --suffix="$suffix")"
+	TMPFILES+=("$f")
+	printf '%s' "$f"
 }
 
-# ───────────────────────────────
-# FFmpeg Option Builder
-# ───────────────────────────────
+# --- Configuration Management ---
+DEFAULTS="$CFG_DIR/config" # Path to the default configuration file
 
-build_ffmpeg_options() {
-	local -a ffmpeg_opts=()
-	local -a video_filters=()
-	local -a audio_filters=()
-	local pts_val="$PTS"
-	local return_status=0
+# save_defaults: Saves current advanced settings to the config file.
+# Arguments are expected as "KEY=VALUE" strings.
+save_defaults() {
+	printf '%s\n' "$@" >"$DEFAULTS" # Write each argument (KEY=VALUE) on a new line
+}
 
-	if "$NOAUDIO"; then ffmpeg_opts+=("-an"); fi
-	if "$MAX1080"; then
-		video_filters+=("scale='min(iw,1920):min(ih,1080):force_original_aspect_ratio=decrease'")
+# load_defaults: Safely loads advanced settings from the config file.
+# This function parses key-value pairs without 'sourcing' the file,
+# mitigating security risks from untrusted config content.
+# Uses printf -v which is a bashism, but safe.
+load_defaults() {
+	if [ -f "$DEFAULTS" ]; then
+		local key value
+		# Read each line, handling potential missing newline at EOF with `|| [ -n "$key" ]`
+		while IFS='=' read -r key value || [ -n "$key" ]; do
+			# Only process lines that look like KEY=VALUE and are not comments or empty
+			# Validate key to prevent arbitrary variable assignment to prevent security risks.
+			# Keys must start with ADV_ and contain only uppercase letters and underscores.
+			if [[ "$key" =~ ^ADV_[A-Z_]+$ && -n "$value" ]]; then
+				# Use printf -v to safely assign values to variables
+				printf -v "$key" "%s" "$value"
+			fi
+		done <"$DEFAULTS"
 	fi
-	if [[ -n "$FPS" ]]; then
-		ffmpeg_opts+=("-r" "$FPS")
+}
+
+# --- File Utilities ---
+# absolute: Converts a path to its absolute form.
+# Uses realpath or readlink -f if available, otherwise falls back to a manual method.
+absolute() {
+	local path="$1"
+	if command -v realpath >/dev/null 2>&1; then
+		realpath "$path"
+	elif command -v readlink >/dev/null 2>&1 && readlink -f "$path" >/dev/null 2>&1; then
+		# readlink -f is a common GNU coreutils alternative to realpath
+		readlink -f "$path"
+	else
+		# Fallback for systems without realpath or readlink -f (e.g., some BSDs)
+		local dir base current_dir
+		dir=$(dirname "$path")
+		base=$(basename "$path")
+		# Get absolute path of the directory, then append the base.
+		# pwd -P resolves symlinks and gives physical path.
+		# The subshell `(...)` ensures `cd` doesn't affect the script's current directory.
+		current_dir=$( (cd "$dir" && pwd -P) 2>/dev/null ) || die "Could not resolve absolute path for '$path'"
+		printf '%s' "${current_dir}/${base}"
 	fi
-	if [[ -n "$pts_val" ]]; then
-		video_filters+=("setpts=$pts_val*PTS")
-		if ! "$NOAUDIO"; then
-			if ! [[ "$pts_val" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-				log_error "Invalid PTS value '$pts_val'. Must be a number. Skipping audio adjustment."
-			elif (($(echo "$pts_val >= 0.5 && $pts_val <= 2.0" | bc -l))); then
-				audio_filters+=("atempo=1/$pts_val")
+}
+
+# id_name: Generates a unique filename by appending a suffix and an incrementing number if needed.
+# Arguments: $1 - base filename (without extension), $2 - suffix, $3 - extension
+id_name() {
+	local base="${1%.*}" suf="$2" ext="$3" n out
+	out="${base}_${suf}.${ext}"
+	n=0
+	while [ -e "$out" ]; do # Check if the file already exists
+		n=$((n + 1)) # Increment counter
+		out="${base}_${suf}${n}.${ext}" # Try a new name
+	done
+	printf '%s' "$out" # Print the unique name
+}
+
+# fzf_pick: Uses fzf to allow interactive selection of files.
+# Dies if fzf is not installed or no selection is made.
+# Returns selected files, one per line.
+fzf_pick() {
+	command -v fzf >/dev/null || die "fzf not installed. Please install it to use interactive file selection."
+	local -a sel
+	mapfile -t sel < <(fzf --multi) # Populate array with selected files
+	[ "${#sel[@]}" -eq 0 ] && die "No selection made." # Exit if no files were selected
+	printf '%s\n' "${sel[@]}" # Print selected files, one per line
+}
+
+# --- Global Options ---
+ADVANCED=false VERBOSE=false REMOVE_AUDIO=false INTERPOLATE=false
+SPECIFIC_FPS="" PTS_FACTOR="" # Initialized empty, will use defaults if not set
+OUTPUT_FILE="" # Global variable to store explicit output file path
+FFMPEG_TIMEOUT_CLI="" # Global variable for CLI-specified FFmpeg timeout
+
+declare -a GLOBAL_REST_ARGS=() # Array to store arguments remaining after global option parsing
+
+# parse_globals: Parses global options passed to the script.
+# Shifts processed options from the positional parameters.
+parse_globals() {
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		-A | --advanced | -a) ADVANCED=true ;;
+		-v | --verbose) VERBOSE=true ;;
+		-an | --noaudio) REMOVE_AUDIO=true ;;
+		-f | --fps)
+			# Ensure the next argument exists and is a number before assigning
+			[ -z "${2:-}" ] && die "Option '$1' requires an argument."
+			if [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+				SPECIFIC_FPS="$2"
 			else
-				log_error "Audio speed adjustment (atempo) requires PTS between 0.5 and 2.0. Skipping audio adjustment."
+				die "Invalid FPS value '$2'. Must be a number."
 			fi
-		fi
-	fi
-	if "$INTERPOLATE"; then
-		if [[ -z "$FPS" ]]; then
-			log_error "Motion interpolation requires a target frame rate (-f/--fps)."
-			return_status=1
-		fi
-		video_filters+=("minterpolate='mi_mode=mci:mc_mode=aobmc:vsbmc=1:fps=$FPS'")
-	fi
-	if [[ ${#video_filters[@]} -gt 0 ]]; then
-		ffmpeg_opts+=("-vf" "$(IFS=,; echo "${video_filters[*]}")")
-	fi
-	if [[ ${#audio_filters[@]} -gt 0 ]]; then
-		ffmpeg_opts+=("-af" "$(IFS=,; echo "${audio_filters[*]}")")
-	fi
-	if "$VERBOSE"; then
-		ffmpeg_opts+=("-v" "info")
-	fi
-	printf "%s\n" "${ffmpeg_opts[@]}" | tr '\n' '\0'
-	return "$return_status"
-}
-
-parse_ffmpeg_options_output() {
-	local -n _common_opts_ref="$1"
-	local -n _video_filter_str_ref="$2"
-	local -n _audio_filter_str_ref="$3"
-	local -a raw_options_output
-	local current_type="common"
-	local opt
-	read -r -d '' -a raw_options_output < <(build_ffmpeg_options; printf '\0') || true
-	for opt in "${raw_options_output[@]}"; do
-		case "$current_type" in
-			"common")
-				if [[ "$opt" == "-vf" ]]; then current_type="vf"; continue; fi
-				if [[ "$opt" == "-af" ]]; then current_type="af"; continue; fi
-				_common_opts_ref+=("$opt")
-				;;
-			"vf")
-				_video_filter_str_ref="$opt"
-				current_type="common"
-				;;
-			"af")
-				_audio_filter_str_ref="$opt"
-				current_type="common"
-				;;
-		esac
-	done
-}
-
-# ───────────────────────────────
-# Option Parsing
-# ───────────────────────────────
-
-parse_global_options() {
-	log_verbose "Parsing global options: $*"
-	local -a remaining_args=()
-	local arg
-	while [[ $# -gt 0 ]]; do
-		arg="$1"
-		case "$arg" in
-		-a|--advanced)   ADVANCED=true ;;
-		-v|--verbose)    VERBOSE=true ;;
-		-b|--bulk)       BULK=true ;;
-		-n|--noaudio)    NOAUDIO=true ;;
-		-m|--max1080)    MAX1080=true ;;
-		-o|--output-dir)
-			if [[ $# -lt 2 || "$2" =~ ^- ]]; then
-				log_error "Option '$arg' requires a directory argument."; show_help; exit 1
+			shift # Consume the argument for -f
+			;;
+		-p | --pts)
+			# Ensure the next argument exists and is a number before assigning
+			[ -z "${2:-}" ] && die "Option '$1' requires an argument."
+			if [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+				PTS_FACTOR="$2"
+			else
+				die "Invalid PTS factor '$2'. Must be a number."
 			fi
-			OUTPUT_DIR="$2"; shift ;;
-		-f|--fps)
-			if [[ $# -lt 2 || "$2" =~ ^- ]] || ! [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-				log_error "Option '$arg' requires a numeric value."; show_help; exit 1
+			shift # Consume the argument for -p
+			;;
+		-i | --interpolate) INTERPOLATE=true ;;
+		-o | --output)
+			[ -z "${2:-}" ] && die "Option '$1' requires an argument."
+			OUTPUT_FILE="$2"
+			shift # Consume the argument for -o
+			;;
+		-T | --timeout)
+			[ -z "${2:-}" ] && die "Option '$1' requires an argument."
+			if [[ "$2" =~ ^[0-9]+$ ]]; then
+				FFMPEG_TIMEOUT_CLI="$2"
+			else
+				die "Invalid timeout value '$2'. Must be an integer."
 			fi
-			FPS="$2"; shift ;;
-		-p|--pts)
-			if [[ $# -lt 2 || "$2" =~ ^- ]] || ! [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-				log_error "Option '$arg' requires a numeric value."; show_help; exit 1
-			fi
-			PTS="$2"; shift ;;
-		-i|--interpolate) INTERPOLATE=true ;;
+			shift # Consume the argument for -T
+			;;
 		--)
-			shift; remaining_args+=("$@"); break ;;
-		-*) log_error "Unknown global option: $arg"; show_help; exit 1 ;;
-		*)  remaining_args+=("$@"); break ;;
+			shift
+			break
+			;;         # End of global options, remaining args are command and its arguments
+		*) break ;; # End of options, start of command/args
 		esac
-		shift
+		shift # This shift removes the processed global option or the breaking argument
 	done
-	COMMAND_ARGS=("${remaining_args[@]}")
-	log_verbose "Remaining arguments: ${COMMAND_ARGS[*]}"
+	GLOBAL_REST_ARGS=("$@") # Store remaining arguments
 }
 
-# ───────────────────────────────
-# Help Message
-# ───────────────────────────────
+# --- Advanced Settings ---
+# Sensible defaults for common video processing.
+# ADV_QUALITY_MODE: 'crf' for Constant Rate Factor (lossy but high quality), 'qp0' for Lossless (true qp=0).
+ADV_CONTAINER=mp4 ADV_RES=1920x1080 ADV_FPS=60 ADV_CODEC=libx264 ADV_PIX=yuv420p ADV_CRF=23 ADV_BR=10M ADV_MULTIPASS=false ADV_QUALITY_MODE=crf
 
-show_help() {
-	cat <<EOH
-Usage: ffxd [global options] <command> [args]
-Commands:
-  process <input(s)>   Process video file(s) with global options.
-  merge <input(s)>     Merge multiple video files into one.
-  composite <input(s)> Composite multiple video files into a grid.
-  looperang <input>    Create a boomerang effect video.
-  slowmo <input>       Create a slow-motion video.
-  fix <input>          Fix common video issues (e.g., VFR to CFR).
-  clean                Clean up ffxd temporary/cache files.
-  probe <input>        Show media information using ffprobe.
-  help                 Show this help message.
-Global options:
-  -a, --advanced        Interactive advanced prompt (future).
-  -v, --verbose         Verbose output.
-  -b, --bulk            Process multiple inputs sequentially (for 'process').
-  -n, --noaudio         Remove audio streams from output.
-  -m, --max1080         Enforce 1080p maximum height for video.
-  -o, --output-dir DIR  Output directory (defaults to current directory).
-  -f, --fps FPS         Force constant frame rate (e.g., 30, 60). Required for interpolation.
-  -p, --pts FACTOR      Adjust playback speed (e.g., 0.5 for half speed, 2.0 for double speed).
-  -i, --interpolate     Enable motion interpolation (requires -f/--fps).
-EOH
+# advanced_prompt: Prompts the user for advanced FFmpeg settings.
+# Loads previously saved settings and allows user to override.
+advanced_prompt() {
+	load_defaults # Load previously saved settings
+
+	# Skip if not in advanced mode
+	if ! "$ADVANCED"; then
+		return 0
+	fi
+
+	say "${CYAN}${BOLD}★ Advanced mode${RESET} – leave blank to keep current/default."
+	local input
+
+	read -r -p "Output Container [$ADV_CONTAINER]: " input
+	[ -n "$input" ] && ADV_CONTAINER="$input"
+
+	read -r -p "Target Resolution (e.g. 1280x720) [$ADV_RES]: " input
+	if [ -n "$input" ]; then
+		if [[ "$input" =~ ^[0-9]+x[0-9]+$ ]]; then
+			ADV_RES="$input"
+		else
+			warn "Invalid resolution format. Keeping current value: '$ADV_RES'."
+		fi
+	fi
+
+	read -r -p "Target FPS [$ADV_FPS]: " input
+	if [ -n "$input" ]; then
+		if [[ "$input" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+			ADV_FPS="$input"
+		else
+			warn "Invalid FPS format. Keeping current value: '$ADV_FPS'."
+		fi
+	fi
+
+	read -r -p "Video Codec (libx264/libx265) [$ADV_CODEC]: " input
+	[ -n "$input" ] && ADV_CODEC="$input"
+
+	read -r -p "Pixel format [$ADV_PIX]: " input
+	[ -n "$input" ] && ADV_PIX="$input"
+
+	read -r -p "Quality Mode (crf/qp0) [$ADV_QUALITY_MODE]: " input
+	if [ -n "$input" ]; then
+		case "$input" in
+			crf|CRF) ADV_QUALITY_MODE="crf" ;;
+			qp0|QP0) ADV_QUALITY_MODE="qp0" ;;
+			*) warn "Invalid quality mode. Keeping current value: '$ADV_QUALITY_MODE'.";;
+		esac
+	fi
+
+	if [[ "$ADV_QUALITY_MODE" == "crf" ]]; then
+		read -r -p "CRF (0-51, 0 lossless for x264/x265, 23 default) [$ADV_CRF]: " input
+		if [ -n "$input" ]; then
+			if [[ "$input" =~ ^[0-9]+$ ]]; then
+				if [ "$input" -ge 0 ] && [ "$input" -le 51 ]; then
+					ADV_CRF="$input"
+				else
+					warn "CRF must be between 0 and 51. Keeping current value: '$ADV_CRF'."
+				fi
+			else
+				warn "Invalid CRF format. Keeping current value: '$ADV_CRF'."
+			fi
+		fi
+
+		read -r -p "Bitrate (e.g. 8M, ignored with CRF unless 2-pass) [$ADV_BR]: " input
+		if [ -n "$input" ]; then
+			if [[ "$input" =~ ^[0-9]+[kKmMgG]?$ ]]; then
+				ADV_BR="$input"
+			else
+				warn "Invalid bitrate format. Keeping current value: '$ADV_BR'."
+			fi
+		fi
+
+		read -r -p "Enable 2-pass encoding? (y/N) [$([ "$ADV_MULTIPASS" == "true" ] && echo "y" || echo "N")]: " input
+		if [[ "$input" =~ ^[Yy]$ ]]; then ADV_MULTIPASS=true; else ADV_MULTIPASS=false; fi
+	else # ADV_QUALITY_MODE is qp0
+		ADV_CRF="" # CRF not applicable for qp0
+		ADV_BR=""  # Bitrate not applicable for qp0
+		ADV_MULTIPASS=false # 2-pass not applicable for qp0
+		say "Quality mode set to 'qp0' (lossless). CRF, Bitrate, and 2-pass settings will be ignored."
+	fi
+
+
+	# Save current settings to the configuration file
+	save_defaults \
+		"ADV_CONTAINER=$ADV_CONTAINER" \
+		"ADV_RES=$ADV_RES" \
+		"ADV_FPS=$ADV_FPS" \
+		"ADV_CODEC=$ADV_CODEC" \
+		"ADV_PIX=$ADV_PIX" \
+		"ADV_CRF=$ADV_CRF" \
+		"ADV_BR=$ADV_BR" \
+		"ADV_MULTIPASS=$ADV_MULTIPASS" \
+		"ADV_QUALITY_MODE=$ADV_QUALITY_MODE"
 }
 
-# ───────────────────────────────
-# Commands Helper Functions
-# ───────────────────────────────
+# --- FFmpeg Helper Functions ---
+# get_audio_opts_array: Returns FFmpeg audio options as an array, one element per line.
+# This format allows mapfile -t to correctly parse them into an array.
+get_audio_opts_array() {
+	local -a opts
+	if "$REMOVE_AUDIO"; then
+		opts+=("-an") # No audio
+	else
+		opts+=("-c:a" "aac" "-b:a" "128k") # Default AAC audio
+	fi
+	printf '%s\n' "${opts[@]}" # Print each option on a new line
+}
 
-ensure_output_directory() {
-	local dir_path="$1"
-	if ! mkdir -p "$dir_path"; then
-		log_error "Could not create output directory: $dir_path"
-		exit 1
+# _run_ffmpeg: Centralized function to execute ffmpeg commands.
+# Handles verbosity, 2-pass encoding, and error checking.
+# Arguments: $1 - The output file path. "$@" - The ffmpeg command arguments (excluding output file).
+_run_ffmpeg() {
+	local output_file="$1"
+	shift # Remove output_file from arguments
+	local -a ffmpeg_passed_args=("$@") # Capture the arguments passed to _run_ffmpeg
+
+	local -a ffmpeg_base_cmd=("ffmpeg" "-y")
+	# Add FFmpeg's own verbosity flag if script's VERBOSE flag is true
+	if "$VERBOSE"; then
+		ffmpeg_base_cmd+=("-v" "info") # "info" level output for FFmpeg
+	else
+		ffmpeg_base_cmd+=("-v" "warning") # Suppress unnecessary output by default
+	fi
+
+	local ffmpeg_log_file
+	ffmpeg_log_file=$(mktemp_ffx .log)
+
+	# Set a timeout for FFmpeg operations.
+	# Precedence: CLI option > FFMPEG_TIMEOUT environment variable > default (300 seconds).
+	# Increased default timeout from 180s to 300s to better accommodate longer video processing tasks.
+	local ffmpeg_timeout="${FFMPEG_TIMEOUT_CLI:-${FFMPEG_TIMEOUT:-300}}"
+	say "FFmpeg timeout set to ${ffmpeg_timeout} seconds."
+
+
+	# run_ffmpeg_command: Helper function for executing an FFmpeg command with proper redirection.
+	# This function executes the command and stores all its output in a log file.
+	# Shellcheck warning SC2034 is disabled here because 'run_ffmpeg_command' is a local function
+	# and its declaration is followed immediately by its definition and use within this scope.
+	local run_ffmpeg_command # shellcheck disable=SC2034
+	run_ffmpeg_command() {
+		local timeout_val="$1"
+		local log_file="$2"
+		shift 2 # Shift off timeout_val and log_file
+		local -a cmd_arr=("$@")
+
+		# Inform the user that FFmpeg is running and where its output is logged.
+		# This message goes to the user's terminal directly.
+		say "Executing FFmpeg command (output in '$log_file'): ${cmd_arr[*]}"
+
+		# Execute FFmpeg, redirecting all its output (stdout and stderr) to the log file.
+		# The exit status of `timeout` (0 for success, 124 for timeout, or FFmpeg's exit status on failure)
+		# determines whether the command is considered successful.
+		timeout "$timeout_val" "${cmd_arr[@]}" >"$log_file" 2>&1
+		local exit_code=$? # Capture exit code of `timeout` command
+
+		if [ "$exit_code" -eq 124 ]; then
+			# Added suggestion to increase timeout for clarity.
+			die "FFmpeg command timed out after ${timeout_val} seconds. Consider increasing timeout with -T. FFmpeg Output:\n$(cat "$ffmpeg_log_file")"
+		elif [ "$exit_code" -ne 0 ]; then
+			# Added suggestion to increase timeout for clarity.
+			die "FFmpeg command failed (exit code $exit_code). Check FFmpeg output for details. Consider increasing timeout with -T for long operations. FFmpeg Output:\n$(cat "$ffmpeg_log_file")"
+		fi
+	}
+
+	# Determine encoding options based on ADV_QUALITY_MODE and ADV_MULTIPASS
+	local -a encoding_opts=()
+	if [[ "$ADV_QUALITY_MODE" == "qp0" ]]; then
+		encoding_opts+=("-qp" "0") # Lossless (for libx264/libx265)
+		say "Using lossless encoding (qp=0)."
+	elif "$ADV_MULTIPASS" && [ -n "$ADV_BR" ]; then # 2-pass encoding with bitrate
+		say "Starting 2-pass encoding..."
+		local pass_log_base="$RUN_DIR/ffmpeg2pass" # Unique base name for logs within session dir
+
+		# Pass 1
+		local -a pass1_cmd=("${ffmpeg_base_cmd[@]}" "${ffmpeg_passed_args[@]}" \
+			"-passlogfile" "$pass_log_base" "-pass" "1" "-f" "null" "/dev/null")
+		run_ffmpeg_command "$ffmpeg_timeout" "$ffmpeg_log_file" "${pass1_cmd[@]}"
+
+		# Pass 2
+		local -a pass2_cmd=("${ffmpeg_base_cmd[@]}" "${ffmpeg_passed_args[@]}" \
+			"-passlogfile" "$pass_log_base" "-pass" "2" "-b:v" "$ADV_BR" "$output_file")
+		run_ffmpeg_command "$ffmpeg_timeout" "$ffmpeg_log_file" "${pass2_cmd[@]}"
+		return # Exit _run_ffmpeg after 2-pass
+	else # Single pass encoding with CRF
+		if [ -n "$ADV_CRF" ]; then
+			encoding_opts+=("-crf" "$ADV_CRF")
+		elif [ -n "$ADV_BR" ]; then # Fallback to single pass bitrate if CRF is empty
+			encoding_opts+=("-b:v" "$ADV_BR")
+		fi
+	fi
+
+	# Construct and run the final FFmpeg command
+	local -a final_cmd=("${ffmpeg_base_cmd[@]}" "${ffmpeg_passed_args[@]}" "${encoding_opts[@]}" "$output_file")
+	run_ffmpeg_command "$ffmpeg_timeout" "$ffmpeg_log_file" "${final_cmd[@]}"
+}
+
+
+# check_dts: Checks if DTS values in a video stream are monotonically increasing.
+# Returns 0 if monotonic, 1 otherwise.
+check_dts() {
+	local file="$1"
+	# Use awk to check for non-monotonic DTS values.
+	# ffprobe output is piped to awk. If awk exits with 1, DTS is not monotonic.
+	# Redirect ffprobe's stderr to /dev/null to ensure awk only processes DTS values.
+	ffprobe -v error -select_streams v -show_entries frame=pkt_dts_time -of csv=p=0 "$file" 2>/dev/null |
+		awk 'NR==1{p=$1;next}{if($1 < p){exit 1} p=$1} END{exit 0}'
+}
+
+# fix_dts: Fixes non-monotonous DTS by re-encoding with stream copy.
+# Returns the path to the fixed temporary file.
+fix_dts() {
+	local in_file="$1"
+	local out_file
+	out_file=$(mktemp_ffx)
+
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	local -a cmd_args=(
+		"-i" "$in_file"
+		"-c:v" "copy" # Stream copy video
+		"${audio_args[@]}" # Expand audio options
+		"-movflags" "+faststart" # Optimize for web streaming
+	)
+	_run_ffmpeg "$out_file" "${cmd_args[@]}" || return 1 # Run ffmpeg, return 1 on failure
+	printf '%s' "$out_file" # Print path to fixed file
+}
+
+# ensure_good_dts: Checks DTS and fixes if necessary, returning the path to the fixed file (or original).
+# Returns the path to a file with monotonic DTS.
+ensure_good_dts() {
+	local in_file="$1"
+	local fixed_file
+	if ! check_dts "$in_file"; then
+		warn "Non-monotonous DTS detected in '$in_file'. Attempting to fix..."
+		fixed_file=$(fix_dts "$in_file") || die "DTS fix failed for '$in_file'"
+		printf '%s' "$fixed_file" # Return path to fixed file
+	else
+		printf '%s' "$in_file" # Return original file path if DTS is good
 	fi
 }
 
-validate_input_files() {
-	local -a files=("$@")
-	local file_path
-	for file_path in "${files[@]}"; do
-		if [[ ! -f "$file_path" ]]; then
-			log_error "Input file not found: $file_path."
-			return 1
+# get_fps: Probes a video file for its frame rate, falling back to ADV_FPS if not found.
+# Returns the frame rate as a float or integer.
+get_fps() {
+	local in_file="$1"
+	local fps_str=""
+	local ffprobe_output=""
+	local ffprobe_status=0
+
+	# Try to get average frame rate first
+	ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1 "$in_file" 2>/dev/null)
+	ffprobe_status=$?
+
+	if [ "$ffprobe_status" -eq 0 ] && [ -n "$ffprobe_output" ] && [ "$ffprobe_output" != "0/0" ]; then
+		fps_str="$ffprobe_output"
+	else
+		# If avg_frame_rate failed or was 0/0, try r_frame_rate
+		ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "$in_file" 2>/dev/null)
+		ffprobe_status=$?
+		if [ "$ffprobe_status" -eq 0 ] && [ -n "$ffprobe_output" ] && [ "$ffprobe_output" != "0/0" ]; then
+			fps_str="$ffprobe_output"
 		fi
-	done
-	return 0
+	fi
+
+	if [ -z "$fps_str" ] || [ "$fps_str" = "0/0" ]; then
+		warn "Could not determine FPS for '$in_file'. Using default: '$ADV_FPS'."
+		printf '%s' "$ADV_FPS"
+	elif [[ "$fps_str" == *"/"* ]]; then # Check if it contains "/" for fractional FPS
+		if ! command -v bc >/dev/null 2>&1; then
+			warn "The 'bc' command is not available. Cannot accurately calculate fractional FPS for '$in_file'. Using default: '$ADV_FPS'."
+			printf '%s' "$ADV_FPS"
+		else
+			# Calculate float FPS using bc, preserving precision.
+			# FFmpeg's -r option can handle fractional FPS (e.g., 30000/1001) or float (e.g., 29.97).
+			printf "%s" "$(echo "scale=4; $fps_str" | bc -l)"
+		fi
+	else
+		printf '%s' "$fps_str"
+	fi
 }
 
-# ───────────────────────────────
-# Commands (No naked logic below!)
-# ───────────────────────────────
+# --- Commands ---
+# cmd_process: Normalizes resolution, pads, and re-encodes video files.
+cmd_process() {
+	advanced_prompt # Prompt for advanced settings
 
-# ... [Unchanged: your cmd_process, cmd_merge, cmd_composite, cmd_looperang, cmd_slowmo, cmd_fix, cmd_clean, cmd_probe functions, as above] ...
+	local adv_width adv_height
+	IFS=x read -r adv_width adv_height <<< "$ADV_RES"
 
-# [For brevity in this reply, they are left as-is—**but in your final file, include all, properly commented, exactly as above!**]
+	local -a input_files=("$@") # Capture all arguments as input files
+	local inF out_file inOK
 
-# ───────────────────────────────
-# Main Execution
-# ───────────────────────────────
+	# If no input files are provided as arguments, prompt user with fzf
+	if [ "${#input_files[@]}" -eq 0 ]; then
+		mapfile -t input_files < <(fzf_pick)
+		[ "${#input_files[@]}" -eq 0 ] && die "No selection."
+	fi
 
-main() {
-	parse_global_options "$@"
-	local cmd="${COMMAND_ARGS[0]:-help}"
-	local -a cmd_args=("${COMMAND_ARGS[@]:1}")
-	log_verbose "Dispatching command: '$cmd' with args: ${cmd_args[*]}"
-	case "$cmd" in
-	process)    cmd_process "${cmd_args[@]}" ;;
-	merge)      cmd_merge "${cmd_args[@]}" ;;
-	composite)  cmd_composite "${cmd_args[@]}" ;;
-	looperang)  cmd_looperang "${cmd_args[@]}" ;;
-	slowmo)     cmd_slowmo "${cmd_args[@]}" ;;
-	fix)        cmd_fix "${cmd_args[@]}" ;;
-	clean)      cmd_clean "${cmd_args[@]}" ;;
-	probe)      cmd_probe "${cmd_args[@]}" ;;
-	help|-h|--help) show_help ;;
-	*) log_error "Unknown command: $cmd"; show_help; exit 1 ;;
+	# Determine audio options once for all files
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	# If OUTPUT_FILE was specified and there are multiple input files,
+	# warn the user and process only the first input.
+	if [ -n "$OUTPUT_FILE" ] && [ "${#input_files[@]}" -gt 1 ]; then
+		warn "Explicit output file '$OUTPUT_FILE' specified with multiple inputs. Only the first input will be processed to this file."
+	fi
+
+	for inF in "${input_files[@]}"; do
+		[ -f "$inF" ] || die "File not found: '$inF'"
+		inOK=$(ensure_good_dts "$inF") # Ensure DTS is monotonic, get path to good file
+		# Use OUTPUT_FILE if specified, otherwise generate a unique name
+		out_file="${OUTPUT_FILE:-$(id_name "${inF%.*}" "processed" "$ADV_CONTAINER")}"
+
+		local -a cmd_args=(
+			"-i" "$inOK"
+			"-vf" "scale=$ADV_RES:flags=lanczos:force_original_aspect_ratio=decrease,pad=${adv_width}:${adv_height}:(ow-iw)/2:(oh-ih)/2"
+			"-c:v" "$ADV_CODEC"
+			"${audio_args[@]}" # Use array expansion for audio options
+			"-movflags" "+faststart" # Optimize for web streaming
+			"-pix_fmt" "$ADV_PIX" # Add pixel format option
+		)
+		_run_ffmpeg "$out_file" "${cmd_args[@]}" || die "Normalization failed for '$inF'"
+		say "'$inF' → '$out_file'"
+
+		# If an explicit output file was given, break after processing the first file.
+		if [ -n "$OUTPUT_FILE" ]; then
+			break
+		fi
+	done
+}
+
+# normalize_seg: Normalizes a single video segment for merging, applying interpolation if enabled.
+# Returns the path to the normalized temporary file.
+normalize_seg() {
+	local in="$1"
+	local out
+	local fps
+	local filter
+
+	out=$(mktemp_ffx) # Create a temporary output file
+
+	fps="${SPECIFIC_FPS:-$(get_fps "$in")}" # Use specific FPS if set, else probe, else ADV_FPS
+
+	local adv_width adv_height
+	IFS=x read -r adv_width adv_height <<< "$ADV_RES"
+
+	filter="scale=$ADV_RES:flags=lanczos:force_original_aspect_ratio=decrease,pad=${adv_width}:${adv_height}:(ow-iw)/2:(oh-ih)/2"
+
+	if "$INTERPOLATE"; then
+		filter="minterpolate=fps=$fps:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,$filter"
+	fi
+
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	local -a cmd_args=(
+		"-i" "$in"
+		"-r" "$fps" # Set output frame rate
+		"-vf" "$filter"
+		"-c:v" "$ADV_CODEC"
+		"${audio_args[@]}" # Use array expansion for audio options
+		"-movflags" "+faststart"
+		"-pix_fmt" "$ADV_PIX" # Add pixel format option
+	)
+	_run_ffmpeg "$out" "${cmd_args[@]}" || die "Normalization failed for '$in'"
+	printf '%s' "$out" # Print path to normalized file
+}
+
+# cmd_merge: Concatenates multiple video files.
+# Attempts stream copy first for lossless merge, falls back to re-encoding if streams are incompatible.
+cmd_merge() {
+	advanced_prompt # Prompt for advanced settings
+
+	local -a input_files=("$@") # All arguments are input files
+	local output_file # Will be determined based on OUTPUT_FILE global or generated
+	local list_file
+
+	# If no input files are provided as arguments, prompt user with fzf
+	if [ "${#input_files[@]}" -eq 0 ]; then
+		mapfile -t input_files < <(fzf_pick)
+		[ "${#input_files[@]}" -eq 0 ] && die "No selection."
+	fi
+
+	[ "${#input_files[@]}" -lt 2 ] && die "Provide at least 2 files for merge."
+
+	# Use explicit OUTPUT_FILE if set, otherwise generate a default
+	output_file="${OUTPUT_FILE:-$(id_name "output" merged "$ADV_CONTAINER")}"
+
+	list_file=$(mktemp_ffx .txt)
+
+	# --- Attempt Stream Copy First (lossless if compatible) ---
+	say "Attempting stream copy merge..."
+	local -a stream_copy_cmd_args=(
+		"-f" "concat"
+		"-safe" "0" # Allow non-safe characters in file paths (e.g., spaces)
+		"-i" "$list_file"
+		"-c" "copy" # Attempt stream copy
+	)
+
+	# Populate list file for stream copy attempt
+	for f in "${input_files[@]}"; do
+		[ -f "$f" ] || die "Input file not found: '$f'"
+		# Escape single quotes in filenames for concat demuxer
+		local escaped_f
+		escaped_f=$(printf "%s" "$f" | sed "s/'/''/g")
+		printf "file '%s'\n" "$escaped_f" >>"$list_file"
+	done
+
+	local stream_copy_log # SC2155: Declare and assign separately for this.
+	stream_copy_log=$(mktemp_ffx .log)
+
+	local -a sc_cmd=("ffmpeg" "-y" "-v" "warning" "${stream_copy_cmd_args[@]}" "$output_file")
+	# Temporarily set a short timeout for stream copy attempts, as they should either work quickly
+	# or fail due to incompatible streams. The _run_ffmpeg function itself will use the regular timeout
+	# for the fallback re-encoding.
+	local sc_timeout="${FFMPEG_TIMEOUT_CLI:-${FFMPEG_TIMEOUT:-30}}"
+	say "Executing stream copy FFmpeg command (output in '$stream_copy_log', timeout ${sc_timeout}s): ${sc_cmd[*]}"
+
+	# Run stream copy with timeout, capture exit status, do not die immediately
+	timeout "$sc_timeout" "${sc_cmd[@]}" >"$stream_copy_log" 2>&1
+	local sc_exit_code=$?
+
+	if [ "$sc_exit_code" -eq 0 ]; then
+		say "✅ Stream copy merge successful: '$output_file'"
+		return 0 # Success, exit merge command
+	elif [ "$sc_exit_code" -eq 124 ]; then
+		warn "Stream copy timed out after ${sc_timeout} seconds. This usually means streams are incompatible. Falling back to re-encoding..."
+	else
+		warn "Stream copy failed (exit code $sc_exit_code). Falling back to re-encoding due to incompatible streams or other error. FFmpeg Output:\n$(cat "$stream_copy_log")"
+	fi
+
+	# --- Fallback to Re-encoding and Concatenation (if stream copy failed) ---
+	say "Stream copy failed or timed out. Normalizing and re-encoding segments for merge..."
+
+	local -a segs=() # Array to hold paths to normalized segments
+	local f_normalized
+	for f in "${input_files[@]}"; do
+		[ -f "$f" ] || die "Input file not found: '$f'"
+		f_normalized=$(normalize_seg "$f") # Normalize each segment to ADV_RES (re-encodes)
+		segs+=("$f_normalized") # Add normalized file to segments array
+	done
+
+	# Clear previous list file content and write new list for normalized segments
+	printf "" >"$list_file" # Clear content
+	for s in "${segs[@]}"; do
+		local escaped_s
+		escaped_s=$(printf "%s" "$s" | sed "s/'/''/g")
+		printf "file '%s'\n" "$escaped_s" >>"$list_file"
+	done
+
+	local -a cmd_args=(
+		"-f" "concat" # Use concat demuxer
+		"-safe" "0" # Allow non-safe characters in file paths (e.g., spaces)
+		"-i" "$list_file" # The list file itself is an absolute path within RUN_DIR
+		"-c" "copy" # Stream copy the already re-encoded (and normalized) files
+	)
+	_run_ffmpeg "$output_file" "${cmd_args[@]}" || die "Merge concatenation failed after re-encoding."
+	say "merged → '$output_file'"
+}
+
+# layout_filter: Generates an FFmpeg filter_complex string for compositing multiple videos into a grid.
+# Argument: $1 - Number of input videos.
+layout_filter() {
+	local n="$1" cols layout i r c
+	case "$n" in
+	1) echo "null[vid0]" ;; # Single video, no complex filter needed, just map it
+	2) echo "[0:v][1:v]hstack=inputs=2[vid0]" ;; # Horizontal stack for 2 videos
+	3) echo "[0:v][1:v][2:v]vstack=inputs=3[vid0]" ;; # Vertical stack for 3 videos
+	4) echo "[0:v][1:v]hstack[top];[2:v][3:v]hstack[bot];[top][bot]vstack[vid0]" ;; # 2x2 grid for 4 videos
+	*) # For more than 4, use xstack to create a grid
+		cols=1
+		# Calculate minimum number of columns for a square-ish grid
+		while [ $((cols * cols)) -lt "$n" ]; do cols=$((cols + 1)); done
+		layout=""
+		# Generate xstack layout string (e.g., "0_0|1_0|0_1|1_1")
+		for i in $(seq 0 $((n - 1))); do
+			r=$((i / cols)) # Row index
+			c=$((i % cols)) # Column index
+			layout="${layout}${c}_${r}|"
+		done
+		layout=${layout%|} # Remove trailing pipe
+		echo "xstack=inputs=$n:layout=${layout}[vid0]"
+		;;
 	esac
 }
 
-main "$@"
+# cmd_composite: Combines multiple video files into a single grid layout.
+cmd_composite() {
+	advanced_prompt # Prompt for advanced settings
+
+	local -a input_files=("$@") n out_file
+	local -a ffmpeg_inputs=() # Will hold paths to normalized temp files
+	local filter
+	local f_normalized
+
+	# If no input files are provided as arguments, prompt user with fzf
+	if [ "${#input_files[@]}" -eq 0 ]; then
+		mapfile -t input_files < <(fzf_pick)
+		[ "${#input_files[@]}" -eq 0 ] && die "No selection."
+	fi
+
+	n="${#input_files[@]}"
+	[ "$n" -eq 0 ] && die "Need at least 1 file for composite."
+
+	# Use explicit OUTPUT_FILE if set, otherwise generate a unique name
+	out_file="${OUTPUT_FILE:-$(id_name "output" composite "$ADV_CONTAINER")}"
+
+	# Normalize each input video to ADV_RES before compositing
+	for i in "${input_files[@]}"; do
+		[ -f "$i" ] || die "File not found: '$i'"
+		f_normalized=$(normalize_seg "$i") # Normalize and get path to temp file
+		ffmpeg_inputs+=("-i" "$f_normalized") # Add normalized temp file as input
+	done
+
+	filter=$(layout_filter "$n") # Generate the filter_complex string
+
+	# Determine audio options once
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	local -a cmd_args=(
+		"${ffmpeg_inputs[@]}" # Use normalized temp files as inputs
+		"-filter_complex" "$filter" # Apply the generated complex filter
+		"-map" "[vid0]" # Map the output of the filter_complex
+		"-c:v" "$ADV_CODEC"
+		"${audio_args[@]}" # Use array expansion for audio options
+		"-movflags" "+faststart"
+		"-pix_fmt" "$ADV_PIX" # Add pixel format option
+	)
+	_run_ffmpeg "$out_file" "${cmd_args[@]}" || die "Composite failed."
+	say "composite → '$out_file'"
+}
+
+# cmd_probe: Displays detailed information about a media file.
+cmd_probe() {
+	local f sz hsz res fps dur process_choice
+
+	# If no file is provided as argument, prompt user with fzf (single selection)
+	if [ -z "${1:-}" ]; then
+		local _f
+		mapfile -t _f < <(fzf_pick | head -1) # Take only the first selected file
+		f="${_f[0]}"
+	else
+		f="$1"
+	fi
+
+	[ -z "$f" ] && die "No file selected for probe."
+	[ -f "$f" ] || die "File not found: '$f'"
+
+	# Get file size in bytes, handling GNU and BSD/macOS stat differences
+	if command -v stat >/dev/null 2>&1; then
+		# Try GNU stat first, then BSD/macOS
+		sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+	else
+		warn "The 'stat' command is not available. Skipping file size display."
+		sz=0
+	fi
+
+	if [ "$sz" -gt 0 ]; then
+		# Convert bytes to human-readable format (KiB, MiB, GiB) using awk
+		hsz=$(awk -v b="$sz" 'BEGIN{split("B KiB MiB GiB",u);i=1;while(b>=1024&&i<4){b/=1024;i++}printf"%.2f %s",b,u[i]}')
+	else
+		hsz="N/A"
+	fi
+
+	fps=$(get_fps "$f") # Use the robust get_fps function
+
+	dur=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null)
+	res=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$f" 2>/dev/null)
+
+	say "${CYAN}${BOLD}# === Ffx Probe ===${RESET}\nFile: '$f'\nSize: $hsz\nResolution: $res\nDuration: ${dur}s\nFPS: $fps"
+
+	# Prompt for processing if resolution is greater than 1080p
+	if [[ "$res" =~ ([0-9]+)x([0-9]+) ]]; then
+		local width="${BASH_REMATCH[1]}"
+		local height="${BASH_REMATCH[2]}"
+		if [ "$width" -gt 1920 ] || [ "$height" -gt 1080 ]; then
+			read -r -p "Resolution ($res) is greater than 1080p. Do you want to process this file to 1080p? (y/N): " process_choice
+			if [[ "$process_choice" =~ ^[Yy]$ ]]; then
+				say "Initiating processing for '$f'..."
+				# Pass the file to cmd_process. If OUTPUT_FILE is set globally, it will be used.
+				# Otherwise, cmd_process will generate a default name.
+				cmd_process "$f" # Call process command with the file
+			fi
+		fi
+	fi
+}
+
+# cmd_slowmo: Creates a slow-motion video.
+cmd_slowmo() {
+	advanced_prompt # Prompt for advanced settings
+
+	local in_file out_file factor fps filter
+	# If no file is provided as argument, prompt user with fzf (single selection)
+	if [ -z "${1:-}" ]; then
+		local _in
+		mapfile -t _in < <(fzf_pick | head -1)
+		in_file="${_in[0]}"
+	else
+		in_file="$1"
+	fi
+
+	[ -z "$in_file" ] && die "Need file for slowmo."
+	[ -f "$in_file" ] || die "File not found: '$in_file'"
+
+	# Ensure 'out_file' is explicitly assigned before being passed to _run_ffmpeg.
+	out_file="${OUTPUT_FILE:-$(id_name "${in_file%.*}" slowmo "$ADV_CONTAINER")}"
+
+	factor="${2:-${PTS_FACTOR:-2}}" # Default factor is 2 if not provided or via global -p
+	fps="${SPECIFIC_FPS:-$ADV_FPS}" # Use ADV_FPS as default if not specified via global -f
+
+	# Ensure DTS is monotonic before applying complex filters like setpts or minterpolate
+	in_file=$(ensure_good_dts "$in_file")
+
+	filter="setpts=$factor*PTS"
+	if "$INTERPOLATE"; then
+		filter="minterpolate=fps=$fps:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,$filter"
+	fi
+
+	local adv_height
+	IFS=x read -r _ adv_height <<< "$ADV_RES"
+	filter="$filter,scale=-2:$adv_height" # Scale to ADV_RES height while preserving aspect ratio
+
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	local -a cmd_args=(
+		"-i" "$in_file"
+		"-r" "$fps" # Set output frame rate
+		"-vf" "$filter"
+		"-c:v" "$ADV_CODEC"
+		"${audio_args[@]}" # Use array expansion for audio options
+		"-movflags" "+faststart"
+		"-pix_fmt" "$ADV_PIX" # Add pixel format option
+	)
+	_run_ffmpeg "$out_file" "${cmd_args[@]}" || die "Slowmo failed."
+	say "slowmo → '$out_file'"
+}
+
+# cmd_looperang: Creates a boomerang effect video (original + reversed).
+cmd_looperang() {
+	advanced_prompt # Prompt for advanced settings
+
+	local in_file out_file tmp_file list_file
+	# If no file is provided as argument, prompt user with fzf (single selection)
+	if [ -z "${1:-}" ]; then
+		local _in
+		mapfile -t _in < <(fzf_pick | head -1)
+		in_file="${_in[0]}"
+	else
+		in_file="$1"
+	fi
+
+	[ -z "$in_file" ] && die "Need file for looperang."
+	[ -f "$in_file" ] || die "File not found: '$in_file'"
+
+	# Use explicit OUTPUT_FILE if set, otherwise generate a unique name
+	out_file="${OUTPUT_FILE:-$(id_name "${in_file%.*}" looperang "$ADV_CONTAINER")}"
+	tmp_file=$(mktemp_ffx) # Temporary file for the reversed video
+
+	# Ensure DTS is monotonic for the input file before reversal
+	in_file=$(ensure_good_dts "$in_file")
+
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	# Reverse the video
+	local -a reverse_cmd_args=(
+		"-i" "$in_file"
+		"-vf" "reverse" # Video filter to reverse frames
+		"-c:v" "$ADV_CODEC"
+		"${audio_args[@]}" # Use array expansion for audio options
+		"-pix_fmt" "$ADV_PIX" # Add pixel format option
+	)
+	_run_ffmpeg "$tmp_file" "${reverse_cmd_args[@]}" || die "Looperang reverse failed."
+
+	# Concatenate original and reversed video using concat demuxer
+	list_file=$(mktemp_ffx .txt)
+	# Escaped paths for concat demuxer
+	local escaped_in_file
+	escaped_in_file=$(printf "%s" "$in_file" | sed "s/'/''/g")
+	local escaped_tmp_file
+	escaped_tmp_file=$(printf "%s" "$tmp_file" | sed "s/'/''/g")
+
+	printf "file '%s'\n" "$escaped_in_file" >"$list_file"
+	printf "file '%s'\n" "$escaped_tmp_file" >>"$list_file"
+
+	local -a concat_cmd_args=(
+		"-f" "concat"
+		"-safe" "0" # Allow non-safe characters in file paths (e.g., spaces)
+		"-i" "$list_file"
+		"-c" "copy" # Stream copy to avoid re-encoding
+	)
+	_run_ffmpeg "$out_file" "${concat_cmd_args[@]}" || die "Looperang concat failed."
+	say "looperang → '$out_file'"
+}
+
+# cmd_clean: Removes all metadata from a video file.
+cmd_clean() {
+	# This command uses stream copy and doesn't benefit from advanced encoding settings directly,
+	# so advanced_prompt is not called.
+
+	local in_file out_file
+	# If no file is provided as argument, prompt user with fzf (single selection)
+	if [ -z "${1:-}" ]; then
+		local _in
+		mapfile -t _in < <(fzf_pick | head -1)
+		in_file="${_in[0]}"
+	else
+		in_file="$1"
+	fi
+
+	[ -z "$in_file" ] && die "Need file for clean."
+	[ -f "$in_file" ] || die "File not found: '$in_file'"
+
+	# Use explicit OUTPUT_FILE if set, otherwise generate a unique name
+	out_file="${OUTPUT_FILE:-$(id_name "${in_file%.*}" cleaned "$ADV_CONTAINER")}"
+
+	local -a audio_args
+	mapfile -t audio_args < <(get_audio_opts_array)
+
+	local -a cmd_args=(
+		"-i" "$in_file"
+		"-map_metadata" "-1" # Remove all metadata streams
+		"-c" "copy"          # Stream copy video and audio
+		"${audio_args[@]}"   # Apply audio options (e.g., -an for no audio)
+	)
+	_run_ffmpeg "$out_file" "${cmd_args[@]}" || die "Clean failed."
+	say "cleaned → '$out_file'"
+}
+
+# --- Help and Dispatch ---
+# banner: Displays the script's main title with bold cyan color.
+banner() { printf '%b%s%b\n' "${CYAN}${BOLD}" "ffxd – minimal media swiss-army" "${RESET}"; }
+
+usage() {
+	banner
+	cat <<EOF
+${BOLD}Usage${RESET}: ffxd [global-opts] <command> [args]
+
+${BOLD}Global flags${RESET}:
+  -A|--advanced|-a  interactive advanced prompt
+  -v|--verbose      verbose ffmpeg output
+  -an|--noaudio     strip audio from output
+  -f|--fps N        force output FPS (e.g., 30, 60.5)
+  -p|--pts F        set PTS factor (e.g., 2 for 2x slowmo, default: 2)
+  -i|--interpolate  enable motion interpolation (slowmo, merge normalization)
+  -o|--output FILE  specify output filename (overrides default naming)
+  -T|--timeout SEC  set FFmpeg timeout in seconds (default: 300s)
+
+${BOLD}Commands${RESET}:
+  process [files...]   : Normalize resolution, pad, and re-encode.
+                         Note: If -o is used with multiple input files, only the first file will be processed.
+  merge [files...]     : Concatenate multiple videos. Attempts lossless stream copy,
+                         falls back to re-encoding if streams are incompatible.
+  composite [files...] : Combine multiple videos into a single grid layout.
+  probe [file]         : Display detailed information about a media file.
+                         Prompts to process if resolution > 1080p.
+  slowmo [file] [factor]: Create a slow-motion video (default factor 2).
+  looperang [file]     : Create a boomerang effect video.
+  clean [file]         : Remove all metadata from a video file.
+  help                 : Show this help message.
+
+${BOLD}Examples${RESET}:
+  ffxd process video.mp4
+  ffxd -A -o final.mp4 merge video1.mp4 video2.mp4
+  ffxd -i -f 60 slowmo input.mp4 4
+  ffxd -an clean messy.mp4
+  ffxd -T 600 process long_video.mkv # Allow 10 minutes for processing
+  ls *.mp4 | ffxd merge # Merge all mp4s in current directory (requires fzf)
+EOF
+}
+
+# dispatch: Parses global options and dispatches to the appropriate command function.
+dispatch() {
+	# Ensure required commands are available before dispatching
+	for cmd in ffmpeg ffprobe; do
+		command -v "$cmd" >/dev/null 2>&1 || die "Required command '$cmd' not found in PATH. Please install it."
+	done
+
+	if [ "$#" -lt 1 ]; then
+		usage
+		exit 0
+	fi
+
+	parse_globals "$@" # Parse global options and populate GLOBAL_REST_ARGS
+	set -- "${GLOBAL_REST_ARGS[@]}" # Reset positional parameters to remaining args (command + its arguments)
+
+	local command_name="${1:-help}" # Default to 'help' if no command is provided
+	shift || true                   # Shift off the command name; `|| true` handles case where no args remain
+
+	case "$command_name" in
+	process) cmd_process "$@" ;;
+	merge) cmd_merge "$@" ;;
+	composite) cmd_composite "$@" ;;
+	probe) cmd_probe "$@" ;;
+	slowmo) cmd_slowmo "$@" ;;
+	looperang) cmd_looperang "$@" ;;
+	clean) cmd_clean "$@" ;;
+	help | *) usage ;; # Default case for 'help' command or any unknown command
+	esac
+}
+
+# Execute the dispatch function with all command-line arguments
+dispatch "$@"
