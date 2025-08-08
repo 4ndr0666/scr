@@ -1,0 +1,97 @@
+#!/bin/sh
+# See https://github.com/purarue/mpvf for more information
+
+mpvf_help() {
+	cat <<HELPTEXT
+Usage: mpvf URL [OPTION]...
+Interface to select a yt-dlp format for streaming stuff with mpv.
+
+Pass the URL to stream from as the first argument.
+Additional options/arguments are passed onto mpv.
+
+You can set the MPVF_DL environment variable to download
+the selected format code instead, like:
+MPVF_DL=1 mpvf https://... [yt-dlp OPTION...]
+
+More info: https://github.com/purarue/mpvf
+HELPTEXT
+}
+
+# handle args/help
+if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+	mpvf_help
+	exit 0
+fi
+
+# check required applications
+require() {
+	if ! command -v "$1" >/dev/null; then
+		printf "mpvf requires '%s', but could not find that on your \$PATH\n" "$1" 1>&2
+		exit 1
+	fi
+}
+
+PICKER="${MPVF_PICKER:-fzf}"
+
+require mpv
+require yt-dlp
+require "$PICKER"
+
+require sed
+require grep
+require cut
+
+URL="$1"
+
+echo "[mpvf] Downloading formats..."
+if ! YOUTUBE_DL_FORMATS_RAW=$(yt-dlp -F "$URL" 2>&1); then
+	# yt-dlp failed to get formats
+	printf "%s\n" "$YOUTUBE_DL_FORMATS_RAW" 1>&2
+	exit 1
+fi
+
+YOUTUBE_DL_FORMATS=$(echo "$YOUTUBE_DL_FORMATS_RAW" | grep -v "^\[") # remove progress info
+YOUTUBE_DL_FORMATS_TITLE=$(echo "$YOUTUBE_DL_FORMATS" | head -n 1)   # get format title
+
+YOUTUBE_DL_FORMATS_BODY=$(echo "$YOUTUBE_DL_FORMATS" | sed -e "1d")
+
+# prompt user to select format
+case "$PICKER" in
+dmenu)
+	if ! FORMAT_CHOICE=$(echo "$YOUTUBE_DL_FORMATS_BODY" | dmenu -i); then
+		echo "Error: You didn't select one of the formats!" 1>&2
+		exit 1
+	fi
+	;;
+rofi)
+	if ! FORMAT_CHOICE=$(echo "$YOUTUBE_DL_FORMATS" | sed -e "1d" | rofi -dmenu -i -p "$YOUTUBE_DL_FORMATS_TITLE"); then
+		echo "Error: You didn't select one of the formats!" 1>&2
+		exit 1
+	fi
+	;;
+*)
+	if ! FORMAT_CHOICE=$(echo "$YOUTUBE_DL_FORMATS_BODY" | fzf +m --layout=reverse --header="$YOUTUBE_DL_FORMATS_TITLE" --tac); then
+		echo "Error: You didn't select one of the formats!" 1>&2
+		exit 1
+	fi
+	;;
+esac
+
+#Get format code
+FORMAT_CODE=$(echo "$FORMAT_CHOICE" | cut -d" " -f1)
+
+# if video only, add bestaudio to format code
+if echo "$FORMAT_CHOICE" | grep -q "video only"; then
+	FORMAT_CODE="${FORMAT_CODE}+bestaudio"
+fi
+
+printf "[mpvf] Format: %s\n" "$FORMAT_CODE"
+echo "[mpvf] Running yt-dlp hook to stream with mpv..."
+
+shift # remove URL
+if [ -n "${MPVF_DL}" ]; then
+	require yt-dlp
+	exec yt-dlp -f "${FORMAT_CODE}" "$@" "${URL}"
+else
+	exec mpv "$@" --ytdl-format="$FORMAT_CODE" "ytdl://${URL}"
+fi
