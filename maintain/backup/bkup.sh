@@ -12,7 +12,7 @@ set -euo pipefail
 ## Global Constants
 # Using XDG_CONFIG_HOME for configuration file location.
 # Default values for configuration options.
-declare -r BACKUP_DIR_DEFAULT="${HOME}/Backups"
+declare -r BACKUP_DIR_DEFAULT="/Nas/Backups/bkup"
 declare -r LOG_FILE_NAME_DEFAULT="bkup.log"
 declare -r LOCK_FILE_DEFAULT="/tmp/bkup.lock" # Using /tmp for user-level script simplicity
 declare -r KEEP_COPIES_DEFAULT="2"

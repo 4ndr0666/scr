@@ -35,13 +35,13 @@ YLW="\e[01;33m"
 RST="\e[00m" # Reset to default color and style
 
 ## Logging
-LOG_FILE="/tmp/BraveClean.log"
+LOG_FILE="/tmp/BraveClean.log" # Using /tmp for temporary logs, generally acceptable for cleanup scripts.
 
 # log: Writes messages to the log file with a timestamp.
 # Arguments:
 #   $1 - The message to log.
 log() {
-  local msg="$1"
+  local msg="$1" # Declare msg as local to the function.
   printf "%s %s\n" "$(date +%Y-%m-%dT%H:%M:%S%z)" "$msg" >> "$LOG_FILE"
 }
 
@@ -50,7 +50,7 @@ log() {
 # Arguments:
 #   $1 - The error message.
 error_exit() {
-  local msg="$1"
+  local msg="$1" # Declare msg as local to the function.
   printf "${RED}Error:${RST} %s\n" "$msg" >&2
   log "ERROR: $msg"
   exit 1
@@ -59,6 +59,7 @@ error_exit() {
 ## Dependency Checks
 # dep_check_sqlite3: Checks if the 'sqlite3' command is available.
 dep_check_sqlite3() {
+  # command -v is robust for checking command existence.
   if ! command -v sqlite3 >/dev/null 2>&1; then
     error_exit "sqlite3 not found. Please install it to enable database vacuuming."
   fi
@@ -79,7 +80,7 @@ spinner() {
   local delay=0.1
   local spin='|/-\\' # Escaping the backslash for SC1003
   local i=0
-  while kill -0 "$pid" 2>/dev/null; do
+  while kill -0 "$pid" 2>/dev/null; do # kill -0 checks if PID exists without sending a signal.
     printf "%s\b" "${spin:$i:1}" # Print character and backspace to overwrite
     sleep "$delay"
     i=$(( (i + 1) % 4 )) # Cycle through spinner characters
@@ -154,7 +155,7 @@ run_cleaner() {
 #   $1 - The process name to check (e.g., "firefox", "brave").
 if_running() {
   local process_name="$1"
-  local user="$USER" # Using $USER is generally fine here, id -un is more robust but not strictly necessary.
+  local user="$USER" # Using $USER is generally fine here for user-specific processes.
   local max_wait_attempts=5 # Number of 2-second waits before prompting to kill
   local current_wait_attempts=0
   local ans
@@ -165,8 +166,8 @@ if_running() {
       if (( current_wait_attempts >= max_wait_attempts )); then
         printf "\n" # Newline after dots
         printf " %s is still running. Kill %s now? [y/N]: " "$process_name" "$process_name"
-        read -r ans
-        if [[ "$ans" =~ ^[Yy]$ ]]; then
+        read -r ans # -r prevents backslash escapes from being interpreted.
+        if [[ "$ans" =~ ^[Yy]$ ]]; then # Case-insensitive check for 'y' or 'Y'.
           printf "Attempting to terminate %s...\n" "$process_name"
           pkill -TERM -u "$user" "$process_name" || true # Send graceful termination signal
           sleep 4 # Give it some time to shut down
@@ -207,7 +208,7 @@ perform_additional_cleanup() {
   else
     printf "Performing Brave-specific cleanup steps in %s...\n" "$brave_dir"
 
-    # Use pushd/popd to manage directory changes safely.
+    # Use pushd/popd to manage directory changes safely and handle errors.
     pushd "$brave_dir" >/dev/null || { log "ERROR: Could not change to Brave directory: $brave_dir"; return; }
 
     # List of directories within the Brave profile to be completely removed.
@@ -294,7 +295,7 @@ vacuum_browsers() {
 
   local b_name config_path full_config_path p_name
   local ini_file profiledir_found profile_dirs=()
-  local line # Declare 'line' as local to this function
+  local line # Declare 'line' as local to this function.
 
   # Loop through each defined browser.
   for b_name in "${!browser_configs[@]}"; do
@@ -316,14 +317,13 @@ vacuum_browsers() {
 
       # Handle Firefox-like profiles, which use a profiles.ini file.
       if [[ "$b_name" =~ ^(Firefox|Icecat|Seamonkey|Aurora)$ ]]; then
-        # Corrected: Use full_config_path for profiles.ini location.
         ini_file="$full_config_path/profiles.ini"
         if [[ -f "$ini_file" ]]; then
           # Read profile paths from profiles.ini.
           # IFS= ensures 'read' processes each line as a single field, ignoring spaces.
           while IFS= read -r line; do
             if [[ "$line" =~ ^Path=(.*)$ ]]; then
-              # Corrected: Use full_config_path for constructing the profile directory path.
+              # Correctly construct the full profile directory path.
               profile_dirs+=("$full_config_path/${BASH_REMATCH[1]}")
             fi
           done < "$ini_file"
