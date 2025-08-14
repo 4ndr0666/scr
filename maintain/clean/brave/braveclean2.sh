@@ -29,10 +29,10 @@ set -euo pipefail
 
 ## Color variables
 # Using ANSI escape codes for colors. These are widely supported in modern terminals.
-RED="\e[01;31m"
-GRN="\e[01;32m"
-YLW="\e[01;33m"
-RST="\e[00m" # Reset to default color and style
+RED="\e[31m"
+GRN="\e[32m"
+YLW="\e[33m"
+RST="\e[0m" # Reset to default color and style
 
 ## Logging
 LOG_FILE="/tmp/BraveClean.log" # Using /tmp for temporary logs, generally acceptable for cleanup scripts.
