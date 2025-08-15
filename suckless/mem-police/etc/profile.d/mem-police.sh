@@ -10,7 +10,7 @@
 ## Usage:       Place in /etc/profile.d for autostart
 # ----------------------------------------------------------------------
 
-declare -r MEM_POLICE_PATH="/usr/local/bin/mem-police"
+declare -r MEM_POLICE_PATH="/usr/bin/mem-police"
 declare -r ID_PATH="/usr/bin/id"
 declare -r PGREP_PATH="/usr/bin/pgrep"
 

@@ -1,44 +1,59 @@
-# FFX Project Makefile
+# Makefile for the mem-police project
 
-SCRIPT     := ffx
-INSTALLDIR := /usr/local/bin
-TESTS      := merge_test.bats
+CC         := cc
+CFLAGS     := -O2 -std=c11 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200809L
+LDFLAGS    := -lpcre2-8
+TARGET     := mem-police
+INSTALLDIR := /usr/local/sbin
+TESTER     := mem-police-tester.sh
 
-.PHONY: all install uninstall test lint clean help
+.PHONY: all build install uninstall test lint clean help
 
-all: help
+all: build
 
-install: # Install the script to the system
-	@echo "📦 Installing $(SCRIPT) to $(INSTALLDIR)..."
-	@chmod +x $(SCRIPT)
-	@sudo cp -f $(SCRIPT) $(INSTALLDIR)/
-	@echo "✅ Installed successfully!"
+build: $(TARGET) # Compile the C daemon
+	@echo "🏗️  Building $(TARGET)..."
+	@$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c $(LDFLAGS)
+	@echo "✅ Build complete!"
 
-uninstall: # Remove the installed script
-	@echo "🗑️  Removing $(INSTALLDIR)/$(SCRIPT)..."
-	@sudo rm -f $(INSTALLDIR)/$(SCRIPT)
-	@echo "✅ Uninstalled successfully!"
+install: build # Install the daemon and test script
+	@echo "📦 Installing $(TARGET) to $(INSTALLDIR)..."
+	@sudo cp -f $(TARGET) $(INSTALLDIR)/
+	@echo "📦 Installing $(TESTER) to $(INSTALL-DIR)..."
+	@sudo cp -f $(TESTER) $(INSTALLDIR)/
+	@echo "✅ Installation complete!"
 
-test: # Run BATS tests
-	@echo "🧪 Running BATS tests..."
-	@bats $(TESTS)
+uninstall: # Remove the installed files
+	@echo "🗑️  Removing $(INSTALLDIR)/$(TARGET)..."
+	@sudo rm -f $(INSTALLDIR)/$(TARGET)
+	@echo "🗑️  Removing $(INSTALLDIR)/$(TESTER)..."
+	@sudo rm -f $(INSTALLDIR)/$(TESTER)
+	@echo "✅ Uninstallation complete!"
 
-lint: # Run shellcheck on the script
-	@echo "🔍 Running shellcheck..."
-	@shellcheck $(SCRIPT)
+test: # Run the integration test script
+	@echo "🧪 Running integration test suite..."
+	@if ! pgrep -x $(TARGET) >/dev/null 2>&1; then \
+		echo "   -> Error: '$(TARGET)' daemon is not running. Please start it as root."; \
+		exit 1; \
+	fi
+	@sudo ./${TESTER}
 
-clean: # Remove temporary and output files
-	@echo "🧹 Cleaning up temp files..."
-	@rm -f *.tmp *.log *.mp4
-	@rm -rf tmp/
+lint: # Run shellcheck on the test script
+	@echo "🔍 Running shellcheck on the test script..."
+	@shellcheck $(TESTER)
+
+clean: # Remove the compiled binary
+	@echo "🧹 Cleaning up build artifacts..."
+	@rm -f $(TARGET)
 	@echo "✅ Cleaned."
 
 help: # Show this help message
-	@echo "FFX Project Makefile"
-	@echo "===================="
-	@echo "make install      Install ffx to $(INSTALLDIR)"
-	@echo "make uninstall    Remove installed ffx"
-	@echo "make test         Run all BATS tests"
-	@echo "make lint         Run shellcheck on ffx"
-	@echo "make clean        Remove temp/output files"
+	@echo "mem-police Project Makefile"
+	@echo "==========================="
+	@echo "make build        Compile the $(TARGET) daemon"
+	@echo "make install      Compile and install the daemon and tester"
+	@echo "make uninstall    Remove installed files"
+	@echo "make test         Run the integration test suite"
+	@echo "make lint         Run shellcheck on the test script"
+	@echo "make clean        Remove the compiled binary"
 	@echo "make help         Show this help"
