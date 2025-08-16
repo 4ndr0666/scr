@@ -17,6 +17,7 @@ import sys
 import argparse
 import sqlite3
 import hashlib
+from tqdm import tqdm # Corrected import for standard environments
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
@@ -25,7 +26,8 @@ TARGET_MAX_VM_USAGE_GB = 70
 REPACKAGE_CHUNK_SIZE_GB = 15
 MAX_SAFE_ARCHIVE_SIZE_GB = 25
 
-BASE_DIR = "/content/drive/MyDrive/TakeoutProject"
+# This BASE_DIR is now the primary root for all operations on the appliance.
+BASE_DIR = "/mnt/takeout_data/TakeoutProject"
 DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
 CONFIG = {
     "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
@@ -36,18 +38,12 @@ CONFIG = {
 }
 CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
 CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
-VM_TEMP_EXTRACT_DIR = '/content/temp_extract'
-VM_TEMP_BATCH_DIR = '/content/temp_batch_creation'
+VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
+VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
-def dummy_tqdm(iterable, *args, **kwargs):
-    """A dummy tqdm function that acts as a fallback if tqdm is not available."""
-    description = kwargs.get('desc', 'items')
-    print(f"    > Processing {description}...")
-    return iterable
-
 def initialize_database(db_path):
     """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
@@ -139,7 +135,7 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
                 conn.commit()
                 new_archive_name = f"{original_basename_no_ext}.part-{part_number:02d}.tgz"
                 final_dest_path = os.path.join(dest_dir, new_archive_name)
-                print(f"    --> Batch contains {files_in_this_batch} unique files. Moving final part {part_number} to Google Drive...")
+                print(f"    --> Batch contains {files_in_this_batch} unique files. Moving final part {part_number}...")
                 shutil.move(temp_batch_archive_path, final_dest_path)
                 print(f"    ✅ Finished part {part_number}.")
             else:
@@ -158,7 +154,6 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
     print(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
     try:
-        # Artifact check for 0-byte files
         if os.path.getsize(archive_path) == 0:
             print(f"    ⚠️ WARNING: Archive is 0 bytes, likely a failed artifact.")
             if auto_delete_artifacts:
@@ -190,7 +185,7 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
             print("    ✅ All files in this archive were already processed. Finalizing.")
             return True
 
-        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to VM.")
+        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to temp dir.")
 
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
         deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
@@ -202,7 +197,7 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
     finally:
         if os.path.exists(VM_TEMP_EXTRACT_DIR):
             shutil.rmtree(VM_TEMP_EXTRACT_DIR)
-            print("    > Cleaned up temporary VM directory.")
+            print("    > Cleaned up temporary directory.")
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
     """Deduplicates new files against the primary storage and updates the database for unique files."""
@@ -258,11 +253,9 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
         if not os.path.exists(media_path):
             continue
         try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            with open(json_path, 'r', encoding='utf-8') as f: data = json.load(f)
             ts = data.get('photoTakenTime', {}).get('timestamp')
-            if not ts:
-                continue
+            if not ts: continue
 
             dt = datetime.fromtimestamp(int(ts))
             new_name_base = dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')
@@ -296,24 +289,14 @@ def main(args):
     conn = None
     try:
         print("--> [Step 0] Initializing environment...")
-        try: from tqdm.notebook import tqdm
-        except ImportError: tqdm = dummy_tqdm
-        from google.colab import drive
-        if not os.path.exists('/content/drive/MyDrive'): drive.mount('/content/drive')
-        else: print("✅ Google Drive already mounted.")
-
+        
+        # This is the standard script, no Colab-specific code.
+        
         for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
         conn = initialize_database(DB_PATH)
         perform_startup_integrity_check()
 
-        total_vm, used_vm, free_vm = shutil.disk_usage('/content/')
-        used_vm_gb = used_vm / (1024**3)
-        if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
-            print(f"\n❌ PRE-FLIGHT CHECK FAILED: Initial disk usage ({used_vm_gb:.2f} GB) is too high.")
-            print("    >>> PLEASE RESTART THE COLAB RUNTIME (Runtime -> Restart runtime) AND TRY AGAIN. <<<")
-            return
-        print(f"✅ Pre-flight disk check passed. (Initial Usage: {used_vm_gb:.2f} GB)")
-        subprocess.run("apt-get -qq install jdupes", shell=True)
+        # No pre-flight check needed in a dedicated appliance with a large drive.
         print("✅ Workspace ready.")
 
         print("\n--> [Step 1] Identifying unprocessed archives...")
@@ -331,7 +314,8 @@ def main(args):
             print(f"--> Locking and staging '{archive_name}' for processing...")
             shutil.move(source_path, staging_path)
 
-            if os.path.getsize(staging_path) / (1024**3) > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
+            archive_size_gb = os.path.getsize(staging_path) / (1024**3)
+            if archive_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
                 repackaging_ok = plan_and_repackage_archive(staging_path, CONFIG["SOURCE_ARCHIVES_DIR"], conn, tqdm)
                 if repackaging_ok:
                     shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
@@ -354,8 +338,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
-    try:
-        args = parser.parse_args([])
-    except SystemExit:
-        args = parser.parse_args()
+    # Use standard sys.argv parsing for a server environment
+    args = parser.parse_args()
     main(args)
