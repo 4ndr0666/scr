@@ -1,10 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-google_takeout_organizer.py
-Author: 4ndr0666
-Description: Uses googles free vm and online resources 
-to stage, unpack and organize data archives on your profile.
-"""
+#!/usr/bin/env python3
 import os
 import shutil
 import subprocess
