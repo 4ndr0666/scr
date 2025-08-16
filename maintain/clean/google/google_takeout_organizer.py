@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Takeout_processor.py
+google_takeout_organizer.py
 Author: 4ndr0666
-Description: Uses googles free vm and online
-resources to stage, unpack and organize all of data archives on your profile.
+Description: Uses googles free vm and online resources 
+to stage, unpack and organize data archives on your profile.
 """
-
 import os
 import shutil
 import subprocess
@@ -150,7 +149,7 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
     finally:
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
-def process_regular_archive(archive_path, conn, tqdm_module):
+def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifacts):
     """
     Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
     for already processed files and only unpacking the missing ones ("the delta").
@@ -159,6 +158,16 @@ def process_regular_archive(archive_path, conn, tqdm_module):
     print(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
     try:
+        # Artifact check for 0-byte files
+        if os.path.getsize(archive_path) == 0:
+            print(f"    ⚠️ WARNING: Archive is 0 bytes, likely a failed artifact.")
+            if auto_delete_artifacts:
+                os.remove(archive_path); print(f"    > Auto-deleting 0-byte artifact.")
+            else:
+                quarantine_path = os.path.join(CONFIG["QUARANTINE_DIR"], archive_name)
+                shutil.move(archive_path, quarantine_path); print(f"    > Moved artifact to quarantine.")
+            return False
+
         print("    > Checking database for previously completed files...")
         cursor.execute("SELECT original_path FROM files WHERE source_archive = ? AND final_path IS NOT NULL", (archive_name,))
         completed_files = {row[0] for row in cursor.fetchall()}
@@ -183,7 +192,6 @@ def process_regular_archive(archive_path, conn, tqdm_module):
 
         print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to VM.")
 
-        # Subsequent steps now operate on the much smaller "delta" of new files.
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
         deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
 
@@ -208,13 +216,11 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
 
     cursor = conn.cursor()
     files_moved = 0
-    # The actual uncompressed data is often in a "Takeout" subdirectory.
     takeout_source = os.path.join(source_path, "Takeout")
     if os.path.exists(takeout_source):
         print("    > Moving unique new files and updating database...")
         for root, _, files in os.walk(takeout_source):
             for filename in files:
-                # This loop now handles all non-photo unique files left after jdupes.
                 unique_file_path = os.path.join(root, filename)
                 relative_path = os.path.relpath(unique_file_path, takeout_source)
                 final_path = os.path.join(primary_storage_path, relative_path)
@@ -222,7 +228,6 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
                 os.makedirs(os.path.dirname(final_path), exist_ok=True)
                 shutil.move(unique_file_path, final_path)
 
-                # We need the original path relative to the TAR root, not the temp dir root.
                 original_path = os.path.relpath(unique_file_path, source_path)
                 cursor.execute("UPDATE files SET final_path = ? WHERE original_path = ? AND source_archive = ?",
                                (final_path, original_path, source_archive_name))
@@ -331,7 +336,7 @@ def main(args):
                 if repackaging_ok:
                     shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
             else:
-                processed_ok = process_regular_archive(staging_path, conn, tqdm)
+                processed_ok = process_regular_archive(staging_path, conn, tqdm, args.auto_delete_artifacts)
                 if processed_ok:
                     shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
                 else:
