@@ -1,4 +1,4 @@
-corrected_setup_script_content = """#!/bin/bash
+#!/bin/bash
 
 # Set permissions for the notebook file
 chmod +x /content/Takeout_Processing_and_Organization_Script.ipynb
@@ -34,9 +34,3 @@ EOF
 chmod +x "$AUTOSTART_SCRIPT_PATH"
 
 echo "Setup complete. The takeout processor script is downloaded and configured to run on startup."
-"""
-
-with open('/content/setupscript.sh', 'w') as f:
-    f.write(corrected_setup_script_content)
-
-print("Corrected setup script generated at /content/setupscript.sh")
