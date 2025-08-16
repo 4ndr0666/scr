@@ -7,7 +7,7 @@
 
 BRAVE_BIN="/usr/bin/brave-beta"
 
-"$BRAVE_BIN" \
+exec "$BRAVE_BIN" \
   --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
   --disable-crash-reporter \
   --ozone-platform=wayland \
@@ -16,4 +16,4 @@ BRAVE_BIN="/usr/bin/brave-beta"
   --enable-gpu-rasterization \
   --enable-zero-copy \
   --enable-features=ProactiveTabFreezeAndDiscard \
-  "$@" &
+  "$@"

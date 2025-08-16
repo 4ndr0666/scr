@@ -7,7 +7,7 @@ After=graphical-session.target
 
 [Service]
 # The %h specifier is the systemd-native, canonical way to refer to the user's home directory.
-ExecStart=%h/.local/bin/bravebackgrounded
+ExecStart=/usr/local/bin/bravebackgrounded
 
 # ---- Cgroup Resource Control ----
 MemoryMax=8G
