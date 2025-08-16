@@ -35,42 +35,56 @@ REPACKAGE_CHUNK_SIZE_GB = 15
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
-def wait_for_drive_mount(mount_point, timeout_seconds=600, interval_seconds=15):
+def wait_for_drive_ready(base_dir, db_path, timeout_seconds=600, interval_seconds=15):
     """
-    Intelligently and robustly waits for a path to become a valid mount point.
-    This is the definitive way to prevent startup race conditions.
+    Robustly waits for the target directory to be a valid, readable mount point.
+    It verifies both the mount's existence and the accessibility of its contents.
     """
-    print(f"--> [SYNC] Verifying that '{mount_point}' is a valid mount point...")
+    print(f"--> [SYNC] Verifying that '{base_dir}' is a ready mount point...")
+    mount_point = os.path.dirname(base_dir.rstrip('/'))
     start_time = time.time()
+    
     while True:
-        # Use findmnt, the correct tool to check the system's mount table.
-        result = subprocess.run(['findmnt', '-n', '--target', mount_point], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("    ✅ Mount point verified. Filesystem is ready.")
+        is_mounted = subprocess.run(['findmnt', '-n', '--target', mount_point], capture_output=True).returncode == 0
+        is_accessible = os.path.exists(db_path) or not os.path.exists(base_dir) # Accessible if DB exists or if base hasn't been created yet
+
+        if is_mounted and is_accessible:
+            print("    ✅ Mount point is active and contents are accessible. Filesystem is ready.")
             return True
         
         elapsed_time = time.time() - start_time
         if elapsed_time > timeout_seconds:
-            print(f"❌ ERROR: Timed out after {timeout_seconds} seconds waiting for mount point.")
-            print(f"    Please ensure your external drive is correctly mounted at '{mount_point}'.")
+            print(f"❌ ERROR: Timed out after {timeout_seconds} seconds waiting for drive to become ready.")
+            print(f"    Mount status: {'OK' if is_mounted else 'NOT MOUNTED'}")
+            print(f"    Content status: {'OK' if is_accessible else 'NOT ACCESSIBLE'}")
+            print(f"    Please ensure your drive is correctly mounted at '{mount_point}'.")
             return False
             
-        print(f"    > Mount point not ready, waiting... ({int(elapsed_time)}s / {timeout_seconds}s)")
+        print(f"    > Drive not ready, waiting... (Mount: {'OK' if is_mounted else '..'}, Access: {'OK' if is_accessible else '..'}) ({int(elapsed_time)}s)")
         time.sleep(interval_seconds)
 
 def initialize_database(db_path):
-    # This function is stable and complete
+    """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, sha256_hash TEXT NOT NULL UNIQUE, original_path TEXT NOT NULL, final_path TEXT, timestamp INTEGER, file_size INTEGER NOT NULL, source_archive TEXT NOT NULL)''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS files (
+        id INTEGER PRIMARY KEY,
+        sha256_hash TEXT NOT NULL UNIQUE,
+        original_path TEXT NOT NULL,
+        final_path TEXT,
+        timestamp INTEGER,
+        file_size INTEGER NOT NULL,
+        source_archive TEXT NOT NULL
+    )
+    ''')
     conn.commit()
     print("    ✅ Database ready.")
     return conn
 
 def perform_startup_integrity_check():
-    # This function is stable and complete
+    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
     print("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
@@ -78,7 +92,8 @@ def perform_startup_integrity_check():
         print("    ⚠️ Found orphaned files. Rolling back transaction...")
         for orphan_file in os.listdir(staging_dir):
             shutil.move(os.path.join(staging_dir, orphan_file), os.path.join(source_dir, orphan_file))
-        if os.path.exists(VM_TEMP_EXTRACT_DIR): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
+            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
         print("    ✅ Rollback complete.")
     for filename in os.listdir(source_dir):
         file_path = os.path.join(source_dir, filename)
@@ -88,7 +103,10 @@ def perform_startup_integrity_check():
     print("--> [POST] Integrity check complete.")
 
 def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
-    # This function is stable and complete
+    """
+    Scans a large archive, hashes unique files, and repackages them into smaller,
+    crash-resilient parts while populating the database.
+    """
     original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
     print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
     repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
@@ -142,7 +160,9 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
 def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifacts):
-    # This function is stable and complete
+    """
+    Handles a regular-sized archive with Rsync-like file-level resumption.
+    """
     archive_name = os.path.basename(archive_path)
     print(f"\n--> Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
@@ -161,6 +181,7 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
                     tf.extract(member, path=VM_TEMP_EXTRACT_DIR, set_attrs=False)
         if not os.listdir(VM_TEMP_EXTRACT_DIR):
             print("    ✅ All files in this archive were already processed."); return True
+        print(f"    ✅ Unpacked new/missing files to temp dir.")
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
         deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
         return True
@@ -169,7 +190,7 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
         if os.path.exists(VM_TEMP_EXTRACT_DIR): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
-    # This function is stable and complete
+    """Deduplicates new files against the primary storage and updates the database."""
     print("--> Deduplicating new files...")
     if not shutil.which('jdupes'): return
     command = f'jdupes -r -S -nh --linkhard --move="{trash_path}" "{source_path}" "{primary_storage_path}"'
@@ -193,7 +214,7 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
     print(f"    ✅ Processed {files_moved} unique files.")
 
 def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
-    # This function is stable and complete
+    """Organizes photos and updates their final path and timestamp in the database."""
     print("--> Organizing photos...")
     photos_organized_count = 0
     photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
@@ -232,9 +253,7 @@ def main(args):
     try:
         print("--> [Step 0] Initializing environment...")
         
-        # This is the crucial fix for the startup race condition.
-        # It ensures we don't start processing until the drive is truly ready.
-        if not wait_for_drive_mount(os.path.dirname(BASE_DIR.rstrip('/'))):
+        if not wait_for_drive_ready(BASE_DIR, DB_PATH):
             sys.exit(1)
 
         for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
