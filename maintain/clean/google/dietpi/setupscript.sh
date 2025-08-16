@@ -1,14 +1,12 @@
 #!/bin/bash
 #
 # DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.4)
-# This script installs the filesystem-based version of the processor.
-# Corrected to use the canonical script name.
+# This is the definitive installer for the v4.3 filesystem-based script.
 
 set -euo pipefail
 
 # --- Configuration ---
 INSTALL_DIR="/opt/takeout_processor"
-# This is the canonical script name
 PROCESSOR_FILENAME="google_takeout_organizer.py"
 PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${PROCESSOR_FILENAME}"
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
@@ -32,7 +30,14 @@ main() {
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
-    apt-get install -y python3 jdupes sqlite3 curl python3-tqdm
+    apt-get install -y \
+        python3 \
+        jdupes \
+        sqlite3 \
+        curl \
+        python3-tqdm \
+        util-linux # Provides findmnt
+
     _log_ok "All dependencies are installed."
 
     _log_info "Creating and verifying data directory structure..."
@@ -60,9 +65,11 @@ main() {
     chmod +x "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Application script deployed to ${PROCESSOR_SCRIPT_PATH}."
     
-    _log_info "Configuring the script for this system..."
+    _log_info "Configuring the script for the appliance environment..."
     sed -i "s|BASE_DIR = \".*\"|BASE_DIR = \"${base_project_dir}\"|" "$PROCESSOR_SCRIPT_PATH"
     sed -i "s|from tqdm.notebook import tqdm|from tqdm import tqdm|" "$PROCESSOR_SCRIPT_PATH"
+    sed -i "s|from google.colab import drive|# from google.colab import drive|" "$PROCESSOR_SCRIPT_PATH"
+    sed -i "s|drive.mount('/content/drive')|pass # drive.mount disabled for appliance|" "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Script configured."
 
     _log_info "Creating the autostart loop in ${CUSTOM_AUTOSTART_FILE}..."
