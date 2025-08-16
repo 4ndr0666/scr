@@ -1,16 +1,19 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.3)
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.4)
 # This script installs the filesystem-based version of the processor.
+# Corrected to use the canonical script name.
 
 set -euo pipefail
 
 # --- Configuration ---
 INSTALL_DIR="/opt/takeout_processor"
-PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/google_takeout_organizer.py"
-PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/takeout_processor.py"
+# This is the canonical script name
+PROCESSOR_FILENAME="google_takeout_organizer.py"
+PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${PROCESSOR_FILENAME}"
+PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
 CUSTOM_AUTOSTART_FILE="/var/lib/dietpi/dietpi-autostart/custom.sh"
-DATA_DIR="/mnt/takeout_data" # The required mount point for the external data drive.
+DATA_DIR="/mnt/takeout_data"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -22,19 +25,14 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (Filesystem Version) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
 
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
-    apt-get install -y \
-        python3 \
-        jdupes \
-        sqlite3 \
-        curl \
-        python3-tqdm
+    apt-get install -y python3 jdupes sqlite3 curl python3-tqdm
     _log_ok "All dependencies are installed."
 
     _log_info "Creating and verifying data directory structure..."
@@ -42,9 +40,7 @@ main() {
     mkdir -p "$base_project_dir"
     
     if ! findmnt -n --target "$DATA_DIR"; then
-        _log_fail "The path '${DATA_DIR}' is NOT a valid mount point.
-    Please mount your external drive to this location (e.g., via /etc/fstab) and re-run the script.
-    This check prevents data from being written to the root SD card by mistake."
+        _log_fail "The path '${DATA_DIR}' is NOT a valid mount point. Aborting."
     fi
     _log_ok "Verified that '${DATA_DIR}' is a valid mount point."
 
@@ -54,7 +50,7 @@ main() {
     mkdir -p "${base_project_dir}/04-trash/quarantined_artifacts"
     mkdir -p "${base_project_dir}/04-trash/duplicates"
     mkdir -p "${base_project_dir}/05-COMPLETED-ARCHIVES"
-    _log_ok "Directory structure created successfully on the mounted drive."
+    _log_ok "Directory structure created successfully."
     
     _log_info "Downloading the Takeout Processor script..."
     mkdir -p "$INSTALL_DIR"
