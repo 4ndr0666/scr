@@ -1,28 +1,21 @@
-# --- DietPi-Automation Settings for Takeout Processor Appliance ---
+# --- DietPi-Automation for Takeout Processor Appliance v1.1 ---
 
 # 1. System Settings
 AUTO_SETUP_NET_HOSTNAME=takeout-processor
 AUTO_SETUP_TIMEZONE=America/New_York # User should change this
 AUTO_SETUP_KEYBOARD_LAYOUT=us
 
-# 2. Networking (Assuming Ethernet DHCP)
-AUTO_SETUP_NET_USESTATIC=0
+# 2. Automatic Software Installation
+# Install only the bare minimum required by the python script itself.
+# The setup script will be downloaded, not cloned.
+AUTO_SETUP_APT_INSTALLS=python3,jdupes,sqlite3,curl
 
-# 3. Automatic Software Installation
-# We need Git (ID 88), Python 3 (ID 138), and jdupes (custom APT install)
-AUTO_SETUP_INSTALL_SOFTWARE_ID=88
-AUTO_SETUP_INSTALL_SOFTWARE_ID=138
-# Install jdupes via APT
-AUTO_SETUP_APT_INSTALLS=jdupes
+# 3. The Custom User Script
+# This is the core of the automation. DietPi will download and execute this
+# exact script after the initial software installation.
+AUTO_SETUP_CUSTOM_SCRIPT_EXEC=https://raw.githubusercontent.com/4ndr0666/scr/refs/heads/main/maintain/clean/google/dietpi/setupscript.sh
 
-# 4. The "Secret Sauce": The User Script
-# This tells DietPi to download and run our custom setup script AFTER software is installed.
-# This script will set up our application and the autostart loop.
-AUTO_SETUP_CUSTOM_SCRIPT_EXEC=https://raw.githubusercontent.com/4ndr0666/scr/main/path/to/our/setup_script.sh #<-- Needs a real URL
-
-# 5. Final Automation Settings
-# Set the user to auto-login (e.g., root is 0, dietpi is 2)
-AUTO_SETUP_AUTOSTART_TARGET_INDEX=0
-# Tell the system the setup is automated and to accept licenses
+# 4. Final Automation Settings
+AUTO_SETUP_AUTOSTART_TARGET_INDEX=0 # Autologin as root
 AUTO_SETUP_AUTOMATED=1
 AUTO_SETUP_ACCEPT_LICENSE=1

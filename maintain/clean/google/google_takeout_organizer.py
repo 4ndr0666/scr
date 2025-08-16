@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""google_takeout_organizer.ipynb
+"""
+Takeout_processor.py
 Author: 4ndr0666
-Description: Uses google free vm to stage, unpack and organize all of your data
+Description: Uses googles free vm and online
+resources to stage, unpack and organize all of data archives on your profile.
 """
 
 import os
