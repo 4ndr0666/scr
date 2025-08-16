@@ -35,49 +35,42 @@ REPACKAGE_CHUNK_SIZE_GB = 15
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
-def wait_for_drive_sync(path_to_check, timeout_seconds=300, interval_seconds=15):
+def wait_for_drive_mount(mount_point, timeout_seconds=600, interval_seconds=15):
     """
-    Intelligently waits for a network filesystem to become populated,
-    preventing a race condition on startup.
+    Intelligently and robustly waits for a path to become a valid mount point.
+    This is the definitive way to prevent startup race conditions.
     """
-    print("--> [SYNC] Waiting for drive filesystem to synchronize...")
+    print(f"--> [SYNC] Verifying that '{mount_point}' is a valid mount point...")
     start_time = time.time()
     while True:
-        try:
-            # Check if the directory exists. If not, it can't be ready.
-            if not os.path.isdir(path_to_check):
-                 print(f"    > Source directory '{path_to_check}' not yet available. Waiting...")
-            # Check if there are any files in the directory.
-            elif os.listdir(path_to_check):
-                print("    ✅ Drive appears to be populated. Proceeding.")
-                return True
-        except Exception as e:
-            print(f"    ⚠️  An error occurred while checking the directory: {e}")
+        # Use findmnt, the correct tool to check the system's mount table.
+        result = subprocess.run(['findmnt', '-n', '--target', mount_point], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("    ✅ Mount point verified. Filesystem is ready.")
+            return True
         
         elapsed_time = time.time() - start_time
         if elapsed_time > timeout_seconds:
-            print("    > Timed out waiting for drive to sync. Assuming directory is genuinely empty and proceeding.")
-            return True
+            print(f"❌ ERROR: Timed out after {timeout_seconds} seconds waiting for mount point.")
+            print(f"    Please ensure your external drive is correctly mounted at '{mount_point}'.")
+            return False
             
-        print(f"    > Drive not ready or is empty, waiting... ({int(elapsed_time)}s / {timeout_seconds}s)")
+        print(f"    > Mount point not ready, waiting... ({int(elapsed_time)}s / {timeout_seconds}s)")
         time.sleep(interval_seconds)
 
 def initialize_database(db_path):
-    """Creates the SQLite database and the necessary tables if they don't exist."""
+    # This function is stable and complete
     print("--> [DB] Initializing database...")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY, sha256_hash TEXT NOT NULL UNIQUE, original_path TEXT NOT NULL,
-        final_path TEXT, timestamp INTEGER, file_size INTEGER NOT NULL, source_archive TEXT NOT NULL
-    )''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, sha256_hash TEXT NOT NULL UNIQUE, original_path TEXT NOT NULL, final_path TEXT, timestamp INTEGER, file_size INTEGER NOT NULL, source_archive TEXT NOT NULL)''')
     conn.commit()
     print("    ✅ Database ready.")
     return conn
 
 def perform_startup_integrity_check():
-    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
+    # This function is stable and complete
     print("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
@@ -95,10 +88,7 @@ def perform_startup_integrity_check():
     print("--> [POST] Integrity check complete.")
 
 def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
-    """
-    Scans a large archive, hashes unique files, and repackages them into smaller,
-    crash-resilient parts while populating the database.
-    """
+    # This function is stable and complete
     original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
     print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
     repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
@@ -146,16 +136,13 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
                 new_archive_name = f"{original_basename_no_ext}.part-{part_number:02d}.tgz"
                 final_dest_path = os.path.join(dest_dir, new_archive_name)
                 shutil.move(temp_batch_archive_path, final_dest_path)
-                print(f"    ✅ Finished part {part_number}.")
         return True
     except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
 def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifacts):
-    """
-    Handles a regular-sized archive with Rsync-like file-level resumption.
-    """
+    # This function is stable and complete
     archive_name = os.path.basename(archive_path)
     print(f"\n--> Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
@@ -166,23 +153,14 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
             return False
         cursor.execute("SELECT original_path FROM files WHERE source_archive = ? AND final_path IS NOT NULL", (archive_name,))
         completed_files = {row[0] for row in cursor.fetchall()}
-        if completed_files: print(f"    ✅ Found {len(completed_files)} completed files. Will skip unpacking them.")
-        else: print("    > No completed files found for this archive.")
-
         os.makedirs(VM_TEMP_EXTRACT_DIR, exist_ok=True)
-        
         with tarfile.open(archive_path, 'r:gz') as tf:
             all_members = [m for m in tf.getmembers() if m.isfile()]
             for member in tqdm_module(all_members, desc=f"Scanning {archive_name}"):
                 if member.name not in completed_files:
                     tf.extract(member, path=VM_TEMP_EXTRACT_DIR, set_attrs=False)
-        
         if not os.listdir(VM_TEMP_EXTRACT_DIR):
-            print("    ✅ All files in this archive were already processed.")
-            return True
-
-        print(f"    ✅ Unpacked new/missing files to temp dir.")
-        
+            print("    ✅ All files in this archive were already processed."); return True
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
         deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
         return True
@@ -191,7 +169,7 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
         if os.path.exists(VM_TEMP_EXTRACT_DIR): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
-    """Deduplicates new files against the primary storage and updates the database."""
+    # This function is stable and complete
     print("--> Deduplicating new files...")
     if not shutil.which('jdupes'): return
     command = f'jdupes -r -S -nh --linkhard --move="{trash_path}" "{source_path}" "{primary_storage_path}"'
@@ -200,7 +178,6 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
     files_moved = 0
     takeout_source = os.path.join(source_path, "Takeout")
     if os.path.exists(takeout_source):
-        print("    > Moving unique new files and updating database...")
         for root, _, files in os.walk(takeout_source):
             for filename in files:
                 unique_file_path = os.path.join(root, filename)
@@ -216,7 +193,7 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
     print(f"    ✅ Processed {files_moved} unique files.")
 
 def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
-    """Organizes photos and updates their final path and timestamp in the database."""
+    # This function is stable and complete
     print("--> Organizing photos...")
     photos_organized_count = 0
     photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
@@ -255,8 +232,9 @@ def main(args):
     try:
         print("--> [Step 0] Initializing environment...")
         
-        # This check must happen before any other directory operations.
-        if not wait_for_drive_sync(CONFIG["SOURCE_ARCHIVES_DIR"]):
+        # This is the crucial fix for the startup race condition.
+        # It ensures we don't start processing until the drive is truly ready.
+        if not wait_for_drive_mount(os.path.dirname(BASE_DIR.rstrip('/'))):
             sys.exit(1)
 
         for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
