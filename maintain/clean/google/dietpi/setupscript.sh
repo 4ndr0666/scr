@@ -1,19 +1,16 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.3)
-# This script is designed to be run by PiKISS or DietPi's automation file.
-# It is fully non-interactive and includes robust verification checks.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.0)
+# This script installs the fully API-driven version of the processor and its dependencies.
 
 set -euo pipefail
 
 # --- Configuration ---
 INSTALL_DIR="/opt/takeout_processor"
-# This URL must point to the final, v4.1 filesystem-based Python script.
-PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/google_takeout_organizer.py"
+PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/google_takeout_organizer.py" #<-- This URL must point to the v5.1 API script
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/takeout_processor.py"
 CUSTOM_AUTOSTART_FILE="/var/lib/dietpi/dietpi-autostart/custom.sh"
-# A predictable, non-interactive mount point for the external data drive.
-DATA_DIR="/mnt/takeout_data"
+CREDENTIALS_PATH="${INSTALL_DIR}/credentials.json"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -25,66 +22,47 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup ---"
-
-    # --- 1. Privilege Check ---
-    if [[ $EUID -ne 0 ]]; then
-       _log_fail "This script must be run as root. Please use 'sudo'."
-    fi
+    _log_info "--- Starting Takeout Processor Appliance Setup (API Version) ---"
+    if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
 
-    # --- 2. Install Dependencies via APT ---
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
+    apt-get install -y python3 python3-pip jdupes sqlite3 curl
     
-    # findmnt is part of the util-linux package, which is essential and should already be present.
-    apt-get install -y \
-        python3 \
-        jdupes \
-        sqlite3 \
-        curl \
-        python3-tqdm
-
+    _log_info "Installing required Google Cloud Python libraries via APT..."
+    apt-get install -y python3-googleapi python3-google-auth-httplib2 python3-google-auth-oauthlib
+    
     _log_ok "All dependencies are installed."
 
-    # --- 3. Create & VERIFY Data Directories ---
-    _log_info "Creating and verifying data directory structure..."
-    local base_project_dir="${DATA_DIR}/TakeoutProject"
-    mkdir -p "$base_project_dir"
-    
-    # --- CRITICAL: Verify that DATA_DIR is a mount point ---
-    if ! findmnt -n --target "$DATA_DIR"; then
-        _log_fail "The path '${DATA_DIR}' is NOT a valid mount point.
-    Please mount your external drive to this location (e.g., via /etc/fstab) and re-run the script.
-    This check prevents data from being written to the root SD card by mistake."
-    fi
-    _log_ok "Verified that '${DATA_DIR}' is a valid mount point."
-
-    mkdir -p "${base_project_dir}/00-ALL-ARCHIVES"
-    mkdir -p "${base_project_dir}/01-PROCESSING-STAGING"
-    mkdir -p "${base_project_dir}/03-organized/My-Photos"
-    mkdir -p "${base_project_dir}/04-trash/quarantined_artifacts"
-    mkdir -p "${base_project_dir}/04-trash/duplicates"
-    mkdir -p "${base_project_dir}/05-COMPLETED-ARCHIVES"
-    _log_ok "Directory structure created successfully on the mounted drive."
-    
-    # --- 4. Deploy Application via cURL ---
-    _log_info "Downloading the Takeout Processor script..."
+    _log_info "Creating application directory at ${INSTALL_DIR}..."
     mkdir -p "$INSTALL_DIR"
+    
+    # --- Handle Service Account Credentials ---
+    if [[ -f "$CREDENTIALS_PATH" ]]; then
+        _log_ok "Existing 'credentials.json' found."
+    elif [[ -t 0 ]]; then # Interactive session
+        local user_creds_path
+        read -r -p "Enter the full path to your service account credentials.json file: " user_creds_path
+        if [[ -z "$user_creds_path" ]] || [[ ! -f "$user_creds_path" ]]; then
+            _log_fail "Invalid or non-existent file provided. Aborting."
+        fi
+        cp "$user_creds_path" "$CREDENTIALS_PATH"
+    else # Non-interactive (first boot)
+        _log_warn "The 'credentials.json' file was not found at ${CREDENTIALS_PATH}."
+        _log_warn "The service will fail until it is placed there manually."
+    fi
+    chmod 600 "$CREDENTIALS_PATH"
+    _log_ok "Service account credentials handled."
+    
+    _log_info "Downloading the Takeout Processor script..."
     if ! curl -Lfo "$PROCESSOR_SCRIPT_PATH" -- "$PROCESSOR_SCRIPT_URL"; then
         _log_fail "Failed to download the processor script. Aborting."
     fi
     chmod +x "$PROCESSOR_SCRIPT_PATH"
-    _log_ok "Application script deployed to ${PROCESSOR_SCRIPT_PATH}."
+    _log_ok "Application script deployed."
     
-    # --- 5. Configure the Script ---
-    _log_info "Configuring the script for this system..."
-    sed -i "s|BASE_DIR = \".*\"|BASE_DIR = \"${base_project_dir}\"|" "$PROCESSOR_SCRIPT_PATH"
-    sed -i "s|from tqdm.notebook import tqdm|from tqdm import tqdm|" "$PROCESSOR_SCRIPT_PATH"
-    _log_ok "Script configured."
-
-    # --- 6. Create the Autostart Loop Script ---
     _log_info "Creating the autostart loop in ${CUSTOM_AUTOSTART_FILE}..."
     cat << EOF > "$CUSTOM_AUTOSTART_FILE"
 #!/bin/bash
@@ -109,14 +87,15 @@ EOF
     chmod +x "$CUSTOM_AUTOSTART_FILE"
     _log_ok "Autostart script created."
 
-    # --- 7. Final Instructions ---
     echo ""
     _log_ok "--------------------------------------------------------"
     _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
-    _log_info "The system is now configured to automatically process your archives."
-    _log_info "1. Place your Takeout .tgz files in: ${base_project_dir}/00-ALL-ARCHIVES/"
-    _log_info "2. Reboot the system to begin the automated processing."
-    _log_info "3. You can monitor progress with: tail -f /var/log/takeout_processor.log"
+    _log_info "IMPORTANT: You must SHARE your 'TakeoutProject' folder in Google Drive"
+    _log_info "with the service account email: dietpi@ytviewer-cli.iam.gserviceaccount.com"
+    _log_info "and grant it 'Editor' permissions."
+    _log_info ""
+    _log_info "Reboot the system to begin processing."
+    _log_info "You can monitor progress with: tail -f /var/log/takeout_processor.log"
     _log_ok "--------------------------------------------------------"
 }
 
