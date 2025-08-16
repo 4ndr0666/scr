@@ -11,7 +11,7 @@ PROCESSOR_FILENAME="google_takeout_organizer.py"
 PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${PROCESSOR_FILENAME}"
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
 CUSTOM_AUTOSTART_FILE="/var/lib/dietpi/dietpi-autostart/custom.sh"
-DATA_DIR="/mnt/takeout_data"
+#DATA_DIR="/mnt/takeout_data"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -40,22 +40,22 @@ main() {
 
     _log_ok "All dependencies are installed."
 
-    _log_info "Creating and verifying data directory structure..."
-    local base_project_dir="${DATA_DIR}/TakeoutProject"
-    mkdir -p "$base_project_dir"
+#    _log_info "Creating and verifying data directory structure..."
+#    local base_project_dir="${DATA_DIR}/TakeoutProject"
+#    mkdir -p "$base_project_dir"
     
-    if ! findmnt -n --target "$DATA_DIR"; then
-        _log_fail "The path '${DATA_DIR}' is NOT a valid mount point. Aborting."
-    fi
-    _log_ok "Verified that '${DATA_DIR}' is a valid mount point."
+#    if ! findmnt -n --target "$DATA_DIR"; then
+#        _log_fail "The path '${DATA_DIR}' is NOT a valid mount point. Aborting."
+#    fi
+#    _log_ok "Verified that '${DATA_DIR}' is a valid mount point."
 
-    mkdir -p "${base_project_dir}/00-ALL-ARCHIVES"
-    mkdir -p "${base_project_dir}/01-PROCESSING-STAGING"
-    mkdir -p "${base_project_dir}/03-organized/My-Photos"
-    mkdir -p "${base_project_dir}/04-trash/quarantined_artifacts"
-    mkdir -p "${base_project_dir}/04-trash/duplicates"
-    mkdir -p "${base_project_dir}/05-COMPLETED-ARCHIVES"
-    _log_ok "Directory structure created successfully."
+ #   mkdir -p "${base_project_dir}/00-ALL-ARCHIVES"
+ #   mkdir -p "${base_project_dir}/01-PROCESSING-STAGING"
+ #   mkdir -p "${base_project_dir}/03-organized/My-Photos"
+ #   mkdir -p "${base_project_dir}/04-trash/quarantined_artifacts"
+ #   mkdir -p "${base_project_dir}/04-trash/duplicates"
+ #   mkdir -p "${base_project_dir}/05-COMPLETED-ARCHIVES"
+ #   _log_ok "Directory structure created successfully."
     
     _log_info "Downloading the Takeout Processor script..."
     mkdir -p "$INSTALL_DIR"
@@ -65,12 +65,12 @@ main() {
     chmod +x "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Application script deployed to ${PROCESSOR_SCRIPT_PATH}."
     
-    _log_info "Configuring the script for the appliance environment..."
-    sed -i "s|BASE_DIR = \".*\"|BASE_DIR = \"${base_project_dir}\"|" "$PROCESSOR_SCRIPT_PATH"
-    sed -i "s|from tqdm.notebook import tqdm|from tqdm import tqdm|" "$PROCESSOR_SCRIPT_PATH"
-    sed -i "s|from google.colab import drive|# from google.colab import drive|" "$PROCESSOR_SCRIPT_PATH"
-    sed -i "s|drive.mount('/content/drive')|pass # drive.mount disabled for appliance|" "$PROCESSOR_SCRIPT_PATH"
-    _log_ok "Script configured."
+#    _log_info "Configuring the script for the appliance environment..."
+#    sed -i "s|BASE_DIR = \".*\"|BASE_DIR = \"${base_project_dir}\"|" "$PROCESSOR_SCRIPT_PATH"
+#    sed -i "s|from tqdm.notebook import tqdm|from tqdm import tqdm|" "$PROCESSOR_SCRIPT_PATH"
+#    sed -i "s|from google.colab import drive|# from google.colab import drive|" "$PROCESSOR_SCRIPT_PATH"
+#    sed -i "s|drive.mount('/content/drive')|pass # drive.mount disabled for appliance|" "$PROCESSOR_SCRIPT_PATH"
+#    _log_ok "Script configured."
 
     _log_info "Creating the autostart loop in ${CUSTOM_AUTOSTART_FILE}..."
     cat << EOF > "$CUSTOM_AUTOSTART_FILE"
@@ -99,10 +99,9 @@ EOF
     echo ""
     _log_ok "--------------------------------------------------------"
     _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
-    _log_info "1. IMPORTANT: Ensure your external drive is mounted to: ${DATA_DIR}"
-    _log_info "2. Place your Takeout .tgz files in: ${base_project_dir}/00-ALL-ARCHIVES/"
-    _log_info "3. Reboot the system to begin processing."
-    _log_info "4. You can monitor progress with: tail -f /var/log/takeout_processor.log"
+    _log_info "1. Place your Takeout .tgz files in: /content/drive/MyDrive/TakeoutProject/00-ALL-ARCHIVES/"
+    _log_info "2. Reboot the system to begin processing."
+    _log_info "3. You can monitor progress with: tail -f /var/log/takeout_processor.log"
     _log_ok "--------------------------------------------------------"
 }
 main
