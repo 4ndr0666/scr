@@ -8,6 +8,11 @@ from datetime import datetime
 import traceback
 import re
 import sys
+
+sys.path.append("/content/drive")
+import drive.bc.Utilfunc as UF
+
+print("Module imported successfully!")
 import argparse
 import sqlite3
 import hashlib
@@ -377,7 +382,9 @@ def main(args):
             from tqdm.notebook import tqdm
         except ImportError:
             tqdm = dummy_tqdm
-        from google.colab import drive
+            from google.colab import drive
+        except ImportError:
+            drive = UF
 
         if not os.path.exists("/content/drive/MyDrive"):
             drive.mount("/content/drive")
