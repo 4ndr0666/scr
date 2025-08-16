@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# A slightly more robust way to check if any brave-browser process is stopped
+if pgrep -f "brave-browser" | xargs -r ps -o stat= -p | grep -q T; then
+  echo "Resuming Brave..."
+  pkill -CONT brave-browser
+else
+  echo "Pausing Brave..."
+  pkill -STOP brave-browser
+fi
