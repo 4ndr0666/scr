@@ -11,12 +11,17 @@ import argparse
 import sqlite3
 import hashlib
 import time
-from tqdm import tqdm
+from tqdm.notebook import tqdm # Correct import for Colab environment
+from google.colab import drive # Correct import for Colab environment
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-BASE_DIR = "/mnt/takeout_data/TakeoutProject"
+TARGET_MAX_VM_USAGE_GB = 70
+REPACKAGE_CHUNK_SIZE_GB = 15
+MAX_SAFE_ARCHIVE_SIZE_GB = 25
+
+BASE_DIR = "/content/drive/MyDrive/TakeoutProject"
 DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
 CONFIG = {
     "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
@@ -27,64 +32,26 @@ CONFIG = {
 }
 CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
 CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
-VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
-VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
-MAX_SAFE_ARCHIVE_SIZE_GB = 25
-REPACKAGE_CHUNK_SIZE_GB = 15
+VM_TEMP_EXTRACT_DIR = '/content/temp_extract'
+VM_TEMP_BATCH_DIR = '/content/temp_batch_creation'
 
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
-def wait_for_drive_ready(base_dir, db_path, timeout_seconds=600, interval_seconds=15):
-    """
-    Robustly waits for the target directory to be a valid, readable mount point.
-    It verifies both the mount's existence and the accessibility of its contents.
-    """
-    print(f"--> [SYNC] Verifying that '{base_dir}' is a ready mount point...")
-    mount_point = os.path.dirname(base_dir.rstrip('/'))
-    start_time = time.time()
-    
-    while True:
-        is_mounted = subprocess.run(['findmnt', '-n', '--target', mount_point], capture_output=True).returncode == 0
-        is_accessible = os.path.exists(db_path) or not os.path.exists(base_dir) # Accessible if DB exists or if base hasn't been created yet
-
-        if is_mounted and is_accessible:
-            print("    ✅ Mount point is active and contents are accessible. Filesystem is ready.")
-            return True
-        
-        elapsed_time = time.time() - start_time
-        if elapsed_time > timeout_seconds:
-            print(f"❌ ERROR: Timed out after {timeout_seconds} seconds waiting for drive to become ready.")
-            print(f"    Mount status: {'OK' if is_mounted else 'NOT MOUNTED'}")
-            print(f"    Content status: {'OK' if is_accessible else 'NOT ACCESSIBLE'}")
-            print(f"    Please ensure your drive is correctly mounted at '{mount_point}'.")
-            return False
-            
-        print(f"    > Drive not ready, waiting... (Mount: {'OK' if is_mounted else '..'}, Access: {'OK' if is_accessible else '..'}) ({int(elapsed_time)}s)")
-        time.sleep(interval_seconds)
-
 def initialize_database(db_path):
-    """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY,
-        sha256_hash TEXT NOT NULL UNIQUE,
-        original_path TEXT NOT NULL,
-        final_path TEXT,
-        timestamp INTEGER,
-        file_size INTEGER NOT NULL,
-        source_archive TEXT NOT NULL
-    )
-    ''')
+        id INTEGER PRIMARY KEY, sha256_hash TEXT NOT NULL UNIQUE, original_path TEXT NOT NULL,
+        final_path TEXT, timestamp INTEGER, file_size INTEGER NOT NULL, source_archive TEXT NOT NULL
+    )''')
     conn.commit()
     print("    ✅ Database ready.")
     return conn
 
 def perform_startup_integrity_check():
-    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
     print("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
@@ -92,21 +59,17 @@ def perform_startup_integrity_check():
         print("    ⚠️ Found orphaned files. Rolling back transaction...")
         for orphan_file in os.listdir(staging_dir):
             shutil.move(os.path.join(staging_dir, orphan_file), os.path.join(source_dir, orphan_file))
-        if os.path.exists(VM_TEMP_EXTRACT_DIR):
-            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+        if os.path.exists(VM_TEMP_EXTRACT_DIR): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
         print("    ✅ Rollback complete.")
-    for filename in os.listdir(source_dir):
-        file_path = os.path.join(source_dir, filename)
-        if os.path.isfile(file_path) and os.path.getsize(file_path) == 0:
-            print(f"    ⚠️ Found 0-byte artifact: '{filename}'. Quarantining...")
-            shutil.move(file_path, os.path.join(CONFIG["QUARANTINE_DIR"], filename))
+    if os.path.exists(source_dir):
+        for filename in os.listdir(source_dir):
+            file_path = os.path.join(source_dir, filename)
+            if os.path.isfile(file_path) and os.path.getsize(file_path) == 0:
+                print(f"    ⚠️ Found 0-byte artifact: '{filename}'. Quarantining...")
+                shutil.move(file_path, os.path.join(CONFIG["QUARANTINE_DIR"], filename))
     print("--> [POST] Integrity check complete.")
 
 def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
-    """
-    Scans a large archive, hashes unique files, and repackages them into smaller,
-    crash-resilient parts while populating the database.
-    """
     original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
     print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
     repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
@@ -160,9 +123,6 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
 def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifacts):
-    """
-    Handles a regular-sized archive with Rsync-like file-level resumption.
-    """
     archive_name = os.path.basename(archive_path)
     print(f"\n--> Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
@@ -190,7 +150,6 @@ def process_regular_archive(archive_path, conn, tqdm_module, auto_delete_artifac
         if os.path.exists(VM_TEMP_EXTRACT_DIR): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
-    """Deduplicates new files against the primary storage and updates the database."""
     print("--> Deduplicating new files...")
     if not shutil.which('jdupes'): return
     command = f'jdupes -r -S -nh --linkhard --move="{trash_path}" "{source_path}" "{primary_storage_path}"'
@@ -214,7 +173,6 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
     print(f"    ✅ Processed {files_moved} unique files.")
 
 def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
-    """Organizes photos and updates their final path and timestamp in the database."""
     print("--> Organizing photos...")
     photos_organized_count = 0
     photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
@@ -253,12 +211,21 @@ def main(args):
     try:
         print("--> [Step 0] Initializing environment...")
         
-        if not wait_for_drive_ready(BASE_DIR, DB_PATH):
-            sys.exit(1)
-
+        # This is the standard script for Colab, so we need the Colab-specific code.
+        drive.mount('/content/drive')
+        
         for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
         conn = initialize_database(DB_PATH)
         perform_startup_integrity_check()
+
+        total_vm, used_vm, free_vm = shutil.disk_usage('/content/')
+        used_vm_gb = used_vm / (1024**3)
+        if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
+            print(f"\n❌ PRE-FLIGHT CHECK FAILED: Initial disk usage ({used_vm_gb:.2f} GB) is too high.")
+            print("    >>> PLEASE RESTART THE COLAB RUNTIME (Runtime -> Restart runtime) AND TRY AGAIN. <<<")
+            return
+        print(f"✅ Pre-flight disk check passed. (Initial Usage: {used_vm_gb:.2f} GB)")
+        subprocess.run("apt-get -qq install jdupes", shell=True)
         print("✅ Workspace ready.")
 
         print("\n--> [Step 1] Identifying unprocessed archives...")
@@ -298,5 +265,8 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
-    args = parser.parse_args()
+    try:
+        args = parser.parse_args([])
+    except SystemExit:
+        args = parser.parse_args()
     main(args)
