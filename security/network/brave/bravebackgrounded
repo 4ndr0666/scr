@@ -1,25 +1,19 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# ===================== // BRAVEBACKGROUNDED //
-## Description: ~/.local/bin/bravebackgrounded optimized
-#               Brave Beta startup for Archcraft/Wayfire
-# -------------------------------------------------
+# ==================== // BRAVEBACKGROUNDED //
+## Description: File: $HOME/.local/bin/bravebackgrounded
+#                     Optimized launcher for brave-beta.
+# ---------------------------------------------------
 
 BRAVE_BIN="/usr/bin/brave-beta"
-PIDFILE="/tmp/brave-beta.pid"
 
-# Production flags for performance, memory management, and Wayland stability.
 "$BRAVE_BIN" \
-	--allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
-	--disable-crash-reporter \
-	--ozone-platform=wayland \
-	--disk-cache-size=104857600
-
-# -- Memory & Performance Tuning --
---extensions-process-limit=1 \
-	--enable-gpu-rasterization \
-	--enable-zero-copy \
-	--enable-features=ProactiveTabFreezeAndDiscard \
-	"$@" &
-
-echo $! >"$PIDFILE"
+  --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne \
+  --disable-crash-reporter \
+  --ozone-platform=wayland \
+  --disk-cache-size=104857600 \
+  --extensions-process-limit=1 \
+  --enable-gpu-rasterization \
+  --enable-zero-copy \
+  --enable-features=ProactiveTabFreezeAndDiscard \
+  "$@" &

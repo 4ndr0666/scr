@@ -1,5 +1,5 @@
 # /etc/systemd/system/mem-police.service
-# Manages the mem-police daemon for system-wide reliability.
+# Manages the mem-police daemon using its canonical path.
 
 [Unit]
 Description=Memory Policing Daemon
@@ -7,8 +7,7 @@ After=network.target
 
 [Service]
 Type=forking
-PIDFile=/run/mem-police.pid
-# This path assumes the compiled binary is in /usr/bin. Adjust if necessary.
+PIDFile=/var/run/mem-police.pid
 ExecStart=/usr/bin/mem-police
 Restart=always
 RestartSec=5s

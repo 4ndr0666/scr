@@ -1,27 +1,18 @@
 # ~/.config/systemd/user/brave.service
-# Manages the Brave instance and applies proactive resource limits.
+# Manages the Brave instance via its canonical script and applies Cgroup limits.
 
 [Unit]
 Description=Brave Web Browser with Cgroup Resource Controls
 After=graphical-session.target
 
 [Service]
-# The %u specifier resolves to your username, making this path canonical.
-ExecStart=/home/%u/.local/bin/bravebackgrounded 
+# The %h specifier is the systemd-native, canonical way to refer to the user's home directory.
+ExecStart=%h/.local/bin/bravebackgrounded
 
-# ---- Cgroup Resource Control (Primary Enforcement) ----
-# Hard memory limit. If the sum of all Brave processes exceeds this, the
-# kernel's OOM killer will terminate a process within this cgroup to enforce the limit.
+# ---- Cgroup Resource Control ----
 MemoryMax=8G
-
-# "High" watermark. The kernel will begin to throttle processes if usage
-# exceeds this limit, attempting to reclaim memory before hitting MemoryMax.
 MemoryHigh=6G
-
-# Lower CPU priority during contention.
 CPUWeight=50
-
-# Maximum CPU usage cap. 200% = 2 full CPU cores.
 CPUQuota=200%
 
 [Install]
