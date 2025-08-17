@@ -110,3 +110,6 @@ vendor/
 secrets.json
 *.env
 urlscraper.py
+# .gitignore
+maintain/clean/google/dietpi/credentials.json
+maintain/clean/google/dietpi/credentials.json
