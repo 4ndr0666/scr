@@ -13,9 +13,15 @@ PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/mainta
 REQUIREMENTS_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${REQUIREMENTS_FILENAME}" # Assuming requirements.txt is in the same repo/path
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
 REQUIREMENTS_PATH="${INSTALL_DIR}/${REQUIREMENTS_FILENAME}"
-CUSTOM_AUTOSTART_FILE="/var/lib/dietpi/dietpi-autostart/custom.sh"
-CREDENTIALS_PATH="${INSTALL_DIR}/credentials.json"
-LOG_FILE="/var/log/takeout_processor.log" # Centralized log file for the Python script
+SYSTEMD_SERVICE_NAME="takeout-organizer.service"
+SYSTEMD_SERVICE_PATH="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}"
+# Canonical path for credentials, as specified by user. Used for instruction and permissions.
+CREDENTIALS_FILE_PATH="/root/.secrets/creds.txt" # This resolves ~/.secrets/creds.txt for the root user
+
+# --- Canonical Google Drive Path (as specified by user) ---
+# This is the expected local mount point for the user's Google Drive's MyDrive folder.
+# The 'TakeoutProject' folder is expected to be directly within this.
+GOOGLE_DRIVE_MOUNT_BASE="/content/drive/MyDrive"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -69,65 +75,66 @@ main() {
 	pip install --no-cache-dir -r "$REQUIREMENTS_PATH" || _log_fail "Failed to install Python dependencies."
 	_log_ok "Python dependencies installed."
 
-	_log_info "Handling Service Account Credentials..."
-	if [[ ! -f "$CREDENTIALS_PATH" ]]; then
-		_log_warn "The 'credentials.json' file was not found at ${CREDENTIALS_PATH}."
-		_log_warn "The service will fail until it is placed there manually."
+	_log_info "Handling Service Account Credentials (GOOGLE_APPLICATION_CREDENTIALS)..."
+	# Ensure the directory for credentials exists for the root user
+	mkdir -p "$(dirname "$CREDENTIALS_FILE_PATH")" || _log_fail "Failed to create credentials directory."
+
+	if [[ ! -f "$CREDENTIALS_FILE_PATH" ]]; then
+		_log_warn "The service account credentials file was not found at ${CREDENTIALS_FILE_PATH}."
+		_log_warn "Please ensure your 'credentials.json' (service account key) is placed there."
+		_log_warn "The service will fail until it is placed there manually and permissions are set."
 	else
-		chmod 600 "$CREDENTIALS_PATH"
-		_log_ok "Service account credentials found and secured."
+		chmod 600 "$CREDENTIALS_FILE_PATH"
+		_log_ok "Service account credentials file found and secured."
 	fi
+	_log_info "The application will use GOOGLE_APPLICATION_CREDENTIALS pointing to ${CREDENTIALS_FILE_PATH}."
 
-	# --- Prompt for Google Drive Mount Point ---
-	GOOGLE_DRIVE_MOUNT_POINT=""
-	read -rp "Enter the local path where your Google Drive 'TakeoutProject' folder will be mounted (e.g., /mnt/google_drive): " GOOGLE_DRIVE_MOUNT_POINT
-	if [[ -z "$GOOGLE_DRIVE_MOUNT_POINT" ]]; then
-		GOOGLE_DRIVE_MOUNT_POINT="/mnt/google_drive"
-		_log_warn "No path entered. Defaulting Google Drive mount point to: ${GOOGLE_DRIVE_MOUNT_POINT}"
-	fi
-	mkdir -p "$GOOGLE_DRIVE_MOUNT_POINT" || _log_fail "Failed to create Google Drive mount point directory."
-	_log_ok "Google Drive mount point set to: ${GOOGLE_DRIVE_MOUNT_POINT}"
-	_log_info "IMPORTANT: You must manually mount your Google Drive 'TakeoutProject' folder to this path (e.g., using rclone)."
+	_log_info "Configuring Google Drive mount point readiness..."
+	# Create the base directory if it doesn't exist, though it's usually managed by Google Colab/VM environment
+	mkdir -p "$GOOGLE_DRIVE_MOUNT_BASE" || _log_warn "Could not create $GOOGLE_DRIVE_MOUNT_BASE. This might be normal if already mounted."
+	_log_ok "Expected Google Drive mount point is: ${GOOGLE_DRIVE_MOUNT_BASE}"
+	_log_info "The Python application expects your 'TakeoutProject' folder to be available directly within this path."
+	_log_info "E.g., '${GOOGLE_DRIVE_MOUNT_BASE}/TakeoutProject'"
 
-	_log_info "Creating the autostart script in ${CUSTOM_AUTOSTART_FILE}..."
-	cat <<EOF >"$CUSTOM_AUTOSTART_FILE"
-#!/bin/bash
-# Autostart script for Google Takeout Organizer
-# This script ensures the Python application runs continuously.
+	_log_info "Creating systemd service for Takeout Processor..."
+	# Set GOOGLE_APPLICATION_CREDENTIALS environment variable within the service unit
+	cat <<EOF >"$SYSTEMD_SERVICE_PATH"
+[Unit]
+Description=Google Takeout Organizer Service
+After=network.target
 
-INSTALL_DIR="${INSTALL_DIR}"
-PROCESSOR_SCRIPT="${PROCESSOR_SCRIPT_PATH}"
-LOG_FILE="${LOG_FILE}"
-GOOGLE_DRIVE_MOUNT_POINT="${GOOGLE_DRIVE_MOUNT_POINT}"
+[Service]
+User=root
+Group=root
+WorkingDirectory=${INSTALL_DIR}
+Environment="GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_FILE_PATH}"
+ExecStart=${INSTALL_DIR}/venv/bin/python3 ${PROCESSOR_SCRIPT_PATH}
+Restart=on-failure
+RestartSec=60
+StandardOutput=journal
+StandardError=journal
 
-# Activate the virtual environment
-source "\${INSTALL_DIR}/venv/bin/activate"
-
-echo "--- Starting Takeout Processor Appliance at \$(date) ---" >> "\$LOG_FILE" 2>&1
-
-# Run the Python script in a loop. The Python script handles its own idle/retry logic.
-# Pass the Google Drive mount point as an argument.
-/usr/bin/python3 "\$PROCESSOR_SCRIPT" --google-drive-mount-point "\$GOOGLE_DRIVE_MOUNT_POINT" >> "\$LOG_FILE" 2>&1 &
-
-# The above line runs the Python script in the background.
-# The Python script itself contains the 'while true' loop and sleep logic.
-# This bash script simply starts it and ensures it logs.
-# If the python script exits, the autostart will restart it on next boot.
-# For continuous restart without reboot, a systemd service would be more robust.
-
+[Install]
+WantedBy=multi-user.target
 EOF
-	chmod +x "$CUSTOM_AUTOSTART_FILE"
-	_log_ok "Autostart script created."
+
+	systemctl daemon-reload || _log_fail "Failed to reload systemd daemon."
+	systemctl enable "$SYSTEMD_SERVICE_NAME" || _log_fail "Failed to enable systemd service."
+	systemctl start "$SYSTEMD_SERVICE_NAME" || _log_fail "Failed to start systemd service."
+	_log_ok "Systemd service '${SYSTEMD_SERVICE_NAME}' created, enabled, and started."
 
 	echo ""
 	_log_ok "--------------------------------------------------------"
 	_log_ok "Takeout Processor Appliance Setup is COMPLETE!"
-	_log_info "IMPORTANT: You must SHARE your 'TakeoutProject' folder in Google Drive"
+	_log_info "IMPORTANT: You must ensure your 'credentials.json' (service account key)"
+	_log_info "is placed at: ${CREDENTIALS_FILE_PATH}"
+	_log_info "and has 600 permissions: chmod 600 ${CREDENTIALS_FILE_PATH}"
+	_log_info "You must also SHARE your 'TakeoutProject' folder in Google Drive"
 	_log_info "with your service account email and grant it 'Editor' permissions."
-	_log_info "Also, ensure your 'TakeoutProject' Google Drive folder is mounted"
-	_log_info "to '${GOOGLE_DRIVE_MOUNT_POINT}' before rebooting."
-	_log_info "Reboot the system to begin processing."
-	_log_info "You can monitor progress with: tail -f ${LOG_FILE}"
+	_log_info "Ensure your Google Drive is mounted and 'TakeoutProject' is accessible at:"
+	_log_info "  ${GOOGLE_DRIVE_MOUNT_BASE}/TakeoutProject"
+	_log_info "The service should now be running automatically."
+	_log_info "You can monitor progress with: journalctl -u ${SYSTEMD_SERVICE_NAME} -f"
 	_log_ok "--------------------------------------------------------"
 }
 

@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 
 # Explicitly import Google API client libraries
-from google.auth import service_account
+import google.auth # Import google.auth for default credential discovery
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -30,26 +30,26 @@ except ImportError:
         logging.info(f"    > Processing {description}...")
         return iterable
 
-
-# Conditional flag for Google Colab environment (no drive mount logic here for VM setup)
+# COLAB_ENVIRONMENT flag remains for any potential future Colab-specific *behavior*
+# beyond mounting, but the core mounting logic is now fixed for the canonical path.
+COLAB_ENVIRONMENT = False
 try:
-    from google.colab import drive
-
+    from google.colab import drive # Attempt import for flag, not for mounting logic
     COLAB_ENVIRONMENT = True
 except ImportError:
-    COLAB_ENVIRONMENT = False
+    pass # Not in Colab environment
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-# Base directory for application data (DB, credentials)
+# Base directory for application data (DB)
 APP_BASE_DIR = Path("/opt/google_takeout_organizer")
 
 # Google Drive specific configurations
 DRIVE_ROOT_FOLDER_NAME = (
     "TakeoutProject"  # This is the *name* of the root folder on Drive
 )
-CREDENTIALS_PATH = APP_BASE_DIR / "credentials.json"
+# CREDENTIALS_PATH is now handled by GOOGLE_APPLICATION_CREDENTIALS env var, no longer needed here.
 
 # Local temporary and database paths
 DB_PATH = APP_BASE_DIR / "takeout_archive.db"
@@ -71,7 +71,10 @@ TARGET_MAX_VM_USAGE_GB = (
 )
 PROCESSING_IDLE_SLEEP_SECONDS = 60 * 5  # Sleep time when no archives are found
 
-# LOCAL_DRIVE_MOUNT_POINT will be set via argparse
+# Canonical Google Drive mount point on the VM.
+# The 'TakeoutProject' folder is expected to be directly within this.
+LOCAL_DRIVE_MOUNT_POINT = Path("/content/drive/MyDrive")
+
 
 # ==============================================================================
 # --- 2. LOGGING SETUP ---
@@ -79,7 +82,7 @@ PROCESSING_IDLE_SLEEP_SECONDS = 60 * 5  # Sleep time when no archives are found
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=[logging.StreamHandler(sys.stdout)], # Logs to stdout, which systemd captures to journalctl
 )
 logger = logging.getLogger(__name__)
 
@@ -123,44 +126,43 @@ class ProcessingError(TakeoutOrganizerError):
 class DriveManager:
     """Manages interactions with the Google Drive API."""
 
-    def __init__(self, credentials_path: Path, root_folder_name: str):
+    def __init__(self, root_folder_name: str):
         """
         Initializes the DriveManager and authenticates with Google Drive.
 
         Args:
-            credentials_path: Path to the service account credentials JSON file.
             root_folder_name: The name of the root folder for the project on Google Drive.
         Raises:
             DriveAuthError: If authentication fails.
         """
-        self.credentials_path = credentials_path
         self.root_folder_name = root_folder_name
         self.service = self._authenticate_headless()
         self.folder_ids: dict[str, str] = {}  # To store IDs of key folders
 
     def _authenticate_headless(self):
         """
-        Authenticates with Google Drive using a service account.
+        Authenticates with Google Drive using a service account (via GOOGLE_APPLICATION_CREDENTIALS).
 
         Returns:
             A Google Drive API service object.
         Raises:
-            DriveAuthError: If authentication fails due to file not found or other issues.
+            DriveAuthError: If authentication fails due to missing credentials or other issues.
         """
         logger.info("--> [Auth] Authenticating with Google Drive service account...")
         scopes = ["https://www.googleapis.com/auth/drive"]
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                self.credentials_path, scopes=scopes
-            )
+            # google.auth.default() automatically looks for GOOGLE_APPLICATION_CREDENTIALS
+            creds, project = google.auth.default(scopes=scopes)
+            if not creds.valid:
+                # Refresh token if expired or invalid; for service accounts, this is less common
+                # but good practice.
+                creds.refresh(google.auth.transport.requests.Request())
             return build("drive", "v3", credentials=creds)
-        except FileNotFoundError as e:
-            raise DriveAuthError(
-                f"Service account credentials not found at {self.credentials_path}. "
-                "Please ensure the file exists and is accessible."
-            ) from e
         except Exception as e:
-            raise DriveAuthError(f"Authentication failed: {e}") from e
+            raise DriveAuthError(
+                f"Authentication failed: {e}. Ensure GOOGLE_APPLICATION_CREDENTIALS "
+                "environment variable is set and points to a valid service account key file."
+            ) from e
 
     def initialize_folder_structure(self):
         """
@@ -172,7 +174,8 @@ class DriveManager:
         """
         logger.info("--> [API] Initializing Google Drive folder structure...")
         try:
-            # 1. Find or create the root folder
+            # 1. Find or create the root folder (e.g., "TakeoutProject")
+            # We explicitly search for it under 'root' (My Drive)
             query = f"name='{self.root_folder_name}' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
             response = (
                 self.service.files()
@@ -201,9 +204,7 @@ class DriveManager:
                 f"    ✅ Found/Created root folder: {self.root_folder_name} (ID: {root_folder_id})"
             )
 
-            # 2. Define and create/find sub-folders
-            # These are the subfolders *directly under* DRIVE_ROOT_FOLDER_NAME
-            # The 'My-Photos' and 'quarantined_artifacts' etc. are sub-subfolders
+            # 2. Define and create/find sub-folders within the root folder
             folder_structure_map = {
                 "00-ALL-ARCHIVES": {},
                 "01-PROCESSING-STAGING": {},
@@ -325,8 +326,6 @@ class DriveManager:
         logger.info(f"    > Downloading '{file_name}' to {download_filepath}...")
         try:
             request = self.service.files().get_media(fileId=file_id)
-            # Use io.BytesIO for in-memory buffer if file is small, or direct file write for large files
-            # For simplicity and large files, direct file write is used as in original.
             with open(download_filepath, "wb") as fh:
                 downloader = self.service._http.request(request.uri)
                 response = downloader.next_chunk()
@@ -626,36 +625,23 @@ class ArchiveProcessor:
         self,
         drive_manager: DriveManager,
         db_manager: DatabaseManager,
-        local_drive_mount_point: Path,  # This is the mount point of the *entire* Google Drive
-        temp_download_dir: Path,
-        temp_extract_dir: Path,
-        temp_batch_dir: Path,
     ):
         self.drive_manager = drive_manager
         self.db_manager = db_manager
-        self.local_drive_mount_point = local_drive_mount_point
-        self.temp_download_dir = temp_download_dir
-        self.temp_extract_dir = temp_extract_dir
-        self.temp_batch_dir = temp_batch_dir
+
+        # Canonical local paths for temp and organized files
+        self.temp_download_dir = VM_TEMP_DOWNLOAD_DIR
+        self.temp_extract_dir = VM_TEMP_EXTRACT_DIR
+        self.temp_batch_dir = VM_TEMP_BATCH_DIR
 
         # The base path for organized files on the local mount.
-        # This assumes DRIVE_ROOT_FOLDER_NAME (e.g., "TakeoutProject") is a folder *within* the mounted drive.
-        # So, if mount_point is /mnt/gdrive, and root_folder_name is "TakeoutProject",
-        # then the base for organized files is /mnt/gdrive/TakeoutProject
-        self.drive_root_local_path = (
-            self.local_drive_mount_point / DRIVE_ROOT_FOLDER_NAME
-        )
+        # This assumes DRIVE_ROOT_FOLDER_NAME ("TakeoutProject") is a folder *within* LOCAL_DRIVE_MOUNT_POINT.
+        self.drive_root_local_path = LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME
 
-        # Construct paths using the actual folder names, not Drive IDs
-        self.organized_photos_dir = (
-            self.drive_root_local_path / "03-organized" / "My-Photos"
-        )
-        self.organized_files_dir = (
-            self.drive_root_local_path / "03-organized"
-        )  # General organized files
-        self.quarantine_dir = (
-            self.drive_root_local_path / "04-trash" / "quarantined_artifacts"
-        )
+        # Construct paths using the canonical folder names
+        self.organized_photos_dir = self.drive_root_local_path / "03-organized" / "My-Photos"
+        self.organized_files_dir = self.drive_root_local_path / "03-organized" # General organized files
+        self.quarantine_dir = self.drive_root_local_path / "04-trash" / "quarantined_artifacts"
         self.duplicates_dir = self.drive_root_local_path / "04-trash" / "duplicates"
 
         # Ensure all necessary local directories exist for temporary operations
@@ -664,10 +650,12 @@ class ArchiveProcessor:
         self.temp_batch_dir.mkdir(parents=True, exist_ok=True)
 
         # Ensure all necessary final destination directories exist on the mounted drive
+        # These will create directories within /content/drive/MyDrive/TakeoutProject/...
         self.organized_photos_dir.mkdir(parents=True, exist_ok=True)
         self.organized_files_dir.mkdir(parents=True, exist_ok=True)
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
         self.duplicates_dir.mkdir(parents=True, exist_ok=True)
+
 
     def _cleanup_temp_dirs(self):
         """Cleans up all temporary local directories."""
@@ -891,7 +879,7 @@ class ArchiveProcessor:
                     logger.info(
                         f"    > Batch {part_number} contained no unique files. Discarding empty batch."
                     )
-            return True  # Indicate successful repackaging
+            return True # Indicate successful repackaging
         except Exception as e:
             raise ProcessingError(
                 f"Error during repackaging of '{archive_name}': {e}"
@@ -945,9 +933,8 @@ class ArchiveProcessor:
                 ):
                     # Check if the file's original_path (relative to archive root) is already processed
                     if member.name not in completed_files_original_paths:
-                        # Ensure no directory traversal exploits by sanitizing path for extraction
-                        # (tarfile.extract already handles this to some extent, but good to be explicit)
                         # Google Takeout generally has a 'Takeout' root, so we should extract with original hierarchy.
+                        # `tf.extract` handles directory traversal attacks internally for member names.
                         tf.extract(member, path=self.temp_extract_dir, set_attrs=False)
                         files_to_unpack_and_process.append(member.name)
                         # The initial insert into DB for truly unique files will happen in deduplicate_files/organize_photos.
@@ -982,7 +969,7 @@ class ArchiveProcessor:
                     self.organized_files_dir,
                     archive_name,
                 )
-            return True  # Indicate successful processing
+            return True # Indicate successful processing
         except Exception as e:
             raise ProcessingError(
                 f"Error during archive processing transaction for '{archive_name}': {e}"
@@ -1013,7 +1000,7 @@ class ArchiveProcessor:
         jdupes_path = shutil.which("jdupes")
         if not jdupes_path:
             logger.warning(
-                "    ⚠️ 'jdupes' command not found. Skipping deduplication. Please install it (e.g., apt-get install jdupes)."
+                "    ⚠️ 'jdupes' command not found. Skipping deduplication. Please ensure it is installed."
             )
             # Fallback: Just move files without deduplication, assuming they are unique.
             logger.info("    > Moving files without deduplication...")
@@ -1055,7 +1042,6 @@ class ArchiveProcessor:
                 "-r",
                 "-S",
                 "-nh",
-                "--linkhard",
                 f"--move={self.duplicates_dir}",
                 str(source_path),  # Scan the extracted takeout content
                 str(primary_storage_path),  # Scan the existing organized storage
@@ -1111,7 +1097,7 @@ class ArchiveProcessor:
 
         Args:
             source_path: The temporary directory containing Google Photos (e.g., /tmp/temp_extract/Takeout/Google Photos).
-            final_dir: The final destination for organized photos (e.g., 03-organized/My-Photos).
+            final_dir: The final destination for organized photos (e.g., /content/drive/MyDrive/TakeoutProject/03-organized/My-Photos).
             source_archive_name: The name of the archive the files came from.
         Raises:
             ProcessingError: If photo organization fails.
@@ -1237,19 +1223,12 @@ def main():
     """
     Main function to orchestrate the Google Takeout archive processing workflow.
     """
+    # Argparse is kept for potential future arguments, but --google-drive-mount-point is removed
+    # as the path is now canonical and hardcoded.
     parser = argparse.ArgumentParser(
         description="Process Google Takeout archives via the Google Drive API."
     )
-    parser.add_argument(
-        "--google-drive-mount-point",
-        type=Path,
-        default=Path("/mnt/google_drive"),  # Default for VM
-        help="Local path where Google Drive's root (TakeoutProject) is mounted (e.g., /mnt/google_drive).",
-    )
-    args = parser.parse_args()
-
-    # Set LOCAL_DRIVE_MOUNT_POINT from argument
-    LOCAL_DRIVE_MOUNT_POINT = args.google_drive_mount_point
+    args = parser.parse_args() # Parse any future arguments
 
     logger.info("--> [Step 0] Initializing environment...")
 
@@ -1261,41 +1240,29 @@ def main():
     processor: ArchiveProcessor | None = None
 
     try:
-        # 0.1 Check for Google Colab environment (no drive mount logic here for VM setup)
-        if COLAB_ENVIRONMENT:
-            logger.info(
-                "    > Running in Colab environment. Google Drive mounting is assumed to be handled externally for this setup."
-            )
-        else:
-            logger.info(
-                "    > Not in Colab environment. Assuming Google Drive is mounted externally."
-            )
-
-        # Validate the provided Google Drive mount point
+        # 0.1 Check for Google Drive mount point existence
         if not LOCAL_DRIVE_MOUNT_POINT.exists():
-            logger.critical(
-                f"❌ Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' not found. Please ensure your Google Drive is mounted here (e.g., via rclone)."
+            # This is a critical error for the application to proceed
+            raise TakeoutOrganizerError(
+                f"Critical Error: Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' not found. "
+                "Ensure your Google Drive is mounted to this canonical path (e.g., in Google Colab or via rclone)."
             )
-            sys.exit(1)
-        logger.info(f"✅ Google Drive mount point set to: {LOCAL_DRIVE_MOUNT_POINT}")
+        logger.info(f"✅ Confirmed Google Drive mount point exists at: {LOCAL_DRIVE_MOUNT_POINT}")
+        logger.info(f"    Application will use '{LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME}' for organized files.")
 
         # 0.2 Initialize Managers
-        drive_manager = DriveManager(CREDENTIALS_PATH, DRIVE_ROOT_FOLDER_NAME)
+        drive_manager = DriveManager(DRIVE_ROOT_FOLDER_NAME) # No credentials_path needed
         drive_manager.initialize_folder_structure()  # Populates drive_manager.folder_ids
 
         db_manager = DatabaseManager(DB_PATH)
 
-        # 0.3 Initialize Archive Processor (needs paths and managers)
+        # 0.3 Initialize Archive Processor (needs managers)
         processor = ArchiveProcessor(
             drive_manager=drive_manager,
             db_manager=db_manager,
-            local_drive_mount_point=LOCAL_DRIVE_MOUNT_POINT,  # Base for target organized folders
-            temp_download_dir=VM_TEMP_DOWNLOAD_DIR,
-            temp_extract_dir=VM_TEMP_EXTRACT_DIR,
-            temp_batch_dir=VM_TEMP_BATCH_DIR,
         )
 
-        # 0.4 Pre-flight disk space check (especially relevant for Colab/VMs)
+        # 0.4 Pre-flight disk space check (relevant for VMs to prevent out-of-disk errors)
         total_vm_bytes, used_vm_bytes, free_vm_bytes = shutil.disk_usage(
             "/"
         )  # Check root filesystem
@@ -1303,7 +1270,7 @@ def main():
         if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
             raise TakeoutOrganizerError(
                 f"Initial VM disk usage ({used_vm_gb:.2f} GB) is too high (> {TARGET_MAX_VM_USAGE_GB} GB). "
-                "Please free up space or restart the runtime (Runtime -> Restart runtime) and try again."
+                "Please free up space or restart the runtime."
             )
         logger.info(
             f"✅ Pre-flight disk check passed. (Initial VM Usage: {used_vm_gb:.2f} GB)"
@@ -1316,6 +1283,7 @@ def main():
 
         logger.info("✅ Pre-flight checks passed. Workspace ready.")
 
+        # --- Main Processing Loop ---
         while True:
             logger.info("\n--> [Step 1] Identifying unprocessed archives...")
             source_folder_id = drive_manager.folder_ids["00-ALL-ARCHIVES"]
@@ -1365,7 +1333,7 @@ def main():
                     archive_id, archive_name, VM_TEMP_DOWNLOAD_DIR
                 )
 
-                processed_ok = False  # Flag to track success of processing
+                processed_ok = False # Flag to track success of processing
                 # Determine processing strategy
                 if archive_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB:
                     logger.info(
@@ -1395,9 +1363,7 @@ def main():
                     )
                     logger.info("    ✅ Transaction committed.")
                 else:
-                    # This branch might be hit if plan_and_repackage_archive or process_regular_archive
-                    # explicitly return False, which they currently don't (they raise exceptions).
-                    # Keeping for robustness.
+                    # This branch should ideally not be reached if methods raise exceptions on failure.
                     logger.warning(
                         f"    ❌ Processing failed for '{archive_name}'. Moving to trash (quarantined_artifacts)."
                     )
@@ -1406,7 +1372,7 @@ def main():
                         archive_id,
                         drive_manager.folder_ids[
                             "04-trash"
-                        ],  # Consider a specific 'failed_archives' subfolder if needed
+                        ],
                         drive_manager.folder_ids["01-PROCESSING-STAGING"],
                     )
                     db_manager.record_archive_status(
@@ -1446,7 +1412,7 @@ def main():
                 )
             finally:
                 # Ensure local temp directories are cleaned up after each archive cycle
-                if processor:  # Check if processor was initialized
+                if processor: # Check if processor was initialized
                     processor._cleanup_temp_dirs()
                     logger.debug(
                         "Cleaned up local temp directories after archive cycle."
