@@ -9,8 +9,10 @@ set -euo pipefail
 INSTALL_DIR="/opt/google_takeout_organizer"
 PROCESSOR_FILENAME="google_takeout_organizer.py"
 REQUIREMENTS_FILENAME="requirements.txt"
-PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${PROCESSOR_FILENAME}"
-REQUIREMENTS_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/${REQUIREMENTS_FILENAME}" # Assuming requirements.txt is in the same repo/path
+# Corrected URLs: Both files are in the same directory as the setup script ('dietpi' folder)
+PROCESSOR_SCRIPT_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/dietpi/${PROCESSOR_FILENAME}"
+REQUIREMENTS_URL="https://raw.githubusercontent.com/4ndr0666/scr/main/maintain/clean/google/dietpi/${REQUIREMENTS_FILENAME}"
+
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
 REQUIREMENTS_PATH="${INSTALL_DIR}/${REQUIREMENTS_FILENAME}"
 SYSTEMD_SERVICE_NAME="takeout-organizer.service"

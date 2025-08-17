@@ -904,13 +904,13 @@ class ArchiveProcessor:
         try:
             logger.info("    > Checking database for previously completed files...")
             # Files that have been unpacked AND moved to their final destination
-            completed_files_original_paths = (
+            self.completed_files_original_paths = ( # Store as instance variable
                 self.db_manager.get_processed_files_for_archive(archive_name)
             )
 
-            if completed_files_original_paths:
+            if self.completed_files_original_paths:
                 logger.info(
-                    f"    ✅ Found {len(completed_files_original_paths)} files previously processed for this archive."
+                    f"    ✅ Found {len(self.completed_files_original_paths)} files previously processed for this archive."
                 )
             else:
                 logger.info(
@@ -932,7 +932,7 @@ class ArchiveProcessor:
                     all_members, desc=f"Scanning & Unpacking Delta for {archive_name}"
                 ):
                     # Check if the file's original_path (relative to archive root) is already processed
-                    if member.name not in completed_files_original_paths:
+                    if member.name not in self.completed_files_original_paths:
                         # Google Takeout generally has a 'Takeout' root, so we should extract with original hierarchy.
                         # `tf.extract` handles directory traversal attacks internally for member names.
                         tf.extract(member, path=self.temp_extract_dir, set_attrs=False)
@@ -1035,8 +1035,8 @@ class ArchiveProcessor:
         try:
             # Use a list for subprocess.run for security, especially with paths that might contain spaces
             # `jdupes -r` (recurse), `-S` (print size), `-nh` (no hardlinks for identified duplicates, which move handles),
-            # `--linkhard` (create hardlinks for identical files within a single scan, not across scans)
-            # `--move=DEST` (move duplicates to DEST, leave first copy)
+            # `--linkhard` is removed as jdupes --move option takes precedence and makes --linkhard redundant
+            # when moving duplicates to a different directory.
             command = [
                 str(jdupes_path),
                 "-r",
