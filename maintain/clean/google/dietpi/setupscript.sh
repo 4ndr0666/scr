@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.0 - Unified API Model)
-# This version represents a complete architectural refactor to a pure API-driven model,
-# inspired by the original Colab notebook's robust local processing logic.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v2.1 - MIME Type Fix)
+# This version corrects the API query to be MIME-type agnostic, ensuring all archive
+# files (.zip, .tgz, etc.) are correctly identified and processed.
 
 set -euo pipefail
 
@@ -24,7 +24,7 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (v2.0 Unified API Model) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup (v2.1 MIME Type Fix) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
 
@@ -51,10 +51,10 @@ main() {
     _log_ok "Service account credentials handled."
     
     _log_info "Deploying the Takeout Processor script..."
-    # --- BEGIN EMBEDDED PYTHON SCRIPT (v2.0) ---
+    # --- BEGIN EMBEDDED PYTHON SCRIPT (v2.1) ---
     cat << 'EOF' > "$PROCESSOR_SCRIPT_PATH"
 """
-Google Takeout Organizer (v2.0 - Unified API Model)
+Google Takeout Organizer (v2.1 - Unified API Model)
 
 This script is a pure API-driven daemon for processing Google Takeout archives.
 It adopts the robust local-processing logic from its Colab notebook origins
@@ -181,7 +181,11 @@ class DriveManager:
 
     def list_files(self, folder_id: str, page_size: int = 10) -> list:
         try:
-            query = f"'{folder_id}' in parents and trashed=false and (mimeType='application/zip' or mimeType='application/gzip' or mimeType='application/x-gzip')"
+            # DEFINITIVE FIX: Removed the restrictive MIME type check. The script will now
+            # identify *any* file in the target folder, making it robust against
+            # different archive types (.zip, .tgz, .tar.gz) and Google Drive's
+            # specific MIME classifications.
+            query = f"'{folder_id}' in parents and trashed=false"
             response = self.service.files().list(
                 q=query, orderBy="createdTime", pageSize=page_size, fields="files(id, name, size)",
                 supportsAllDrives=True, includeItemsFromAllDrives=True
@@ -453,7 +457,7 @@ EOF
     _log_info "Creating and enabling the systemd service..."
     cat << EOF > "$SYSTEMD_SERVICE_PATH"
 [Unit]
-Description=Google Takeout Organizer Service (v2.0)
+Description=Google Takeout Organizer Service (v2.1)
 After=network-online.target
 
 [Service]
