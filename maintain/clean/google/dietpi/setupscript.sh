@@ -1,8 +1,9 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v5.1 - Final Fix)
-# This version contains the complete, unabridged, and corrected Python script, including a
-# MIME type filter to definitively resolve the file visibility issue.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v6.0 - Final Deployment Fix)
+# This version ensures the systemd service is explicitly stopped before updating files,
+# guaranteeing the new code is loaded and executed. It contains the complete, unabridged,
+# and fully corrected Python script.
 
 set -euo pipefail
 
@@ -28,6 +29,12 @@ main() {
     _log_info "--- Starting Takeout Processor Appliance Setup (Hybrid API/FS Version) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
+
+    _log_info "Ensuring any old service version is stopped..."
+    # CRITICAL FIX: Stop the service if it is running to ensure it reloads the new script.
+    # The '|| true' prevents an error if the service doesn't exist on a fresh install.
+    systemctl stop ${SYSTEMD_SERVICE_NAME} || true
+    _log_ok "Service stopped."
 
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
