@@ -1,8 +1,9 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.3 - Self-Contained)
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.4 - Self-Contained)
 # This is the definitive installer for the v5.0+ hybrid (API + Filesystem) Python script.
-# This version embeds the python script to avoid download failures.
+# This version embeds the python script to avoid download failures and removes the redundant
+# User=root line from the systemd service to fix status 217/USER errors.
 
 set -euo pipefail
 
@@ -1574,7 +1575,6 @@ def main():
 if __name__ == "__main__":
     main()
 EOF
-    # --- END EMBEDDED PYTHON SCRIPT ---
 
     chmod +x "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Application script deployed."
@@ -1593,7 +1593,7 @@ Environment="GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_PATH}"
 ExecStart=/usr/bin/python3 ${PROCESSOR_SCRIPT_PATH}
 Restart=on-failure
 RestartSec=60
-User=root # Or a dedicated user with permissions to the mount
+# User=root # Removed this line, as systemd defaults to root if no user is specified, fixing 217/USER error
 
 [Install]
 WantedBy=multi-user.target
