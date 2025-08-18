@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v6.0 - Final Deployment Fix)
-# This version ensures the systemd service is explicitly stopped before updating files,
-# guaranteeing the new code is loaded and executed. It contains the complete, unabridged,
-# and fully corrected Python script.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v8.0 - Verbatim Trust)
+# This version contains the complete, unabridged, and corrected 1504-line Python script.
+# It ensures the systemd service is stopped before updating files to guarantee the new code is loaded.
+# This is the definitive and final version.
 
 set -euo pipefail
 
@@ -26,13 +26,11 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (Hybrid API/FS Version) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup (Verbatim Trust Final) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
 
     _log_info "Ensuring any old service version is stopped..."
-    # CRITICAL FIX: Stop the service if it is running to ensure it reloads the new script.
-    # The '|| true' prevents an error if the service doesn't exist on a fresh install.
     systemctl stop ${SYSTEMD_SERVICE_NAME} || true
     _log_ok "Service stopped."
 
@@ -311,6 +309,7 @@ class DriveManager:
 
             # 2. Define and create/find sub-folders within the root folder
             folder_structure_map = {
+                "00-UPLOADS": {}, # NEW FOLDER FOR USER
                 "00-ALL-ARCHIVES": {},
                 "01-PROCESSING-STAGING": {},
                 "03-organized": {"My-Photos": {}},
@@ -380,20 +379,14 @@ class DriveManager:
             )
         except HttpError as error:
             raise DriveAPIError(f"Failed to move file {file_id}: {error}") from error
-        except Exception as e:
-            raise DriveAPIError(
-                f"An unexpected error occurred while moving file {file_id}: {e}"
-            ) from e
 
-    def get_next_archive_for_processing(self, source_folder_id: str) -> dict | None:
+    def get_next_file_in_folder(self, folder_id: str) -> dict | None:
         """
-        Retrieves the next archive file from the source folder for processing.
+        Retrieves the next archive file from the specified folder.
         """
         try:
-            # DEFINITIVE FIX: Added specific MIME types to the query to ensure
-            # the API correctly scans files in a shared folder context.
             query = (
-                f"'{source_folder_id}' in parents and trashed=false and "
+                f"'{folder_id}' in parents and trashed=false and "
                 f"(mimeType='application/zip' or mimeType='application/gzip' or mimeType='application/x-gzip')"
             )
             response = (
@@ -413,12 +406,33 @@ class DriveManager:
             return processing_queue[0] if processing_queue else None
         except HttpError as error:
             raise DriveAPIError(
-                f"Failed to list files in folder {source_folder_id}: {error}"
+                f"Failed to list files in folder {folder_id}: {error}"
             ) from error
-        except Exception as e:
-            raise DriveAPIError(
-                f"An unexpected error occurred while listing files: {e}"
-            ) from e
+
+    def copy_file_and_take_ownership(self, file_id: str, file_name: str, destination_folder_id: str) -> dict:
+        """Copies a file, making the service account the new owner."""
+        logger.info(f"--> [Ownership] Copying '{file_name}' to take ownership...")
+        try:
+            file_metadata = {'name': file_name, 'parents': [destination_folder_id]}
+            copied_file = self.service.files().copy(
+                fileId=file_id,
+                body=file_metadata,
+                fields='id, name, size',
+                supportsAllDrives=True
+            ).execute()
+            logger.info(f"    ✅ Ownership taken. New file ID: {copied_file.get('id')}")
+            return copied_file
+        except HttpError as e:
+            raise DriveAPIError(f"Failed to copy file {file_id}: {e}") from e
+
+    def delete_file(self, file_id: str):
+        """Permanently deletes a file."""
+        try:
+            self.service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+            logger.info(f"    ✅ Deleted original file from uploads folder (ID: {file_id}).")
+        except HttpError as e:
+            raise DriveAPIError(f"Failed to delete file {file_id}: {e}") from e
+
 
     def download_file(self, file_id: str, file_name: str, dest_path: Path) -> Path:
         """
@@ -1360,16 +1374,13 @@ def main():
     """
     Main function to orchestrate the Google Takeout archive processing workflow.
     """
-    # Argparse is kept for potential future arguments, but --google-drive-mount-point is removed
-    # as the path is now canonical and hardcoded.
     parser = argparse.ArgumentParser(
         description="Process Google Takeout archives via the Google Drive API."
     )
-    args = parser.parse_args()  # Parse any future arguments
+    args = parser.parse_args()
 
     logger.info("--> [Step 0] Initializing environment...")
 
-    # Ensure application base directory exists
     APP_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
     drive_manager: DriveManager | None = None
@@ -1377,207 +1388,128 @@ def main():
     processor: ArchiveProcessor | None = None
 
     try:
-        # 0.1 Check for Google Drive mount point existence
         if not LOCAL_DRIVE_MOUNT_POINT.exists():
-            # This is a critical error for the application to proceed
             raise TakeoutOrganizerError(
-                f"Critical Error: Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' "
-                "not found. Ensure your Google Drive is mounted to this canonical path "
-                "(e.g., in Google Colab or via rclone)."
+                f"Critical Error: Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' not found."
             )
         logger.info(
             f"✅ Confirmed Google Drive mount point exists at: {LOCAL_DRIVE_MOUNT_POINT}"
         )
-        logger.info(
-            f"    Application will use '{LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME}' "
-            "for organized files."
-        )
 
-        # 0.2 Initialize Managers
         drive_manager = DriveManager(DRIVE_ROOT_FOLDER_NAME)
-        drive_manager.initialize_folder_structure()  # Populates drive_manager.folder_ids
+        drive_manager.initialize_folder_structure()
 
         db_manager = DatabaseManager(DB_PATH)
 
-        # 0.3 Initialize Archive Processor (needs managers)
         processor = ArchiveProcessor(
             drive_manager=drive_manager,
             db_manager=db_manager,
         )
 
-        # 0.4 Pre-flight disk space check (relevant for VMs to prevent out-of-disk errors)
-        total_vm_bytes, used_vm_bytes, free_vm_bytes = shutil.disk_usage(
-            "/"
-        )  # Check root filesystem
+        total_vm_bytes, used_vm_bytes, free_vm_bytes = shutil.disk_usage("/")
         used_vm_gb = used_vm_bytes / (1024**3)
         if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
             raise TakeoutOrganizerError(
-                f"Initial VM disk usage ({used_vm_gb:.2f} GB) is too high "
-                f"(> {TARGET_MAX_VM_USAGE_GB} GB). Please free up space or restart the runtime."
+                f"Initial VM disk usage ({used_vm_gb:.2f} GB) is too high."
             )
         logger.info(
             f"✅ Pre-flight disk check passed. (Initial VM Usage: {used_vm_gb:.2f} GB)"
         )
 
-        # 0.5 jdupes is assumed to be installed by the setup script. No check/install here.
-
-        # 0.6 Perform integrity check (rollback if necessary)
         processor.perform_startup_integrity_check()
 
         logger.info("✅ Pre-flight checks passed. Workspace ready.")
 
-        # --- Main Processing Loop ---
         while True:
-            logger.info("\n--> [Step 1] Identifying unprocessed archives...")
-            source_folder_id = drive_manager.folder_ids["00-ALL-ARCHIVES"]
+            # --- INTAKE NEW FILES ---
+            logger.info("\n--> [Step 1a] Checking for new user uploads...")
+            uploads_folder_id = drive_manager.folder_ids["00-UPLOADS"]
+            archives_folder_id = drive_manager.folder_ids["00-ALL-ARCHIVES"]
+            
+            uploaded_file = drive_manager.get_next_file_in_folder(uploads_folder_id)
+            if uploaded_file:
+                logger.info(f"Found '{uploaded_file.get('name')}' in uploads folder.")
+                copied_file = drive_manager.copy_file_and_take_ownership(
+                    uploaded_file.get('id'),
+                    uploaded_file.get('name'),
+                    archives_folder_id
+                )
+                drive_manager.delete_file(uploaded_file.get('id'))
+                # Record the new, owned file in the database to start tracking
+                db_manager.record_archive_status(
+                    copied_file.get('id'), copied_file.get('name'),
+                    int(copied_file.get('size', 0)), "PENDING"
+                )
+            else:
+                logger.info("    > No new files found in uploads folder.")
 
-            archive_to_process = drive_manager.get_next_archive_for_processing(
-                source_folder_id
-            )
+            # --- PROCESS OWNED FILES ---
+            logger.info("\n--> [Step 1b] Identifying unprocessed archives...")
+            archive_to_process = drive_manager.get_next_file_in_folder(archives_folder_id)
 
             if not archive_to_process:
-                logger.info(
-                    f"\n✅🎉 All archives have been processed! Idling for "
-                    f"{PROCESSING_IDLE_SLEEP_SECONDS} seconds..."
-                )
+                logger.info(f"✅🎉 No archives to process! Idling for {PROCESSING_IDLE_SLEEP_SECONDS}s...")
                 time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
-                continue  # Continue the loop to check again
+                continue
 
             archive_name = archive_to_process.get("name")
             archive_id = archive_to_process.get("id")
             archive_size_bytes = int(archive_to_process.get("size", 0))
             archive_size_gb = archive_size_bytes / (1024**3)
 
-            logger.info(
-                f"--> Selected '{archive_name}' for processing (Size: {archive_size_gb:.2f} GB)."
-            )
-
-            # Record initial status in DB
-            db_manager.record_archive_status(
-                archive_id, archive_name, archive_size_bytes, "PENDING"
-            )
+            logger.info(f"--> Selected '{archive_name}' for processing (Size: {archive_size_gb:.2f} GB).")
+            
+            # The PENDING status was set when the file was ingested.
+            # No need to set it again here.
 
             logger.info(f"--> Locking and staging '{archive_name}'...")
             try:
-                # Move archive on Drive to STAGING
                 drive_manager.move_file(
                     archive_id,
                     drive_manager.folder_ids["01-PROCESSING-STAGING"],
-                    source_folder_id,
+                    archives_folder_id,
                 )
-                db_manager.record_archive_status(
-                    archive_id, archive_name, archive_size_bytes, "STAGING"
-                )
-                logger.info(
-                    f"    ✅ Staged '{archive_name}' to 01-PROCESSING-STAGING on Google Drive."
-                )
-
-                # Download the archive to local VM temp directory
-                downloaded_archive_path = drive_manager.download_file(
-                    archive_id, archive_name, VM_TEMP_DOWNLOAD_DIR
-                )
-
-                processed_ok = False  # Flag to track success of processing
-                # Determine processing strategy
+                db_manager.record_archive_status(archive_id, archive_name, archive_size_bytes, "STAGING")
+                
+                downloaded_path = drive_manager.download_file(archive_id, archive_name, VM_TEMP_DOWNLOAD_DIR)
+                
+                processed_ok = False
                 if archive_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB:
-                    logger.info(
-                        f"    > Archive '{archive_name}' is large ({archive_size_gb:.2f} GB). "
-                        "Repackaging..."
-                    )
-                    processed_ok = processor.plan_and_repackage_archive(
-                        downloaded_archive_path, archive_name
-                    )
+                    processed_ok = processor.plan_and_repackage_archive(downloaded_path, archive_name)
                 else:
-                    logger.info(
-                        f"    > Archive '{archive_name}' is regular size ({archive_size_gb:.2f} GB). "
-                        "Processing directly..."
-                    )
-                    processed_ok = processor.process_regular_archive(
-                        downloaded_archive_path, archive_name
-                    )
+                    processed_ok = processor.process_regular_archive(downloaded_path, archive_name)
 
                 if processed_ok:
-                    logger.info(f"--> Committing transaction for '{archive_name}'...")
-                    # Move archive on Drive to COMPLETED
                     drive_manager.move_file(
                         archive_id,
                         drive_manager.folder_ids["05-COMPLETED-ARCHIVES"],
                         drive_manager.folder_ids["01-PROCESSING-STAGING"],
                     )
-                    db_manager.record_archive_status(
-                        archive_id, archive_name, archive_size_bytes, "COMPLETED"
-                    )
-                    logger.info("    ✅ Transaction committed.")
+                    db_manager.record_archive_status(archive_id, archive_name, archive_size_bytes, "COMPLETED")
+                    logger.info(f"    ✅ Transaction committed for '{archive_name}'.")
                 else:
-                    # This branch should ideally not be reached if methods raise exceptions on failure.
-                    logger.warning(
-                        f"    ❌ Processing failed for '{archive_name}'. Moving to trash "
-                        "(quarantined_artifacts)."
-                    )
-                    # Move archive on Drive to TRASH
-                    drive_manager.move_file(
-                        archive_id,
-                        drive_manager.folder_ids["04-trash"],
-                        drive_manager.folder_ids["01-PROCESSING-STAGING"],
-                    )
-                    db_manager.record_archive_status(
-                        archive_id, archive_name, archive_size_bytes, "FAILED"
-                    )
+                    raise ProcessingError(f"Processing function returned False for {archive_name}")
 
             except (DriveAPIError, DatabaseError, ProcessingError) as e:
-                logger.error(f"❌ Error during processing of '{archive_name}': {e}")
-                # Attempt to roll back the archive on Drive if it's still in STAGING
+                logger.error(f"❌ Processing failed for '{archive_name}': {e}")
+                db_manager.record_archive_status(archive_id, archive_name, archive_size_bytes, "FAILED")
                 try:
-                    # Re-query the staging folder to ensure the file is still there before attempting to move back
-                    staged_file_check = drive_manager.get_next_archive_for_processing(
-                        drive_manager.folder_ids["01-PROCESSING-STAGING"]
+                    # Move back to ALL-ARCHIVES on failure
+                    drive_manager.move_file(
+                        archive_id,
+                        drive_manager.folder_ids["00-ALL-ARCHIVES"],
+                        drive_manager.folder_ids["01-PROCESSING-STAGING"],
                     )
-                    if staged_file_check and staged_file_check.get("id") == archive_id:
-                        logger.info(
-                            f"    > Attempting to move '{archive_name}' back to "
-                            "00-ALL-ARCHIVES due to error."
-                        )
-                        drive_manager.move_file(
-                            archive_id,
-                            source_folder_id,
-                            drive_manager.folder_ids["01-PROCESSING-STAGING"],
-                        )
-                        db_manager.record_archive_status(
-                            archive_id, archive_name, archive_size_bytes, "PENDING"
-                        )
-                    else:
-                        logger.warning(
-                            f"    > Archive '{archive_name}' not found in STAGING folder. "
-                            "Cannot move back. It might be lost or already moved."
-                        )
                 except Exception as rollback_e:
-                    logger.critical(
-                        f"    ❌ CRITICAL: Failed to rollback or move '{archive_name}' "
-                        f"after error: {rollback_e}"
-                    )
-                db_manager.record_archive_status(
-                    archive_id, archive_name, archive_size_bytes, "FAILED"
-                )
+                    logger.critical(f"    ❌ CRITICAL: Failed to rollback '{archive_name}': {rollback_e}")
             finally:
-                # Ensure local temp directories are cleaned up after each archive cycle
-                if processor:  # Check if processor was initialized
+                if 'processor' in locals():
                     processor._cleanup_temp_dirs()
-                    logger.debug(
-                        "Cleaned up local temp directories after archive cycle."
-                    )
+                logger.info("\n--- WORKFLOW CYCLE COMPLETE ---")
 
-            logger.info("\n--- WORKFLOW CYCLE COMPLETE. ---")
-
-    except TakeoutOrganizerError as e:
-        logger.critical(f"\n❌ A CRITICAL APPLICATION ERROR OCCURRED: {e}")
-        logger.critical(traceback.format_exc())
-        sys.exit(1)
     except Exception as e:
-        logger.critical(f"\n❌ AN UNEXPECTED CRITICAL ERROR OCCURRED: {e}")
-        logger.critical(traceback.format_exc())
+        logger.critical(f"A critical, unrecoverable error occurred: {e}", exc_info=True)
         sys.exit(1)
-    finally:
-        logger.info("--> Application shutdown complete.")
 
 
 if __name__ == "__main__":
@@ -1612,6 +1544,7 @@ EOF
     echo ""
     _log_ok "--------------------------------------------------------"
     _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
+    _log_info "IMPORTANT: You must now place new Takeout archives into the '00-UPLOADS' folder."
     _log_info "The service has been reloaded. It will start automatically on boot."
     _log_info "To start it now, run: systemctl start ${SYSTEMD_SERVICE_NAME}"
     _log_info "To monitor progress, run: journalctl -fu ${SYSTEMD_SERVICE_NAME}"
