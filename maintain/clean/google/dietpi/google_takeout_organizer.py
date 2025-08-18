@@ -1,3 +1,36 @@
+"""
+Google Takeout Organizer
+
+This script automates the process of organizing Google Takeout archives,
+especially large ones, by integrating with Google Drive, managing a local
+SQLite database for deduplication and progress tracking, and utilizing
+external tools like 'jdupes' for efficient file management.
+
+It's designed to run as a long-running service, continuously monitoring
+a designated Google Drive folder for new Takeout archives, processing them,
+and organizing their contents (e.g., photos by date, other files deduplicated)
+into a structured folder hierarchy on Google Drive.
+
+Key Features:
+- Google Drive API integration for file management (move, download, upload).
+- Service account authentication for headless operation.
+- SQLite database for tracking processed archives and extracted files (SHA256 hashes, paths).
+- Deduplication of files using SHA256 hashes and 'jdupes'.
+- Intelligent handling of Google Photos metadata (JSON sidecars) for date-based organization.
+- Repackaging of very large Takeout archives into smaller, more manageable chunks.
+- Robust error handling with rollback mechanisms for interrupted processing.
+- Startup integrity checks to recover from previous crashes.
+- Disk space monitoring for VM environments (e.g., Google Colab).
+
+Usage:
+1. Ensure 'jdupes' is installed on the system.
+2. Set the GOOGLE_APPLICATION_CREDENTIALS environment variable to point
+   to your service account key file.
+3. Run the script, ideally as a background service (e.g., using systemd).
+
+For more details, refer to the project's README.md.
+"""
+
 import os
 import shutil
 import subprocess
@@ -16,9 +49,10 @@ from pathlib import Path
 
 # Explicitly import Google API client libraries
 import google.auth
+from google.auth.transport.requests import Request  # CRITICAL FIX: Correct import for Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload # New import for robust downloads
+from googleapiclient.http import MediaIoBaseDownload
 
 # Try to import tqdm for progress bars, fall back to dummy if not available
 try:
@@ -30,14 +64,6 @@ except ImportError:
         """A dummy tqdm function that acts as a fallback if tqdm is not available."""
         return iterable
 
-# COLAB_ENVIRONMENT flag remains for any potential future Colab-specific *behavior*
-# beyond mounting, but the core mounting logic is now fixed for the canonical path.
-COLAB_ENVIRONMENT = False
-try:
-    from google.colab import drive # Attempt import for flag, not for mounting logic
-    COLAB_ENVIRONMENT = True
-except ImportError:
-    pass # Not in Colab environment
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
@@ -49,7 +75,6 @@ APP_BASE_DIR = Path("/opt/google_takeout_organizer")
 DRIVE_ROOT_FOLDER_NAME = (
     "TakeoutProject"  # This is the *name* of the root folder on Drive
 )
-# CREDENTIALS_PATH is now handled by GOOGLE_APPLICATION_CREDENTIALS env var, no longer needed here.
 
 # Local temporary and database paths
 DB_PATH = APP_BASE_DIR / "takeout_archive.db"
@@ -82,7 +107,7 @@ LOCAL_DRIVE_MOUNT_POINT = Path("/content/drive/MyDrive")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)], # Logs to stdout, which systemd captures to journalctl
+    handlers=[logging.StreamHandler(sys.stdout)],  # Logs to stdout, which systemd captures to journalctl
 )
 logger = logging.getLogger(__name__)
 
@@ -156,7 +181,7 @@ class DriveManager:
             if not creds.valid:
                 # Refresh token if expired or invalid; for service accounts, this is less common
                 # but good practice.
-                creds.refresh(google.auth.transport.requests.Request())
+                creds.refresh(Request())  # Use the imported Request class
             return build("drive", "v3", credentials=creds)
         except Exception as e:
             raise DriveAuthError(
@@ -176,7 +201,10 @@ class DriveManager:
         try:
             # 1. Find or create the root folder (e.g., "TakeoutProject")
             # We explicitly search for it under 'root' (My Drive)
-            query = f"name='{self.root_folder_name}' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            query = (
+                f"name='{self.root_folder_name}' and 'root' in parents and "
+                "mimeType='application/vnd.google-apps.folder' and trashed=false"
+            )
             response = (
                 self.service.files()
                 .list(q=query, spaces="drive", fields="files(id)")
@@ -215,7 +243,10 @@ class DriveManager:
 
             def _traverse_and_create(parent_id: str, structure: dict):
                 for name, substructure in structure.items():
-                    query = f"name='{name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+                    query = (
+                        f"name='{name}' and '{parent_id}' in parents and "
+                        "mimeType='application/vnd.google-apps.folder' and trashed=false"
+                    )
                     response = (
                         self.service.files().list(q=query, fields="files(id)").execute()
                     )
@@ -640,9 +671,15 @@ class ArchiveProcessor:
         self.drive_root_local_path = LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME
 
         # Construct paths using the canonical folder names
-        self.organized_photos_dir = self.drive_root_local_path / "03-organized" / "My-Photos"
-        self.organized_files_dir = self.drive_root_local_path / "03-organized" # General organized files
-        self.quarantine_dir = self.drive_root_local_path / "04-trash" / "quarantined_artifacts"
+        self.organized_photos_dir = (
+            self.drive_root_local_path / "03-organized" / "My-Photos"
+        )
+        self.organized_files_dir = (
+            self.drive_root_local_path / "03-organized"
+        )  # General organized files
+        self.quarantine_dir = (
+            self.drive_root_local_path / "04-trash" / "quarantined_artifacts"
+        )
         self.duplicates_dir = self.drive_root_local_path / "04-trash" / "duplicates"
 
         # Ensure all necessary local directories exist for temporary operations
@@ -672,8 +709,8 @@ class ArchiveProcessor:
     def _calculate_file_hash(self, filepath: Path) -> str:
         """Calculates the SHA256 hash of a file in chunks for memory efficiency."""
         hasher = hashlib.sha256()
-        with open(filepath, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
 
@@ -726,7 +763,9 @@ class ArchiveProcessor:
             raise  # Re-raise to halt execution if POST fails critically
         logger.info("--> [POST] Integrity check complete.")
 
-    def plan_and_repackage_archive(self, archive_path: Path, archive_name: str) -> bool:
+    def plan_and_repackage_archive(
+        self, archive_path: Path, archive_name: str
+    ) -> bool:
         """
         Scans a large archive, hashes unique files, and repackages them into smaller,
         crash-resilient parts while populating the database.
@@ -749,7 +788,10 @@ class ArchiveProcessor:
 
         # Check for existing partial archives in the completed folder on Drive
         completed_folder_id = self.drive_manager.folder_ids["05-COMPLETED-ARCHIVES"]
-        part_query = f"name contains '{original_basename_no_ext}.part-' and '{completed_folder_id}' in parents and trashed=false"
+        part_query = (
+            f"name contains '{original_basename_no_ext}.part-' and "
+            f"'{completed_folder_id}' in parents and trashed=false"
+        )
         response = (
             self.drive_manager.service.files()
             .list(q=part_query, fields="files(name)")
@@ -777,7 +819,8 @@ class ArchiveProcessor:
                 all_members = [m for m in original_tar.getmembers() if m.isfile()]
                 if not all_members:
                     logger.warning(
-                        f"    > Archive '{archive_name}' is empty or contains no files. Skipping repackaging."
+                        f"    > Archive '{archive_name}' is empty or contains no files. "
+                        "Skipping repackaging."
                     )
                     return True  # Nothing to repackage
 
@@ -815,7 +858,8 @@ class ArchiveProcessor:
                 # Skip parts already completed from a previous run if resuming
                 if part_number <= last_part_num:
                     logger.info(
-                        f"    > Skipping part {part_number} (already processed in a previous session)."
+                        f"    > Skipping part {part_number} (already processed in a "
+                        "previous session)."
                     )
                     continue
 
@@ -837,7 +881,8 @@ class ArchiveProcessor:
                             file_obj = original_tar_stream.extractfile(member)
                             if not file_obj:
                                 logger.warning(
-                                    f"Failed to extract file object for {member.name}. Skipping."
+                                    f"Failed to extract file object for {member.name}. "
+                                    "Skipping."
                                 )
                                 continue
 
@@ -849,7 +894,8 @@ class ArchiveProcessor:
 
                             if sha256 in existing_hashes:
                                 logger.debug(
-                                    f"File {member.name} (hash {sha256}) already exists. Skipping add to new archive."
+                                    f"File {member.name} (hash {sha256}) already exists. "
+                                    "Skipping add to new archive."
                                 )
                                 continue
 
@@ -865,7 +911,8 @@ class ArchiveProcessor:
                 if files_in_this_batch > 0:
                     # Upload the newly created part to Drive's 05-COMPLETED-ARCHIVES
                     logger.info(
-                        f"    --> Batch contains {files_in_this_batch} unique files. Uploading new part {part_number} to Google Drive..."
+                        f"    --> Batch contains {files_in_this_batch} unique files. "
+                        f"Uploading new part {part_number} to Google Drive..."
                     )
                     file_metadata = {
                         "name": new_archive_name,
@@ -885,9 +932,10 @@ class ArchiveProcessor:
                     logger.info(f"    ✅ Uploaded part {new_archive_name}.")
                 else:
                     logger.info(
-                        f"    > Batch {part_number} contained no unique files. Discarding empty batch."
+                        f"    > Batch {part_number} contained no unique files. "
+                        "Discarding empty batch."
                     )
-            return True # Indicate successful repackaging
+            return True  # Indicate successful repackaging
         except Exception as e:
             raise ProcessingError(
                 f"Error during repackaging of '{archive_name}': {e}"
@@ -912,13 +960,14 @@ class ArchiveProcessor:
         try:
             logger.info("    > Checking database for previously completed files...")
             # Files that have been unpacked AND moved to their final destination
-            self.completed_files_original_paths = ( # Store as instance variable
+            self.completed_files_original_paths = (  # Store as instance variable
                 self.db_manager.get_processed_files_for_archive(archive_name)
             )
 
             if self.completed_files_original_paths:
                 logger.info(
-                    f"    ✅ Found {len(self.completed_files_original_paths)} files previously processed for this archive."
+                    f"    ✅ Found {len(self.completed_files_original_paths)} files "
+                    "previously processed for this archive."
                 )
             else:
                 logger.info(
@@ -932,7 +981,8 @@ class ArchiveProcessor:
                 all_members = [m for m in tf.getmembers() if m.isfile()]
                 if not all_members:
                     logger.warning(
-                        f"    > Archive '{archive_name}' is empty or contains no files. Skipping processing."
+                        f"    > Archive '{archive_name}' is empty or contains no files. "
+                        "Skipping processing."
                     )
                     return True  # Nothing to process
 
@@ -954,7 +1004,8 @@ class ArchiveProcessor:
                 return True
 
             logger.info(
-                f"    ✅ Unpacked {len(files_to_unpack_and_process)} new/missing files to VM for '{archive_name}'."
+                f"    ✅ Unpacked {len(files_to_unpack_and_process)} new/missing files "
+                f"to VM for '{archive_name}'."
             )
 
             # Subsequent steps now operate on the extracted files in VM_TEMP_EXTRACT_DIR.
@@ -977,7 +1028,7 @@ class ArchiveProcessor:
                     self.organized_files_dir,
                     archive_name,
                 )
-            return True # Indicate successful processing
+            return True  # Indicate successful processing
         except Exception as e:
             raise ProcessingError(
                 f"Error during archive processing transaction for '{archive_name}': {e}"
@@ -1234,7 +1285,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Process Google Takeout archives via the Google Drive API."
     )
-    args = parser.parse_args() # Parse any future arguments
+    args = parser.parse_args()  # Parse any future arguments
 
     logger.info("--> [Step 0] Initializing environment...")
 
@@ -1250,14 +1301,20 @@ def main():
         if not LOCAL_DRIVE_MOUNT_POINT.exists():
             # This is a critical error for the application to proceed
             raise TakeoutOrganizerError(
-                f"Critical Error: Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' not found. "
-                "Ensure your Google Drive is mounted to this canonical path (e.g., in Google Colab or via rclone)."
+                f"Critical Error: Google Drive mount point '{LOCAL_DRIVE_MOUNT_POINT}' "
+                "not found. Ensure your Google Drive is mounted to this canonical path "
+                "(e.g., in Google Colab or via rclone)."
             )
-        logger.info(f"✅ Confirmed Google Drive mount point exists at: {LOCAL_DRIVE_MOUNT_POINT}")
-        logger.info(f"    Application will use '{LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME}' for organized files.")
+        logger.info(
+            f"✅ Confirmed Google Drive mount point exists at: {LOCAL_DRIVE_MOUNT_POINT}"
+        )
+        logger.info(
+            f"    Application will use '{LOCAL_DRIVE_MOUNT_POINT / DRIVE_ROOT_FOLDER_NAME}' "
+            "for organized files."
+        )
 
         # 0.2 Initialize Managers
-        drive_manager = DriveManager(DRIVE_ROOT_FOLDER_NAME) # No credentials_path needed
+        drive_manager = DriveManager(DRIVE_ROOT_FOLDER_NAME)
         drive_manager.initialize_folder_structure()  # Populates drive_manager.folder_ids
 
         db_manager = DatabaseManager(DB_PATH)
@@ -1275,8 +1332,8 @@ def main():
         used_vm_gb = used_vm_bytes / (1024**3)
         if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
             raise TakeoutOrganizerError(
-                f"Initial VM disk usage ({used_vm_gb:.2f} GB) is too high (> {TARGET_MAX_VM_USAGE_GB} GB). "
-                "Please free up space or restart the runtime."
+                f"Initial VM disk usage ({used_vm_gb:.2f} GB) is too high "
+                f"(> {TARGET_MAX_VM_USAGE_GB} GB). Please free up space or restart the runtime."
             )
         logger.info(
             f"✅ Pre-flight disk check passed. (Initial VM Usage: {used_vm_gb:.2f} GB)"
@@ -1300,7 +1357,8 @@ def main():
 
             if not archive_to_process:
                 logger.info(
-                    f"\n✅🎉 All archives have been processed! Idling for {PROCESSING_IDLE_SLEEP_SECONDS} seconds..."
+                    f"\n✅🎉 All archives have been processed! Idling for "
+                    f"{PROCESSING_IDLE_SLEEP_SECONDS} seconds..."
                 )
                 time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
                 continue  # Continue the loop to check again
@@ -1339,18 +1397,20 @@ def main():
                     archive_id, archive_name, VM_TEMP_DOWNLOAD_DIR
                 )
 
-                processed_ok = False # Flag to track success of processing
+                processed_ok = False  # Flag to track success of processing
                 # Determine processing strategy
                 if archive_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB:
                     logger.info(
-                        f"    > Archive '{archive_name}' is large ({archive_size_gb:.2f} GB). Repackaging..."
+                        f"    > Archive '{archive_name}' is large ({archive_size_gb:.2f} GB). "
+                        "Repackaging..."
                     )
                     processed_ok = processor.plan_and_repackage_archive(
                         downloaded_archive_path, archive_name
                     )
                 else:
                     logger.info(
-                        f"    > Archive '{archive_name}' is regular size ({archive_size_gb:.2f} GB). Processing directly..."
+                        f"    > Archive '{archive_name}' is regular size ({archive_size_gb:.2f} GB). "
+                        "Processing directly..."
                     )
                     processed_ok = processor.process_regular_archive(
                         downloaded_archive_path, archive_name
@@ -1371,14 +1431,13 @@ def main():
                 else:
                     # This branch should ideally not be reached if methods raise exceptions on failure.
                     logger.warning(
-                        f"    ❌ Processing failed for '{archive_name}'. Moving to trash (quarantined_artifacts)."
+                        f"    ❌ Processing failed for '{archive_name}'. Moving to trash "
+                        "(quarantined_artifacts)."
                     )
                     # Move archive on Drive to TRASH
                     drive_manager.move_file(
                         archive_id,
-                        drive_manager.folder_ids[
-                            "04-trash"
-                        ],
+                        drive_manager.folder_ids["04-trash"],
                         drive_manager.folder_ids["01-PROCESSING-STAGING"],
                     )
                     db_manager.record_archive_status(
@@ -1395,7 +1454,8 @@ def main():
                     )
                     if staged_file_check and staged_file_check.get("id") == archive_id:
                         logger.info(
-                            f"    > Attempting to move '{archive_name}' back to 00-ALL-ARCHIVES due to error."
+                            f"    > Attempting to move '{archive_name}' back to "
+                            "00-ALL-ARCHIVES due to error."
                         )
                         drive_manager.move_file(
                             archive_id,
@@ -1407,18 +1467,20 @@ def main():
                         )
                     else:
                         logger.warning(
-                            f"    > Archive '{archive_name}' not found in STAGING folder. Cannot move back. It might be lost or already moved."
+                            f"    > Archive '{archive_name}' not found in STAGING folder. "
+                            "Cannot move back. It might be lost or already moved."
                         )
                 except Exception as rollback_e:
                     logger.critical(
-                        f"    ❌ CRITICAL: Failed to rollback or move '{archive_name}' after error: {rollback_e}"
+                        f"    ❌ CRITICAL: Failed to rollback or move '{archive_name}' "
+                        f"after error: {rollback_e}"
                     )
                 db_manager.record_archive_status(
                     archive_id, archive_name, archive_size_bytes, "FAILED"
                 )
             finally:
                 # Ensure local temp directories are cleaned up after each archive cycle
-                if processor: # Check if processor was initialized
+                if processor:  # Check if processor was initialized
                     processor._cleanup_temp_dirs()
                     logger.debug(
                         "Cleaned up local temp directories after archive cycle."
