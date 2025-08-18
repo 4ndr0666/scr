@@ -15,19 +15,19 @@ import logging
 from pathlib import Path
 
 # Explicitly import Google API client libraries
-import google.auth # Import google.auth for default credential discovery
+import google.auth
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload # New import for robust downloads
 
 # Try to import tqdm for progress bars, fall back to dummy if not available
 try:
     from tqdm.auto import tqdm
 except ImportError:
-    # If tqdm is not available, use a dummy function
+    # If tqdm is not available, use a dummy function that just returns the iterable.
+    # Existing logging in processing functions provides sufficient feedback.
     def tqdm(iterable, *args, **kwargs):
         """A dummy tqdm function that acts as a fallback if tqdm is not available."""
-        description = kwargs.get("desc", "items")
-        logging.info(f"    > Processing {description}...")
         return iterable
 
 # COLAB_ENVIRONMENT flag remains for any potential future Colab-specific *behavior*
@@ -311,7 +311,7 @@ class DriveManager:
 
     def download_file(self, file_id: str, file_name: str, dest_path: Path) -> Path:
         """
-        Downloads a file from Google Drive.
+        Downloads a file from Google Drive using MediaIoBaseDownload for robustness.
 
         Args:
             file_id: The ID of the file to download.
@@ -327,11 +327,12 @@ class DriveManager:
         try:
             request = self.service.files().get_media(fileId=file_id)
             with open(download_filepath, "wb") as fh:
-                downloader = self.service._http.request(request.uri)
-                response = downloader.next_chunk()
-                while response[0]:
-                    fh.write(response[0])
-                    response = downloader.next_chunk()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                    if status:
+                        logger.debug(f"Downloaded {int(status.progress() * 100)}%")
             logger.info(f"    ✅ Downloaded '{file_name}'.")
             return download_filepath
         except HttpError as error:
@@ -656,7 +657,6 @@ class ArchiveProcessor:
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
         self.duplicates_dir.mkdir(parents=True, exist_ok=True)
 
-
     def _cleanup_temp_dirs(self):
         """Cleans up all temporary local directories."""
         for temp_dir in [
@@ -668,6 +668,14 @@ class ArchiveProcessor:
                 shutil.rmtree(temp_dir)
                 logger.debug(f"Cleaned up temporary directory: {temp_dir}")
             temp_dir.mkdir(parents=True, exist_ok=True)  # Recreate empty for next cycle
+
+    def _calculate_file_hash(self, filepath: Path) -> str:
+        """Calculates the SHA256 hash of a file in chunks for memory efficiency."""
+        hasher = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hasher.update(chunk)
+        return hasher.hexdigest()
 
     def perform_startup_integrity_check(self):
         """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
@@ -718,7 +726,7 @@ class ArchiveProcessor:
             raise  # Re-raise to halt execution if POST fails critically
         logger.info("--> [POST] Integrity check complete.")
 
-    def plan_and_repackage_archive(self, archive_path: Path, archive_name: str):
+    def plan_and_repackage_archive(self, archive_path: Path, archive_name: str) -> bool:
         """
         Scans a large archive, hashes unique files, and repackages them into smaller,
         crash-resilient parts while populating the database.
@@ -887,7 +895,7 @@ class ArchiveProcessor:
         finally:
             self._cleanup_temp_dirs()  # Clean up temp directories after each large archive process
 
-    def process_regular_archive(self, archive_path: Path, archive_name: str):
+    def process_regular_archive(self, archive_path: Path, archive_name: str) -> bool:
         """
         Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
         for already processed files and only unpacking the missing ones ("the delta").
@@ -1000,7 +1008,9 @@ class ArchiveProcessor:
         jdupes_path = shutil.which("jdupes")
         if not jdupes_path:
             logger.warning(
-                "    ⚠️ 'jdupes' command not found. Skipping deduplication. Please ensure it is installed."
+                "    ⚠️ 'jdupes' command not found. Skipping deduplication. "
+                "Files will be moved without checking for duplicates. "
+                "Please ensure it is installed for optimal functionality."
             )
             # Fallback: Just move files without deduplication, assuming they are unique.
             logger.info("    > Moving files without deduplication...")
@@ -1014,9 +1024,8 @@ class ArchiveProcessor:
                     try:
                         final_file_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.move(file_loc_path, final_file_path)
-                        # Record in DB - need hash, so calculate it.
-                        with open(final_file_path, "rb") as f:
-                            sha256 = hashlib.sha256(f.read()).hexdigest()
+                        # Record in DB - need hash, so calculate it using chunked hashing.
+                        sha256 = self._calculate_file_hash(final_file_path)
                         self.db_manager.insert_extracted_file(
                             sha256,
                             str(relative_path),
@@ -1035,8 +1044,7 @@ class ArchiveProcessor:
         try:
             # Use a list for subprocess.run for security, especially with paths that might contain spaces
             # `jdupes -r` (recurse), `-S` (print size), `-nh` (no hardlinks for identified duplicates, which move handles),
-            # `--linkhard` is removed as jdupes --move option takes precedence and makes --linkhard redundant
-            # when moving duplicates to a different directory.
+            # `--move` option moves identified duplicates to the specified directory.
             command = [
                 str(jdupes_path),
                 "-r",
@@ -1065,9 +1073,8 @@ class ArchiveProcessor:
                     final_file_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(file_loc_path, final_file_path)
 
-                    # Calculate hash and record in DB
-                    with open(final_file_path, "rb") as f:
-                        sha256 = hashlib.sha256(f.read()).hexdigest()
+                    # Calculate hash and record in DB using chunked hashing
+                    sha256 = self._calculate_file_hash(final_file_path)
 
                     self.db_manager.insert_extracted_file(
                         sha256,
@@ -1173,9 +1180,8 @@ class ArchiveProcessor:
             final_filepath = final_dir / new_filename
 
             try:
-                # Calculate SHA256 before moving to record in DB
-                with open(media_path, "rb") as f:
-                    sha256 = hashlib.sha256(f.read()).hexdigest()
+                # Calculate SHA256 before moving to record in DB using chunked hashing
+                sha256 = self._calculate_file_hash(media_path)
 
                 # Construct relative path from the original extracted root
                 relative_original_path = media_path.relative_to(self.temp_extract_dir)
