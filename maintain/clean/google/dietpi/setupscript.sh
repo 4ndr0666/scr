@@ -1,3 +1,74 @@
+#!/bin/bash
+#
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v6.0 - Final Deployment Fix)
+# This version ensures the systemd service is explicitly stopped before updating files,
+# guaranteeing the new code is loaded and executed. It contains the complete, unabridged,
+# and fully corrected Python script.
+
+set -euo pipefail
+
+# --- Configuration ---
+INSTALL_DIR="/opt/google_takeout_organizer"
+PROCESSOR_FILENAME="google_takeout_organizer.py"
+PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
+CREDENTIALS_PATH="${INSTALL_DIR}/credentials.json"
+GDRIVE_MOUNT_POINT="/content/drive/MyDrive"
+SYSTEMD_SERVICE_NAME="takeout-organizer.service"
+SYSTEMD_SERVICE_PATH="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}"
+
+# --- Logging Utilities ---
+_log_info() { printf "\n[INFO] %s\n" "$*"; }
+_log_ok()   { printf "✅ %s\n" "$*"; }
+_log_warn() { printf "⚠️  %s\n" "$*"; }
+_log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
+
+# ==============================================================================
+# --- Main Installation Logic ---
+# ==============================================================================
+main() {
+    _log_info "--- Starting Takeout Processor Appliance Setup (Hybrid API/FS Version) ---"
+    if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
+    _log_ok "Root privileges confirmed."
+
+    _log_info "Ensuring any old service version is stopped..."
+    # CRITICAL FIX: Stop the service if it is running to ensure it reloads the new script.
+    # The '|| true' prevents an error if the service doesn't exist on a fresh install.
+    systemctl stop ${SYSTEMD_SERVICE_NAME} || true
+    _log_ok "Service stopped."
+
+    _log_info "Updating package lists and installing dependencies..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y >/dev/null
+    apt-get install -y \
+        python3 \
+        jdupes \
+        sqlite3 \
+        curl \
+        util-linux \
+        python3-googleapi \
+        python3-google-auth-httplib2 \
+        python3-google-auth-oauthlib \
+        python3-tqdm >/dev/null
+    _log_ok "All dependencies are installed."
+
+    _log_info "Creating application directory..."
+    mkdir -p "$INSTALL_DIR"
+    mkdir -p "$GDRIVE_MOUNT_POINT"
+    _log_ok "Directories created."
+    
+    _log_info "Handling Service Account Credentials..."
+    if [[ ! -f "$CREDENTIALS_PATH" ]]; then
+        _log_warn "The 'credentials.json' file was not found at ${CREDENTIALS_PATH}."
+        _log_warn "The service will fail until it is placed there manually."
+    fi
+    if [[ -f "$CREDENTIALS_PATH" ]]; then
+        chmod 600 "$CREDENTIALS_PATH"
+    fi
+    _log_ok "Service account credentials handled."
+    
+    _log_info "Creating the Takeout Processor script from complete embedded source..."
+    # --- BEGIN EMBEDDED PYTHON SCRIPT ---
+    cat << 'EOF' > "$PROCESSOR_SCRIPT_PATH"
 """
 Google Takeout Organizer
 
@@ -647,7 +718,7 @@ class DatabaseManager:
                 f"Failed to update final path for {original_path}: {e}"
             ) from e
 
-            
+
 # ==============================================================================
 # --- 6. ARCHIVE PROCESSING CLASS ---
 # ==============================================================================
@@ -1570,3 +1641,40 @@ def main():
 
 if __name__ == "__main__":
     main()
+EOF
+    # --- END EMBEDDED PYTHON SCRIPT ---
+
+    chmod +x "$PROCESSOR_SCRIPT_PATH"
+    _log_ok "Application script deployed successfully."
+    
+    _log_info "Creating and enabling the systemd service..."
+    cat << EOF > "$SYSTEMD_SERVICE_PATH"
+[Unit]
+Description=Google Takeout Organizer Service
+After=network-online.target
+
+[Service]
+Type=simple
+Environment="GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_PATH}"
+ExecStart=/usr/bin/python3 ${PROCESSOR_SCRIPT_PATH}
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable "$SYSTEMD_SERVICE_NAME"
+    _log_ok "Systemd service '${SYSTEMD_SERVICE_NAME}' created and enabled."
+
+    echo ""
+    _log_ok "--------------------------------------------------------"
+    _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
+    _log_info "The service has been reloaded. It will start automatically on boot."
+    _log_info "To start it now, run: systemctl start ${SYSTEMD_SERVICE_NAME}"
+    _log_info "To monitor progress, run: journalctl -fu ${SYSTEMD_SERVICE_NAME}"
+    _log_ok "--------------------------------------------------------"
+}
+
+main
