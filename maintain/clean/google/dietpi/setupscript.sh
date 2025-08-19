@@ -35,8 +35,7 @@ import time
 # Import Google API client libraries
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from googleapiclaph import MediaIoBaseDownload, MediaFileUpload
 
 # Attempt to use tqdm if available, otherwise use dummy
 try:
@@ -55,19 +54,16 @@ TARGET_MAX_VM_USAGE_GB = 70 # Still relevant for temp disk usage during processi
 REPACKAGE_CHUNK_SIZE_GB = 15
 MAX_SAFE_ARCHIVE_SIZE_GB = 25 # Maximum size for direct processing before repackaging
 
-# BASE_DIR is not used for source/dest paths with Drive API, only for local DB and config
-# Default to a persistent location for the database and potentially local config files
-BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", os.path.join(os.path.expanduser("~"), ".takeout_organizer"))
-
-# Allow specifying a temporary directory for local processing via environment variable
-# Default to /tmp/takeout_processing for temporary extraction and file handling
-DEFAULT_TEMP_PROCESSING_DIR = "/tmp/takeout_processing"
+# BASE_DIR for local temporary processing space
+# Default to a temp dir within /tmp or a configurable location
+# This will be for downloading and processing archives locally
+DEFAULT_TEMP_PROCESSING_DIR = os.environ.get("TAKEOUT_TEMP_DIR", "/tmp/takeout_processing")
 TEMP_PROCESSING_DIR = os.environ.get("TAKEOUT_TEMP_DIR", DEFAULT_TEMP_PROCESSING_DIR)
 
 
 # Google Drive specific configuration - these will be folder IDs or paths in Drive
-# The user will need to configure these via environment variables.
-# Using placeholder names as defaults assuming a standard structure the user will set up.
+# The user will need to configure these, perhaps via environment variables or args later
+# For now, using placeholder names assuming a structure in Drive
 DRIVE_SOURCE_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_SOURCE_FOLDER", "00-ALL-ARCHIVES")
 DRIVE_COMPLETED_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_COMPLETED_FOLDER", "05-COMPLETED-ARCHIVES")
 DRIVE_ORGANIZED_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_ORGANIZED_FOLDER", "03-organized/My-Photos") # May need to handle nested paths
@@ -75,7 +71,7 @@ DRIVE_TRASH_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_TRASH_FOLDER", "04-trash
 
 # The local database will still store metadata about files processed from Drive
 # It will be located in a persistent location, potentially near the script or in a user-defined path
-DB_PATH = os.path.get("TAKEOUT_DB_PATH", os.path.join(BASE_DIR, "takeout_archive.db")) # Use BASE_DIR for default DB path
+DB_PATH = os.environ.get("TAKEOUT_DB_PATH", os.path.join(os.path.expanduser("~"), ".takeout_organizer", "takeout_archive.db"))
 
 
 CONFIG = {
@@ -120,16 +116,10 @@ def authenticate_drive():
 def find_drive_folder(service, folder_name, parent_id=None):
     # Finds a Google Drive folder by name. Can search within a parent folder.
     # Returns the folder ID if found, otherwise None.
-    # Note: Searching by name can return multiple results if names are not unique.
-    # This function assumes the first result is the correct one.
     print(f"    > Searching for Drive folder: '{folder_name}'...")
     query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     if parent_id:
         query += f" and '{parent_id}' in parents"
-    else:
-         # Search in root if no parent_id is provided
-         query += " and 'root' in parents"
-
 
     try:
         results = service.files().list(q=query, fields="files(id, name)").execute()
@@ -158,10 +148,6 @@ def create_drive_folder(service, folder_name, parent_id=None):
     }
     if parent_id:
         file_metadata['parents'] = [parent_id]
-    else:
-        # Create in root if no parent_id is provided
-        file_metadata['parents'] = ['root']
-
 
     try:
         file = service.files().create(body=file_metadata, fields='id').execute()
@@ -187,60 +173,30 @@ def ensure_drive_directory_structure(service):
     print("--> [Drive] Ensuring Drive directory structure exists...")
     root_id = 'root' # Start from the user's Drive root
 
-    # Check if the main 'TakeoutProject' base folder exists or create it
-    takeout_base_folder_name = os.path.basename(os.environ.get("TAKEOUT_BASE_DIR", os.path.join(os.path.expanduser("~"), ".takeout_organizer")))
-    takeout_base_folder_id = ensure_drive_folder(service, takeout_base_folder_name, root_id)
-    if not takeout_base_folder_id:
-         print("    ❌ Could not ensure base 'TakeoutProject' folder on Drive. Cannot proceed.")
-         return None # Indicate critical failure
+    source_id = ensure_drive_folder(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"], root_id)
+    if not source_id: return None, None, None, None
 
+    completed_id = ensure_drive_folder(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"], root_id)
+    if not completed_id: return source_id, None, None, None
 
-    # Create subfolders within the base folder
-    source_id = ensure_drive_folder(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"], takeout_base_folder_id)
-    if not source_id: return None # Indicate failure
+    organized_id = ensure_drive_folder(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"], root_id)
+    # organized_id = ensure_drive_folder(service, "My-Photos", ensure_drive_folder(service, "03-organized", root_id)) # Example for nested
 
-    completed_id = ensure_drive_folder(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"], takeout_base_folder_id)
-    if not completed_id: return None # Indicate failure
+    trash_id = ensure_drive_folder(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"], root_id)
+    if not trash_id: return source_id, completed_id, organized_id, None
 
-    # Handle nested '03-organized/My-Photos'
-    organized_base_id = ensure_drive_folder(service, "03-organized", takeout_base_folder_id)
-    if not organized_base_id: return None
-    organized_id = ensure_drive_folder(service, "My-Photos", organized_base_id)
-    if not organized_id: return None
-
-    # Handle nested '04-trash' and its subfolders
-    trash_id = ensure_drive_folder(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"], takeout_base_folder_id)
-    if not trash_id: return None
-
+    # Ensure subfolders within trash
     quarantine_id = ensure_drive_folder(service, "quarantined_artifacts", trash_id)
     dupes_id = ensure_drive_folder(service, "duplicates", trash_id)
 
-    # Store the resolved Drive Folder IDs
-    drive_folder_ids = {
-         "source_id": source_id,
-         "completed_id": completed_id,
-         "organized_id": organized_id,
-         "trash_id": trash_id,
-         "quarantine_id": quarantine_id,
-         "dupes_id": dupes_id,
-         # Store the base folder ID as well
-         "base_id": takeout_base_folder_id
-    }
-
-    # Ensure the 'OtherTakeoutFiles' subfolder within Organized
-    other_files_drive_folder_name = "OtherTakeoutFiles"
-    other_files_drive_folder_id = ensure_drive_folder(service, other_files_drive_folder_name, organized_id)
-    if not other_files_drive_folder_id: return None # Indicate failure
-    drive_folder_ids["other_files_id"] = other_files_drive_folder_id
-
 
     print("    ✅ Drive directory structure ready.")
-    return drive_folder_ids # Return the dictionary of IDs
+    return source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id # Return all relevant IDs
 
 
 def initialize_database(db_path):
     # Creates the SQLite database and the necessary tables if they don't exist.
-    # Adapted to store Drive File IDs and original paths within the archive.
+    # Adapted to store Drive File IDs
     print("--> [DB] Initializing database...")
     # Ensure the directory for the database exists
     db_dir = os.path.dirname(db_path)
@@ -252,12 +208,11 @@ def initialize_database(db_path):
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS files (
         id INTEGER PRIMARY KEY,
-        drive_file_id TEXT NOT NULL UNIQUE, -- Store Google Drive File ID (final location)
+        drive_file_id TEXT NOT NULL UNIQUE, -- Store Google Drive File ID
         sha256_hash TEXT, -- Hash after download
-        original_archive_path TEXT NOT NULL, -- Path within the original tar archive
+        original_drive_path TEXT NOT NULL, -- Path within Drive (e.g., folder names)
         original_filename TEXT NOT NULL, -- Original filename from Drive
-        final_drive_path TEXT, -- Final path within Drive after organizing (string representation)
-        final_drive_folder_id TEXT, -- Drive Folder ID of the final location
+        final_drive_path TEXT, -- Final path within Drive after organizing
         timestamp INTEGER, -- Timestamp from metadata
         file_size INTEGER, -- Size from Drive metadata
         source_archive_drive_id TEXT NOT NULL -- Drive ID of the source archive file
@@ -368,18 +323,18 @@ def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_
         # Resume logic needs to be adapted for Drive File IDs and the local extraction process
         # For now, let's simplify: If the archive's Drive ID is in the database as processed, skip.
         # A more robust approach would check if all files *within* the archive (by original path or hash)
-        # have been fully processed (final_drive_folder_id set).
+        # have been fully processed (final_drive_path set).
 
         # --- Check if the archive's Drive ID is in the database as fully processed ---
         # This simplified check might need refinement for true resume capability.
-        # A better check: count files from this archive with final_drive_folder_id NOT NULL.
+        # A better check: count files from this archive with final_drive_path NOT NULL.
         # If this count equals total files in the archive (from initial scan/db population), it's processed.
         # For now, let's rely on the processing_queue logic in process_drive_archives.
 
 
         print("    > Checking database for previously processed files from this archive...")
         # This check will help resume if the local processing failed partially
-        cursor.execute("SELECT original_archive_path FROM files WHERE source_archive_drive_id = ? AND final_drive_folder_id IS NOT NULL", (drive_archive_id,))
+        cursor.execute("SELECT original_drive_path FROM files WHERE source_archive_drive_id = ? AND final_drive_path IS NOT NULL", (drive_archive_id,))
         completed_files_in_db = {row[0] for row in cursor.fetchall()}
         if completed_files_in_db:
             print(f"    ✅ Found {len(completed_files_in_db)} files from this archive previously processed. Will skip unpacking them.")
@@ -394,11 +349,16 @@ def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_
             all_members = [m for m in tf.getmembers() if m.isfile()]
             print(f"    > Scanning {archive_name} for files to unpack...")
             for member in all_members:
-                 # Use the path within the tar as the original_archive_path
-                 original_archive_path = member.name
+                 # Need a way to map tar member names to original_drive_path for robust resumption
+                 # For now, assuming member.name is the original_drive_path for simplicity.
+                 # This might need refinement based on actual Takeout archive structure.
+                 original_drive_path_candidate = member.name
 
                  # Skip unpacking if the file is already marked as processed in the DB
-                 if original_archive_path not in completed_files_in_db:
+                 # Note: This check is based on original_drive_path, which assumes
+                 # the path within the tar matches the intended original_drive_path.
+                 # This needs validation based on actual Takeout structure.
+                 if original_drive_path_candidate not in completed_files_in_db:
                     try:
                         tf.extract(member, path=LOCAL_TEMP_EXTRACT_DIR, set_attrs=False)
                         files_to_process_locally.append(os.path.join(LOCAL_TEMP_EXTRACT_DIR, member.name)) # Store local path
@@ -519,13 +479,16 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
             ext = os.path.splitext(media_file_to_process)[1].lower()
             final_drive_filename = f"{new_name_base}{ext}"
 
-            # Determine the original_archive_path for the DB update.
-            # Assuming path relative to the *root* of the extracted archive is the original_archive_path.
-            original_archive_path = os.path.relpath(media_file_to_process, source_path)
+            # Determine the original_drive_path for the DB update.
+            # This requires tracing the file back to its origin in the archive.
+            # For now, assuming the path relative to the 'Takeout/Google Photos' folder in the extract dir works.
+            # This needs careful mapping based on actual Takeout structure.
+            original_path_in_extract_dir = os.path.relpath(media_file_to_process, photos_source_path)
+            original_drive_path_candidate = os.path.join("Takeout", "Google Photos", original_path_in_extract_dir)
 
 
-            # --- Check if this file (by original_archive_path and source_archive_drive_id) is already processed ---
-            cursor.execute("SELECT drive_file_id FROM files WHERE original_archive_path = ? AND source_archive_drive_id = ? LIMIT 1", (original_archive_path, source_archive_drive_id))
+            # --- Check if this file (by original_drive_path and source_archive_drive_id) is already processed ---
+            cursor.execute("SELECT drive_file_id FROM files WHERE original_drive_path = ? AND source_archive_drive_id = ? LIMIT 1", (original_drive_path_candidate, source_archive_drive_id))
             if cursor.fetchone():
                  # print(f"    > File '{os.path.basename(media_file_to_process)}' from archive '{source_archive_drive_id}' already processed. Skipping upload.")
                  # Delete local temporary files for this already processed file
@@ -551,12 +514,10 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
                       print(f"    ⚠️ Could not delete local temp files for {os.path.basename(media_file_to_process)}: {e}")
 
                  # Prepare database update for the successfully uploaded file
-                 # Construct the full final_drive_path for the DB (e.g., "03-organized/My-Photos/YYYY-MM-DD_HHhMMmSS.ext")
-                 # This assumes a flat structure within the target organized folder.
-                 final_drive_path_full = f"{CONFIG['DRIVE_ORGANIZED_FOLDER_NAME']}/{final_drive_filename}"
+                 # Construct the full final_drive_path for the DB
+                 final_drive_path_full = f"{CONFIG['DRIVE_ORGANIZED_FOLDER_NAME']}/{final_drive_filename}" # Example path string, assuming flat structure in target
 
-
-                 organized_db_updates.append((uploaded_file_id, final_drive_filename, final_drive_path_full, organized_drive_folder_id, original_archive_path, int(ts), os.path.getsize(media_file_to_process), source_archive_drive_id))
+                 organized_db_updates.append((uploaded_file_id, final_drive_filename, final_drive_path_full, original_drive_path_candidate, int(ts), os.path.getsize(media_file_to_process), source_archive_drive_id))
 
             # else:
                  # Upload failed, local temp files are not deleted. Integrity check might handle this later.
@@ -569,7 +530,7 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
     if organized_db_updates:
         print(f"    > Committing {len(organized_db_updates)} database updates for organized files...")
         # Insert into files table, handling potential duplicates based on drive_file_id unique constraint
-        cursor.executemany("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, final_drive_folder_id, original_archive_path, timestamp, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", organized_db_updates)
+        cursor.executemany("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, timestamp, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?, ?)", organized_db_updates)
         conn.commit()
         print(f"    ✅ Organized and uploaded {photos_organized_count} new files to Drive and updated DB.")
     else:
@@ -578,22 +539,27 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
 
 # Adapted deduplicate_files to work with local files and manage on Drive
 def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive_folder_ids):
-    # Processes remaining local files (non-photos, unorganized, orphaned JSONs)
-    # and uploads/moves them to appropriate trash/other folders on Drive.
-    # Note: This function does NOT perform Drive-based content deduplication.
+    # Deduplicates local files against files already in the Organized Drive folder
+    # and moves duplicates/unique non-photo files on Drive.
     print("\n--> [Step 2b] Managing other files on Drive...")
+    # Note: Local jdupes is not directly applicable for Drive-based deduplication.
+    # Drive-based deduplication logic would need to be implemented using the Drive API
+    # to compare hashes or metadata of local files against files already in the
+    # destination folder before uploading. This is complex and out of scope for this step.
+    # We will focus on managing the remaining local files (non-photos or unorganized)
+    # by uploading them to a designated location on Drive.
 
     organized_drive_folder_id = drive_folder_ids.get("organized_id")
     trash_drive_folder_id = drive_folder_ids.get("trash_id")
-    dupes_drive_folder_id = drive_folder_ids.get("dupes_id") # For duplicates on Drive - currently not used for content dedup
+    dupes_drive_folder_id = drive_folder_ids.get("dupes_id") # For duplicates on Drive
     quarantine_drive_folder_id = drive_folder_ids.get("quarantine_id") # For quarantined artifacts
 
-    if not organized_drive_folder_id or not trash_drive_folder_id or not quarantine_drive_folder_id:
-        print("    ❌ Required Drive folder IDs for organized, trash, or quarantine not found. Skipping management of other files.")
+    if not organized_drive_folder_id or not trash_drive_folder_id or not dupes_drive_folder_id or not quarantine_drive_folder_id:
+        print("    ❌ Required Drive folder IDs for organized, trash, duplicates, or quarantine not found. Skipping deduplication/management.")
         return
 
     cursor = conn.cursor()
-    files_managed_count = 0
+    files_processed_count = 0
 
     # After organize_photos runs, remaining files in source_path (specifically in the 'Takeout' subdir)
     # are non-photo files, photos that couldn't be organized, or orphaned JSON files.
@@ -605,18 +571,8 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
             for filename in files:
                 local_file_path = os.path.join(root, filename)
 
-                # Determine the original_archive_path. Assuming path relative to the *root* of the extracted archive.
-                original_archive_path = os.path.relpath(local_file_path, source_path)
-
-                # --- Check if this file (by original_archive_path and source_archive_drive_id) is already processed ---
-                cursor.execute("SELECT drive_file_id FROM files WHERE original_archive_path = ? AND source_archive_drive_id = ? LIMIT 1", (original_archive_path, source_archive_drive_id))
-                if cursor.fetchone():
-                     # print(f"    > File '{os.path.basename(local_file_path)}' from archive '{source_archive_drive_id}' already processed. Skipping management.")
-                     # Delete local temporary file for this already processed file
-                     try: os.remove(local_file_path)
-                     except OSError as e: print(f"    ⚠️ Could not delete local temp file for already processed {os.path.basename(local_file_path)}: {e}")
-                     continue # Skip to next file if already processed
-
+                # Determine the original_drive_path. Assuming path relative to the 'Takeout' folder.
+                original_drive_path_candidate = os.path.relpath(local_file_path, os.path.join(source_path, "Takeout"))
 
                 # --- Handle orphaned JSON files ---
                 if filename.lower().endswith('.json'):
@@ -627,35 +583,37 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                     uploaded_file_id = upload_to_drive(service, local_file_path, quarantine_drive_folder_id, filename)
 
                     if uploaded_file_id:
-                         files_managed_count += 1
+                         files_processed_count += 1
                          # Delete local file after upload
                          try: os.remove(local_file_path)
                          except OSError as e: print(f"    ⚠️ Could not delete local orphaned JSON {local_file_path}: {e}")
 
-                         # Record in DB
-                         # Use original_archive_path as the final_drive_path within quarantine for simplicity
-                         final_drive_path_full = f"{CONFIG['DRIVE_TRASH_FOLDER_NAME']}/quarantined_artifacts/{original_archive_path}"
-                         cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, final_drive_folder_id, original_archive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                        (uploaded_file_id, filename, final_drive_path_full, quarantine_drive_folder_id, original_archive_path, os.path.getsize(local_file_path), source_archive_drive_id))
+                         # Record in DB (optional, but good for tracking quarantined items)
+                         # Use original_drive_path as the final_drive_path within quarantine for simplicity
+                         final_drive_path_full = f"{CONFIG['DRIVE_TRASH_FOLDER_NAME']}/quarantined_artifacts/{original_drive_path_candidate}"
+                         cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?)",
+                                        (uploaded_file_id, filename, final_drive_path_full, original_drive_path_candidate, os.path.getsize(local_file_path), source_archive_drive_id))
                     continue # Move to the next file
-
 
                 # --- Handle other remaining files (non-photos or failed photos) ---
                 # Upload them to a designated 'OtherTakeoutFiles' folder within Organized on Drive,
                 # preserving relative path structure from 'Takeout'.
                 other_files_drive_folder_name = "OtherTakeoutFiles"
-                other_files_drive_folder_id = drive_folder_ids.get("other_files_id") # Get the pre-ensured ID
+                # Ensure the 'OtherTakeoutFiles' subfolder exists within the Organized folder on Drive
+                other_files_drive_folder_id = ensure_drive_folder(service, other_files_drive_folder_name, organized_drive_folder_id)
 
                 if not other_files_drive_folder_id:
-                     print(f"    ❌ 'OtherTakeoutFiles' folder ID not found. Skipping management of '{filename}'.")
+                     print(f"    ❌ Could not ensure '{other_files_drive_folder_name}' folder in Drive. Skipping management of '{filename}'.")
                      continue # Skip this file
 
-                # Construct the final Drive path (relative to the organized folder) and ensure nested folders
-                path_components_relative_to_takeout = os.path.relpath(local_file_path, takeout_source).split(os.sep)
+                # Construct the final Drive path (relative to the organized folder)
+                # Need to create subfolders on Drive if the original path had them.
+                # This requires iterating through path components and ensuring folders exist on Drive.
+                path_components = original_drive_path_candidate.split(os.sep)
                 current_parent_id = other_files_drive_folder_id
-                final_drive_path_parts = [CONFIG['DRIVE_ORGANIZED_FOLDER_NAME'].split('/')[-1], other_files_drive_folder_name] # Start building the path string for DB. Use last part of organized path.
+                final_drive_path_parts = [other_files_drive_folder_name] # Start building the path string for DB
                 # Traverse path components to create nested folders on Drive
-                for i, component in enumerate(path_components_relative_to_takeout[:-1]): # Exclude the filename
+                for i, component in enumerate(path_components[:-1]): # Exclude the filename
                     if component: # Avoid empty components from leading/trailing slashes
                          # Check if folder exists within current_parent_id, create if not
                          component_folder_id = ensure_drive_folder(service, component, current_parent_id)
@@ -681,7 +639,7 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                 uploaded_file_id = upload_to_drive(service, local_file_path, final_upload_parent_id, filename) # Upload with original filename for now
 
                 if uploaded_file_id:
-                    files_managed_count += 1
+                    files_processed_count += 1
 
                     # After successful upload, delete the local temporary file
                     try:
@@ -690,15 +648,15 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                          print(f"    ⚠️ Could not delete local temp file {local_file_path}: {e}")
 
                     # Prepare database update
-                    cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, final_drive_folder_id, original_archive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                   (uploaded_file_id, filename, final_drive_path_full_for_db, final_upload_parent_id, original_archive_path, os.path.getsize(local_file_path), source_archive_drive_id))
+                    cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (uploaded_file_id, filename, final_drive_path_full_for_db, original_drive_path_candidate, os.path.getsize(local_file_path), source_archive_drive_id))
 
 
-        conn.commit() # Commit updates for files managed
+            conn.commit() # Commit updates for files moved manually
     else:
          print("    > 'Takeout' directory not found in extracted temp location. No other files to process.")
 
-    print(f"    ✅ Finished managing other files. Processed {files_managed_count} files.")
+    print(f"    ✅ Finished managing other files. Processed {files_processed_count} files.")
     # Clean up jdupes temp directory (if it was used for local temp files)
     if os.path.exists(LOCAL_JDUPE_TEMP_DIR):
         try: shutil.rmtree(LOCAL_JDUPE_TEMP_DIR)
@@ -743,7 +701,7 @@ def process_drive_archives(service, drive_folder_ids, conn, tqdm_module):
 
     # Check database for already processed archives (based on Drive File ID)
     # A robust check here should look at files table: if ALL files originating
-    # from a source_archive_drive_id have final_drive_folder_id NOT NULL, consider the archive processed.
+    # from a source_archive_drive_id have final_drive_path set, consider the archive processed.
     # For simplicity in this step, we'll check if the archive's Drive ID is present
     # in the files table with *any* associated file record. This is a basic indicator.
     cursor = conn.cursor()
@@ -898,7 +856,7 @@ def process_drive_archives(service, drive_folder_ids, conn, tqdm_module):
                 traceback.print_exc()
                 print(f"    >>> Skipping '{archive_name}'. <<<")
 
-            print("\n--- Finished processing archive cycle. ---")
+            print("--- Finished processing archive cycle. ---")
 
 
 # ==============================================================================
@@ -925,10 +883,16 @@ def main(args):
             return
 
         # Ensure Drive directory structure exists and get folder IDs
-        drive_folder_ids = ensure_drive_directory_structure(service)
-        if not drive_folder_ids:
-             print("    ❌ Failed to ensure Google Drive directory structure. Exiting.")
-             return
+        drive_folder_ids = {
+             "source_id": ensure_drive_folder(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"]),
+             "completed_id": ensure_drive_folder(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"]),
+             "organized_id": ensure_drive_folder(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"]),
+             "trash_id": ensure_drive_folder(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"]) # Need to handle nested trash structure
+        }
+        # Example for nested trash subfolders if needed, requires obtaining trash_id first
+        if drive_folder_ids["trash_id"]:
+             drive_folder_ids["quarantine_id"] = ensure_drive_folder(service, "quarantined_artifacts", drive_folder_ids["trash_id"])
+             drive_folder_ids["dupes_id"] = ensure_drive_folder(service, "duplicates", drive_folder_ids["trash_id"])
 
 
         # Check local disk space for temporary processing
@@ -984,17 +948,17 @@ def main(args):
                   if not os.listdir(TEMP_PROCESSING_DIR):
                       os.rmdir(TEMP_PROCESSING_DIR)
                       print(f"--> Cleaned up main temporary processing directory: {TEMP_PROCESSING_DIR}")
-                 except OSError as e:
-                      # Directory might not be empty or another process holds files
-                      pass # Ignore if not empty
-                 except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {TEMP_PROCESSING_DIR}: {e}")
+             except OSError as e:
+                  # Directory might not be empty or another process holds files
+                  pass # Ignore if not empty
+             except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {TEMP_PROCESSING_DIR}: {e}")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process Google Takeout archives from Google Drive.")
     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
     # Note: TEMP_PROCESSING_DIR is configured via environment variable TAKEOUT_TEMP_DIR
-    # Drive folder names are configured via environment variable TAKEOUT_DRIVE_SOURCE_FOLDER, etc.
+    # Drive folder names are configured via environment variables TAKEOUT_DRIVE_SOURCE_FOLDER, etc.
     # DB_PATH is configured via environment variable TAKEOUT_DB_PATH
 
     args = parser.parse_args()
@@ -1004,4 +968,7 @@ if __name__ == '__main__':
 
     main(args)
 
-EOF
+"""
+
+print("Updated Python script content with download logic.")
+print("Further steps are needed to integrate the local processing and Drive upload/move logic.")
