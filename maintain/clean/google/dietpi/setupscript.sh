@@ -1,23 +1,19 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v4.0 - Rclone Mount Model)
-# This version replicates the successful Colab environment by using rclone to mount
-# Google Drive, allowing a file-system-based script to run reliably.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v5.0 - Faithful Port)
+# This version is a direct, faithful port of the working Colab script (v4.1.1).
+# It assumes Google Drive is mounted at the target path by an external mechanism.
 
 set -euo pipefail
 
 # --- Configuration ---
 INSTALL_DIR="/opt/google_takeout_organizer"
-RCLONE_CONFIG_PATH="${INSTALL_DIR}/rclone.conf"
-GDRIVE_MOUNT_POINT="/content/drive/MyDrive" # Mount point to match Colab script
+GDRIVE_MOUNT_POINT="/content/drive/MyDrive" # Prerequisite: This path must be mounted.
 
 PROCESSOR_FILENAME="google_takeout_organizer.py"
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
 PROCESSOR_SERVICE_NAME="takeout-organizer.service"
 PROCESSOR_SERVICE_PATH="/etc/systemd/system/${PROCESSOR_SERVICE_NAME}"
-
-RCLONE_SERVICE_NAME="gdrive-mount.service"
-RCLONE_SERVICE_PATH="/etc/systemd/system/${RCLONE_SERVICE_NAME}"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -29,81 +25,77 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (v4.0 Rclone Mount Model) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup (v5.0 Faithful Port) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
 
-    _log_info "Ensuring any old services are stopped..."
+    _log_info "Ensuring any old service is stopped..."
     systemctl stop ${PROCESSOR_SERVICE_NAME} &>/dev/null || true
-    systemctl stop ${RCLONE_SERVICE_NAME} &>/dev/null || true
     systemctl disable ${PROCESSOR_SERVICE_NAME} &>/dev/null || true
-    systemctl disable ${RCLONE_SERVICE_NAME} &>/dev/null || true
+    # Clean up old rclone service if it exists
+    systemctl stop gdrive-mount.service &>/dev/null || true
+    systemctl disable gdrive-mount.service &>/dev/null || true
+    rm -f /etc/systemd/system/gdrive-mount.service
     _log_ok "Services stopped and disabled."
 
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y >/dev/null
-    # Add rclone and fusermount
-    apt-get install -y python3 jdupes sqlite3 python3-tqdm rclone fuse >/dev/null
-    _log_ok "All dependencies (including rclone) are installed."
+    apt-get install -y python3 jdupes sqlite3 python3-tqdm >/dev/null
+    _log_ok "All dependencies are installed."
 
     _log_info "Creating directories..."
     mkdir -p "$INSTALL_DIR"
-    mkdir -p "$GDRIVE_MOUNT_POINT"
+    mkdir -p "$GDRIVE_MOUNT_POINT" # Ensure mount point exists
     _log_ok "Directories created."
     
-    _log_info "Checking for rclone configuration..."
-    if [[ ! -f "$RCLONE_CONFIG_PATH" ]]; then
-        _log_warn "CRITICAL: 'rclone.conf' not found at ${RCLONE_CONFIG_PATH}."
-        _log_warn "The mount service WILL FAIL until you place a valid config file there."
-    else
-        chmod 600 "$RCLONE_CONFIG_PATH"
-        _log_ok "Found 'rclone.conf' and set permissions."
-    fi
-
-    _log_info "Deploying the Takeout Processor script (File System Version)..."
-    # --- BEGIN EMBEDDED PYTHON SCRIPT (v4.0) ---
+    _log_info "Deploying the Takeout Processor script (Faithful Port)..."
+    # --- BEGIN EMBEDDED PYTHON SCRIPT (v5.0) ---
     cat << 'EOF' > "$PROCESSOR_SCRIPT_PATH"
 """
-Google Takeout Organizer (v4.0 - File System Model)
+Google Takeout Organizer (v5.0 - Faithful File System Port)
 This script is a direct port of the working Colab v4.1.1. It assumes that
 the Google Drive is already mounted at the specified BASE_DIR by an external
-service like rclone.
+service (e.g., systemd mount, rclone service, etc.).
 """
-import os, shutil, subprocess, tarfile, json, traceback, re, sys, argparse, sqlite3, hashlib, time
+import os, shutil, subprocess, tarfile, json, traceback, re, sys, argparse, sqlite3, hashlib, time, logging
 from datetime import datetime
+from pathlib import Path
 
 try:
     from tqdm import tqdm
 except ImportError:
     def tqdm(iterable, *args, **kwargs):
-        print(f"    > Processing {kwargs.get('desc', 'items')}...")
+        logger.info(f"    > Processing {kwargs.get('desc', 'items')}...")
         return iterable
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-BASE_DIR = "/content/drive/MyDrive/TakeoutProject"
-DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
+logger = logging.getLogger(__name__)
+
+BASE_DIR = Path("/content/drive/MyDrive/TakeoutProject")
+DB_PATH = BASE_DIR / "takeout_archive.db"
 CONFIG = {
-    "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
-    "PROCESSING_STAGING_DIR": os.path.join(BASE_DIR, "01-PROCESSING-STAGING/"),
-    "ORGANIZED_PHOTOS_DIR": os.path.join(BASE_DIR, "03-organized/My-Photos/"),
-    "ORGANIZED_FILES_DIR": os.path.join(BASE_DIR, "03-organized/My-Files/"), # Added for clarity
-    "TRASH_DIR": os.path.join(BASE_DIR, "04-trash/"),
-    "COMPLETED_ARCHIVES_DIR": os.path.join(BASE_DIR, "05-COMPLETED-ARCHIVES/"),
+    "SOURCE_ARCHIVES_DIR": BASE_DIR / "00-ALL-ARCHIVES",
+    "PROCESSING_STAGING_DIR": BASE_DIR / "01-PROCESSING-STAGING",
+    "ORGANIZED_PHOTOS_DIR": BASE_DIR / "03-organized/My-Photos",
+    "ORGANIZED_FILES_DIR": BASE_DIR / "03-organized/My-Files",
+    "TRASH_DIR": BASE_DIR / "04-trash",
+    "COMPLETED_ARCHIVES_DIR": BASE_DIR / "05-COMPLETED-ARCHIVES",
 }
-CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
-CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
-VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
-VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
+CONFIG["QUARANTINE_DIR"] = CONFIG["TRASH_DIR"] / "quarantined_artifacts"
+CONFIG["DUPES_DIR"] = CONFIG["TRASH_DIR"] / "duplicates"
+VM_TEMP_EXTRACT_DIR = Path('/tmp/temp_extract')
 PROCESSING_IDLE_SLEEP_SECONDS = 300
+MAX_SAFE_ARCHIVE_SIZE_GB = 25
 
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
 def initialize_database(db_path):
-    print("--> [DB] Initializing database...")
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    logger.info("--> [DB] Initializing database...")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute('''
     CREATE TABLE IF NOT EXISTS files (
@@ -111,162 +103,173 @@ def initialize_database(db_path):
         source_archive TEXT NOT NULL
     )''')
     conn.commit()
-    print("    ✅ Database ready.")
+    logger.info("    ✅ Database ready.")
     return conn
 
 def perform_startup_integrity_check():
-    print("--> [POST] Performing startup integrity check...")
-    # Check for stalled archives in staging
+    logger.info("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
-    if os.path.exists(staging_dir) and os.listdir(staging_dir):
-        print(f"    ⚠️ Found {len(os.listdir(staging_dir))} orphaned file(s). Rolling back...")
-        for orphan in os.listdir(staging_dir):
-            shutil.move(os.path.join(staging_dir, orphan), os.path.join(source_dir, orphan))
-        print("    ✅ Rollback complete.")
+    if staging_dir.exists() and any(staging_dir.iterdir()):
+        logger.warning(f"    ⚠️ Found {len(list(staging_dir.iterdir()))} orphaned file(s). Rolling back...")
+        for orphan in staging_dir.iterdir():
+            shutil.move(str(orphan), str(source_dir / orphan.name))
+        logger.info("    ✅ Rollback complete.")
     else:
-        print("    ✅ No orphaned files found.")
+        logger.info("    ✅ No orphaned files found.")
 
-def deduplicate_and_move_files(source_dir, dest_dir, dupe_dir, conn, archive_name):
-    print("\n--> [Step 2b] Deduplicating new files...")
-    known_hashes = {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
-    new_files_to_db = []
-    
-    takeout_dir = os.path.join(source_dir, "Takeout")
-    if not os.path.exists(takeout_dir):
-        print("    > No 'Takeout' directory found to process for general files.")
-        return
+def process_archive(archive_path, conn):
+    archive_name = archive_path.name
+    logger.info(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
+    try:
+        if VM_TEMP_EXTRACT_DIR.exists(): shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+        VM_TEMP_EXTRACT_DIR.mkdir(parents=True)
+        
+        logger.info(f"    > Extracting '{archive_name}'...")
+        with tarfile.open(archive_path, 'r:gz') as tf:
+            tf.extractall(path=VM_TEMP_EXTRACT_DIR)
 
-    for root, _, files in os.walk(takeout_dir):
-        if "Google Photos" in root: continue # Skip photos, handled separately
-        for filename in files:
-            file_path = os.path.join(root, filename)
-            with open(file_path, 'rb') as f:
-                sha256 = hashlib.sha256(f.read()).hexdigest()
-            
-            if sha256 in known_hashes:
-                # It's a duplicate, move to duplicates folder
-                dupe_dest = os.path.join(dupe_dir, filename)
-                shutil.move(file_path, dupe_dest)
-            else:
-                # It's unique, move to final destination
-                relative_path = os.path.relpath(file_path, takeout_dir)
-                final_path = os.path.join(dest_dir, relative_path)
-                os.makedirs(os.path.dirname(final_path), exist_ok=True)
-                shutil.move(file_path, final_path)
-                new_files_to_db.append((sha256, archive_name))
-                known_hashes.add(sha256)
+        organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_PHOTOS_DIR"], conn, archive_name)
+        deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_FILES_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
 
-    if new_files_to_db:
-        conn.executemany("INSERT OR IGNORE INTO files VALUES (?, ?)", new_files_to_db)
-        conn.commit()
-    print(f"    ✅ Processed {len(new_files_to_db)} unique general files.")
+        return True
+    except Exception as e:
+        logger.error(f"\n❌ ERROR during archive processing transaction: {e}")
+        traceback.print_exc()
+        return False
+    finally:
+        if VM_TEMP_EXTRACT_DIR.exists():
+            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
 
-def organize_photos(source_dir, final_dir, conn, archive_name):
-    print("\n--> [Step 2c] Organizing photos...")
-    photos_source_path = os.path.join(source_dir, "Takeout", "Google Photos")
-    if not os.path.isdir(photos_source_path):
-        print("    > 'Google Photos' directory not found. Skipping.")
-        return
+def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
+    logger.info("\n--> [Step 2b] Deduplicating new general files...")
+    takeout_source = source_path / "Takeout"
+    if not takeout_source.exists(): return
 
     known_hashes = {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
     new_files_to_db = []
     
-    for root, _, files in os.walk(photos_source_path):
-        for filename in files:
-            if filename.lower().endswith('.json'): continue
-            media_path = os.path.join(root, filename)
-            with open(media_path, 'rb') as f:
-                sha256 = hashlib.sha256(f.read()).hexdigest()
+    for file_path in tqdm(list(takeout_source.rglob('*')), desc="Deduplicating files"):
+        if file_path.is_dir() or "Google Photos" in file_path.parts: continue
 
-            if sha256 in known_hashes: continue
-
-            json_path = os.path.splitext(media_path)[0] + '.json'
-            ts = int(os.path.getmtime(media_path)) # Fallback to file modification time
-            if os.path.exists(json_path):
-                try:
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    ts = int(data.get('photoTakenTime', {}).get('timestamp', ts))
-                except: pass
-
-            dt = datetime.fromtimestamp(ts)
-            new_name = f"{dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')}_{filename}"
-            final_filepath = os.path.join(final_dir, new_name)
-
-            shutil.move(media_path, final_filepath)
-            new_files_to_db.append((sha256, archive_name))
+        with open(file_path, 'rb') as f:
+            sha256 = hashlib.sha256(f.read()).hexdigest()
+        
+        if sha256 in known_hashes:
+            shutil.move(str(file_path), str(trash_path / file_path.name))
+        else:
+            relative_path = file_path.relative_to(takeout_source)
+            final_path = primary_storage_path / relative_path
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(file_path), str(final_path))
+            new_files_to_db.append((sha256, source_archive_name))
             known_hashes.add(sha256)
+    
+    if new_files_to_db:
+        conn.executemany("INSERT OR IGNORE INTO files (sha256_hash, source_archive) VALUES (?, ?)", new_files_to_db)
+        conn.commit()
+    logger.info(f"    ✅ Processed {len(new_files_to_db)} unique general files.")
+
+def organize_photos(source_path, final_dir, conn, source_archive_name):
+    logger.info("\n--> [Step 2c] Organizing photos...")
+    photos_source_path = source_path / "Takeout" / "Google Photos"
+    if not photos_source_path.is_dir():
+        logger.info("    > 'Google Photos' directory not found. Skipping.")
+        return
+
+    known_hashes = {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
+    new_files_to_db = []
+
+    for media_path in tqdm(list(photos_source_path.rglob('*')), desc="Organizing photos"):
+        if media_path.is_dir() or media_path.name.lower().endswith('.json'): continue
+        
+        with open(media_path, 'rb') as f:
+            sha256 = hashlib.sha256(f.read()).hexdigest()
+        if sha256 in known_hashes: continue
+
+        json_path = media_path.with_suffix(media_path.suffix + '.json')
+        if not json_path.exists(): json_path = media_path.with_suffix('.json')
+        
+        ts = int(media_path.stat().st_mtime)
+        if json_path.exists():
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f: data = json.load(f)
+                ts = int(data.get('photoTakenTime', {}).get('timestamp', ts))
+            except: pass
+
+        dt = datetime.fromtimestamp(ts)
+        new_name = f"{dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')}_{media_path.name}"
+        final_filepath = final_dir / new_name
+        shutil.move(str(media_path), str(final_filepath))
+        
+        new_files_to_db.append((sha256, source_archive_name))
+        known_hashes.add(sha256)
 
     if new_files_to_db:
-        conn.executemany("INSERT OR IGNORE INTO files VALUES (?, ?)", new_files_to_db)
+        conn.executemany("INSERT OR IGNORE INTO files (sha256_hash, source_archive) VALUES (?, ?)", new_files_to_db)
         conn.commit()
-    print(f"    ✅ Processed {len(new_files_to_db)} unique photos.")
+    logger.info(f"    ✅ Processed {len(new_files_to_db)} unique photos.")
 
-
+# ==============================================================================
+# --- MAIN EXECUTION SCRIPT ---
+# ==============================================================================
 def main():
     conn = None
     try:
-        print("--> [Step 0] Initializing environment...")
-        for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
-        os.makedirs(VM_TEMP_EXTRACT_DIR, exist_ok=True)
-
+        logger.info("--> [Step 0] Initializing environment...")
+        for path in CONFIG.values(): path.mkdir(parents=True, exist_ok=True)
         conn = initialize_database(DB_PATH)
-        perform_startup_integrity_check()
-        print("✅ Workspace ready.")
-
+        
         while True:
-            print("\n--> [Step 1] Identifying unprocessed archives...")
-            if not os.path.exists(CONFIG["SOURCE_ARCHIVES_DIR"]):
-                print(f"    > Source directory not found. Is Drive mounted? Sleeping...")
-                time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
-                continue
-
-            all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
-            completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
-            processing_queue = sorted([f for f in list(all_archives - completed_archives) if not f.startswith('.')])
-
-            if not processing_queue:
-                print("\n✅🎉 No archives to process. Idling...")
-                time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
-                continue
-
-            archive_name = processing_queue[0]
-            source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
-            staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
-
-            print(f"--> Locking and staging '{archive_name}' for processing...")
-            shutil.move(source_path, staging_path)
-
             try:
-                print(f"\n--> [Step 2a] Extracting '{archive_name}'...")
-                with tarfile.open(staging_path, 'r:gz') as tf:
-                    tf.extractall(path=VM_TEMP_EXTRACT_DIR)
+                if not BASE_DIR.exists() or not CONFIG["SOURCE_ARCHIVES_DIR"].exists():
+                    logger.warning(f"Base directory '{BASE_DIR}' not found. Is drive mounted? Retrying in {PROCESSING_IDLE_SLEEP_SECONDS}s...")
+                    time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
+                    continue
 
-                organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_PHOTOS_DIR"], conn, archive_name)
-                deduplicate_and_move_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_FILES_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
+                perform_startup_integrity_check()
+                logger.info("✅ Workspace ready.")
+
+                logger.info("\n--> [Step 1] Identifying unprocessed archives...")
+                all_archives = {p.name for p in CONFIG["SOURCE_ARCHIVES_DIR"].iterdir() if p.is_file() and not p.name.startswith('.')}
+                completed_archives = {p.name for p in CONFIG["COMPLETED_ARCHIVES_DIR"].iterdir() if p.is_file()}
+                processing_queue = sorted(list(all_archives - completed_archives))
+
+                if not processing_queue:
+                    logger.info(f"✅🎉 No archives to process! Idling for {PROCESSING_IDLE_SLEEP_SECONDS}s...")
+                    time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
+                    continue
+
+                archive_name = processing_queue[0]
+                source_path = CONFIG["SOURCE_ARCHIVES_DIR"] / archive_name
+                staging_path = CONFIG["PROCESSING_STAGING_DIR"] / archive_name
+
+                logger.info(f"--> Locking and staging '{archive_name}' for processing...")
+                shutil.move(str(source_path), str(staging_path))
+
+                processed_ok = process_archive(staging_path, conn)
                 
-                shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
-                print(f"✅ Transaction for '{archive_name}' complete.")
+                if processed_ok:
+                    shutil.move(str(staging_path), str(CONFIG["COMPLETED_ARCHIVES_DIR"] / archive_name))
+                    logger.info(f"✅ Transaction for '{archive_name}' complete.")
+                else:
+                    logger.error(f"    ❌ Transaction failed for '{archive_name}'. Rolling back.")
+                    shutil.move(str(staging_path), str(source_path))
 
-            except Exception as e:
-                print(f"❌ ERROR processing '{archive_name}': {e}")
+                logger.info("\n--- WORKFLOW CYCLE COMPLETE ---")
+
+            except Exception as loop_error:
+                logger.error(f"An error occurred in the main loop: {loop_error}")
                 traceback.print_exc()
-                # Rollback
-                shutil.move(staging_path, source_path)
-            finally:
-                if os.path.exists(VM_TEMP_EXTRACT_DIR):
-                    shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+                time.sleep(60)
 
-            print("\n--- WORKFLOW CYCLE COMPLETE ---")
-            
     except Exception as e:
-        print(f"\n❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
+        logger.critical(f"\n❌ A CRITICAL STARTUP ERROR OCCURRED: {e}")
         traceback.print_exc()
     finally:
         if conn:
             conn.close()
-            print("--> [DB] Database connection closed.")
+            logger.info("--> [DB] Database connection closed.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -278,38 +281,12 @@ EOF
     chmod +x "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Application script deployed successfully."
     
-    _log_info "Creating and enabling systemd services..."
-    
-    # --- RCLONE MOUNT SERVICE ---
-    cat << EOF > "$RCLONE_SERVICE_PATH"
-[Unit]
-Description=Google Drive Mount Service (rclone)
-After=network-online.target
-
-[Service]
-Type=simple
-User=root
-Group=root
-ExecStart=/usr/bin/rclone mount "gdrive:" "${GDRIVE_MOUNT_POINT}" \\
-    --config "${RCLONE_CONFIG_PATH}" \\
-    --allow-other \\
-    --vfs-cache-mode writes \\
-    --log-level INFO
-ExecStop=/bin/fusermount -u "${GDRIVE_MOUNT_POINT}"
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # --- PYTHON PROCESSOR SERVICE ---
+    _log_info "Creating and enabling the systemd service..."
     cat << EOF > "$PROCESSOR_SERVICE_PATH"
 [Unit]
-Description=Google Takeout Organizer Service (v4.0)
-# This service requires the drive to be mounted first
-Requires=${RCLONE_SERVICE_NAME}
-After=${RCLONE_SERVICE_NAME}
+Description=Google Takeout Organizer Service (v5.0 - File System)
+# This service should start after the network and any remote mounts are ready.
+After=network-online.target remote-fs.target
 
 [Service]
 Type=simple
@@ -322,18 +299,15 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable "$RCLONE_SERVICE_NAME"
     systemctl enable "$PROCESSOR_SERVICE_NAME"
-    _log_ok "Systemd services created and enabled."
+    _log_ok "Systemd service '${PROCESSOR_SERVICE_NAME}' created and enabled."
 
     echo ""
     _log_ok "--------------------------------------------------------"
     _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
-    _log_warn "ACTION REQUIRED: A valid 'rclone.conf' must be placed at:"
-    _log_warn "  ${RCLONE_CONFIG_PATH}"
-    _log_warn "The remote must be named 'gdrive:' for the mount to work."
-    _log_info "After placing the file, reboot or run:"
-    _log_info "  systemctl start ${RCLONE_SERVICE_NAME}"
+    _log_warn "ACTION REQUIRED: You MUST ensure that your Google Drive is mounted at"
+    _log_warn "  '${GDRIVE_MOUNT_POINT}' for this service to work."
+    _log_info "After ensuring the drive is mounted, reboot or run:"
     _log_info "  systemctl start ${PROCESSOR_SERVICE_NAME}"
     _log_info "To monitor, run: journalctl -fu ${PROCESSOR_SERVICE_NAME}"
     _log_ok "--------------------------------------------------------"
