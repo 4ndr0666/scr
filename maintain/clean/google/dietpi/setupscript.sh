@@ -1,17 +1,23 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.1 - Final Corpora Fix)
-# This version applies the critical 'corpora="allDrives"' parameter to the file
-# listing method, which was the final point of failure.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v4.0 - Rclone Mount Model)
+# This version replicates the successful Colab environment by using rclone to mount
+# Google Drive, allowing a file-system-based script to run reliably.
 
 set -euo pipefail
 
 # --- Configuration ---
 INSTALL_DIR="/opt/google_takeout_organizer"
+RCLONE_CONFIG_PATH="${INSTALL_DIR}/rclone.conf"
+GDRIVE_MOUNT_POINT="/content/drive/MyDrive" # Mount point to match Colab script
+
 PROCESSOR_FILENAME="google_takeout_organizer.py"
 PROCESSOR_SCRIPT_PATH="${INSTALL_DIR}/${PROCESSOR_FILENAME}"
-SYSTEMD_SERVICE_NAME="takeout-organizer.service"
-SYSTEMD_SERVICE_PATH="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}"
+PROCESSOR_SERVICE_NAME="takeout-organizer.service"
+PROCESSOR_SERVICE_PATH="/etc/systemd/system/${PROCESSOR_SERVICE_NAME}"
+
+RCLONE_SERVICE_NAME="gdrive-mount.service"
+RCLONE_SERVICE_PATH="/etc/systemd/system/${RCLONE_SERVICE_NAME}"
 
 # --- Logging Utilities ---
 _log_info() { printf "\n[INFO] %s\n" "$*"; }
@@ -23,320 +29,248 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (v3.1 Final Corpora Fix) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup (v4.0 Rclone Mount Model) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
-    _log_ok "Root privileges confirmed."
 
-    _log_info "Ensuring any old service version is stopped..."
-    systemctl stop ${SYSTEMD_SERVICE_NAME} &>/dev/null || true
-    _log_ok "Service stopped."
+    _log_info "Ensuring any old services are stopped..."
+    systemctl stop ${PROCESSOR_SERVICE_NAME} &>/dev/null || true
+    systemctl stop ${RCLONE_SERVICE_NAME} &>/dev/null || true
+    systemctl disable ${PROCESSOR_SERVICE_NAME} &>/dev/null || true
+    systemctl disable ${RCLONE_SERVICE_NAME} &>/dev/null || true
+    _log_ok "Services stopped and disabled."
 
     _log_info "Updating package lists and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y >/dev/null
-    apt-get install -y python3 jdupes sqlite3 python3-googleapi python3-google-auth-httplib2 python3-google-auth-oauthlib python3-tqdm >/dev/null
-    _log_ok "All dependencies are installed."
+    # Add rclone and fusermount
+    apt-get install -y python3 jdupes sqlite3 python3-tqdm rclone fuse >/dev/null
+    _log_ok "All dependencies (including rclone) are installed."
 
-    _log_info "Creating application directory..."
+    _log_info "Creating directories..."
     mkdir -p "$INSTALL_DIR"
-    _log_ok "Directory created."
+    mkdir -p "$GDRIVE_MOUNT_POINT"
+    _log_ok "Directories created."
     
-    _log_info "Detecting Service Account Credential file..."
-    CREDENTIALS_FILE=$(find "$INSTALL_DIR" -maxdepth 1 -type f \( -name "*.json" -o -name "*.txt" \) -print -quit)
-
-    if [[ -z "$CREDENTIALS_FILE" ]]; then
-        _log_warn "No credential file (.json or .txt) found in ${INSTALL_DIR}."
-        CREDENTIALS_PATH_FOR_SERVICE="${INSTALL_DIR}/credentials.json" # Placeholder
+    _log_info "Checking for rclone configuration..."
+    if [[ ! -f "$RCLONE_CONFIG_PATH" ]]; then
+        _log_warn "CRITICAL: 'rclone.conf' not found at ${RCLONE_CONFIG_PATH}."
+        _log_warn "The mount service WILL FAIL until you place a valid config file there."
     else
-        _log_ok "Found credential file: $(basename "$CREDENTIALS_FILE")"
-        chmod 600 "$CREDENTIALS_FILE"
-        CREDENTIALS_PATH_FOR_SERVICE="$CREDENTIALS_FILE"
+        chmod 600 "$RCLONE_CONFIG_PATH"
+        _log_ok "Found 'rclone.conf' and set permissions."
     fi
-    
-    _log_info "Deploying the Takeout Processor script..."
-    # --- BEGIN EMBEDDED PYTHON SCRIPT (v3.1) ---
+
+    _log_info "Deploying the Takeout Processor script (File System Version)..."
+    # --- BEGIN EMBEDDED PYTHON SCRIPT (v4.0) ---
     cat << 'EOF' > "$PROCESSOR_SCRIPT_PATH"
 """
-Google Takeout Organizer (v3.1 - Unified API Model)
+Google Takeout Organizer (v4.0 - File System Model)
+This script is a direct port of the working Colab v4.1.1. It assumes that
+the Google Drive is already mounted at the specified BASE_DIR by an external
+service like rclone.
 """
-
-import os, shutil, subprocess, tarfile, json, traceback, re, sys, argparse, sqlite3, hashlib, time, logging
+import os, shutil, subprocess, tarfile, json, traceback, re, sys, argparse, sqlite3, hashlib, time
 from datetime import datetime
-from pathlib import Path
-
-import google.auth
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 try:
-    from tqdm.auto import tqdm
+    from tqdm import tqdm
 except ImportError:
-    def tqdm(iterable, *args, **kwargs): return iterable
+    def tqdm(iterable, *args, **kwargs):
+        print(f"    > Processing {kwargs.get('desc', 'items')}...")
+        return iterable
 
-# --- Core Configuration ---
-APP_BASE_DIR = Path("/opt/google_takeout_organizer")
-DB_PATH = APP_BASE_DIR / "takeout_archive.db"
-DRIVE_ROOT_FOLDER_NAME = "TakeoutProject"
+# ==============================================================================
+# --- 1. CORE CONFIGURATION ---
+# ==============================================================================
+BASE_DIR = "/content/drive/MyDrive/TakeoutProject"
+DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
+CONFIG = {
+    "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
+    "PROCESSING_STAGING_DIR": os.path.join(BASE_DIR, "01-PROCESSING-STAGING/"),
+    "ORGANIZED_PHOTOS_DIR": os.path.join(BASE_DIR, "03-organized/My-Photos/"),
+    "ORGANIZED_FILES_DIR": os.path.join(BASE_DIR, "03-organized/My-Files/"), # Added for clarity
+    "TRASH_DIR": os.path.join(BASE_DIR, "04-trash/"),
+    "COMPLETED_ARCHIVES_DIR": os.path.join(BASE_DIR, "05-COMPLETED-ARCHIVES/"),
+}
+CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
+CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
+VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
+VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 PROCESSING_IDLE_SLEEP_SECONDS = 300
-VM_TEMP_BASE_DIR = Path("/tmp/takeout_organizer")
-VM_TEMP_DOWNLOAD_DIR = VM_TEMP_BASE_DIR / "download"
-VM_TEMP_EXTRACT_DIR = VM_TEMP_BASE_DIR / "extract"
 
-# --- Logging & Exceptions ---
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
-logger = logging.getLogger(__name__)
+# ==============================================================================
+# --- 2. WORKFLOW FUNCTIONS & HELPERS ---
+# ==============================================================================
+def initialize_database(db_path):
+    print("--> [DB] Initializing database...")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS files (
+        sha256_hash TEXT PRIMARY KEY,
+        source_archive TEXT NOT NULL
+    )''')
+    conn.commit()
+    print("    ✅ Database ready.")
+    return conn
 
-class TakeoutError(Exception): pass
-class DriveError(TakeoutError): pass
-class DatabaseError(TakeoutError): pass
-class ProcessingError(TakeoutError): pass
+def perform_startup_integrity_check():
+    print("--> [POST] Performing startup integrity check...")
+    # Check for stalled archives in staging
+    staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
+    source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
+    if os.path.exists(staging_dir) and os.listdir(staging_dir):
+        print(f"    ⚠️ Found {len(os.listdir(staging_dir))} orphaned file(s). Rolling back...")
+        for orphan in os.listdir(staging_dir):
+            shutil.move(os.path.join(staging_dir, orphan), os.path.join(source_dir, orphan))
+        print("    ✅ Rollback complete.")
+    else:
+        print("    ✅ No orphaned files found.")
 
-class DriveManager:
-    """Manages all Google Drive API interactions."""
-    def __init__(self, root_folder_name: str):
-        self.root_folder_name = root_folder_name
-        self.service = self._authenticate()
-        self.folder_ids: dict[str, str] = {}
+def deduplicate_and_move_files(source_dir, dest_dir, dupe_dir, conn, archive_name):
+    print("\n--> [Step 2b] Deduplicating new files...")
+    known_hashes = {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
+    new_files_to_db = []
+    
+    takeout_dir = os.path.join(source_dir, "Takeout")
+    if not os.path.exists(takeout_dir):
+        print("    > No 'Takeout' directory found to process for general files.")
+        return
 
-    def _authenticate(self):
-        logger.info("--> [Auth] Authenticating via service account...")
-        try:
-            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/drive"])
-            return build("drive", "v3", credentials=creds, cache_discovery=False)
-        except Exception as e:
-            raise DriveError(f"Authentication failed: {e}") from e
-
-    def initialize_folder_structure(self):
-        logger.info("--> [API] Synchronizing folder structure...")
-        try:
-            root_query = f"name='{self.root_folder_name}' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            self.folder_ids["root"] = self._find_or_create_folder("root", self.root_folder_name, query=root_query)
-            structure = {
-                "00-UPLOADS": {}, "00-ALL-ARCHIVES": {}, "01-PROCESSING-STAGING": {},
-                "03-organized": {"My-Photos": {}, "My-Files": {}},
-                "04-trash": {"quarantined_artifacts": {}, "duplicates": {}},
-                "05-COMPLETED-ARCHIVES": {}
-            }
-            def _traverse_and_create(parent_id: str, substructure: dict):
-                for name, sub in substructure.items():
-                    folder_id = self._find_or_create_folder(parent_id, name)
-                    self.folder_ids[name] = folder_id
-                    if sub: _traverse_and_create(folder_id, sub)
-            _traverse_and_create(self.folder_ids["root"], structure)
-        except HttpError as e:
-            raise DriveError(f"API error during folder setup: {e}") from e
-
-    def _find_or_create_folder(self, parent_id: str, name: str, query: str = None) -> str:
-        q = query or f"name='{name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        response = self.service.files().list(q=q, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True, corpora="allDrives").execute()
-        files = response.get("files", [])
-        if files: return files[0].get("id")
-        logger.info(f"    > Creating folder: {name}")
-        meta = {'name': name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [parent_id]}
-        return self.service.files().create(body=meta, fields="id", supportsAllDrives=True).execute().get("id")
-
-    def list_files(self, folder_id: str, page_size: int = 10) -> list:
-        try:
-            query = f"'{folder_id}' in parents and trashed=false"
-            # THE DEFINITIVE FIX: 'corpora' is required for service accounts to see shared files.
-            response = self.service.files().list(
-                q=query,
-                orderBy="createdTime",
-                pageSize=page_size,
-                fields="files(id, name, size)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
-                corpora="allDrives"
-            ).execute()
-            return response.get("files", [])
-        except HttpError as e:
-            raise DriveError(f"Failed to list files in folder {folder_id}: {e}") from e
-
-    def move_file(self, file_id: str, to_folder_id: str, from_folder_id: str):
-        try:
-            self.service.files().update(fileId=file_id, addParents=to_folder_id, removeParents=from_folder_id, supportsAllDrives=True).execute()
-        except HttpError as e:
-            raise DriveError(f"Failed to move file {file_id}: {e}") from e
-
-    def download_file(self, file_id: str, file_name: str, dest_path: Path) -> Path:
-        download_filepath = dest_path / file_name
-        logger.info(f"    > Downloading '{file_name}'...")
-        try:
-            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
-            with open(download_filepath, "wb") as fh:
-                downloader = MediaIoBaseDownload(fh, request, chunksize=1024*1024*50)
-                done = False
-                while not done: status, done = downloader.next_chunk()
-            logger.info(f"    ✅ Download complete.")
-            return download_filepath
-        except HttpError as e:
-            raise DriveError(f"Failed to download file {file_id}: {e}") from e
-
-    def upload_file(self, local_path: Path, drive_folder_id: str):
-        try:
-            logger.debug(f"    > Uploading '{local_path.name}'...")
-            meta = {'name': local_path.name, 'parents': [drive_folder_id]}
-            media = MediaFileUpload(str(local_path), mimetype='application/octet-stream', resumable=True)
-            self.service.files().create(body=meta, media_body=media, fields='id', supportsAllDrives=True).execute()
-        except HttpError as e:
-            raise DriveError(f"Failed to upload file {local_path}: {e}") from e
-
-class DatabaseManager:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._initialize()
-
-    def _initialize(self):
-        logger.info("--> [DB] Initializing database...")
-        try:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("CREATE TABLE IF NOT EXISTS archives (drive_id TEXT PRIMARY KEY, name TEXT, size INTEGER, status TEXT, processed_at TEXT)")
-                conn.execute("CREATE TABLE IF NOT EXISTS files (sha256_hash TEXT PRIMARY KEY, source_archive_name TEXT)")
-            logger.info("    ✅ Database ready.")
-        except sqlite3.Error as e:
-            raise DatabaseError(f"DB initialization failed: {e}") from e
-
-    def record_archive_status(self, drive_id: str, name: str, size: int, status: str):
-        with sqlite3.connect(self.db_path) as conn:
-            ts = datetime.now().isoformat() if status in ['COMPLETED', 'FAILED'] else None
-            conn.execute("INSERT OR REPLACE INTO archives VALUES (?, ?, ?, ?, ?)", (drive_id, name, size, status, ts))
-
-    def get_all_file_hashes(self) -> set:
-        with sqlite3.connect(self.db_path) as conn:
-            return {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
-
-    def add_processed_files(self, files_to_add: list):
-        if not files_to_add: return
-        with sqlite3.connect(self.db_path) as conn:
-            conn.executemany("INSERT OR IGNORE INTO files VALUES (?, ?)", files_to_add)
-
-class ArchiveProcessor:
-    def __init__(self, drive: DriveManager, db: DatabaseManager):
-        self.drive = drive
-        self.db = db
-
-    def process(self, archive_path: Path, archive_name: str):
-        logger.info(f"--> [Step 3] Processing '{archive_name}' locally...")
-        try:
-            self._cleanup_temp_dirs()
-            with tarfile.open(archive_path, "r:gz") as tf:
-                logger.info(f"    > Extracting archive...")
-                tf.extractall(path=VM_TEMP_EXTRACT_DIR)
+    for root, _, files in os.walk(takeout_dir):
+        if "Google Photos" in root: continue # Skip photos, handled separately
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            with open(file_path, 'rb') as f:
+                sha256 = hashlib.sha256(f.read()).hexdigest()
             
-            self._process_directory(VM_TEMP_EXTRACT_DIR, archive_name)
-            logger.info(f"    ✅ Finished local processing for '{archive_name}'.")
-        except Exception as e:
-            raise ProcessingError(f"Local processing failed: {e}") from e
-        finally:
-            self._cleanup_temp_dirs()
+            if sha256 in known_hashes:
+                # It's a duplicate, move to duplicates folder
+                dupe_dest = os.path.join(dupe_dir, filename)
+                shutil.move(file_path, dupe_dest)
+            else:
+                # It's unique, move to final destination
+                relative_path = os.path.relpath(file_path, takeout_dir)
+                final_path = os.path.join(dest_dir, relative_path)
+                os.makedirs(os.path.dirname(final_path), exist_ok=True)
+                shutil.move(file_path, final_path)
+                new_files_to_db.append((sha256, archive_name))
+                known_hashes.add(sha256)
 
-    def _process_directory(self, source_dir: Path, archive_name: str):
-        logger.info("    > Hashing, organizing, and uploading unique files...")
-        known_hashes = self.db.get_all_file_hashes()
-        new_files_to_db = []
-        
-        for path in tqdm(list(source_dir.rglob('*')), desc="Processing files"):
-            if path.is_dir(): continue
-            
-            sha256 = self._calculate_file_hash(path)
+    if new_files_to_db:
+        conn.executemany("INSERT OR IGNORE INTO files VALUES (?, ?)", new_files_to_db)
+        conn.commit()
+    print(f"    ✅ Processed {len(new_files_to_db)} unique general files.")
+
+def organize_photos(source_dir, final_dir, conn, archive_name):
+    print("\n--> [Step 2c] Organizing photos...")
+    photos_source_path = os.path.join(source_dir, "Takeout", "Google Photos")
+    if not os.path.isdir(photos_source_path):
+        print("    > 'Google Photos' directory not found. Skipping.")
+        return
+
+    known_hashes = {row[0] for row in conn.execute("SELECT sha256_hash FROM files")}
+    new_files_to_db = []
+    
+    for root, _, files in os.walk(photos_source_path):
+        for filename in files:
+            if filename.lower().endswith('.json'): continue
+            media_path = os.path.join(root, filename)
+            with open(media_path, 'rb') as f:
+                sha256 = hashlib.sha256(f.read()).hexdigest()
+
             if sha256 in known_hashes: continue
 
-            # Determine destination
-            is_photo = "Google Photos" in path.parts
-            if is_photo:
-                ts = self._get_photo_timestamp(path)
-                final_name = f"{datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%Hh%Mm%Ss')}_{path.name}"
-                new_path = path.rename(path.with_name(final_name))
-                self.drive.upload_file(new_path, self.drive.folder_ids["My-Photos"])
-            else:
-                self.drive.upload_file(path, self.drive.folder_ids["My-Files"])
-            
+            json_path = os.path.splitext(media_path)[0] + '.json'
+            ts = int(os.path.getmtime(media_path)) # Fallback to file modification time
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    ts = int(data.get('photoTakenTime', {}).get('timestamp', ts))
+                except: pass
+
+            dt = datetime.fromtimestamp(ts)
+            new_name = f"{dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')}_{filename}"
+            final_filepath = os.path.join(final_dir, new_name)
+
+            shutil.move(media_path, final_filepath)
             new_files_to_db.append((sha256, archive_name))
-            known_hashes.add(sha256) # Add to in-memory set to avoid re-hashing duplicates within the same archive
+            known_hashes.add(sha256)
 
-        self.db.add_processed_files(new_files_to_db)
-        logger.info(f"        > Uploaded and indexed {len(new_files_to_db)} new files.")
+    if new_files_to_db:
+        conn.executemany("INSERT OR IGNORE INTO files VALUES (?, ?)", new_files_to_db)
+        conn.commit()
+    print(f"    ✅ Processed {len(new_files_to_db)} unique photos.")
 
-    def _get_photo_timestamp(self, p: Path) -> int:
-        json_p = p.with_suffix(p.suffix + ".json")
-        if not json_p.exists(): json_p = p.with_suffix(".json")
-        if json_p.exists():
-            try:
-                with open(json_p, 'r') as f: data = json.load(f)
-                return int(data['photoTakenTime']['timestamp'])
-            except (KeyError, json.JSONDecodeError): pass
-        return int(p.stat().st_mtime)
-
-    def _calculate_file_hash(self, p: Path) -> str:
-        h = hashlib.sha256()
-        with open(p, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""): h.update(chunk)
-        return h.hexdigest()
-
-    def _cleanup_temp_dirs(self):
-        for d in [VM_TEMP_DOWNLOAD_DIR, VM_TEMP_EXTRACT_DIR]:
-            shutil.rmtree(d, ignore_errors=True)
-            d.mkdir(parents=True, exist_ok=True)
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.parse_known_args()
-    logger.info("--> [Step 0] Initializing service...")
+    conn = None
     try:
-        drive = DriveManager(DRIVE_ROOT_FOLDER_NAME)
-        drive.initialize_folder_structure()
-        db = DatabaseManager(DB_PATH)
-        processor = ArchiveProcessor(drive, db)
-        logger.info("✅ Pre-flight checks passed. Starting main loop.")
+        print("--> [Step 0] Initializing environment...")
+        for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
+        os.makedirs(VM_TEMP_EXTRACT_DIR, exist_ok=True)
+
+        conn = initialize_database(DB_PATH)
+        perform_startup_integrity_check()
+        print("✅ Workspace ready.")
+
         while True:
-            logger.info("\n--> [Step 1] Checking for new user uploads...")
-            uploads = drive.list_files(drive.folder_ids["00-UPLOADS"])
-            if uploads:
-                logger.info(f"    > Found {len(uploads)} new archive(s). Moving to queue...")
-                for up in uploads: drive.move_file(up['id'], drive.folder_ids["00-ALL-ARCHIVES"], drive.folder_ids["00-UPLOADS"])
-            else:
-                logger.info("    > No new files found in uploads folder.")
-            
-            logger.info("--> [Step 2] Identifying next archive for processing...")
-            queue = drive.list_files(drive.folder_ids["00-ALL-ARCHIVES"], page_size=1)
-            if not queue:
-                logger.info(f"✅ No archives to process. Idling for {PROCESSING_IDLE_SLEEP_SECONDS}s...")
+            print("\n--> [Step 1] Identifying unprocessed archives...")
+            if not os.path.exists(CONFIG["SOURCE_ARCHIVES_DIR"]):
+                print(f"    > Source directory not found. Is Drive mounted? Sleeping...")
                 time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
                 continue
-            
-            archive = queue[0]
-            archive_id, name, size = archive['id'], archive['name'], int(archive.get('size', 0))
-            logger.info(f"--> Selected '{name}' ({size / 1e9:.2f} GB).")
-            
+
+            all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
+            completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
+            processing_queue = sorted([f for f in list(all_archives - completed_archives) if not f.startswith('.')])
+
+            if not processing_queue:
+                print("\n✅🎉 No archives to process. Idling...")
+                time.sleep(PROCESSING_IDLE_SLEEP_SECONDS)
+                continue
+
+            archive_name = processing_queue[0]
+            source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
+            staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
+
+            print(f"--> Locking and staging '{archive_name}' for processing...")
+            shutil.move(source_path, staging_path)
+
             try:
-                db.record_archive_status(archive_id, name, size, "STAGING")
-                drive.move_file(archive_id, drive.folder_ids["01-PROCESSING-STAGING"], drive.folder_ids["00-ALL-ARCHIVES"])
-                dl_path = drive.download_file(archive_id, name, VM_TEMP_DOWNLOAD_DIR)
-                processor.process(dl_path, name)
-                drive.move_file(archive_id, drive.folder_ids["05-COMPLETED-ARCHIVES"], drive.folder_ids["01-PROCESSING-STAGING"])
-                db.record_archive_status(archive_id, name, size, "COMPLETED")
-                logger.info(f"✅ Successfully processed '{name}'.")
-            except (DriveError, DatabaseError, ProcessingError) as e:
-                logger.error(f"❌ Error processing '{name}': {e}")
-                db.record_archive_status(archive_id, name, size, "FAILED")
-                try:
-                    drive.move_file(archive_id, drive.folder_ids["00-ALL-ARCHIVES"], drive.folder_ids["01-PROCESSING-STAGING"])
-                    logger.info(f"    > Rolled back '{name}' to the main queue.")
-                except DriveError as rb_e:
-                    logger.critical(f"    ❌ CRITICAL: Failed to rollback '{name}': {rb_e}")
+                print(f"\n--> [Step 2a] Extracting '{archive_name}'...")
+                with tarfile.open(staging_path, 'r:gz') as tf:
+                    tf.extractall(path=VM_TEMP_EXTRACT_DIR)
+
+                organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_PHOTOS_DIR"], conn, archive_name)
+                deduplicate_and_move_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_FILES_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
+                
+                shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                print(f"✅ Transaction for '{archive_name}' complete.")
+
             except Exception as e:
-                logger.critical(f"An unexpected critical error occurred with '{name}': {e}", exc_info=True)
-                db.record_archive_status(archive_id, name, size, "FAILED")
+                print(f"❌ ERROR processing '{archive_name}': {e}")
+                traceback.print_exc()
+                # Rollback
+                shutil.move(staging_path, source_path)
+            finally:
+                if os.path.exists(VM_TEMP_EXTRACT_DIR):
+                    shutil.rmtree(VM_TEMP_EXTRACT_DIR)
 
-            logger.info("\n--- WORKFLOW CYCLE COMPLETE ---")
-    except (TakeoutError, Exception) as e:
-        logger.critical(f"\n❌ A CRITICAL STARTUP ERROR OCCURRED: {e}", exc_info=True)
-        sys.exit(1)
+            print("\n--- WORKFLOW CYCLE COMPLETE ---")
+            
+    except Exception as e:
+        print(f"\n❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
+        traceback.print_exc()
+    finally:
+        if conn:
+            conn.close()
+            print("--> [DB] Database connection closed.")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.parse_known_args()
     main()
 EOF
     # --- END EMBEDDED PYTHON SCRIPT ---
@@ -344,15 +278,41 @@ EOF
     chmod +x "$PROCESSOR_SCRIPT_PATH"
     _log_ok "Application script deployed successfully."
     
-    _log_info "Creating and enabling the systemd service..."
-    cat << EOF > "$SYSTEMD_SERVICE_PATH"
+    _log_info "Creating and enabling systemd services..."
+    
+    # --- RCLONE MOUNT SERVICE ---
+    cat << EOF > "$RCLONE_SERVICE_PATH"
 [Unit]
-Description=Google Takeout Organizer Service (v3.1)
+Description=Google Drive Mount Service (rclone)
 After=network-online.target
 
 [Service]
 Type=simple
-Environment="GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_PATH_FOR_SERVICE}"
+User=root
+Group=root
+ExecStart=/usr/bin/rclone mount "gdrive:" "${GDRIVE_MOUNT_POINT}" \\
+    --config "${RCLONE_CONFIG_PATH}" \\
+    --allow-other \\
+    --vfs-cache-mode writes \\
+    --log-level INFO
+ExecStop=/bin/fusermount -u "${GDRIVE_MOUNT_POINT}"
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # --- PYTHON PROCESSOR SERVICE ---
+    cat << EOF > "$PROCESSOR_SERVICE_PATH"
+[Unit]
+Description=Google Takeout Organizer Service (v4.0)
+# This service requires the drive to be mounted first
+Requires=${RCLONE_SERVICE_NAME}
+After=${RCLONE_SERVICE_NAME}
+
+[Service]
+Type=simple
 ExecStart=/usr/bin/python3 ${PROCESSOR_SCRIPT_PATH}
 Restart=on-failure
 RestartSec=60
@@ -362,15 +322,20 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable "$SYSTEMD_SERVICE_NAME"
-    _log_ok "Systemd service '${SYSTEMD_SERVICE_NAME}' created and enabled."
+    systemctl enable "$RCLONE_SERVICE_NAME"
+    systemctl enable "$PROCESSOR_SERVICE_NAME"
+    _log_ok "Systemd services created and enabled."
 
     echo ""
     _log_ok "--------------------------------------------------------"
     _log_ok "Takeout Processor Appliance Setup is COMPLETE!"
-    _log_info "The service has been reloaded. It will start automatically on boot."
-    _log_info "To start it now, run: systemctl start ${SYSTEMD_SERVICE_NAME}"
-    _log_info "To monitor progress, run: journalctl -fu ${SYSTEMD_SERVICE_NAME}"
+    _log_warn "ACTION REQUIRED: A valid 'rclone.conf' must be placed at:"
+    _log_warn "  ${RCLONE_CONFIG_PATH}"
+    _log_warn "The remote must be named 'gdrive:' for the mount to work."
+    _log_info "After placing the file, reboot or run:"
+    _log_info "  systemctl start ${RCLONE_SERVICE_NAME}"
+    _log_info "  systemctl start ${PROCESSOR_SERVICE_NAME}"
+    _log_info "To monitor, run: journalctl -fu ${PROCESSOR_SERVICE_NAME}"
     _log_ok "--------------------------------------------------------"
 }
 
