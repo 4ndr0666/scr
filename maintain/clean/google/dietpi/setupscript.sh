@@ -333,8 +333,7 @@ def plan_and_repackage_archive(drive, archive_file_obj, dest_folder_id, conn, tq
 
         return True # Indicate successful repackaging
     except Exception as e:
-        print(f"
-❌ ERROR during JIT repackaging: {e}")
+        print(f"❌ ERROR during JIT repackaging: {e}")
         traceback.print_exc()
         return False # Indicate failure
     finally:
@@ -351,8 +350,7 @@ def process_regular_archive(drive, archive_file_obj, conn, tqdm_module):
     """
     archive_name = archive_file_obj['title']
     archive_id = archive_file_obj['id']
-    print(f"
---> [Step 2a] Processing transaction for '{archive_name}'...")
+    print(f"--> [Step 2a] Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
 
     # Download the archive locally for processing
@@ -458,8 +456,7 @@ def process_regular_archive(drive, archive_file_obj, conn, tqdm_module):
 
         return True # Indicate successful processing
     except Exception as e:
-        print(f"
-❌ ERROR during archive processing transaction: {e}")
+        print(f"❌ ERROR during archive processing transaction: {e}")
         traceback.print_exc()
         return False # Indicate failure
     finally:
@@ -473,8 +470,7 @@ def deduplicate_files(drive, source_local_path, primary_storage_folder_id, trash
     Deduplicates new files (in a local temporary directory) against files already
     in the primary Google Drive storage using jdupes, then handles moves/deletes via PyDrive2.
     """
-    print("
---> [Step 2b] Deduplicating new files...")
+    print("--> [Step 2b] Deduplicating new files...")
     if not shutil.which('jdupes'):
         print("    ⚠️ 'jdupes' not found. Skipping deduplication.")
         # If jdupes is not available, files will be handled by the final move logic in process_regular_archive
@@ -621,8 +617,7 @@ def deduplicate_files(drive, source_local_path, primary_storage_folder_id, trash
         print(f"    ✅ Deduplication and file handling complete. Uploaded {files_uploaded_unique} unique files.")
 
     except Exception as e:
-        print(f"
-❌ ERROR during deduplication: {e}")
+        print(f"❌ ERROR during deduplication: {e}")
         traceback.print_exc()
     finally:
         # Clean up local temporary directories
@@ -636,8 +631,7 @@ def organize_photos(drive, source_local_path, final_drive_folder_id, conn, tqdm_
     Organizes photos (in a local temporary directory) based on their metadata,
     moves them to the final Google Drive location using PyDrive2, and updates the database.
     """
-    print("
---> [Step 2c] Organizing photos...")
+    print("--> [Step 2c] Organizing photos...")
     photos_organized_count = 0
     photos_source_local_path = os.path.join(source_local_path, "Takeout", "Google Photos")
     if not os.path.isdir(photos_source_local_path):
@@ -794,8 +788,7 @@ def main(args):
         total_vm, used_vm, free_vm = shutil.disk_usage('/tmp')
         used_vm_gb = used_vm / (1024**3)
         if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
-            print(f"
-❌ PRE-FLIGHT CHECK FAILED: Initial /tmp disk usage ({used_vm_gb:.2f} GB) is too high.")
+            print(f"❌ PRE-FLIGHT CHECK FAILED: Initial /tmp disk usage ({used_vm_gb:.2f} GB) is too high.")
             print("    >>> PLEASE FREE UP SPACE ON THE /tmp PARTITION AND TRY AGAIN. <<<")
             return
         print(f"✅ Pre-flight disk check passed. (Initial /tmp Usage: {used_vm_gb:.2f} GB)")
@@ -804,8 +797,7 @@ def main(args):
 
         print("✅ Workspace ready.")
 
-        print("
---> [Step 1] Identifying unprocessed archives...")
+        print("--> [Step 1] Identifying unprocessed archives...")
         # List archives in the source folder on Google Drive
         source_archives_files = list_drive_files(drive, CONFIG["SOURCE_ARCHIVES_DIR_ID"])
         all_archives = {f['title']: f for f in source_archives_files} # Map name to file object
@@ -818,8 +810,7 @@ def main(args):
         processing_queue_names = sorted(list(all_archives.keys() - completed_archives_names))
 
         if not processing_queue_names:
-            print("
-✅🎉 All archives have been processed!")
+            print("✅🎉 All archives have been processed!")
         else:
             archive_name_to_process = processing_queue_names[0]
             archive_file_obj = all_archives[archive_name_to_process] # Get the PyDrive2 file object
@@ -852,11 +843,9 @@ def main(args):
                     print(f"    ❌ Transaction failed for '{archive_name_to_process}'. It will be rolled back on the next run by the integrity check.")
                     # The integrity check will move the failed archive back to SOURCE_ARCHIVES_DIR_ID
 
-            print("
---- WORKFLOW CYCLE COMPLETE. ---")
+            print("--- WORKFLOW CYCLE COMPLETE. ---")
     except Exception as e:
-        print(f"
-❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
+        print(f"❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
         traceback.print_exc()
     finally:
         if conn:
