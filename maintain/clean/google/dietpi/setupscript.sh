@@ -1,97 +1,18 @@
 #!/bin/bash
-#
-# Google Takeout Organizer Setup Script
-# This script sets up the Google Takeout Organizer Python application.
-# It checks for root privileges, creates necessary directories, installs Python
-# dependencies, and deploys the Python script and a wrapper executable.
 
-# --- Configuration ---
-# Base directory for the application files (Python script, DB, etc.)
-# Using /opt for application-specific files is a common Linux convention.
-APP_BASE_DIR="/opt/takeout_organizer"
-# Name of the main Python script file
-PYTHON_SCRIPT_NAME="takeout_organizer.py"
-# Path to the main Python script
-PYTHON_SCRIPT_FILE="$APP_BASE_DIR/$PYTHON_SCRIPT_NAME"
-# Path for the user-friendly executable wrapper in a standard PATH location
-WRAPPER_SCRIPT_FILE="/usr/local/bin/takeout-organizer"
-
-# --- Script Robustness ---
 # Exit immediately if a command exits with a non-zero status.
 set -e
-# Treat unset variables as an error.
-set -u
-# The return value of a pipeline is the status of the last command to exit with a non-zero status,
-# or zero if all commands in the pipeline exit successfully.
-set -o pipefail
 
-echo "--- Google Takeout Organizer Setup Script ---"
+echo "--> Starting Google Takeout Organizer setup script for Raspberry Pi..."
 
-# Check if script is run as root; if not, re-execute with sudo
-if [[ "$EUID" -ne 0 ]]; then
-   echo "This script requires root privileges. Re-running with sudo..."
-   # Preserve the script name ($0) and all arguments ($@) when re-executing with sudo.
-   exec sudo bash "$0" "$@"
-fi
+# --- 1. Define Variables ---
+PYTHON_SCRIPT_NAME="takeout_organizer.py"
+PYTHON_SCRIPT_PATH="/usr/local/bin/$PYTHON_SCRIPT_NAME" # Install to a standard bin location
+TAKEOUT_BASE_DIR="${TAKEOUT_BASE_DIR:-$HOME/TakeoutOrganizer}" # Default to $HOME/TakeoutOrganizer if env var not set
 
-echo "--> [1/5] Ensuring application directory exists..."
-# Create the application base directory with appropriate permissions (rwx for owner, rx for group/others).
-# 'install -d' is more robust for installation purposes than 'mkdir -p'.
-if install -d -m 755 "$APP_BASE_DIR"; then
-    echo "    ✅ Ensured application directory exists: $APP_BASE_DIR"
-else
-    echo "    ❌ Failed to create application directory: $APP_BASE_DIR" >&2
-    exit 1
-fi
-
-echo "--> [2/5] Installing Python and required dependencies..."
-
-# Check for python3 and install if not found
-if ! command -v python3 &> /dev/null; then
-    echo "    ⚠️ python3 not found. Attempting to install..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y python3 python3-pip
-    elif command -v yum &> /dev/null; then
-        yum install -y python3 python3-pip
-    elif command -v dnf &> /dev/null; then
-        dnf install -y python3 python3-pip
-    else
-        echo "    ❌ Cannot find a suitable package manager (apt, yum, dnf) to install python3. Please install it manually." >&2
-        exit 1
-    fi
-    echo "    ✅ python3 installed."
-fi
-
-# Check for pip3 and install if not found (sometimes pip is separate from python3 install)
-if ! command -v pip3 &> /dev/null; then
-    echo "    ⚠️ pip3 not found. Attempting to install..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y python3-pip
-    elif command -v yum &> /dev/null; then
-        yum install -y python3-pip
-    elif command -v dnf &> /dev/null; then
-        dnf install -y python3-pip
-    else
-        echo "    ❌ Cannot find a suitable package manager (apt, yum, dnf) to install pip3. Please install it manually." >&2
-        exit 1
-    fi
-    echo "    ✅ pip3 installed."
-fi
-
-# Install Python dependencies using pip3
-echo "    > Installing Python packages: google-api-python-client google-auth tqdm..."
-if pip3 install google-api-python-client google-auth tqdm; then
-    echo "    ✅ Python dependencies installed successfully."
-else
-    echo "    ❌ Failed to install Python dependencies. Please check your internet connection or pip configuration." >&2
-    exit 1
-fi
-
-echo "--> [3/5] Writing Python script to: $PYTHON_SCRIPT_FILE"
-# Define the Python script content and write it using a heredoc.
-# Single quotes around 'EOF' prevent shell variable expansion inside the heredoc,
-# ensuring the Python code is written literally.
-cat << 'EOF' > "$PYTHON_SCRIPT_FILE"
+# --- 2. Embed Python Script ---
+echo "--> Embedding Python script..."
+cat << 'EOF' > "$PYTHON_SCRIPT_PATH"
 import os
 import shutil
 import subprocess
@@ -104,212 +25,56 @@ import sys
 import argparse
 import sqlite3
 import hashlib
-import time
-
-# Import Google API client libraries
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError # Corrected import: HttpError was missing
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload # Corrected import: Typo 'googleapiph' fixed
-
-# Attempt to use tqdm if available, otherwise use dummy
-try:
-    from tqdm.auto import tqdm
-except ImportError:
-    def tqdm(iterable, *args, **kwargs):
-        description = kwargs.get('desc', 'items')
-        print(f"    > Processing {description}...")
-        return iterable
-
+import stat # Import stat module for file permissions
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-TARGET_MAX_VM_USAGE_GB = 70 # Still relevant for temp disk usage during processing
+TARGET_MAX_VM_USAGE_GB = 70 # This value is less relevant for Raspberry Pi with external storage, but keep it as a potential check.
 REPACKAGE_CHUNK_SIZE_GB = 15
-MAX_SAFE_ARCHIVE_SIZE_GB = 25 # Maximum size for direct processing before repackaging
+MAX_SAFE_ARCHIVE_SIZE_GB = 25
 
-# BASE_DIR for local temporary processing space
-# Default to a temp dir within /tmp or a configurable location
-# This will be for downloading and processing archives locally
-DEFAULT_TEMP_PROCESSING_DIR = os.environ.get("TAKEOUT_TEMP_DIR", "/tmp/takeout_processing")
-TEMP_PROCESSING_DIR = os.environ.get("TAKEOUT_TEMP_DIR", DEFAULT_TEMP_PROCESSING_DIR)
+# Use an environment variable for the base directory for flexibility
+TAKEOUT_BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", ".") # Default to current directory if env var not set
 
-
-# Google Drive specific configuration - these will be folder IDs or paths in Drive
-# The user will need to configure these, perhaps via environment variables or args later
-# For now, using placeholder names assuming a structure in Drive
-DRIVE_SOURCE_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_SOURCE_FOLDER", "00-ALL-ARCHIVES")
-DRIVE_COMPLETED_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_COMPLETED_FOLDER", "05-COMPLETED-ARCHIVES")
-DRIVE_ORGANIZED_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_ORGANIZED_FOLDER", "03-organized/My-Photos") # May need to handle nested paths
-DRIVE_TRASH_FOLDER_NAME = os.environ.get("TAKEOUT_DRIVE_TRASH_FOLDER", "04-trash") # For quarantined/duplicates
-
-# The local database will still store metadata about files processed from Drive
-# It will be located in a persistent location, potentially near the script or in a user-defined path
-DB_PATH = os.environ.get("TAKEOUT_DB_PATH", os.path.join(os.path.expanduser("~"), ".takeout_organizer", "takeout_archive.db"))
-
-
+DB_PATH = os.path.join(TAKEOUT_BASE_DIR, "takeout_archive.db")
 CONFIG = {
-    "TEMP_PROCESSING_DIR": TEMP_PROCESSING_DIR,
-    # Drive folder names are stored separately as they require API interaction to resolve to IDs
-    "DRIVE_SOURCE_FOLDER_NAME": DRIVE_SOURCE_FOLDER_NAME,
-    "DRIVE_COMPLETED_FOLDER_NAME": DRIVE_COMPLETED_FOLDER_NAME,
-    "DRIVE_ORGANIZED_FOLDER_NAME": DRIVE_ORGANIZED_FOLDER_NAME,
-    "DRIVE_TRASH_FOLDER_NAME": DRIVE_TRASH_FOLDER_NAME,
-    "DB_PATH": DB_PATH,
+    "SOURCE_ARCHIVES_DIR": os.path.join(TAKEOUT_BASE_DIR, "00-ALL-ARCHIVES/"),
+    "PROCESSING_STAGING_DIR": os.path.join(TAKEOUT_BASE_DIR, "01-PROCESSING-STAGING/"),
+    "ORGANIZED_DIR": os.path.join(TAKEOUT_BASE_DIR, "03-organized/My-Photos/"),
+    "TRASH_DIR": os.path.join(TAKEOUT_BASE_DIR, "04-trash/"),
+    "COMPLETED_ARCHIVES_DIR": os.path.join(TAKEOUT_BASE_DIR, "05-COMPLETED-ARCHIVES/"),
 }
+CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
+CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
 
-# Local temporary directories within the processing directory
-LOCAL_TEMP_EXTRACT_DIR = os.path.join(CONFIG["TEMP_PROCESSING_DIR"], 'temp_extract')
-LOCAL_TEMP_BATCH_DIR = os.path.join(CONFIG["TEMP_PROCESSING_DIR"], 'temp_batch_creation')
-LOCAL_JDUPE_TEMP_DIR = os.path.join(CONFIG["TEMP_PROCESSING_DIR"], 'jdupes_temp')
-
-
-# GOOGLE_APPLICATION_CREDENTIALS environment variable is expected to be set externally
+# Use standard temporary directories instead of Colab-specific ones
+VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
+VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 
 # ==============================================================================
-# --- 2. WORKFLOW FUNCTIONS & HELPERS (Adapted for Drive API) ---
+# --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
-
-def authenticate_drive():
-    # Authenticates with Google Drive using GOOGLE_APPLICATION_CREDENTIALS.
-    print("--> [Auth] Authenticating with Google Drive...")
-    try:
-        # GOOGLE_APPLICATION_CREDENTIALS env var should point to the service account JSON file
-        creds = service_account.Credentials.from_environment_variable(
-            'GOOGLE_APPLICATION_CREDENTIALS',
-            scopes=['https://www.googleapis.com/auth/drive'] # Scope for full Drive access
-        )
-        service = build('drive', 'v3', credentials=creds)
-        print("    ✅ Google Drive authentication successful.")
-        return service
-    except Exception as e:
-        print(f"    ❌ ERROR during Google Drive authentication: {e}")
-        print("    >>> Please ensure GOOGLE_APPLICATION_CREDENTIALS environment variable is set correctly and points to a valid service account key file. <<<")
-        return None
-
-def find_drive_folder(service, folder_name, parent_id=None):
-    # Finds a Google Drive folder by name. Can search within a parent folder.
-    # Returns the folder ID if found, otherwise None.
-    # print(f"    > Searching for Drive folder: '{folder_name}' in parent ID: {parent_id if parent_id else 'root'}...") # Commented out for less verbose output
-    query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-    if parent_id:
-        query += f" and '{parent_id}' in parents"
-
-    try:
-        results = service.files().list(q=query, fields="files(id, name)").execute()
-        items = results.get('files', [])
-        if not items:
-            # print(f"    ⚠️ Drive folder '{folder_name}' not found in parent ID: {parent_id if parent_id else 'root'}.") # Commented out for less verbose output
-            return None
-        else:
-            # Assuming unique folder names within a parent, or taking the first result
-            folder_id = items[0]['id']
-            # print(f"    ✅ Found Drive folder '{folder_name}' with ID: {folder_id}") # Commented out for less verbose output
-            return folder_id
-    except HttpError as error:
-        print(f"    ❌ An API error occurred while searching for folder '{folder_name}': {error}")
-        return None
-    except Exception as e:
-        print(f"    ❌ An unexpected error occurred while searching for folder '{folder_name}': {e}")
-        return None
-
-def create_drive_folder(service, folder_name, parent_id=None):
-    # Creates a Google Drive folder.
-    # print(f"    > Creating Drive folder: '{folder_name}' in parent ID: {parent_id if parent_id else 'root'}...") # Commented out for less verbose output
-    file_metadata = {
-        'name': folder_name,
-        'mimeType': 'application/vnd.google-apps.folder'
-    }
-    if parent_id:
-        file_metadata['parents'] = [parent_id]
-
-    try:
-        file = service.files().create(body=file_metadata, fields='id').execute()
-        folder_id = file.get('id')
-        # print(f"    ✅ Created Drive folder '{folder_name}' with ID: {folder_id}") # Commented out for less verbose output
-        return folder_id
-    except HttpError as error:
-        print(f"    ❌ An API error occurred while creating folder '{folder_name}': {error}")
-        return None
-    except Exception as e:
-        print(f"    ❌ An unexpected error occurred while creating folder '{folder_name}': {e}")
-        return None
-
-def ensure_drive_folder(service, folder_name, parent_id=None):
-    # Ensures a Drive folder exists, creates it if not. Returns folder ID.
-    folder_id = find_drive_folder(service, folder_name, parent_id)
-    if folder_id is None:
-        folder_id = create_drive_folder(service, folder_name, parent_id)
-    return folder_id
-
-def ensure_drive_folder_recursive(service, full_path, parent_id='root'):
-    # Handles creating nested Drive folders, e.g., "folder1/folder2/folder3".
-    print(f"    > Ensuring recursive Drive folder path: '{full_path}' under parent ID: {parent_id if parent_id != 'root' else 'root'}")
-    parts = full_path.split('/')
-    current_parent_id = parent_id
-    for part in parts:
-        if not part: continue # Skip empty parts from leading/trailing slashes or double slashes
-        folder_id = find_drive_folder(service, part, current_parent_id)
-        if folder_id is None:
-            print(f"    > Creating folder '{part}' under parent ID: {current_parent_id}")
-            folder_id = create_drive_folder(service, part, current_parent_id)
-            if folder_id is None:
-                print(f"    ❌ Failed to create nested folder '{part}' under parent ID {current_parent_id}.")
-                return None
-        current_parent_id = folder_id
-    return current_parent_id
-
-
-def ensure_drive_directory_structure(service):
-    # Ensures the necessary directory structure exists on Google Drive.
-    print("--> [Drive] Ensuring Drive directory structure exists...")
-    root_id = 'root' # Start from the user's Drive root
-
-    # Use the recursive function for all top-level and potentially nested paths
-    source_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"], root_id)
-    if not source_id: return None, None, None, None, None, None
-
-    completed_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"], root_id)
-    if not completed_id: return source_id, None, None, None, None, None
-
-    organized_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"], root_id)
-    if not organized_id: return source_id, completed_id, None, None, None, None
-
-    trash_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"], root_id)
-    if not trash_id: return source_id, completed_id, organized_id, None, None, None
-
-    # Ensure subfolders within trash (these are relative to the trash_id)
-    quarantine_id = ensure_drive_folder_recursive(service, "quarantined_artifacts", trash_id)
-    dupes_id = ensure_drive_folder_recursive(service, "duplicates", trash_id)
-
-
-    print("    ✅ Drive directory structure ready.")
-    return source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id # Return all relevant IDs
-
+def dummy_tqdm(iterable, *args, **kwargs):
+    """A dummy tqdm function that acts as a fallback if tqdm is not available."""
+    description = kwargs.get('desc', 'items')
+    print(f"    > Processing {description}...")
+    return iterable
 
 def initialize_database(db_path):
-    # Creates the SQLite database and the necessary tables if they don't exist.
-    # Adapted to store Drive File IDs
+    """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
-    # Ensure the directory for the database exists
-    db_dir = os.path.dirname(db_path)
-    os.makedirs(db_dir, exist_ok=True)
-    print(f"    > Ensuring database directory exists: {db_dir}")
-
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS files (
         id INTEGER PRIMARY KEY,
-        drive_file_id TEXT NOT NULL UNIQUE, -- Store Google Drive File ID
-        sha256_hash TEXT, -- Hash after download
-        original_drive_path TEXT NOT NULL, -- Path within Drive (e.g., folder names)
-        original_filename TEXT NOT NULL, -- Original filename from Drive
-        final_drive_path TEXT, -- Final path within Drive after organizing
-        timestamp INTEGER, -- Timestamp from metadata
-        file_size INTEGER, -- Size from Drive metadata
-        source_archive_drive_id TEXT NOT NULL -- Drive ID of the source archive file
+        sha256_hash TEXT NOT NULL UNIQUE,
+        original_path TEXT NOT NULL,
+        final_path TEXT,
+        timestamp INTEGER,
+        file_size INTEGER NOT NULL,
+        source_archive TEXT NOT NULL
     )
     ''')
     conn.commit()
@@ -317,238 +82,255 @@ def initialize_database(db_path):
     return conn
 
 def perform_startup_integrity_check():
-    # Performs a "Power-On Self-Test".
-    # This will need significant adaptation for Drive API interaction.
-    # For now, let's keep basic local temp cleanup.
-    print("--> [POST] Performing startup integrity check (Local Temp Cleanup Only)...")
-    # Ensure local temporary directories are clean
-    if os.path.exists(LOCAL_TEMP_EXTRACT_DIR):
-         try: shutil.rmtree(LOCAL_TEMP_EXTRACT_DIR)
-         except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_TEMP_EXTRACT_DIR}: {e}")
-    if os.path.exists(LOCAL_TEMP_BATCH_DIR):
-         try: shutil.rmtree(LOCAL_TEMP_BATCH_DIR)
-         except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_TEMP_BATCH_DIR}: {e}")
-    if os.path.exists(LOCAL_JDUPE_TEMP_DIR):
-         try: shutil.rmtree(LOCAL_JDUPE_TEMP_DIR)
-         except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_JDUPE_TEMP_DIR}: {e}")
+    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
+    print("--> [POST] Performing startup integrity check...")
+    staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
+    source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
+    if os.path.exists(staging_dir) and os.listdir(staging_dir):
+        print("    ⚠️ Found orphaned files. Rolling back transaction...")
+        for orphan_file in os.listdir(staging_dir):
+            shutil.move(os.path.join(staging_dir, orphan_file), os.path.join(source_dir, orphan_file))
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
+            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+        print("    ✅ Rollback complete.")
+    # Handle 0-byte files based on the --auto-delete-artifacts flag
+    delete_zero_byte = False
+    # Check if --auto-delete-artifacts was passed during script execution
+    if '--auto-delete-artifacts' in sys.argv:
+         delete_zero_byte = True
 
-    print("--> [POST] Integrity check complete (Local Temp Cleaned).")
+    for filename in os.listdir(source_dir):
+        file_path = os.path.join(source_dir, filename)
+        if os.path.isfile(file_path) and os.path.getsize(file_path) == 0:
+            print(f"    ⚠️ Found 0-byte artifact: '{filename}'.")
+            quarantine_path = os.path.join(CONFIG["QUARANTINE_DIR"], filename)
+            try:
+                if delete_zero_byte:
+                    os.remove(file_path)
+                    print(f"    > Automatically deleted 0-byte artifact: '{filename}'")
+                else:
+                    shutil.move(file_path, quarantine_path)
+                    print(f"    > Quarantined 0-byte artifact to: '{quarantine_path}'")
+            except Exception as e:
+                 print(f"    ❌ Failed to handle 0-byte artifact '{filename}': {e}")
 
-# The core processing logic (plan_and_repackage_archive, process_regular_archive,
-# deduplicate_files, organize_photos) needs to be completely rewritten to:
-# 1. List files from the Source Drive Folder using the API.
-# 2. Check the database for files already processed (using Drive File IDs).
-# 3. Download unprocessed archive files to LOCAL_TEMP_PROCESSING_DIR.
-# 4. Process the downloaded archives locally (unpacking, hashing, organizing).
-# 5. Upload organized files back to the Organized Drive Folder.
-# 6. Move processed source archives to the Completed Drive Folder.
-# 7. Move duplicates/quarantined files to the respective Trash Drive Folders.
-# 8. Update the database with final Drive file IDs and paths.
-# 9. Clean up local temporary files after successful processing of an archive.
-
-# This is a major development effort. For this step, I will add placeholder
-# functions and focus on the initial authentication and directory setup logic.
-
-def list_drive_files_in_folder(service, folder_id):
-    # Lists files (not folders) in a given Drive folder.
-    print(f"    > Listing files in Drive folder ID: {folder_id}")
-    items = []
-    page_token = None
-    query = f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"
-    try:
-        while True:
-            response = service.files().list(
-                q=query,
-                spaces='drive',
-                fields='nextPageToken, files(id, name, size, mimeType)',
-                pageToken=page_token
-            ).execute()
-            items.extend(response.get('files', []))
-            page_token = response.get('nextPageToken', None)
-            if page_token is None:
-                break
-        print(f"    ✅ Found {len(items)} files.")
-        return items
-    except HttpError as error:
-        print(f"    ❌ An API error occurred while listing files in folder ID {folder_id}: {error}")
-        return None
-    except Exception as e:
-        print(f"    ❌ An unexpected error occurred while listing files: {e}")
-        return None
-
-# Function to upload a file to Google Drive
-def upload_to_drive(service, local_filepath, drive_folder_id, drive_filename=None):
-    # Uploads a local file to a specified Google Drive folder.
-    # Returns the Drive File ID of the uploaded file, or None on failure.
-    filename = drive_filename if drive_filename else os.path.basename(local_filepath)
-    print(f"    > Uploading '{filename}' to Drive folder ID: {drive_folder_id}...")
-
-    file_metadata = {
-        'name': filename,
-        'parents': [drive_folder_id]
-    }
-    media = MediaFileUpload(local_filepath, resumable=True)
-    try:
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id, parents'
-        ).execute()
-        uploaded_file_id = file.get('id')
-        print(f"    ✅ Uploaded '{filename}' with Drive ID: {uploaded_file_id}")
-        return uploaded_file_id
-    except HttpError as error:
-        print(f"    ❌ An API error occurred while uploading '{filename}': {error}")
-        return None
-    except Exception as e:
-        print(f"    ❌ An unexpected error occurred while uploading '{filename}': {e}")
-        return None
+    print("--> [POST] Integrity check complete.")
 
 
-# Adapted process_regular_archive to work with a local file path
-def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_name, conn, tqdm_module, service, drive_folder_ids):
-    # Handles a regular-sized archive. Unpacks to a local temp dir, processes,
-    # and then uploads/moves files on Google Drive.
-    print(f"\n--> [Step 2a] Processing transaction for local archive '{os.path.basename(local_archive_path)}'...")
+def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
+    """
+    Scans a large archive, hashes unique files, and repackages them into smaller,
+    crash-resilient parts while populating the database.
+    """
+    original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
+    print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
+    repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
     cursor = conn.cursor()
-    archive_name = os.path.basename(local_archive_path)
-
     try:
-        # Resume logic needs to be adapted for Drive File IDs and the local extraction process
-        # For now, let's simplify: If the archive's Drive ID is in the database as processed, skip.
-        # A more robust approach would check if all files *within* the archive (by original path or hash)
-        # have been fully processed (final_drive_path set).
-
-
-        print("    > Checking database for previously processed files from this archive...")
-        # This check will help resume if the local processing failed partially
-        cursor.execute("SELECT original_drive_path FROM files WHERE source_archive_drive_id = ? AND final_drive_path IS NOT NULL", (drive_archive_id,))
-        completed_files_in_db = {row[0] for row in cursor.fetchall()}
-        if completed_files_in_db:
-            print(f"    ✅ Found {len(completed_files_in_db)} files from this archive previously processed. Will skip unpacking them.")
-        else:
-            print("    > No files from this archive found in the database as fully processed.")
-
-
-        os.makedirs(LOCAL_TEMP_EXTRACT_DIR, exist_ok=True)
-
-        files_to_process_locally = []
-        with tarfile.open(local_archive_path, 'r:gz') as tf:
-            all_members = [m for m in tf.getmembers() if m.isfile()]
-            print(f"    > Scanning {archive_name} for files to unpack...")
+        cursor.execute("SELECT sha256_hash FROM files")
+        existing_hashes = {row[0] for row in cursor.fetchall()}
+        print(f"    > Index loaded with {len(existing_hashes)} records.")
+        existing_parts = [f for f in os.listdir(dest_dir) if f.startswith(original_basename_no_ext) and '.part-' in f]
+        last_part_num = 0
+        if existing_parts:
+            part_numbers = [int(re.search(r'\.part-(\d+)\.tgz', f).group(1)) for f in existing_parts if re.search(r'\.part-(\d+)\.tgz', f)]
+            if part_numbers: last_part_num = max(part_numbers)
+            print(f"    ✅ Resuming after part {last_part_num}.")
+        batches, current_batch, current_batch_size = [], [], 0
+        with tarfile.open(archive_path, 'r:gz') as original_tar:
+            all_members = [m for m in original_tar.getmembers() if m.isfile()]
             for member in all_members:
-                 # Need a way to map tar member names to original_drive_path for robust resumption
-                 # For now, assuming member.name is the original_drive_path for simplicity.
-                 # This might need refinement based on actual Takeout archive structure.
-                 original_drive_path_candidate = member.name
-
-                 # Skip unpacking if the file is already marked as processed in the DB
-                 # Note: This check is based on original_drive_path, which assumes
-                 # the path within the tar matches the intended original_drive_path.
-                 # This needs validation based on actual Takeout structure.
-                 if original_drive_path_candidate not in completed_files_in_db:
-                    try:
-                        tf.extract(member, path=LOCAL_TEMP_EXTRACT_DIR, set_attrs=False)
-                        files_to_process_locally.append(os.path.join(LOCAL_TEMP_EXTRACT_DIR, member.name)) # Store local path
-                    except Exception as e:
-                        print(f"    ⚠️ Could not extract '{member.name}': {e}")
-                        # Optionally quarantine the problematic file/archive here (needs Drive API)
-                        pass
-                 # else:
-                    # print(f"    > Skipping extraction of '{member.name}' - already processed.")
-
-
-        if not os.listdir(LOCAL_TEMP_EXTRACT_DIR): # Check if anything was extracted
-            print("    ✅ No new files found to unpack from this archive.")
-            # If no new files were extracted, and the archive was not marked complete,
-            # it implies all contained files were already processed in a previous run.
-            # So, we can mark the archive as processed on Drive and in DB.
-            print("    > All files previously processed. Proceeding to finalize archive on Drive.")
-            return True # Indicate success for finalization
-
-
-        print(f"    ✅ Unpacked new/missing files to {LOCAL_TEMP_EXTRACT_DIR}.")
-
-        # Subsequent steps now operate on the local extracted files.
-        # These functions need to be adapted to handle Drive uploads/moves
-        # and update the database with final Drive IDs.
-
-        # --- Process local extracted files and upload to Drive ---
-        print("\n    > Running local processing and uploading to Drive...")
-        # organize_photos now takes service and drive_folder_ids and handles uploads
-        organize_photos(LOCAL_TEMP_EXTRACT_DIR, conn, tqdm_module, drive_archive_id, service, drive_folder_ids)
-        # deduplicate_files now handles comparisons and moves on Drive
-        deduplicate_files(LOCAL_TEMP_EXTRACT_DIR, conn, drive_archive_id, service, drive_folder_ids)
-
-
-        # After local processing and potential Drive uploads, we need to verify
-        # completion and update the database for all files from this archive.
-        # This is complex and needs a separate function.
-        # For now, assuming called functions handle DB updates partially.
-        # A final check and update based on the state of files originating
-        # from this archive might be needed here for robustness.
-
-        return True # Indicate success after local processing and upload attempts
-
-    except Exception as e:
-        print(f"\n❌ ERROR during local archive processing transaction: {e}"); traceback.print_exc()
-        return False # Indicate failure
-
+                if current_batch and (current_batch_size + member.size) > repackage_chunk_size_bytes:
+                    batches.append(current_batch); current_batch, current_batch_size = [], 0
+                current_batch.append(member); current_batch_size += member.size
+            if current_batch: batches.append(current_batch)
+        print(f"    > Plan complete: {len(all_members)} files -> up to {len(batches)} new archives.")
+        for i, batch in enumerate(batches):
+            part_number = i + 1
+            if part_number <= last_part_num: continue
+            os.makedirs(VM_TEMP_BATCH_DIR, exist_ok=True)
+            temp_batch_archive_path = os.path.join(VM_TEMP_BATCH_DIR, f"temp_batch_{part_number}.tgz")
+            files_in_this_batch = 0
+            with tarfile.open(temp_batch_archive_path, 'w:gz') as temp_tar:
+                with tarfile.open(archive_path, 'r:gz') as original_tar_stream:
+                    for member in tqdm_module(batch, desc=f"Hashing & Staging Batch {part_number}"):
+                        file_obj = original_tar_stream.extractfile(member)
+                        if not file_obj: continue
+                        file_content = file_obj.read()
+                        sha256 = hashlib.sha256(file_content).hexdigest()
+                        if sha256 in existing_hashes: continue
+                        file_obj.seek(0)
+                        temp_tar.addfile(member, file_obj)
+                        cursor.execute("INSERT INTO files (sha256_hash, original_path, file_size, source_archive) VALUES (?, ?, ?, ?)",
+                                       (sha256, member.name, member.size, os.path.basename(archive_path)))
+                        existing_hashes.add(sha256)
+                        files_in_this_batch += 1
+            if files_in_this_batch > 0:
+                conn.commit()
+                new_archive_name = f"{original_basename_no_ext}.part-{part_number:02d}.tgz"
+                final_dest_path = os.path.join(dest_dir, new_archive_name)
+                print(f"    --> Batch contains {files_in_this_batch} unique files. Moving final part {part_number} to destination...") # Changed 'Google Drive' to 'destination'
+                shutil.move(temp_batch_archive_path, final_dest_path)
+                print(f"    ✅ Finished part {part_number}.")
+            else:
+                print(f"    > Batch {part_number} contained no unique files. Discarding empty batch.")
+        return True
+    except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
-        # Clean up local extract temp directory regardless of success/failure
-        if os.path.exists(LOCAL_TEMP_EXTRACT_DIR):
-             try: shutil.rmtree(LOCAL_TEMP_EXTRACT_DIR)
-             except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_TEMP_EXTRACT_DIR}: {e}")
+        if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
+
+def process_regular_archive(archive_path, conn, tqdm_module):
+    """
+    Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
+    for already processed files and only unpacking the missing ones ("the delta").
+    """
+    archive_name = os.path.basename(archive_path)
+    print(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
+    cursor = conn.cursor()
+    try:
+        print("    > Checking database for previously completed files...")
+        cursor.execute("SELECT original_path FROM files WHERE source_archive = ? AND final_path IS NOT NULL", (archive_name,))
+        completed_files = {row[0] for row in cursor.fetchall()}
+        if completed_files:
+            print(f"    ✅ Found {len(completed_files)} completed files. Will skip unpacking them.")
+        else:
+            print("    > No completed files found for this archive.")
+
+        os.makedirs(VM_TEMP_EXTRACT_DIR, exist_ok=True)
+
+        files_to_process = []
+        with tarfile.open(archive_path, 'r:gz') as tf:
+            all_members = [m for m in tf.getmembers() if m.isfile()]
+            for member in tqdm_module(all_members, desc=f"Scanning {archive_name}"):
+                # Normalize path separators for comparison
+                normalized_member_name = member.name.replace('\\', '/')
+                if normalized_member_name not in completed_files:
+                    try:
+                        # Ensure the target directory exists before extracting
+                        extract_path = os.path.join(VM_TEMP_EXTRACT_DIR, member.name)
+                        os.makedirs(os.path.dirname(extract_path), exist_ok=True)
+                        tf.extract(member, path=VM_TEMP_EXTRACT_DIR, set_attrs=False)
+                        # Set execute permissions for directories for safer os.walk
+                        if os.path.isdir(extract_path):
+                             os.chmod(extract_path, os.stat(extract_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                        files_to_process.append(normalized_member_name)
+                    except Exception as e:
+                        print(f"    ❌ Failed to extract file '{member.name}': {e}")
+                        # Decide whether to continue or abort based on severity
+                        continue # Continue processing other files
+
+        if not files_to_process:
+            print("    ✅ All files in this archive were already processed. Finalizing.")
+            return True
+
+        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to temp directory.") # Changed 'VM' to 'temp directory'
+
+        # Subsequent steps now operate on the much smaller "delta" of new files.
+        organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
+        deduplicate_files(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], CONFIG["DUPES_DIR"], conn, archive_name)
+
+        return True
+    except Exception as e:
+        print(f"\n❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
+        return False
+    finally:
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
+            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+            print("    > Cleaned up temporary directory.") # Changed 'VM' to 'temporary'
+
+def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
+    """Deduplicates new files against the primary storage and updates the database for unique files."""
+    print("\n--> [Step 2b] Deduplicating new files...")
+    if not shutil.which('jdupes'):
+        print("    ⚠️ 'jdupes' not found. Skipping.")
+        return
+
+    # Use absolute paths for jdupes command for clarity and robustness
+    source_path_abs = os.path.abspath(source_path)
+    primary_storage_path_abs = os.path.abspath(primary_storage_path)
+    trash_path_abs = os.path.abspath(trash_path)
+
+    command = f'jdupes -r -S -nh --linkhard --move="{trash_path_abs}" "{source_path_abs}" "{primary_storage_path_abs}"'
+    print(f"    > Running command: {command}") # Added for debugging
+    result = subprocess.run(command, shell=True, capture_output=True, text=True) # Added text=True for string output
+    print(f"    > jdupes stdout:\n{result.stdout}") # Added for debugging
+    if result.stderr:
+        print(f"    > jdupes stderr:\n{result.stderr}") # Added for debugging
 
 
-# Adapted organize_photos to upload to Google Drive
-def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, service, drive_folder_ids):
-    # Organizes photos from a local source path and uploads them to the final Drive folder.
-    print("\n--> [Step 2c] Organizing photos and uploading to Drive...")
+    cursor = conn.cursor()
+    files_moved = 0
+    # The actual uncompressed data is often in a "Takeout" subdirectory relative to the source_path.
+    takeout_source = os.path.join(source_path_abs, "Takeout") # Use absolute path here
+    if os.path.exists(takeout_source):
+        print("    > Moving unique new files and updating database...")
+        for root, _, files in os.walk(takeout_source):
+            for filename in files:
+                unique_file_path = os.path.join(root, filename)
+                # Ensure the file still exists (jdupes might have moved it if it was a duplicate)
+                if not os.path.exists(unique_file_path):
+                    continue
+
+                relative_path_to_takeout = os.path.relpath(unique_file_path, takeout_source)
+                final_path = os.path.join(primary_storage_path_abs, relative_path_to_takeout) # Use absolute primary_storage_path
+
+                os.makedirs(os.path.dirname(final_path), exist_ok=True)
+                try:
+                    shutil.move(unique_file_path, final_path)
+                    # We need the original path relative to the TAR root for the DB.
+                    # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/..., so the original path
+                    # inside the archive would be 'Takeout/Google Photos/...'.
+                    original_path_in_archive = os.path.relpath(unique_file_path, source_path_abs) # Relative to the initial extraction path
+                    cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
+                                   (final_path, int(ts), original_path_in_archive.replace('\\', '/'), source_archive_name)) # Normalize path separator
+                    files_moved += 1
+                except Exception as e:
+                    print(f"    ❌ Failed to move unique file '{unique_file_path}' to '{final_path}': {e}")
+
+
+        if files_moved > 0:
+            conn.commit()
+    print(f"    ✅ Deduplication and move complete. Processed {files_moved} unique files.")
+
+
+def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
+    """Organizes photos and updates their final path and timestamp in the database."""
+    print("\n--> [Step 2c] Organizing photos...")
     photos_organized_count = 0
+    # Path is relative to the temporary extraction directory
     photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
     if not os.path.isdir(photos_source_path):
         print("    > 'Google Photos' directory not found in extracted path. Skipping.")
         return
 
-    organized_drive_folder_id = drive_folder_ids.get("organized_id")
-    if not organized_drive_folder_id:
-         print("    ❌ Organized Drive folder ID not found. Cannot upload organized photos.")
-         return
+    final_dir_abs = os.path.abspath(final_dir) # Use absolute path for final_dir
 
-    # Need a way to efficiently check for existing files in the destination Drive folder
-    # to avoid duplicates. This is complex and might require listing files in the
-    # destination folder or relying on database lookups (if we stored info about
-    # files already uploaded to the organized folder).
-    # For simplicity in this step, we'll upload and rely on Drive's handling of
-    # duplicate filenames (it appends a number). A more sophisticated approach
-    # would compare hashes or metadata before uploading.
+    try:
+        # Need to list files in the *actual* final_dir, not just the current state of the temp dir
+        # Also need to account for files potentially moved by jdupes from the temp dir to final_dir
+        existing_filenames = set(os.listdir(final_dir_abs))
+        # Add filenames of files that were just moved by jdupes from the current source_path to final_dir
+        # This is tricky as jdupes handles the move, but we need the updated state.
+        # A simpler approach is to rely solely on the database and target final_dir contents.
+        # However, listing the target dir is a quick check for naming conflicts *before* moving.
+        # Let's keep listing final_dir_abs for pre-check, and rely on DB for uniqueness after move.
+    except FileNotFoundError:
+        existing_filenames = set()
 
-    all_json_files = []
-    for root, _, files in os.walk(photos_source_path):
-        for f in files:
-            if f.lower().endswith('.json'):
-                all_json_files.append(os.path.join(root, f))
-
-    if not all_json_files:
-        print("    > No JSON files found in Google Photos directory. Skipping photo organization.")
-        return
-
+    all_json_files = [os.path.join(r, f) for r, _, files in os.walk(photos_source_path) for f in files if f.lower().endswith('.json')]
     cursor = conn.cursor()
-    organized_db_updates = [] # Collect DB updates
 
-    for json_path in tqdm_module(all_json_files, desc="Organizing & Uploading photos"):
-        media_path_base = os.path.splitext(json_path)[0]
+    # Check for photos already in the database that might be in the final destination
+    # This helps avoid re-processing or naming conflicts for files already organized.
+    cursor.execute("SELECT final_path FROM files WHERE source_archive = ? AND final_path IS NOT NULL AND original_path LIKE ?", (source_archive_name, 'Takeout/Google Photos/%'))
+    already_organized_final_paths = {os.path.basename(row[0]) for row in cursor.fetchall() if row[0]} # Use only the basename for comparison
 
-        media_file_to_process = None
-        for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.mp4', '.mov', '.avi', '.webm', '.tiff', '.heic', '.webp']:
-             potential_media_path = media_path_base + ext
-             if os.path.exists(potential_media_path):
-                  media_file_to_process = potential_media_path
-                  break
-
-        if not media_file_to_process:
-            # print(f"    > No associated media file found for JSON {json_path}. Skipping.")
+    for json_path in tqdm_module(all_json_files, desc="Organizing photos"):
+        media_path = os.path.splitext(json_path)[0]
+        # Check if the corresponding media file exists in the source_path
+        if not os.path.exists(media_path):
+            # The media file might have been moved by jdupes if it was a duplicate of something already in the target directory.
+            # We can skip processing this JSON if its media file is gone from the source_path.
             continue
 
         try:
@@ -556,570 +338,279 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
                 data = json.load(f)
             ts = data.get('photoTakenTime', {}).get('timestamp')
             if not ts:
-                 ts = data.get('creationTime', {}).get('timestamp')
-
-            if not ts:
-                print(f"    ⚠️ No valid timestamp found for {os.path.basename(media_file_to_process)}. Skipping.")
+                # Skip if no timestamp is available in the JSON
                 continue
 
             dt = datetime.fromtimestamp(int(ts))
             new_name_base = dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')
-            ext = os.path.splitext(media_file_to_process)[1].lower()
-            final_drive_filename = f"{new_name_base}{ext}"
+            ext = os.path.splitext(media_path)[1].lower()
 
-            # Determine the original_drive_path for the DB update.
-            # This requires tracing the file back to its origin in the archive.
-            # For now, assuming the path relative to the 'Takeout/Google Photos' folder in the extract dir works.
-            # This needs careful mapping based on actual Takeout structure.
-            original_path_in_extract_dir = os.path.relpath(media_file_to_process, photos_source_path)
-            original_drive_path_candidate = os.path.join("Takeout", "Google Photos", original_path_in_extract_dir)
+            # Ensure valid characters in filename (remove potentially problematic ones)
+            new_filename = re.sub(r'[^\w.-]', '_', f"{new_name_base}{ext}")
 
+            counter = 0
+            proposed_filename = new_filename
+            # Check against both files already in the final directory AND files already recorded in the DB for this archive as organized
+            while proposed_filename in existing_filenames or proposed_filename in already_organized_final_paths:
+                counter += 1
+                proposed_filename = re.sub(r'[^\w.-]', '_', f"{new_name_base}_{counter}{ext}")
 
-            # --- Check if this file (by original_drive_path and source_archive_drive_id) is already processed ---
-            cursor.execute("SELECT drive_file_id FROM files WHERE original_drive_path = ? AND source_archive_drive_id = ? LIMIT 1", (original_drive_path_candidate, source_archive_drive_id))
-            if cursor.fetchone():
-                 # print(f"    > File '{os.path.basename(media_file_to_process)}' from archive '{source_archive_drive_id}' already processed. Skipping upload.")
-                 # Delete local temporary files for this already processed file
-                 try:
-                     os.remove(media_file_to_process)
-                     os.remove(json_path) # Also remove the associated JSON
-                 except OSError as e:
-                      print(f"    ⚠️ Could not delete local temp files for already processed {os.path.basename(media_file_to_process)}: {e}")
-                 continue # Skip to next file if already processed
-
-
-            # --- Upload the organized file to Google Drive ---
-            uploaded_file_id = upload_to_drive(service, media_file_to_process, organized_drive_folder_id, final_drive_filename)
-
-            if uploaded_file_id:
-                 photos_organized_count += 1
-
-                 # After successful upload, delete the local temporary media and JSON files
-                 try:
-                     os.remove(media_file_to_process)
-                     os.remove(json_path)
-                 except OSError as e:
-                      print(f"    ⚠️ Could not delete local temp files for {os.path.basename(media_file_to_process)}: {e}")
-
-                 # Prepare database update for the successfully uploaded file
-                 # Construct the full final_drive_path for the DB, reflecting the full path including any nested folders from DRIVE_ORGANIZED_FOLDER_NAME
-                 final_drive_path_full = f"{CONFIG['DRIVE_ORGANIZED_FOLDER_NAME']}/{final_drive_filename}"
-
-                 organized_db_updates.append((uploaded_file_id, final_drive_filename, final_drive_path_full, original_drive_path_candidate, int(ts), os.path.getsize(media_file_to_process), source_archive_drive_id))
-
-            # else:
-                 # Upload failed, local temp files are not deleted. Integrity check might handle this later.
-
-        except Exception as e:
-            print(f"    ❌ Error processing or uploading JSON file {json_path} and associated media: {e}")
-            traceback.print_exc()
-            continue
-
-    if organized_db_updates:
-        print(f"    > Committing {len(organized_db_updates)} database updates for organized files...")
-        # Insert into files table, handling potential duplicates based on drive_file_id unique constraint
-        cursor.executemany("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, timestamp, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?, ?)", organized_db_updates)
-        conn.commit()
-        print(f"    ✅ Organized and uploaded {photos_organized_count} new files to Drive and updated DB.")
-    else:
-        print("    > No new photos were organized and uploaded.")
-
-
-# Adapted deduplicate_files to work with local files and manage on Drive
-def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive_folder_ids):
-    # Deduplicates local files against files already in the Organized Drive folder
-    # and moves duplicates/unique non-photo files on Drive.
-    print("\n--> [Step 2b] Managing other files on Drive...")
-    # Note: Local jdupes is not directly applicable for Drive-based deduplication.
-    # Drive-based deduplication logic would need to be implemented using the Drive API
-    # to compare hashes or metadata of local files against files already in the
-    # destination folder before uploading. This is complex and out of scope for this step.
-    # We will focus on managing the remaining local files (non-photos or unorganized)
-    # by uploading them to a designated location on Drive.
-
-    organized_drive_folder_id = drive_folder_ids.get("organized_id")
-    trash_drive_folder_id = drive_folder_ids.get("trash_id")
-    dupes_drive_folder_id = drive_folder_ids.get("dupes_id") # For duplicates on Drive
-    quarantine_drive_folder_id = drive_folder_ids.get("quarantine_id") # For quarantined artifacts
-
-    if not organized_drive_folder_id or not trash_drive_folder_id or not dupes_drive_folder_id or not quarantine_drive_folder_id:
-        print("    ❌ Required Drive folder IDs for organized, trash, duplicates, or quarantine not found. Skipping deduplication/management.")
-        return
-
-    cursor = conn.cursor()
-    files_processed_count = 0
-
-    # After organize_photos runs, remaining files in source_path (specifically in the 'Takeout' subdir)
-    # are non-photo files, photos that couldn't be organized, or orphaned JSON files.
-    takeout_source = os.path.join(source_path, "Takeout")
-
-    if os.path.exists(takeout_source):
-        print("    > Processing remaining files in temp directory (non-photos, unorganized, or orphans)...")
-        for root, _, files in os.walk(takeout_source):
-            for filename in files:
-                local_file_path = os.path.join(root, filename)
-
-                # Determine the original_drive_path. Assuming path relative to the 'Takeout' folder.
-                original_drive_path_candidate = os.path.relpath(local_file_path, os.path.join(source_path, "Takeout"))
-
-                # --- Handle orphaned JSON files ---
-                if filename.lower().endswith('.json'):
-                    # These are JSON files whose associated media was either not found,
-                    # skipped, or failed to process. We should quarantine them.
-                    print(f"    > Quarantining orphaned JSON file: {filename}")
-                    # Upload to quarantine folder on Drive
-                    uploaded_file_id = upload_to_drive(service, local_file_path, quarantine_drive_folder_id, filename)
-
-                    if uploaded_file_id:
-                         files_processed_count += 1
-                         # Delete local file after upload
-                         try: os.remove(local_file_path)
-                         except OSError as e: print(f"    ⚠️ Could not delete local orphaned JSON {local_file_path}: {e}")
-
-                         # Record in DB (optional, but good for tracking quarantined items)
-                         # Use original_drive_path as the final_drive_path within quarantine for simplicity
-                         final_drive_path_full = f"{CONFIG['DRIVE_TRASH_FOLDER_NAME']}/quarantined_artifacts/{original_drive_path_candidate}"
-                         cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?)",
-                                        (uploaded_file_id, filename, final_drive_path_full, original_drive_path_candidate, os.path.getsize(local_file_path), source_archive_drive_id))
-                    continue # Move to the next file
-
-                # --- Handle other remaining files (non-photos or failed photos) ---
-                # Upload them to a designated 'OtherTakeoutFiles' folder within Organized on Drive,
-                # preserving relative path structure from 'Takeout'.
-                other_files_drive_folder_name = "OtherTakeoutFiles"
-                # Ensure the 'OtherTakeoutFiles' subfolder exists within the Organized folder on Drive
-                other_files_drive_folder_id = ensure_drive_folder_recursive(service, other_files_drive_folder_name, organized_drive_folder_id)
-
-                if not other_files_drive_folder_id:
-                     print(f"    ❌ Could not ensure '{other_files_drive_folder_name}' folder in Drive. Skipping management of '{filename}'.")
-                     continue # Skip this file
-
-                # Construct the final Drive path (relative to the organized folder)
-                # Need to create subfolders on Drive if the original path had them.
-                # This requires iterating through path components and ensuring folders exist on Drive.
-                path_components = original_drive_path_candidate.split(os.sep)
-                current_parent_id = other_files_drive_folder_id
-                # Start building the path string for DB. Use the last part of DRIVE_ORGANIZED_FOLDER_NAME
-                # as the base, then 'OtherTakeoutFiles', then the nested path from the archive.
-                final_drive_path_parts = [CONFIG['DRIVE_ORGANIZED_FOLDER_NAME'].split('/')[-1], other_files_drive_folder_name]
-                # Traverse path components to create nested folders on Drive
-                for i, component in enumerate(path_components[:-1]): # Exclude the filename
-                    if component: # Avoid empty components from leading/trailing slashes
-                         # Check if folder exists within current_parent_id, create if not
-                         component_folder_id = ensure_drive_folder(service, component, current_parent_id)
-                         if not component_folder_id:
-                              print(f"    ❌ Could not ensure nested Drive folder '{component}'. Skipping management of '{filename}'.")
-                              current_parent_id = None # Indicate failure to create path
-                              break
-                         current_parent_id = component_folder_id
-                         final_drive_path_parts.append(component)
-
-                if current_parent_id is None:
-                     continue # Skip this file if nested folder creation failed
-
-                # The final parent folder on Drive is current_parent_id
-                final_upload_parent_id = current_parent_id
-                final_drive_path_parts.append(filename)
-                final_drive_path_full_for_db = "/".join(final_drive_path_parts) # Use '/' for Drive path string
-
-
-                # --- Upload the file ---
-                # Note: This simple upload does NOT perform deduplication against existing files on Drive.
-                # A robust solution would check for duplicates based on hash or metadata before uploading.
-                uploaded_file_id = upload_to_drive(service, local_file_path, final_upload_parent_id, filename) # Upload with original filename for now
-
-                if uploaded_file_id:
-                    files_processed_count += 1
-
-                    # After successful upload, delete the local temporary file
-                    try:
-                        os.remove(local_file_path)
-                    except OSError as e:
-                         print(f"    ⚠️ Could not delete local temp file {local_file_path}: {e}")
-
-                    # Prepare database update
-                    cursor.execute("INSERT OR IGNORE INTO files (drive_file_id, original_filename, final_drive_path, original_drive_path, file_size, source_archive_drive_id) VALUES (?, ?, ?, ?, ?, ?)",
-                                   (uploaded_file_id, filename, final_drive_path_full_for_db, original_drive_path_candidate, os.path.getsize(local_file_path), source_archive_drive_id))
-
-
-            conn.commit() # Commit updates for files moved manually
-    else:
-         print("    > 'Takeout' directory not found in extracted temp location. No other files to process.")
-
-    print(f"    ✅ Finished managing other files. Processed {files_processed_count} files.")
-    # Clean up jdupes temp directory (if it was used for local temp files)
-    if os.path.exists(LOCAL_JDUPE_TEMP_DIR):
-        try: shutil.rmtree(LOCAL_JDUPE_TEMP_DIR)
-        except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_JDUPE_TEMP_DIR}: {e}")
-
-
-# Adapted plan_and_repackage_archive for Drive API (placeholder)
-def plan_and_repackage_archive(local_archive_path, drive_archive_id, drive_archive_name, conn, tqdm_module, service, drive_folder_ids):
-     # This function needs significant adaptation. It would involve:
-     # 1. Scanning the large local archive.
-     # 2. Identifying files to repackage (potentially checking DB/Drive for existing).
-     # 3. Creating smaller archive parts locally.
-     # 4. Uploading these local parts to the Source Drive folder.
-     # 5. Updating the database with information about the new part files on Drive.
-     # 6. Deleting the original large archive from Drive and locally.
-     # This is a major rewrite and is left as a placeholder for future development.
-     print(f"\n--> [Step 2a - Repackage] Repackaging logic needs full Drive API adaptation. Skipping for '{os.path.basename(local_archive_path)}'.")
-     # For now, if repackaging is needed, we'll skip the archive.
-     return False # Indicate repackaging was not successful (or skipped)
-
-
-# Adapted process_drive_archives to call the updated processing functions
-def process_drive_archives(service, drive_folder_ids, conn, tqdm_module):
-    print("\n--> [Step 1] Identifying unprocessed archives on Google Drive...")
-
-    source_folder_id = drive_folder_ids.get("source_id")
-    completed_folder_id = drive_folder_ids.get("completed_id")
-
-    if not source_folder_id:
-        print("    ❌ Source Drive folder not found or accessible. Cannot proceed.")
-        return
-
-    # Get list of archive files from the Source Drive folder
-    # Assuming archives are .tar.gz files for now
-    all_drive_archives = [f for f in list_drive_files_in_folder(service, source_folder_id) if f.get('name', '').lower().endswith('.tar.gz')]
-
-    if not all_drive_archives:
-        print("\n✅🎉 No Google Takeout archive files found in the source Drive folder!")
-        return
-
-    print(f"    > Found {len(all_drive_archives)} potential archive files in the source Drive folder.")
-
-    # Check database for already processed archives (based on Drive File ID)
-    # A robust check here should look at files table: if ALL files originating
-    # from a source_archive_drive_id have final_drive_path set, consider the archive processed.
-    # For simplicity in this step, we'll check if the archive's Drive ID is present
-    # in the files table with *any* associated file record. This is a basic indicator.
-    cursor = conn.cursor()
-    processed_archive_drive_ids = set()
-    try:
-        cursor.execute("SELECT DISTINCT source_archive_drive_id FROM files")
-        processed_archive_drive_ids = {row[0] for row in cursor.fetchall() if row[0] is not None}
-        print(f"    > Database contains records linked to {len(processed_archive_drive_ids)} archives.")
-    except Exception as e:
-        print(f"    ⚠️ Error querying database for processed files: {e}. Proceeding with potentially incomplete history check.")
-
-
-    processing_queue_drive_files = [
-        archive for archive in all_drive_archives
-        # Check if the archive ID is NOT in the set of processed archive IDs
-        if archive['id'] not in processed_archive_drive_ids
-    ]
-
-    if not processing_queue_drive_files:
-         print("\n✅🎉 All relevant archives seem to have been processed!")
-         # A more sophisticated check could be implemented here to verify completion
-         # e.g., check if all files in completed_folder_id match files originally
-         # from source_folder_id and if database reflects this.
-
-    else:
-        print(f"    > Found {len(processing_queue_drive_files)} archives to process.")
-        # Process archives one by one
-        for drive_archive_file in tqdm_module(processing_queue_drive_files, desc="Processing Archives from Drive"):
-            archive_name = drive_archive_file.get('name')
-            archive_id = drive_archive_file.get('id')
-            archive_size = int(drive_archive_file.get('size', 0)) # Size in bytes
-            archive_size_gb = archive_size / (1024**3)
-
-            print(f"\n--> Processing archive from Drive: '{archive_name}' (ID: {archive_id})")
-
-            # --- Download the archive ---
-            local_archive_path = os.path.join(CONFIG["TEMP_PROCESSING_DIR"], archive_name)
-            print(f"    > Downloading '{archive_name}' to {local_archive_path}...")
-            os.makedirs(CONFIG["TEMP_PROCESSING_DIR"], exist_ok=True) # Ensure temp dir exists
+            final_filepath = os.path.join(final_dir_abs, proposed_filename) # Use absolute final_dir_abs
 
             try:
-                # Check if the local file already exists from a previous failed attempt
-                if os.path.exists(local_archive_path):
-                     print(f"    > Local file '{local_archive_path}' already exists. Resuming from local file.")
-                     # Verify file size matches Drive size
-                     if os.path.getsize(local_archive_path) != archive_size:
-                          print(f"    ⚠️ Local file size mismatch ({os.path.getsize(local_archive_path)} bytes) with Drive ({archive_size} bytes). Redownloading.")
-                          os.remove(local_archive_path) # Delete incomplete file
-                          # Proceed with download
-                          request = service.files().get_media(fileId=archive_id)
-                          with open(local_archive_path, 'wb') as f:
-                              downloader = MediaIoBaseDownload(f, request)
-                              done = False
-                              while done is False:
-                                  status, done = downloader.next_chunk()
-                                  # Optional: Add progress bar using status.progress()
-                                  # print(f"    > Download progress: {status.progress() * 100:.2f}%")
-                          print(f"    ✅ Download complete: {local_archive_path}")
+                 shutil.move(media_path, final_filepath)
+                 # Remove the now-moved JSON file
+                 os.remove(json_path)
 
-                     else:
-                           print(f"    ✅ Local file '{local_archive_path}' size matches Drive file. Using existing local file.")
-                else:
-                    # Proceed with download if local file does not exist
-                    request = service.files().get_media(fileId=archive_id)
-                    with open(local_archive_path, 'wb') as f:
-                        downloader = MediaIoBaseDownload(f, request)
-                        done = False
-                        while done is False:
-                            status, done = downloader.next_chunk()
-                            # Optional: Add progress bar using status.progress()
-                            # print(f"    > Download progress: {status.progress() * 100:.2f}%")
-                    print(f"    ✅ Download complete: {local_archive_path}")
+                 # We need the original path relative to the TAR root for the DB.
+                 # The media file was extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/...,
+                 # so the original path inside the archive would be 'Takeout/Google Photos/...'.
+                 original_path_in_archive = os.path.relpath(media_path, source_path_abs) # Relative to the initial extraction path
+                 cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
+                                (final_filepath, int(ts), original_path_in_archive.replace('\\', '/'), source_archive_name)) # Normalize path separator
 
+                 # Add the new filename to our sets to prevent immediate conflicts within this run
+                 existing_filenames.add(proposed_filename)
+                 already_organized_final_paths.add(proposed_filename)
 
-                # --- Process the downloaded archive locally ---
-                print("    > Processing downloaded archive locally...")
-                # Call the adapted processing function with the local file path
-                # Check archive size to decide between regular processing or repackaging (repackaging is placeholder for now)
-                if archive_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
-                     print(f"    > Archive size ({archive_size_gb:.2f} GB) exceeds safe limit ({MAX_SAFE_ARCHIVE_SIZE_GB} GB). Attempting repackaging...")
-                     # Call the placeholder repackaging function
-                     processing_success = plan_and_repackage_archive(
-                          local_archive_path,
-                          archive_id,
-                          archive_name,
-                          conn,
-                          tqdm_module,
-                          service,
-                          drive_folder_ids
-                     )
-                else:
-                    print(f"    > Archive size ({archive_size_gb:.2f} GB) is within safe limit or is a part file. Processing directly.")
-                    processing_success = process_regular_archive(
-                        local_archive_path,
-                        archive_id,
-                        archive_name,
-                        conn,
-                        tqdm_module,
-                        service, # Pass service object for Drive API calls within processing functions
-                        drive_folder_ids # Pass folder IDs for Drive API calls within processing functions
-                        )
-
-
-                # --- Move the processed archive on Drive and clean up local file ---
-                if processing_success:
-                    print(f"\n--> Processing of '{archive_name}' complete. Moving to completed on Drive.")
-                    if completed_folder_id:
-                        try:
-                            # Remove from source folder, add to completed folder
-                            service.files().update(
-                                fileId=archive_id,
-                                addParents=completed_folder_id,
-                                removeParents=source_folder_id,
-                                fields='id, parents' # Request updated parents to confirm
-                            ).execute()
-                            print(f"    ✅ Archive moved successfully on Drive.")
-
-                            # After successfully moving the archive on Drive, it's safe to clean up the local file
-                            if os.path.exists(local_archive_path):
-                                try:
-                                    os.remove(local_archive_path)
-                                    print(f"    > Cleaned up local archive file: {local_archive_path}")
-                                except Exception as e:
-                                    print(f"    ⚠️ Failed to clean up local archive file {local_archive_path}: {e}")
-
-                        except HttpError as error:
-                            print(f"    ❌ An API error occurred while moving archive on Drive: {error}")
-                            print(f"    >>> Archive '{archive_name}' remains in source folder on Drive. Local file kept in temp. <<<")
-                            processing_success = False # Mark as failed if Drive move fails
-                        except Exception as e:
-                             print(f"    ❌ An unexpected error occurred while moving archive on Drive: {e}")
-                             print(f"    >>> Archive '{archive_name}' remains in source folder on Drive. Local file kept in temp. <<<")
-                             processing_success = False # Mark as failed if Drive move fails
-                    else:
-                        print("    ⚠️ Completed Drive folder ID not found. Skipping moving archive on Drive.")
-                        print(f"    >>> Archive '{archive_name}' remains in source folder on Drive. Local file kept in temp. <<<")
-                        processing_success = False # Consider failed if cannot move on Drive
-                else:
-                    print(f"\n❌ Processing failed for '{archive_name}'. Leaving in local temp directory and source folder on Drive.")
-                    # Rollback happens on next run via integrity check if local temp files remain
-                    # Database state will reflect which files *were* processed before failure.
-
-
-            except HttpError as error:
-                print(f"    ❌ An API error occurred while downloading '{archive_name}' (ID: {archive_id}): {error}")
-                print(f"    >>> Skipping '{archive_name}'. <<<")
-            except FileNotFoundError:
-                 print(f"    ❌ Error: Local temporary path {local_archive_path} issue during download setup.")
-                 print(f"    >>> Skipping '{archive_name}'. <<<")
+                 photos_organized_count += 1
             except Exception as e:
-                print(f"    ❌ An unexpected error occurred during archive download or initial processing: {e}")
-                traceback.print_exc()
-                print(f"    >>> Skipping '{archive_name}'. <<<")
+                 print(f"    ❌ Failed to move and organize photo '{media_path}' to '{final_filepath}': {e}")
 
-            print("--- Finished processing archive cycle. ---")
+
+        except Exception as e:
+             print(f"    ❌ Failed to process photo JSON '{json_path}': {e}")
+             continue # Continue processing other JSON files
+
+    if photos_organized_count > 0:
+        conn.commit()
+        print(f"    ✅ Organized and updated DB for {photos_organized_count} new photos.")
+    else:
+         print("    > No new photos to organize in this batch.")
 
 
 # ==============================================================================
-# --- MAIN EXECUTION SCRIPT (Adapted for Drive API) ---
+# --- MAIN EXECUTION SCRIPT ---
 # ==============================================================================
 def main(args):
     conn = None
-    service = None
     try:
         print("--> [Step 0] Initializing environment...")
+        # Use the fallback dummy_tqdm for headless execution
+        tqdm = dummy_tqdm
 
-        # Ensure local temporary processing directory exists
-        if CONFIG["TEMP_PROCESSING_DIR"]:
-             os.makedirs(CONFIG["TEMP_PROCESSING_DIR"], exist_ok=True)
-             print(f"    > Ensuring local temporary processing directory exists: {CONFIG['TEMP_PROCESSING_DIR']}")
-        else:
-             print("    ❌ TEMP_PROCESSING_DIR is not set. Please ensure TAKEOUT_TEMP_DIR is configured.")
-             return # Exit if temp dir is not configured
+        # Remove Google Colab specific mount command
+        # from google.colab import drive
+        # if not os.path.exists('/content/drive/MyDrive'): drive.mount('/content/drive')
+        # else: print("✅ Google Drive already mounted.")
+        print("✅ Environment initialization complete.") # Adjusted message
 
-        # Authenticate with Google Drive
-        service = authenticate_drive()
-        if not service:
-            print("    ❌ Failed to authenticate with Google Drive. Exiting.")
-            return
+        # Ensure base directory is created if using a specific env var path
+        os.makedirs(TAKEOUT_BASE_DIR, exist_ok=True)
+        print(f"✅ Using base directory: {os.path.abspath(TAKEOUT_BASE_DIR)}") # Print actual base dir path
 
-        # Ensure Drive directory structure exists and get folder IDs
-        # Unpack all 6 return values from the ensure_drive_directory_structure function
-        source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id = ensure_drive_directory_structure(service)
-        drive_folder_ids = {
-             "source_id": source_id,
-             "completed_id": completed_id,
-             "organized_id": organized_id,
-             "trash_id": trash_id,
-             "quarantine_id": quarantine_id,
-             "dupes_id": dupes_id
-        }
-
-        # Check if any critical folder is missing after ensuring structure
-        if not all([source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id]):
-            print("    ❌ Failed to ensure all required Google Drive folders. Exiting.")
-            return
-
-
-        # Check local disk space for temporary processing
-        if os.path.exists(CONFIG["TEMP_PROCESSING_DIR"]):
-             total_tmp, used_tmp, free_tmp = shutil.disk_usage(CONFIG["TEMP_PROCESSING_DIR"])
-             free_tmp_gb = free_tmp / (1024**3)
-             # Need enough space for extracting at least one archive chunk + buffer
-             required_tmp_gb = REPACKAGE_CHUNK_SIZE_GB + 5 # Add some buffer for extracted files, db ops, etc.
-             if free_tmp_gb < required_tmp_gb:
-                 print(f"\n❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space in local temporary directory ({free_tmp_gb:.2f} GB). Required: ~{required_tmp_gb:.2f} GB.")
-                 print(f"    >>> Please ensure enough free space in {CONFIG['TEMP_PROCESSING_DIR']} or set TAKEOUT_TEMP_DIR to a location with more space. <<<")
-                 # Note: This check is for the local disk where TEMP_PROCESSING_DIR resides
-                 return # Exit if not enough temporary space
-             print(f"✅ Pre-flight local temporary disk check passed. (Free Space: {free_tmp_gb:.2f} GB in {CONFIG['TEMP_PROCESSING_DIR']})")
-        else:
-             print(f"    ⚠️ Local temporary directory '{CONFIG['TEMP_PROCESSING_DIR']}' not found during disk check. Skipping disk check.")
-
-
-        conn = initialize_database(CONFIG["DB_PATH"])
+        for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
+        conn = initialize_database(DB_PATH)
         perform_startup_integrity_check()
 
+        # Disk usage check for the root filesystem (where /tmp might be)
+        # This is less critical if external storage is used for TAKEOUT_BASE_DIR,
+        # but still relevant for the /tmp extract directory.
+        total_vm, used_vm, free_vm = shutil.disk_usage('/') # Check root partition
+        used_vm_gb = used_vm / (1024**3)
+        # Adjusting the check threshold or removing it might be necessary depending on Pi setup
+        # For now, keep a check but maybe make the threshold more flexible.
+        # TARGET_MAX_VM_USAGE_GB is defined earlier, let's use that.
+        if free_vm / (1024**3) < REPACKAGE_CHUNK_SIZE_GB * 2: # Check if there's enough space for extraction/batching
+             print(f"\n❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space on root filesystem ({free_vm / (1024**3):.2f} GB free).")
+             print(f"    >>> Need at least {REPACKAGE_CHUNK_SIZE_GB * 2} GB free for temporary operations. <<<")
+             return
 
+        print(f"✅ Pre-flight disk check passed. (Free space on root: {free_vm / (1024**3):.2f} GB)") # Adjusted message
+        subprocess.run("apt-get update && apt-get -qq install jdupes", shell=True, check=True) # Added check=True to raise error if install fails
         print("✅ Workspace ready.")
 
-        # --- Process archives from Drive ---
-        process_drive_archives(service, drive_folder_ids, conn, tqdm)
+        print("\n--> [Step 1] Identifying unprocessed archives...")
+        all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
+        completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
+        processing_queue = sorted(list(all_archives - completed_archives))
 
-        print("\n--- WORKFLOW COMPLETE. ---")
+        if not processing_queue:
+            print("\n✅🎉 All archives have been processed!")
+        else:
+            archive_name = processing_queue[0]
+            source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
+            staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
 
+            print(f"--> Locking and staging '{archive_name}' for processing...")
+            # Add check if source_path exists before moving
+            if not os.path.exists(source_path):
+                print(f"    ⚠️ Source archive '{archive_name}' not found at '{source_path}'. Skipping.")
+                return
+
+            try:
+                 shutil.move(source_path, staging_path)
+            except Exception as e:
+                 print(f"    ❌ Failed to move '{source_path}' to staging '{staging_path}': {e}")
+                 # Attempt to clean up staging if a partial move occurred?
+                 if os.path.exists(staging_path) and os.path.getsize(staging_path) > 0:
+                     print(f"    > Partial file found in staging. Attempting rollback...")
+                     try:
+                         shutil.move(staging_path, source_path)
+                         print("    ✅ Rollback successful.")
+                     except Exception as rollback_e:
+                         print(f"    ❌ Rollback failed: {rollback_e}. Manual intervention needed for '{staging_path}'.")
+                 return # Stop processing this archive
+
+            # Check staged file size
+            staged_file_size_gb = os.path.getsize(staging_path) / (1024**3)
+            print(f"    > Staged file size: {staged_file_size_gb:.2f} GB")
+
+
+            if staged_file_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
+                print(f"--> Archive '{archive_name}' ({staged_file_size_gb:.2f} GB) is larger than MAX_SAFE_ARCHIVE_SIZE_GB ({MAX_SAFE_ARCHIVE_SIZE_GB} GB). Repackaging...")
+                repackaging_ok = plan_and_repackage_archive(staging_path, CONFIG["SOURCE_ARCHIVES_DIR"], conn, tqdm)
+                if repackaging_ok:
+                    print(f"--> Repackaging successful for '{archive_name}'. Moving to completed.")
+                    try:
+                        shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                    except Exception as e:
+                         print(f"    ❌ Failed to move staged file '{staging_path}' to completed: {e}")
+                         # Manual intervention might be needed
+                else:
+                    print(f"    ❌ Repackaging failed for '{archive_name}'. It remains in staging for manual inspection or rollback on next run.")
+            else:
+                print(f"--> Archive '{archive_name}' ({staged_file_size_gb:.2f} GB) is within safe limits or is a part file. Processing directly.")
+                processed_ok = process_regular_archive(staging_path, conn, tqdm)
+                if processed_ok:
+                    print(f"--> Direct processing successful for '{archive_name}'. Moving to completed.")
+                    try:
+                         shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                    except Exception as e:
+                         print(f"    ❌ Failed to move staged file '{staging_path}' to completed: {e}")
+                         # Manual intervention might be needed
+                else:
+                    print(f"    ❌ Transaction failed for '{archive_name}'. It remains in staging for manual inspection or rollback on next run.")
+
+            print("\n--- WORKFLOW CYCLE COMPLETE. ---")
     except Exception as e:
         print(f"\n❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
         traceback.print_exc()
     finally:
-        # Ensure database connection is closed
         if conn:
             conn.close()
             print("--> [DB] Database connection closed.")
-
-        # Clean up local temporary directories
-        if os.path.exists(LOCAL_TEMP_EXTRACT_DIR):
-             try: shutil.rmtree(LOCAL_TEMP_EXTRACT_DIR)
-             except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_TEMP_EXTRACT_DIR}: {e}")
-        if os.path.exists(LOCAL_TEMP_BATCH_DIR):
-             try: shutil.rmtree(LOCAL_TEMP_BATCH_DIR)
-             except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_TEMP_BATCH_DIR}: {e}")
-        if os.path.exists(LOCAL_JDUPE_TEMP_DIR):
-             try: shutil.rmtree(LOCAL_JDUPE_TEMP_DIR)
-             except Exception as e: print(f"    ⚠️ Failed to clean up {LOCAL_JDUPE_TEMP_DIR}: {e}")
-        # Clean up the main TEMP_PROCESSING_DIR if it's empty and was the default or user-specified local path
-        if os.path.exists(TEMP_PROCESSING_DIR):
-             try:
-                  # Only remove if empty
-                  if not os.listdir(TEMP_PROCESSING_DIR):
-                      os.rmdir(TEMP_PROCESSING_DIR)
-                      print(f"--> Cleaned up main temporary processing directory: {TEMP_PROCESSING_DIR}")
-             except OSError as e:
-                  # Directory might not be empty or another process holds files
-                  pass # Ignore if not empty
-             except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {TEMP_PROCESSING_DIR}: {e}")
+        # Ensure temporary directories are cleaned up even on error
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
+            shutil.rmtree(VM_TEMP_EXTRACT_DIR, ignore_errors=True)
+            print("    > Ensured cleanup of temporary extract directory.")
+        if os.path.exists(VM_TEMP_BATCH_DIR):
+            shutil.rmtree(VM_TEMP_BATCH_DIR, ignore_errors=True)
+            print("    > Ensured cleanup of temporary batch directory.")
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Process Google Takeout archives from Google Drive.")
+    parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
-    # Note: TEMP_PROCESSING_DIR is configured via environment variable TAKEOUT_TEMP_DIR
-    # Drive folder names are configured via environment variables TAKEOUT_DRIVE_SOURCE_FOLDER, etc.
-    # DB_PATH is configured via environment variable TAKEOUT_DB_PATH
-
-    args = parser.parse_args()
-
-    # Configuration from environment variables is handled at the top of the script
-    # before main is called, allowing CONFIG to be set globally.
+    # Parse known arguments and ignore unknown ones
+    args, unknown = parser.parse_known_args()
 
     main(args)
+
 EOF
 
-# Make the Python script executable
-if chmod +x "$PYTHON_SCRIPT_FILE"; then
-    echo "    ✅ Python script made executable: $PYTHON_SCRIPT_FILE"
-else
-    echo "    ❌ Failed to make Python script executable: $PYTHON_SCRIPT_FILE" >&2
-    exit 1
-fi
+echo "    ✅ Python script embedded."
 
-echo "--> [4/5] Creating wrapper script for easy execution..."
-# Create a wrapper script in /usr/local/bin.
-# This allows users to run the application simply by typing 'takeout-organizer'.
-# Variables like $APP_BASE_DIR and $PYTHON_SCRIPT_NAME are expanded by the outer shell,
-# while $PYTHON_SCRIPT_FILE and $@ are escaped to be expanded by the wrapper script itself.
-cat << EOF_WRAPPER > "$WRAPPER_SCRIPT_FILE"
-#!/bin/bash
-# Wrapper script for Google Takeout Organizer
-# This script executes the main Python application.
+# --- 3. Install Dependencies ---
+echo "--> Installing dependencies..."
+# Update package list and install jdupes and python3-pip
+sudo apt-get update || { echo "❌ Error updating package list."; exit 1; }
+sudo apt-get install -y jdupes python3-pip || { echo "❌ Error installing apt packages. Ensure you have sudo privileges."; exit 1; }
+echo "    ✅ Apt dependencies installed."
 
-# Ensure the application's base directory is correct
-APP_BASE_DIR="$APP_BASE_DIR"
-PYTHON_SCRIPT_FILE="\$APP_BASE_DIR/$PYTHON_SCRIPT_NAME"
+echo "--> Installing Python dependencies..."
+# Install tqdm using pip3
+pip3 install tqdm || { echo "❌ Error installing pip package 'tqdm'. Ensure pip3 is installed and in your PATH."; exit 1; }
+echo "    ✅ Python dependencies installed."
 
-# Check if the Python script exists before attempting to run it
-if [[ ! -f "\$PYTHON_SCRIPT_FILE" ]]; then
-    echo "Error: Main Python script not found at \$PYTHON_SCRIPT_FILE" >&2
-    echo "Please re-run the setup script or check the installation." >&2
-    exit 1
-fi
+# --- 4. Create Directory Structure ---
+echo "--> Creating directory structure under $TAKEOUT_BASE_DIR..."
+# Use mkdir -p to create parent directories if they don't exist
+mkdir -p "$TAKEOUT_BASE_DIR/00-ALL-ARCHIVES" \
+         "$TAKEOUT_BASE_DIR/01-PROCESSING-STAGING" \
+         "$TAKEOUT_BASE_DIR/03-organized/My-Photos" \
+         "$TAKEOUT_BASE_DIR/04-trash/quarantined_artifacts" \
+         "$TAKEOUT_BASE_DIR/04-trash/duplicates" \
+         "$TAKEOUT_BASE_DIR/05-COMPLETED-ARCHIVES" || { echo "❌ Error creating directories. Check permissions for $TAKEOUT_BASE_DIR."; exit 1; }
+echo "    ✅ Directory structure created."
 
-# Execute the Python script, passing all arguments from the wrapper call.
-# 'exec' replaces the current shell process with the Python process,
-# which is efficient and ensures correct signal handling.
-exec python3 "\$PYTHON_SCRIPT_FILE" "\$@"
-EOF_WRAPPER
+# --- 5. Make Python Script Executable ---
+echo "--> Making Python script executable..."
+chmod +x "$PYTHON_SCRIPT_PATH" || { echo "❌ Error making script executable. Check permissions for $PYTHON_SCRIPT_PATH."; exit 1; }
+echo "    ✅ Script is executable."
 
-# Make the wrapper script executable
-if chmod +x "$WRAPPER_SCRIPT_FILE"; then
-    echo "    ✅ Wrapper script created and made executable: $WRAPPER_SCRIPT_FILE"
-else
-    echo "    ❌ Failed to create or make wrapper script executable: $WRAPPER_SCRIPT_FILE" >&2
-    exit 1
-fi
-
-echo "--> [5/5] Setup complete!"
+# --- 6. Provide Usage Instructions and Automation Examples ---
 echo ""
-echo "========================================================================"
-echo "  Google Takeout Organizer has been set up."
-echo "  To run the organizer, use the command: $WRAPPER_SCRIPT_FILE"
+echo "Setup complete!"
+echo "The Google Takeout Organizer script has been installed to $PYTHON_SCRIPT_PATH."
 echo ""
-echo "  IMPORTANT: You need to set the GOOGLE_APPLICATION_CREDENTIALS"
-echo "  environment variable to point to your Google Service Account JSON key file."
-echo "  Example (add to your ~/.bashrc or ~/.profile):"
-echo "    export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/service-account-key.json\""
+echo "To use the script, place your Google Takeout archives (.tgz or .tar.gz files) into the:"
+echo "  $TAKEOUT_BASE_DIR/00-ALL-ARCHIVES/"
 echo ""
-echo "  You can also configure Drive folder names and temporary directories"
-echo "  using environment variables (e.g., TAKEOUT_DRIVE_SOURCE_FOLDER)."
-echo "  Run '$WRAPPER_SCRIPT_FILE --help' for more options."
-echo "========================================================================"
+echo "You can run the script manually from any directory. The script will use '$TAKEOUT_BASE_DIR' as its base directory."
 echo ""
+echo "Usage:"
+echo "  $PYTHON_SCRIPT_PATH"
+echo ""
+echo "To specify a different base directory (e.g., on an external hard drive), set the TAKEOUT_BASE_DIR environment variable before running:"
+echo "  export TAKEOUT_BASE_DIR=/path/to/your/external/drive/TakeoutOrganizer"
+echo "  $PYTHON_SCRIPT_PATH"
+echo ""
+echo "To enable automatic deletion of 0-byte artifact files (use with caution):"
+echo "  $PYTHON_SCRIPT_PATH --auto-delete-artifacts"
+echo ""
+echo "Processed files will be organized into:"
+echo "  \$TAKEOUT_BASE_DIR/03-organized/My-Photos/"
+echo "Duplicates and quarantined files will be moved to:"
+echo "  \$TAKEOUT_BASE_DIR/04-trash/"
+echo "Successfully processed archives will be moved to:"
+echo "  \$TAKEOUT_BASE_DIR/05-COMPLETED-ARCHIVES/"
+echo ""
+echo "The database file is located at:"
+echo "  \$TAKEOUT_BASE_DIR/takeout_archive.db"
+echo ""
+echo "For automation (e.g., daily runs), consider using cron or systemd. Examples are provided below (commented out):"
+echo "--------------------------------------------------------------------------------"
+echo "# Example: Running the script daily using cron"
+echo "# Edit your crontab:  crontab -e"
+echo "# Add the following line to run the script every day at 3 AM:"
+echo "# 0 3 * * * TAKEOUT_BASE_DIR=\$TAKEOUT_BASE_DIR \$PYTHON_SCRIPT_PATH >> \$TAKEOUT_BASE_DIR/organizer.log 2>&1"
+echo ""
+echo "# Example: Running the script as a systemd service"
+echo "# Create a service file (e.g., /etc/systemd/system/takeout-organizer.service) with content like:"
+echo "# [Unit]"
+echo "# Description=Google Takeout Organizer"
+echo "# After=network.target"
+echo ""
+echo "# [Service]"
+echo "# User=%i  # Use %i for instance user, or replace with a specific user like 'pi'"
+echo "# Environment=\"TAKEOUT_BASE_DIR=\$TAKEOUT_BASE_DIR\""
+echo "# ExecStart=\$PYTHON_SCRIPT_PATH"
+echo "# WorkingDirectory=\$TAKEOUT_BASE_DIR"
+echo "# Restart=on-failure"
+echo ""
+echo "# [Install]"
+echo "# WantedBy=multi-user.target"
+echo ""
+echo "# Save the file, then run:"
+echo "# sudo systemctl daemon-reload"
+echo "# sudo systemctl enable takeout-organizer.service"
+echo "# sudo systemctl start takeout-organizer.service"
+"# You can check the status with: sudo systemctl status takeout-organizer.service"
+"# And logs with: journalctl -u takeout-organizer.service"
+echo "--------------------------------------------------------------------------------"
+echo ""
+echo "Remember to replace %i or \$USER in the systemd example with the actual user on your system (e.g., 'pi')."
+echo "Consider running the script manually first to ensure everything is working correctly."
+echo ""
+echo "--> Setup script finished. Please copy the content of this cell, save it as a .sh file on your Raspberry Pi, and make it executable (chmod +x your_script_name.sh) before running it with sudo."
