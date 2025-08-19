@@ -2,7 +2,14 @@
 
 echo "--- Google Takeout Organizer Setup Script ---"
 
+# Check if script is run as root; if not, re-execute with sudo
+if [[ $EUID -ne 0 ]]; then
+   echo "This script requires root privileges. Re-running with sudo..."
+   exec sudo bash "$0" "$@"
+fi
+
 # Define the Python script content as a heredoc
+# The 'EOF' is quoted to prevent parameter expansion and command substitution within the heredoc
 read -r -d '' PYTHON_SCRIPT << 'EOF'
 import os
 import shutil
@@ -21,27 +28,41 @@ import time
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-TARGET_MAX_VM_USAGE_GB = 70
+TARGET_MAX_VM_USAGE_GB = 70 # This is more relevant for VM environments, keeping for context but not strictly used on Pi
 REPACKAGE_CHUNK_SIZE_GB = 15
-MAX_SAFE_ARCHIVE_SIZE_GB = 25
+MAX_SAFE_ARCHIVE_SIZE_GB = 25 # Maximum size for direct processing before repackaging
 
 # BASE_DIR will be set by the bash script or environment
-BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", "/mnt/storage/TakeoutProject") # Default to a common mount point
+# Default to a common mount point for external storage on Raspberry Pi/Linux
+BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", "/mnt/storage/TakeoutProject")
 DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
+
+# Allow specifying a temporary directory via environment variable
+# Default to a temp dir within BASE_DIR for persistent storage, or /tmp for RAMFS if preferred
+# Using a subdirectory of BASE_DIR avoids reliance on limited RAMFS /tmp on some systems
+DEFAULT_TEMP_DIR = os.path.join(BASE_DIR, "02-temp/")
+TEMP_DIR = os.environ.get("TAKEOUT_TEMP_DIR", DEFAULT_TEMP_DIR)
+
 CONFIG = {
     "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
     "PROCESSING_STAGING_DIR": os.path.join(BASE_DIR, "01-PROCESSING-STAGING/"),
     "ORGANIZED_DIR": os.path.join(BASE_DIR, "03-organized/My-Photos/"),
     "TRASH_DIR": os.path.join(BASE_DIR, "04-trash/"),
     "COMPLETED_ARCHIVES_DIR": os.path.join(BASE_DIR, "05-COMPLETED-ARCHIVES/"),
+    "TEMP_DIR": TEMP_DIR # Use the determined temp directory
 }
 CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
 CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
-VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract' # Use /tmp for temporary VM/system files
-VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation' # Use /tmp for temporary VM/system files
 
-# Placeholder for GOOGLE_APPLICATION_CREDENTIALS - not used in this script but requested in bash
-# os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.join(os.path.expanduser("~"), ".secrets", "credentials.json")
+# Update temporary directories to use the new CONFIG["TEMP_DIR"]
+VM_TEMP_EXTRACT_DIR = os.path.join(CONFIG["TEMP_DIR"], 'temp_extract')
+VM_TEMP_BATCH_DIR = os.path.join(CONFIG["TEMP_DIR"], 'temp_batch_creation')
+
+
+# Placeholder for GOOGLE_APPLICATION_CREDENTIALS - not used directly in this script's core logic
+# but required by some potential downstream Google Cloud APIs.
+# os.environ['GOOGLE_APPLICATION_CREDENTIALS'] is expected to be set externally by the bash script.
+
 
 # ==============================================================================
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
@@ -88,10 +109,20 @@ def perform_startup_integrity_check():
                 try:
                     shutil.move(staging_file_path, source_file_path)
                 except FileNotFoundError:
-                    print(f"    > Orphaned file '{orphan_file}' already moved or missing from source, deleting from staging.")
+                    # This can happen if the file was deleted manually or moved elsewhere
+                    print(f"    > Orphaned file '{orphan_file}' not found in source during rollback, deleting from staging.")
                     os.remove(staging_file_path)
-            if os.path.exists(VM_TEMP_EXTRACT_DIR):
-                shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+                except Exception as e:
+                    print(f"    ❌ Error rolling back '{orphan_file}': {e}")
+
+            # Ensure temporary directories are cleaned up during rollback if they exist within the temp dir
+            if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+                try: shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+                except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR} during rollback: {e}")
+            if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+                try: shutil.rmtree(VM_TEMP_BATCH_DIR)
+                except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR} during rollback: {e}")
+
             print("    ✅ Rollback complete.")
     else:
         print("    > Staging directory not found or empty, no rollback needed.")
@@ -107,7 +138,9 @@ def perform_startup_integrity_check():
                 try:
                     shutil.move(file_path, quarantine_path)
                 except FileNotFoundError:
-                     print(f"    > 0-byte artifact '{filename}' already moved or missing from source.")
+                     print(f"    > 0-byte artifact '{filename}' not found in source during quarantine attempt.")
+                except Exception as e:
+                    print(f"    ❌ Error quarantining '{filename}': {e}")
     else:
         print("    > Source directory not found.")
 
@@ -172,7 +205,10 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
         return True
     except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
-        if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
+        if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+             try: shutil.rmtree(VM_TEMP_BATCH_DIR)
+             except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR}: {e}")
+
 
 def process_regular_archive(archive_path, conn, tqdm_module):
     # Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
@@ -209,7 +245,7 @@ def process_regular_archive(archive_path, conn, tqdm_module):
             print("    ✅ All files in this archive were already processed. Finalizing.")
             return True
 
-        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to VM.")
+        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to {VM_TEMP_EXTRACT_DIR}.")
 
         # Subsequent steps now operate on the much smaller "delta" of new files.
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
@@ -220,9 +256,10 @@ def process_regular_archive(archive_path, conn, tqdm_module):
         print(f"\n❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
         return False
     finally:
-        if os.path.exists(VM_TEMP_EXTRACT_DIR):
-            shutil.rmtree(VM_TEMP_EXTRACT_DIR)
-            print("    > Cleaned up temporary VM directory.")
+        if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+             try: shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+             except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR}: {e}")
+
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
     # Deduplicates new files against the primary storage and updates the database for unique files.
@@ -232,8 +269,9 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
         return
 
     # Use a temporary directory for jdupes output to avoid issues with long paths
-    jdupes_temp_dir = os.path.join('/tmp', 'jdupes_temp')
+    jdupes_temp_dir = os.path.join(CONFIG["TEMP_DIR"], 'jdupes_temp') # Use temp dir within BASE_DIR
     os.makedirs(jdupes_temp_dir, exist_ok=True)
+
 
     # jdupes command - finds duplicates in source_path compared to primary_storage_path
     # --linkhard: hardlink duplicates in source_path to the ones in primary_storage_path
@@ -292,7 +330,7 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
                                    (final_path, original_relative_path_in_extract, source_archive_name))
 
                 except FileNotFoundError:
-                    print(f"    > File '{unique_file_path_temp}' not found, likely moved by jdupes.")
+                    print(f"    > File '{unique_file_path_temp}' not found during move, likely already handled by jdupes or previous run.")
                 except Exception as e:
                     print(f"    ❌ Error processing file '{unique_file_path_temp}': {e}")
 
@@ -302,8 +340,9 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
 
     print(f"    ✅ Deduplication and move complete. Processed {files_processed} unique files.")
     # Clean up jdupes temp directory
-    if os.path.exists(jdupes_temp_dir):
-        shutil.rmtree(jdupes_temp_dir)
+    if os.path.exists(jdupes_temp_dir) and os.path.commonpath([jdupes_temp_dir, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+        try: shutil.rmtree(jdupes_temp_dir)
+        except Exception as e: print(f"    ⚠️ Failed to clean up {jdupes_temp_dir}: {e}")
 
 
 def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
@@ -342,28 +381,36 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
     organized_updates = [] # Collect updates to commit in a batch
 
     for json_path in tqdm_module(all_json_files, desc="Organizing photos"):
-        media_path = os.path.splitext(json_path)[0]
-        # Check for associated media file (image or video)
-        media_exists = False
+        # Construct the potential media file path by removing .json
+        media_path_base = os.path.splitext(json_path)[0]
+
+        # Find the actual media file by checking common extensions
         media_file_to_process = None
-        for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.mp4', '.mov', '.avi', '.webm']:
-             potential_media_path = media_path + ext
+        for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.mp4', '.mov', '.avi', '.webm', '.tiff', '.heic', '.webp']: # Added more common extensions
+             potential_media_path = media_path_base + ext
              if os.path.exists(potential_media_path):
-                  media_exists = True
                   media_file_to_process = potential_media_path
                   break # Found the associated media file
 
-        if not media_exists or not media_file_to_process:
-            # print(f"    > No associated media file found for {json_path}. Skipping.")
-            continue # Skip if no associated media file
+        if not media_file_to_process:
+            # print(f"    > No associated media file found for JSON {json_path}. Skipping.")
+            # Optionally, handle orphaned JSON files (e.g., move to quarantine)
+            continue # Skip if no associated media file found
 
 
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             ts = data.get('photoTakenTime', {}).get('timestamp')
+            # Fallback to creationTime if photoTakenTime is missing
             if not ts:
-                # print(f"    > No timestamp found in {json_path}. Skipping.")
+                 ts = data.get('creationTime', {}).get('timestamp')
+                 if ts:
+                      print(f"    > Using creationTime for {os.path.basename(media_file_to_process)} as photoTakenTime is missing.")
+
+            if not ts:
+                print(f"    ⚠️ No valid timestamp found in JSON {json_path} or its associated media file. Skipping.")
+                # Optionally quarantine the orphaned JSON and media file
                 continue
 
             dt = datetime.fromtimestamp(int(ts))
@@ -376,9 +423,12 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
             # Handle potential filename conflicts in the destination directory
             while new_filename in existing_filenames:
                 counter += 1
-                new_filename = f"{new_name_base}_{counter}{ext}"
+                # Add counter before extension
+                base_name_no_ext = os.path.splitext(new_filename)[0]
+                new_filename = f"{base_name_no_ext}_{counter}{ext}"
+
                 if counter > 1000: # Prevent infinite loops for extreme cases
-                     print(f"    ⚠️ Too many conflicts for {original_new_filename}. Skipping.")
+                     print(f"    ⚠️ Too many conflicts for {original_new_filename} (derived from {os.path.basename(media_file_to_process)}). Skipping.")
                      new_filename = None # Indicate skipping this file
                      break
 
@@ -402,10 +452,9 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
 
             # Prepare database update
             # The original_path in the DB was relative to the TAR root.
-            # The path in VM_TEMP_EXTRACT_DIR is relative to VM_TEMP_EXTRACT_DIR.
+            # The path in media_file_to_process is relative to VM_TEMP_EXTRACT_DIR.
             # We need to find the original_path that corresponds to media_file_to_process.
-            # This is the same challenge as in deduplicate_files.
-            # Let's use the path relative to VM_TEMP_EXTRACT_DIR as the key for now.
+            # Let's assume the path relative to VM_TEMP_EXTRACT_DIR matches the original_path in the DB.
             original_path_in_extract = os.path.relpath(media_file_to_process, source_path)
 
             organized_updates.append((final_filepath, int(ts), original_path_in_extract, source_archive_name))
@@ -414,6 +463,7 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
         except Exception as e:
             print(f"    ❌ Error processing JSON file {json_path}: {e}")
             traceback.print_exc()
+            # Optionally, quarantine the problematic JSON and media file
             continue
 
     if organized_updates:
@@ -439,33 +489,41 @@ def main(args):
             tqdm = dummy_tqdm
             print("    ⚠️ tqdm not found. Using dummy progress indicator.")
 
+        # Google Colab specific mounting code removed
 
-        # Google Drive mounting code removed for standalone script
+        # Ensure all necessary directories exist
+        print("    > Ensuring required directories exist...")
+        for key, path in CONFIG.items():
+            # Skip creating the TEMP_DIR here if it's /tmp or another system path not controlled by BASE_DIR
+            # We'll create TEMP_DIR specifically below.
+            if key != "TEMP_DIR" or os.path.commonpath([path, BASE_DIR]) == BASE_DIR:
+                 os.makedirs(path, exist_ok=True)
+                 print(f"        > Ensured: {path}")
 
-
-        for path in CONFIG.values():
-             os.makedirs(path, exist_ok=True)
-             print(f"    > Ensuring directory exists: {path}")
+        # Ensure the configured temporary directory exists
+        if CONFIG["TEMP_DIR"]: # Ensure TEMP_DIR is not empty string or None
+             os.makedirs(CONFIG["TEMP_DIR"], exist_ok=True)
+             print(f"    > Ensuring temporary directory exists: {CONFIG['TEMP_DIR']}")
+        else:
+             print("    ❌ TEMP_DIR is not set. Please ensure TAKEOUT_TEMP_DIR or TAKEOUT_BASE_DIR is configured.")
+             return # Exit if TEMP_DIR is not configured
 
         conn = initialize_database(DB_PATH)
         perform_startup_integrity_check()
 
-        # Check available disk space where temporary files will be extracted
-        # On Raspberry Pi, /tmp is usually on the root filesystem or RAM.
-        # We should check the disk where BASE_DIR resides if possible, but checking /tmp is crucial for extraction.
-        # Let's check /tmp for extraction space
-        if os.path.exists('/tmp'):
-             total_tmp, used_tmp, free_tmp = shutil.disk_usage('/tmp')
+        # Check available disk space in the temporary directory
+        if os.path.exists(CONFIG["TEMP_DIR"]):
+             total_tmp, used_tmp, free_tmp = shutil.disk_usage(CONFIG["TEMP_DIR"])
              free_tmp_gb = free_tmp / (1024**3)
-             # Need enough space for extracting at least one archive chunk
-             required_tmp_gb = REPACKAGE_CHUNK_SIZE_GB + 5 # Add some buffer
+             # Need enough space for extracting at least one archive chunk + buffer
+             required_tmp_gb = REPACKAGE_CHUNK_SIZE_GB + 5 # Add some buffer for logs, db ops, etc.
              if free_tmp_gb < required_tmp_gb:
-                 print(f"\n❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space in /tmp ({free_tmp_gb:.2f} GB). Required: ~{required_tmp_gb:.2f} GB.")
-                 print("    >>> Please ensure enough free space in /tmp or configure a different temporary directory. <<<")
-                 return
-             print(f"✅ Pre-flight /tmp disk check passed. (Free Space: {free_tmp_gb:.2f} GB)")
+                 print(f"\n❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space in temporary directory ({free_tmp_gb:.2f} GB). Required: ~{required_tmp_gb:.2f} GB.")
+                 print(f"    >>> Please ensure enough free space in {CONFIG['TEMP_DIR']} or set TAKEOUT_TEMP_DIR to a location with more space. <<<")
+                 return # Exit if not enough temporary space
+             print(f"✅ Pre-flight temporary disk check passed. (Free Space: {free_tmp_gb:.2f} GB in {CONFIG['TEMP_DIR']})")
         else:
-             print("    ⚠️ /tmp directory not found. Skipping /tmp disk check.")
+             print(f"    ⚠️ Temporary directory '{CONFIG['TEMP_DIR']}' not found during disk check. Skipping temporary disk check.")
 
 
         # Check available disk space in the BASE_DIR where files will be stored
@@ -474,18 +532,19 @@ def main(args):
             free_base_gb = free_base / (1024**3)
             print(f"✅ Pre-flight BASE_DIR disk check passed. (Free Space in {BASE_DIR}: {free_base_gb:.2f} GB)")
         else:
-            print(f"    ⚠️ BASE_DIR '{BASE_DIR}' not found. Cannot perform disk space check on destination.")
+            print(f"    ⚠️ BASE_DIR '{BASE_DIR}' not found during disk check. Cannot perform disk space check on destination.")
 
 
         # Install jdupes if not found
         if not shutil.which('jdupes'):
             print("\n    > jdupes not found. Attempting to install...")
             try:
-                subprocess.run("sudo apt-get update && sudo apt-get install -y jdupes", shell=True, check=True)
+                # Use a non-interactive installation
+                subprocess.run("sudo apt-get update -y && sudo apt-get install -y jdupes", shell=True, check=True)
                 print("    ✅ jdupes installed successfully.")
             except subprocess.CalledProcessError as e:
                 print(f"    ❌ Failed to install jdupes: {e}")
-                print("    >>> Deduplication will be skipped. Please install jdupes manually. <<<")
+                print("    >>> Deduplication will be skipped. Please install jdupes manually if needed. <<<")
         else:
              print("    ✅ jdupes already installed.")
 
@@ -495,10 +554,10 @@ def main(args):
         print("\n--> [Step 1] Identifying unprocessed archives...")
         # Ensure source directory exists before listing
         if not os.path.exists(CONFIG["SOURCE_ARCHIVES_DIR"]):
-            print(f"    ❌ Source archives directory not found: {CONFIG['SOURCE_ARCHIVES_DIR']}. Please place your archives here.")
-            return
+            print(f"    ❌ Source archives directory not found: {CONFIG['SOURCE_ARCHIVES_DIR']}. Please place your Google Takeout archives here.")
+            return # Exit if source directory doesn't exist
 
-        all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR']))
+        all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
         completed_archives = set()
         # Ensure completed directory exists before listing
         if os.path.exists(CONFIG["COMPLETED_ARCHIVES_DIR"]):
@@ -506,6 +565,10 @@ def main(args):
         else:
              print(f"    > Completed archives directory not found: {CONFIG['COMPLETED_ARCHIVES_DIR']}. Assuming no archives completed yet.")
 
+        # --- Debugging output (Optional) ---
+        # print(f"    > Content of SOURCE_ARCHIVES_DIR ({CONFIG['SOURCE_ARCHIVES_DIR']}): {list(all_archives)}")
+        # print(f"    > Content of COMPLETED_ARCHIVES_DIR ({CONFIG['COMPLETED_ARCHIVES_DIR']}): {list(completed_archives)}")
+        # --- End Debugging output ---
 
         processing_queue = sorted(list(all_archives - completed_archives))
 
@@ -516,13 +579,16 @@ def main(args):
             source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
             staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
 
-            print(f"--> Locking and staging '{archive_name}' for processing...")
+            print(f"\n--> Locking and staging '{archive_name}' for processing...")
             try:
                 shutil.move(source_path, staging_path)
                 print(f"    ✅ '{archive_name}' moved to staging.")
             except FileNotFoundError:
-                print(f"    ❌ Source archive not found at '{source_path}'. Skipping.")
+                print(f"    ❌ Source archive not found at '{source_path}'. Skipping '{archive_name}'.")
                 return # Skip this archive if not found
+            except Exception as e:
+                print(f"    ❌ Error moving '{archive_name}' to staging: {e}")
+                return # Exit if moving fails
 
             archive_size_gb = os.path.getsize(staging_path) / (1024**3)
             print(f"    > Archive size: {archive_size_gb:.2f} GB")
@@ -533,20 +599,26 @@ def main(args):
                 repackaging_ok = plan_and_repackage_archive(staging_path, CONFIG["SOURCE_ARCHIVES_DIR"], conn, tqdm)
                 if repackaging_ok:
                     print(f"\n--> Repackaging of '{archive_name}' complete. Moving original to completed.")
-                    shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
-                    print(f"    ✅ Original archive '{archive_name}' moved to completed.")
+                    try:
+                        shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                        print(f"    ✅ Original archive '{archive_name}' moved to completed.")
+                    except Exception as e:
+                        print(f"    ❌ Error moving original archive '{archive_name}' to completed: {e}. Leaving in staging.")
                 else:
-                    print(f"\n❌ Repackaging failed for '{archive_name}'. Leaving in staging.")
+                    print(f"\n❌ Repackaging failed for '{archive_name}'. Leaving in staging for next run's rollback.")
                     # Rollback happens on next run via integrity check
             else:
                 print(f"    > Archive size is within safe limit or is a part file. Processing directly.")
                 processed_ok = process_regular_archive(staging_path, conn, tqdm)
                 if processed_ok:
                     print(f"\n--> Processing of '{archive_name}' complete. Moving to completed.")
-                    shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
-                    print(f"    ✅ Processed archive '{archive_name}' moved to completed.")
+                    try:
+                         shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                         print(f"    ✅ Processed archive '{archive_name}' moved to completed.")
+                    except Exception as e:
+                         print(f"    ❌ Error moving processed archive '{archive_name}' to completed: {e}. Leaving in staging.")
                 else:
-                    print(f"\n❌ Processing failed for '{archive_name}'. Leaving in staging.")
+                    print(f"\n❌ Processing failed for '{archive_name}'. Leaving in staging for next run's rollback.")
                     # Rollback happens on next run via integrity check
 
             print("\n--- WORKFLOW CYCLE COMPLETE. ---")
@@ -554,75 +626,123 @@ def main(args):
         print(f"\n❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
         traceback.print_exc()
     finally:
+        # Ensure database connection is closed
         if conn:
             conn.close()
             print("--> [DB] Database connection closed.")
-        # Clean up temporary directories regardless of success/failure
-        if os.path.exists(VM_TEMP_EXTRACT_DIR):
-             try: shutil.rmtree(VM_TEMP_EXTRACT_DIR)
+
+        # Clean up temporary directories regardless of success/failure, only if they are within the defined TEMP_DIR
+        # This check is important to avoid deleting unrelated system files if TEMP_DIR was accidentally set to '/' or '/tmp'
+        if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+             try:
+                  # Check if directory is empty before trying to remove
+                  if not os.listdir(VM_TEMP_EXTRACT_DIR):
+                      os.rmdir(VM_TEMP_EXTRACT_DIR) # Use rmdir for empty dir
+                      print(f"--> Cleaned up empty temporary directory: {VM_TEMP_EXTRACT_DIR}")
+                  else:
+                      shutil.rmtree(VM_TEMP_EXTRACT_DIR) # Use rmtree for non-empty
+                      print(f"--> Cleaned up temporary directory: {VM_TEMP_EXTRACT_DIR}")
+             except FileNotFoundError:
+                  pass # Directory already gone
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR}: {e}")
-        if os.path.exists(VM_TEMP_BATCH_DIR):
-             try: shutil.rmtree(VM_TEMP_BATCH_DIR)
+
+        if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+             try:
+                 if not os.listdir(VM_TEMP_BATCH_DIR):
+                     os.rmdir(VM_TEMP_BATCH_DIR)
+                     print(f"--> Cleaned up empty temporary directory: {VM_TEMP_BATCH_DIR}")
+                 else:
+                     shutil.rmtree(VM_TEMP_BATCH_DIR)
+                     print(f"--> Cleaned up temporary directory: {VM_TEMP_BATCH_DIR}")
+             except FileNotFoundError:
+                  pass # Directory already gone
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR}: {e}")
-        print("--> Temporary directories cleaned up.")
+
+        # Clean up the main TEMP_DIR if it's empty and within BASE_DIR
+        if os.path.exists(CONFIG["TEMP_DIR"]) and os.path.commonpath([CONFIG["TEMP_DIR"], BASE_DIR]) == BASE_DIR:
+             try:
+                  # Only remove if empty
+                  if not os.listdir(CONFIG["TEMP_DIR"]):
+                      os.rmdir(CONFIG["TEMP_DIR"])
+                      print(f"--> Cleaned up main temporary directory: {CONFIG['TEMP_DIR']}")
+             except OSError as e:
+                  # Directory might not be empty or another process holds files
+                  # print(f"    > Main temporary directory {CONFIG['TEMP_DIR']} not empty or in use, not removed.")
+                  pass # Ignore if not empty
+             except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {CONFIG['TEMP_DIR']}: {e}")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
-    # The bash script will handle setting GOOGLE_APPLICATION_CREDENTIALS in the environment
-    # parser.add_argument('--credentials', type=str, default=os.path.join(os.path.expand_user("~"), ".secrets", "credentials.json"), help="Path to Google Cloud credentials JSON file.")
-    # parser.add_argument('--base-dir', type=str, default="/mnt/storage/TakeoutProject", help="Base directory for Takeout processing.")
+    # Note: BASE_DIR and TEMP_DIR are now configured via environment variables TAKEOUT_BASE_DIR and TAKEOUT_TEMP_DIR
+    # Command line arguments for these are removed to simplify the script when run via environment variables.
 
     args = parser.parse_args()
 
-    # Set BASE_DIR from environment variable if available
-    # if args.base_dir:
-    #     BASE_DIR = args.base_dir
-    #     CONFIG["SOURCE_ARCHIVES_DIR"] = os.path.join(BASE_DIR, "00-ALL-ARCHIVES/")
-    #     CONFIG["PROCESSING_STAGING_DIR"] = os.path.join(BASE_DIR, "01-PROCESSING-STAGING/")
-    #     CONFIG["ORGANIZED_DIR"] = os.path.join(BASE_DIR, "03-organized/My-Photos/")
-    #     CONFIG["TRASH_DIR"] = os.path.join(BASE_DIR, "04-trash/")
-    #     CONFIG["COMPLETED_ARCHIVES_DIR"] = os.path.join(BASE_DIR, "05-COMPLETED-ARCHIVES/")
-    #     CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
-    #     CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
-    #     DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
-
+    # Configuration from environment variables is handled at the top of the script
+    # before main is called, allowing CONFIG and BASE_DIR/TEMP_DIR to be set globally.
 
     main(args)
 
 EOF
 
 echo "Installing dependencies (jdupes, tqdm)..."
-sudo apt-get update -y
-sudo apt-get install -y jdupes
+# Update package list and install jdupes non-interactively
+apt-get update -y
+apt-get install -y jdupes
+
+# Install tqdm using pip
 pip install tqdm
 
 echo "Creating installation directory..."
 INSTALL_DIR="/usr/local/bin/takeout_organizer"
-sudo mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
 
 echo "Saving Python script..."
 SCRIPT_NAME="takeout_organizer.py"
 # Use printf to handle potential issues with echo and complex strings/newlines
-printf "%s" "$PYTHON_SCRIPT" | sudo tee "$INSTALL_DIR/$SCRIPT_NAME" > /dev/null
+# Ensure the script is written with root privileges
+printf "%s" "$PYTHON_SCRIPT" | tee "$INSTALL_DIR/$SCRIPT_NAME" > /dev/null
 
 echo "Making the script executable..."
-sudo chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
+chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
 
 echo "Setting GOOGLE_APPLICATION_CREDENTIALS environment variable..."
 CREDENTIALS_PATH="$HOME/.secrets/credentials.json"
-# Check if the export line already exists in the user's bash profile
-if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" "$HOME/.bashrc"; then
-  echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> "$HOME/.bashrc"
-  echo "Added export command to ~/.bashrc"
+# Check if the export line already exists in the user's bash profile (~/.bashrc)
+# Use the original user's home directory, not root's home if run with sudo
+USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+USER_BASHRC="$USER_HOME/.bashrc"
+
+if [ -z "$USER_HOME" ]; then
+    echo "Could not determine the original user's home directory. Skipping setting GOOGLE_APPLICATION_CREDENTIALS in .bashrc."
 else
-  echo "Export command already exists in ~/.bashrc"
+    if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" "$USER_BASHRC" 2>/dev/null; then
+      echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> "$USER_BASHRC"
+      echo "Added export command to $USER_BASHRC"
+    else
+      echo "Export command already exists in $USER_BASHRC"
+    fi
 fi
+
 
 echo "Installation complete."
 echo "The script is located at $INSTALL_DIR/$SCRIPT_NAME"
-echo "The GOOGLE_APPLICATION_CREDENTIALS environment variable has been set in ~/.bashrc."
-echo "You may need to source your ~/.bashrc file (source ~/.bashrc) for the environment variable to take effect in the current terminal session."
+if [ -n "$USER_HOME" ]; then
+    echo "The GOOGLE_APPLICATION_CREDENTIALS environment variable has been set in $USER_BASHRC."
+    echo "You may need to source your $USER_BASHRC file (source $USER_BASHRC) for the environment variable to take effect in the current terminal session."
+fi
 echo "Ensure your credentials file exists at $CREDENTIALS_PATH"
-echo "You can now run the script using: python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "To run the script using the default configuration:"
+echo "python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "To specify a custom base directory for storage, set TAKEOUT_BASE_DIR:"
+echo "TAKEOUT_BASE_DIR=/path/to/your/storage python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "To specify a custom temporary directory for processing, set TAKEOUT_TEMP_DIR:"
+echo "TAKEOUT_TEMP_DIR=/path/to/your/temp/dir python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "You can combine them:"
+echo "TAKEOUT_BASE_DIR=/path/to/storage TAKEOUT_TEMP_DIR=/path/to/temp python $INSTALL_DIR/$SCRIPT_NAME"
