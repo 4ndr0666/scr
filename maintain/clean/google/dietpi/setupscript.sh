@@ -35,7 +35,8 @@ import time
 # Import Google API client libraries
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclaph import MediaIoBaseDownload, MediaFileUpload
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 # Attempt to use tqdm if available, otherwise use dummy
 try:
@@ -324,13 +325,6 @@ def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_
         # For now, let's simplify: If the archive's Drive ID is in the database as processed, skip.
         # A more robust approach would check if all files *within* the archive (by original path or hash)
         # have been fully processed (final_drive_path set).
-
-        # --- Check if the archive's Drive ID is in the database as fully processed ---
-        # This simplified check might need refinement for true resume capability.
-        # A better check: count files from this archive with final_drive_path NOT NULL.
-        # If this count equals total files in the archive (from initial scan/db population), it's processed.
-        # For now, let's rely on the processing_queue logic in process_drive_archives.
-
 
         print("    > Checking database for previously processed files from this archive...")
         # This check will help resume if the local processing failed partially
@@ -856,7 +850,7 @@ def process_drive_archives(service, drive_folder_ids, conn, tqdm_module):
                 traceback.print_exc()
                 print(f"    >>> Skipping '{archive_name}'. <<<")
 
-            print("--- Finished processing archive cycle. ---")
+            print("\n--- Finished processing archive cycle. ---")
 
 
 # ==============================================================================
@@ -968,7 +962,69 @@ if __name__ == '__main__':
 
     main(args)
 
-"""
+EOF
 
-print("Updated Python script content with download logic.")
-print("Further steps are needed to integrate the local processing and Drive upload/move logic.")
+echo "Installing dependencies (jdupes, tqdm, google-api-python-client, google-auth-httplib2, google-auth-oauthlib)..."
+# Update package list and install jdupes non-interactively
+apt-get update -y
+apt-get install -y jdupes
+
+# Install Python packages using pip
+pip install tqdm google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+echo "Creating installation directory..."
+INSTALL_DIR="/usr/local/bin/takeout_organizer"
+mkdir -p "$INSTALL_DIR"
+
+echo "Saving Python script..."
+SCRIPT_NAME="takeout_organizer.py"
+# Use printf to handle potential issues with echo and complex strings/newlines
+# Ensure the script is written with root privileges
+printf "%s" "$PYTHON_SCRIPT" | tee "$INSTALL_DIR/$SCRIPT_NAME" > /dev/null
+
+echo "Making the script executable..."
+chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
+
+echo "Setting GOOGLE_APPLICATION_CREDENTIALS environment variable..."
+CREDENTIALS_PATH="$HOME/.secrets/credentials.json"
+# Check if the export line already exists in the user's bash profile (~/.bashrc)
+# Use the original user's home directory, not root's home if run with sudo
+USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+USER_BASHRC="$USER_HOME/.bashrc"
+
+if [ -z "$USER_HOME" ]; then
+    echo "Could not determine the original user's home directory. Skipping setting GOOGLE_APPLICATION_CREDENTIALS in .bashrc."
+else
+    if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" "$USER_BASHRC" 2>/dev/null; then
+      echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> "$USER_BASHRC"
+      echo "Added export command to $USER_BASHRC"
+    else
+      echo "Export command already exists in $USER_BASHRC"
+    fi
+fi
+
+
+echo "Installation complete."
+echo "The script is located at $INSTALL_DIR/$SCRIPT_NAME"
+if [ -n "$USER_HOME" ]; then
+    echo "The GOOGLE_APPLICATION_CREDENTIALS environment variable has been set in $USER_BASHRC."
+    echo "You may need to source your $USER_BASHRC file (source $USER_BASHRC) for the environment variable to take effect in the current terminal session."
+fi
+echo "Ensure your Google Cloud service account credentials file exists at $CREDENTIALS_PATH"
+echo ""
+echo "To run the script using the default configuration:"
+echo "python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "To specify a custom temporary directory for local processing, set TAKEOUT_TEMP_DIR:"
+echo "TAKEOUT_TEMP_DIR=/path/to/your/temp/dir python $INSTALL_DIR/$SCRIPT_DIR/$SCRIPT_NAME"
+echo ""
+echo "To specify custom Google Drive folder names, set the following environment variables:"
+echo "TAKEOUT_DRIVE_SOURCE_FOLDER='My Takeout Archives'"
+echo "TAKEOUT_DRIVE_COMPLETED_FOLDER='Processed Takeout'"
+echo "TAKEOUT_DRIVE_ORGANIZED_FOLDER='Organized Photos'"
+echo "TAKEOUT_DRIVE_TRASH_FOLDER='Takeout Trash'"
+echo ""
+echo "Example of running with custom temp directory and source folder name:"
+echo "TAKEOUT_TEMP_DIR=/mnt/external/temp TAKEOUT_DRIVE_SOURCE_FOLDER='Takeout-to-Process' python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "Note: The Python script will attempt to create the specified Google Drive folders if they do not exist in your Drive root."
