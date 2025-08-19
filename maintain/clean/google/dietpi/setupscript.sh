@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status.
@@ -56,13 +57,11 @@ VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
 def dummy_tqdm(iterable, *args, **kwargs):
-    """A dummy tqdm function that acts as a fallback if tqdm is not available."""
     description = kwargs.get('desc', 'items')
     print(f"    > Processing {description}...")
     return iterable
 
 def initialize_database(db_path):
-    """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -82,7 +81,6 @@ def initialize_database(db_path):
     return conn
 
 def perform_startup_integrity_check():
-    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
     print("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
@@ -118,10 +116,6 @@ def perform_startup_integrity_check():
 
 
 def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
-    """
-    Scans a large archive, hashes unique files, and repackages them into smaller,
-    crash-resilient parts while populating the database.
-    """
     original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
     print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
     repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
@@ -175,17 +169,15 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
             else:
                 print(f"    > Batch {part_number} contained no unique files. Discarding empty batch.")
         return True
-    except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
+    except Exception as e: print(f"
+❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
 def process_regular_archive(archive_path, conn, tqdm_module):
-    """
-    Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
-    for already processed files and only unpacking the missing ones ("the delta").
-    """
     archive_name = os.path.basename(archive_path)
-    print(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
+    print(f"
+--> [Step 2a] Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
     try:
         print("    > Checking database for previously completed files...")
@@ -203,7 +195,7 @@ def process_regular_archive(archive_path, conn, tqdm_module):
             all_members = [m for m in tf.getmembers() if m.isfile()]
             for member in tqdm_module(all_members, desc=f"Scanning {archive_name}"):
                 # Normalize path separators for comparison
-                normalized_member_name = member.name.replace('\\', '/')
+                normalized_member_name = member.name.replace('\', '/')
                 if normalized_member_name not in completed_files:
                     try:
                         # Ensure the target directory exists before extracting
@@ -231,7 +223,8 @@ def process_regular_archive(archive_path, conn, tqdm_module):
 
         return True
     except Exception as e:
-        print(f"\n❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
+        print(f"
+❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
         return False
     finally:
         if os.path.exists(VM_TEMP_EXTRACT_DIR):
@@ -239,8 +232,8 @@ def process_regular_archive(archive_path, conn, tqdm_module):
             print("    > Cleaned up temporary directory.") # Changed 'VM' to 'temporary'
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
-    """Deduplicates new files against the primary storage and updates the database for unique files."""
-    print("\n--> [Step 2b] Deduplicating new files...")
+    print("
+--> [Step 2b] Deduplicating new files...")
     if not shutil.which('jdupes'):
         print("    ⚠️ 'jdupes' not found. Skipping.")
         return
@@ -253,9 +246,11 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
     command = f'jdupes -r -S -nh --linkhard --move="{trash_path_abs}" "{source_path_abs}" "{primary_storage_path_abs}"'
     print(f"    > Running command: {command}") # Added for debugging
     result = subprocess.run(command, shell=True, capture_output=True, text=True) # Added text=True for string output
-    print(f"    > jdupes stdout:\n{result.stdout}") # Added for debugging
+    print(f"    > jdupes stdout:
+{result.stdout}") # Added for debugging
     if result.stderr:
-        print(f"    > jdupes stderr:\n{result.stderr}") # Added for debugging
+        print(f"    > jdupes stderr:
+{result.stderr}") # Added for debugging
 
 
     cursor = conn.cursor()
@@ -278,14 +273,19 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
                 try:
                     shutil.move(unique_file_path, final_path)
                     # We need the original path relative to the TAR root for the DB.
-                    # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/..., so the original path
+                    # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/..., so the original path
                     # inside the archive would be 'Takeout/Google Photos/...'.
                     original_path_in_archive = os.path.relpath(unique_file_path, source_path_abs) # Relative to the initial extraction path
                     cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
-                                   (final_path, int(ts), original_path_in_archive.replace('\\', '/'), source_archive_name)) # Normalize path separator
-                    files_moved += 1
+                                   (final_path, int(ts), original_path_in_archive.replace('\', '/'), source_archive_name)) # Normalize path separator)
+
+                    # Add the new filename to our sets to prevent immediate conflicts within this run
+                    existing_filenames.add(proposed_filename)
+                    already_organized_final_paths.add(proposed_filename)
+
+                    photos_organized_count += 1
                 except Exception as e:
-                    print(f"    ❌ Failed to move unique file '{unique_file_path}' to '{final_path}': {e}")
+                    print(f"    ❌ Failed to move and organize photo '{unique_file_path}' to '{final_path}': {e}")
 
 
         if files_moved > 0:
@@ -294,8 +294,8 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
 
 
 def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
-    """Organizes photos and updates their final path and timestamp in the database."""
-    print("\n--> [Step 2c] Organizing photos...")
+    print("
+--> [Step 2c] Organizing photos...")
     photos_organized_count = 0
     # Path is relative to the temporary extraction directory
     photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
@@ -363,11 +363,11 @@ def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_na
                  os.remove(json_path)
 
                  # We need the original path relative to the TAR root for the DB.
-                 # The media file was extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/...,
-                 # so the original path inside the archive would be 'Takeout/Google Photos/...'.
+                 # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/..., so the original path
+                 # inside the archive would be 'Takeout/Google Photos/...'.
                  original_path_in_archive = os.path.relpath(media_path, source_path_abs) # Relative to the initial extraction path
                  cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
-                                (final_filepath, int(ts), original_path_in_archive.replace('\\', '/'), source_archive_name)) # Normalize path separator
+                                (final_filepath, int(ts), original_path_in_archive.replace('\', '/'), source_archive_name)) # Normalize path separator)
 
                  # Add the new filename to our sets to prevent immediate conflicts within this run
                  existing_filenames.add(proposed_filename)
@@ -422,7 +422,8 @@ def main(args):
         # For now, keep a check but maybe make the threshold more flexible.
         # TARGET_MAX_VM_USAGE_GB is defined earlier, let's use that.
         if free_vm / (1024**3) < REPACKAGE_CHUNK_SIZE_GB * 2: # Check if there's enough space for extraction/batching
-             print(f"\n❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space on root filesystem ({free_vm / (1024**3):.2f} GB free).")
+             print(f"
+❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space on root filesystem ({free_vm / (1024**3):.2f} GB free).")
              print(f"    >>> Need at least {REPACKAGE_CHUNK_SIZE_GB * 2} GB free for temporary operations. <<<")
              return
 
@@ -430,13 +431,15 @@ def main(args):
         subprocess.run("apt-get update && apt-get -qq install jdupes", shell=True, check=True) # Added check=True to raise error if install fails
         print("✅ Workspace ready.")
 
-        print("\n--> [Step 1] Identifying unprocessed archives...")
+        print("
+--> [Step 1] Identifying unprocessed archives...")
         all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
         completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
         processing_queue = sorted(list(all_archives - completed_archives))
 
         if not processing_queue:
-            print("\n✅🎉 All archives have been processed!")
+            print("
+✅🎉 All archives have been processed!")
         else:
             archive_name = processing_queue[0]
             source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
@@ -492,9 +495,11 @@ def main(args):
                 else:
                     print(f"    ❌ Transaction failed for '{archive_name}'. It remains in staging for manual inspection or rollback on next run.")
 
-            print("\n--- WORKFLOW CYCLE COMPLETE. ---")
+            print("
+--- WORKFLOW CYCLE COMPLETE. ---")
     except Exception as e:
-        print(f"\n❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
+        print(f"
+❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
         traceback.print_exc()
     finally:
         if conn:
@@ -518,99 +523,3 @@ if __name__ == '__main__':
     main(args)
 
 EOF
-
-echo "    ✅ Python script embedded."
-
-# --- 3. Install Dependencies ---
-echo "--> Installing dependencies..."
-# Update package list and install jdupes and python3-pip
-sudo apt-get update || { echo "❌ Error updating package list."; exit 1; }
-sudo apt-get install -y jdupes python3-pip || { echo "❌ Error installing apt packages. Ensure you have sudo privileges."; exit 1; }
-echo "    ✅ Apt dependencies installed."
-
-echo "--> Installing Python dependencies..."
-# Install tqdm using pip3
-pip3 install tqdm || { echo "❌ Error installing pip package 'tqdm'. Ensure pip3 is installed and in your PATH."; exit 1; }
-echo "    ✅ Python dependencies installed."
-
-# --- 4. Create Directory Structure ---
-echo "--> Creating directory structure under $TAKEOUT_BASE_DIR..."
-# Use mkdir -p to create parent directories if they don't exist
-mkdir -p "$TAKEOUT_BASE_DIR/00-ALL-ARCHIVES" \
-         "$TAKEOUT_BASE_DIR/01-PROCESSING-STAGING" \
-         "$TAKEOUT_BASE_DIR/03-organized/My-Photos" \
-         "$TAKEOUT_BASE_DIR/04-trash/quarantined_artifacts" \
-         "$TAKEOUT_BASE_DIR/04-trash/duplicates" \
-         "$TAKEOUT_BASE_DIR/05-COMPLETED-ARCHIVES" || { echo "❌ Error creating directories. Check permissions for $TAKEOUT_BASE_DIR."; exit 1; }
-echo "    ✅ Directory structure created."
-
-# --- 5. Make Python Script Executable ---
-echo "--> Making Python script executable..."
-chmod +x "$PYTHON_SCRIPT_PATH" || { echo "❌ Error making script executable. Check permissions for $PYTHON_SCRIPT_PATH."; exit 1; }
-echo "    ✅ Script is executable."
-
-# --- 6. Provide Usage Instructions and Automation Examples ---
-echo ""
-echo "Setup complete!"
-echo "The Google Takeout Organizer script has been installed to $PYTHON_SCRIPT_PATH."
-echo ""
-echo "To use the script, place your Google Takeout archives (.tgz or .tar.gz files) into the:"
-echo "  $TAKEOUT_BASE_DIR/00-ALL-ARCHIVES/"
-echo ""
-echo "You can run the script manually from any directory. The script will use '$TAKEOUT_BASE_DIR' as its base directory."
-echo ""
-echo "Usage:"
-echo "  $PYTHON_SCRIPT_PATH"
-echo ""
-echo "To specify a different base directory (e.g., on an external hard drive), set the TAKEOUT_BASE_DIR environment variable before running:"
-echo "  export TAKEOUT_BASE_DIR=/path/to/your/external/drive/TakeoutOrganizer"
-echo "  $PYTHON_SCRIPT_PATH"
-echo ""
-echo "To enable automatic deletion of 0-byte artifact files (use with caution):"
-echo "  $PYTHON_SCRIPT_PATH --auto-delete-artifacts"
-echo ""
-echo "Processed files will be organized into:"
-echo "  \$TAKEOUT_BASE_DIR/03-organized/My-Photos/"
-echo "Duplicates and quarantined files will be moved to:"
-echo "  \$TAKEOUT_BASE_DIR/04-trash/"
-echo "Successfully processed archives will be moved to:"
-echo "  \$TAKEOUT_BASE_DIR/05-COMPLETED-ARCHIVES/"
-echo ""
-echo "The database file is located at:"
-echo "  \$TAKEOUT_BASE_DIR/takeout_archive.db"
-echo ""
-echo "For automation (e.g., daily runs), consider using cron or systemd. Examples are provided below (commented out):"
-echo "--------------------------------------------------------------------------------"
-echo "# Example: Running the script daily using cron"
-echo "# Edit your crontab:  crontab -e"
-echo "# Add the following line to run the script every day at 3 AM:"
-echo "# 0 3 * * * TAKEOUT_BASE_DIR=\$TAKEOUT_BASE_DIR \$PYTHON_SCRIPT_PATH >> \$TAKEOUT_BASE_DIR/organizer.log 2>&1"
-echo ""
-echo "# Example: Running the script as a systemd service"
-echo "# Create a service file (e.g., /etc/systemd/system/takeout-organizer.service) with content like:"
-echo "# [Unit]"
-echo "# Description=Google Takeout Organizer"
-echo "# After=network.target"
-echo ""
-echo "# [Service]"
-echo "# User=%i  # Use %i for instance user, or replace with a specific user like 'pi'"
-echo "# Environment=\"TAKEOUT_BASE_DIR=\$TAKEOUT_BASE_DIR\""
-echo "# ExecStart=\$PYTHON_SCRIPT_PATH"
-echo "# WorkingDirectory=\$TAKEOUT_BASE_DIR"
-echo "# Restart=on-failure"
-echo ""
-echo "# [Install]"
-echo "# WantedBy=multi-user.target"
-echo ""
-echo "# Save the file, then run:"
-echo "# sudo systemctl daemon-reload"
-echo "# sudo systemctl enable takeout-organizer.service"
-echo "# sudo systemctl start takeout-organizer.service"
-"# You can check the status with: sudo systemctl status takeout-organizer.service"
-"# And logs with: journalctl -u takeout-organizer.service"
-echo "--------------------------------------------------------------------------------"
-echo ""
-echo "Remember to replace %i or \$USER in the systemd example with the actual user on your system (e.g., 'pi')."
-echo "Consider running the script manually first to ensure everything is working correctly."
-echo ""
-echo "--> Setup script finished. Please copy the content of this cell, save it as a .sh file on your Raspberry Pi, and make it executable (chmod +x your_script_name.sh) before running it with sudo."
