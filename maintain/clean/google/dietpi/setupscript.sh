@@ -1,19 +1,145 @@
-
 #!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
-echo "--> Starting Google Takeout Organizer setup script for Raspberry Pi..."
+# This script installs and configures the Google Takeout Archive Processor.
+# It sets up directories, installs dependencies, and prepares for execution.
 
-# --- 1. Define Variables ---
-PYTHON_SCRIPT_NAME="takeout_organizer.py"
-PYTHON_SCRIPT_PATH="/usr/local/bin/$PYTHON_SCRIPT_NAME" # Install to a standard bin location
-TAKEOUT_BASE_DIR="${TAKEOUT_BASE_DIR:-$HOME/TakeoutOrganizer}" # Default to $HOME/TakeoutOrganizer if env var not set
+# ==============================================================================
+# --- Configuration ---
 
-# --- 2. Embed Python Script ---
-echo "--> Embedding Python script..."
-cat << 'EOF' > "$PYTHON_SCRIPT_PATH"
+# Define the base directory where Google Drive is mounted
+BASE_DIR="/mnt/gdrive/TakeoutProject"
+
+# Define directories relative to the base directory
+SOURCE_ARCHIVES_DIR="${BASE_DIR}/00-ALL-ARCHIVES/"
+PROCESSING_STAGING_DIR="${BASE_DIR}/01-PROCESSING-STAGING/"
+ORGANIZED_DIR="${BASE_DIR}/03-organized/My-Photos/"
+TRASH_DIR="${BASE_DIR}/04-trash/"
+COMPLETED_ARCHIVES_DIR="${BASE_DIR}/05-COMPLETED-ARCHIVES/"
+QUARANTINE_DIR="${TRASH_DIR}/quarantined_artifacts/"
+DUPES_DIR="${TRASH_DIR}/duplicates/"
+
+# Define local temporary directories on the Raspberry Pi
+VM_TEMP_EXTRACT_DIR='/tmp/temp_extract'
+VM_TEMP_BATCH_DIR='/tmp/temp_batch_creation'
+
+# Define the database path
+DB_PATH="${BASE_DIR}/takeout_archive.db"
+
+# Define the path for the service account credentials
+SERVICE_ACCOUNT_FILE="${HOME}/.secrets/credentials.json"
+
+# ==============================================================================
+
+# ==============================================================================
+# --- Dependency Installation ---
+
+# Update package lists and install dependencies
+echo "Updating package lists and installing dependencies..."
+sudo apt-get update -qq
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to update apt package lists." >&2
+    exit 1
+fi
+
+# Check for and install jdupes
+if ! command -v jdupes &> /dev/null
+then
+    echo "jdupes not found. Attempting to install..."
+    sudo apt-get install jdupes -qq -y
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to install jdupes." >&2
+        exit 1
+    fi
+    echo "jdupes installed successfully."
+else
+    echo "jdupes already installed."
+fi
+
+# Check for and install rclone
+if ! command -v rclone &> /dev/null
+then
+    echo "rclone not found. Attempting to install..."
+    # Use the official rclone installation script for the latest version
+    curl https://rclone.org/install.sh | sudo bash
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to install rclone." >&2
+        exit 1
+    fi
+    echo "rclone installed successfully."
+else
+    echo "rclone already installed."
+fi
+
+echo "Dependency installation complete."
+
+# ==============================================================================
+
+# ==============================================================================
+# --- Google Drive Mount Check ---
+
+# Check if Google Drive is mounted at /mnt/gdrive
+echo "Checking for Google Drive mount at /mnt/gdrive..."
+if ! mountpoint -q /mnt/gdrive;
+then
+    echo "
+"
+    echo "======================================================================"
+    echo "ERROR: Google Drive is NOT mounted at /mnt/gdrive."
+    echo "
+"
+    echo "Please ensure your Google Drive is mounted at this location."
+    echo "If you are using rclone and fuse, a typical command might look like:"
+    echo "  rclone mount my-google-drive: /mnt/gdrive --allow-other --daemon"
+    echo "
+"
+    echo "Replace 'my-google-drive:' with the name of your rclone Google Drive remote."
+    Consult the rclone documentation for detailed setup instructions:"
+    echo "  https://rclone.org/googlephotos/"
+    echo "  https://rclone.org/commands/rclone_mount/"
+    echo "======================================================================"
+    echo "
+"
+    exit 1
+else
+    echo "✅ Google Drive is mounted at /mnt/gdrive."
+fi
+
+# ==============================================================================
+
+# ==============================================================================
+# --- Directory Setup ---
+
+# Create necessary directories
+echo "Setting up directories..."
+mkdir -p "${SOURCE_ARCHIVES_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${SOURCE_ARCHIVES_DIR}." >&2; exit 1; fi
+mkdir -p "${PROCESSING_STAGING_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${PROCESSING_STAGING_DIR}." >&2; exit 1; fi
+mkdir -p "${ORGANIZED_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${ORGANIZED_DIR}." >&2; exit 1; fi
+mkdir -p "${TRASH_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${TRASH_DIR}." >&2; exit 1; fi
+mkdir -p "${COMPLETED_ARCHIVES_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${COMPLETED_ARCHIVES_DIR}." >&2; exit 1; fi
+mkdir -p "${QUARANTINE_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${QUARANTINE_DIR}." >&2; exit 1; fi
+mkdir -p "${DUPES_DIR}"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create directory ${DUPES_DIR}." >&2; exit 1; fi
+
+# Create the directory for service account credentials if it doesn't exist
+mkdir -p "$(dirname "${SERVICE_ACCOUNT_FILE}")"
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create secrets directory." >&2; exit 1; fi
+
+echo "Directory setup complete."
+
+# ==============================================================================
+
+# ==============================================================================
+# --- Embed Python Script ---
+
+# Write the Python script to a file
+cat <<'EOF' > takeout_processor.py
 import os
 import shutil
 import subprocess
@@ -26,30 +152,30 @@ import sys
 import argparse
 import sqlite3
 import hashlib
-import stat # Import stat module for file permissions
+import time
 
 # ==============================================================================
 # --- 1. CORE CONFIGURATION ---
 # ==============================================================================
-TARGET_MAX_VM_USAGE_GB = 70 # This value is less relevant for Raspberry Pi with external storage, but keep it as a potential check.
+# TARGET_MAX_VM_USAGE_GB = 70 # Not directly applicable to Raspberry Pi filesystem
 REPACKAGE_CHUNK_SIZE_GB = 15
 MAX_SAFE_ARCHIVE_SIZE_GB = 25
 
-# Use an environment variable for the base directory for flexibility
-TAKEOUT_BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", ".") # Default to current directory if env var not set
-
-DB_PATH = os.path.join(TAKEOUT_BASE_DIR, "takeout_archive.db")
+# Define the base directory for the Raspberry Pi environment
+# Assuming Google Drive is mounted to /mnt/gdrive using rclone, fuse, or similar
+BASE_DIR = "/mnt/gdrive/TakeoutProject"
+DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
 CONFIG = {
-    "SOURCE_ARCHIVES_DIR": os.path.join(TAKEOUT_BASE_DIR, "00-ALL-ARCHIVES/"),
-    "PROCESSING_STAGING_DIR": os.path.join(TAKEOUT_BASE_DIR, "01-PROCESSING-STAGING/"),
-    "ORGANIZED_DIR": os.path.join(TAKEOUT_BASE_DIR, "03-organized/My-Photos/"),
-    "TRASH_DIR": os.path.join(TAKEOUT_BASE_DIR, "04-trash/"),
-    "COMPLETED_ARCHIVES_DIR": os.path.join(TAKEOUT_BASE_DIR, "05-COMPLETED-ARCHIVES/"),
+    "SOURCE_ARCHIVES_DIR": os.path.join(BASE_DIR, "00-ALL-ARCHIVES/"),
+    "PROCESSING_STAGING_DIR": os.path.join(BASE_DIR, "01-PROCESSING-STAGING/"),
+    "ORGANIZED_DIR": os.path.join(BASE_DIR, "03-organized/My-Photos/"),
+    "TRASH_DIR": os.path.join(BASE_DIR, "04-trash/"),
+    "COMPLETED_ARCHIVES_DIR": os.path.join(BASE_DIR, "05-COMPLETED-ARCHIVES/"),
 }
 CONFIG["QUARANTINE_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "quarantined_artifacts/")
 CONFIG["DUPES_DIR"] = os.path.join(CONFIG["TRASH_DIR"], "duplicates/")
 
-# Use standard temporary directories instead of Colab-specific ones
+# Use local temporary directories on the Raspberry Pi
 VM_TEMP_EXTRACT_DIR = '/tmp/temp_extract'
 VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 
@@ -57,11 +183,13 @@ VM_TEMP_BATCH_DIR = '/tmp/temp_batch_creation'
 # --- 2. WORKFLOW FUNCTIONS & HELPERS ---
 # ==============================================================================
 def dummy_tqdm(iterable, *args, **kwargs):
+    """A dummy tqdm function that acts as a fallback if tqdm is not available."""
     description = kwargs.get('desc', 'items')
     print(f"    > Processing {description}...")
     return iterable
 
 def initialize_database(db_path):
+    """Creates the SQLite database and the necessary tables if they don't exist."""
     print("--> [DB] Initializing database...")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -81,6 +209,7 @@ def initialize_database(db_path):
     return conn
 
 def perform_startup_integrity_check():
+    """Performs a "Power-On Self-Test" to detect and correct inconsistent states."""
     print("--> [POST] Performing startup integrity check...")
     staging_dir = CONFIG["PROCESSING_STAGING_DIR"]
     source_dir = CONFIG["SOURCE_ARCHIVES_DIR"]
@@ -91,31 +220,18 @@ def perform_startup_integrity_check():
         if os.path.exists(VM_TEMP_EXTRACT_DIR):
             shutil.rmtree(VM_TEMP_EXTRACT_DIR)
         print("    ✅ Rollback complete.")
-    # Handle 0-byte files based on the --auto-delete-artifacts flag
-    delete_zero_byte = False
-    # Check if --auto-delete-artifacts was passed during script execution
-    if '--auto-delete-artifacts' in sys.argv:
-         delete_zero_byte = True
-
     for filename in os.listdir(source_dir):
         file_path = os.path.join(source_dir, filename)
         if os.path.isfile(file_path) and os.path.getsize(file_path) == 0:
-            print(f"    ⚠️ Found 0-byte artifact: '{filename}'.")
-            quarantine_path = os.path.join(CONFIG["QUARANTINE_DIR"], filename)
-            try:
-                if delete_zero_byte:
-                    os.remove(file_path)
-                    print(f"    > Automatically deleted 0-byte artifact: '{filename}'")
-                else:
-                    shutil.move(file_path, quarantine_path)
-                    print(f"    > Quarantined 0-byte artifact to: '{quarantine_path}'")
-            except Exception as e:
-                 print(f"    ❌ Failed to handle 0-byte artifact '{filename}': {e}")
-
+            print(f"    ⚠️ Found 0-byte artifact: '{filename}'. Quarantining...")
+            shutil.move(file_path, os.path.join(CONFIG["QUARANTINE_DIR"], filename))
     print("--> [POST] Integrity check complete.")
 
-
 def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
+    """
+    Scans a large archive, hashes unique files, and repackages them into smaller,
+    crash-resilient parts while populating the database.
+    """
     original_basename_no_ext = os.path.splitext(os.path.basename(archive_path))[0]
     print(f"--> Repackaging & Indexing '{os.path.basename(archive_path)}'...")
     repackage_chunk_size_bytes = REPACKAGE_CHUNK_SIZE_GB * (1024**3)
@@ -163,21 +279,23 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
                 conn.commit()
                 new_archive_name = f"{original_basename_no_ext}.part-{part_number:02d}.tgz"
                 final_dest_path = os.path.join(dest_dir, new_archive_name)
-                print(f"    --> Batch contains {files_in_this_batch} unique files. Moving final part {part_number} to destination...") # Changed 'Google Drive' to 'destination'
+                print(f"    --> Batch contains {files_in_this_batch} unique files. Moving final part {part_number} to Google Drive...")
                 shutil.move(temp_batch_archive_path, final_dest_path)
                 print(f"    ✅ Finished part {part_number}.")
             else:
                 print(f"    > Batch {part_number} contained no unique files. Discarding empty batch.")
         return True
-    except Exception as e: print(f"
-❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
+    except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
         if os.path.exists(VM_TEMP_BATCH_DIR): shutil.rmtree(VM_TEMP_BATCH_DIR)
 
 def process_regular_archive(archive_path, conn, tqdm_module):
+    """
+    Handles a regular-sized archive with Rsync-like file-level resumption by checking the DB
+    for already processed files and only unpacking the missing ones ("the delta").
+    """
     archive_name = os.path.basename(archive_path)
-    print(f"
---> [Step 2a] Processing transaction for '{archive_name}'...")
+    print(f"\n--> [Step 2a] Processing transaction for '{archive_name}'...")
     cursor = conn.cursor()
     try:
         print("    > Checking database for previously completed files...")
@@ -194,28 +312,15 @@ def process_regular_archive(archive_path, conn, tqdm_module):
         with tarfile.open(archive_path, 'r:gz') as tf:
             all_members = [m for m in tf.getmembers() if m.isfile()]
             for member in tqdm_module(all_members, desc=f"Scanning {archive_name}"):
-                # Normalize path separators for comparison
-                normalized_member_name = member.name.replace('\', '/')
-                if normalized_member_name not in completed_files:
-                    try:
-                        # Ensure the target directory exists before extracting
-                        extract_path = os.path.join(VM_TEMP_EXTRACT_DIR, member.name)
-                        os.makedirs(os.path.dirname(extract_path), exist_ok=True)
-                        tf.extract(member, path=VM_TEMP_EXTRACT_DIR, set_attrs=False)
-                        # Set execute permissions for directories for safer os.walk
-                        if os.path.isdir(extract_path):
-                             os.chmod(extract_path, os.stat(extract_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                        files_to_process.append(normalized_member_name)
-                    except Exception as e:
-                        print(f"    ❌ Failed to extract file '{member.name}': {e}")
-                        # Decide whether to continue or abort based on severity
-                        continue # Continue processing other files
+                if member.name not in completed_files:
+                    tf.extract(member, path=VM_TEMP_EXTRACT_DIR, set_attrs=False)
+                    files_to_process.append(member.name)
 
         if not files_to_process:
             print("    ✅ All files in this archive were already processed. Finalizing.")
             return True
 
-        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to temp directory.") # Changed 'VM' to 'temp directory'
+        print(f"    ✅ Unpacked {len(files_to_process)} new/missing files to VM.")
 
         # Subsequent steps now operate on the much smaller "delta" of new files.
         organize_photos(VM_TEMP_EXTRACT_DIR, CONFIG["ORGANIZED_DIR"], conn, tqdm_module, archive_name)
@@ -223,171 +328,55 @@ def process_regular_archive(archive_path, conn, tqdm_module):
 
         return True
     except Exception as e:
-        print(f"
-❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
+        print(f"\n❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
         return False
     finally:
         if os.path.exists(VM_TEMP_EXTRACT_DIR):
             shutil.rmtree(VM_TEMP_EXTRACT_DIR)
-            print("    > Cleaned up temporary directory.") # Changed 'VM' to 'temporary'
+            print("    > Cleaned up temporary VM directory.")
 
 def deduplicate_files(source_path, primary_storage_path, trash_path, conn, source_archive_name):
-    print("
---> [Step 2b] Deduplicating new files...")
+    """Deduplicates new files against the primary storage and updates the database for unique files."""
+    print("\n--> [Step 2b] Deduplicating new files...")
+    # Check if jdupes is available. If not, print a warning and skip.
     if not shutil.which('jdupes'):
         print("    ⚠️ 'jdupes' not found. Skipping.")
         return
 
-    # Use absolute paths for jdupes command for clarity and robustness
-    source_path_abs = os.path.abspath(source_path)
-    primary_storage_path_abs = os.path.abspath(primary_storage_path)
-    trash_path_abs = os.path.abspath(trash_path)
-
-    command = f'jdupes -r -S -nh --linkhard --move="{trash_path_abs}" "{source_path_abs}" "{primary_storage_path_abs}"'
-    print(f"    > Running command: {command}") # Added for debugging
-    result = subprocess.run(command, shell=True, capture_output=True, text=True) # Added text=True for string output
-    print(f"    > jdupes stdout:
-{result.stdout}") # Added for debugging
-    if result.stderr:
-        print(f"    > jdupes stderr:
-{result.stderr}") # Added for debugging
-
+    # Use jdupes for deduplication. This command links hard, moves duplicates to trash.
+    command = f'jdupes -r -S -nh --linkhard --move="{trash_path}" "{source_path}" "{primary_storage_path}"'
+    subprocess.run(command, shell=True, capture_output=True)
 
     cursor = conn.cursor()
     files_moved = 0
-    # The actual uncompressed data is often in a "Takeout" subdirectory relative to the source_path.
-    takeout_source = os.path.join(source_path_abs, "Takeout") # Use absolute path here
+    # The actual uncompressed data is often in a "Takeout" subdirectory.
+    takeout_source = os.path.join(source_path, "Takeout")
     if os.path.exists(takeout_source):
         print("    > Moving unique new files and updating database...")
         for root, _, files in os.walk(takeout_source):
             for filename in files:
+                # This loop now handles all non-photo unique files left after jdupes.
                 unique_file_path = os.path.join(root, filename)
-                # Ensure the file still exists (jdupes might have moved it if it was a duplicate)
-                if not os.path.exists(unique_file_path):
-                    continue
+                relative_path = os.path.relpath(unique_file_path, takeout_source)
+                final_path = os.path.join(primary_storage_path, relative_path)
 
-                relative_path_to_takeout = os.path.relpath(unique_file_path, takeout_source)
-                final_path = os.path.join(primary_storage_path_abs, relative_path_to_takeout) # Use absolute primary_storage_path
-
+                # Create the directory structure if it doesn't exist
                 os.makedirs(os.path.dirname(final_path), exist_ok=True)
-                try:
-                    shutil.move(unique_file_path, final_path)
-                    # We need the original path relative to the TAR root for the DB.
-                    # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/..., so the original path
-                    # inside the archive would be 'Takeout/Google Photos/...'.
-                    original_path_in_archive = os.path.relpath(unique_file_path, source_path_abs) # Relative to the initial extraction path
-                    cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
-                                   (final_path, int(ts), original_path_in_archive.replace('\', '/'), source_archive_name)) # Normalize path separator)
+                shutil.move(unique_file_path, final_path)
 
-                    # Add the new filename to our sets to prevent immediate conflicts within this run
-                    existing_filenames.add(proposed_filename)
-                    already_organized_final_paths.add(proposed_filename)
+                # We need the original path relative to the TAR root, not the temp dir root.
+                original_path = os.path.relpath(unique_file_path, source_path)
+                cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
+                               (final_path, int(ts), original_path, source_archive_name))
 
-                    photos_organized_count += 1
-                except Exception as e:
-                    print(f"    ❌ Failed to move and organize photo '{unique_file_path}' to '{final_path}': {e}")
-
-
-        if files_moved > 0:
-            conn.commit()
-    print(f"    ✅ Deduplication and move complete. Processed {files_moved} unique files.")
-
-
-def organize_photos(source_path, final_dir, conn, tqdm_module, source_archive_name):
-    print("
---> [Step 2c] Organizing photos...")
-    photos_organized_count = 0
-    # Path is relative to the temporary extraction directory
-    photos_source_path = os.path.join(source_path, "Takeout", "Google Photos")
-    if not os.path.isdir(photos_source_path):
-        print("    > 'Google Photos' directory not found in extracted path. Skipping.")
-        return
-
-    final_dir_abs = os.path.abspath(final_dir) # Use absolute path for final_dir
-
-    try:
-        # Need to list files in the *actual* final_dir, not just the current state of the temp dir
-        # Also need to account for files potentially moved by jdupes from the temp dir to final_dir
-        existing_filenames = set(os.listdir(final_dir_abs))
-        # Add filenames of files that were just moved by jdupes from the current source_path to final_dir
-        # This is tricky as jdupes handles the move, but we need the updated state.
-        # A simpler approach is to rely solely on the database and target final_dir contents.
-        # However, listing the target dir is a quick check for naming conflicts *before* moving.
-        # Let's keep listing final_dir_abs for pre-check, and rely on DB for uniqueness after move.
-    except FileNotFoundError:
-        existing_filenames = set()
-
-    all_json_files = [os.path.join(r, f) for r, _, files in os.walk(photos_source_path) for f in files if f.lower().endswith('.json')]
-    cursor = conn.cursor()
-
-    # Check for photos already in the database that might be in the final destination
-    # This helps avoid re-processing or naming conflicts for files already organized.
-    cursor.execute("SELECT final_path FROM files WHERE source_archive = ? AND final_path IS NOT NULL AND original_path LIKE ?", (source_archive_name, 'Takeout/Google Photos/%'))
-    already_organized_final_paths = {os.path.basename(row[0]) for row in cursor.fetchall() if row[0]} # Use only the basename for comparison
-
-    for json_path in tqdm_module(all_json_files, desc="Organizing photos"):
-        media_path = os.path.splitext(json_path)[0]
-        # Check if the corresponding media file exists in the source_path
-        if not os.path.exists(media_path):
-            # The media file might have been moved by jdupes if it was a duplicate of something already in the target directory.
-            # We can skip processing this JSON if its media file is gone from the source_path.
+                existing_filenames.add(new_filename)
+                photos_organized_count += 1
+        except Exception:
             continue
-
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            ts = data.get('photoTakenTime', {}).get('timestamp')
-            if not ts:
-                # Skip if no timestamp is available in the JSON
-                continue
-
-            dt = datetime.fromtimestamp(int(ts))
-            new_name_base = dt.strftime('%Y-%m-%d_%Hh%Mm%Ss')
-            ext = os.path.splitext(media_path)[1].lower()
-
-            # Ensure valid characters in filename (remove potentially problematic ones)
-            new_filename = re.sub(r'[^\w.-]', '_', f"{new_name_base}{ext}")
-
-            counter = 0
-            proposed_filename = new_filename
-            # Check against both files already in the final directory AND files already recorded in the DB for this archive as organized
-            while proposed_filename in existing_filenames or proposed_filename in already_organized_final_paths:
-                counter += 1
-                proposed_filename = re.sub(r'[^\w.-]', '_', f"{new_name_base}_{counter}{ext}")
-
-            final_filepath = os.path.join(final_dir_abs, proposed_filename) # Use absolute final_dir_abs
-
-            try:
-                 shutil.move(media_path, final_filepath)
-                 # Remove the now-moved JSON file
-                 os.remove(json_path)
-
-                 # We need the original path relative to the TAR root for the DB.
-                 # The files were extracted into VM_TEMP_EXTRACT_DIR/Takeout/Google Photos/..., so the original path
-                 # inside the archive would be 'Takeout/Google Photos/...'.
-                 original_path_in_archive = os.path.relpath(media_path, source_path_abs) # Relative to the initial extraction path
-                 cursor.execute("UPDATE files SET final_path = ?, timestamp = ? WHERE original_path = ? AND source_archive = ?",
-                                (final_filepath, int(ts), original_path_in_archive.replace('\', '/'), source_archive_name)) # Normalize path separator)
-
-                 # Add the new filename to our sets to prevent immediate conflicts within this run
-                 existing_filenames.add(proposed_filename)
-                 already_organized_final_paths.add(proposed_filename)
-
-                 photos_organized_count += 1
-            except Exception as e:
-                 print(f"    ❌ Failed to move and organize photo '{media_path}' to '{final_filepath}': {e}")
-
-
-        except Exception as e:
-             print(f"    ❌ Failed to process photo JSON '{json_path}': {e}")
-             continue # Continue processing other JSON files
 
     if photos_organized_count > 0:
         conn.commit()
-        print(f"    ✅ Organized and updated DB for {photos_organized_count} new photos.")
-    else:
-         print("    > No new photos to organize in this batch.")
-
+        print(f"    ✅ Organized and updated DB for {photos_organized_count} new files.")
 
 # ==============================================================================
 # --- MAIN EXECUTION SCRIPT ---
@@ -396,107 +385,119 @@ def main(args):
     conn = None
     try:
         print("--> [Step 0] Initializing environment...")
-        # Use the fallback dummy_tqdm for headless execution
-        tqdm = dummy_tqdm
+        try:
+            # Use regular tqdm for terminal output on Raspberry Pi
+            from tqdm import tqdm
+        except ImportError:
+            tqdm = dummy_tqdm
 
-        # Remove Google Colab specific mount command
+        # Removed Colab-specific drive mounting
         # from google.colab import drive
         # if not os.path.exists('/content/drive/MyDrive'): drive.mount('/content/drive')
         # else: print("✅ Google Drive already mounted.")
-        print("✅ Environment initialization complete.") # Adjusted message
+        print("Assuming Google Drive is already mounted at /mnt/gdrive")
 
-        # Ensure base directory is created if using a specific env var path
-        os.makedirs(TAKEOUT_BASE_DIR, exist_ok=True)
-        print(f"✅ Using base directory: {os.path.abspath(TAKEOUT_BASE_DIR)}") # Print actual base dir path
+        # Set the GOOGLE_APPLICATION_CREDENTIALS environment variable
+        # This is needed for rclone to authenticate with the Google service account
+        service_account_file = os.path.expanduser("~/.secrets/credentials.json")
+        if os.path.exists(service_account_file):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_file
+            print(f"✅ Set GOOGLE_APPLICATION_CREDENTIALS to {service_account_file}")
+        else:
+            print(f"⚠️ Service account credentials file not found at {service_account_file}. Rclone may not authenticate correctly.")
 
-        for path in CONFIG.values(): os.makedirs(path, exist_ok=True)
+
+        for path in CONFIG.values():
+            os.makedirs(path, exist_ok=True)
+
+
         conn = initialize_database(DB_PATH)
         perform_startup_integrity_check()
 
-        # Disk usage check for the root filesystem (where /tmp might be)
-        # This is less critical if external storage is used for TAKEOUT_BASE_DIR,
-        # but still relevant for the /tmp extract directory.
-        total_vm, used_vm, free_vm = shutil.disk_usage('/') # Check root partition
-        used_vm_gb = used_vm / (1024**3)
-        # Adjusting the check threshold or removing it might be necessary depending on Pi setup
-        # For now, keep a check but maybe make the threshold more flexible.
-        # TARGET_MAX_VM_USAGE_GB is defined earlier, let's use that.
-        if free_vm / (1024**3) < REPACKAGE_CHUNK_SIZE_GB * 2: # Check if there's enough space for extraction/batching
-             print(f"
-❌ PRE-FLIGHT CHECK FAILED: Insufficient free disk space on root filesystem ({free_vm / (1024**3):.2f} GB free).")
-             print(f"    >>> Need at least {REPACKAGE_CHUNK_SIZE_GB * 2} GB free for temporary operations. <<<")
-             return
+        # Removed Colab-specific disk usage check
+        # total_vm, used_vm, free_vm = shutil.disk_usage('/content/')
+        # used_vm_gb = used_vm / (1024**3)
+        # if used_vm_gb > TARGET_MAX_VM_USAGE_GB:
+        #     print(f"
+❌ PRE-FLIGHT CHECK FAILED: Initial disk usage ({used_vm_gb:.2f} GB) is too high.")
+        #     print("    >>> PLEASE RESTART THE COLAB RUNTIME (Runtime -> Restart runtime) AND TRY AGAIN. <<<")
+        #     return
+        # print(f"✅ Pre-flight disk check passed. (Initial Usage: {used_vm_gb:.2f} GB)")
+        print("✅ Skipping VM disk usage check for Raspberry Pi.")
 
-        print(f"✅ Pre-flight disk check passed. (Free space on root: {free_vm / (1024**3):.2f} GB)") # Adjusted message
-        subprocess.run("apt-get update && apt-get -qq install jdupes", shell=True, check=True) # Added check=True to raise error if install fails
+        # Install jdupes and rclone if not found - Handled by the bash script now
+        # if not shutil.which('jdupes'):
+        #     print("    > jdupes not found. Attempting to install...")
+        #     try:
+        #         subprocess.run("sudo apt-get update -qq && sudo apt-get install jdupes -qq -y", shell=True, check=True)
+        #         print("    ✅ jdupes installed successfully.")
+        #     except subprocess.CalledProcessError:
+        #         print("    ❌ Failed to install jdupes. Deduplication will be skipped.")
+        # else:
+        #      print("✅ jdupes already installed.")
+
         print("✅ Workspace ready.")
 
-        print("
+        # Main processing loop for continuous operation
+        while True:
+            print("
 --> [Step 1] Identifying unprocessed archives...")
-        all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
-        completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
-        processing_queue = sorted(list(all_archives - completed_archives))
+            # Ensure the source directory exists before listing
+            if not os.path.exists(CONFIG["SOURCE_ARCHIVES_DIR"]):
+                 print(f"⚠️ Source archives directory not found: {CONFIG['SOURCE_ARCHIVES_DIR']}. Waiting 300 seconds.")
+                 time.sleep(300)
+                 continue
 
-        if not processing_queue:
-            print("
+            all_archives = set(os.listdir(CONFIG["SOURCE_ARCHIVES_DIR"]))
+            completed_archives = set(os.listdir(CONFIG["COMPLETED_ARCHIVES_DIR"]))
+            processing_queue = sorted(list(all_archives - completed_archives))
+
+            if not processing_queue:
+                print("
 ✅🎉 All archives have been processed!")
-        else:
-            archive_name = processing_queue[0]
-            source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
-            staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
-
-            print(f"--> Locking and staging '{archive_name}' for processing...")
-            # Add check if source_path exists before moving
-            if not os.path.exists(source_path):
-                print(f"    ⚠️ Source archive '{archive_name}' not found at '{source_path}'. Skipping.")
-                return
-
-            try:
-                 shutil.move(source_path, staging_path)
-            except Exception as e:
-                 print(f"    ❌ Failed to move '{source_path}' to staging '{staging_path}': {e}")
-                 # Attempt to clean up staging if a partial move occurred?
-                 if os.path.exists(staging_path) and os.path.getsize(staging_path) > 0:
-                     print(f"    > Partial file found in staging. Attempting rollback...")
-                     try:
-                         shutil.move(staging_path, source_path)
-                         print("    ✅ Rollback successful.")
-                     except Exception as rollback_e:
-                         print(f"    ❌ Rollback failed: {rollback_e}. Manual intervention needed for '{staging_path}'.")
-                 return # Stop processing this archive
-
-            # Check staged file size
-            staged_file_size_gb = os.path.getsize(staging_path) / (1024**3)
-            print(f"    > Staged file size: {staged_file_size_gb:.2f} GB")
-
-
-            if staged_file_size_gb > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
-                print(f"--> Archive '{archive_name}' ({staged_file_size_gb:.2f} GB) is larger than MAX_SAFE_ARCHIVE_SIZE_GB ({MAX_SAFE_ARCHIVE_SIZE_GB} GB). Repackaging...")
-                repackaging_ok = plan_and_repackage_archive(staging_path, CONFIG["SOURCE_ARCHIVES_DIR"], conn, tqdm)
-                if repackaging_ok:
-                    print(f"--> Repackaging successful for '{archive_name}'. Moving to completed.")
-                    try:
-                        shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
-                    except Exception as e:
-                         print(f"    ❌ Failed to move staged file '{staging_path}' to completed: {e}")
-                         # Manual intervention might be needed
-                else:
-                    print(f"    ❌ Repackaging failed for '{archive_name}'. It remains in staging for manual inspection or rollback on next run.")
+                print("Idling for 300 seconds...")
+                time.sleep(300) # Idle for 300 seconds before checking again
+                continue # Go back to the start of the while loop
             else:
-                print(f"--> Archive '{archive_name}' ({staged_file_size_gb:.2f} GB) is within safe limits or is a part file. Processing directly.")
-                processed_ok = process_regular_archive(staging_path, conn, tqdm)
-                if processed_ok:
-                    print(f"--> Direct processing successful for '{archive_name}'. Moving to completed.")
-                    try:
-                         shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
-                    except Exception as e:
-                         print(f"    ❌ Failed to move staged file '{staging_path}' to completed: {e}")
-                         # Manual intervention might be needed
-                else:
-                    print(f"    ❌ Transaction failed for '{archive_name}'. It remains in staging for manual inspection or rollback on next run.")
+                archive_name = processing_queue[0]
+                source_path = os.path.join(CONFIG["SOURCE_ARCHIVES_DIR"], archive_name)
+                staging_path = os.path.join(CONFIG["PROCESSING_STAGING_DIR"], archive_name)
 
-            print("
+                if not os.path.exists(source_path):
+                    print(f"⚠️ Source archive disappeared during check: {archive_name}. Skipping.")
+                    continue
+
+                print(f"--> Locking and staging '{archive_name}' for processing...")
+                try:
+                    shutil.move(source_path, staging_path)
+                except FileNotFoundError:
+                     print(f"⚠️ Source archive disappeared during move: {archive_name}. Skipping.")
+                     continue
+
+
+                if os.path.getsize(staging_path) / (1024**3) > MAX_SAFE_ARCHIVE_SIZE_GB and '.part-' not in archive_name:
+                    repackaging_ok = plan_and_repackage_archive(staging_path, CONFIG["SOURCE_ARCHIVES_DIR"], conn, tqdm)
+                    if repackaging_ok:
+                        shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                    else:
+                         print(f"    ❌ Repackaging failed for '{archive_name}'. It will be rolled back on the next run.")
+                         # Rollback the staged file to source
+                         if os.path.exists(staging_path):
+                            shutil.move(staging_path, source_path)
+                else:
+                    processed_ok = process_regular_archive(staging_path, conn, tqdm)
+                    if processed_ok:
+                        shutil.move(staging_path, os.path.join(CONFIG["COMPLETED_ARCHIVES_DIR"], archive_name))
+                    else:
+                        print(f"    ❌ Transaction failed for '{archive_name}'. It will be rolled back on the next run.")
+                        # Rollback the staged file to source
+                        if os.path.exists(staging_path):
+                             shutil.move(staging_path, source_path)
+
+
+                print("
 --- WORKFLOW CYCLE COMPLETE. ---")
+
     except Exception as e:
         print(f"
 ❌ A CRITICAL UNHANDLED ERROR OCCURRED: {e}")
@@ -505,21 +506,78 @@ def main(args):
         if conn:
             conn.close()
             print("--> [DB] Database connection closed.")
-        # Ensure temporary directories are cleaned up even on error
-        if os.path.exists(VM_TEMP_EXTRACT_DIR):
-            shutil.rmtree(VM_TEMP_EXTRACT_DIR, ignore_errors=True)
-            print("    > Ensured cleanup of temporary extract directory.")
-        if os.path.exists(VM_TEMP_BATCH_DIR):
-            shutil.rmtree(VM_TEMP_BATCH_DIR, ignore_errors=True)
-            print("    > Ensured cleanup of temporary batch directory.")
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
-    parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
-    # Parse known arguments and ignore unknown ones
-    args, unknown = parser.parse_known_args()
-
-    main(args)
+# The if __name__ == "__main__": block and argparse are handled by the bash script
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser(description="Process Google Takeout archives.")
+#     parser.add_argument('--auto-delete-artifacts', action='store_true', help="Enable automatic deletion of 0-byte artifact files.")
+#     try:
+#         args = parser.parse_args([])
+#     except SystemExit:
+#         # This block handles interactive environments like Colab where args might not be passed
+#         # In a script executed from the command line, this won't be triggered.
+#         # We can simply parse the arguments directly in a script.
+#         args = parser.parse_args() # Re-parse using sys.argv if needed for command line
+#     main(args)
 
 EOF
+
+echo "Embedded Python script created as takeout_processor.py."
+# ==============================================================================
+
+# ==============================================================================
+# --- Execute Python Script ---
+# ==============================================================================
+
+# ==============================================================================
+# --- Systemd Service Setup ---
+
+echo "Setting up systemd service..."
+
+# Create the service installation directory if it doesn't exist
+sudo mkdir -p /opt/takeout_processor/
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create /opt/takeout_processor directory." >&2; exit 1; fi
+
+# Move the Python script to the installation directory
+sudo mv takeout_processor.py /opt/takeout_processor/
+if [ $? -ne 0 ]; then echo "ERROR: Failed to move takeout_processor.py to /opt/takeout_processor." >&2; exit 1; fi
+
+# Create the systemd service file
+echo "Writing systemd service file to /etc/systemd/system/takeout_processor.service..."
+sudo cat <<'EOF_SERVICE' > /etc/systemd/system/takeout_processor.service
+[Unit]
+Description=Google Takeout Archive Processor
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/takeout_processor/takeout_processor.py
+WorkingDirectory=/opt/takeout_processor/
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=takeout_processor
+Restart=always
+User=pi # Replace 'pi' with your desired non-root user
+
+[Install]
+WantedBy=multi-user.target
+EOF_SERVICE
+if [ $? -ne 0 ]; then echo "ERROR: Failed to create systemd service file." >&2; exit 1; fi
+
+# Reload the systemd daemon
+echo "Reloading systemd daemon..."
+sudo systemctl daemon-reload
+if [ $? -ne 0 ]; then echo "ERROR: Failed to reload systemd daemon." >&2; exit 1; fi
+
+# Enable the service to start on boot
+echo "Enabling takeout_processor.service..."
+sudo systemctl enable takeout_processor.service
+if [ $? -ne 0 ]; then echo "ERROR: Failed to enable systemd service." >&2; exit 1; fi
+
+# Start the service immediately
+echo "Starting takeout_processor.service..."
+sudo systemctl start takeout_processor.service
+if [ $? -ne 0 ]; then echo "ERROR: Failed to start systemd service." >&2; exit 1; fi
+
+echo "Systemd service setup complete."
+
+# ==============================================================================
