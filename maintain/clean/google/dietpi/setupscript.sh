@@ -1007,7 +1007,7 @@ if __name__ == '__main__':
 # Write the Python script content to a file
 PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
 # Ensure the heredoc delimiter is exactly on a line by itself
-echo "$PYTHON_SCRIPT" | sed 's/^[ \t]*//g' > "$PYTHON_SCRIPT_FILE"
+echo "$PYTHON_SCRIPT" | sed 's/[ \t]*$//' > "$PYTHON_SCRIPT_FILE" # Remove trailing whitespace before saving
 echo "Python script written to: $PYTHON_SCRIPT_FILE"
 
 # Make the Python script executable
