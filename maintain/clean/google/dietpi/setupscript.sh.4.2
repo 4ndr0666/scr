@@ -1,96 +1,22 @@
 #!/bin/bash
-#
-# Google Takeout Organizer Setup Script
-# This script sets up the Google Takeout Organizer Python application.
-# It checks for root privileges, creates necessary directories, installs Python
-# dependencies, and deploys the Python script and a wrapper executable.
-
-# --- Configuration ---
-# Base directory for the application files (Python script, DB, etc.)
-# Using /opt for application-specific files is a common Linux convention.
-APP_BASE_DIR="/opt/takeout_organizer"
-# Name of the main Python script file
-PYTHON_SCRIPT_NAME="takeout_organizer.py"
-# Path to the main Python script
-PYTHON_SCRIPT_FILE="$APP_BASE_DIR/$PYTHON_SCRIPT_NAME"
-# Path for the user-friendly executable wrapper in a standard PATH location
-WRAPPER_SCRIPT_FILE="/usr/local/bin/takeout-organizer"
-
-# --- Script Robustness ---
-# Exit immediately if a command exits with a non-zero status.
-set -e
-# Treat unset variables as an error.
-set -u
-# The return value of a pipeline is the status of the last command to exit with a non-zero status,
-# or zero if all commands in the pipeline exit successfully.
-set -o pipefail
 
 echo "--- Google Takeout Organizer Setup Script ---"
 
 # Check if script is run as root; if not, re-execute with sudo
-if [[ "$EUID" -ne 0 ]]; then
+if [[ $EUID -ne 0 ]]; then
    echo "This script requires root privileges. Re-running with sudo..."
-   # Preserve the script name ($0) and all arguments ($@) when re-executing with sudo.
    exec sudo bash "$0" "$@"
 fi
 
-echo "--> [1/5] Ensuring application directory exists..."
-# Create the application base directory with appropriate permissions (rwx for owner, rx for group/others).
-# 'install -d' is more robust for installation purposes than 'mkdir -p'.
-if install -d -m 755 "$APP_BASE_DIR"; then
-    echo "    ✅ Ensured application directory exists: $APP_BASE_DIR"
-else
-    echo "    ❌ Failed to create application directory: $APP_BASE_DIR" >&2
-    exit 1
-fi
+# Ensure the script directory exists
+SCRIPT_DIR="/usr/local/bin/takeout_organizer"
+mkdir -p "$SCRIPT_DIR"
+echo "Ensured script directory exists: $SCRIPT_DIR"
 
-echo "--> [2/5] Installing Python and required dependencies..."
+# Define the Python script content and write it using a heredoc with cat
+PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
 
-# Check for python3 and install if not found
-if ! command -v python3 &> /dev/null; then
-    echo "    ⚠️ python3 not found. Attempting to install..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y python3 python3-pip
-    elif command -v yum &> /dev/null; then
-        yum install -y python3 python3-pip
-    elif command -v dnf &> /dev/null; then
-        dnf install -y python3 python3-pip
-    else
-        echo "    ❌ Cannot find a suitable package manager (apt, yum, dnf) to install python3. Please install it manually." >&2
-        exit 1
-    fi
-    echo "    ✅ python3 installed."
-fi
-
-# Check for pip3 and install if not found (sometimes pip is separate from python3 install)
-if ! command -v pip3 &> /dev/null; then
-    echo "    ⚠️ pip3 not found. Attempting to install..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y python3-pip
-    elif command -v yum &> /dev/null; then
-        yum install -y python3-pip
-    elif command -v dnf &> /dev/null; then
-        dnf install -y python3-pip
-    else
-        echo "    ❌ Cannot find a suitable package manager (apt, yum, dnf) to install pip3. Please install it manually." >&2
-        exit 1
-    fi
-    echo "    ✅ pip3 installed."
-fi
-
-# Install Python dependencies using pip3
-echo "    > Installing Python packages: google-api-python-client google-auth tqdm..."
-if pip3 install google-api-python-client google-auth tqdm; then
-    echo "    ✅ Python dependencies installed successfully."
-else
-    echo "    ❌ Failed to install Python dependencies. Please check your internet connection or pip configuration." >&2
-    exit 1
-fi
-
-echo "--> [3/5] Writing Python script to: $PYTHON_SCRIPT_FILE"
-# Define the Python script content and write it using a heredoc.
-# Single quotes around 'EOF' prevent shell variable expansion inside the heredoc,
-# ensuring the Python code is written literally.
+echo "Writing Python script to: $PYTHON_SCRIPT_FILE"
 cat << 'EOF' > "$PYTHON_SCRIPT_FILE"
 import os
 import shutil
@@ -109,8 +35,8 @@ import time
 # Import Google API client libraries
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError # Corrected import: HttpError was missing
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload # Corrected import: Typo 'googleapiph' fixed
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 # Attempt to use tqdm if available, otherwise use dummy
 try:
@@ -191,7 +117,7 @@ def authenticate_drive():
 def find_drive_folder(service, folder_name, parent_id=None):
     # Finds a Google Drive folder by name. Can search within a parent folder.
     # Returns the folder ID if found, otherwise None.
-    # print(f"    > Searching for Drive folder: '{folder_name}' in parent ID: {parent_id if parent_id else 'root'}...") # Commented out for less verbose output
+    print(f"    > Searching for Drive folder: '{folder_name}'...")
     query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     if parent_id:
         query += f" and '{parent_id}' in parents"
@@ -200,12 +126,12 @@ def find_drive_folder(service, folder_name, parent_id=None):
         results = service.files().list(q=query, fields="files(id, name)").execute()
         items = results.get('files', [])
         if not items:
-            # print(f"    ⚠️ Drive folder '{folder_name}' not found in parent ID: {parent_id if parent_id else 'root'}.") # Commented out for less verbose output
+            print(f"    ⚠️ Drive folder '{folder_name}' not found.")
             return None
         else:
             # Assuming unique folder names within a parent, or taking the first result
             folder_id = items[0]['id']
-            # print(f"    ✅ Found Drive folder '{folder_name}' with ID: {folder_id}") # Commented out for less verbose output
+            print(f"    ✅ Found Drive folder '{folder_name}' with ID: {folder_id}")
             return folder_id
     except HttpError as error:
         print(f"    ❌ An API error occurred while searching for folder '{folder_name}': {error}")
@@ -216,7 +142,7 @@ def find_drive_folder(service, folder_name, parent_id=None):
 
 def create_drive_folder(service, folder_name, parent_id=None):
     # Creates a Google Drive folder.
-    # print(f"    > Creating Drive folder: '{folder_name}' in parent ID: {parent_id if parent_id else 'root'}...") # Commented out for less verbose output
+    print(f"    > Creating Drive folder: '{folder_name}'...")
     file_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder'
@@ -227,7 +153,7 @@ def create_drive_folder(service, folder_name, parent_id=None):
     try:
         file = service.files().create(body=file_metadata, fields='id').execute()
         folder_id = file.get('id')
-        # print(f"    ✅ Created Drive folder '{folder_name}' with ID: {folder_id}") # Commented out for less verbose output
+        print(f"    ✅ Created Drive folder '{folder_name}' with ID: {folder_id}")
         return folder_id
     except HttpError as error:
         print(f"    ❌ An API error occurred while creating folder '{folder_name}': {error}")
@@ -243,45 +169,26 @@ def ensure_drive_folder(service, folder_name, parent_id=None):
         folder_id = create_drive_folder(service, folder_name, parent_id)
     return folder_id
 
-def ensure_drive_folder_recursive(service, full_path, parent_id='root'):
-    # Handles creating nested Drive folders, e.g., "folder1/folder2/folder3".
-    print(f"    > Ensuring recursive Drive folder path: '{full_path}' under parent ID: {parent_id if parent_id != 'root' else 'root'}")
-    parts = full_path.split('/')
-    current_parent_id = parent_id
-    for part in parts:
-        if not part: continue # Skip empty parts from leading/trailing slashes or double slashes
-        folder_id = find_drive_folder(service, part, current_parent_id)
-        if folder_id is None:
-            print(f"    > Creating folder '{part}' under parent ID: {current_parent_id}")
-            folder_id = create_drive_folder(service, part, current_parent_id)
-            if folder_id is None:
-                print(f"    ❌ Failed to create nested folder '{part}' under parent ID {current_parent_id}.")
-                return None
-        current_parent_id = folder_id
-    return current_parent_id
-
-
 def ensure_drive_directory_structure(service):
     # Ensures the necessary directory structure exists on Google Drive.
     print("--> [Drive] Ensuring Drive directory structure exists...")
     root_id = 'root' # Start from the user's Drive root
 
-    # Use the recursive function for all top-level and potentially nested paths
-    source_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"], root_id)
-    if not source_id: return None, None, None, None, None, None
+    source_id = ensure_drive_folder(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"], root_id)
+    if not source_id: return None, None, None, None
 
-    completed_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"], root_id)
-    if not completed_id: return source_id, None, None, None, None, None
+    completed_id = ensure_drive_folder(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"], root_id)
+    if not completed_id: return source_id, None, None, None
 
-    organized_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"], root_id)
-    if not organized_id: return source_id, completed_id, None, None, None, None
+    organized_id = ensure_drive_folder(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"], root_id)
+    # organized_id = ensure_drive_folder(service, "My-Photos", ensure_drive_folder(service, "03-organized", root_id)) # Example for nested
 
-    trash_id = ensure_drive_folder_recursive(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"], root_id)
-    if not trash_id: return source_id, completed_id, organized_id, None, None, None
+    trash_id = ensure_drive_folder(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"], root_id)
+    if not trash_id: return source_id, completed_id, organized_id, None
 
-    # Ensure subfolders within trash (these are relative to the trash_id)
-    quarantine_id = ensure_drive_folder_recursive(service, "quarantined_artifacts", trash_id)
-    dupes_id = ensure_drive_folder_recursive(service, "duplicates", trash_id)
+    # Ensure subfolders within trash
+    quarantine_id = ensure_drive_folder(service, "quarantined_artifacts", trash_id)
+    dupes_id = ensure_drive_folder(service, "duplicates", trash_id)
 
 
     print("    ✅ Drive directory structure ready.")
@@ -418,7 +325,6 @@ def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_
         # For now, let's simplify: If the archive's Drive ID is in the database as processed, skip.
         # A more robust approach would check if all files *within* the archive (by original path or hash)
         # have been fully processed (final_drive_path set).
-
 
         print("    > Checking database for previously processed files from this archive...")
         # This check will help resume if the local processing failed partially
@@ -602,8 +508,8 @@ def organize_photos(source_path, conn, tqdm_module, source_archive_drive_id, ser
                       print(f"    ⚠️ Could not delete local temp files for {os.path.basename(media_file_to_process)}: {e}")
 
                  # Prepare database update for the successfully uploaded file
-                 # Construct the full final_drive_path for the DB, reflecting the full path including any nested folders from DRIVE_ORGANIZED_FOLDER_NAME
-                 final_drive_path_full = f"{CONFIG['DRIVE_ORGANIZED_FOLDER_NAME']}/{final_drive_filename}"
+                 # Construct the full final_drive_path for the DB
+                 final_drive_path_full = f"{CONFIG['DRIVE_ORGANIZED_FOLDER_NAME']}/{final_drive_filename}" # Example path string, assuming flat structure in target
 
                  organized_db_updates.append((uploaded_file_id, final_drive_filename, final_drive_path_full, original_drive_path_candidate, int(ts), os.path.getsize(media_file_to_process), source_archive_drive_id))
 
@@ -688,7 +594,7 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                 # preserving relative path structure from 'Takeout'.
                 other_files_drive_folder_name = "OtherTakeoutFiles"
                 # Ensure the 'OtherTakeoutFiles' subfolder exists within the Organized folder on Drive
-                other_files_drive_folder_id = ensure_drive_folder_recursive(service, other_files_drive_folder_name, organized_drive_folder_id)
+                other_files_drive_folder_id = ensure_drive_folder(service, other_files_drive_folder_name, organized_drive_folder_id)
 
                 if not other_files_drive_folder_id:
                      print(f"    ❌ Could not ensure '{other_files_drive_folder_name}' folder in Drive. Skipping management of '{filename}'.")
@@ -699,9 +605,7 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                 # This requires iterating through path components and ensuring folders exist on Drive.
                 path_components = original_drive_path_candidate.split(os.sep)
                 current_parent_id = other_files_drive_folder_id
-                # Start building the path string for DB. Use the last part of DRIVE_ORGANIZED_FOLDER_NAME
-                # as the base, then 'OtherTakeoutFiles', then the nested path from the archive.
-                final_drive_path_parts = [CONFIG['DRIVE_ORGANIZED_FOLDER_NAME'].split('/')[-1], other_files_drive_folder_name]
+                final_drive_path_parts = [other_files_drive_folder_name] # Start building the path string for DB
                 # Traverse path components to create nested folders on Drive
                 for i, component in enumerate(path_components[:-1]): # Exclude the filename
                     if component: # Avoid empty components from leading/trailing slashes
@@ -946,7 +850,7 @@ def process_drive_archives(service, drive_folder_ids, conn, tqdm_module):
                 traceback.print_exc()
                 print(f"    >>> Skipping '{archive_name}'. <<<")
 
-            print("--- Finished processing archive cycle. ---")
+            print("\n--- Finished processing archive cycle. ---")
 
 
 # ==============================================================================
@@ -973,21 +877,16 @@ def main(args):
             return
 
         # Ensure Drive directory structure exists and get folder IDs
-        # Unpack all 6 return values from the ensure_drive_directory_structure function
-        source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id = ensure_drive_directory_structure(service)
         drive_folder_ids = {
-             "source_id": source_id,
-             "completed_id": completed_id,
-             "organized_id": organized_id,
-             "trash_id": trash_id,
-             "quarantine_id": quarantine_id,
-             "dupes_id": dupes_id
+             "source_id": ensure_drive_folder(service, CONFIG["DRIVE_SOURCE_FOLDER_NAME"]),
+             "completed_id": ensure_drive_folder(service, CONFIG["DRIVE_COMPLETED_FOLDER_NAME"]),
+             "organized_id": ensure_drive_folder(service, CONFIG["DRIVE_ORGANIZED_FOLDER_NAME"]),
+             "trash_id": ensure_drive_folder(service, CONFIG["DRIVE_TRASH_FOLDER_NAME"]) # Need to handle nested trash structure
         }
-
-        # Check if any critical folder is missing after ensuring structure
-        if not all([source_id, completed_id, organized_id, trash_id, quarantine_id, dupes_id]):
-            print("    ❌ Failed to ensure all required Google Drive folders. Exiting.")
-            return
+        # Example for nested trash subfolders if needed, requires obtaining trash_id first
+        if drive_folder_ids["trash_id"]:
+             drive_folder_ids["quarantine_id"] = ensure_drive_folder(service, "quarantined_artifacts", drive_folder_ids["trash_id"])
+             drive_folder_ids["dupes_id"] = ensure_drive_folder(service, "duplicates", drive_folder_ids["trash_id"])
 
 
         # Check local disk space for temporary processing
@@ -1062,64 +961,70 @@ if __name__ == '__main__':
     # before main is called, allowing CONFIG to be set globally.
 
     main(args)
+
 EOF
 
-# Make the Python script executable
-if chmod +x "$PYTHON_SCRIPT_FILE"; then
-    echo "    ✅ Python script made executable: $PYTHON_SCRIPT_FILE"
+echo "Installing dependencies (jdupes, tqdm, google-api-python-client, google-auth-httplib2, google-auth-oauthlib)..."
+# Update package list and install jdupes non-interactively
+apt-get update -y
+apt-get install -y jdupes
+
+# Install Python packages using pip
+pip install tqdm google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+echo "Creating installation directory..."
+INSTALL_DIR="/usr/local/bin/takeout_organizer"
+mkdir -p "$INSTALL_DIR"
+
+echo "Saving Python script..."
+SCRIPT_NAME="takeout_organizer.py"
+# Use printf to handle potential issues with echo and complex strings/newlines
+# Ensure the script is written with root privileges
+printf "%s" "$PYTHON_SCRIPT" | tee "$INSTALL_DIR/$SCRIPT_NAME" > /dev/null
+
+echo "Making the script executable..."
+chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
+
+echo "Setting GOOGLE_APPLICATION_CREDENTIALS environment variable..."
+CREDENTIALS_PATH="$HOME/.secrets/credentials.json"
+# Check if the export line already exists in the user's bash profile (~/.bashrc)
+# Use the original user's home directory, not root's home if run with sudo
+USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+USER_BASHRC="$USER_HOME/.bashrc"
+
+if [ -z "$USER_HOME" ]; then
+    echo "Could not determine the original user's home directory. Skipping setting GOOGLE_APPLICATION_CREDENTIALS in .bashrc."
 else
-    echo "    ❌ Failed to make Python script executable: $PYTHON_SCRIPT_FILE" >&2
-    exit 1
+    if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" "$USER_BASHRC" 2>/dev/null; then
+      echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> "$USER_BASHRC"
+      echo "Added export command to $USER_BASHRC"
+    else
+      echo "Export command already exists in $USER_BASHRC"
+    fi
 fi
 
-echo "--> [4/5] Creating wrapper script for easy execution..."
-# Create a wrapper script in /usr/local/bin.
-# This allows users to run the application simply by typing 'takeout-organizer'.
-# Variables like $APP_BASE_DIR and $PYTHON_SCRIPT_NAME are expanded by the outer shell,
-# while $PYTHON_SCRIPT_FILE and $@ are escaped to be expanded by the wrapper script itself.
-cat << EOF_WRAPPER > "$WRAPPER_SCRIPT_FILE"
-#!/bin/bash
-# Wrapper script for Google Takeout Organizer
-# This script executes the main Python application.
 
-# Ensure the application's base directory is correct
-APP_BASE_DIR="$APP_BASE_DIR"
-PYTHON_SCRIPT_FILE="\$APP_BASE_DIR/$PYTHON_SCRIPT_NAME"
-
-# Check if the Python script exists before attempting to run it
-if [[ ! -f "\$PYTHON_SCRIPT_FILE" ]]; then
-    echo "Error: Main Python script not found at \$PYTHON_SCRIPT_FILE" >&2
-    echo "Please re-run the setup script or check the installation." >&2
-    exit 1
+echo "Installation complete."
+echo "The script is located at $INSTALL_DIR/$SCRIPT_NAME"
+if [ -n "$USER_HOME" ]; then
+    echo "The GOOGLE_APPLICATION_CREDENTIALS environment variable has been set in $USER_BASHRC."
+    echo "You may need to source your $USER_BASHRC file (source $USER_BASHRC) for the environment variable to take effect in the current terminal session."
 fi
-
-# Execute the Python script, passing all arguments from the wrapper call.
-# 'exec' replaces the current shell process with the Python process,
-# which is efficient and ensures correct signal handling.
-exec python3 "\$PYTHON_SCRIPT_FILE" "\$@"
-EOF_WRAPPER
-
-# Make the wrapper script executable
-if chmod +x "$WRAPPER_SCRIPT_FILE"; then
-    echo "    ✅ Wrapper script created and made executable: $WRAPPER_SCRIPT_FILE"
-else
-    echo "    ❌ Failed to create or make wrapper script executable: $WRAPPER_SCRIPT_FILE" >&2
-    exit 1
-fi
-
-echo "--> [5/5] Setup complete!"
+echo "Ensure your Google Cloud service account credentials file exists at $CREDENTIALS_PATH"
 echo ""
-echo "========================================================================"
-echo "  Google Takeout Organizer has been set up."
-echo "  To run the organizer, use the command: $WRAPPER_SCRIPT_FILE"
+echo "To run the script using the default configuration:"
+echo "python $INSTALL_DIR/$SCRIPT_NAME"
 echo ""
-echo "  IMPORTANT: You need to set the GOOGLE_APPLICATION_CREDENTIALS"
-echo "  environment variable to point to your Google Service Account JSON key file."
-echo "  Example (add to your ~/.bashrc or ~/.profile):"
-echo "    export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/service-account-key.json\""
+echo "To specify a custom temporary directory for local processing, set TAKEOUT_TEMP_DIR:"
+echo "TAKEOUT_TEMP_DIR=/path/to/your/temp/dir python $INSTALL_DIR/$SCRIPT_DIR/$SCRIPT_NAME"
 echo ""
-echo "  You can also configure Drive folder names and temporary directories"
-echo "  using environment variables (e.g., TAKEOUT_DRIVE_SOURCE_FOLDER)."
-echo "  Run '$WRAPPER_SCRIPT_FILE --help' for more options."
-echo "========================================================================"
+echo "To specify custom Google Drive folder names, set the following environment variables:"
+echo "TAKEOUT_DRIVE_SOURCE_FOLDER='My Takeout Archives'"
+echo "TAKEOUT_DRIVE_COMPLETED_FOLDER='Processed Takeout'"
+echo "TAKEOUT_DRIVE_ORGANIZED_FOLDER='Organized Photos'"
+echo "TAKEOUT_DRIVE_TRASH_FOLDER='Takeout Trash'"
 echo ""
+echo "Example of running with custom temp directory and source folder name:"
+echo "TAKEOUT_TEMP_DIR=/mnt/external/temp TAKEOUT_DRIVE_SOURCE_FOLDER='Takeout-to-Process' python $INSTALL_DIR/$SCRIPT_NAME"
+echo ""
+echo "Note: The Python script will attempt to create the specified Google Drive folders if they do not exist in your Drive root."
