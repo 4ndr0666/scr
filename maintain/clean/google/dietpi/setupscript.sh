@@ -33,14 +33,13 @@ REPACKAGE_CHUNK_SIZE_GB = 15
 MAX_SAFE_ARCHIVE_SIZE_GB = 25 # Maximum size for direct processing before repackaging
 
 # BASE_DIR will be set by the bash script or environment
-# Default to a common mount point for external storage on Raspberry Pi/Linux
-BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", "/mnt/storage/TakeoutProject")
+# Default to a common mount point for Google Drive in Colab
+BASE_DIR = os.environ.get("TAKEOUT_BASE_DIR", "/content/drive/MyDrive/TakeoutProject")
 DB_PATH = os.path.join(BASE_DIR, "takeout_archive.db")
 
 # Allow specifying a temporary directory via environment variable
-# Default to a temp dir within BASE_DIR for persistent storage, or /tmp for RAMFS if preferred
-# Using a subdirectory of BASE_DIR avoids reliance on limited RAMFS /tmp on some systems
-DEFAULT_TEMP_DIR = os.path.join(BASE_DIR, "02-temp/")
+# Default to /tmp for RAMFS in Colab for faster temporary operations
+DEFAULT_TEMP_DIR = "/tmp"
 TEMP_DIR = os.environ.get("TAKEOUT_TEMP_DIR", DEFAULT_TEMP_DIR)
 
 CONFIG = {
@@ -116,10 +115,11 @@ def perform_startup_integrity_check():
                     print(f"    ❌ Error rolling back '{orphan_file}': {e}")
 
             # Ensure temporary directories are cleaned up during rollback if they exist within the temp dir
-            if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+            # NOTE: /tmp is a common case outside of BASE_DIR, so we don't restrict cleanup to within BASE_DIR here
+            if os.path.exists(VM_TEMP_EXTRACT_DIR):
                 try: shutil.rmtree(VM_TEMP_EXTRACT_DIR)
                 except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR} during rollback: {e}")
-            if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+            if os.path.exists(VM_TEMP_BATCH_DIR):
                 try: shutil.rmtree(VM_TEMP_BATCH_DIR)
                 except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR} during rollback: {e}")
 
@@ -205,7 +205,8 @@ def plan_and_repackage_archive(archive_path, dest_dir, conn, tqdm_module):
         return True
     except Exception as e: print(f"\n❌ ERROR during JIT repackaging: {e}"); traceback.print_exc(); return False
     finally:
-        if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+        # Clean up batch temp directory
+        if os.path.exists(VM_TEMP_BATCH_DIR):
              try: shutil.rmtree(VM_TEMP_BATCH_DIR)
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR}: {e}")
 
@@ -256,7 +257,8 @@ def process_regular_archive(archive_path, conn, tqdm_module):
         print(f"\n❌ ERROR during archive processing transaction: {e}"); traceback.print_exc()
         return False
     finally:
-        if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+        # Clean up extract temp directory
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
              try: shutil.rmtree(VM_TEMP_EXTRACT_DIR)
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR}: {e}")
 
@@ -269,7 +271,8 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
         return
 
     # Use a temporary directory for jdupes output to avoid issues with long paths
-    jdupes_temp_dir = os.path.join(CONFIG["TEMP_DIR"], 'jdupes_temp') # Use temp dir within BASE_DIR
+    # Use the configured TEMP_DIR
+    jdupes_temp_dir = os.path.join(CONFIG["TEMP_DIR"], 'jdupes_temp')
     os.makedirs(jdupes_temp_dir, exist_ok=True)
 
 
@@ -307,7 +310,15 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
             for filename in files:
                 unique_file_path_temp = os.path.join(root, filename)
                 # Calculate the relative path from the original archive's root
+                # This assumes the structure inside VM_TEMP_EXTRACT_DIR mirrors the original tar structure
+                # relative to the root within the tar (e.g., 'Takeout/...')
+                # Need to be careful here. The original_path in the DB is relative to the TAR root.
+                # The path in unique_file_path_temp is relative to VM_TEMP_EXTRACT_DIR.
+                # We need to find the original_path that corresponds to unique_file_path_temp.
+                # Let's assume the path relative to VM_TEMP_EXTRACT_DIR matches the original_path in the DB.
+                # This is a potential point of failure if the archive structure is unusual.
                 original_relative_path_in_extract = os.path.relpath(unique_file_path_temp, VM_TEMP_EXTRACT_DIR)
+
 
                 final_path = os.path.join(other_files_base_dir, original_relative_path_in_extract)
 
@@ -317,15 +328,7 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
                     files_processed += 1
 
                     # Update the database record for this file
-                    # This is tricky because the original_path in the DB was relative to the TAR root,
-                    # and the path in VM_TEMP_EXTRACT_DIR is relative to VM_TEMP_EXTRACT_DIR.
-                    # Assuming the structure is preserved, we can use the path relative to the
-                    # VM_TEMP_EXTRACT_DIR as the key to find the original_path in the DB. This is not ideal
-                    # as the original_path in the DB was relative to the TAR. A better DB schema would store
-                    # the path *within the archive* explicitly.
-
-                    # Let's try to match based on the path relative to the VM_TEMP_EXTRACT_DIR,
-                    # hoping it matches the original_path stored in the DB.
+                    # Use the path relative to VM_TEMP_EXTRACT_DIR to find the original_path in the DB
                     cursor.execute("UPDATE files SET final_path = ? WHERE original_path = ? AND source_archive = ?",
                                    (final_path, original_relative_path_in_extract, source_archive_name))
 
@@ -340,7 +343,7 @@ def deduplicate_files(source_path, primary_storage_path, trash_path, conn, sourc
 
     print(f"    ✅ Deduplication and move complete. Processed {files_processed} unique files.")
     # Clean up jdupes temp directory
-    if os.path.exists(jdupes_temp_dir) and os.path.commonpath([jdupes_temp_dir, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+    if os.path.exists(jdupes_temp_dir):
         try: shutil.rmtree(jdupes_temp_dir)
         except Exception as e: print(f"    ⚠️ Failed to clean up {jdupes_temp_dir}: {e}")
 
@@ -494,9 +497,8 @@ def main(args):
         # Ensure all necessary directories exist
         print("    > Ensuring required directories exist...")
         for key, path in CONFIG.items():
-            # Skip creating the TEMP_DIR here if it's /tmp or another system path not controlled by BASE_DIR
-            # We'll create TEMP_DIR specifically below.
-            if key != "TEMP_DIR" or os.path.commonpath([path, BASE_DIR]) == BASE_DIR:
+            # Skip creating the TEMP_DIR here as it's handled below
+            if key != "TEMP_DIR":
                  os.makedirs(path, exist_ok=True)
                  print(f"        > Ensured: {path}")
 
@@ -505,7 +507,7 @@ def main(args):
              os.makedirs(CONFIG["TEMP_DIR"], exist_ok=True)
              print(f"    > Ensuring temporary directory exists: {CONFIG['TEMP_DIR']}")
         else:
-             print("    ❌ TEMP_DIR is not set. Please ensure TAKEOUT_TEMP_DIR or TAKEOUT_BASE_DIR is configured.")
+             print("    ❌ TEMP_DIR is not set. Please ensure TAKEOUT_TEMP_DIR or TAKEOUT_BASE_DIR is configured correctly.")
              return # Exit if TEMP_DIR is not configured
 
         conn = initialize_database(DB_PATH)
@@ -631,9 +633,9 @@ def main(args):
             conn.close()
             print("--> [DB] Database connection closed.")
 
-        # Clean up temporary directories regardless of success/failure, only if they are within the defined TEMP_DIR
-        # This check is important to avoid deleting unrelated system files if TEMP_DIR was accidentally set to '/' or '/tmp'
-        if os.path.exists(VM_TEMP_EXTRACT_DIR) and os.path.commonpath([VM_TEMP_EXTRACT_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+        # Clean up temporary directories regardless of success/failure
+        # This check is important to avoid deleting unrelated system files if TEMP_DIR was accidentally set to '/' or another system path
+        if os.path.exists(VM_TEMP_EXTRACT_DIR):
              try:
                   # Check if directory is empty before trying to remove
                   if not os.listdir(VM_TEMP_EXTRACT_DIR):
@@ -646,7 +648,7 @@ def main(args):
                   pass # Directory already gone
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_EXTRACT_DIR}: {e}")
 
-        if os.path.exists(VM_TEMP_BATCH_DIR) and os.path.commonpath([VM_TEMP_BATCH_DIR, CONFIG["TEMP_DIR"]]) == CONFIG["TEMP_DIR"]:
+        if os.path.exists(VM_TEMP_BATCH_DIR):
              try:
                  if not os.listdir(VM_TEMP_BATCH_DIR):
                      os.rmdir(VM_TEMP_BATCH_DIR)
@@ -658,18 +660,23 @@ def main(args):
                   pass # Directory already gone
              except Exception as e: print(f"    ⚠️ Failed to clean up {VM_TEMP_BATCH_DIR}: {e}")
 
-        # Clean up the main TEMP_DIR if it's empty and within BASE_DIR
-        if os.path.exists(CONFIG["TEMP_DIR"]) and os.path.commonpath([CONFIG["TEMP_DIR"], BASE_DIR]) == BASE_DIR:
-             try:
-                  # Only remove if empty
-                  if not os.listdir(CONFIG["TEMP_DIR"]):
-                      os.rmdir(CONFIG["TEMP_DIR"])
-                      print(f"--> Cleaned up main temporary directory: {CONFIG['TEMP_DIR']}")
-             except OSError as e:
-                  # Directory might not be empty or another process holds files
-                  # print(f"    > Main temporary directory {CONFIG['TEMP_DIR']} not empty or in use, not removed.")
-                  pass # Ignore if not empty
-             except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {CONFIG['TEMP_DIR']}: {e}")
+        # Clean up the main TEMP_DIR if it's empty AND was the default /tmp or within BASE_DIR
+        # This prevents accidental deletion of user-specified TEMP_DIR if it was set to a crucial system directory
+        if os.path.exists(CONFIG["TEMP_DIR"]):
+             is_default_tmp = CONFIG["TEMP_DIR"] == DEFAULT_TEMP_DIR
+             is_within_base = os.path.commonpath([CONFIG["TEMP_DIR"], BASE_DIR]) == BASE_DIR
+
+             if is_default_tmp or is_within_base:
+                 try:
+                      # Only remove if empty
+                      if not os.listdir(CONFIG["TEMP_DIR"]):
+                          os.rmdir(CONFIG["TEMP_DIR"])
+                          print(f"--> Cleaned up main temporary directory: {CONFIG['TEMP_DIR']}")
+                 except OSError as e:
+                      # Directory might not be empty or another process holds files
+                      # print(f"    > Main temporary directory {CONFIG['TEMP_DIR']} not empty or in use, not removed.")
+                      pass # Ignore if not empty
+                 except Exception as e: print(f"    ⚠️ Failed to clean up main temp directory {CONFIG['TEMP_DIR']}: {e}")
 
 
 if __name__ == '__main__':
