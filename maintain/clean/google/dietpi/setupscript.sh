@@ -1003,6 +1003,7 @@ if __name__ == '__main__':
     main(args)
 
 """
+'EOF'
 
 # Write the Python script content to a file
 PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
