@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.0 - Grand Unification)
-# This version is a complete refactor to a pure API-driven model, correctly
-# porting the robust local-processing logic from the original Colab notebook.
+# DietPi First-Boot Custom Script for Takeout Processor Appliance (v3.1 - Final Corpora Fix)
+# This version applies the critical 'corpora="allDrives"' parameter to the file
+# listing method, which was the final point of failure.
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ _log_fail() { printf "❌ ERROR: %s\n" "$*"; exit 1; }
 # --- Main Installation Logic ---
 # ==============================================================================
 main() {
-    _log_info "--- Starting Takeout Processor Appliance Setup (v3.0 Grand Unification) ---"
+    _log_info "--- Starting Takeout Processor Appliance Setup (v3.1 Final Corpora Fix) ---"
     if [[ $EUID -ne 0 ]]; then _log_fail "This script must be run as root."; fi
     _log_ok "Root privileges confirmed."
 
@@ -54,13 +54,10 @@ main() {
     fi
     
     _log_info "Deploying the Takeout Processor script..."
-    # --- BEGIN EMBEDDED PYTHON SCRIPT (v3.0) ---
+    # --- BEGIN EMBEDDED PYTHON SCRIPT (v3.1) ---
     cat << 'EOF' > "$PROCESSOR_SCRIPT_PATH"
 """
-Google Takeout Organizer (v3.0 - Unified API Model)
-
-This script is a pure API-driven daemon for processing Google Takeout archives,
-correctly ported from the robust file-system logic of its Colab notebook origins.
+Google Takeout Organizer (v3.1 - Unified API Model)
 """
 
 import os, shutil, subprocess, tarfile, json, traceback, re, sys, argparse, sqlite3, hashlib, time, logging
@@ -143,8 +140,17 @@ class DriveManager:
     def list_files(self, folder_id: str, page_size: int = 10) -> list:
         try:
             query = f"'{folder_id}' in parents and trashed=false"
-            return self.service.files().list(q=query, orderBy="createdTime", pageSize=page_size, fields="files(id, name, size)",
-                                             supportsAllDrives=True, includeItemsFromAllDrives=True, corpora="allDrives").execute().get("files", [])
+            # THE DEFINITIVE FIX: 'corpora' is required for service accounts to see shared files.
+            response = self.service.files().list(
+                q=query,
+                orderBy="createdTime",
+                pageSize=page_size,
+                fields="files(id, name, size)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                corpora="allDrives"
+            ).execute()
+            return response.get("files", [])
         except HttpError as e:
             raise DriveError(f"Failed to list files in folder {folder_id}: {e}") from e
 
@@ -341,7 +347,7 @@ EOF
     _log_info "Creating and enabling the systemd service..."
     cat << EOF > "$SYSTEMD_SERVICE_PATH"
 [Unit]
-Description=Google Takeout Organizer Service (v3.0)
+Description=Google Takeout Organizer Service (v3.1)
 After=network-online.target
 
 [Service]
