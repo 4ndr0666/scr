@@ -13,9 +13,11 @@ SCRIPT_DIR="/usr/local/bin/takeout_organizer"
 mkdir -p "$SCRIPT_DIR"
 echo "Ensured script directory exists: $SCRIPT_DIR"
 
-# Define the Python script content as a heredoc
-# The 'EOF' is quoted to prevent parameter expansion and command substitution within the heredoc
-read -r -d '' PYTHON_SCRIPT << 'EOF'
+# Define the Python script content and write it using a heredoc with cat
+PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
+
+echo "Writing Python script to: $PYTHON_SCRIPT_FILE"
+cat << 'EOF' > "$PYTHON_SCRIPT_FILE"
 import os
 import shutil
 import subprocess
@@ -1001,14 +1003,13 @@ if __name__ == '__main__':
     # before main is called, allowing CONFIG to be set globally.
 
     main(args)
-'EOF'
 
 """
 
-# Write the Python script content to a file
-PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
-# Ensure the heredoc delimiter is exactly on a line by itself
-echo "$PYTHON_SCRIPT" | sed 's/[ \t]*$//' > "$PYTHON_SCRIPT_FILE" # Remove trailing whitespace before saving
+# Write the Python script content to a file using cat and EOF
+# Ensure EOF is on a line by itself with no trailing whitespace.
+# The `\n` before EOF ensures it's on a new line.
+echo "$PYTHON_SCRIPT" > "$PYTHON_SCRIPT_FILE"
 echo "Python script written to: $PYTHON_SCRIPT_FILE"
 
 # Make the Python script executable
@@ -1037,19 +1038,26 @@ else
 fi
 
 # Source .bashrc to update the current session's environment variables and PATH
+# Note: For changes to be permanent across new login sessions, sourcing is needed.
+# For a single script execution like this, exporting variables before the command is also an option.
+# Sourcing here applies to the current shell where the setup script is being run.
+# User will need to source or open a new terminal for interactive use.
 source "$HOME/.bashrc"
 echo "Sourced ~/.bashrc to update current session."
 
 
 echo "--- Setup Complete ---"
 echo "You can now run the script from any terminal session after opening a new one or running 'source ~/.bashrc', using the command: takeout_organizer.py"
-echo "Remember to place your Google Takeout archive files (.tar.gz) into the Google Drive folder named '${CONFIG[DRIVE_SOURCE_FOLDER_NAME]}' (default: 00-ALL-ARCHIVES) in the root of your Drive."
+echo "Remember to place your Google Takeout archive files (.tar.gz) into the Google Drive folder named '${CONFIG[DRIVE_SOURCE_FOLDER_NAME]}' (default: 00-ALL-ARCHIVES) in the base 'TakeoutProject' folder in the root of your Drive."
 echo "You can configure the Drive folder names and local temporary directory using environment variables:"
 echo "  - TAKEOUT_DRIVE_SOURCE_FOLDER=/path/to/source/folder/name"
 echo "  - TAKEOUT_DRIVE_COMPLETED_FOLDER=/path/to/completed/folder/name"
 echo "  - TAKEOUT_DRIVE_ORGANIZED_FOLDER=/path/to/organized/folder/name"
 echo "  - TAKEOUT_DRIVE_TRASH_FOLDER=/path/to/trash/folder/name"
 echo "  - TAKEOUT_TEMP_DIR=/path/to/local/temp/directory"
-echo "  - TAKEOUT_DB_PATH=/path/to/local/database.db (default: $HOME/.takeout_organizer/takeout_archive.db)"
+echo "  - TAKEOUT_DB_PATH=/path/to/local/database.db (default: \$HOME/.takeout_organizer/takeout_archive.db)"
 echo "Example usage with custom source folder and temp directory:"
 echo "  TAKEOUT_DRIVE_SOURCE_FOLDER=\"My Takeout Archives\" TAKEOUT_TEMP_DIR=\"/mnt/usbstorage/temp\" takeout_organizer.py"
+
+# Add EOF on a line by itself at the very end
+EOF
