@@ -1001,9 +1001,9 @@ if __name__ == '__main__':
     # before main is called, allowing CONFIG to be set globally.
 
     main(args)
+'EOF'
 
 """
-'EOF'
 
 # Write the Python script content to a file
 PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
