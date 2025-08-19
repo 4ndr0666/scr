@@ -366,11 +366,11 @@ def process_regular_archive(local_archive_path, drive_archive_id, drive_archive_
         # Resume logic needs to be adapted for Drive File IDs and the local extraction process
         # For now, let's simplify: If the archive's Drive ID is in the database as processed, skip.
         # A more robust approach would check if all files *within* the archive (by original path or hash)
-        # have been fully processed (final_drive_path set).
+        # have been fully processed (final_drive_folder_id set).
 
         # --- Check if the archive's Drive ID is in the database as fully processed ---
         # This simplified check might need refinement for true resume capability.
-        # A better check: count files from this archive with final_drive_path NOT NULL.
+        # A better check: count files from this archive with final_drive_folder_id NOT NULL.
         # If this count equals total files in the archive (from initial scan/db population), it's processed.
         # For now, let's rely on the processing_queue logic in process_drive_archives.
 
@@ -651,7 +651,7 @@ def deduplicate_files(source_path, conn, source_archive_drive_id, service, drive
                 # Construct the final Drive path (relative to the organized folder) and ensure nested folders
                 path_components_relative_to_takeout = os.path.relpath(local_file_path, takeout_source).split(os.sep)
                 current_parent_id = other_files_drive_folder_id
-                final_drive_path_parts = [CONFIG['DRIVE_ORGANIZED_FOLDER_NAME'], other_files_drive_folder_name] # Start building the path string for DB
+                final_drive_path_parts = [CONFIG['DRIVE_ORGANIZED_FOLDER_NAME'].split('/')[-1], other_files_drive_folder_name] # Start building the path string for DB. Use last part of organized path.
                 # Traverse path components to create nested folders on Drive
                 for i, component in enumerate(path_components_relative_to_takeout[:-1]): # Exclude the filename
                     if component: # Avoid empty components from leading/trailing slashes
@@ -1006,7 +1006,8 @@ if __name__ == '__main__':
 
 # Write the Python script content to a file
 PYTHON_SCRIPT_FILE="$SCRIPT_DIR/takeout_organizer.py"
-echo "$PYTHON_SCRIPT" > "$PYTHON_SCRIPT_FILE"
+# Ensure the heredoc delimiter is exactly on a line by itself
+echo "$PYTHON_SCRIPT" | sed 's/^[ \t]*//g' > "$PYTHON_SCRIPT_FILE"
 echo "Python script written to: $PYTHON_SCRIPT_FILE"
 
 # Make the Python script executable
@@ -1014,40 +1015,33 @@ chmod +x "$PYTHON_SCRIPT_FILE"
 echo "Made Python script executable."
 
 # Add the script directory to the PATH in ~/.bashrc if not already there
-if ! grep -q "export PATH=.*$SCRIPT_DIR" ~/.bashrc; then
+if ! grep -q "export PATH=.*$SCRIPT_DIR" "$HOME/.bashrc"; then
   echo "Adding $SCRIPT_DIR to PATH in ~/.bashrc"
-  echo "export PATH=\$PATH:$SCRIPT_DIR" >> ~/.bashrc
-  # Source .bashrc to update the current session's PATH
-  source ~/.bashrc
+  echo "export PATH=\$PATH:$SCRIPT_DIR" >> "$HOME/.bashrc"
 else
   echo "Script directory $SCRIPT_DIR already in PATH."
-  # Ensure the current session has the updated PATH if it was just added
-  if [[ ":$PATH:" != *":$SCRIPT_DIR:"* ]]; then
-      source ~/.bashrc
-      echo "Sourced ~/.bashrc to update current session PATH."
-  fi
 fi
 
 # Set GOOGLE_APPLICATION_CREDENTIALS environment variable in ~/.bashrc
 CREDENTIALS_PATH="$HOME/.secrets/credentials.json"
-if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=.*" ~/.bashrc || ! grep -q "$CREDENTIALS_PATH" ~/.bashrc; then
+# Check if the line exists and contains the correct path
+if ! grep -q "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" "$HOME/.bashrc"; then
+  # Remove any existing GOOGLE_APPLICATION_CREDENTIALS setting to avoid duplicates
+  sed -i '/^export GOOGLE_APPLICATION_CREDENTIALS=/d' "$HOME/.bashrc"
   echo "Setting GOOGLE_APPLICATION_CREDENTIALS in ~/.bashrc"
-  echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> ~/.bashrc
-  # Source .bashrc to update the current session's environment variable
-  source ~/.bashrc
+  echo "export GOOGLE_APPLICATION_CREDENTIALS=\"$CREDENTIALS_PATH\"" >> "$HOME/.bashrc"
   echo "Please ensure your service account credentials file is located at: $CREDENTIALS_PATH"
 else
-  echo "GOOGLE_APPLICATION_CREDENTIALS already set in ~/.bashrc."
-  # Ensure the current session has the updated variable if it was just added
-   if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ] || [[ "$GOOGLE_APPLICATION_CREDENTIALS" != *"$CREDENTIALS_PATH"* ]]; then
-       source ~/.bashrc
-       echo "Sourced ~/.bashrc to update current session GOOGLE_APPLICATION_CREDENTIALS."
-   fi
+  echo "GOOGLE_APPLICATION_CREDENTIALS already set correctly in ~/.bashrc."
 fi
+
+# Source .bashrc to update the current session's environment variables and PATH
+source "$HOME/.bashrc"
+echo "Sourced ~/.bashrc to update current session."
 
 
 echo "--- Setup Complete ---"
-echo "You can now run the script from any terminal session using the command: takeout_organizer.py"
+echo "You can now run the script from any terminal session after opening a new one or running 'source ~/.bashrc', using the command: takeout_organizer.py"
 echo "Remember to place your Google Takeout archive files (.tar.gz) into the Google Drive folder named '${CONFIG[DRIVE_SOURCE_FOLDER_NAME]}' (default: 00-ALL-ARCHIVES) in the root of your Drive."
 echo "You can configure the Drive folder names and local temporary directory using environment variables:"
 echo "  - TAKEOUT_DRIVE_SOURCE_FOLDER=/path/to/source/folder/name"
@@ -1055,6 +1049,6 @@ echo "  - TAKEOUT_DRIVE_COMPLETED_FOLDER=/path/to/completed/folder/name"
 echo "  - TAKEOUT_DRIVE_ORGANIZED_FOLDER=/path/to/organized/folder/name"
 echo "  - TAKEOUT_DRIVE_TRASH_FOLDER=/path/to/trash/folder/name"
 echo "  - TAKEOUT_TEMP_DIR=/path/to/local/temp/directory"
-echo "  - TAKEOUT_DB_PATH=/path/to/local/database.db"
+echo "  - TAKEOUT_DB_PATH=/path/to/local/database.db (default: $HOME/.takeout_organizer/takeout_archive.db)"
 echo "Example usage with custom source folder and temp directory:"
 echo "  TAKEOUT_DRIVE_SOURCE_FOLDER=\"My Takeout Archives\" TAKEOUT_TEMP_DIR=\"/mnt/usbstorage/temp\" takeout_organizer.py"
