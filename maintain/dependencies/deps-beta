@@ -29,6 +29,7 @@ declare -r PACMAN_LOCK="/var/lib/pacman/db.lck"
 declare ALL_SYSTEM=false
 declare INTERACTIVE_MODE=false
 declare DEBUG_MODE=false # New global variable to control debug logging
+declare YAY_AVAILABLE=false # New global variable to cache yay's availability
 
 declare -a DEFAULT_IGNORE_PKGS=("wayland") # Default packages to ignore.
 declare -a CUSTOM_IGNORE_PKGS=()           # Packages ignored via command line or interactive prompt.
@@ -166,12 +167,13 @@ check_requirements() {
 	local -a required_tools=("pacman" "pactree")
 	local tool missing_tools=()
 
-	# Check if yay is available. If so, add it to the list of tools to check.
-	# We don't strictly require yay, but its presence affects AUR support.
+	# Check if yay is available. If so, add it to the list of tools to check and set global flag.
 	if command -v yay >/dev/null 2>&1; then
 		required_tools+=("yay")
+		YAY_AVAILABLE=true # Set global flag
 		log_message "INFO" "'yay' found, AUR support enabled."
 	else
+		YAY_AVAILABLE=false # Set global flag
 		log_message "INFO" "'yay' not found. AUR support will be limited to identification."
 	fi
 
@@ -199,8 +201,8 @@ check_requirements() {
 		exit 1
 	elif [[ ${#missing_tools[@]} -gt 0 ]]; then
 		local missing_str="${missing_tools[*]}"
-		log_message "WARN" "Optional required tools missing: $missing_str"
-		printf "Warning: Optional required tools missing: %s\n" "$missing_str" >&2
+		log_message "WARN" "Optional required tools missing: %s. Functionality may be limited." "$missing_str"
+		printf "Warning: Optional required tools missing: %s. Functionality may be limited.\n" "$missing_str" >&2
 	fi
 
 	log_message "INFO" "All essential required tools found."
@@ -339,17 +341,18 @@ refresh_pacman_databases() {
 	# Critical check: Verify if pacman can actually query packages from the refreshed database.
 	# This ensures that even if -Syy returned 0, the databases are actually populated and usable.
 	if [[ "$db_refresh_successful" = true ]]; then
-		log_message "INFO" "Verifying pacman database integrity by querying official packages (pacman -Sqq)..."
-		# Use head -n 1 to quickly check if any output is produced.
-		# If it produces no output, it means no packages are found in the databases.
-		# `grep -q .` returns 0 if any character is found, 1 otherwise.
-		if ! pacman -Sqq 2>/dev/null | head -n 1 | grep -q .; then
-			# BUG FIX: Enhanced error message to include network connectivity as a potential cause.
-			log_message "FATAL" "pacman -Sqq returned no packages after database refresh. This indicates a severe database issue despite -Syy success. Check /etc/pacman.conf, mirrorlist, and network connectivity."
-			printf "FATAL: Pacman database appears empty or corrupted after refresh. Cannot proceed. Check /etc/pacman.conf, mirrorlist, and network connectivity.\n" >&2
+		# Changed the database integrity check from `pacman -Sqq` to `pacman -Si filesystem`.
+		# This is a more robust check, as `pacman -Si` queries for information about a specific
+		# package, and if it succeeds for a fundamental package like 'filesystem', it confirms
+		# that the databases are loaded and functional, rather than relying on `pacman -Sqq`
+		# producing output on stdout, which can sometimes be unreliable.
+		log_message "INFO" "Verifying pacman database integrity by querying essential package 'filesystem' (pacman -Si filesystem)..."
+		if ! pacman -Si filesystem >/dev/null 2>&1; then
+			log_message "FATAL" "Failed to retrieve 'filesystem' package info (pacman -Si filesystem). This indicates a severe database issue despite -Syy success. Check /etc/pacman.conf, mirrorlist, and network connectivity."
+			printf "FATAL: Pacman database appears empty or corrupted after refresh (failed to query 'filesystem'). Cannot proceed. Check /etc/pacman.conf, mirrorlist, and network connectivity.\n" >&2
 			exit 1
 		fi
-		log_message "INFO" "Pacman database integrity verified: packages found."
+		log_message "INFO" "Pacman database integrity verified: 'filesystem' package info retrieved successfully."
 	else
 		# If db_refresh_successful is false, it means all attempts to refresh failed.
 		log_message "FATAL" "Unable to achieve a successful pacman database refresh. Exiting."
@@ -368,17 +371,21 @@ cache_package_lists() {
 	OFFICIAL_PKGS=()
 	AUR_PKGS=()
 
+	local pacman_qq_raw_output
 	log_message "INFO" "Caching installed packages (pacman -Qq)..."
-	# Use process substitution and 'read' with IFS= to handle package names.
-	# Redirect stderr to the log file (2>>"$LOGFILE") to capture any errors, not /dev/null.
-	# Check the exit status of the entire pipeline.
-	if ! while IFS= read -r pkg; do
-		[[ -n "$pkg" ]] && INSTALLED_PKGS["$pkg"]=1
-	done < <(pacman -Qq 2>>"$LOGFILE"); then
-		log_message "ERROR" "Failed to cache installed packages (pacman -Qq). Check pacman configuration/status."
-		# This is a critical error, as we can't proceed without knowing installed packages.
+	# REVISED: Capture stdout and stderr separately to prevent set -e from trapping on stderr output
+	# when the command itself returns a success status. This makes parsing more robust.
+	if ! pacman_qq_raw_output="$(pacman -Qq 2>>"$LOGFILE")"; then
+		log_message "ERROR" "pacman -Qq command failed with non-zero exit code. See log for full output."
+		printf "Error: Failed to cache installed packages (pacman -Qq). Check pacman configuration/status. See log for details.\n" >&2
 		exit 1
 	fi
+
+	# Process the captured output to populate INSTALLED_PKGS.
+	while IFS= read -r pkg; do
+		[[ -n "$pkg" ]] && INSTALLED_PKGS["$pkg"]=1
+	done <<<"$pacman_qq_raw_output"
+
 	log_message "INFO" "Cached ${#INSTALLED_PKGS[@]} installed packages."
 	# Explicitly check if any installed packages were found.
 	if [[ ${#INSTALLED_PKGS[@]} -eq 0 ]]; then
@@ -387,33 +394,55 @@ cache_package_lists() {
 		exit 1
 	fi
 
+	local pacman_sqq_raw_output
 	log_message "INFO" "Caching official packages (pacman -Sqq)..."
-	# Cache official packages. Redirect stderr to the log file.
-	if ! while IFS= read -r pkg; do
-		[[ -n "$pkg" ]] && OFFICIAL_PKGS["$pkg"]=1
-	done < <(pacman -Sqq 2>>"$LOGFILE"); then
-		log_message "ERROR" "Failed to cache official packages (pacman -Sqq). Check pacman configuration/status."
-		# This is a critical error, as we can't resolve official dependencies.
+	# REVISED: Capture stdout and stderr separately to prevent set -e from trapping on stderr output
+	# when the command itself returns a success status. This makes parsing more robust.
+	if ! pacman_sqq_raw_output="$(pacman -Sqq 2>>"$LOGFILE")"; then
+	    log_message "ERROR" "pacman -Sqq command failed with non-zero exit code. Output: $pacman_sqq_raw_output"
+		printf "Error: Failed to cache official packages (pacman -Sqq). See log for details.\n" >&2
 		exit 1
 	fi
+
+    # Log parts of the raw output for debugging purposes if DEBUG_MODE is enabled.
+    log_message "DEBUG" "Raw output from pacman -Sqq (first 10 lines):"
+    log_message "DEBUG" "$(head -n 10 <<<"$pacman_sqq_raw_output")"
+    log_message "DEBUG" "Raw output from pacman -Sqq (last 10 lines):"
+    log_message "DEBUG" "$(tail -n 10 <<<"$pacman_sqq_raw_output")"
+    local line_count
+    line_count=$(wc -l <<<"$pacman_sqq_raw_output") # Count lines of output
+    log_message "DEBUG" "Total lines from pacman -Sqq: $line_count"
+
+
+	# Process the captured output to populate OFFICIAL_PKGS.
+	# This redirection `<<<` safely feeds the variable content line by line.
+	while IFS= read -r pkg; do
+		[[ -n "$pkg" ]] && OFFICIAL_PKGS["$pkg"]=1
+	done <<<"$pacman_sqq_raw_output"
+
 	log_message "INFO" "Cached ${#OFFICIAL_PKGS[@]} official packages."
 	# If no official packages are found, it's a critical issue with pacman databases.
+	# This check remains essential even after the above debugging, as it confirms successful parsing.
 	if [[ ${#OFFICIAL_PKGS[@]} -eq 0 ]]; then
 		log_message "FATAL" "No official packages found. This indicates a severe pacman database issue. Cannot proceed."
 		printf "FATAL: No official packages found. This indicates a severe pacman database issue. Cannot proceed.\n" >&2
 		exit 1
 	fi
 
-	# Cache AUR packages only if yay is available.
-	if command -v yay >/dev/null 2>&1; then
+	# Cache AUR packages only if yay is available (using the global flag).
+	if [[ "$YAY_AVAILABLE" = true ]]; then
+		local yay_sqq_raw_output
 		log_message "INFO" "Caching AUR packages (yay -Sqq)..."
-		# Cache AUR packages. Redirect stderr to the log file.
-		if ! while IFS= read -r pkg; do
-			[[ -n "$pkg" ]] && AUR_PKGS["$pkg"]=1
-		done < <(yay -Sqq 2>>"$LOGFILE"); then
-			log_message "WARN" "Failed to cache AUR packages (yay -Sqq). AUR dependency resolution might be incomplete."
-			# This is a warning, not fatal, as AUR is optional.
+		# REVISED: Apply the same robust capture and parsing pattern for yay -Sqq.
+		if ! yay_sqq_raw_output="$(yay -Sqq 2>>"$LOGFILE")"; then
+			log_message "WARN" "yay -Sqq command failed with non-zero exit code. AUR dependency resolution might be incomplete. See log for full output."
+			printf "Warning: Failed to cache AUR packages (yay -Sqq). AUR dependency resolution might be incomplete. See log for details.\n" >&2
 		fi
+
+		while IFS= read -r pkg; do
+			[[ -n "$pkg" ]] && AUR_PKGS["$pkg"]=1
+		done <<<"$yay_sqq_raw_output"
+
 		log_message "INFO" "Cached ${#AUR_PKGS[@]} AUR packages."
 	else
 		log_message "INFO" "'yay' not found. Skipping AUR package caching."
@@ -426,58 +455,49 @@ cache_package_groups() {
 	PACKAGE_GROUPS=() # Clear the array
 	local pkg groups line
 
-	# Use awk to parse pacman -Qi output block by block.
-	# Redirect stderr of pacman -Qi to the log file (2>>"$LOGFILE").
-	# Check the exit status of the entire pipeline.
-	if ! pacman -Qi 2>>"$LOGFILE" | awk '
-        # This awk script processes pacman -Qi output block by block.
-        # It captures the package Name and Groups for each block.
-        # It prints "Name Groups" when both are found for a block.
-        # Packages without groups will not be printed by this script.
-        # This is acceptable as is_ignored only checks groups if PACKAGE_GROUPS[$pkg] is non-empty.
+	local pacman_qi_raw_output
+	# REVISED: Apply the robust capture pattern to pacman -Qi as well.
+	if ! pacman_qi_raw_output="$(pacman -Qi 2>>"$LOGFILE")"; then
+		log_message "ERROR" "pacman -Qi command failed with non-zero exit code. Group ignore logic may be affected. See log for full output."
+		printf "Error: Failed to cache package group information (pacman -Qi). Group ignore logic may be affected. See log for details.\n" >&2
+		# This is an error, but not necessarily fatal, as the script can still function without group info.
+		return 1 # Indicate failure, but don't exit script from here.
+	fi
 
+	# Use awk to parse pacman -Qi output block by block from the captured variable.
+	# It captures the package Name and Groups for each block.
+	# It prints "Name Groups" when both are found for a block.
+	# Packages without groups will not be printed by this script, which is acceptable
+	# as is_ignored only checks groups if PACKAGE_GROUPS[$pkg] is non-empty.
+	printf "%s" "$pacman_qi_raw_output" | awk '
         /^Name[[:space:]]+:/ {
-            # Store the name of the current package
             current_pkg = $0
             sub(/^Name[[:space:]]+:/, "", current_pkg)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_pkg)
-            # Reset groups for the new package
-            current_groups = ""
+            current_groups = "" # Reset groups for the new package
         }
 
         /^Groups[[:space:]]+:/ {
-            # Found groups for the current package
             current_groups = $0
             sub(/^Groups[[:space:]]+:/, "", current_groups)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_groups)
-            # We have both name and groups for this package block.
-            # Print them separated by a single space.
             if (current_pkg != "") {
                 print current_pkg, current_groups
             }
-            # Reset for the next block (optional, but good practice)
-            current_pkg = ""
+            current_pkg = "" # Reset for the next block
             current_groups = ""
         }
-
-        # Note: Packages without a "Groups :" line will not be added to the output.
-        # This is fine for the purpose of checking ignored groups.
-
     ' | while IFS= read -r line; do
 		# Split the line into package name and groups string at the first space.
-		# This relies on the awk script outputting "PackageName GroupsString".
 		pkg="${line%% *}"
 		groups="${line#* }"
 		# Store in the associative array if the package name is not empty.
 		[[ -n "$pkg" ]] && PACKAGE_GROUPS["$pkg"]="$groups"
-	done; then
-		log_message "ERROR" "Failed to cache package group information (pacman -Qi or awk issue). Group ignore logic may be affected."
-		# This is an error, but not necessarily fatal, as the script can still function without group info.
-	fi
+	done
+	# No error check on `while read` pipeline here. The critical error is `pacman -Qi` itself.
 
-    # Fix: Corrected typo from PACKAGE_GROGS to PACKAGE_GROUPS
 	if [[ ${#PACKAGE_GROUPS[@]} -eq 0 ]]; then
-		log_message "WARN" "No package group information cached. This might be normal if no installed packages have groups, or indicates a pacman -Qi issue."
+		log_message "WARN" "No package group information cached. This might be normal if no installed packages have groups, or indicates a pacman -Qi parsing issue."
 	else
 		log_message "INFO" "Cached group information for ${#PACKAGE_GROUPS[@]} packages."
 	fi
@@ -491,14 +511,14 @@ prompt_ignore_lists() {
 	log_message "INFO" "Prompting for interactive ignore lists..."
 	local selected_pkgs selected_groups all_groups user_pkgs user_groups
 	local -a tmp_pkgs tmp_groups
-	local old_ifs # Declare old_ifs as local
+	local old_ifs # Declare old_ifs as local to prevent global side effects
 
 	# Check if fzf is available and stdin is connected to a terminal (-t 0).
 	if command -v fzf >/dev/null 2>&1 && [[ -t 0 ]]; then
-		echo "--- Interactive Ignore Selection ---"
+		printf "--- Interactive Ignore Selection ---\n" >&2
 
 		# Prompt for packages to ignore using fzf.
-		echo "Select packages to ignore (TAB to mark, ENTER when done):"
+		printf "Select packages to ignore (TAB to mark, ENTER when done):\n" >&2
 		# Provide installed packages list to fzf. Sort for easier navigation.
 		# Redirect stderr of fzf to /dev/null to suppress potential fzf errors.
 		selected_pkgs=$(printf "%s\n" "${!INSTALLED_PKGS[@]}" | sort | fzf --multi --prompt="Ignore Package: " --header="Select packages to ignore" 2>/dev/null)
@@ -514,9 +534,10 @@ prompt_ignore_lists() {
 		fi
 
 		# Prompt for groups to ignore using fzf.
-		echo "Select groups to ignore (TAB to mark, ENTER when done):"
+		printf "Select groups to ignore (TAB to mark, ENTER when done):\n" >&2
 		# Collect all unique groups from the cached PACKAGE_GROUPS.
 		# Shellcheck SC2086: Quoted "$g" to prevent word splitting if group names contain spaces (though unlikely for Arch groups).
+		# REVISED: Corrected typo PACKAGE_GROGS to PACKAGE_GROUPS.
 		all_groups=$(for g in "${PACKAGE_GROUPS[@]}"; do [[ -n "$g" ]] && printf "%s\n" "$g"; done | tr ' ' '\n' | sort -u)
 		# Provide unique groups list to fzf. Redirect stderr of fzf to /dev/null.
 		selected_groups=$(printf "%s\n" "$all_groups" | fzf --multi --prompt="Ignore Group: " --header="Select groups to ignore" 2>/dev/null)
@@ -530,7 +551,7 @@ prompt_ignore_lists() {
 		else
 			log_message "INFO" "No groups selected to ignore via fzf."
 		fi
-		echo "------------------------------------"
+		printf "------------------------------------\n" >&2
 
 	else
 		log_message "INFO" "fzf not available or not interactive. Using fallback prompts."
@@ -553,9 +574,9 @@ prompt_ignore_lists() {
 		# Add user-entered packages to CUSTOM_IGNORE_PKGS.
 		if [[ -n "$user_pkgs" ]]; then
 			log_message "INFO" "User entered packages to ignore via fallback: $user_pkgs"
-			old_ifs="$IFS"                        # Save current IFS
+			old_ifs="$IFS"                           # Save current IFS
 			IFS=',' read -r -a tmp_pkgs <<<"$user_pkgs" # Split by comma
-			IFS="$old_ifs"                              # Restore IFS
+			IFS="$old_ifs"                               # Restore IFS
 			for pkg in "${tmp_pkgs[@]}"; do
 				[[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg") # Add non-empty entries
 			done
@@ -578,9 +599,9 @@ prompt_ignore_lists() {
 		# Add user-entered groups to CUSTOM_IGNORE_GROUPS.
 		if [[ -n "$user_groups" ]]; then
 			log_message "INFO" "User entered groups to ignore via fallback: $user_groups"
-			old_ifs="$IFS"                            # Save current IFS
+			old_ifs="$IFS"                             # Save current IFS
 			IFS=',' read -r -a tmp_groups <<<"$user_groups" # Split by comma
-			IFS="$old_ifs"                                  # Restore IFS
+			IFS="$old_ifs"                                   # Restore IFS
 			for group in "${tmp_groups[@]}"; do
 				[[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group") # Add non-empty entries
 			done
@@ -613,13 +634,9 @@ is_ignored() {
 		# Use :- to handle cases where array might be unset or empty.
 		for ignore_item in "${CUSTOM_IGNORE_GROUPS[@]:-}"; do
 			# Use -n to check if ignore_item is not empty.
-			if [[ -n "$ignore_item" ]]; then
-				# Check if the ignore_item group is present as a whole word in the package's groups string.
-				# Use space padding around the groups string and the ignore item for accurate word matching.
-				if [[ " ${pkg_groups} " =~ (^|[[:space:]])${ignore_item}([[:space:]]|$) ]]; then
-					log_message "DEBUG" "Package '$pkg' ignored (belongs to ignored group '$ignore_item')."
-					return 0 # Ignored
-				fi
+			if [[ " ${pkg_groups} " =~ (^|[[:space:]])${ignore_item}([[:space:]]|$) ]]; then
+				log_message "DEBUG" "Package '$pkg' ignored (belongs to ignored group '$ignore_item')."
+				return 0 # Ignored
 			fi
 		done
 	fi
@@ -753,8 +770,8 @@ install_dependencies() {
 
 	# Install official dependencies if any.
 	if [[ ${#official_deps[@]} -gt 0 ]]; then
-		echo "Official dependencies to install:"
-		printf "  %s\n" "${official_deps[@]}"
+		printf "Official dependencies to install:\n" >&2
+		printf "  %s\n" "${official_deps[@]}" >&2
 		# Prompt user in interactive mode before installing official packages.
 		if [[ "$INTERACTIVE_MODE" = true ]]; then
 			# Print prompt to standard error so it doesn't interfere with potential stdout redirection.
@@ -781,12 +798,11 @@ install_dependencies() {
 		fi
 	fi
 
-	# Install AUR dependencies if any and yay is available.
+	# Install AUR dependencies if any and yay is available (using the global flag).
 	if [[ ${#aur_deps[@]} -gt 0 ]]; then
-		echo "AUR dependencies to install:"
-		printf "  %s\n" "${aur_deps[@]}"
-		# Check if yay is available before attempting AUR installation.
-		if command -v yay >/dev/null 2>&1; then
+		printf "AUR dependencies to install:\n" >&2
+		printf "  %s\n" "${aur_deps[@]}" >&2
+		if [[ "$YAY_AVAILABLE" = true ]]; then
 			# Prompt user in interactive mode before installing AUR packages.
 			if [[ "$INTERACTIVE_MODE" = true ]]; then
 				# Print prompt to standard error.
@@ -806,7 +822,7 @@ install_dependencies() {
 				if ! yay -S --needed --noconfirm "${aur_deps[@]}" 2>&1 | tee -a "$LOGFILE"; then
 					log_message "ERROR" "Failed to install AUR dependencies: ${aur_deps[*]}"
 					printf "Error: Failed to install AUR dependencies.\n" >&2
-					success=1 # Mark as failed.
+					success=1 # Mark as failed because some dependencies couldn't be installed.
 				else
 					log_message "INFO" "AUR dependencies installed successfully."
 				fi
@@ -837,11 +853,7 @@ process_dependency_closure() {
 	elif [[ ${#TARGET_PKGLIST[@]} -gt 0 ]]; then
 		log_message "INFO" "Checking dependencies for specified target packages: ${TARGET_PKGLIST[*]}"
 		current_targets=("${TARGET_PKGLIST[@]}")
-	else
-		# This case should ideally be caught by argument parsing defaulting to ALL_SYSTEM=true,
-		# but handle defensively.
-		log_message "INFO" "No specific targets or -a flag. Defaulting to all installed packages."
-		mapfile -t current_targets < <(printf "%s\n" "${!INSTALLED_PKGS[@]}" | sort)
+	# No 'else' needed here, as parse_arguments ensures ALL_SYSTEM is true if no targets are given.
 	fi
 
 	# Initialize last_missing to empty. It will be populated with the final set of unresolved dependencies.
@@ -916,7 +928,7 @@ parse_arguments() {
 	log_message "INFO" "Parsing arguments: $*"
 	local opt packages_arg="" groups_arg=""
 	local -a tmp_pkgs tmp_groups
-	local old_ifs # Declare old_ifs as local
+	local old_ifs # Declare old_ifs as local to prevent global side effects
 	OPTIND=1 # Reset OPTIND to 1 to allow getopts to be called multiple times in a script.
 
 	# Parse options with getopts. The leading ':' in the optstring enables silent error reporting,
@@ -946,7 +958,7 @@ parse_arguments() {
 			;;
 		d) # New debug option
 			DEBUG_MODE=true
-			log_message "INFO" "Option -d (DEBUG_MODE) set."
+			log_message "INFO" "INFO: Debug mode enabled." # Log this to stderr immediately, as log_message might not be fully configured yet.
 			;;
 		h)
 			print_help
@@ -976,7 +988,7 @@ parse_arguments() {
 	if [[ -n "$packages_arg" ]]; then
 		old_ifs="$IFS"                           # Save current IFS.
 		IFS=',' read -r -a tmp_pkgs <<<"$packages_arg" # Split the string by comma into an array.
-		IFS="$old_ifs"                                 # Restore IFS.
+		IFS="$old_ifs"                               # Restore IFS.
 		for pkg in "${tmp_pkgs[@]}"; do
 			[[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg") # Add non-empty entries to the custom ignore list.
 		done
@@ -987,7 +999,7 @@ parse_arguments() {
 	if [[ -n "$groups_arg" ]]; then
 		old_ifs="$IFS"                           # Save current IFS.
 		IFS=',' read -r -a tmp_groups <<<"$groups_arg" # Split the string by comma into an array.
-		IFS="$old_ifs"                                 # Restore IFS.
+		IFS="$old_ifs"                               # Restore IFS.
 		for group in "${tmp_groups[@]}"; do
 			[[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group") # Add non-empty entries to the custom ignore list.
 		done
@@ -1063,7 +1075,7 @@ main() {
 	fi
 	log_message "INFO" "Created temporary directory: ${TMP_DIR}"
 
-	# Check for required system tools.
+	# Check for required system tools and set YAY_AVAILABLE global flag.
 	check_requirements
 
 	# Wait for pacman lock to ensure safe execution of pacman commands.
@@ -1117,15 +1129,15 @@ main() {
 	declare -a final_missing=("${last_missing[@]}")
 
 	# Print the summary report to standard output.
-	echo "## Dependency Check Summary ##"
+	printf "\n## Dependency Check Summary ##\n"
 	if [[ ${#final_missing[@]} -gt 0 ]]; then
 		printf "Found %d missing dependencies:\n" "${#final_missing[@]}"
 		# Print missing dependencies, one per line with a bullet.
 		printf " - %s\n" "${final_missing[@]}"
-		echo "" # Add a blank line for readability.
+		printf "\n" # Add a blank line for readability.
 
 		# Categorize final missing dependencies for installation suggestion.
-		local needs_yay=false
+		local needs_yay_for_install=false # Renamed to avoid confusion with global YAY_AVAILABLE
 		local -a official_only=() aur_only=() unknown_only=()
 
 		for dep in "${final_missing[@]}"; do
@@ -1134,7 +1146,7 @@ main() {
 				official_only+=("$dep")
 			elif [[ -n "${AUR_PKGS[$dep]:-}" ]]; then
 				aur_only+=("$dep")
-				needs_yay=true # Flag that yay is needed if any AUR package is missing.
+				needs_yay_for_install=true # Flag that yay is needed if any AUR package is missing.
 			else
 				# This case should ideally not happen if caches are fresh and
 				# compute_missing_dependencies only returned packages found in caches.
@@ -1158,14 +1170,14 @@ main() {
 			printf "Unknown dependencies (not found in official/AUR caches):\n"
 			printf "  %s\n" "${unknown_only[@]}"
 		fi
-		echo "" # Add a blank line for readability
+		printf "\n" # Add a blank line for readability
 
 		# Prioritize suggesting yay if needed and available, as it can install both.
-		if [[ "$needs_yay" = true && $(command -v yay >/dev/null 2>&1) ]]; then
+		if [[ "$needs_yay_for_install" = true && "$YAY_AVAILABLE" = true ]]; then
 			printf "To install all found missing dependencies (official and AUR):\n"
 			# Print the full list of missing dependencies for the yay command.
 			printf "  sudo yay -S --needed %s\n" "${final_missing[*]}"
-		elif [[ "$needs_yay" = true && ! $(command -v yay >/dev/null 2>&1) ]]; then
+		elif [[ "$needs_yay_for_install" = true && "$YAY_AVAILABLE" = false ]]; then
 			# If yay is needed but not found, warn the user.
 			printf "Warning: 'yay' is required to install some dependencies, but it was not found.\n" >&2
 			# Suggest pacman for official dependencies if there are any.
@@ -1183,10 +1195,11 @@ main() {
 
 	else
 		# If no missing dependencies were found in the final iteration.
-		echo "All dependencies satisfied—no further action needed!"
+		printf "All dependencies satisfied—no further action needed!\n"
 	fi
 
 	log_message "INFO" "Script finished successfully."
 }
 
 main "$@"
+
