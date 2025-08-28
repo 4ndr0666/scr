@@ -1,412 +1,319 @@
 #!/usr/bin/env bash
-# ======================================================================
-# Watermark Suite v3.2-fix13
-#  • Default watermark: prefers wm-XL.png in CWD or script dir
-#  • Video path defaults to -an (no audio)
-#  • Hardened ffmpeg (remux → mezzanine) for damaged inputs
-#  • ImageMagick primary for stills; ffmpeg fallback
-#  • Fixes ShellCheck errors (no () after function names, proper calls)
-# ======================================================================
-
+# Author: 4ndr0666
+# v3.1.4
 set -euo pipefail
+# ================== // WM_SUITE.SH //
+## Description: Embeds a normalized, crisp watermark (resolution-aware).
+#  Presets for "teaser" auto-cut, WEBP encode, spot-blur, 
+#  fzf multi-select, recursion, error trapping.
+# ------------------------------------------------
+# Canonical defaults
+PROJECT_ROOT="${PROJECT_ROOT:-$PWD}"
+OUTPUT_DIR="$PROJECT_ROOT/output"
+IMG_OUT_DIR="$OUTPUT_DIR/images"
+VID_OUT_DIR="$OUTPUT_DIR/videos"
+TEASER_DIR="$OUTPUT_DIR/teasers"
 
-# ---------------- Configuration ----------------
-SCALE_PCT="${SCALE_PCT:-10}"          # % of short edge (video & image)
-CRF="${CRF:-18}"                       # x264 CRF
-PRESET="${PRESET:-slow}"               # x264 preset for final encode
-INSET_GEOMETRY="${INSET_GEOMETRY:-}"   # e.g. +24+24; overrides INSET_PCT (image only)
-INSET_PCT="${INSET_PCT:-0.05}"         # inset for bottom-right (5%)
-MIN_LONG_EDGE="${MIN_LONG_EDGE:-1440}" # min long edge for image preprocess
-JPG_QUALITY="${JPG_QUALITY:-92}"
-WEBP_METHOD="${WEBP_METHOD:-6}"
-FORCE_EXT="${FORCE_EXT:-webp}"         # webp|jpg for images
-TEASER_MODE="${TEASER_MODE:-off}"      # off|blur|spot (image only)
-BLUR_SIGMA="${BLUR_SIGMA:-12}"
-SPOT_RECT_PCT="${SPOT_RECT_PCT:-0.50}"
-SPOT_FEATHER="${SPOT_FEATHER:-40}"
-SPOT_ASPECT="${SPOT_ASPECT:-0.60}"     # height/width
+# Resolve script dir (for watermark fallback)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ffmpeg hardening
-FFLOGLEVEL="${FFLOGLEVEL:-error}"
-FF_THREADS="${FF_THREADS:-1}"
-FF_MAXQ="${FF_MAXQ:-1024}"
-FF_IOBUF="${FF_IOBUF:-32M}"
-FF_PROBE="${FF_PROBE:-100M}"
-VIDEO_NO_AUDIO="${VIDEO_NO_AUDIO:-1}"  # 1 = -an (default)
+# Watermark asset (search order handled below)
+WM_FILE_DEFAULT="$SCRIPT_DIR/wm-XL.png"
+WM_FILE_SCRIPT="$PROJECT_ROOT/wm-XL.png"
+WM_FILE_LEGACY1="/home/git/clone/scr/media/wm_suite/wm-XL.png"
 
-# Paths & flags
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-WM_BUNDLE_ROOT="${WM_BUNDLE_ROOT:-}"   # optional explicit bundle root
-WM_OVERRIDE="${WM_OVERRIDE:-}"         # optional explicit watermark file
-PICK_WM="${PICK_WM:-0}"                # 1 to force fzf picker
+# Video encoding
+VIDEO_CRF=15
+VIDEO_PRESET="slow"
+AUDIO_MODE="-an"
+MAX_RESOLUTION=1080
 
-# ---------------- Core utils -------------------
-die(){ printf 'Error: %s\n' "$*" >&2; exit 1; }
-need(){ command -v "$1" >/dev/null 2>&1 || die "'$1' not found in PATH. Please install it."; }
+# Watermark layout
+WM_INSET=0.05
+WM_OPACITY=0.65           # used only for images; video uses PNG alpha as-is
+WM_POSITION="bottom-right" # bottom-right | bottom-left | top-right | top-left
 
-# ---------------- Dependency Check -----------------
-need magick
+# Resolution-aware watermark widths (px) for video
+WM_W_1080=340
+WM_W_720=260
+WM_W_LOW=200
+
+# Teasers
+TEASER_LENGTH=12
+TEASER_OFFSET=40
+TEASER_MODE="on"
+
+# Images
+MIN_LONG_EDGE=1440
+JPG_QUALITY=92
+WEBP_METHOD=6
+FORCE_EXT="webp"
+WM_SCALE=0.12             # legacy image scaling fraction of width (min 120 px)
+
+# Legacy/compat
+FFLOGLEVEL="error"
+BLUR_SIGMA=12
+SPOT_RECT_PCT=0.50
+SPOT_ASPECT=0.60
+PICK_WM=0
+SPOT_BLUR="${SPOT_BLUR:-off}"  # off | on
+
+########################
+# Flags
+########################
+WM_FILE="${WM_FILE:-}"
+usage() {
+  cat <<EOF
+Usage:
+  wm_suite.sh <file-or-dir> [more ...]
+Options:
+  --wm FILE          Override watermark file
+  --wm-pick          Pick watermark via fzf
+  --spot-blur        Enable center rectangle blur (images/videos)
+  --teaser-off       Disable teaser generation
+  -h, --help         Show help
+Outputs:
+  videos  -> $PROJECT_ROOT/output/videos/*_wm.mp4
+  teasers -> $PROJECT_ROOT/output/teasers/*_teaser.mp4
+  images  -> $PROJECT_ROOT/output/images/*_wm.webp
+Never overwrites existing outputs.
+EOF
+}
+ARGS=()
+while (( $# )); do
+  case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    --wm) WM_FILE="${2:?}"; shift 2 ;;
+    --wm-pick) PICK_WM=1; shift ;;
+    --spot-blur) SPOT_BLUR="on"; shift ;;
+    --teaser-off) TEASER_MODE="off"; shift ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${ARGS[@]:-}"
+[[ $# -ge 1 ]] || { usage; exit 1; }
+
+########################
+# Setup and deps
+########################
+mkdir -p "$IMG_OUT_DIR" "$VID_OUT_DIR" "$TEASER_DIR"
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing $1. Install: sudo pacman -S $1"; exit 1; }; }
 need ffmpeg
 need ffprobe
+need magick
 need fzf
 need find
-need exiftool
-need awk
 
-# ---------------- IO & File Handling -------------------
-next_out_path(){
-  local stem="$1" ext="$2" base="${stem}_watermarked" n=0 cand
-  while :; do
-    cand="${PWD}/${base}${n:+($n)}.${ext}"
-    [[ ! -e "$cand" ]] && { printf '%s\n' "$cand"; return; }
-    n=$((n+1))
-  done
-}
-
-mktemp_safe(){ mktemp -t "wm.XXXXXX.$1" || die "Failed to create temporary file."; }
-
-# ---------------- Image helpers -------------------
-is_readable_image(){
-  local in="$1"
-  [[ -s "$in" ]] || return 1
-  magick identify -- "$in" >/dev/null 2>&1
-}
-
-transcode_with_ffmpeg(){
-  local in="$1" tmp
-  tmp="$(mktemp -t "wm.ff.XXXXXX.jpg")" || return 1
-  ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y -i "$in" -q:v 1 "$tmp" >/dev/null 2>&1 || { rm -f "$tmp"; return 1; }
-  printf '%s\n' "$tmp"
-}
-
-# ---------------- FFmpeg-only Image Fallback ----------------
-watermark_image_ffmpeg(){
-  local in="$1" wm="$2" out="$3"
-  local xpct="${INSET_PCT:-0.05}" ypct="${INSET_PCT:-0.05}" scp="${SCALE_PCT:-10}"
-  local blur_sigma="${BLUR_SIGMA:-12}"
-
-  local base="[0:v]scale='if(gte(iw,ih),max(iw,${MIN_LONG_EDGE}),-2)':'if(gt(ih,iw),max(ih,${MIN_LONG_EDGE}),-2)'[b0]"
-  if [[ "${TEASER_MODE}" == "blur" || "${TEASER_MODE}" == "spot" ]]; then
-    base="${base};[b0]gblur=sigma=${blur_sigma}[b0]"
-  fi
-  local fc="${base};[1:v][b0]scale2ref=w='if(lte(iw2,ih2), iw2*${scp}/100, -1)':h='if(gt(iw2,ih2), ih2*${scp}/100, -1)'[wm][b1];[b1][wm]overlay=x=W-w-(W*${xpct}):y=H-h-(H*${ypct})[v]"
-
-  case "${out##*.}" in
-    jpg|jpeg)
-      ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y -loop 1 -t 1 -i "$in" -i "$wm" \
-        -filter_complex "$fc" -frames:v 1 -q:v $((100-${JPG_QUALITY})) -map_metadata -1 "$out" >/dev/null 2>&1 || return 1 ;;
-    webp)
-      ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y -loop 1 -t 1 -i "$in" -i "$wm" \
-        -filter_complex "$fc" -frames:v 1 -lossless 0 -qscale:v $((100-${JPG_QUALITY})) -map_metadata -1 "$out" >/dev/null 2>&1 || return 1 ;;
-    *) return 1 ;;
-  esac
-  return 0
-}
-
-# ---------------- Image Processing (IM primary) ----------------
-watermark_image(){
-  local in="$1" wm="$2" out_stub="$3"
-  local ext="${FORCE_EXT,,}"; [[ $ext == jpeg ]] && ext=jpg
-  [[ $ext =~ ^(webp|jpg)$ ]] || { printf 'skip %s (bad FORCE_EXT)\n' "$in"; return 1; }
-  local out="${out_stub%.*}.${ext}"
-
-  if ! is_readable_image "$in"; then
-    if watermark_image_ffmpeg "$in" "$wm" "$out"; then
-      printf '✅ %s -> %s (ffmpeg fallback)\n' "$in" "$out"; return 0
-    fi
-    local surrogate; surrogate="$(transcode_with_ffmpeg "$in")" || { printf 'skip %s (unreadable and transcode failed)\n' "$in"; return 1; }
-    in="$surrogate"
-  fi
-
-  local tmp_processed_img; tmp_processed_img="$(mktemp_safe "$ext")"
-  local tmp_final_img;     tmp_final_img="$(mktemp_safe "$ext")"
-  trap 'rm -f "$tmp_processed_img" "$tmp_final_img" 2>/dev/null' RETURN
-
-  local W_orig H_orig dimensions_str
-  if ! dimensions_str=$(magick identify -format "%wx%h" "$in" 2>/dev/null); then
-    printf 'skip %s (magick identify failed for dimensions)\n' "$in"; return 1
-  fi
-  read -r W_orig H_orig <<< "${dimensions_str//x/ }"
-  [[ "$W_orig" =~ ^[0-9]+$ && "$H_orig" =~ ^[0-9]+$ ]] || { printf 'skip %s (invalid dims W=%s H=%s)\n' "$in" "$W_orig" "$H_orig"; return 1; }
-
-  local resize_arg="" long_orig="$W_orig" short_orig="$H_orig"
-  (( W_orig < H_orig )) && { long_orig="$H_orig"; short_orig="$W_orig"; }
-  if (( long_orig < MIN_LONG_EDGE )); then
-    local fac targetW targetH
-    fac="$(awk -v L="$long_orig" -v M="$MIN_LONG_EDGE" 'BEGIN{printf "%.6f", M/L}')"
-    targetW="$(awk -v x="$W_orig" -v f="$fac" 'BEGIN{printf "%.0f", x*f}')"
-    targetH="$(awk -v x="$H_orig" -v f="$fac" 'BEGIN{printf "%.0f", x*f}')"
-    if [[ "$targetW" -gt 0 && "$targetH" -gt 0 ]]; then
-      resize_arg="-resize ${targetW}x${targetH}!"
-    fi
-  fi
-  if ! magick "$in" -auto-orient ${resize_arg:+$resize_arg} -colorspace sRGB "$tmp_processed_img" 2>/dev/null; then
-    printf 'skip %s (preprocess failed)\n' "$in"; return 1
-  fi
-
-  local W H
-  if ! dimensions_str=$(magick identify -format "%wx%h" "$tmp_processed_img" 2>/dev/null); then
-    printf 'skip %s (post-preprocess identify failed)\n' "$in"; return 1
-  fi
-  read -r W H <<< "${dimensions_str//x/ }"
-  [[ "$W" =~ ^[0-9]+$ && "$H" =~ ^[0-9]+$ ]] || { printf 'skip %s (invalid post dims W=%s H=%s)\n' "$in" "$W" "$H"; return 1; }
-
-  local short_eff="$W"; (( H < short_eff )) && short_eff="$H"
-  local wm_px; wm_px="$(awk -v s="$short_eff" -v p="$SCALE_PCT" 'BEGIN{printf "%.0f", s*p/100}')"
-  (( wm_px >= 1 )) || { printf 'skip %s (wm too small: %dpx)\n' "$in" "$wm_px"; return 1; }
-
-  local geom_arg="${INSET_GEOMETRY:-+%[fx:${INSET_PCT}*w]+%[fx:${INSET_PCT}*h]}"
-  local enc_opts=() flatten=()
-  if [[ $ext == webp ]]; then
-    enc_opts=( -quality "$JPG_QUALITY" -define "webp:method=$WEBP_METHOD" )
-  else
-    enc_opts=( -quality "$JPG_QUALITY" )
-    flatten=( -background "#0A0F1A" -alpha remove -alpha off -compose over -flatten )
-  fi
-
-  local teaser_cmd=( magick "$tmp_processed_img" )
-  case "$TEASER_MODE" in
-    off) : ;;
-    blur) teaser_cmd+=( -blur "0x$BLUR_SIGMA" ) ;;
-    spot)
-      local pw ph
-      pw="$(awk -v s="$short_eff" -v p="$SPOT_RECT_PCT" 'BEGIN{printf "%.0f", s*p}')"
-      ph="$(awk -v w="$pw" -v a="$SPOT_ASPECT" 'BEGIN{printf "%.0f", w*a}')"
-      (( pw < 1 )) && pw=1; (( ph < 1 )) && ph=1
-      teaser_cmd+=( -write mpr:O +delete
-                    mpr:O -blur "0x$BLUR_SIGMA" -write mpr:B +delete
-                    mpr:O -gravity center -crop "${pw}x${ph}+0+0" +repage -write mpr:C +delete
-                    \( -size "${pw}x${ph}" xc:black -fill white \
-                       -draw "roundrectangle 8,8 $((pw-8)),$((ph-8)) 18,18" \
-                       -gaussian-blur "0x$SPOT_FEATHER" \)
-                    mpr:C -compose copyopacity -composite -write mpr:M +delete
-                    mpr:B mpr:M -gravity center -compose over -composite )
-      ;;
-    *) printf 'skip %s (bad TEASER_MODE)\n' "$in"; return 1 ;;
-  esac
-
-  if ! "${teaser_cmd[@]}" \
-        \( "$wm" -alpha on -colorspace sRGB -resize "${wm_px}x" \) \
-        -gravity southeast -geometry "$geom_arg" -compose over -composite \
-        "${flatten[@]}" -strip "${enc_opts[@]}" "$tmp_final_img" 2>/dev/null; then
-    printf 'skip %s (composite/encode failed)\n' "$in"; return 1
-  fi
-
-  exiftool -quiet -overwrite_original -ALL= -Orientation=1 -icc_profile:all= "$tmp_final_img" >/dev/null 2>&1 || true
-  mv -f "$tmp_final_img" "$out" || { printf 'skip %s (move failed)\n' "$in"; return 1; }
-  printf '✅ %s -> %s\n' "$in" "$out"
-}
-
-# ---------------- Video helpers -------------------
-_probe_vdims(){ # echo "w h"
-  local in="$1" w h
-  IFS=x read -r w h < <(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$in")
-  if [[ ! "$w" =~ ^[0-9]+$ || ! "$h" =~ ^[0-9]+$ ]]; then
-    printf 'Error: Could not probe video dimensions of "%s". The file might be corrupted or unreadable.\n' "$in" >&2
-    return 1
-  fi
-  echo "$w $h"
-}
-
-_build_vf_chain(){ # target_w xpct ypct
-  local target_w="$1" xpct="$2" ypct="$3"
-  printf '[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2,format=rgba[base];[1:v]scale=%d:-2[wm];[base][wm]overlay=x=W-w-(W*%s):y=H-h-(H*%s)[v]' "$target_w" "$xpct" "$ypct"
-}
-
-_ffmpeg_try_encode(){ # in wm out vf movflag aopts...
-  local in="$1" wm="$2" out="$3" vf="$4" movflag="$5"; shift 5 || true
-  local aopts=( "$@" )
-  ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y \
-    -fflags +discardcorrupt -err_detect ignore_err \
-    -probesize "$FF_PROBE" -analyzeduration "$FF_PROBE" \
-    -i "$in" -i "$wm" \
-    -filter_complex "$vf" -map "[v]" \
-    "${aopts[@]}" \
-    -c:v libx264 -crf "$CRF" -preset "$PRESET" -pix_fmt yuv420p \
-    -movflags "$movflag" \
-    -max_muxing_queue_size "$FF_MAXQ" -bufsize "$FF_IOBUF" -rtbufsize "$FF_IOBUF" \
-    -threads "$FF_THREADS" \
-    -map_metadata -1 -map_chapters -1 -dn -sn \
-    "$out"
-}
-
-_repair_remux(){ # in out
-  local in="$1" out="$2"
-  ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y \
-    -fflags +discardcorrupt -err_detect ignore_err \
-    -probesize "$FF_PROBE" -analyzeduration "$FF_PROBE" \
-    -i "$in" -map 0:v:0 -c copy -movflags +faststart "$out" || return 1
-}
-
-_repair_mezz(){ # in out
-  local in="$1" out="$2"
-  ffmpeg -hide_banner -nostdin -loglevel "$FFLOGLEVEL" -y \
-    -fflags +discardcorrupt -err_detect ignore_err \
-    -probesize "$FF_PROBE" -analyzeduration "$FF_PROBE" \
-    -i "$in" -map 0:v:0 -c:v libx264 -crf 18 -preset veryfast -pix_fmt yuv420p \
-    -vsync 1 -movflags +faststart "$out" || return 1
-}
-
-# ---------------- Video Processing ------------------------
-watermark_video(){
-  local in="$1" wm="$2" out="$3"
-  local xpct="${INSET_PCT:-0.05}" ypct="${INSET_PCT:-0.05}"
-  local vw vh; read -r vw vh < <(_probe_vdims "$in") || { printf 'skip %s (probe failed)\n' "$in"; return 1; }
-  [[ "$vw" -gt 0 && "$vh" -gt 0 ]] || { printf 'skip %s (bad dims)\n' "$in"; return 1; }
-
-  local short="$vw"; (( vh < short )) && short="$vh"
-  local target_w; target_w="$(awk -v s="$short" -v p="$SCALE_PCT" 'BEGIN{v=int(s*p/100); if(v<1)v=1; print v}')"
-  local vf; vf="$(_build_vf_chain "$target_w" "$xpct" "$ypct")"
-
-  local AOPTS=(-an) MOVFLAG="+faststart"
-  [[ "${VIDEO_NO_AUDIO}" == "0" ]] && AOPTS=(-c:a copy)
-
-  # Try direct
-  if _ffmpeg_try_encode "$in" "$wm" "$out" "$vf" "$MOVFLAG" "${AOPTS[@]}"; then
-    printf '✅ %s -> %s\n' "$in" "$out"; return 0
-  fi
-
-  printf '…source looks problematic, attempting repair (remux)…\n'
-  local remux; remux="$(mktemp_safe mp4)"
-  if _repair_remux "$in" "$remux" && _ffmpeg_try_encode "$remux" "$wm" "$out" "$vf" "$MOVFLAG" "${AOPTS[@]}"; then
-    rm -f "$remux"
-    printf '✅ %s -> %s (remux path)\n' "$in" "$out"; return 0
-  fi
-  rm -f "$remux"
-
-  printf '…remux insufficient, transcoding to clean mezzanine…\n'
-  local mezz; mezz="$(mktemp_safe mp4)"
-  if _repair_mezz "$in" "$mezz" && _ffmpeg_try_encode "$mezz" "$wm" "$out" "$vf" "$MOVFLAG" "${AOPTS[@]}"; then
-    rm -f "$mezz"
-    printf '✅ %s -> %s (mezz path)\n' "$in" "$out"; return 0
-  fi
-  rm -f "$mezz"
-
-  printf 'skip %s (video processing failed, likely due to a corrupt or incomplete input file)\n' "$in"
-  return 1
-}
-
-# ---------------- Bundle discovery (XL→L→M→S) -----------------
-_find_bundle_default_wm() {
-  local try_roots=()
-  [[ -n "$WM_BUNDLE_ROOT" ]] && try_roots+=("$WM_BUNDLE_ROOT")
-  try_roots+=(
-    "$PWD"
-    "$SCRIPT_DIR"
-    "$SCRIPT_DIR/4ndr0666_watermarks"
-    "$SCRIPT_DIR/4ndr0666_watermarks_bundle"
-    "$SCRIPT_DIR/4ndr0666_watermarks_bundle/4ndr0666_set1"
-    "$SCRIPT_DIR/4ndr0666_watermarks_bundle/4ndr0666_set2"
-    "$SCRIPT_DIR/4ndr0666_watermarks_bundle/4ndr0666_set3"
-    "$SCRIPT_DIR/4ndr0666_watermarks_bundle/4ndr0666_set4"
-  )
-
-  # Prefer exact wm-XL*.png first, then broader matches
-  local -a P_XL=( "wm-XL*.png" "*xl*.png" "wm*xl*.png" "wmXL*.png" )
-  local -a P_L=(  "*-l.png" "*_l.png" "*large*.png" "wm*-L*.png" )
-  local -a P_M=(  "*-m.png" "*_m.png" "*medium*.png" "wm*-M*.png" )
-  local -a P_S=(  "*-s.png" "*_s.png" "*small*.png" "wm*-S*.png" )
-
-  _first_match() {
-    local root="$1"; shift; local p f
-    for p in "$@"; do
-      while IFS= read -r -d '' f; do printf '%s\n' "$f"; return 0; done \
-        < <(find "$root" -maxdepth 3 -type f -iname "$p" -print0 2>/dev/null)
-    done
-    return 1
-  }
-
-  local root
-  for root in "${try_roots[@]}"; do
-    [[ -d "$root" ]] || continue
-    _first_match "$root" "${P_XL[@]}" && return 0
-    _first_match "$root" "${P_L[@]}"  && return 0
-    _first_match "$root" "${P_M[@]}"  && return 0
-    _first_match "$root" "${P_S[@]}"  && return 0
-  done
-  return 1
-}
-
-# ---------------- Pickers (fzf UI) ----------------------
-pick_mode(){ printf '%s\n' "Single image" "Batch images" "Video" | fzf --prompt="Select Mode ▶ " --height=15%; }
-
-pick_wm(){
-  local list
-  list="$(find . -maxdepth 3 -type f \( \
-            -iname 'wm*.png' -o -iname 'wm-*.png' -o \
-            -iname '*watermark*.png' -o -iname '4ndr0666*.png' \) \
-          | sed 's|^\./||')" || true
-  if [[ -z "$list" ]]; then
-    list="$(find . -maxdepth 3 -type f -iname '*.png' | sed 's|^\./||')" || true
-  fi
-  [[ -n "$list" ]] || return 0
-  printf '%s\n' "$list" | fzf --prompt="Select Watermark PNG ▶ " || true
-}
-
-pick_img(){ find "${1:-.}" -maxdepth 5 -type f -iregex '.*\.\(jpg\|jpeg\|png\|webp\|avif\|heic\|heif\|tiff\)' | sed 's|^\./||' | fzf --prompt="Select Image ▶ " || true; }
-pick_dir(){ find . -maxdepth 3 -type d ! -name '.*' | sed 's|^\./||' | fzf --prompt="Select Source Directory ▶ " || true; }
-pick_vid(){ find . -maxdepth 3 -type f -iregex '.*\.\(mp4\|mov\|mkv\|webm\)' | sed 's|^\./||' | fzf --prompt="Select Video ▶ " || true; }
-
-# ---------------- WM Resolver ----------------------
-_resolve_wm() {
-  if [[ -n "$WM_OVERRIDE" ]]; then
-    [[ -f "$WM_OVERRIDE" ]] || die "WM_OVERRIDE not found: $WM_OVERRIDE"
-    printf '%s\n' "$WM_OVERRIDE"; return 0
-  fi
-  if [[ "$PICK_WM" == "1" ]]; then
-    local sel; sel="$(pick_wm)"
-    [[ -n "$sel" ]] || die "No watermark selected. Exiting."
-    printf '%s\n' "$sel"; return 0
-  fi
-  if wm_auto="$(_find_bundle_default_wm)"; then
-    printf '%s\n' "$wm_auto"; return 0
-  fi
-  local sel; sel="$(pick_wm)"
-  [[ -n "$sel" ]] || die "No watermark selected. Exiting."
-  printf '%s\n' "$sel"
-}
-
-# ---------------- Main Execution -------------------------
-MODE="${MODE:-}"
-if [[ -z "$MODE" ]]; then
-  sel=$(pick_mode)
-  case "$sel" in
-    "Single image") MODE="img";;
-    "Batch images") MODE="batch";;
-    "Video") MODE="vid";;
-    *) die "No mode chosen. Exiting.";;
-  esac
+# Resolve watermark file
+if [[ -n "${WM_FILE:-}" ]]; then
+  :
+elif [[ -f "./wm-XL.png" ]]; then
+  WM_FILE="./wm-XL.png"
+elif [[ -f "$WM_FILE_SCRIPT" ]]; then
+  WM_FILE="$WM_FILE_SCRIPT"
+elif [[ -f "$WM_FILE_DEFAULT" ]]; then
+  WM_FILE="$WM_FILE_DEFAULT"
+elif [[ -f "$WM_FILE_LEGACY1" ]]; then
+  WM_FILE="$WM_FILE_LEGACY1"
+elif [[ -f "$WM_FILE_LEGACY2" ]]; then
+  WM_FILE="$WM_FILE_LEGACY2"
+else
+  echo "Error: watermark not found. Supply --wm FILE."
+  exit 1
 fi
 
-case "$MODE" in
-  img)
-    IN="$(pick_img)"; [[ -n "$IN" ]] || die "No image selected. Exiting."
-    WM="$(_resolve_wm)"; printf 'Using watermark: %s\n' "$WM"
-    stem="$(basename "${IN%.*}")"; out_stub="$(next_out_path "$stem" "$FORCE_EXT")"
-    printf 'Processing single image: %s with watermark: %s\n' "$IN" "$WM"
-    watermark_image "$IN" "$WM" "$out_stub" || die "Image failed."
-    ;;
-  batch)
-    dir="$(pick_dir)"; [[ -n "$dir" ]] || die "No input directory selected. Exiting."
-    WM="$(_resolve_wm)"; printf 'Using watermark: %s\n' "$WM"
-    shopt -s nullglob
-    mapfile -t arr < <(find "$dir" -type f -iregex '.*\.\(jpg\|jpeg\|png\|webp\|avif\|heic\|heif\|tiff\)')
-    ((${#arr[@]})) || { printf 'No images found in %s. Exiting.\n' "$dir"; exit 0; }
-    printf 'Found %d images to process in %s...\n' "${#arr[@]}" "$dir"
-    ok=0; fail=0
-    for f in "${arr[@]}"; do
-      stem="$(basename "${f%.*}")"; out_stub="$(next_out_path "$stem" "$FORCE_EXT")"
-      if watermark_image "$f" "$WM" "$out_stub"; then ok=$((ok+1)); else fail=$((fail+1)); fi
-    done
-    printf '✅ Batch complete. Success: %d  Skipped/Failed: %d\n' "$ok" "$fail"
-    ;;
-  vid)
-    IN="$(pick_vid)"; [[ -n "$IN" ]] || die "No video selected. Exiting."
-    WM="$(_resolve_wm)"; printf 'Using watermark: %s\n' "$WM"
-    stem="$(basename "${IN%.*}")"; out="$(next_out_path "$stem" "mp4")"
-    printf "Processing video: %s with watermark: %s\n" "$IN" "$WM"
-    printf "Using video settings: SCALE_PCT=%s%%, CRF=%s, PRESET=%s\n" "$SCALE_PCT" "$CRF" "$PRESET"
-    watermark_video "$IN" "$WM" "$out" || die "Video failed."
-    ;;
-  *) die "Unknown MODE: '$MODE'. Exiting." ;;
-esac
+if (( PICK_WM == 1 )); then
+  sel="$(find "$PROJECT_ROOT" -type f -iregex '.*\.\(png\|webp\)' | fzf || true)"
+  [[ -n "$sel" ]] && WM_FILE="$sel"
+fi
+
+trap 'echo "Error at line $LINENO"; exit 1' ERR
+
+########################
+# Helpers
+########################
+lower_ext() { awk -F. '{print tolower($NF)}' <<<"$1"; }
+is_video() { case "$(lower_ext "$1")" in mp4|mov|mkv) return 0;; *) return 1;; esac; }
+is_image() { case "$(lower_ext "$1")" in jpg|jpeg|png|webp) return 0;; *) return 1;; esac; }
+
+probe_dim() { ffprobe -v 0 -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$1"; }
+probe_dur() { ffprobe -v 0 -show_entries format=duration -of default=nw=1:nk=1 "$1" 2>/dev/null || echo "0"; }
+
+wm_xy_expr() {
+  case "$WM_POSITION" in
+    bottom-right) echo "x=W-w-${WM_INSET}*W:y=H-h-${WM_INSET}*H" ;;
+    bottom-left)  echo "x=${WM_INSET}*W:y=H-h-${WM_INSET}*H" ;;
+    top-right)    echo "x=W-w-${WM_INSET}*W:y=${WM_INSET}*H" ;;
+    top-left)     echo "x=${WM_INSET}*W:y=${WM_INSET}*H" ;;
+    *)            echo "x=W-w-${WM_INSET}*W:y=H-h-${WM_INSET}*H" ;;
+  esac
+}
+
+build_spot_blur_ff() {
+  cat <<'EOF'
+[0:v]split=2[base][work];
+[work]crop=w=W*SPOTW:h=W*SPOTW*SPOTA:x=(W-w)/2:y=(H-h)/2,boxblur=luma_radius=BLUR:luma_power=1[blur];
+[base][blur]overlay=x=(W-w)/2:y=(H-h)/2[prewm]
+EOF
+}
+subst_spot_vars() {
+  sed -e "s/SPOTW/${SPOT_RECT_PCT}/g" -e "s/SPOTA/${SPOT_ASPECT}/g" -e "s/BLUR/${BLUR_SIGMA}/g"
+}
+
+wm_target_px_for_h() {
+  local h="$1"
+  if   (( h >= 1000 )); then echo "$WM_W_1080"
+  elif (( h >= 700 ));  then echo "$WM_W_720"
+  else echo "$WM_W_LOW"
+  fi
+}
+
+img_gravity() {
+  case "$WM_POSITION" in
+    bottom-right) echo "southeast" ;;
+    bottom-left)  echo "southwest" ;;
+    top-right)    echo "northeast" ;;
+    top-left)     echo "northwest" ;;
+    *)            echo "southeast" ;;
+  esac
+}
+
+########################
+# Image pipeline
+########################
+process_image() {
+  local in="$1"; local base="${in##*/}"; local stem="${base%.*}"
+  local out="$IMG_OUT_DIR/${stem}_wm.${FORCE_EXT}"
+  [[ -e "$out" ]] && { echo "Skip image (exists): $out"; return; }
+
+  # Identify size
+  read -r W H < <(magick identify -format "%w %h" "$in")
+  [[ -z "${W:-}" || -z "${H:-}" ]] && { echo "Identify failed: $in"; return; }
+  local LONG="$W"; (( H > W )) && LONG="$H"
+  local TARGET="$LONG"; (( LONG < MIN_LONG_EDGE )) && TARGET="$MIN_LONG_EDGE"
+
+  # Trim PNG margins once into temp
+  local TMP_WM; TMP_WM="$(mktemp --suffix=.png)"
+  magick "$WM_FILE" -trim +repage "$TMP_WM"
+
+  # Derived geometry
+  local wm_w xoff yoff
+  wm_w="$(awk "BEGIN{printf \"%d\", $W * $WM_SCALE}")"
+  (( wm_w < 120 )) && wm_w=120
+  xoff="$(awk "BEGIN{printf \"%d\", $W*$WM_INSET}")"
+  yoff="$(awk "BEGIN{printf \"%d\", $H*$WM_INSET}")"
+
+  if [[ "$SPOT_BLUR" == "on" ]]; then
+    local rw rh rx ry
+    rw=$(awk "BEGIN{printf \"%d\", $W*$SPOT_RECT_PCT}")
+    rh=$(awk "BEGIN{printf \"%d\", $W*$SPOT_RECT_PCT*$SPOT_ASPECT}")
+    rx=$(awk "BEGIN{printf \"%d\", ($W-$rw)/2}")
+    ry=$(awk "BEGIN{printf \"%d\", ($H-$rh)/2}")
+    magick "$in" \
+      \( +clone -crop "${rw}x${rh}+${rx}+${ry}" +repage -blur 0x$BLUR_SIGMA \) \
+      -geometry +"${rx}"+"${ry}" -compose over -composite \
+      -resize "${TARGET}x${TARGET}\>" \
+      \( "$TMP_WM" -alpha on -channel A -evaluate multiply "$WM_OPACITY" +channel -resize "${wm_w}x" \) \
+      -gravity "$(img_gravity)" -geometry +"${xoff}"+"${yoff}" -compose over -composite \
+      -strip -quality "$JPG_QUALITY" -define webp:method="$WEBP_METHOD" \
+      "$out"
+  else
+    magick "$in" \
+      -resize "${TARGET}x${TARGET}\>" \
+      \( "$TMP_WM" -alpha on -channel A -evaluate multiply "$WM_OPACITY" +channel -resize "${wm_w}x" \) \
+      -gravity "$(img_gravity)" -geometry +"${xoff}"+"${yoff}" -compose over -composite \
+      -strip -quality "$JPG_QUALITY" -define webp:method="$WEBP_METHOD" \
+      "$out"
+  fi
+  rm -f "$TMP_WM"
+  echo "Image -> $out"
+}
+
+########################
+# Video pipeline
+########################
+process_video() {
+  local in="$1"; local base="${in##*/}"; local stem="${base%.*}"
+  local out_main="$VID_OUT_DIR/${stem}_wm.mp4"
+  local out_teaser="$TEASER_DIR/${stem}_teaser.mp4"
+  [[ -e "$out_main" ]] && { echo "Skip video (exists): $out_main"; return; }
+
+  # Probe source size
+  local WxH; WxH="$(probe_dim "$in")" || WxH="1920x1080"
+  local src_h="${WxH#*x}"
+
+  # Pick crisp watermark width by height, auto-trim margins once
+  local WM_TARGET; WM_TARGET="$(wm_target_px_for_h "$src_h")"
+  local TMP_WM; TMP_WM="$(mktemp --suffix=.png)"
+  magick "$WM_FILE" -trim +repage "$TMP_WM"
+
+  # Optional spot-blur pregraph -> produces [prewm]
+  local pregraph=""; [[ "$SPOT_BLUR" == "on" ]] && pregraph="$(build_spot_blur_ff | subst_spot_vars)"
+  local pos; pos="$(wm_xy_expr)"
+
+  # Build full filter graph: scale watermark -> overlay -> normalize -> label [v]
+  local graph
+  if [[ -n "$pregraph" ]]; then
+    graph="$pregraph;[1:v]scale=${WM_TARGET}:-1:flags=lanczos[wm];[prewm][wm]overlay=${pos}:format=auto[ov];[ov]scale='if(gt(iw,$MAX_RESOLUTION),$MAX_RESOLUTION,iw)':'-2',fps=30,format=yuv420p[v]"
+  else
+    graph="[1:v]scale=${WM_TARGET}:-1:flags=lanczos[wm];[0:v][wm]overlay=${pos}:format=auto[ov];[ov]scale='if(gt(iw,$MAX_RESOLUTION),$MAX_RESOLUTION,iw)':'-2',fps=30,format=yuv420p[v]"
+  fi
+
+  ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
+    -i "$in" -i "$TMP_WM" \
+    -filter_complex "$graph" \
+    -map "[v]" -c:v libx264 -crf "$VIDEO_CRF" -preset "$VIDEO_PRESET" $AUDIO_MODE \
+    "$out_main"
+
+  rm -f "$TMP_WM"
+  echo "Video -> $out_main"
+
+  # Teaser
+  if [[ "$TEASER_MODE" == "on" ]]; then
+    local dur start
+    dur="$(probe_dur "$out_main")"; start="$TEASER_OFFSET"
+    awk_prog='BEGIN{d='"${dur:-0}"'+0; off='"$TEASER_OFFSET"'+0; len='"$TEASER_LENGTH"'+0;
+      s=(d>0?off:0); if (s+len>d && d>len) s=d-len-0.1; if (s<0) s=0; printf "%.2f", s;}'
+    start="$(awk "$awk_prog")"
+    if [[ ! -e "$out_teaser" ]]; then
+      ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
+        -ss "$start" -i "$out_main" -t "$TEASER_LENGTH" -an \
+        -vf "scale='if(gt(iw,$MAX_RESOLUTION),$MAX_RESOLUTION,iw)':'-2',fps=30,format=yuv420p" \
+        -c:v libx264 -crf "$VIDEO_CRF" -preset "$VIDEO_PRESET" \
+        "$out_teaser"
+      echo "Teaser -> $out_teaser"
+    else
+      echo "Skip teaser (exists): $out_teaser"
+    fi
+  fi
+}
+
+########################
+# Dispatch
+########################
+handle_target() {
+  local t="$1"
+  if [[ -d "$t" ]]; then
+    find "$t" -type f -iregex '.*\.\(mp4\|mov\|mkv\|jpg\|jpeg\|png\|webp\)' \
+      | fzf -m --preview 'bash -c '\''
+          p="$1"
+          ext=$(printf "%s" "${p##*.}" | tr "[:upper:]" "[:lower:]")
+          case "$ext" in
+            mp4|mov|mkv) ffprobe -hide_banner -- "$p" ;;
+            *) magick identify -format "%m %wx%h\n" -- "$p" ;;
+          esac
+        '\'' -- {}' \
+      | while IFS= read -r f; do
+          if is_video "$f"; then process_video "$f";
+          elif is_image "$f"; then process_image "$f"; fi
+        done
+  else
+    if is_video "$t"; then process_video "$t";
+    elif is_image "$t"; then process_image "$t";
+    else echo "Skip unsupported: $t"; fi
+  fi
+}
+
+for target in "$@"; do handle_target "$target"; done
+echo "Done."
