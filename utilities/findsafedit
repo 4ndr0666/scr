@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+set -euo pipefail
+# ================== // FINDSAFEDIT //
+## Description: Search a term in ~ /etc, create .bak backups, and edit in-place. 
+#
+## Usage:
+# Comment out any line containing example under ~ and /etc
+#$findsafedit -t example -v --show
+#
+# Use custom sed to replace a bad path
+#$findsafedit -t '/Nas/Nas/creds/credentials.json' -s 's#/Nas/Nas#/NAS/NAS#g' -E --show
+#
+# Restrict to custom paths
+#$findsafedit -t PROMPT_VAR -p "/etc /usr/local/etc"
+#
+# Restore backups
+#$findsafedit --restore -p "/etc $HOME"
+# ------------------------------------
+usage() {
+  cat <<'USAGE'
+findsafedit - safe find-and-edit with backups
+
+USAGE:
+  findsafedit -t TERM [options]
+
+Required:
+  -t TERM          String or regex to search for.
+
+Common options:
+  -p "PATHS..."    Space-separated paths to search. Default: "$HOME /etc"
+  -n               Dry run. Show matches with line numbers. No edits.
+  -c               Comment whole matching lines (default action).
+  -s 'SED_EXPR'    Custom sed edit (replaces default -c). Example: -s 's/foo/bar/g'
+  -w               Word match for TERM (grep -w).
+  -i               Case-insensitive search (grep -i).
+  -E               Use extended regex (grep -E and sed -E).
+  -x               Only match if the entire line matches TERM.
+  -v               Verbose.
+
+Backup and review:
+  --show           Show diff after edits.
+  --restore        Restore any "*.bak" within target paths (undo edits).
+  --list-backups   List "*.bak" files within target paths.
+
+Notes:
+  - Every edited file gets a sibling backup: FILE.bak
+  - Edits use GNU sed. Run with sudo if needed for system files.
+
+USAGE
+}
+
+# Defaults
+TERM_STR=""
+PATHS=("$HOME" "/etc")
+DRY_RUN=0
+WORD=0
+ICASE=0
+EREGEX=0
+LINE_EXACT=0
+VERBOSE=0
+ACTION="comment"   # or "sed"
+SED_EXPR=""
+SHOW_DIFF=0
+DO_RESTORE=0
+LIST_BACKUPS=0
+
+# Parse args
+while (( "$#" )); do
+  case "${1-}" in
+    -t) TERM_STR="${2-}"; shift 2 ;;
+    -p) IFS=' ' read -r -a PATHS <<< "${2-}"; shift 2 ;;
+    -n) DRY_RUN=1; shift ;;
+    -c) ACTION="comment"; shift ;;
+    -s) ACTION="sed"; SED_EXPR="${2-}"; shift 2 ;;
+    -w) WORD=1; shift ;;
+    -i) ICASE=1; shift ;;
+    -E) EREGEX=1; shift ;;
+    -x) LINE_EXACT=1; shift ;;
+    -v) VERBOSE=1; shift ;;
+    --show) SHOW_DIFF=1; shift ;;
+    --restore) DO_RESTORE=1; shift ;;
+    --list-backups) LIST_BACKUPS=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+# Helper: sudo if not writable
+need_sudo() {
+  local f="$1"
+  [[ -w "$f" ]] && echo "" || echo "sudo"
+}
+
+# Restore mode
+if (( DO_RESTORE )); then
+  find "${PATHS[@]}" -type f -name '*.bak' -print0 | while IFS= read -r -d '' bak; do
+    orig="${bak%.bak}"
+    cmd=$(need_sudo "$orig")
+    [[ $VERBOSE -eq 1 ]] && echo "$cmd mv '$bak' '$orig'"
+    $cmd mv "$bak" "$orig"
+  done
+  exit 0
+fi
+
+# List backups
+if (( LIST_BACKUPS )); then
+  find "${PATHS[@]}" -type f -name '*.bak'
+  exit 0
+fi
+
+# Require TERM unless only listing/restoring
+if [[ -z "$TERM_STR" ]]; then
+  echo "error: -t TERM is required" >&2
+  usage
+  exit 2
+fi
+
+# Build grep flags
+GFLAGS=(-R -n --color=never --binary-files=without-match)
+(( WORD )) && GFLAGS+=(-w)
+(( ICASE )) && GFLAGS+=(-i)
+(( EREGEX )) && GFLAGS+=(-E)
+PATTERN="$TERM_STR"
+if (( LINE_EXACT )); then
+  # anchor to full line
+  PATTERN="^${TERM_STR}$"
+  (( EREGEX )) || GFLAGS+=(-E) # need ERE for anchors in some shells
+fi
+
+# Find candidate files
+mapfile -d '' hits < <(grep "${GFLAGS[@]}" -l -- "$PATTERN" "${PATHS[@]}" 2>/dev/null | tr '\n' '\0')
+
+if (( DRY_RUN )); then
+  grep "${GFLAGS[@]}" -- "$PATTERN" "${PATHS[@]}" 2>/dev/null || true
+  exit 0
+fi
+
+if [[ "${#hits[@]}" -eq 0 ]]; then
+  [[ $VERBOSE -eq 1 ]] && echo "no files matched"
+  exit 0
+fi
+
+# Edit each file with backup
+for f in "${hits[@]}"; do
+  [[ -z "$f" ]] && continue
+  # Show target if verbose
+  (( VERBOSE )) && echo "editing: $f"
+
+  cmd=$(need_sudo "$f")
+
+  # Backup
+  $cmd cp "$f" "$f.bak"
+
+  if [[ "$ACTION" == "comment" ]]; then
+    # Comment entire matching line
+    # Use extended regex if requested
+    if (( EREGEX )); then
+      $cmd sed -E -i "s/^(.*${TERM_STR}.*)$/# \1/" "$f"
+    else
+      $cmd sed -i "s/^\(.*${TERM_STR}.*\)$/# \1/" "$f"
+    fi
+  else
+    # Custom sed expression provided by user
+    if (( EREGEX )); then
+      $cmd sed -E -i "${SED_EXPR}" "$f"
+    else
+      $cmd sed -i "${SED_EXPR}" "$f"
+    fi
+  fi
+
+  if (( SHOW_DIFF )); then
+    diff -u "$f.bak" "$f" || true
+  fi
+done
