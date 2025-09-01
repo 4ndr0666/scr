@@ -139,7 +139,7 @@ pm_install() {
 	elif command -v dnf >/dev/null 2>&1; then
 		sudo dnf install -y openssh-clients curl nmap-ncat >/dev/null
 	elif command -v pacman >/dev/null 2>&1; then
-		sudo pacman -Sy --noconfirm openssh curl ncat >/dev/null
+		sudo pacman -Sy --noconfirm openssh curl netcat --needed --noconfirm >/dev/null
 	else
 		fail "No supported package manager found."
 	fi
