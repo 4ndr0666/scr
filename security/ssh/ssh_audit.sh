@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# ssh_audit.sh — Deterministic SSH audit + alignment for Kali/Linux hosts
-# Version: 3.0.2  |  Author: 4ndr0666
-
+# Author: 4ndr0666
+# Version: 3.0.2  
 set -Eeuo pipefail
 export LC_ALL=C
-
-# ===== Canonical defaults =====
+# ===================== // SSH_AUDIT.SH //
+# Description: Deterministic SSH audit and alignment
+# Usage: `ssh_audit.sh --hosts "192.168.1.92" --user kali --github 4ndr0666 --mode enforce`
+# ------------------------------------------------
+# Constants
 DEFAULT_USER="kali"
 DEFAULT_GITHUB_USER="4ndr0666"
 DEFAULT_HOSTS=("192.168.1.92")
@@ -286,11 +288,22 @@ EOF
 }
 
 final_verify() {
-	local target="$1" host="$2"
-	local out
-	out="$(ssh -vvv -o ControlMaster=no -o ControlPath=none "$target" 2>&1 || true)"
-	echo "$out" | grep -q 'Server host key: ssh-ed25519' || fail "[$host] server host key is not ED25519."
-	echo "$out" | grep -q 'Authenticated to .* using "publickey"' || fail "[$host] auth did not use publickey."
+  local target="$1" host="$2"
+  # Non-interactive probe. Auth + run `true` then exit.
+  local out
+  out="$(
+    ssh -vvv \
+      -o ControlMaster=no -o ControlPath=none \
+      -o BatchMode=yes -o RequestTTY=no \
+      -o PreferredAuthentications=publickey \
+      -o ConnectTimeout=5 \
+      "$target" true 2>&1
+  )" || fail "[$host] final handshake command failed"
+
+  echo "$out" | grep -q 'Server host key: ssh-ed25519' \
+    || fail "[$host] server host key is not ED25519."
+  echo "$out" | grep -q 'Authenticated to .* using "publickey"' \
+    || fail "[$host] auth did not use publickey."
 }
 
 write_report() {
