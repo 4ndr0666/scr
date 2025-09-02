@@ -113,3 +113,7 @@ urlscraper.py
 # .gitignore
 maintain/clean/google/dietpi/credentials.json
 maintain/clean/google/dietpi/credentials.json
+pi-20250902T025643Z.img
+pi-20250902T025643Z.img.map
+pi-20250902T025643Z.img.map.bak
+pi-20250902T025643Z.img.xz
