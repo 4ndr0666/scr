@@ -1,280 +1,215 @@
 #!/usr/bin/env bash
-# pi-image-capture.sh — capture a Raspberry Pi SD card to a distributable image
-# Author: 4ndr0666
-# Version: 1.5.0  (resilient shrink, non-interactive resize, auto-unmount, TUI, safe truncate)
-# License: MIT
+# pi-image-capture.sh — Zero-touch Raspberry Pi SD → image tool
+# Author: 4ndr0666   Version: 1.6.0   License: MIT
+# Modes:
+#   --auto            Detect source, stop automount, capture → shrink → truncate → verify → compress → checksum → restart automount
+#   --shrink-img IMG  Offline-shrink an existing image file and truncate safely (no device needed)
+set -Eeuo pipefail; VERSION="1.6.0"
 
-set -Eeuo pipefail
+# -------- defaults --------
+SRC_DEV=""; OUT_IMG=""; COMPRESS="auto"; FAST_DD=0; NO_SHRINK=0; VERIFY=0
+QUIET=0; JSON=0; COLOR=1; LOG_FILE=""; FORCE=0; TUI=0; AUTO=0; SHRINK_IMG=""
+TIMEOUT_SECS="${TIMEOUT_SECS:-0}"
 
-VERSION="1.5.0"
+# -------- logging --------
+ts(){ date +"%Y-%m-%dT%H:%M:%S%z"; }
+emit(){ local L="$1"; shift; local M="$*"; [[ -n "$LOG_FILE" ]] && printf "%s %s %s\n" "$(ts)" "$L" "$M" >>"$LOG_FILE"
+  if [[ $JSON -eq 1 ]]; then printf '{ "ts":"%s","level":"%s","msg":%q }\n' "$(ts)" "$L" "$M"; else
+    [[ $QUIET -eq 1 && "$L" != "ERR" ]] && return 0
+    if [[ $COLOR -eq 1 ]]; then case "$L" in
+      INFO) printf "\033[1;34m[INFO]\033[0m %s\n" "$M" ;; WARN) printf "\033[1;33m[WARN]\033[0m %s\n" "$M" ;;
+      DONE) printf "\033[1;32m[DONE]\033[0m %s\n" "$M" ;; ERR)  printf "\033[1;31m[ERR ]\033[0m %s\n" "$M" ;;
+      *) printf "[%s] %s\n" "$L" "$M" ;; esac; else printf "[%s] %s\n" "$L" "$M"; fi; fi; }
+log(){ emit INFO "$*"; } warn(){ emit WARN "$*"; } ok(){ emit DONE "$*"; } err(){ emit ERR "$*"; }
 
-# --------------------------- Defaults ---------------------------
-SRC_DEV=""             # e.g. /dev/sdb or /dev/mmcblk0
-OUT_IMG=""             # e.g. /path/raspi.img or .img.xz/.gz/.zst
-COMPRESS="auto"        # auto|xz|gz|zst|none
-FAST_DD=0              # prefer dd over ddrescue
-NO_SHRINK=0            # skip shrink stage
-VERIFY=0               # fsck -n + read-only mount checks
-QUIET=0
-JSON=0
-COLOR=1
-LOG_FILE=""
-FORCE=0
-TUI=0
-TIMEOUT_SECS="${TIMEOUT_SECS:-0}"  # 0 = none
-
-# --------------------------- Logging ----------------------------
-_ts(){ date +"%Y-%m-%dT%H:%M:%S%z"; }
-_emit(){ local lvl="$1"; shift; local msg="$*"
-  [[ -n "$LOG_FILE" ]] && printf "%s %s %s\n" "$(_ts)" "$lvl" "$msg" >>"$LOG_FILE"
-  if [[ $JSON -eq 1 ]]; then printf '{ "ts":"%s","level":"%s","msg":%q }\n' "$(_ts)" "$lvl" "$msg"
-  else
-    [[ $QUIET -eq 1 && "$lvl" != "ERR" ]] && return 0
-    if [[ $COLOR -eq 1 ]]; then
-      case "$lvl" in
-        INFO) printf "\033[1;34m[INFO]\033[0m %s\n" "$msg" ;;
-        WARN) printf "\033[1;33m[WARN]\033[0m %s\n" "$msg" ;;
-        DONE) printf "\033[1;32m[DONE]\033[0m %s\n" "$msg" ;;
-        ERR ) printf "\033[1;31m[ERR ]\033[0m %s\n" "$msg" ;;
-        *)    printf "[%s] %s\n" "$lvl" "$msg" ;;
-      esac
-    else
-      printf "[%s] %s\n" "$lvl" "$msg"
-    fi
-  fi
-}
-log(){ _emit INFO "$*"; }
-warn(){ _emit WARN "$*"; }
-ok(){ _emit DONE "$*"; }
-err(){ _emit ERR  "$*"; }
-
-# --------------------------- Usage ------------------------------
+# -------- usage --------
 usage(){ cat <<EOF
 pi-image-capture.sh v$VERSION
 Usage:
-  sudo $0 -s /dev/sdX -o /path/raspi.img[.xz|.gz|.zst] [options]
-  sudo $0 --tui
+  sudo $0 --auto
+  sudo $0 --shrink-img ./file.img[.xz] [--compress auto|xz|gz|zst|none] [--verify]
+  sudo $0 -s /dev/sdX -o ./raspi.img[.xz|.gz|.zst] [--verify] [--fast-dd] [--no-shrink]
 
-Options:
-  -s, --source DEV       Source device (/dev/sdX or /dev/mmcblk0)
-  -o, --output FILE      Output image path (suffix controls compression when --compress=auto)
-      --compress MODE    auto|xz|gz|zst|none  (default auto)
-      --fast-dd          Prefer dd over ddrescue
-      --no-shrink        Skip ext4 shrink (still truncates to last partition)
-      --verify           Run fsck -n and read-only mount checks on image
-      --force            Auto-confirm prompts
-      --tui              Minimal TUI (fzf if present, else prompts)
-      --no-color         Disable colors
-      --quiet            Suppress non-error logs
-      --json             JSON logs
-      --log-file PATH    Append logs to file
-  -h, --help             Help
-Env:
-  TIMEOUT_SECS=N         Timeout for long steps (0 = none)
+Options: --auto | --shrink-img IMG | -s/--source DEV  -o/--output FILE  --compress MODE
+         --fast-dd  --no-shrink  --verify  --force  --no-color  --quiet  --json  --log-file PATH
+Env:     TIMEOUT_SECS=N
 EOF
 }
 
-# --------------------------- Args -------------------------------
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -s|--source) SRC_DEV="${2:-}"; shift 2;;
-    -o|--output) OUT_IMG="${2:-}"; shift 2;;
-    --compress)  COMPRESS="${2:-}"; shift 2;;
-    --fast-dd)   FAST_DD=1; shift;;
-    --no-shrink) NO_SHRINK=1; shift;;
-    --verify)    VERIFY=1; shift;;
-    --force)     FORCE=1; shift;;
-    --tui)       TUI=1; shift;;
-    --no-color)  COLOR=0; shift;;
-    --quiet)     QUIET=1; shift;;
-    --json)      JSON=1; shift;;
-    --log-file)  LOG_FILE="${2:-}"; shift 2;;
-    -h|--help)   usage; exit 0;;
-    *) err "Unknown arg: $1"; usage; exit 2;;
-  esac
-done
+# -------- args --------
 [[ $EUID -eq 0 ]] || { err "Run as root."; exit 2; }
+while [[ $# -gt 0 ]]; do case "$1" in
+  --auto) AUTO=1; shift;;
+  --shrink-img) SHRINK_IMG="${2:-}"; shift 2;;
+  -s|--source) SRC_DEV="${2:-}"; shift 2;;
+  -o|--output) OUT_IMG="${2:-}"; shift 2;;
+  --compress) COMPRESS="${2:-}"; shift 2;;
+  --fast-dd) FAST_DD=1; shift;;
+  --no-shrink) NO_SHRINK=1; shift;;
+  --verify) VERIFY=1; shift;;
+  --force) FORCE=1; shift;;
+  --tui) TUI=1; shift;;
+  --no-color) COLOR=0; shift;;
+  --quiet) QUIET=1; shift;;
+  --json) JSON=1; shift;;
+  --log-file) LOG_FILE="${2:-}"; shift 2;;
+  -h|--help) usage; exit 0;;
+  *) err "Unknown arg: $1"; usage; exit 2;;
+esac; done
 
-# --------------------------- Helpers ----------------------------
+# -------- helpers --------
 need(){ command -v "$1" >/dev/null 2>&1 || { err "Missing dependency: $1"; exit 3; }; }
 settle(){ command -v udevadm >/dev/null 2>&1 && udevadm settle || true; }
 run_to(){ if [[ "$TIMEOUT_SECS" -gt 0 ]]; then timeout --foreground "$TIMEOUT_SECS" "$@"; else "$@"; fi; }
-ask_yes(){ [[ $FORCE -eq 1 ]] && return 0; read -r -p "${1:-Proceed?} [y/N]: " a; [[ "$a" =~ ^[Yy]$ ]]; }
-
-CLEANUP_CMDS=()
-push_cleanup(){ CLEANUP_CMDS+=("$*"); }
-on_exit(){ set +e; for ((i=${#CLEANUP_CMDS[@]}-1;i>=0;i--)); do eval "${CLEANUP_CMDS[$i]}" || true; done; }
+CLEANUP=(); pushc(){ CLEANUP+=("$*"); }
+on_exit(){ set +e; for ((i=${#CLEANUP[@]}-1;i>=0;i--)); do eval "${CLEANUP[$i]}" || true; done; }
 trap on_exit EXIT
+stop_automount(){ systemctl is-active --quiet udisks2.service && { log "Stopping udisks2"; systemctl stop udisks2.service || true; pushc "systemctl start udisks2.service || true"; } || true; }
+auto_unmount_all(){ local t="$1" b="$(basename "$t")"; mount | awk -v b="$b" '$1 ~ b {print $3}' | while read -r m; do umount -f "$m" 2>/dev/null || true; done; }
+decide_comp(){ case "$1" in auto) [[ "$OUT_IMG" == *.xz ]]&&echo xz||{ [[ "$OUT_IMG" == *.gz ]]&&echo gz||{ [[ "$OUT_IMG" == *.zst ]]&&echo zst||echo xz; }; };; xz|gz|zst|none) echo "$1";; *) err "Invalid --compress"; exit 9;; esac; }
 
-auto_unmount_all(){ local t="$1" base="$(basename "$t")"
-  mount | awk -v b="$base" '$1 ~ b {print $3}' | while read -r m; do [[ -n "$m" ]] && umount -f "$m" 2>/dev/null || true; done; }
-
-tui(){
-  log "TUI"
-  local choices; choices="$(lsblk -dpno NAME,SIZE,MODEL,TRAN,RM | awk '{print $1 "  (" $2 ")  " $3 " " $4 " RM=" $5}' | grep -E '/dev/sd|/dev/mmcblk' || true)"
-  if command -v fzf >/dev/null 2>&1; then SRC_DEV="$(printf "%s\n" "$choices" | fzf --prompt="Select source > " | awk '{print $1}')"
-  else echo "$choices"; read -r -p "Source device: " SRC_DEV; fi
-  [[ -b "$SRC_DEV" ]] || { err "Invalid source: $SRC_DEV"; exit 2; }
-  read -r -p "Output image path [./raspi.img.xz]: " OUT_IMG; OUT_IMG="${OUT_IMG:-./raspi.img.xz}"
-  read -r -p "Compression [auto|xz|gz|zst|none] (auto): " COMPRESS; COMPRESS="${COMPRESS:-auto}"
-  read -r -p "Verify after capture? [y/N]: " v; [[ "$v" =~ ^[Yy]$ ]] && VERIFY=1 || VERIFY=0
-}
-
-# --------------------------- Deps -------------------------------
-for b in lsblk sfdisk partprobe blkid losetup fdisk truncate sha256sum; do need "$b"; done
-if [[ $NO_SHRINK -eq 0 ]]; then for b in e2fsck resize2fs dumpe2fs; do need "$b"; done; fi
-command -v ddrescue >/dev/null 2>&1 || true
-command -v pv >/dev/null 2>&1 || true
-command -v xz >/dev/null 2>&1 || true
-command -v gzip >/dev/null 2>&1 || true
-command -v zstd >/dev/null 2>&1 || true
-command -v parted >/dev/null 2>&1 || true
-command -v udevadm >/dev/null 2>&1 || true
+# -------- deps --------
+for b in lsblk sfdisk partprobe blkid losetup fdisk truncate sha256sum stat; do need "$b"; done
+command -v ddrescue >/dev/null || true; command -v pv >/dev/null || true
+command -v xz >/dev/null || true; command -v gzip >/dev/null || true; command -v zstd >/dev/null || true
+command -v parted >/dev/null || true; command -v udevadm >/dev/null || true
+if [[ -z "$SHRINK_IMG" && $NO_SHRINK -eq 0 ]] || [[ -n "$SHRINK_IMG" ]]; then
+  for b in e2fsck resize2fs dumpe2fs; do need "$b"; done
+fi
 FSCK_FAT_BIN="$(command -v fsck.fat || command -v dosfsck || true)"
 
-# --------------------------- Input/TUI --------------------------
-if [[ $TUI -eq 1 || -z "${SRC_DEV:-}" || -z "${OUT_IMG:-}" ]]; then tui; fi
-[[ -b "${SRC_DEV:-/dev/null}" ]] || { err "Missing/invalid --source"; usage; exit 2; }
-[[ -n "${OUT_IMG:-}" ]] || { err "Missing --output"; usage; exit 2; }
+# -------- core routines --------
+detect_src_auto(){ # pick largest removable sd*/mmcblk* not hosting '/'
+  local line dev; line="$(lsblk -dpno NAME,RM,SIZE,TYPE,MOUNTPOINT | awk '$2==1 && $4=="disk" && $5!="/" {print $1" "$3}' | sort -h -k2 | tail -n1)"
+  dev="$(awk '{print $1}' <<<"$line")"
+  [[ -b "$dev" ]] || { err "No removable source device found."; exit 2; }
+  SRC_DEV="$dev"
+}
 
-# --------------------------- Guards -----------------------------
+prepare_output_auto(){ local ts outdir file
+  outdir="$PWD"; file="pi-$(date -u +%Y%m%dT%H%M%SZ).img.xz"; OUT_IMG="${OUT_IMG:-$outdir/$file}"
+  COMPRESS="${COMPRESS:-auto}"; VERIFY=1
+}
+
+calc_copy_span(){ local dev="$1"
+  SECT_SIZE="$(cat "/sys/class/block/$(basename "$dev")/queue/logical_block_size")"
+  LAST_END_SECT="$(sfdisk -d "$dev" | awk -F'[ ,]+' '/start=/ {e=$4+$6-1} END {print e+1}')"
+  [[ -n "$LAST_END_SECT" ]] || { err "Cannot read partition table on $dev"; exit 5; }
+  RAW_BYTES=$(( LAST_END_SECT * SECT_SIZE ))
+}
+
+capture_device(){ local dev="$1" out="$2"
+  log "Capturing $dev → $out"
+  case "$out" in *.xz|*.gz|*.zst) TMP_IMG="${out%.*}";; *) TMP_IMG="$out";; esac
+  if command -v ddrescue >/dev/null 2>&1 && [[ $FAST_DD -eq 0 ]]; then
+    run_to ddrescue -v --force --size="$RAW_BYTES" --sector-size="$SECT_SIZE" "$dev" "$TMP_IMG" "${TMP_IMG}.map"
+  else
+    if command -v pv >/dev/null 2>&1; then run_to bash -c 'pv -tpreb -s "$0" "$1" | dd of="$2" bs=4M status=none conv=fsync' "$RAW_BYTES" "$dev" "$TMP_IMG"
+    else run_to dd if="$dev" of="$TMP_IMG" bs=4M count="$RAW_BYTES" iflag=count_bytes status=progress conv=fsync; fi
+  fi
+  sync; ok "Capture complete"
+}
+
+attach_loop(){ local img="$1"
+  LOOP="$(losetup --show -fP "$img")"; pushc "losetup -d '$LOOP' >/dev/null 2>&1"; settle; auto_unmount_all "$LOOP"; settle
+  local lsz; lsz="$(blockdev --getsize64 "$LOOP" 2>/dev/null || echo 0)"; [[ "$lsz" -ge 512 ]] || { err "Loop <512 B; aborting"; exit 10; }
+}
+
+detect_fs(){ BOOT_PART=""; ROOT_PART=""; ROOT_SIZE=0; BOOT_SIZE=0
+  while read -r n f s; do [[ "$n" == "$LOOP" || -z "$f" ]] && continue
+    if [[ "$f" =~ ^(vfat|fat|exfat)$ ]]; then [[ -z "$BOOT_PART" || "$s" -lt "$BOOT_SIZE" ]] && BOOT_PART="$n" BOOT_SIZE="$s"
+    elif [[ "$f" =~ ^ext ]]; then [[ "$s" -gt "$ROOT_SIZE" ]] && ROOT_PART="$n" ROOT_SIZE="$s"; fi
+  done < <(lsblk -b -lnpo NAME,FSTYPE,SIZE "$LOOP")
+  LAST_NUM="$(lsblk -lnpo NAME "$LOOP" | tail -n +2 | sed -E 's/.*[^0-9]([0-9]+)$/\1/' | tail -n1)"
+  ROOT_NUM=""; [[ -n "$ROOT_PART" ]] && ROOT_NUM="$(echo "$ROOT_PART" | sed -E 's/.*[^0-9]([0-9]+)$/\1/')"
+  log "Boot: ${BOOT_PART:-unknown}  Root: ${ROOT_PART:-unknown}"
+}
+
+shrink_ext4_if_last(){ [[ $NO_SHRINK -eq 1 ]] && { warn "--no-shrink set"; return 0; }
+  [[ -n "$ROOT_PART" && -n "$ROOT_NUM" && "$ROOT_NUM" == "$LAST_NUM" ]] || { warn "Skip shrink (no ext* root last)"; return 0; }
+  auto_unmount_all "$LOOP"; settle
+  log "e2fsck $ROOT_PART"; run_to e2fsck -fy "$ROOT_PART"
+  log "resize2fs -M $ROOT_PART"; run_to resize2fs -M "$ROOT_PART"
+  local BS="" BC=""
+  eval "$(dumpe2fs -h "$ROOT_PART" 2>/dev/null | awk '/Block size:/ {bs=$3} /Block count:/ {bc=$3} END{printf "BS=%d;BC=%d;\n",bs,bc }')"
+  [[ -n "$BS" && -n "$BC" ]] || { warn "No ext4 geometry; skip partition resize"; return 0; }
+  local FS_BYTES=$(( BS * BC ))
+  local START_SECT; START_SECT="$(sfdisk -d "$LOOP" | awk -F'[ ,]+' -v p="$(basename "$ROOT_PART")" '$1==p {print $4}')"
+  [[ -n "$START_SECT" ]] || { warn "No start sector; skip partition resize"; return 0; }
+  local NEEDED_SECT=$(( (FS_BYTES + SECT_SIZE - 1) / SECT_SIZE )); local NEW_END=$(( START_SECT + NEEDED_SECT - 1 ))
+  log "Resize root end → sector $NEW_END (sfdisk)"
+  if echo ",${NEEDED_SECT}" | run_to sfdisk --no-reread -N "$ROOT_NUM" "$LOOP"; then partprobe "$LOOP" || losetup -c "$LOOP" || true; settle; ok "Partition resized (sfdisk)"
+  else warn "sfdisk failed; trying parted -s"; if run_to parted -s "$LOOP" unit s resizepart "$ROOT_NUM" "${NEW_END}s"; then partprobe "$LOOP" || losetup -c "$LOOP" || true; settle; ok "Partition resized (parted)"; else warn "Partition resize failed; continuing unshrunk"; fi; fi
+}
+
+truncate_image_safely(){ local img="$1"
+  local LAST_END_IMG; LAST_END_IMG="$(sfdisk -d "$LOOP" | awk -F'[ ,]+' '/start=/ {e=$4+$6-1} END {print e}')" || true
+  [[ -n "$LAST_END_IMG" ]] || { err "Cannot compute end sector; refusing to truncate"; exit 8; }
+  local FINAL_BYTES=$(( (LAST_END_IMG + 1) * SECT_SIZE ))
+  local FILE_BYTES; FILE_BYTES="$(stat -c %s "$img")"
+  (( FINAL_BYTES >= 1048576 )) || { err "Final size <1MiB ($FINAL_BYTES). Abort."; exit 11; }
+  (( FINAL_BYTES <= FILE_BYTES )) || { err "Final size ($FINAL_BYTES) > file size ($FILE_BYTES). Abort."; exit 12; }
+  log "Detach loop and truncate to $FINAL_BYTES bytes"; losetup -d "$LOOP" || true; CLEANUP=("${CLEANUP[@]:0:${#CLEANUP[@]}-1}")
+  run_to truncate -s "$FINAL_BYTES" "$img"; ok "Truncate complete"
+}
+
+verify_image(){ local img="$1"; [[ $VERIFY -eq 1 ]] || return 0
+  log "Verify image"; local L; L="$(losetup --show -fP "$img")"; pushc "losetup -d '$L' >/dev/null 2>&1"; settle; auto_unmount_all "$L"; settle
+  while read -r p; do [[ "$p" == "$L" ]] && continue; local t; t="$(blkid -o value -s TYPE "$p" 2>/dev/null || true)"
+    case "$t" in ext*) run_to e2fsck -fn "$p" >/dev/null ;; vfat|fat|exfat) [[ -n "$FSCK_FAT_BIN" ]] && run_to "$FSCK_FAT_BIN" -n "$p" >/dev/null || true ;; esac
+  done < <(lsblk -lnpo NAME "$L"); losetup -d "$L" || true; ok "Verify complete"
+}
+
+compress_and_hash(){ local img="$1"
+  local mode; mode="$(decide_comp "$COMPRESS")"
+  if [[ "$mode" == "none" ]]; then OUT_IMG="${OUT_IMG:-$img}"; [[ "$img" != "$OUT_IMG" ]] && mv -f "$img" "$OUT_IMG"
+    warn "No compression selected"
+  else
+    [[ -n "$OUT_IMG" ]] || OUT_IMG="${img}.${mode}"
+    log "Compress → $OUT_IMG ($mode)"
+    case "$mode" in xz) need xz;  run_to xz   -T0 -9e -f -c "$img" > "$OUT_IMG" ;;
+                      gz) need gzip;run_to gzip -9    -f -c "$img" > "$OUT_IMG" ;;
+                     zst) need zstd;run_to zstd -T0 -19 -f -c "$img" > "$OUT_IMG" ;; esac
+    rm -f "$img"
+  fi
+  log "SHA-256"; sha256sum "$OUT_IMG" | tee "${OUT_IMG}.sha256" >/dev/null; ok "All done."
+  printf "%s\n%s\n" "Image: $OUT_IMG" "SHA256: $(cut -d' ' -f1 "${OUT_IMG}.sha256")"
+}
+
+# -------- shrink existing image mode --------
+if [[ -n "$SHRINK_IMG" ]]; then
+  # If compressed, decompress to .img first (stream to temp)
+  if [[ "$SHRINK_IMG" =~ \.xz$ ]]; then need xz; TMP_IMG="${SHRINK_IMG%.xz}"; xz -dkf "$SHRINK_IMG"; elif [[ "$SHRINK_IMG" =~ \.gz$ ]]; then need gzip; TMP_IMG="${SHRINK_IMG%.gz}"; gunzip -kf "$SHRINK_IMG"; else TMP_IMG="$SHRINK_IMG"; fi
+  [[ -f "$TMP_IMG" ]] || { err "Image not found: $TMP_IMG"; exit 2; }
+  attach_loop "$TMP_IMG"; SECT_SIZE=512  # loop logical size path may be absent; 512 is correct for MSDOS/GPT math
+  detect_fs; shrink_ext4_if_last; truncate_image_safely "$TMP_IMG"; verify_image "$TMP_IMG"; OUT_IMG="${OUT_IMG:-${TMP_IMG}.xz}"
+  compress_and_hash "$TMP_IMG"; exit 0
+fi
+
+# -------- AUTO mode --------
+if [[ $AUTO -eq 1 ]]; then
+  stop_automount
+  detect_src_auto
+  prepare_output_auto
+fi
+
+# -------- manual sanity (when not --auto) --------
+if [[ $AUTO -eq 0 ]]; then
+  [[ -b "${SRC_DEV:-/dev/null}" ]] || { err "Missing/invalid --source"; usage; exit 2; }
+  [[ -n "${OUT_IMG:-}" ]] || OUT_IMG="./pi-$(date -u +%Y%m%dT%H%M%SZ).img.xz"
+fi
+
+# refuse output on same physical device
 OUT_DIR="$(dirname "$(readlink -f "$OUT_IMG")")"
 SRC_PDEV="$(lsblk -no PKNAME "$SRC_DEV" 2>/dev/null || true)"
 OUT_SRC="$(df --output=source "$OUT_DIR" | tail -n1 || true)"
 if [[ -n "$SRC_PDEV" && "$OUT_SRC" == *"$SRC_PDEV"* ]]; then err "Destination is on source device"; exit 4; fi
 
-log "Unmounting any mounted partitions on $SRC_DEV"
-while read -r P; do [[ -n "$P" && "$P" != "$SRC_DEV" ]] && umount -f "$P" 2>/dev/null || true; done < <(lsblk -lnpo NAME "$SRC_DEV")
-settle; sync
+# unmount source partitions
+log "Unmounting source"; while read -r P; do [[ -n "$P" && "$P" != "$SRC_DEV" ]] && umount -f "$P" 2>/dev/null || true; done < <(lsblk -lnpo NAME "$SRC_DEV"); settle; sync
 
-# --------------------------- Sizing -----------------------------
-SECT_SIZE="$(cat "/sys/class/block/$(basename "$SRC_DEV")/queue/logical_block_size")"
-LAST_END_SECT="$(sfdisk -d "$SRC_DEV" | awk -F'[ ,]+' '/start=/ {e=$4+$6-1} END {print e+1}')"
-[[ -n "$LAST_END_SECT" ]] || { err "Cannot read partition table"; exit 5; }
-RAW_BYTES=$(( LAST_END_SECT * SECT_SIZE ))
-DISK_BYTES="$(blockdev --getsize64 "$SRC_DEV")"
-diff_abs=$(( RAW_BYTES>DISK_BYTES ? RAW_BYTES-DISK_BYTES : DISK_BYTES-RAW_BYTES ))
-(( diff_abs > 1048576 )) && warn "Partition end vs device size differ by ${diff_abs} bytes."
-log "Copy size: $RAW_BYTES bytes"
+# compute span and capture
+calc_copy_span "$SRC_DEV"; capture_device "$SRC_DEV" "$OUT_IMG"
 
-# --------------------------- Capture ----------------------------
-TMP_IMG="$OUT_IMG"; case "$OUT_IMG" in *.xz|*.gz|*.zst) TMP_IMG="${OUT_IMG%.*}";; esac
-log "Capturing $SRC_DEV → $TMP_IMG"
-if command -v ddrescue >/dev/null 2>&1 && [[ $FAST_DD -eq 0 ]]; then
-  run_to ddrescue -v --force --size="$RAW_BYTES" --sector-size="$SECT_SIZE" "$SRC_DEV" "$TMP_IMG" "${TMP_IMG}.map"
-else
-  if command -v pv >/dev/null 2>&1; then run_to bash -c 'pv -tpreb -s "$0" "$1" | dd of="$2" bs=4M status=none conv=fsync' "$RAW_BYTES" "$SRC_DEV" "$TMP_IMG"
-  else run_to dd if="$SRC_DEV" of="$TMP_IMG" bs=4M count="$RAW_BYTES" iflag=count_bytes status=progress conv=fsync
-  fi
-fi
-sync; ok "Capture complete"
-
-# --------------------------- Loop attach ------------------------
-log "Attaching loop"
-LOOP="$(losetup --show -fP "$TMP_IMG")"; push_cleanup "losetup -d '$LOOP' >/dev/null 2>&1"; settle
-auto_unmount_all "$LOOP"; settle
-
-# Safety: loop must be >512 B
-LOOP_SZ="$(blockdev --getsize64 "$LOOP" 2>/dev/null || echo 0)"
-if [[ -z "$LOOP_SZ" || "$LOOP_SZ" -lt 512 ]]; then err "Loop reports <512 bytes; aborting"; exit 10; fi
-
-# --------------------------- Detect FS --------------------------
-log "Detecting filesystems"
-BOOT_PART=""; ROOT_PART=""; ROOT_SIZE=0; BOOT_SIZE=0
-while read -r name fstype size; do
-  [[ "$name" == "$LOOP" || -z "$fstype" ]] && continue
-  if [[ "$fstype" =~ ^(vfat|fat|exfat)$ ]]; then [[ -z "$BOOT_PART" || "$size" -lt "$BOOT_SIZE" ]] && BOOT_PART="$name" BOOT_SIZE="$size"
-  elif [[ "$fstype" =~ ^ext ]]; then [[ "$size" -gt "$ROOT_SIZE" ]] && ROOT_PART="$name" ROOT_SIZE="$size"
-  fi
-done < <(lsblk -b -lnpo NAME,FSTYPE,SIZE "$LOOP")
-LAST_NUM="$(lsblk -lnpo NAME "$LOOP" | tail -n +2 | sed -E 's/.*[^0-9]([0-9]+)$/\1/' | tail -n1)"
-ROOT_NUM=""; [[ -n "$ROOT_PART" ]] && ROOT_NUM="$(echo "$ROOT_PART" | sed -E 's/.*[^0-9]([0-9]+)$/\1/')"
-log "Boot: ${BOOT_PART:-unknown}  Root: ${ROOT_PART:-unknown}"
-
-# --------------------------- Shrink ext4 root -------------------
-if [[ $NO_SHRINK -eq 0 && -n "$ROOT_PART" && -n "$ROOT_NUM" && "$ROOT_NUM" == "$LAST_NUM" ]]; then
-  auto_unmount_all "$LOOP"; settle
-  log "e2fsck $ROOT_PART"; run_to e2fsck -fy "$ROOT_PART"
-  log "resize2fs -M $ROOT_PART"; run_to resize2fs -M "$ROOT_PART"
-  # ext4 geometry
-  BS=""; BC=""
-  eval "$(dumpe2fs -h "$ROOT_PART" 2>/dev/null | awk '/Block size:/ {bs=$3} /Block count:/ {bc=$3} END{printf "BS=%d;BC=%d;\n",bs,bc }')"
-  if [[ -n "${BS:-}" && -n "${BC:-}" ]]; then
-    FS_BYTES=$(( BS * BC ))
-    START_SECT="$(sfdisk -d "$LOOP" | awk -F'[ ,]+' -v p="$(basename "$ROOT_PART")" '$1==p {print $4}')"
-    if [[ -n "$START_SECT" ]]; then
-      NEEDED_SECT=$(( (FS_BYTES + SECT_SIZE - 1) / SECT_SIZE ))
-      NEW_END=$(( START_SECT + NEEDED_SECT - 1 ))
-      log "Resize root end → sector $NEW_END (sfdisk)"
-      if echo ",${NEEDED_SECT}" | run_to sfdisk --no-reread -N "$ROOT_NUM" "$LOOP"; then
-        partprobe "$LOOP" || losetup -c "$LOOP" || true; settle; ok "Partition resized (sfdisk)"
-      else
-        warn "sfdisk failed; trying parted -s"
-        if run_to parted -s "$LOOP" unit s resizepart "$ROOT_NUM" "${NEW_END}s"; then
-          partprobe "$LOOP" || losetup -c "$LOOP" || true; settle; ok "Partition resized (parted)"
-        else
-          warn "Partition resize failed; continuing without shrink of partition length"
-        fi
-      fi
-    else
-      warn "Cannot read root start sector; skipping partition resize"
-    fi
-  else
-    warn "Cannot read ext4 geometry; skipping partition resize"
-  fi
-else
-  [[ $NO_SHRINK -eq 1 ]] && warn "--no-shrink set" || [[ -z "$ROOT_PART" ]] && warn "No ext* root detected" || warn "Root not last; skip shrink"
-fi
-
-# --------------------------- Truncate ---------------------------
-LAST_END_IMG="$(sfdisk -d "$LOOP" | awk -F'[ ,]+' '/start=/ {e=$4+$6-1} END {print e}')"
-[[ -n "$LAST_END_IMG" ]] || { err "Cannot compute image end sector; refusing to truncate"; exit 8; }
-FINAL_BYTES=$(( (LAST_END_IMG + 1) * SECT_SIZE ))
-
-FILE_BYTES="$(stat -c %s "$TMP_IMG")"
-if [[ "$FINAL_BYTES" -lt 1048576 ]]; then err "Final size <1MiB ($FINAL_BYTES). Aborting to prevent data loss."; exit 11; fi
-if [[ "$FINAL_BYTES" -gt "$FILE_BYTES" ]]; then err "Final size ($FINAL_BYTES) > file size ($FILE_BYTES). Aborting."; exit 12; fi
-
-log "Detach loop and truncate to $FINAL_BYTES bytes"
-losetup -d "$LOOP" || true; CLEANUP_CMDS=("${CLEANUP_CMDS[@]:0:${#CLEANUP_CMDS[@]}-1}")
-run_to truncate -s "$FINAL_BYTES" "$TMP_IMG"; ok "Truncate complete"
-
-# --------------------------- Verify -----------------------------
-if [[ $VERIFY -eq 1 ]]; then
-  log "Verify image"
-  LOOP_VERIFY="$(losetup --show -fP "$TMP_IMG")"; push_cleanup "losetup -d '$LOOP_VERIFY' >/dev/null 2>&1"; settle; auto_unmount_all "$LOOP_VERIFY"; settle
-  while read -r p; do
-    [[ "$p" == "$LOOP_VERIFY" ]] && continue
-    fstype="$(blkid -o value -s TYPE "$p" 2>/dev/null || true)"
-    case "$fstype" in
-      ext*) run_to e2fsck -fn "$p" >/dev/null ;;
-      vfat|fat|exfat) [[ -n "$FSCK_FAT_BIN" ]] && run_to "$FSCK_FAT_BIN" -n "$p" >/dev/null || true ;;
-    esac
-  done < <(lsblk -lnpo NAME "$LOOP_VERIFY")
-  losetup -d "$LOOP_VERIFY" || true; ok "Verify complete"
-fi
-
-# --------------------------- Compression ------------------------
-decide_comp(){ case "$1" in
-  auto) [[ "$OUT_IMG" == *.xz ]] && echo xz || { [[ "$OUT_IMG" == *.gz ]] && echo gz || { [[ "$OUT_IMG" == *.zst ]] && echo zst || echo xz; }; } ;;
-  xz|gz|zst|none) echo "$1" ;;
-  *) err "Invalid --compress"; exit 9;;
-esac; }
-do_c="$(decide_comp "$COMPRESS")"
-if [[ "$do_c" != "none" ]]; then
-  log "Compress → $OUT_IMG ($do_c)"
-  case "$do_c" in
-    xz)  need xz;  run_to xz   -T0 -9e -f -c "$TMP_IMG" > "$OUT_IMG" ;;
-    gz)  need gzip;run_to gzip -9    -f -c "$TMP_IMG" > "$OUT_IMG" ;;
-    zst) need zstd;run_to zstd -T0 -19 -f -c "$TMP_IMG" > "$OUT_IMG" ;;
-  esac
-  rm -f "$TMP_IMG"
-else
-  [[ "$TMP_IMG" != "$OUT_IMG" ]] && { log "No compression; renaming '$TMP_IMG' → '$OUT_IMG'"; mv -f "$TMP_IMG" "$OUT_IMG"; } || warn "No compression selected"
-fi
-
-# --------------------------- Digest -----------------------------
-log "SHA-256"
-sha256sum "$OUT_IMG" | tee "${OUT_IMG}.sha256" >/dev/null
-ok "All done."
-printf "%s\n%s\n" "Image: $OUT_IMG" "SHA256: $(cut -d' ' -f1 "${OUT_IMG}.sha256")"
+# attach, shrink if possible, truncate, verify, compress, hash
+attach_loop "$TMP_IMG"; detect_fs; shrink_ext4_if_last; truncate_image_safely "$TMP_IMG"; verify_image "$TMP_IMG"; compress_and_hash "$TMP_IMG"
