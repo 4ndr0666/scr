@@ -1,0 +1,9 @@
+# Mapfile. Created by GNU ddrescue version 1.29.1
+# Command line: ddrescue -v --force --size=31914983424 --sector-size=512 /dev/sde /home/git/clone/scr/install/pi/pi-20250902T100844Z.img /home/git/clone/scr/install/pi/pi-20250902T100844Z.img.map
+# Start time:   2025-09-02 05:08:45
+# Current time: 2025-09-02 05:50:17
+# Finished
+# current_pos  current_status  current_pass
+0x76E470000     +               1
+#      pos        size  status
+0x00000000  0x76E480000  +
