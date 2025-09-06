@@ -4,8 +4,10 @@
 # Description: Maintain a canonical ~/.config/brave-flags.conf tuned for low-RAM Arch.
 # - Idempotent, safe to re-run
 # - Detects HW accel and adds GPU raster toggles only when useful
-# - Collapses multiple --enable/--disable feature lines into exactly one each
-# - Auto-comments stray non-flag lines (e.g. “Extracted brave://flags entries:”)
+# - Exactly one --enable-features and one --disable-features line
+# - Resolves enable/disable conflicts (disable wins)
+# - File locking to prevent concurrent edits
+# - Auto-comments stray non-flag lines
 # =============================================================
 
 set -euo pipefail
@@ -13,7 +15,17 @@ IFS=$'\n\t'
 
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/brave-flags.conf"
 mkdir -p "$(dirname "$CFG")"
+: >"${CFG}" 2>/dev/null || true
 touch "$CFG"
+
+# -------- lock the file (prevent concurrent runs) ----------
+LOCK="${CFG}.lock"
+exec 9>"$LOCK"
+flock -n 9 || { echo "Another instance is updating $CFG"; exit 1; }
+trap 'rm -f "$LOCK"' EXIT
+
+# -------- normalize line endings / trailing spaces ----------
+tmp="$(mktemp)"; sed -e 's/\r$//' -e 's/[[:space:]]\+$//' "$CFG" >"$tmp" && mv "$tmp" "$CFG"
 
 # ------------------------- HW ACCEL DETECTION -------------------------
 detect_renderer() {
@@ -56,130 +68,126 @@ fi
 # -------------------------- HELPERS -----------------------------------
 dedupe_file() {
   local f="$1" tmp; tmp="$(mktemp)"
-  awk '!seen[$0]++' "$f" > "$tmp" && mv "$tmp" "$f"
+  awk '!seen[$0]++' "$f" >"$tmp" && mv "$tmp" "$f"
 }
 
 ensure_line() {
   local line="$1" f="$2"
-  # Redirect grep's stderr to /dev/null to prevent error messages (like '-')
-  # from being appended to the config file when a line is not found.
-  grep -qxF -- "$line" "$f" 2>/dev/null || echo "$line" >> "$f"
+  grep -qxF -- "$line" "$f" 2>/dev/null || echo "$line" >>"$f"
 }
 
-# write_feat_payload now performs an atomic replace-or-add operation using awk.
-# It reads the file, finds lines starting with 'key=', replaces all of them with 'new_line'
-# (only once), or adds 'new_line' at the end if no such line was found.
 write_feat_payload() {
+  # atomic replace-or-add for a KEY=payload line
   local key="$1" payload="${2:-}" f="$3"
-  local key_prefix="$key="
-  local new_line=""
-  if [[ -n "$payload" ]]; then
-    new_line="$key_prefix$payload"
-  fi
-
+  local key_prefix="$key=" new_line=""
+  [[ -n "$payload" ]] && new_line="$key_prefix$payload"
   local tmp; tmp="$(mktemp)"
   awk -v key_prefix_awk="$key_prefix" -v new_line_awk="$new_line" '
-    BEGIN {
-      found_key = 0
-    }
-    index($0, key_prefix_awk) == 1 { # If this line starts with the key prefix
-      if (new_line_awk != "" && !found_key) {
-        print new_line_awk
-        found_key = 1
-      }
-      next # Skip this line, whether it matched first or subsequent. Effectively purges.
-    }
-    { print } # Print all other lines
-    END {
-      # If the key was never found in the file and a new_line is specified, print it at the end
-      if (!found_key && new_line_awk != "") {
-        print new_line_awk
-      }
-    }
-  ' "$f" > "$tmp" && mv "$tmp" "$f"
+    BEGIN{found=0}
+    index($0,key_prefix_awk)==1 { if(new_line_awk!="" && !found){print new_line_awk; found=1} ; next }
+    { print }
+    END{ if(!found && new_line_awk!="") print new_line_awk }
+  ' "$f" >"$tmp" && mv "$tmp" "$f"
 }
+
+read_payload() { grep -m1 -F "^$1=" "$CFG" | sed "s|^$1=||" || true; }
 
 merge_features() {
   local key="$1"; shift || true
   local -a add=( "$@" ) existing out
-  local payload
-  # Add '|| true' to grep to prevent 'set -e' from exiting the script
-  # if the line is not found (grep exits with 1)
-  payload="$(grep -m1 -F "^$key=" "$CFG" | sed "s|^$key=||" || true)"
-  if [[ -n "$payload" ]]; then
-    IFS=',' read -r -a existing <<< "$payload"
-  else
-    existing=()
-  fi
+  local payload; payload="$(read_payload "$key")"
+  if [[ -n "$payload" ]]; then IFS=',' read -r -a existing <<<"$payload"; else existing=(); fi
   declare -A set=()
   for f in "${existing[@]}"; do [[ -n "${f:-}" ]] && set["$f"]=1; done
   for f in "${add[@]}";     do set["$f"]=1; done
-  # Only write payload if there are features to enable/disable
   if (( ${#set[@]} > 0 )); then
     mapfile -t out < <(printf '%s\n' "${!set[@]}" | sort -u)
     write_feat_payload "$key" "$(IFS=','; echo "${out[*]}")" "$CFG"
   else
-    # If no features are left after merge, ensure the line is removed
     write_feat_payload "$key" "" "$CFG"
   fi
 }
 
-# Comment any stray non-flag lines (don’t pass them to Brave)
 comment_strays() {
   local tmp; tmp="$(mktemp)"
   awk '
-    # Rule 1: If it is the specific undesirable meta-comment, skip it (effectively delete).
     /^\s*#\s*Extracted brave:\/\// { next }
-
-    # Rule 2: If it is any other existing comment, print it as is.
     /^\s*#/ { print; next }
-
-    # Rule 3: If it is a flag, print it as is.
     /^\s*--/ { print; next }
-
-    # Rule 4: If it has content and was not caught by previous rules, prepend a comment.
     NF { print "# " $0; next }
-
-    # Rule 5: For empty lines, print them as is.
     { print }
-  ' "$CFG" > "$tmp" && mv "$tmp" "$CFG"
+  ' "$CFG" >"$tmp" && mv "$tmp" "$CFG"
+}
+
+# Remove features present in both enable & disable sets (disable wins).
+resolve_conflicts() {
+  local en dis
+  en="$(read_payload --enable-features)"
+  dis="$(read_payload --disable-features)"
+  [[ -z "$en$dis" ]] && return 0
+
+  declare -A den; IFS=',' read -r -a _en <<<"${en,,}"; for f in "${_en[@]}"; do [[ -n "$f" ]] && den["$f"]=1; done
+  declare -A ddis; IFS=',' read -r -a _dis <<<"${dis,,}"; for f in "${_dis[@]}"; do [[ -n "$f" ]] && ddis["$f"]=1; done
+
+  # if a feature is in both, drop it from enable
+  declare -a kept_en=()
+  IFS=',' read -r -a en_arr <<<"$en"
+  for f in "${en_arr[@]}"; do
+    lf="${f,,}"
+    if [[ -n "$lf" && -z "${ddis[$lf]+x}" ]]; then kept_en+=("$f"); fi
+  done
+
+  declare -a kept_dis=()
+  IFS=',' read -r -a dis_arr <<<"$dis"
+  for f in "${dis_arr[@]}"; do
+    [[ -n "$f" ]] && kept_dis+=("$f")
+  done
+
+  # write back
+  if ((${#kept_en[@]})); then
+    write_feat_payload "--enable-features" "$(IFS=','; echo "${kept_en[*]}")" "$CFG"
+  else
+    write_feat_payload "--enable-features" "" "$CFG"
+  fi
+  if ((${#kept_dis[@]})); then
+    write_feat_payload "--disable-features" "$(IFS=','; echo "${kept_dis[*]}")" "$CFG"
+  else
+    write_feat_payload "--disable-features" "" "$CFG"
+  fi
 }
 
 # ---------------------------- APPLY -----------------------------------
-# 0) Tidy & comment strays first (so later greps behave)
 dedupe_file "$CFG"
 comment_strays
 
-# 1) Ensure canonical single-value flags
 for line in "${WANT_LINES[@]}"; do ensure_line "$line" "$CFG"; done
 
-# 2) Merge our required feature sets with any existing ones.
-#    This correctly handles pre-existing user flags and collapses
-#    multiple --enable/disable-features lines into one each.
+# collapse to one feature line per key and merge our sets
+write_feat_payload "--enable-features"  "$(read_payload --enable-features)"  "$CFG"
+write_feat_payload "--disable-features" "$(read_payload --disable-features)" "$CFG"
 merge_features "--enable-features"  "${ENABLE_FEATS[@]}"
 merge_features "--disable-features" "${DISABLE_FEATS[@]}"
 
-# 3) If SW rasterizer, strip GPU toggles defensively
+# if SW rasterizer, strip GPU toggles (defensive)
 if [[ "$HW_ACCEL" -eq 0 ]]; then
   for key in "--enable-features" "--disable-features"; do
-    payload="$(grep -m1 -F "^$key=" "$CFG" | sed "s|^$key=||" || true)" # Also add '|| true' here for robustness
-    if [[ -n "${payload:-}" ]]; then
-      filtered="$(
-        awk -v RS=, -v ORS=, '{
-          if ($0 != "UseGpuRasterization" && $0 != "ZeroCopy" && length($0) > 0) print $0
-        }' <<< "$payload" | sed 's/,$//'
-      )"
-      write_feat_payload "$key" "$filtered" "$CFG"
-    else
-      # If a feature line somehow became empty or didn't exist, ensure it's not created with just GPU flags
-      write_feat_payload "$key" "" "$CFG"
-    fi
+    payload="$(read_payload "$key")"
+    [[ -z "${payload:-}" ]] && continue
+    filtered="$(
+      awk -v RS=, -v ORS=, '{
+        if ($0 != "UseGpuRasterization" && $0 != "ZeroCopy" && length($0) > 0) print $0
+      }' <<< "$payload" | sed 's/,$//'
+    )"
+    write_feat_payload "$key" "$filtered" "$CFG"
   done
 fi
 
-# 4) Final tidy: unique + sorted for stable diffs
+# resolve enable vs disable collisions (disable wins)
+resolve_conflicts
+
+# final tidy: unique + sorted for stable diffs; ensure trailing newline
 dedupe_file "$CFG"
-tmp="$(mktemp)"; sort "$CFG" > "$tmp" && mv "$tmp" "$CFG"
+tmp="$(mktemp)"; sort "$CFG" >"$tmp" && printf '\n' >>"$tmp" && mv "$tmp" "$CFG"
 
 # --------------------------- REPORT -----------------------------------
 echo "Renderer: ${RENDERER:-unknown}  | HW Accel: $([[ $HW_ACCEL -eq 1 ]] && echo yes || echo no)"
