@@ -15,7 +15,6 @@ IFS=$'\n\t'
 
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/brave-flags.conf"
 mkdir -p "$(dirname "$CFG")"
-: >"${CFG}" 2>/dev/null || true
 touch "$CFG"
 
 # -------- lock the file (prevent concurrent runs) ----------
