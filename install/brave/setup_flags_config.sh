@@ -61,20 +61,42 @@ dedupe_file() {
 
 ensure_line() {
   local line="$1" f="$2"
-  grep -qxF -- "$line" "$f" || echo "$line" >> "$f"
+  # Redirect grep's stderr to /dev/null to prevent error messages (like '-')
+  # from being appended to the config file when a line is not found.
+  grep -qxF -- "$line" "$f" 2>/dev/null || echo "$line" >> "$f"
 }
 
-# Remove ALL lines for a given key, regardless of payload
-purge_key_lines() {
-  local key="$1" f="$2" tmp; tmp="$(mktemp)"
-  grep -v -F "^$key=" "$f" > "$tmp" || true
-  mv "$tmp" "$f"
-}
-
+# write_feat_payload now performs an atomic replace-or-add operation using awk.
+# It reads the file, finds lines starting with 'key=', replaces all of them with 'new_line'
+# (only once), or adds 'new_line' at the end if no such line was found.
 write_feat_payload() {
   local key="$1" payload="${2:-}" f="$3"
-  purge_key_lines "$key" "$f"
-  [[ -n "$payload" ]] && echo "$key=$payload" >> "$f"
+  local key_prefix="$key="
+  local new_line=""
+  if [[ -n "$payload" ]]; then
+    new_line="$key_prefix$payload"
+  fi
+
+  local tmp; tmp="$(mktemp)"
+  awk -v key_prefix_awk="$key_prefix" -v new_line_awk="$new_line" '
+    BEGIN {
+      found_key = 0
+    }
+    index($0, key_prefix_awk) == 1 { # If this line starts with the key prefix
+      if (new_line_awk != "" && !found_key) {
+        print new_line_awk
+        found_key = 1
+      }
+      next # Skip this line, whether it matched first or subsequent. Effectively purges.
+    }
+    { print } # Print all other lines
+    END {
+      # If the key was never found in the file and a new_line is specified, print it at the end
+      if (!found_key && new_line_awk != "") {
+        print new_line_awk
+      }
+    }
+  ' "$f" > "$tmp" && mv "$tmp" "$f"
 }
 
 merge_features() {
@@ -92,18 +114,34 @@ merge_features() {
   declare -A set=()
   for f in "${existing[@]}"; do [[ -n "${f:-}" ]] && set["$f"]=1; done
   for f in "${add[@]}";     do set["$f"]=1; done
-  mapfile -t out < <(printf '%s\n' "${!set[@]}" | sort -u)
-  write_feat_payload "$key" "$(IFS=','; echo "${out[*]}")" "$CFG"
+  # Only write payload if there are features to enable/disable
+  if (( ${#set[@]} > 0 )); then
+    mapfile -t out < <(printf '%s\n' "${!set[@]}" | sort -u)
+    write_feat_payload "$key" "$(IFS=','; echo "${out[*]}")" "$CFG"
+  else
+    # If no features are left after merge, ensure the line is removed
+    write_feat_payload "$key" "" "$CFG"
+  fi
 }
 
 # Comment any stray non-flag lines (don’t pass them to Brave)
 comment_strays() {
   local tmp; tmp="$(mktemp)"
   awk '
-    /^\s*#/ {print; next}
-    /^\s*--/ {print; next}
-    NF {print "# " $0; next}
-    {print}
+    # Rule 1: If it is the specific undesirable meta-comment, skip it (effectively delete).
+    /^\s*#\s*Extracted brave:\/\// { next }
+
+    # Rule 2: If it is any other existing comment, print it as is.
+    /^\s*#/ { print; next }
+
+    # Rule 3: If it is a flag, print it as is.
+    /^\s*--/ { print; next }
+
+    # Rule 4: If it has content and was not caught by previous rules, prepend a comment.
+    NF { print "# " $0; next }
+
+    # Rule 5: For empty lines, print them as is.
+    { print }
   ' "$CFG" > "$tmp" && mv "$tmp" "$CFG"
 }
 
@@ -132,6 +170,9 @@ if [[ "$HW_ACCEL" -eq 0 ]]; then
         }' <<< "$payload" | sed 's/,$//'
       )"
       write_feat_payload "$key" "$filtered" "$CFG"
+    else
+      # If a feature line somehow became empty or didn't exist, ensure it's not created with just GPU flags
+      write_feat_payload "$key" "" "$CFG"
     fi
   done
 fi
