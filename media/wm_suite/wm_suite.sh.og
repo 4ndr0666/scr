@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# v3.1.7 (Mathematical Lossless Quality - CRF 0, No Overwrite Prompt)
+# v3.1.4
 set -euo pipefail
 # ================== // WM_SUITE.SH //
 ## Description: Embeds a normalized, crisp watermark (resolution-aware).
@@ -31,10 +31,7 @@ VIDEO_INTERMEDIATE_CODEC="ffv1"
 VIDEO_INTERMEDIATE_QP=0
 # For final H.264 MP4 output step:
 VIDEO_FINAL_CODEC="libx264"
-# Set to CRF 0 for mathematically lossless H.264 encoding.
-# Be aware: This will result in very large file sizes.
-# Also, the 'format=yuv420p' filter still applies chroma subsampling if the source was higher chroma.
-VIDEO_FINAL_CRF=0       
+VIDEO_FINAL_CRF=23       # Default CRF for final libx264 output (23 is good quality)
 VIDEO_FINAL_PRESET="slow" # Default preset for final libx264 output
 AUDIO_MODE_FLAG="-an"    # Default: remove audio. Can be overridden by --keep-audio
 MAX_RESOLUTION=1080
@@ -62,7 +59,6 @@ FFLOGLEVEL="error" # Default FFMPEG log level. Set to 'info' with --verbose.
 ########################
 KEEP_AUDIO=0 # Default: remove audio
 VERBOSE=0    # Default: non-verbose output
-FULL_CONCAT=0 # Default: do not include intro/outro concatenation
 
 usage() {
   cat <<EOF
@@ -71,10 +67,9 @@ Usage:
 Options:
   --keep-audio       Keep original audio track in final video output
   --verbose          Enable verbose logging
-  --full             Include intro and outro videos in the final output
   -h, --help         Show help
 Outputs:
-  videos  -> $PROJECT_ROOT/output/videos/*_wm.mp4 (H.264, CRF $VIDEO_FINAL_CRF 'mathematically lossless', with Intro/Outro if present)
+  videos  -> $PROJECT_ROOT/output/videos/*_wm.mp4 (H.264, CRF $VIDEO_FINAL_CRF, with Intro/Outro if present)
   images  -> $PROJECT_ROOT/output/images/*_wm.png (lossless)
 Configuration paths (Watermark, Intro, Outro, Temporary Directory) are managed in: $CONFIG_FILE
 Never overwrites existing outputs.
@@ -86,7 +81,6 @@ while (( $# )); do
     -h|--help) usage; exit 0 ;;
     --keep-audio) KEEP_AUDIO=1; shift ;;
     --verbose) VERBOSE=1; FFLOGLEVEL="info"; shift ;;
-    --full) FULL_CONCAT=1; shift ;; # New flag to enable full concatenation
     *) ARGS+=("$1"); shift ;;
   esac
 done
@@ -341,72 +335,62 @@ process_video() {
   local pos; pos="$(wm_xy_expr)"
 
   # Build full filter graph: scale watermark -> overlay -> normalize -> label [v]
-  # Removed 'fps=30' to preserve original video speed.
-  local graph="[1:v]scale=${WM_TARGET}:-1:flags=lanczos[wm];[0:v][wm]overlay=${pos}:format=auto[ov];[ov]scale='if(gt(iw,$MAX_RESOLUTION),$MAX_RESOLUTION,iw)':'-2',format=yuv420p[v]"
+  local graph="[1:v]scale=${WM_TARGET}:-1:flags=lanczos[wm];[0:v][wm]overlay=${pos}:format=auto[ov];[ov]scale='if(gt(iw,$MAX_RESOLUTION),$MAX_RESOLUTION,iw)':'-2',fps=30,format=yuv420p[v]"
 
   # --- First Pass: Watermark and encode to lossless FFV1 MKV ---
   # Explicitly specify output format as matroska
-  # Added -y to automatically overwrite existing temporary files.
-  ffmpeg -y -hide_banner -loglevel "$FFLOGLEVEL" \
+  ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
     -i "$in" -i "$GLOBAL_TMP_WM" \
     -filter_complex "$graph" \
-    -map "[v]" -c:v "$VIDEO_INTERMEDIATE_CODEC" -qp "$VIDEO_INTERMEDIATE_QP" $AUDIO_MODE_FLAG \
+    -map "[v]" -c:v "$VIDEO_INTERMEDIATE_CODEC" -qp "$VIDEO_INTERMEDIATE_QP" "$AUDIO_MODE_FLAG" \
     -f matroska "$intermediate_mkv"
   
   TEMP_FILES+=("$intermediate_mkv") # Add intermediate file to cleanup list
   echo "Intermediate FFV1 MKV created: $intermediate_mkv"
 
   # --- Second Pass: Re-encode from lossless FFV1 MKV to H.264 MP4 (main content only) ---
-  # Added -y to automatically overwrite existing temporary files.
-  # Added -f mp4 to explicitly specify output format for non-standard .mp4.tmp extension.
-  ffmpeg -y -hide_banner -loglevel "$FFLOGLEVEL" \
+  ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
     -i "$intermediate_mkv" \
-    -c:v "$VIDEO_FINAL_CODEC" -crf "$VIDEO_FINAL_CRF" -preset "$VIDEO_FINAL_PRESET" $AUDIO_MODE_FLAG \
-    -f mp4 "$watermarked_mp4_temp"
+    -c:v "$VIDEO_FINAL_CODEC" -crf "$VIDEO_FINAL_CRF" -preset "$VIDEO_FINAL_PRESET" "$AUDIO_MODE_FLAG" \
+    "$watermarked_mp4_temp"
 
   TEMP_FILES+=("$watermarked_mp4_temp") # Add temporary watermarked MP4 to cleanup list
   echo "Temporary H.264 MP4 (main content) created: $watermarked_mp4_temp"
 
-  # --- Third Pass: Concatenate Intro, Main Video, Outro (if FULL_CONCAT is enabled and files exist) ---
-  if (( FULL_CONCAT == 1 )); then
-    local has_intro=0
-    local has_outro=0
-    local concat_files=()
+  # --- Third Pass: Concatenate Intro, Main Video, Outro (if they exist) ---
+  local has_intro=0
+  local has_outro=0
+  local concat_files=()
 
-    # INTRO_FILE and OUTRO_FILE are sourced from the config
-    if [[ -n "${INTRO_FILE:-}" && -f "$INTRO_FILE" ]]; then
-      has_intro=1
-      concat_files+=("file '$INTRO_FILE'")
-      [[ "$VERBOSE" == 1 ]] && echo "  Found intro: $INTRO_FILE"
-    fi
+  # INTRO_FILE and OUTRO_FILE are sourced from the config
+  if [[ -n "${INTRO_FILE:-}" && -f "$INTRO_FILE" ]]; then
+    has_intro=1
+    concat_files+=("file '$INTRO_FILE'")
+    [[ "$VERBOSE" == 1 ]] && echo "  Found intro: $INTRO_FILE"
+  fi
 
-    concat_files+=("file '$watermarked_mp4_temp'")
+  concat_files+=("file '$watermarked_mp4_temp'")
 
-    if [[ -n "${OUTRO_FILE:-}" && -f "$OUTRO_FILE" ]]; then
-      has_outro=1
-      concat_files+=("file '$OUTRO_FILE'")
-      [[ "$VERBOSE" == 1 ]] && echo "  Found outro: $OUTRO_FILE"
-    fi
+  if [[ -n "${OUTRO_FILE:-}" && -f "$OUTRO_FILE" ]]; then
+    has_outro=1
+    concat_files+=("file '$OUTRO_FILE'")
+    [[ "$VERBOSE" == 1 ]] && echo "  Found outro: $OUTRO_FILE"
+  fi
 
-    if (( has_intro == 1 || has_outro == 1 )); then
-      local concat_list="$(mktemp --suffix=.txt)"
-      TEMP_FILES+=("$concat_list") # Add concat list to cleanup
-      
-      printf "%s\n" "${concat_files[@]}" > "$concat_list"
-      [[ "$VERBOSE" == 1 ]] && { echo "  Concat list content:"; cat "$concat_list"; }
+  if (( has_intro == 1 || has_outro == 1 )); then
+    local concat_list="$(mktemp --suffix=.txt)"
+    TEMP_FILES+=("$concat_list") # Add concat list to cleanup
+    
+    printf "%s\n" "${concat_files[@]}" > "$concat_list"
+    [[ "$VERBOSE" == 1 ]] && { echo "  Concat list content:"; cat "$concat_list"; }
 
-      # Perform concatenation using concat demuxer (fast and lossless if compatible streams)
-      ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
-        -f concat -safe 0 -i "$concat_list" \
-        -c copy "$final_output_mp4" 
-      echo "Concatenated video (with intro/outro) -> $final_output_mp4"
-    else
-      # If --full was specified but no intro/outro files were found, just move the watermarked file
-      mv "$watermarked_mp4_temp" "$final_output_mp4"
-      echo "Video (no intro/outro found) -> $final_output_mp4"
-    fi
+    # Perform concatenation using concat demuxer (fast and lossless if compatible streams)
+    ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
+      -f concat -safe 0 -i "$concat_list" \
+      -c copy "$final_output_mp4" 
+    echo "Concatenated video (with intro/outro) -> $final_output_mp4"
   else
-    # If FULL_CONCAT is not enabled, simply move the watermarked_mp4_temp to the final destination
+    # If no intro/outro, simply move the watermarked_mp4_temp to the final destination
     mv "$watermarked_mp4_temp" "$final_output_mp4"
     echo "Video -> $final_output_mp4"
   fi

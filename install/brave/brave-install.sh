@@ -13,12 +13,20 @@ IFS=$'\n\t'
 # --------------------------- Defaults (overridable) ----------------------------
 PREFIX="${PREFIX:-/usr/local}"       # install prefix for wrapper/symlinks
 AUTO_ENABLE="${AUTO_ENABLE:-1}"      # 1=enable unit after install; 0=just install
-BRAVE_ENV="${BRAVE_ENV:-BRAVE_LOW_ISOLATION=1 BRAVE_EXTRA_FLAGS=--incognito}"
+# BRAVE_ENV: space-separated KEY=VALUE pairs. Values should not contain unquoted spaces.
+# Example: BRAVE_ENV="BRAVE_LOW_ISOLATION=1 BRAVE_EXTRA_FLAGS=--incognito"
+BRAVE_ENV="${BRAVE_ENV:-}" # Default to empty, as per user's existing bravebackgrounded
+
+# Cgroup Resource Controls (as per user's existing brave.service)
+CGROUP_MEMORY_MAX="${CGROUP_MEMORY_MAX:-8G}"
+CGROUP_MEMORY_HIGH="${CGROUP_MEMORY_HIGH:-6G}"
+CGROUP_CPU_WEIGHT="${CGROUP_CPU_WEIGHT:-50}"
+CGROUP_CPU_QUOTA="${CGROUP_CPU_QUOTA:-200%}"
 # ------------------------------------------------------------------------------
 BINDIR="${PREFIX}/bin"
 WRAPPER="brave-wrapper"
 SERVICE="brave.service"
-SYMLINKS=(brave brave-beta brave-nightly)
+SYMLINKS=(brave brave-beta brave-nightly) # brave-beta is what bravebackgrounded launched
 
 # Mode selection: default GLOBAL unit; --user flag switches to per-user
 MODE="global" # global|user
@@ -40,6 +48,10 @@ Env overrides:
   PREFIX=/usr/local
   AUTO_ENABLE=1
   BRAVE_ENV="KEY1=VAL1 KEY2=VAL2"
+  CGROUP_MEMORY_MAX=8G
+  CGROUP_MEMORY_HIGH=6G
+  CGROUP_CPU_WEIGHT=50
+  CGROUP_CPU_QUOTA=200%
 USAGE
   exit 1
 }
@@ -66,7 +78,7 @@ require_root_if_global() {
 }
 
 # ----------------- Embedded Brave Wrapper Script Content -----------------------
-read -r -d '' BRAVE_WRAPPER_SCRIPT <<'EOF_BRAVE_WRAPPER_SCRIPT'
+BRAVE_WRAPPER_SCRIPT="$(cat <<'EOF_BRAVE_WRAPPER_SCRIPT'
 #!/usr/bin/env bash
 # Author: 4ndr0666
 # One wrapper to keep ~/.config/brave-flags.conf canonical and launch Brave (all channels).
@@ -82,7 +94,7 @@ case "$argv0" in
   brave|brave-browser) REAL="/usr/bin/brave" ;;
   brave-beta)          REAL="/usr/bin/brave-beta" ;;
   brave-nightly)       REAL="/usr/bin/brave-nightly" ;;
-  *)                   REAL="${BRAVE_BIN:-/usr/bin/brave-beta}" ;;
+  *)                   REAL="${BRAVE_BIN:-/usr/bin/brave-beta}" ;; # Default to beta if not symlinked
 esac
 [[ -x "${REAL}" ]] || REAL="$(command -v "$(basename -- "$REAL")" || true)"
 if [[ -z "$REAL" ]]; then
@@ -122,12 +134,26 @@ declare -A FLAGS=(
   ["--ozone-platform"]="wayland"
   ["--disk-cache-size"]="104857600"
   ["--extensions-process-limit"]="1"
+  ["--renderer-process-limit"]="8" # Added: Limits total renderer processes
 )
-ALL_KEYS=(--disable-crash-reporter --allowlisted-extension-id --ozone-platform --disk-cache-size --extensions-process-limit --process-per-site --enable-features --disable-features)
+ALL_KEYS=(
+  --disable-crash-reporter
+  --allowlisted-extension-id
+  --ozone-platform
+  --disk-cache-size
+  --extensions-process-limit
+  --renderer-process-limit # Added to ALL_KEYS
+  --process-per-site
+  --enable-features
+  --disable-features
+)
 
-ENABLE=(DefaultSiteInstanceGroups InfiniteTabsFreeze MemoryPurgeOnFreezeLimit)
-DISABLE=(BackForwardCache SmoothScrolling)
+# Added ProactiveTabFreezeAndDiscard to match bravebackgrounded
+ENABLE=(DefaultSiteInstanceGroups InfiniteTabsFreeze MemoryPurgeOnFreezeLimit ProactiveTabFreezeAndDiscard)
+# Added BraveRewards and IPFS to DISABLE
+DISABLE=(BackForwardCache SmoothScrolling BraveRewards IPFS)
 [[ $HW -eq 1 ]] && ENABLE+=("UseGpuRasterization" "ZeroCopy")
+# BRAVE_LOW_ISOLATION comes from systemd Environment= if set, or via direct shell launch
 [[ "${BRAVE_LOW_ISOLATION:-0}" = "1" ]] && FLAGS["--process-per-site"]=""
 
 dedupe(){ local f="$1" t; t="$(mktemp)"; awk '!s[$0]++' "$f" >"$t" && mv "$t" "$f"; }
@@ -162,6 +188,7 @@ mapfile -t BRAVE_FLAGS < <(awk 'NF && $1 ~ /^--/ {print $0}' "$CFG")
 echo "Renderer: ${RENDERER:-unknown} | HW Accel: $([[ $HW -eq 1 ]] && echo yes || echo no)"
 exec "$REAL" "${BRAVE_FLAGS[@]}" "$@"
 EOF_BRAVE_WRAPPER_SCRIPT
+)" # Closing parenthesis for command substitution
 
 # ----------------------------- Helpers -----------------------------------------
 install_wrapper_and_links() {
@@ -172,7 +199,7 @@ install_wrapper_and_links() {
 
 build_env_block() {
   local -a arr
-  # shellcheck disable=SC2206
+  # shellcheck disable=SC2206 # Intentional word splitting for KEY=VALUE pairs
   arr=(${BRAVE_ENV})
   local out=""
   for kv in "${arr[@]}"; do [[ -n "$kv" ]] && out+="Environment=${kv}\n"; done
@@ -180,20 +207,31 @@ build_env_block() {
   printf '%b' "$out"
 }
 
+build_cgroup_block() {
+  local out=""
+  [[ -n "${CGROUP_MEMORY_MAX}"  ]] && out+="MemoryMax=${CGROUP_MEMORY_MAX}\n"
+  [[ -n "${CGROUP_MEMORY_HIGH}" ]] && out+="MemoryHigh=${CGROUP_MEMORY_HIGH}\n"
+  [[ -n "${CGROUP_CPU_WEIGHT}"  ]] && out+="CPUWeight=${CGROUP_CPU_WEIGHT}\n"
+  [[ -n "${CGROUP_CPU_QUOTA}"   ]] && out+="CPUQuota=${CGROUP_CPU_QUOTA}\n"
+  printf '%b' "$out"
+}
+
 install_unit_global() {
   local env_block; env_block="$(build_env_block)"
+  local cgroup_block; cgroup_block="$(build_cgroup_block)"
   install -d "${UNIT_GLOBAL_DIR}"
   cat <<EOF | install -m0644 /dev/stdin "${UNIT_GLOBAL_DIR}/${SERVICE}"
 [Unit]
-Description=Brave Browser (wrapped with canonical flags)
-After=network.target
+Description=Brave Web Browser with Cgroup Resource Controls (wrapped with canonical flags)
+After=graphical-session.target # Changed from network.target
 
 [Service]
-ExecStart=${BINDIR}/${WRAPPER}
+ExecStart=${BINDIR}/${WRAPPER} # Calls the wrapper, which can launch brave-beta
 Restart=on-failure
 ${env_block}
+${cgroup_block} # Injected Cgroup settings
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target # Changed from default.target
 EOF
   systemctl daemon-reload || true
   if [[ "${AUTO_ENABLE}" == "1" ]]; then
@@ -206,18 +244,20 @@ EOF
 
 install_unit_user() {
   local env_block; env_block="$(build_env_block)"
+  local cgroup_block; cgroup_block="$(build_cgroup_block)"
   install -d "${UNIT_USER_DIR}"
   cat <<EOF | install -m0644 /dev/stdin "${UNIT_USER_DIR}/${SERVICE}"
 [Unit]
-Description=Brave Browser (wrapped with canonical flags)
-After=network.target
+Description=Brave Web Browser with Cgroup Resource Controls (wrapped with canonical flags)
+After=graphical-session.target # Changed from network.target
 
 [Service]
-ExecStart=${BINDIR}/${WRAPPER}
+ExecStart=${BINDIR}/${WRAPPER} # Calls the wrapper, which can launch brave-beta
 Restart=on-failure
 ${env_block}
+${cgroup_block} # Injected Cgroup settings
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target # Changed from default.target
 EOF
   systemctl --user daemon-reload || true
   if [[ "${AUTO_ENABLE}" == "1" ]]; then
@@ -256,6 +296,12 @@ uninstall_cmd() {
     echo "Global uninstall touches ${UNIT_GLOBAL_DIR}; run with sudo." >&2
     exit 1
   fi
+  # If PREFIX is a system-wide path, require root for BINDIR cleanup
+  if [[ "$EUID" -ne 0 && "$PREFIX" == "/usr/local" ]]; then
+    echo "Uninstalling from system-wide path (${BINDIR}) requires root. Run with sudo." >&2
+    exit 1
+  fi
+
   echo "Uninstalling wrapper + symlinks from ${BINDIR}"
   rm -f "${BINDIR}/${WRAPPER}" || true
   for link in "${SYMLINKS[@]}"; do rm -f "${BINDIR}/${link}" || true; done
