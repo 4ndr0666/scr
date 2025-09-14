@@ -4,120 +4,121 @@ set -eu
 # ======================= // DOWNSCALE.SH //
 ## USAGE: downscale.sh <input_file> [output_file] [quality] [keep_audio]
 # -----------------------------------------------
+keep_audio="true"
+output_file=""
+input_file=""
+
+# --- Functions ---
 print_usage() {
-  echo "Usage: $(basename "$0") <input_file> [output_file] [quality] [keep_audio]"
-  echo "  <input_file>  : Required. Path to source video."
-  echo "  [output_file] : Optional. Output file name (default: downscaled_1080p.mp4)."
-  echo "  [quality]     : Optional. CRF value (default: 18). Lower is better quality (0-51)."
-  echo "  [keep_audio]  : Optional. \"true\" (default) or \"false\" to keep or remove audio."
+  echo "Usage: $(basename "$0") [options] <input_file> [output_file]"
+  echo
+  echo "Prepares a video for services with a 1080p resolution limit (like TensorPix)."
+  echo "It downscales videos larger than 1080p using lossless quality. If the video is already compliant, it exits."
+  echo
+  echo "Options:"
+  echo "      --no-audio   Remove the audio stream from the output."
+  echo "  -h, --help       Display this help menu and exit."
+  echo
+  echo "Arguments:"
+  echo "  <input_file>     Required. Path to the source video."
+  echo "  [output_file]    Optional. Output name (default: <input>_1080p.mp4)."
 }
 
-if [ $# -lt 1 ]; then
-  print_usage
-  exit 1
+# --- Argument Parsing ---
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    --no-audio)
+      keep_audio="false"
+      shift
+      ;;
+    -*)
+      echo "Error: Unknown option: $1" >&2
+      print_usage
+      exit 1
+      ;;
+    *)
+      if [ -z "$input_file" ]; then
+        input_file="$1"
+      elif [ -z "$output_file" ]; then
+        output_file="$1"
+      else
+        echo "Error: Too many arguments provided." >&2; print_usage; exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+# --- Validation and Dependency Check ---
+if [ -z "$input_file" ]; then
+  echo "Error: Input file is required." >&2; print_usage; exit 1
 fi
-
-input_file="$1"
-output_file="${2:-downscaled_1080p.mp4}"
-quality="${3:-18}"
-keep_audio="${4:-true}"
-
 if [ ! -f "$input_file" ]; then
-  echo "Error: Input file '$input_file' does not exist." >&2 # Redirect error to stderr
-  exit 1
+  echo "Error: Input file '$input_file' does not exist." >&2; exit 1
 fi
-
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-  echo "Error: FFmpeg (including ffprobe) is not installed or not in PATH." >&2 # Redirect error to stderr
-  exit 1
+  echo "Error: FFmpeg (including ffprobe) is not installed or not in PATH." >&2; exit 1
 fi
 
-case "$quality" in
-  ''|[!0-9])
-    echo "Error: Quality (CRF) must be an integer." >&2 # Redirect error to stderr
-    exit 1
-    ;;
-esac
-
-if [ "$quality" -lt 0 ] || [ "$quality" -gt 51 ]; then
-  echo "Warning: Quality (CRF) value '$quality' is outside the typical range (0-51). Proceeding anyway." >&2 # Redirect warning to stderr
-fi
-
-width="$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$input_file" 2>/dev/null || echo "")"
+# --- Main Logic ---
 height="$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$input_file" 2>/dev/null || echo "")"
 
-if [ -z "$width" ] || [ -z "$height" ]; then
-  echo "Warning: Could not detect resolution for '$input_file'. Proceeding without resolution check." >&2 # Redirect warning to stderr
+if [ -z "$height" ]; then
+  echo "Warning: Could not detect video height. Proceeding with conversion." >&2
 else
-  # Use arithmetic comparison (Shellcheck SC2086)
-  # If width <=1920 AND height <=1080, skip re-encoding
-  if [ "$width" -le 1920 ] && [ "$height" -le 1080 ]; then
-    echo "Video is already ${width}x${height} (≤1080p). Skipping downscale."
+  echo "Source video height detected: ${height}p."
+  if [ "$height" -le 1080 ]; then
+    echo "Video is already 1080p or smaller and is compliant. Skipping."
     exit 0
   fi
-  echo "Source resolution detected: ${width}x${height}."
+  echo "Source is >1080p. Downscaling to 1080p."
 fi
 
+# --- Output File Naming ---
+if [ -z "$output_file" ]; then
+  input_basename="${input_file%.*}"
+  output_file="${input_basename}_1080p.mp4"
+fi
+
+# Handle existing files by creating numbered copies (_1, _2, etc.)
 base_name="${output_file%.*}"
 extension="${output_file##*.}"
 counter=1
-
 while [ -f "$output_file" ]; do
   output_file="${base_name}_${counter}.${extension}"
-  counter=$((counter + 1)) # Use arithmetic expansion (Shellcheck SC2003)
+  counter=$((counter + 1))
 done
 echo "Output file set to: '$output_file'."
 
-colorspace="$(ffprobe -v error -select_streams v:0 \
-  -show_entries stream=color_space -of default=nw=1:nk=1 "$input_file" 2>/dev/null || echo "")"
-
-detected_colorspace_msg="Detected color space: "
-if [ -z "$colorspace" ]; then
-  detected_colorspace_msg="${detected_colorspace_msg}(unknown or not specified)"
-else
-  detected_colorspace_msg="${detected_colorspace_msg}$colorspace"
-fi
-echo "$detected_colorspace_msg"
-
-case "$colorspace" in
-  bt709|"")
-    # If bt709 or unknown/not specified, assume bt709 behavior
-    # Simple scale and format conversion
-    filters="scale=1920:1080:flags=lanczos,format=yuv420p"
-    echo "Applying standard Rec.709 downscale filters."
-    ;;
-  *)
-    # For any other detected color space (e.g., bt2020nc), apply an advanced chain
-    # This chain attempts a conversion from wider gamut/HDR to Rec.709 SDR
-    # Note: This is a generic conversion and may not be optimal for all sources.
-    # The original script's bt2020nc and default (*) cases were identical,
-    # so we consolidate them here.
-    filters="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=reinhard,zscale=t=bt709:m=bt709:r=tv,scale=1920:1080:flags=lanczos,format=yuv420p"
-    echo "Applying advanced downscale filters for non-Rec.709 color space."
-    ;;
-esac
+# --- FFmpeg Parameter Setup ---
+filters="scale=-2:1080:flags=lanczos,format=yuv420p"
 
 if [ "$keep_audio" = "true" ]; then
   audio_params="-c:a copy"
-  echo "Keeping audio stream."
+  echo "Keeping original audio stream."
 else
   audio_params="-an"
   echo "Discarding audio stream."
 fi
 
-echo "Starting high-quality downscale to 1080p for '$input_file'..."
+# --- FFmpeg Execution ---
+echo "Starting lossless downscale for '$input_file'..."
 echo "FFmpeg command:"
+echo "ffmpeg -i \"$input_file\" -vf \"$filters\" -c:v libx264 -qp 0 -preset ultrafast $audio_params \"$output_file\""
 
 ffmpeg -i "$input_file" \
   -vf "$filters" \
-  -colorspace bt709 -color_primaries bt709 -color_trc bt709 \
-  -c:v libx264 -crf "$quality" -preset slow \
+  -c:v libx264 -qp 0 -preset ultrafast \
   $audio_params \
   "$output_file"
 
 if [ $? -eq 0 ]; then
   echo "Downscale complete. Output saved to '$output_file'."
 else
-  echo "Error: Downscale process failed for '$input_file'." >&2 # Redirect error to stderr
+  echo "Error: Downscale process failed for '$input_file'." >&2
   exit 1
 fi
