@@ -25,11 +25,15 @@ declare -i SILENT=0 DRY_RUN=0 VPN_FLAG=0 JD_FLAG=0 BACKUP_FLAG=0 STATUS_FLAG=0 R
 declare -i SWAPPINESS_VAL=60
 declare -i UFW_SUPPORTS_COMMENT=1
 
+## RT-ENHANCEMENT (Shellcheck SC2155): Declare and assign separately.
+SCRIPT_NAME=""
+SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME
+
 readonly DEFAULT_SWAPPINESS=60
-readonly SCRIPT_NAME="$(basename "$0")"
 readonly LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
 readonly LOG_FILE="$LOG_DIR/ufw.log"
-readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-ufw-custom.conf"
+readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-zz-ufw-hardening.conf"
 readonly BACKUP_DIR="/etc/ufw/backups"
 readonly UFW_DEFAULTS_FILE="/etc/default/ufw"
 readonly SSH_PORT="22"
@@ -42,7 +46,6 @@ declare -g VPN_IFACES="" # Space-separated string of VPN interfaces
 
 cleanup() {
 	local status=$?
-	# Restore resolv.conf if a backup was made AND we are not in disconnect mode (which handles its own restore)
 	if [[ "$RESOLV_BACKUP_CREATED" -eq 1 && "$DISCONNECT_FLAG" -eq 0 ]]; then
 		restore_resolv_conf
 	fi
@@ -72,7 +75,7 @@ log() {
 		WARN) printf '%b %s%b\n' "$WARN" "$msg" "$RESET" >&2 ;;
 		NOTE) printf '%b %s%b\n' "$NOTE" "$msg" "$RESET" ;;
 		CAT) printf '%b %s%b\n' "$CAT" "$msg" "$RESET" ;;
-		*) printf '%s [%s] : %s%b\n' "$ts" "$lv" "$msg" "$RESET" ;;
+		*) printf '%s [%s] : %s\b\n' "$ts" "$lv" "$msg" "$RESET" ;;
 		esac
 	fi
 }
@@ -125,11 +128,23 @@ run_status_cmd() {
 }
 
 apply_ufw_rule() {
-	local rule="$*"
-	if [[ "$UFW_SUPPORTS_COMMENT" -eq 0 ]]; then
-		rule="${rule// comment */}"
+	local rule_str="$*"
+	local comment_str=""
+	
+	# Extract comment if it exists, handling quotes
+	if [[ "$rule_str" == *comment* ]]; then
+		comment_str="${rule_str##* comment }"
+		rule_str="${rule_str%% comment *}"
 	fi
-	run_cmd_dry ufw $rule
+
+	local -a ufw_args
+	read -r -a ufw_args <<<"$rule_str"
+
+	if [[ "$UFW_SUPPORTS_COMMENT" -eq 1 && -n "$comment_str" ]]; then
+		ufw_args+=("comment" "$comment_str")
+	fi
+
+	run_cmd_dry ufw "${ufw_args[@]}"
 }
 
 detect_ufw_comment_support() {
@@ -267,23 +282,21 @@ apply_dns_rules() {
 		return 1
 	fi
 
-	local rule DNS_IP VPN_IF
+	## RT-ENHANCEMENT (Shellcheck SC2034): Removed unused 'rule' variable.
+	local DNS_IP VPN_IF
 
 	for DNS_IP in "${VPN_DNS_SERVERS[@]}"; do
 		if [[ "$DNS_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 			for VPN_IF in "${vpn_iface_array[@]}"; do
-				rule="allow out on $VPN_IF to $DNS_IP port 53 proto udp comment 'VPN DNS Allow'"
-				apply_ufw_rule "$rule" || log WARN "Failed to apply rule: $rule"
-				rule="allow out on $VPN_IF to $DNS_IP port 53 proto tcp comment 'VPN DNS Allow'"
-				apply_ufw_rule "$rule" || log WARN "Failed to apply rule: $rule"
+				apply_ufw_rule "allow out on $VPN_IF to $DNS_IP port 53 proto udp comment 'VPN DNS Allow'"
+				apply_ufw_rule "allow out on $VPN_IF to $DNS_IP port 53 proto tcp comment 'VPN DNS Allow'"
 			done
 		else
 			log WARN "Skipping invalid DNS IP: $DNS_IP"
 		fi
 	done
 
-	rule="deny out to any port 53 comment 'Block other DNS'"
-	apply_ufw_rule "$rule" || log WARN "Failed to apply rule: $rule"
+	apply_ufw_rule "deny out to any port 53 comment 'Block other DNS'"
 
 	return 0
 }
@@ -352,7 +365,7 @@ set_immutable() {
 
 check_dependencies() {
 	log INFO "Checking dependencies"
-	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'sysctl' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
+	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'ipcalc' 'sysctl' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
 	local -a opt=('lsattr' 'chattr' 'expressvpn' 'resolvectl')
 	local -a miss=()
 
@@ -468,18 +481,12 @@ expressvpn_disconnect() {
 	return 0
 }
 
-## RT-ENHANCEMENT ##
-# New function to safely disconnect and reset firewall to a sane default state.
 tear_down() {
 	log CAT "Tearing down VPN configuration and resetting firewall"
 
-	# 1. Disconnect VPN
 	expressvpn_disconnect || log WARN "Failed to disconnect from VPN. Please check manually."
-
-	# 2. Restore DNS
 	restore_resolv_conf || log WARN "Failed to restore resolv.conf. DNS may require manual correction."
 
-	# 3. Reset UFW to a safe default (deny in, allow out)
 	log INFO "Resetting UFW rules to default"
 	run_cmd_dry ufw --force reset || {
 		log ERROR "Failed to reset UFW. Firewall may be in an inconsistent state."
@@ -487,7 +494,8 @@ tear_down() {
 	}
 	run_cmd_dry ufw default deny incoming
 	run_cmd_dry ufw default allow outgoing
-	run_cmd_dry ufw allow "$SSH_PORT"/tcp # Re-allow SSH
+	run_cmd_dry ufw default deny routed
+	run_cmd_dry ufw allow "$SSH_PORT"/tcp
 	run_cmd_dry ufw enable
 
 	log OK "Teardown complete. System is back to default network state."
@@ -496,9 +504,7 @@ tear_down() {
 
 configure_sysctl() {
 	log CAT "Configuring sysctl settings"
-	local kernel
-	local cake
-	local bbr
+	local kernel cake bbr
 	local sysctl_out="/tmp/sysctl_ufw.$$"
 
 	kernel=$(uname -r)
@@ -506,7 +512,7 @@ configure_sysctl() {
 	bbr=$(ls "/lib/modules/$kernel/kernel/net/ipv4/tcp_bbr.ko"* 2>/dev/null || true)
 
 	cat >"$sysctl_out" <<EOF
-# $SYSCTL_UFW_FILE - Managed by $SCRIPT_NAME. Do not edit manually.
+# $SYSCTL_UFW_FILE - Managed by $SCRIPT_NAME.
 net.ipv4.ip_forward=0
 net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.default.accept_redirects=0
@@ -515,7 +521,6 @@ net.ipv4.conf.default.rp_filter=1
 net.ipv4.conf.default.accept_source_route=0
 net.ipv4.conf.all.accept_source_route=0
 net.ipv4.icmp_ignore_bogus_error_responses=1
-net.ipv4.conf.default.log_martians=0
 net.ipv4.conf.all.log_martians=0
 net.ipv4.icmp_echo_ignore_broadcasts=1
 net.ipv4.icmp_echo_ignore_all=0
@@ -588,8 +593,7 @@ configure_ufw() {
 
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
 		backup_file "$UFW_DEFAULTS_FILE" || log WARN "UFW defaults backup failed, proceeding..."
-		## RT-ENHANCEMENT ##: Ensure IPv6 is enabled in UFW for a complete kill switch
-		log INFO "Ensuring IPv6 is enabled in UFW config"
+		log INFO "Ensuring IPv6 is enabled in UFW config for complete kill switch"
 		run_cmd_dry sed -i 's/IPV6=no/IPV6=yes/' "$UFW_DEFAULTS_FILE"
 	fi
 
@@ -602,7 +606,8 @@ configure_ufw() {
 
 	log INFO "Setting default UFW policies"
 	run_cmd_dry ufw default deny incoming
-	run_cmd_dry ufw default deny logging
+	run_cmd_dry ufw default deny routed
+	run_cmd_dry ufw logging off
 
 	local outpol="allow"
 	local vpn_iface_array=()
@@ -623,10 +628,10 @@ configure_ufw() {
 
 	log INFO "Applying base firewall rules"
 	if [[ -n "$PRIMARY_IF" ]]; then
-		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH on primary interface'"
-		## RT-ENHANCEMENT ##: Add rule to allow access to local network devices from primary IF
+		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
 		local primary_ip_cidr
-		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+')
+		## RT-ENHANCEMENT (BUG FIX): Handle multiple IPs on an interface by taking the first one.
+		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+' | head -n 1)
 		if [[ -n "$primary_ip_cidr" ]]; then
 			local local_subnet
 			local_subnet=$(ipcalc -n "$primary_ip_cidr" | awk '/Network/ {print $2}')
@@ -634,7 +639,11 @@ configure_ufw() {
 				apply_ufw_rule "allow in on $PRIMARY_IF from $local_subnet to any comment 'Allow LAN IN'"
 				apply_ufw_rule "allow out on $PRIMARY_IF to $local_subnet from any comment 'Allow LAN OUT'"
 				log OK "Local network access rules applied for subnet $local_subnet on $PRIMARY_IF"
+			else
+				log WARN "Could not calculate local subnet from CIDR $primary_ip_cidr"
 			fi
+		else
+			log WARN "Could not determine primary IP CIDR. Skipping LAN rules."
 		fi
 	else
 		log WARN "Primary interface not detected, skipping SSH and LAN rules."
@@ -645,6 +654,7 @@ configure_ufw() {
 		apply_ufw_rule "allow in 9666/tcp comment 'JDownloader2 Remote Control'"
 		apply_ufw_rule "allow in 3129/tcp comment 'JDownloader2 Flashgot'"
 	fi
+
 
 	if ((VPN_FLAG)); then
 		log INFO "Applying VPN kill switch rules"
@@ -658,16 +668,9 @@ configure_ufw() {
 		fi
 	fi
 
-	log INFO "Enabling and reloading UFW"
-	run_cmd_dry systemctl enable ufw.service
-	run_cmd_dry ufw reload || {
-		log ERROR "Failed to reload UFW. Rules may not be active."
-		return 1
-	}
-	# On some systems, a restart is more reliable than reload after a reset
-	run_cmd_dry systemctl restart ufw.service || log WARN "Failed to restart UFW service."
+	log INFO "Enabling UFW"
 	run_cmd_dry ufw enable
-	log OK "UFW enabled and reloaded."
+	log OK "UFW enabled."
 
 	return 0
 }
@@ -696,7 +699,6 @@ main() {
 		exit 0
 	fi
 
-	## RT-ENHANCEMENT ##: Handle disconnect flag separately and exit
 	if ((DISCONNECT_FLAG)); then
 		tear_down
 		exit 0
