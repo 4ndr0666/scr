@@ -7,11 +7,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-### Constants
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
-# shellcheck source=4ndr0tools/4ndr0service/common.sh
-source "$SCRIPT_DIR/common.sh"
-ensure_pkg_path
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# SCRIPT_DIR is not needed here as PKG_PATH is available.
 
 # shellcheck source=4ndr0tools/4ndr0service/settings_functions.sh
 source "$PKG_PATH/settings_functions.sh"
@@ -31,13 +28,13 @@ load_plugins() {
 		log_warn "Plugins directory '$plugins_dir' not found. Skipping."
 		return
 	fi
-        for plugin in "$plugins_dir"/*.sh; do
-                if [[ -f "$plugin" ]]; then
-                        # shellcheck disable=SC1090
-                        source "$plugin" || log_warn "Failed to load plugin '$plugin'."
-                        log_info "Loaded plugin: $plugin"
-                fi
-        done
+	for plugin in "$plugins_dir"/*.sh; do
+		if [[ -f "$plugin" ]]; then
+			# shellcheck disable=SC1090
+			source "$plugin" || log_warn "Failed to load plugin '$plugin'."
+			log_info "Loaded plugin: $plugin"
+		fi
+	done
 }
 
 source_all_services() {
@@ -45,22 +42,22 @@ source_all_services() {
 	if [[ ! -d "$services_dir" ]]; then
 		handle_error "Services directory '$services_dir' does not exist."
 	fi
-        for script in "$services_dir"/optimize_*.sh; do
-                if [[ -f "$script" ]]; then
-                        # shellcheck disable=SC1090
-                        source "$script" || log_warn "Failed to source '$script'."
-                        log_info "Sourced service script: '$script'."
-                fi
-        done
+	for script in "$services_dir"/optimize_*.sh; do
+		if [[ -f "$script" ]]; then
+			# shellcheck disable=SC1090
+			source "$script" || log_warn "Failed to source '$script'."
+			log_info "Sourced service script: '$script'."
+		fi
+	done
 }
 
 source_views() {
 	case "$USER_INTERFACE" in
 	cli)
 		local cli_script="$PKG_PATH/view/cli.sh"
-                if [[ -f "$cli_script" ]]; then
-                        # shellcheck disable=SC1090
-                        source "$cli_script" || handle_error "Failed to source '$cli_script'."
+		if [[ -f "$cli_script" ]]; then
+			# shellcheck disable=SC1090
+			source "$cli_script" || handle_error "Failed to source '$cli_script'."
 			log_info "Sourced CLI interface script."
 			main_cli
 		else
@@ -69,9 +66,9 @@ source_views() {
 		;;
 	dialog)
 		local dialog_script="$PKG_PATH/view/dialog.sh"
-                if [[ -f "$dialog_script" ]]; then
-                        # shellcheck disable=SC1090
-                        source "$dialog_script" || handle_error "Failed to source '$dialog_script'."
+		if [[ -f "$dialog_script" ]]; then
+			# shellcheck disable=SC1090
+			source "$dialog_script" || handle_error "Failed to source '$dialog_script'."
 			log_info "Sourced Dialog interface script."
 			main_dialog
 		else
@@ -111,15 +108,13 @@ export_functions() {
 	export -f prompt_config_value create_config_if_missing load_config
 	export -f modify_settings fallback_editor
 	export -f load_plugins source_all_services source_views
-	export -f run_all_services run_parallel_services run_verification
+	export -f run_all_services run_parallel_services run_verification optimize_python_service
 }
 
 main_controller() {
-	export_functions
 	load_plugins
 	source_all_services
+	export_functions
 	source_views
 }
 
-# Execute controller main logic when sourced or run
-main_controller

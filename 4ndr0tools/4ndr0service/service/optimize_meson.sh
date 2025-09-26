@@ -6,11 +6,13 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Determine PKG_PATH and source common utilities
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
 # shellcheck source=4ndr0tools/4ndr0service/common.sh
-source "$SCRIPT_DIR/../common.sh"
-ensure_pkg_path
+source "$PKG_PATH/common.sh"
+
+# Ensure CONFIG_FILE is available
+create_config_if_missing
 
 install_meson() {
 	if ! command -v meson &>/dev/null; then

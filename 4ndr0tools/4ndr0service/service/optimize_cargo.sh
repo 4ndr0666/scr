@@ -6,90 +6,82 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Colors
-CYAN='\033[38;2;21;255;255m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
+source "$PKG_PATH/common.sh"
 
-# Logging
-LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || {
-	echo "Failed to create log directory."
-	exit 1
-}
-
-log() {
-	local msg="$1"
-	echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $msg" >>"$LOG_FILE"
-}
-
-handle_error() {
-	local msg="$1"
-	echo -e "${RED}❌ Error: $msg${NC}" >&2
-	log "ERROR: $msg"
-	exit 1
-}
-
-check_directory_writable() {
-	local dir="$1"
-	[[ -w "$dir" ]] &&
-		log "Dir '$dir' writable." ||
-		handle_error "Directory $dir not writable."
-}
+# Ensure CONFIG_FILE is available
+create_config_if_missing
 
 export CARGO_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/cargo"
 export RUSTUP_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/rustup"
 export PATH="$CARGO_HOME/bin:$PATH"
 
+check_directory_writable() {
+	local dir="$1"
+	if [[ -w "$dir" ]]; then
+		log_info "Dir '$dir' writable."
+	else
+		handle_error "Directory $dir not writable."
+	fi
+}
+
 install_rustup() {
-	echo -e "${CYAN}📦 Installing rustup...${NC}"
+	log_info "Installing rustup..."
 	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path ||
 		handle_error "rustup install failed."
-        # shellcheck disable=SC1091
-        [ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed sourcing rustup env."
-	log "rustup installed."
+	# shellcheck disable=SC1091
+	[ -s "$CARGO_HOME/env" ] && source "$CARGO_HOME/env" || handle_error "Failed sourcing rustup env."
+	log_info "rustup installed."
 }
 
 update_rustup_and_cargo() {
-	echo -e "${CYAN}🔄 Updating rustup + toolchain...${NC}"
-	rustup self update 2>/dev/null || log "Warning: rustup self-update failed."
-	rustup update stable 2>/dev/null || log "Warning: toolchain update failed."
-	rustup default stable 2>/dev/null || log "Warning: setting default toolchain failed."
-	log "Rustup and Cargo updated."
+	log_info "Updating rustup + toolchain..."
+	rustup self update 2>/dev/null || log_warn "Warning: rustup self-update failed."
+	rustup update stable 2>/dev/null || log_warn "Warning: toolchain update failed."
+	rustup default stable 2>/dev/null || log_warn "Warning: setting default toolchain failed."
+	log_info "Rustup and Cargo updated."
 }
 
 cargo_install_or_update() {
 	local pkg="$1"
 	if cargo install --list | grep -q "^$pkg "; then
-		echo -e "${CYAN}🔄 Updating $pkg...${NC}"
+		log_info "Updating $pkg..."
 		cargo install "$pkg" --force 2>/dev/null &&
-			log "$pkg updated." ||
-			log "Warning: update failed for $pkg."
+			log_info "$pkg updated." ||
+			log_warn "Warning: update failed for $pkg."
 	else
-		echo -e "${CYAN}📦 Installing $pkg...${NC}"
+		log_info "Installing $pkg..."
 		cargo install "$pkg" 2>/dev/null &&
-			log "$pkg installed." ||
-			log "Warning: install failed for $pkg."
+			log_info "$pkg installed." ||
+			log_warn "Warning: install failed for $pkg."
 	fi
 }
 
 optimize_cargo_service() {
-	echo "🔧 Optimizing Cargo environment..."
+	local -a CARGO_TOOLS
+	mapfile -t CARGO_TOOLS < <(jq -r '.cargo_tools[]' "$CONFIG_FILE")
 
-	command -v rustup &>/dev/null || install_rustup
+	log_info "Optimizing Cargo environment..."
+
+	if ! command -v rustup &>/dev/null; then
+		install_rustup
+	else
+		log_info "rustup is already installed."
+	fi
 	update_rustup_and_cargo
 
-	mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
+	ensure_dir "$CARGO_HOME"
+	ensure_dir "$RUSTUP_HOME"
 	check_directory_writable "$CARGO_HOME"
 	check_directory_writable "$RUSTUP_HOME"
 
-	for tool in cargo-update cargo-audit; do
+	for tool in "${CARGO_TOOLS[@]}"; do
 		cargo_install_or_update "$tool"
 	done
 
-	echo -e "${GREEN}🎉 Cargo & rustup optimization complete.${NC}"
-	log "Cargo optimization completed."
+	log_info "Cargo & rustup optimization complete."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

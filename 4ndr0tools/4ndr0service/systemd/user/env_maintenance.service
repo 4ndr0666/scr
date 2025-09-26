@@ -3,7 +3,7 @@ Description=Run 4ndr0service environment verification
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/verify_environment.sh --fix
+ExecStart=%h/.local/bin/4ndr0service/main.sh --fix
 
 [Install]
 WantedBy=default.target

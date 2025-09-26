@@ -295,9 +295,8 @@ load_config() {
         TAR_COMPRESS="$TAR_COMPRESS_DEFAULT"
     fi
 
-    # Load sources into array. Use `jq -e` to ensure non-zero exit if sources array is not found or empty.
-    # If `jq` fails or returns empty, fall back to default source.
-    if ! jq -re '.sources[]' <<<"$config_content" | mapfile -t SOURCES; then
+    # Load sources into array. Check explicitly if the array is empty after loading.
+    if ! jq -re '.sources[]' <<<"$config_content" | mapfile -t SOURCES || ((${#SOURCES[@]} == 0)); then
         err "Could not load sources from config or sources array is empty. Using default source."
         SOURCES=("$HOME/.config/BraveSoftware")
     fi
@@ -317,6 +316,7 @@ archive_one() {
     local base stamp archive_path tar_flag tar_suffix
     local -a tar_args=()
     local -a tar_opts_array=()
+    local -a tar_flag_array=()
 
     if [[ ! -e "$src" ]]; then
         err "Missing source: '$src'"
@@ -333,7 +333,8 @@ archive_one() {
     if [[ "$current_tar_compress" == "zstd" || "$current_tar_compress" == "zst" ]]; then
         if ! tar --help 2>&1 | grep -q -- '--zstd'; then
             if command -v zstd >/dev/null 2>&1; then
-                tar_flag="-I zstd" # Use external zstd command via tar's --use-compress-program
+                # This flag has two words and must be handled as such
+                tar_flag="-I zstd"
             else
                 err "zstd command not found for compression. Falling back to no compression for archive of '$src'."
                 tar_flag=""
@@ -345,9 +346,16 @@ archive_one() {
 
     archive_path="$BACKUP_DIR/${base}-${stamp}${tar_suffix}"
 
-    tar_args+=("-c")                                # Create archive
-    tar_args+=("-f" "$archive_path")                # Output file
-    [[ -n "$tar_flag" ]] && tar_args+=("$tar_flag") # Add compression flag if not none
+    tar_args+=("-c")
+    tar_args+=("-f" "$archive_path")
+
+    # *** FIX ***
+    # Split the tar_flag string into an array to handle cases like "-I zstd".
+    # This prevents the shell from passing "-I zstd" as a single, invalid argument.
+    if [[ -n "$tar_flag" ]]; then
+        read -ra tar_flag_array <<<"$tar_flag"
+        tar_args+=("${tar_flag_array[@]}")
+    fi
 
     if [[ -n "$current_tar_opts" ]]; then
         # Use `read -ra` to split options string into an array, respecting spaces.

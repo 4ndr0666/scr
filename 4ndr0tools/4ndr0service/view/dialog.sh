@@ -5,9 +5,14 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
+source "$PKG_PATH/common.sh"
+
 main_dialog() {
 	if ! command -v dialog &>/dev/null; then
-		echo "dialog not installed."
+		log_warn "dialog not installed."
 		exit 1
 	fi
 	while true; do
@@ -39,7 +44,7 @@ main_dialog() {
 		10) manage_files_main ;;
 		11) modify_settings ;;
 		0)
-			echo "💥Terminated!"
+			log_info "Terminated!"
 			exit 0
 			;;
 		*) dialog --msgbox "Invalid selection." 7 40 ;;

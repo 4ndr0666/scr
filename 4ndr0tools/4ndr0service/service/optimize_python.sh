@@ -5,106 +5,75 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Determine PKG_PATH and source common environment
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
-# shellcheck source=4ndr0tools/4ndr0service/common.sh
-source "$SCRIPT_DIR/../common.sh"
-ensure_pkg_path
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
 
 optimize_python_service() {
-	# Configuration
-	local PY_VERSION="3.10.14"
-	local -a TOOLS=(black flake8 mypy pytest poetry)
+	# Initialize pyenv for the current shell session
+			if command -v pyenv &>/dev/null; then
+				local PYENV_ROOT_VAL
+				PYENV_ROOT_VAL="$(pyenv root)"
+	
+				if [[ ! -d "$PYENV_ROOT_VAL/plugins/pyenv-virtualenv" ]]; then
+					log_info "pyenv-virtualenv plugin not found. Installing..."
+					git clone https://github.com/pyenv/pyenv-virtualenv.git "$PYENV_ROOT_VAL/plugins/pyenv-virtualenv" || log_warn "Failed to install pyenv-virtualenv plugin."
+				fi
+	
+				eval "$(pyenv init -)"
+				eval "$(pyenv virtualenv-init -)"
+			fi
+	create_config_if_missing
+	local PY_VERSION
+	PY_VERSION=$(jq -r '.python_version' "$CONFIG_FILE")
+	local -a TOOLS
+	mapfile -t TOOLS < <(jq -r '.python_tools[]' "$CONFIG_FILE")
 
-	echo "📦 Checking if Python is installed..."
+	log_info "Checking if Python is installed..."
 	if command -v python3 &>/dev/null; then
 		local py_version
 		py_version="$(python3 --version 2>/dev/null || echo 'Unknown')"
-		echo -e "\033[0;32m✅ Python is already installed: $py_version\033[0m"
+		log_info "Python is already installed: $py_version"
 	else
-		echo -e "\033[1;33m⚠ Python not found.\033[0m"
+		log_warn "Python not found."
 		if command -v pyenv &>/dev/null; then
-			echo "👉 Using pyenv to install Python $PY_VERSION..."
-			pyenv install -s "$PY_VERSION" || echo "Warning: pyenv install failed."
-			pyenv global "$PY_VERSION" || echo "Warning: could not set pyenv global version."
+			log_info "Using pyenv to install Python $PY_VERSION..."
+			pyenv install -s "$PY_VERSION" || log_warn "pyenv install failed."
+			pyenv global "$PY_VERSION" || log_warn "could not set pyenv global version."
 			pyenv rehash || true
 			if command -v python3 &>/dev/null; then
-				echo -e "\033[0;32m✅ Installed Python $PY_VERSION via pyenv.\033[0m"
+				log_info "Installed Python $PY_VERSION via pyenv."
 			else
-				echo -e "\033[1;33m⚠ Python still not available. Please install a Python version via pyenv.\033[0m"
-				return 1
-			fi
-		else
-			echo "ERROR: Python not found and pyenv not installed. Please install pyenv or python3 manually."
-			return 1
-		fi
-	fi
-
-	# Use python3 -m pip as canonical pip command.
-	local pip_cmd="python3 -m pip"
-	if ! $pip_cmd --version &>/dev/null; then
-		echo "pip not found. Attempting ensurepip..."
-		python3 -m ensurepip --upgrade || echo "Warning: ensurepip failed. Try manually installing pip."
-	fi
-
-	echo "🔄 Attempting pip upgrade..."
-	set +e
-	$pip_cmd install --upgrade pip
-	local pip_ec=$?
-	set -e
-	if [[ $pip_ec -ne 0 ]]; then
-		echo -e "\033[1;33m⚠ Warning: pip upgrade failed (possibly due to externally-managed environment).\033[0m"
-		if command -v pyenv &>/dev/null; then
-			echo "👉 Skipping system pip install since pyenv is in use."
-		else
-			echo "Manual pip install required."
-		fi
-	else
-		echo "✅ pip upgraded successfully."
-	fi
-
-	echo "🔧 Checking for virtualenv..."
-	if ! $pip_cmd show virtualenv &>/dev/null; then
-		set +e
-		$pip_cmd install --upgrade virtualenv
-		local venv_ec=$?
-		set -e
-		if [[ $venv_ec -ne 0 ]]; then
-			echo -e "\033[1;33m⚠ Warning: virtualenv install failed.\033[0m"
-			if command -v pyenv &>/dev/null; then
-				echo "👉 Skipping system virtualenv install due to pyenv."
-			else
-				echo "Manual virtualenv install required."
-			fi
-		else
-			echo "✅ virtualenv installed/updated."
-		fi
-	else
-		echo "✅ virtualenv is already installed."
-	fi
-
-	echo "🔧 Ensuring pipx is installed..."
-	if command -v pipx &>/dev/null; then
-		echo "✅ pipx is already installed."
-	else
-		$pip_cmd install --user pipx || echo -e "\033[1;33m⚠ Warning: pipx installation failed.\033[0m"
-		if command -v pipx &>/dev/null; then
-			echo "✅ pipx installed successfully."
-		fi
-	fi
-
-	echo "🔧 Installing/updating base Python tools via pipx..."
+																log_warn "Python still not available. Please install a Python version via pyenv."
+																return 1
+															fi
+														else
+															handle_error "Python not found and pyenv not installed. Please install pyenv or python3 manually."
+														fi
+													fi
+												
+													# Use pyenv exec pip as canonical pip command.
+													local pip_cmd="pyenv exec pip"
+												
+													log_info "Ensuring pipx is installed..."
+													if command -v pipx &>/dev/null; then
+														log_info "pipx is already installed."
+													else
+														$pip_cmd install --user pipx || log_warn "Warning: pipx installation failed."
+														if command -v pipx &>/dev/null; then
+															log_info "pipx installed successfully."
+														fi
+													fi
+	log_info "Installing/updating base Python tools via pipx..."
 	for tool in "${TOOLS[@]}"; do
 		if ! pipx list | grep -q "${tool}"; then
-			echo "📦 Installing $tool with pipx..."
-			pipx install "$tool" || echo -e "\033[1;33m⚠ Warning: Failed to install $tool via pipx.\033[0m"
+			log_info "Installing $tool with pipx..."
+			pipx install "$tool" || log_warn "Warning: Failed to install $tool via pipx."
 		else
-			echo "🔄 $tool found; upgrading with pipx..."
-			pipx upgrade "$tool" || echo -e "\033[1;33m⚠ Warning: Failed to upgrade $tool via pipx.\033[0m"
+			log_info "$tool found; upgrading with pipx..."
+			pipx upgrade "$tool" || log_warn "Warning: Failed to upgrade $tool via pipx."
 		fi
 	done
 
-	echo "✅ Python environment setup complete."
+	log_info "Python environment setup complete."
 }
 
 # If run as a script, execute the optimization

@@ -2,35 +2,32 @@
 # 4ndr0service Systemd Env Maintenance Installer
 set -euo pipefail
 
-# Compute PKG_PATH relative to this script
-PKG_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-# shellcheck source=../common.sh
-# shellcheck disable=SC1091
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$PKG_PATH/common.sh"
 
 SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 ensure_dir "$SYSTEMD_USER_DIR"
 
-# Install verify_environment.sh into ~/.local/bin for unit invocation
-LOCAL_BIN="$HOME/.local/bin"
-ensure_dir "$LOCAL_BIN"
+# Install main.sh into ~/.local/bin/4ndr0service for unit invocation
+LOCAL_BIN_DIR="$HOME/.local/bin/4ndr0service"
+ensure_dir "$LOCAL_BIN_DIR"
 
-if install -Dm755 "$PKG_PATH/test/src/verify_environment.sh" \
-	"$LOCAL_BIN/verify_environment.sh"; then
-	echo "Installed $LOCAL_BIN/verify_environment.sh"
+if install -Dm755 "$PKG_PATH/main.sh" \
+	"$LOCAL_BIN_DIR/main.sh"; then
+	log_info "Installed $LOCAL_BIN_DIR/main.sh"
 else
-	echo "Warning: failed to install verify_environment.sh" >&2
+	log_warn "Warning: failed to install main.sh" >&2
 fi
-
 
 # Copy or symlink units
 install_unit() {
-        local src="$1"
-        local dest
-        dest="$SYSTEMD_USER_DIR/$(basename "$src")"
-        cp -f "$src" "$dest"
-        echo "Installed $dest"
+	local src="$1"
+	local dest
+	dest="$SYSTEMD_USER_DIR/$(basename "$src")"
+	cp -f "$src" "$dest"
+	log_info "Installed $dest"
 }
 
 # Install units
@@ -39,10 +36,10 @@ for unit in "$PKG_PATH/systemd/user/"*; do
 	install_unit "$unit"
 done
 
-echo "Reloading systemd user units..."
+log_info "Reloading systemd user units..."
 systemctl --user daemon-reload
 
-echo "Enabling 4ndr0service environment maintenance timer..."
+log_info "Enabling 4ndr0service environment maintenance timer..."
 systemctl --user enable --now env_maintenance.timer
 
-echo "Done."
+log_info "Done."

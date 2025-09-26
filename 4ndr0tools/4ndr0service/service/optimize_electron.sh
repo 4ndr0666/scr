@@ -6,106 +6,80 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
+source "$PKG_PATH/common.sh"
 
-# Logging
-LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || {
-	echo "Failed to create log directory."
-	exit 1
-}
-
-log() {
-	local msg="$1"
-	echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $msg" >>"$LOG_FILE"
-}
-
-handle_error() {
-	local msg="$1"
-	echo -e "${RED}❌ Error: $msg${NC}" >&2
-	log "ERROR: $msg"
-	exit 1
-}
-
-check_directory_writable() {
-	local dir="$1"
-	if [[ -w "$dir" ]]; then
-		echo "✅ Directory $dir is writable."
-		log "Directory '$dir' is writable."
-	else
-		handle_error "Directory $dir is not writable."
-	fi
-}
+# Ensure CONFIG_FILE is available
+create_config_if_missing
 
 export ELECTRON_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/electron"
 
 npm_global_install_or_update() {
 	local pkg="$1"
 	if npm ls -g "$pkg" --depth=0 &>/dev/null; then
-		echo "🔄 Updating $pkg globally..."
+		log_info "Updating $pkg globally..."
 		npm update -g "$pkg" &&
 			{
-				echo "✅ $pkg updated."
-				log "$pkg updated."
+				log_info "$pkg updated."
 			} ||
 			{
-				echo "⚠️ Warning: update failed for $pkg."
-				log "Warning: update failed for $pkg."
+				log_warn "Warning: update failed for $pkg."
 			}
 	else
-		echo "📦 Installing $pkg globally..."
+		log_info "Installing $pkg globally..."
 		npm install -g "$pkg" &&
 			{
-				echo "✅ $pkg installed."
-				log "$pkg installed."
+				log_info "$pkg installed."
 			} ||
 			{
-				echo "⚠️ Warning: install failed for $pkg."
-				log "Warning: install failed for $pkg."
+				log_warn "Warning: install failed for $pkg."
 			}
 	fi
 }
 
 optimize_electron_service() {
-	echo "🔧 Optimizing Electron environment..."
+	local -a ELECTRON_TOOLS
+	mapfile -t ELECTRON_TOOLS < <(jq -r '.electron_tools[]' "$CONFIG_FILE")
+
+	log_info "Optimizing Electron environment..."
 
 	command -v npm &>/dev/null || handle_error "npm not found; install Node.js first."
 
 	if npm ls -g electron --depth=0 &>/dev/null; then
-		echo "✅ Electron already installed."
-		log "Electron installed."
+		log_info "Electron already installed."
 	else
-		echo "📦 Installing Electron..."
+		log_info "Installing Electron..."
 		npm install -g electron &&
 			{
-				echo "✅ Electron installed."
-				log "Electron installed."
+				log_info "Electron installed."
 			} ||
 			handle_error "Failed to install Electron."
 	fi
 
-	npm_global_install_or_update "electron-builder"
+	for tool in "${ELECTRON_TOOLS[@]}"; do
+		npm_global_install_or_update "$tool"
+	done
 
-	echo "🛠️ Setting ELECTRON_OZONE_PLATFORM_HINT=wayland-egl"
+	log_info "Setting ELECTRON_OZONE_PLATFORM_HINT=wayland-egl"
 	export ELECTRON_OZONE_PLATFORM_HINT="wayland-egl"
 
-	mkdir -p "$ELECTRON_CACHE" || handle_error "Cannot create $ELECTRON_CACHE."
+	ensure_dir "$ELECTRON_CACHE" || handle_error "Cannot create $ELECTRON_CACHE."
 	check_directory_writable "$ELECTRON_CACHE"
 
-	echo "🗑️ Cleaning old Electron cache..."
-	rm -rf "${ELECTRON_CACHE:?}/"* 2>/dev/null || log "Skipped cache cleanup."
+	log_info "Cleaning old Electron cache..."
+	rm -rf "${ELECTRON_CACHE:?}/"* 2>/dev/null || log_warn "Skipped cache cleanup."
 
-	echo "✅ Verifying Electron..."
-	command -v electron &>/dev/null &&
-		echo "Electron → $(electron --version)" &&
-		log "Electron verified." ||
+	log_info "Verifying Electron..."
+	if command -v electron &>/dev/null; then
+		log_info "Electron → $(electron --version)"
+		log_info "Electron verified."
+	else
 		handle_error "Electron verification failed."
+	fi
 
-	echo -e "${GREEN}🎉 Electron optimization complete.${NC}"
-	log "Electron optimization completed."
+	log_info "Electron optimization complete."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

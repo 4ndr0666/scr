@@ -6,37 +6,21 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Colors
-RED='\033[0;31m'
-NC='\033[0m'
+# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# Source common.sh to ensure logging functions and PKG_PATH are available
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
+source "$PKG_PATH/common.sh"
 
-# Logging
-LOG_FILE="${LOG_FILE:-$HOME/.cache/4ndr0service/logs/service_optimization.log}"
-mkdir -p "$(dirname "$LOG_FILE")" || {
-	echo "Failed to create log directory."
-	exit 1
-}
-
-log() {
-	local msg="$1"
-	echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $msg" >>"$LOG_FILE"
-}
-
-handle_error() {
-	local msg="$1"
-	echo -e "${RED}❌ Error: $msg${NC}" >&2
-	log "ERROR: $msg"
-	exit 1
-}
+# Ensure CONFIG_FILE is available
+create_config_if_missing
 
 check_directory_writable() {
 	local dir="$1"
-	[[ -w "$dir" ]] &&
-		{
-			echo "✅ Directory $dir writable."
-			log "Dir '$dir' writable."
-		} ||
+	if [[ -w "$dir" ]]; then
+		log_info "Directory $dir writable."
+	else
 		handle_error "Directory $dir not writable."
+	fi
 }
 
 export GEM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/gem"
@@ -45,33 +29,35 @@ export PATH="$GEM_HOME/bin:$PATH"
 
 install_ruby() {
 	if ! command -v ruby &>/dev/null; then
-		echo "📦 Installing Ruby..."
+		log_info "Installing Ruby..."
 		sudo pacman -S --needed --noconfirm ruby ||
 			handle_error "Failed to install Ruby."
-		log "Ruby installed."
+		log_info "Ruby installed."
 	else
-		echo "✅ Ruby present: $(ruby --version)"
-		log "Ruby already installed."
+		log_info "Ruby present: $(ruby --version)"
+		log_info "Ruby already installed."
 	fi
 }
-
 gem_install_or_update() {
 	local gem="$1"
 	if gem list -i "$gem" &>/dev/null; then
-		echo "🔄 Updating gem $gem..."
+		log_info "Updating gem $gem..."
 		gem update "$gem" &&
-			log "Gem $gem updated." ||
-			log "Warning: update failed for gem $gem."
+			log_info "Gem $gem updated." ||
+			log_warn "Warning: update failed for gem $gem."
 	else
-		echo "📦 Installing gem $gem..."
+		log_info "Installing gem $gem..."
 		gem install --user-install "$gem" &&
-			log "Gem $gem installed." ||
-			log "Warning: install failed for gem $gem."
+			log_info "Gem $gem installed." ||
+			log_warn "Warning: install failed for gem $gem."
 	fi
 }
 
 optimize_ruby_service() {
-	echo "🔧 Optimizing Ruby environment..."
+	local -a RUBY_GEMS
+	mapfile -t RUBY_GEMS < <(jq -r '.ruby_gems[]' "$CONFIG_FILE")
+
+	log_info "Optimizing Ruby environment..."
 
 	install_ruby
 
@@ -81,20 +67,20 @@ optimize_ruby_service() {
 	export GEM_HOME GEM_PATH
 	export PATH="$GEM_HOME/bin:$PATH"
 
-	mkdir -p "$GEM_HOME" \
-		"${XDG_CONFIG_HOME:-$HOME/.config}/ruby" \
-		"${XDG_CACHE_HOME:-$HOME/.cache}/ruby" ||
+	ensure_dir "$GEM_HOME"
+	ensure_dir "${XDG_CONFIG_HOME:-$HOME/.config}/ruby"
+	ensure_dir "${XDG_CACHE_HOME:-$HOME/.cache}/ruby" ||
 		handle_error "Failed to create Ruby dirs."
 
-	echo "🔐 Checking permissions..."
+	log_info "Checking permissions..."
 	check_directory_writable "$GEM_HOME"
 
-	for g in bundler rake rubocop; do
+	for g in "${RUBY_GEMS[@]}"; do
 		gem_install_or_update "$g"
 	done
 
-	echo -e "${CYAN}Ruby → $(ruby -v)${NC}"
-	log "Ruby optimization completed."
+	log_info "Ruby → $(ruby -v)"
+	log_info "Ruby optimization completed."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

@@ -86,20 +86,23 @@ run_core_checks() {
 
 	create_config_if_missing
 
-	if [[ "$par" == "true" ]]; then
-		run_parallel_services
+	if [[ "$fix" == "true" || "$report" == "true" ]]; then
+		run_verification
 	else
-		run_all_services
+		if [[ "$par" == "true" ]]; then
+			run_parallel_services
+		else
+			run_all_services
+		fi
 	fi
-
-	run_verification
 }
 
 if [[ "$test_mode" == "true" ]]; then
 	run_core_checks "$report_mode" "$fix_mode" "$parallel"
 	cat "$LOG_FILE"
 	exit 0
+elif [[ $# -gt 0 ]]; then # Run core checks when arguments are provided
+	run_core_checks "$report_mode" "$fix_mode" "$parallel"
+else # No arguments, run interactive CLI
+	main_controller
 fi
-
-# Uncomment the following line to run core checks automatically:
-# run_core_checks "$report_mode" "$fix_mode" "$parallel"
