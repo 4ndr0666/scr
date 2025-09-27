@@ -10,6 +10,7 @@
 # 4. Performs additional cleanup actions, including Chromium cache.
 #
 # Usage: ./braveclean.sh
+#   BRAVE_DEEP_CLEAN=1 ./braveclean.sh   # Also clears GPUCache, Code Cache, Service Worker/CacheStorage
 #
 # Requirements:
 # - sqlite3: For vacuuming SQLite databases.
@@ -22,17 +23,37 @@
 #              to exit with a non-zero status, or zero if all commands exit successfully.
 set -euo pipefail
 
-# IFS is left at its default value for most operations.
+# IFS is explicitly set to newline and tab for array processing etc.
 # It is explicitly set to ' ' or '' where needed for 'read' to prevent word splitting.
+IFS=$'\n\t'
 
 # ============================== // BRAVECLEAN.SH //
 
-## Color variables
-# Using ANSI escape codes for colors. These are widely supported in modern terminals.
-RED="\e[31m"
-GRN="\e[32m"
-YLW="\e[33m"
-RST="\e[0m" # Reset to default color and style
+# Global variable for deep clean mode
+DEEP_CLEAN=0
+
+# usage: Displays help message and exits.
+usage() {
+  printf "Usage: %s [-d|--deep-clean] [-h|--help]\n" "$(basename "$0")"
+  printf "\n"
+  printf "  -d, --deep-clean    Perform a deep clean, removing additional caches (GPUCache, Code Cache, Service Worker/CacheStorage, DawnCache).\n"
+  printf "  -h, --help          Display this help message and exit.\n"
+  printf "\n"
+  printf "This script cleans up Brave Browser and other browser profiles by vacuuming SQLite databases and removing specific cache and temporary directories/files.\n"
+  exit 0
+}
+
+## Color variables (more robust using tput)
+# Check if stdout is a tty AND supports colors
+if [[ -t 1 && -n "$TERM" && "$TERM" != "dumb" ]]; then
+    # Use tput for more robust color code retrieval
+    RED=$(tput setaf 1 || true) # Red foreground
+    GRN=$(tput setaf 2 || true) # Green foreground
+    YLW=$(tput setaf 3 || true) # Yellow foreground
+    RST=$(tput sgr0 || true)    # Reset all attributes
+else
+    RED=; GRN=; YLW=; RST=; # No colors if not a TTY or no color support
+fi
 
 ## Logging
 LOG_FILE="/tmp/BraveClean.log" # Using /tmp for temporary logs, generally acceptable for cleanup scripts.
@@ -50,9 +71,12 @@ log() {
 # Arguments:
 #   $1 - The error message.
 error_exit() {
-  local msg="$1" # Declare msg as local to the function.
-  printf "${RED}Error:${RST} %s\n" "$msg" >&2
-  log "ERROR: $msg"
+  local err_red="$RED" err_rst="$RST"
+  if ! [[ -t 2 && -n "$TERM" && "$TERM" != "dumb" ]]; then # Check if stderr is a TTY
+    err_red=; err_rst=; # Disable colors if stderr is not a TTY
+  fi
+  printf "%sError:%s %s\n" "$err_red" "$err_rst" "$1" >&2
+  log "ERROR: $1"
   exit 1
 }
 
@@ -71,24 +95,49 @@ dep_check_notify_send() {
   command -v notify-send >/dev/null 2>&1
 }
 
-## Spinner for User Experience
-# spinner: Displays a spinning cursor while a background process runs.
+## Spinner for User Experience (reintegrated from first script's pattern)
+_spid=""
+spin_start(){ ( local g='|/-\' i=0; while :; do printf '%s\b' "${g:i++%4:1}"; sleep 0.1; done ) & _spid=$!; }
+spin_stop(){ [[ -n "${_spid}" ]] && { kill "${_spid}" 2>/dev/null || true; wait "${_spid}" 2>/dev/null || true; _spid=""; printf ' \b'; }; }
+trap 'spin_stop' EXIT INT TERM
+
+## Process Management (reintegrated from first script's pattern, modified)
+# kill_browser: Checks if a process is running and prompts the user to kill it.
 # Arguments:
-#   $1 - PID of the process to monitor.
-spinner() {
-  local pid="$1"
-  local delay=0.1
-  local spin='|/-\\' # Escaping the backslash for SC1003
-  local i=0
-  while kill -0 "$pid" 2>/dev/null; do # kill -0 checks if PID exists without sending a signal.
-    printf "%s\b" "${spin:$i:1}" # Print character and backspace to overwrite
-    sleep "$delay"
-    i=$(( (i + 1) % 4 )) # Cycle through spinner characters
+#   $1 - The process name to check (e.g., "firefox", "brave").
+kill_browser() {
+  local proc="$1" user="${USER}" tries=0
+  pgrep -u "$user" "$proc" >/dev/null 2>&1 || return 0
+  printf "Waiting for %s to exit" "$proc"
+  while pgrep -u "$user" "$proc" >/dev/null 2>&1; do
+    ((tries++))
+    if (( tries >= 5 )); then # Wait 5 * 2 = 10 seconds before prompting
+      printf "\nKill %s now? [y/N]: " "$proc"
+      local a; read -r a
+      if [[ "$a" =~ ^[Yy]$ ]]; then
+        pkill -TERM -u "$user" "$proc" || true; sleep 4
+        pgrep -u "$user" "$proc" >/dev/null 2>&1 && pkill -KILL -u "$user" "$proc" || true
+      else
+        printf "Please close %s manually and re-run the script.\n" "$proc"; exit 1
+      fi
+      break # Exit the loop after user interaction
+    fi
+    printf "."; sleep 2
   done
-  printf " \b" # Clear the spinner character after the process finishes
+  printf "\n" # Ensure a newline after dots
 }
 
 ## Core Cleaning Logic
+# vacuum_db: Performs SQLite vacuum, reindex, and optimization.
+# Arguments:
+#   $1 - Path to the SQLite database file.
+vacuum_db(){
+  local db="$1"
+  rm -f -- "${db}-wal" "${db}-shm" 2>/dev/null || true
+  # Combined VACUUM, REINDEX, PRAGMA optimize for efficiency and thoroughness.
+  sqlite3 "$db" "PRAGMA journal_mode=DELETE; VACUUM; REINDEX; PRAGMA optimize;" >/dev/null 2>&1 || true
+}
+
 # run_cleaner: Finds and vacuums SQLite databases in the current directory.
 # This function expects to be run from within a browser profile directory.
 run_cleaner() {
@@ -98,8 +147,7 @@ run_cleaner() {
   # Find SQLite files in the current directory (maxdepth 1) and process them.
   # Using -print0 and read -d '' for robustness against unusual filenames (e.g., spaces, newlines).
   while IFS= read -r -d '' db_file; do
-    # Skip if db_file is empty (e.g., if find returns nothing, though unlikely with -print0)
-    [[ -z "$db_file" ]] && continue
+    [[ -z "$db_file" ]] && continue # Skip if db_file is empty
 
     # Print the cleaning message, filename only
     printf "${GRN} Cleaning${RST}  %s" "${db_file##*/}"
@@ -107,17 +155,9 @@ run_cleaner() {
     # Get initial file size. If stat fails (e.g., file disappears), default to 0.
     s_old=$(stat -c%s "$db_file" 2>/dev/null || echo 0)
 
-    # Perform vacuum and reindex in a subshell, running spinner concurrently.
-    (
-      # Remove WAL (Write-Ahead Log) and SHM (Shared Memory) files first.
-      # These are temporary files used by SQLite and can be safely removed.
-      # '|| true' prevents script from exiting if files don't exist.
-      rm -f -- "${db_file}-wal" "${db_file}-shm" 2>/dev/null || true
-      # Vacuum: Rebuilds the database, reclaiming unused space.
-      sqlite3 "$db_file" "VACUUM;" >/dev/null 2>&1
-      # Reindex: Rebuilds all indexes in the database.
-      sqlite3 "$db_file" "REINDEX;" >/dev/null 2>&1
-    ) & spinner $!; wait # Run subshell in background, start spinner, then wait for subshell
+    spin_start # Start spinner
+    vacuum_db "$db_file" # Perform vacuum
+    spin_stop # Stop spinner
 
     # Get new file size. If stat fails, default to 0.
     s_new=$(stat -c%s "$db_file" 2>/dev/null || echo 0)
@@ -130,7 +170,7 @@ run_cleaner() {
     if (( diff_kb > 0 )); then
       diff_str="${YLW}- ${diff_kb} KB${RST}" # Space reclaimed (yellow)
     elif (( diff_kb < 0 )); then
-      diff_str="${RED}+ $(( -diff_kb )) KB${RST}" # File grew (red)
+      diff_str="${RED}+ $(( -diff_kb )) KB (grew)${RST}" # File grew (red)
     else
       diff_str="${RST}∘${RST}" # No change (default color)
     fi
@@ -139,7 +179,7 @@ run_cleaner() {
     # The %-45s pads the string to 45 characters, ensuring alignment.
     printf "\r%-45s %s %s\n" "${GRN} Cleaning${RST}  ${db_file##*/}" "${GRN}done${RST}" "${diff_str}"
 
-  done < <(find . -maxdepth 1 -type f -name "*.sqlite" -print0) # Find files ending with .sqlite
+  done < <(find . -maxdepth 1 -type f -name "*.sqlite" -print0)
 
   # Summary message for the current profile.
   if (( total_cleaned_kb > 0 )); then
@@ -149,112 +189,46 @@ run_cleaner() {
   fi
 }
 
-## Process Management
-# if_running: Checks if a process is running and prompts the user to kill it.
-# Arguments:
-#   $1 - The process name to check (e.g., "firefox", "brave").
-if_running() {
-  local process_name="$1"
-  local user="$USER" # Using $USER is generally fine here for user-specific processes.
-  local max_wait_attempts=5 # Number of 2-second waits before prompting to kill
-  local current_wait_attempts=0
-  local ans
+# ----- Brave-specific cache cleanup (consolidated from first script) -----
+clean_brave_specific_caches(){
+  local dir="$1"
+  printf "Performing Brave-specific cache cleanup in %s...\n" "$dir"
+  pushd "$dir" >/dev/null || { log "pushd failed: $dir"; return; }
 
-  if pgrep -u "$user" "$process_name" >/dev/null 2>&1; then
-    printf "Waiting for %s to exit" "$process_name"
-    while pgrep -u "$user" "$process_name" >/dev/null 2>&1; do
-      if (( current_wait_attempts >= max_wait_attempts )); then
-        printf "\n" # Newline after dots
-        printf " %s is still running. Kill %s now? [y/N]: " "$process_name" "$process_name"
-        read -r ans # -r prevents backslash escapes from being interpreted.
-        if [[ "$ans" =~ ^[Yy]$ ]]; then # Case-insensitive check for 'y' or 'Y'.
-          printf "Attempting to terminate %s...\n" "$process_name"
-          pkill -TERM -u "$user" "$process_name" || true # Send graceful termination signal
-          sleep 4 # Give it some time to shut down
-          if pgrep -u "$user" "$process_name" >/dev/null 2>&1; then
-            printf "Force killing %s...\n" "$process_name"
-            pkill -KILL -u "$user" "$process_name" || true # Force kill if still running
-          fi
-        else
-          printf "Please close %s manually and re-run the script.\n" "$process_name"
-          exit 1
-        fi
-        current_wait_attempts=0 # Reset attempts after prompt
+  # Always-safe removals
+  local -a rm_dirs=(
+    component_crx_cache extensions_crx_cache "Crash Reports"
+    Greaselion GrShaderCache ShaderCache GraphiteDawnCache "Local Traces"
+  )
+  for d in "${rm_dirs[@]}"; do
+    if [[ -d "$d" ]]; then
+      printf "Removing directory: %s\n" "$d"
+      rm -rf -- "$d"
+    fi
+  done
+
+  # Deep cache (opt-in via --deep-clean flag)
+  if (( DEEP_CLEAN == 1 )); then
+    local -a deep=(
+      "GPUCache" "Code Cache" "Service Worker/CacheStorage" "DawnCache"
+    )
+    for d in "${deep[@]}"; do
+      if [[ -e "$d" ]]; then
+        printf "DEEP: Removing: %s\n" "$d"
+        rm -rf -- "$d"
       fi
-      printf "."
-      sleep 2
-      current_wait_attempts=$(( current_wait_attempts + 1 ))
     done
-    printf "\n" # Newline after dots or wait message
   fi
+
+  # Keep folder, clear contents
+  if [[ -d "Guest Profile" ]]; then
+    printf "Clearing contents of directory: %s\n" "Guest Profile"
+    find "Guest Profile" -mindepth 1 -delete
+  fi
+
+  popd >/dev/null || true
 }
 
-## Brave-specific and Additional Cleanup
-# perform_additional_cleanup: Performs Brave-specific and other requested cleanup steps.
-perform_additional_cleanup() {
-  local brave_dir="$HOME/.config/BraveSoftware/Brave-Browser" # Default Brave stable path
-  local dirs_to_remove
-  local dd
-  local brave_subdirs_to_clear
-  local subdir
-
-  # Check for Brave Beta if stable not found
-  if [[ ! -d "$brave_dir" ]]; then
-    brave_dir="$HOME/.config/BraveSoftware/Brave-Browser-Beta"
-  fi
-
-  if [[ ! -d "$brave_dir" ]]; then
-    printf "Brave directory not found (%s). Skipping Brave-specific cleanup.\n" "$brave_dir"
-  else
-    printf "Performing Brave-specific cleanup steps in %s...\n" "$brave_dir"
-
-    # Use pushd/popd to manage directory changes safely and handle errors.
-    pushd "$brave_dir" >/dev/null || { log "ERROR: Could not change to Brave directory: $brave_dir"; return; }
-
-    # List of directories within the Brave profile to be completely removed.
-    dirs_to_remove=(
-      component_crx_cache
-      extensions_crx_cache
-      "Crash Reports"
-      Greaselion
-      GrShaderCache
-      ShaderCache
-      GraphiteDawnCache
-      "Local Traces"
-    )
-    for dd in "${dirs_to_remove[@]}"; do
-      if [[ -d "$dd" ]]; then
-        printf "Removing directory: %s\n" "$dd"
-        rm -rf -- "$dd" # Using '--' to protect against paths starting with '-'
-      fi
-    done
-
-    # List of directories whose *contents* should be cleared, but the directory itself kept.
-    brave_subdirs_to_clear=(
-      "Guest Profile"
-    )
-    for subdir in "${brave_subdirs_to_clear[@]}"; do
-      if [[ -d "$subdir" ]]; then
-        printf "Clearing contents of directory: %s\n" "$subdir"
-        # Using find -mindepth 1 -delete is the most robust way to clear directory contents,
-        # including hidden files, without removing the parent directory itself.
-        find "$subdir" -mindepth 1 -delete
-      fi
-    done
-
-    popd >/dev/null || { log "ERROR: Could not return from Brave directory."; return; }
-  fi
-
-  # --- Additional Cleanup Steps ---
-
-  # Clear Chromium's cache.
-  # Note: This clears the cache for Chromium, not Brave, but is included here
-  # as a general browser-related cleanup step.
-  printf "Removing Chromium cache: %s\n" "$HOME/.cache/chromium"
-  # Using '--' to protect against paths starting with '-' and '|| true' to prevent script exit
-  # if the path does not exist (e.g., Chromium not installed).
-  rm -rf -- "$HOME/.cache/chromium" || true
-}
 
 ## Main Browser Vacuuming Function
 # vacuum_browsers: Iterates through known browser configurations and cleans their profiles.
@@ -272,12 +246,12 @@ vacuum_browsers() {
     [Google-Chrome]=".config/google-chrome"
     [Google-Chrome-Beta]=".config/google-chrome-beta"
     [Google-Chrome-Unstable]=".config/google-chrome-unstable"
+    [Brave-Browser-Stable]=".config/BraveSoftware/Brave-Browser"
     [Brave-Browser-Beta]=".config/BraveSoftware/Brave-Browser-Beta"
-    [Brave-Browser]=".config/BraveSoftware/Brave-Browser"
+    [Brave-Browser-Development]=".config/BraveSoftware/Brave-Browser-Development"
   )
 
   # Map browser display names to actual process names for pgrep.
-  # This handles cases where the config directory name differs from the process name.
   declare -A process_names=(
     [Firefox]="firefox"
     [Icecat]="icecat"
@@ -289,8 +263,9 @@ vacuum_browsers() {
     [Google-Chrome]="chrome" # Common process name for Chrome variants
     [Google-Chrome-Beta]="chrome"
     [Google-Chrome-Unstable]="chrome"
-    [Brave-Browser-Beta]="brave" # Common process name for Brave variants
-    [Brave-Browser]="brave"
+    [Brave-Browser-Stable]="brave" # Common process name for Brave variants
+    [Brave-Browser-Beta]="brave"
+    [Brave-Browser-Development]="brave"
   )
 
   local b_name config_path full_config_path p_name
@@ -309,9 +284,9 @@ vacuum_browsers() {
 
     if [[ -d "$full_config_path" ]]; then
       # Overwrite the "Scanning for..." line with "found" status.
-      printf "\r[%s] Scanning for %s %s\n" "${YLW}$USER${RST}" "${GRN}$b_name${RST}" "[${GRN}found${RST}]"
+      printf "\r[%s] Scanning for %s [${GRN}found${RST}]\n" "${YLW}$USER${RST}" "${GRN}$b_name${RST}"
       # Check if the browser process is running and prompt to kill if necessary.
-      if_running "$p_name"
+      kill_browser "$p_name"
 
       profile_dirs=() # Reset array for each browser to store its profile paths.
 
@@ -319,40 +294,40 @@ vacuum_browsers() {
       if [[ "$b_name" =~ ^(Firefox|Icecat|Seamonkey|Aurora)$ ]]; then
         ini_file="$full_config_path/profiles.ini"
         if [[ -f "$ini_file" ]]; then
-          # Read profile paths from profiles.ini.
-          # IFS= ensures 'read' processes each line as a single field, ignoring spaces.
           while IFS= read -r line; do
             if [[ "$line" =~ ^Path=(.*)$ ]]; then
-              # Correctly construct the full profile directory path.
               profile_dirs+=("$full_config_path/${BASH_REMATCH[1]}")
             fi
           done < "$ini_file"
         fi
       else # Handle Chromium-like profile directories (e.g., "Default", "Profile 1").
-        # Find "Default" and "Profile*" directories within the browser's config path.
-        # Using -print0 and read -d '' for robustness against unusual filenames.
         while IFS= read -r -d '' profiledir_found; do
           profile_dirs+=("$profiledir_found")
         done < <(find "$full_config_path" -maxdepth 1 -type d \( -iname "Default" -o -iname "Profile*" \) -print0)
       fi
 
-      # Process each found profile directory.
+      # Process each found profile directory (SQLite vacuum).
       if (( ${#profile_dirs[@]} > 0 )); then
         for profiledir in "${profile_dirs[@]}"; do
           if [[ -d "$profiledir" ]]; then
             printf "[%s]\n" "${YLW}${profiledir##*/}${RST}" # Print profile name (e.g., "Default", "Profile 1")
-            # Use pushd/popd to manage directory changes safely for run_cleaner.
             pushd "$profiledir" >/dev/null || { log "ERROR: Could not change to profile directory: $profiledir"; continue; }
-            run_cleaner # Call the core cleaning function.
+            run_cleaner # Call the core SQLite cleaning function.
             popd >/dev/null || { log "ERROR: Could not return from profile directory: $profiledir"; }
           fi
         done
       else
         printf "No profiles found for %s in %s.\n" "$b_name" "$full_config_path"
       fi
+
+      # After SQLite vacuum, perform Brave-specific cache cleanup for Brave directories.
+      if [[ "$b_name" =~ ^Brave-Browser.*$ ]]; then
+        clean_brave_specific_caches "$full_config_path"
+      fi
+
     else
       # Overwrite the "Scanning for..." line with "none" status if directory not found.
-      printf "\r[%s] Scanning for %s %s\n" "${YLW}$USER${RST}" "${GRN}$b_name${RST}" "[${RED}none${RST}]"
+      printf "\r[%s] Scanning for %s [${RED}none${RST}]\n" "${YLW}$USER${RST}" "${GRN}$b_name${RST}"
       sleep 0.1 # Small delay for better visual flow.
     fi
   done
@@ -360,9 +335,40 @@ vacuum_browsers() {
   printf "Browser vacuuming complete.\n"
 }
 
+# --- Additional Cleanup for other browsers ---
+clean_other_caches() {
+  printf "Removing other common browser caches...\n"
+  # Clear Chromium's cache.
+  # This clears the cache for Chromium (if installed), separate from Brave.
+  if [[ -d "$HOME/.cache/chromium" ]]; then
+    printf "Removing Chromium cache: %s\n" "$HOME/.cache/chromium"
+    rm -rf -- "$HOME/.cache/chromium" || true
+  else
+    printf "Chromium cache directory not found: %s\n" "$HOME/.cache/chromium"
+  fi
+}
+
+
 ## Main Execution Block
 main() {
   local ans # Declare local variable for user input.
+
+  # Parse command-line arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -d|--deep-clean)
+        DEEP_CLEAN=1
+        shift # past argument
+        ;;
+      -h|--help)
+        usage
+        ;;
+      *)
+        printf "Unknown option: %s\n" "$1" >&2
+        usage
+        ;;
+    esac
+  done
 
   # Check if running as root and warn the user.
   if [[ $EUID -eq 0 ]]; then
@@ -377,8 +383,8 @@ main() {
 
   # Perform browser vacuuming for all configured browsers.
   vacuum_browsers
-  # Perform Brave-specific and other additional cleanup steps.
-  perform_additional_cleanup
+  # Perform other general cache cleanup.
+  clean_other_caches
 
   # Send a desktop notification if notify-send is available, otherwise print to console.
   if dep_check_notify_send; then

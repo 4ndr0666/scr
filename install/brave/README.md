@@ -1,173 +1,123 @@
 # 🛡️ Brave Unified Wrapper & Systemd Installer
 
-## 📖 Overview
+This project automates the setup of a powerful wrapper script that dynamically generates browser configurations on-the-fly, hardening privacy settings, optimizing performance, and allowing for deep, declarative customization through a single environment file.
 
-This project provides a **single, self-contained installer script** that sets up:
+## Features
 
-* An **argv0-aware Brave wrapper** (`brave-wrapper`) that keeps
-  `~/.config/brave-flags.conf` canonical and optimized for **low-RAM systems**.
-* Symlinks: `brave`, `brave-beta`, `brave-nightly` → wrapper.
-* A **systemd service unit** (global or per-user) to auto-launch Brave with managed flags.
-* Full **idempotency**: safe to run repeatedly without duplication or corruption.
+-   **Dynamic Flag Generation:** Automatically applies performance and privacy-enhancing flags on every launch.
+-   **Centralized Configuration:** Control all your Brave settings, from experimental features to proxy settings, from a single file (`~/.config/brave/brave.env`).
+-   **Idempotent & Atomic:** The installer can be run repeatedly without causing issues. It ensures the system is always in the desired state. File writes are atomic to prevent corruption.
+-   **User & Global Installs:** Choose between a local user installation (`~/.local/bin`, recommended) or a system-wide installation (`/usr/local/bin`).
+-   **Systemd Integration:** Installs a systemd user service for seamless integration with modern Linux desktops.
+-   **Multi-Channel Support:** Automatically works for `brave`, `brave-beta`, and `brave-nightly` channels if they are installed.
+-   **User-Friendly Scaffolding:** Includes a command to generate a well-commented configuration file to get you started.
 
----
+## Why Use This?
 
-## ⚡ Key Features
+Running Brave directly is fine, but it lacks consistency and ease of advanced configuration. This wrapper solves several problems:
 
-* **Hardware acceleration aware**: auto-enables GPU rasterization only if GPU is usable.
-* **Minimal RAM profile**: disables unnecessary features, enforces memory purges.
-* **Self-healing flags**: guarantees exactly one `--enable-features` and `--disable-features`.
-* **System-wide or per-user install**:
+1.  **Consistency:** Ensures Brave always starts with your preferred set of optimized flags, regardless of how it's launched (terminal, `.desktop` file, etc.).
+2.  **Performance:** Enables modern features like Vulkan, GPU rasterization, and VA-API video decoding where appropriate.
+3.  **Privacy:** Disables anti-features like the crash reporter and provides an easy way to disable web features you don't use (e.g., WebUSB, Bluetooth).
+4.  **Control:** Makes complex configurations (like forcing all traffic through a Tor proxy) declarative and simple to manage.
 
-  * Global (`--global`): installs to `/usr/lib/systemd/user` (requires root).
-  * Per-user (`--user`): installs to `~/.config/systemd/user`.
-* **Environment overrides**:
+## Quick Start
 
-  * `PREFIX=/opt/local` → install wrapper to `/opt/local/bin`.
-  * `AUTO_ENABLE=0` → install systemd unit without enabling.
-  * `BRAVE_ENV="KEY=VAL …"` → inject runtime environment into systemd unit.
+1.  **Make the script executable:**
+    ```bash
+    chmod +x brave-install.sh
+    ```
 
----
+2.  **Run the installer (user mode is recommended):**
+    ```bash
+    ./brave-install.sh --user install
+    ```
+    This will install the wrapper to `~/.local/bin/brave-wrapper` and create symlinks like `~/.local/bin/brave`. Make sure `~/.local/bin` is in your `PATH`.
 
-## 🚀 Installation
+3.  **Initialize your custom configuration file:**
+    The script will now prompt you to do this.
+    ```bash
+    ./brave-install.sh --user init-config
+    ```
+    This creates a template at `~/.config/brave/brave.env`.
 
-### Global Install (default)
+4.  **Customize!**
+    Open the newly created file and uncomment/edit the options you want.
+    ```bash
+    nano ~/.config/brave/brave.env
+    ```
+    Your changes will apply the next time you start Brave.
 
-```bash
-sudo ./brave-install.sh --global install
-```
+## Detailed Usage
 
-Installs wrapper to `/usr/local/bin`, creates symlinks, and places
-systemd *user* unit in `/usr/lib/systemd/user`.
+### Installing
 
-Enable service:
+-   **User Install (Recommended):**
+    ```bash
+    ./brave-install.sh --user install
+    ```
+-   **Global Install (Requires sudo):**
+    ```bash
+    ./brave-install.sh --global install
+    ```
 
-```bash
-sudo systemctl --global enable brave.service
-```
+### Uninstalling
 
-### Per-User Install
+The uninstaller is safe and will only remove files and links it created.
+bash
 
-```bash
-./brave-install.sh --user install
-```
-
-Installs wrapper in `/usr/local/bin`, creates symlinks, and places
-systemd *user* unit in `~/.config/systemd/user`.
-
-Enable service:
-
-```bash
-systemctl --user enable --now brave.service
-```
-
----
-
-## 🧹 Uninstallation
-
-Remove wrapper, symlinks, and all service units:
-
-```bash
-sudo ./brave-install.sh --global uninstall
-```
-
-or
-
-```bash
 ./brave-install.sh --user uninstall
-```
 
-Alias:
 
-```bash
-./brave-install.sh clean
-```
+### Configuration (`~/.config/brave/brave.env`)
 
----
+This is the control center. After running `init-config`, you can edit this file to enable powerful features.
 
-## ⚙️ Wrapper Behavior
+#### Example: Performance Tuning
 
-* Executable name (`argv0`) determines which Brave binary to call:
+To enable the Vulkan graphics backend and hardware-accelerated video decoding (requires `intel-media-driver` or similar), add this to your `brave.env`:
+bash
 
-  * `brave` → `/usr/bin/brave`
-  * `brave-beta` → `/usr/bin/brave-beta`
-  * `brave-nightly` → `/usr/bin/brave-nightly`
-* Before launching, wrapper ensures `~/.config/brave-flags.conf` is:
+~/.config/brave/brave.env
+BRAVE_ENABLE="Vulkan,VaapiVideoDecoder"
 
-  * Deduplicated and sorted.
-  * Populated with tuned flags:
 
-    * ✅ `--disable-crash-reporter`
-    * ✅ `--disk-cache-size=104857600`
-    * ✅ `--extensions-process-limit=1`
-    * ✅ `--ozone-platform=wayland`
-    * ✅ `--allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne`
-  * With managed feature sets:
+#### Example: Privacy Hardening
 
-    * **Enable**: `DefaultSiteInstanceGroups`, `InfiniteTabsFreeze`,
-      `MemoryPurgeOnFreezeLimit`, (`UseGpuRasterization`, `ZeroCopy` if HW accel).
-    * **Disable**: `BackForwardCache`, `SmoothScrolling`.
-  * Resolves conflicts automatically: if a feature is in both enable & disable, **disable wins**.
+To disable features that could increase your browser's fingerprint or attack surface, add:
+bash
 
----
+~/.config/brave/brave.env
+BRAVE_DISABLE="WebBluetooth,WebUSB,WebSerial,WebNFC"
 
-## 🌍 Systemd Integration
 
-### Global User Service
+#### Example: Forcing a SOCKS5 Proxy (Tor)
 
-* Installed to `/usr/lib/systemd/user/brave.service`
-* Managed with:
+To route all Brave traffic through a local Tor daemon running on port 9050:
+bash
 
-  ```bash
-  sudo systemctl --global enable --now brave.service
-  sudo systemctl --global disable brave.service
-  ```
+~/.config/brave/brave.env
+BRAVE_EXTRA_FLAGS='--proxy-server="socks5://127.0.0.1:9050" --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"'
 
-### Per-User Service
 
-* Installed to `~/.config/systemd/user/brave.service`
-* Managed with:
+### Diagnostics & Debugging
 
-  ```bash
-  systemctl --user enable --now brave.service
-  systemctl --user disable --now brave.service
-  ```
+If the browser isn't behaving as you expect, the wrapper has tools to help.
 
-### Environment Injection
+-   **Print Effective Flags:** To see the exact command and full list of flags that will be used to launch Brave, run:
+    ```bash
+    # For user install:
+    ~/.local/bin/brave --print-effective-flags
+    
+    # For global install:
+    /usr/local/bin/brave --print-effective-flags
+    ```
 
-Values from `BRAVE_ENV` are passed as `Environment=` lines in the service file.
-Example:
+-   **Check the Systemd Journal:** The wrapper logs its startup decisions (like GPU and Wayland detection). If Brave fails to launch from your application menu, check the logs:
+    ```bash
+    # For user installs
+    journalctl --user -u brave.service -f
 
-```bash
-BRAVE_ENV="BRAVE_LOW_ISOLATION=0 BRAVE_EXTRA_FLAGS=--new-window"
-```
-
----
-
-## 📌 Reference
-
-For a full list of **Brave and Chromium flags** (including Arch Linux integration, deprecated flags, and automation practices), see:
-
-📄 [Canonical Brave Flags Reference](./brave_flags_refference.md)
-
----
-
-## ✅ Quick Commands
-
-### Install globally (root):
-
-```bash
-sudo ./brave-install.sh --global install
-```
-
-### Install per-user:
-
-```bash
-./brave-install.sh --user install
-```
-
-### Uninstall (alias `clean`):
-
-```bash
-sudo ./brave-install.sh --global clean
-```
+    # For global installs (if launched via systemd --global)
+    journalctl -t brave-wrapper -f
+    ```
