@@ -20,6 +20,7 @@ readonly ENV_FILE_PATH="${HOME}/.config/brave/brave.env"
 
 # Mode defaults. Global install by default.
 MODE="global"
+SUBCMD=""
 PREFIX="" # Computed later if not set by user
 AUTO_ENABLE="${AUTO_ENABLE:-1}"
 VERBOSE=0
@@ -83,6 +84,7 @@ usage() {
 	  install                      Install the wrapper, symlinks, and systemd unit.
 	  uninstall                    Remove all managed components.
 	  init-config                  Create a commented default config file at ${ENV_FILE_PATH}.
+	  diagnose                     Check for common configuration and runtime issues.
 
 	Options:
 	  --user                       Install for the current user (~/.local). [Recommended]
@@ -119,9 +121,9 @@ parse_args() {
     esac
   done
 
-  (( ${#remaining_args[@]} == 1 )) || { usage; die "A single subcommand (install|uninstall|init-config) is required."; }
-  # Return the subcommand instead of setting a global variable.
-  echo "${remaining_args[0]}"
+  (( ${#remaining_args[@]} == 1 )) || { usage; die "A single subcommand is required."; }
+  # Set the global SUBCMD variable instead of echoing.
+  SUBCMD="${remaining_args[0]}"
 }
 
 #==============================================================================
@@ -192,8 +194,6 @@ write_wrapper() {
   tmp_wrapper="$(run mktemp "${BIN_DIR}/brave-wrapper.XXXXXX")"
 
   # Heredoc for the wrapper script content.
-  # The 'WRAPPER_SCRIPT' delimiter is single-quoted to prevent any variable
-  # expansion within this block. All variables are resolved inside the wrapper itself.
   run cat >"$tmp_wrapper" <<'WRAPPER_SCRIPT'
 #!/usr/bin/env bash
 # This script is auto-generated. Do not edit directly.
@@ -202,129 +202,77 @@ set -Eeufo pipefail
 # This header is used by the installer to identify its managed files.
 # BRAVE_WRAPPER_MANAGED=1
 
-# --- Configuration Paths ---
 readonly FLAGS_FILE="${HOME}/.config/brave-flags.conf"
 readonly LOCK_FILE="${HOME}/.config/.brave-flags.lock"
 readonly ENV_FILE="${HOME}/.config/brave/brave.env"
 
-# --- Utilities ---
 have() { command -v "$1" >/dev/null 2>&1; }
 on_wayland() { [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]]; }
 gpu_ok() {
-  # Respect explicit user overrides first.
   [[ "${BRAVE_DISABLE_GPU:-0}" == "1" ]] && return 1
   [[ "${BRAVE_FORCE_GPU:-0}" == "1" ]] && return 0
-  # Autodetect by checking for a render device node.
   compgen -G "/dev/dri/renderD*" >/dev/null 2>&1
 }
 
-# --- Main Logic ---
 main() {
-  # Ensure config directories exist.
   mkdir -p "$(dirname "$FLAGS_FILE")"
-
-  # Source optional environment file for non-systemd sessions.
   # shellcheck source=/dev/null
   [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 
-  # Determine which Brave channel to run based on how the script was called.
   local argv0 channel
   argv0="$(basename "${BASH_SOURCE[0]}")"
   case "$argv0" in
     brave|brave-wrapper) channel="brave" ;;
     brave-beta)          channel="brave-beta" ;;
     brave-nightly)       channel="brave-nightly" ;;
-    *)                   channel="brave" ;; # Default to stable
+    *)                   channel="brave" ;;
   esac
 
-  # Find the actual Brave binary.
   local brave_bin
   if [[ -x "/usr/bin/${channel}" ]]; then
     brave_bin="/usr/bin/${channel}"
   elif have "$channel"; then
     brave_bin="$(command -v "$channel")"
   else
-    printf '[x] Brave binary not found: %s\n' "$channel" >&2
-    exit 127
+    printf '[x] Brave binary not found: %s\n' "$channel" >&2; exit 127
   fi
 
-  # --- Dynamic Flag Generation ---
-  local -a base_flags enable_feats disable_feats
-  base_flags=(
-    "--disable-crash-reporter"
-    "--disk-cache-size=104857600"
-    "--extensions-process-limit=1"
-    # Allow uBlock Origin to run in its own process for better performance.
-    "--allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne"
-  )
-  on_wayland && base_flags+=("--ozone-platform=wayland")
-
-  enable_feats=("DefaultSiteInstanceGroups" "InfiniteTabsFreeze" "MemoryPurgeOnFreezeLimit")
-  disable_feats=("BackForwardCache" "SmoothScrolling")
-  gpu_ok && enable_feats+=("UseGpuRasterization" "ZeroCopy")
-
-  # --- Environment Overrides ---
-  # This is a robust way to parse comma or space-separated lists from env vars
-  # without invoking subshells or being vulnerable to globbing.
-  local old_ifs="$IFS"
-  IFS=', ' read -r -a extra_en <<<"${BRAVE_ENABLE:-}"
-  IFS=', ' read -r -a extra_dis <<<"${BRAVE_DISABLE:-}"
-  IFS="$old_ifs"
-  # Append the arrays, handling the case where they might be empty.
-  [[ ${#extra_en[@]} -gt 0 ]] && enable_feats+=("${extra_en[@]}")
-  [[ ${#extra_dis[@]} -gt 0 ]] && disable_feats+=("${extra_dis[@]}")
-
-  # --- Atomically Write brave-flags.conf ---
   (
-    flock -x 200 # Acquire exclusive lock, blocks until available.
-    local tmp_flags_file
+    flock -x 200
+    local tmp_flags_file=""
+    trap '[[ -n "$tmp_flags_file" && -f "$tmp_flags_file" ]] && rm -f "$tmp_flags_file"' EXIT
     tmp_flags_file="$(mktemp "${FLAGS_FILE}.XXXXXX")"
-    # Use /dev/null when the flags file does not yet exist to avoid awk read errors under set -e.
-    local src_file="$FLAGS_FILE"
-    [[ -f "$src_file" ]] || src_file="/dev/null"
 
-    # This awk script is the core of the flag management. It efficiently
-    # merges managed flags with user-defined flags from a previous run.
+    local -a base_flags=("--disable-crash-reporter" "--disk-cache-size=104857600" "--extensions-process-limit=1" "--allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne")
+    on_wayland && base_flags+=("--ozone-platform=wayland")
+
+    local -a enable_feats=("DefaultSiteInstanceGroups" "InfiniteTabsFreeze" "MemoryPurgeOnFreezeLimit")
+    local -a disable_feats=("BackForwardCache" "SmoothScrolling")
+    gpu_ok && enable_feats+=("UseGpuRasterization" "ZeroCopy")
+
+    local old_ifs="$IFS"; IFS=', '; read -r -a extra_en <<<"${BRAVE_ENABLE:-}"; IFS="$old_ifs"
+    [[ ${#extra_en[@]} -gt 0 ]] && enable_feats+=("${extra_en[@]}")
+    IFS=', '; read -r -a extra_dis <<<"${BRAVE_DISABLE:-}"; IFS="$old_ifs"
+    [[ ${#extra_dis[@]} -gt 0 ]] && disable_feats+=("${extra_dis[@]}")
+
+    local src_file="$FLAGS_FILE"; [[ -f "$src_file" ]] || src_file="/dev/null"
     awk -v header="# BRAVE_WRAPPER_MANAGED=1" \
         -v date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
         -v base_flags_str="$(printf '%s\n' "${base_flags[@]}")" \
         -v enable_str="$(printf '%s,' "${enable_feats[@]}" | sed 's/,$//')" \
         -v disable_str="$(printf '%s,' "${disable_feats[@]}" | sed 's/,$//')" \
       '
-      # Function to extract the key from a flag (e.g., "--foo=bar" -> "--foo").
-      function get_key(flag) {
-        return (index(flag, "=")) ? substr(flag, 1, index(flag, "=") - 1) : flag
-      }
-      # BEGIN block: Runs once before processing any input.
+      function get_key(flag) { return (index(flag, "=")) ? substr(flag, 1, index(flag, "=") - 1) : flag }
       BEGIN {
-        # Load all managed base flags and their keys into an associative array for quick lookups.
         split(base_flags_str, lines, "\n");
         for (i in lines) if (lines[i] != "") managed_keys[get_key(lines[i])] = 1
-        managed_keys["--enable-features"] = 1
-        managed_keys["--disable-features"] = 1
-
-        # Process enabled features, removing any that are also explicitly disabled.
+        managed_keys["--enable-features"] = 1; managed_keys["--disable-features"] = 1
         split(enable_str, en, ","); split(disable_str, dis, ",");
         for (i in dis) disabled[dis[i]] = 1
-        for (i in en) if (!(en[i] in disabled) && !seen_en[en[i]++]) {
-          final_enable = (final_enable ? final_enable "," : "") en[i]
-        }
-        # Process disabled features, ensuring uniqueness.
-        for (i in dis) if (!seen_dis[dis[i]++]) {
-          final_disable = (final_disable ? final_disable "," : "") dis[i]
-        }
+        for (i in en) if (!(en[i] in disabled) && !seen_en[en[i]++]) final_enable = (final_enable ? final_enable "," : "") en[i]
+        for (i in dis) if (!seen_dis[dis[i]++]) final_disable = (final_disable ? final_disable "," : "") dis[i]
       }
-      # Main block: Runs for each line of the input file(s).
-      # FNR==NR is true only for the first file argument.
-      # This is a common awk pattern to read one file into memory, then process the second.
-      # Here, we use it to read the existing flags file and store user-defined flags.
-      FNR==NR && !/^\s*(#|$)/ {
-        # If the flag key is not managed by us, and we have not seen this exact flag before,
-        # store it as a user-defined flag.
-        if (!(get_key($0) in managed_keys) && !seen_user[$0]++) user_flags[++uc] = $0
-        next
-      }
-      # END block: Runs once after all input is processed.
+      FNR==NR && !/^\s*(#|$)/ { if (!(get_key($0) in managed_keys) && !seen_user[$0]++) user_flags[++uc] = $0; next }
       END {
         print header; printf "# Generated: %s\n\n", date
         printf "# User-defined flags (preserved from previous runs):\n"
@@ -336,61 +284,41 @@ main() {
       }
       ' "$src_file" "$src_file" > "$tmp_flags_file"
 
-    # Atomically replace the old flags file with the new one.
-    mv -f "$tmp_flags_file" "$FLAGS_FILE"
+    if [[ -s "$tmp_flags_file" ]]; then
+      mv -f "$tmp_flags_file" "$FLAGS_FILE"
+    else
+      logger -t brave-wrapper "ERROR: Generated brave-flags.conf was empty. Using old version."
+      rm -f "$tmp_flags_file"
+    fi
+    trap - EXIT
   ) 200>"$LOCK_FILE"
 
-  # --- Execute Brave ---
-  local -a launch_args
-  # Read non-comment, non-empty lines from the flags file into an array.
-  mapfile -t launch_args < <(grep -vE '^\s*(#|$)' "$FLAGS_FILE")
-
-  # Append extra flags from environment.
-  # WARNING: This uses word splitting. Flags with spaces must be quoted
-  # correctly within the BRAVE_EXTRA_FLAGS variable itself.
-  # e.g., BRAVE_EXTRA_FLAGS='--foo="bar baz"'
+  local -a launch_args; mapfile -t launch_args < <(grep -vE '^\s*(#|$)' "$FLAGS_FILE")
   if [[ -n "${BRAVE_EXTRA_FLAGS:-}" ]]; then
     local -a extra_flags; read -r -a extra_flags <<<"$BRAVE_EXTRA_FLAGS"
     launch_args+=("${extra_flags[@]}")
   fi
 
-  # Debug hook to print the final command.
   if [[ "${1:-}" == "--print-effective-flags" ]]; then
-    printf "Effective command:\n"; printf '%q ' "$brave_bin" "${launch_args[@]}" "$@"
-    printf '\n'; exit 0
+    printf "Effective command:\n"; printf '%q ' "$brave_bin" "${launch_args[@]}" "$@"; printf '\n'; exit 0
   fi
 
-  # Log a summary to the system journal if available.
   if have logger; then
-    local gpu_status=0 wayland_status=0
-    gpu_ok && gpu_status=1; on_wayland && wayland_status=1
+    local gpu_status=0 wayland_status=0; gpu_ok && gpu_status=1; on_wayland && wayland_status=1
     logger -t brave-wrapper "channel=${channel} gpu=${gpu_status} wayland=${wayland_status}"
   fi
 
-  # Replace this script process with Brave. `exec` is crucial for correct
-  # process management and signal handling.
   exec "$brave_bin" "${launch_args[@]}" "$@"
 }
-
-# Pass all script arguments to the main function of the wrapper.
 main "$@"
 WRAPPER_SCRIPT
-
-  # Set permissions and atomically move the script into place.
   run chmod 0755 "$tmp_wrapper"
   run mv -f "$tmp_wrapper" "$WRAPPER_PATH"
 }
 
 write_unit() {
   log "Writing systemd unit to ${UNIT_DIR}/${UNIT_NAME}"
-
-  # Build optional Environment= lines from the BRAVE_ENV variable.
-  local env_lines=""
-  if [[ -n "${BRAVE_ENV:-}" ]]; then
-    env_lines="Environment=${BRAVE_ENV}"
-  fi
-
-  # Using a variable to hold the heredoc content is cleaner.
+  local env_lines=""; [[ -n "${BRAVE_ENV:-}" ]] && env_lines="Environment=${BRAVE_ENV}"
   local unit_content
   unit_content=$(cat <<UNIT
 [Unit]
@@ -402,28 +330,20 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=${BRAVE_SYMLINK}
-# The '-' prefix means systemd will not fail if the file doesn't exist.
 EnvironmentFile=-%h/.config/brave/brave.env
 ${env_lines}
-# Standard hardening options. ProtectHome is intentionally disabled to allow
-# the browser to access Downloads, etc. without flatpak-like portals.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 Restart=on-failure
 RestartSec=3
-# Prevent rapid-restart loops if brave is crashing on startup
 StartLimitIntervalSec=60
 StartLimitBurst=5
-# NOTE: SystemCallFilter can break GPU/VA-API on some distros. Enable only if you need it.
-#SystemCallFilter=@system-service
 
 [Install]
 WantedBy=graphical-session.target
 UNIT
 )
-  # This is an atomic write. `install` creates the destination file directly
-  # from stdin, avoiding the need for a temporary file managed by the script.
   run install -m 0644 /dev/stdin "${UNIT_DIR}/${UNIT_NAME}" <<<"$unit_content"
 }
 
@@ -443,23 +363,15 @@ enable_unit() {
 }
 
 #==============================================================================
-# Uninstallation Logic
+# Uninstallation & Diagnostics
 #==============================================================================
 
 disable_unit() {
   local -a cmd_args=()
+  if [[ "$MODE" == "user" ]]; then cmd_args=(systemctl --user); else cmd_args=(systemctl); fi
+  cmd_args+=(disable --now "$UNIT_NAME")
 
-  if [[ "$MODE" == "user" ]]; then
-    cmd_args=(systemctl --user disable --now "$UNIT_NAME")
-  else
-    cmd_args=(systemctl disable --now "$UNIT_NAME")
-  fi
-
-  # This is a more robust way to handle expected failures.
-  # We run the command and check its output only if it fails.
   if ! output="$(run "${cmd_args[@]}" 2>&1)"; then
-    # If the command failed, check if it was the "doesn't exist" or "not loaded" error.
-    # If it was any other error, die.
     if ! grep -q -E "does not exist|not loaded" <<<"$output"; then
       die "Failed to disable systemd unit: ${output}"
     fi
@@ -468,24 +380,15 @@ disable_unit() {
     log "Stopped and disabled systemd unit."
   fi
 
-  # The unit is disabled or never existed, now remove the file and reload.
   run rm -f "${UNIT_DIR}/${UNIT_NAME}"
-  if [[ "$MODE" == "user" ]]; then
-    run systemctl --user daemon-reload
-  else
-    run systemctl daemon-reload
-  fi
+  if [[ "$MODE" == "user" ]]; then run systemctl --user daemon-reload; else run systemctl daemon-reload; fi
 }
 
 unlink_if_managed() {
-  local link_path="$1"
-  # Use -e to check for existence before -L to avoid errors on non-existent files.
-  [[ -e "$link_path" && -L "$link_path" ]] || return 0 # Exit if not a symlink
-  local target
-  target="$(run readlink -f "$link_path")"
+  local link_path="$1"; [[ -e "$link_path" && -L "$link_path" ]] || return 0
+  local target; target="$(run readlink -f "$link_path")"
   if [[ "$target" == "$WRAPPER_PATH" ]]; then
-    vlog "Removing managed symlink: ${link_path}"
-    run rm -f "$link_path"
+    vlog "Removing managed symlink: ${link_path}"; run rm -f "$link_path"
   else
     vlog "Skipping unmanaged symlink: ${link_path} -> ${target}"
   fi
@@ -496,20 +399,14 @@ unlink_if_managed() {
 #==============================================================================
 do_install() {
   log "Starting Brave wrapper installation (mode: ${MODE}, prefix: ${PREFIX})"
-  ensure_dirs
-  write_wrapper
-  # Use -v for verbose output on what ln is doing.
+  ensure_dirs; write_wrapper
   run ln -v -sfn "$WRAPPER_PATH" "$BRAVE_SYMLINK"
   run ln -v -sfn "$WRAPPER_PATH" "$BRAVE_BETA_SYMLINK"
   run ln -v -sfn "$WRAPPER_PATH" "$BRAVE_NIGHTLY_SYMLINK"
-  write_unit
-  enable_unit
-  log "Installation complete."
-  printf "\n" >&2
-  log "--- NEXT STEPS ---"
-  log "To customize Brave's features and flags, you can now create a configuration file."
-  log "Run the following command to generate a heavily commented template:"
-  printf "  %s --user init-config\n" "${SCRIPT_NAME}" >&2
+  write_unit; enable_unit
+  log "Installation complete."; printf "\n" >&2
+  log "--- NEXT STEPS ---"; log "To customize Brave, generate a config file with:"
+  printf "  %s init-config\n" "${SCRIPT_NAME}" >&2
 }
 
 do_uninstall() {
@@ -518,11 +415,8 @@ do_uninstall() {
   unlink_if_managed "$BRAVE_SYMLINK"
   unlink_if_managed "$BRAVE_BETA_SYMLINK"
   unlink_if_managed "$BRAVE_NIGHTLY_SYMLINK"
-  # Only remove the wrapper if it exists and contains our managed header.
-  # This is a final safety check.
   if [[ -f "$WRAPPER_PATH" ]] && grep -qF "$MANAGED_HEADER" "$WRAPPER_PATH"; then
-    log "Removing wrapper script: ${WRAPPER_PATH}"
-    run rm -f "$WRAPPER_PATH"
+    log "Removing wrapper script: ${WRAPPER_PATH}"; run rm -f "$WRAPPER_PATH"
   fi
   log "Uninstallation complete."
 }
@@ -530,60 +424,72 @@ do_uninstall() {
 do_init_config() {
   log "Initializing configuration file at ${ENV_FILE_PATH}"
   if [[ -f "${ENV_FILE_PATH}" ]]; then
-    die "Configuration file already exists. Remove it first if you want to regenerate it."
+    die "Configuration file already exists. Remove it first to regenerate."
   fi
-  
-  # Explicitly create parent dir, as this command can be run before 'install'.
-  # This action is always for the current user, so no 'run' helper is needed.
   mkdir -p "$(dirname "${ENV_FILE_PATH}")"
-
   cat <<'EOF' > "${ENV_FILE_PATH}"
 # Configuration file for the Brave Wrapper.
 # This file is sourced by the wrapper script before Brave is launched.
-# You can set environment variables here to control Brave's behavior.
-# Uncomment lines by removing the '#' at the beginning.
 
-# --- Performance & Feature Tuning ---
-#
-# Comma or space-separated list of features to enable or disable.
-# Find a comprehensive list at: https://peter.sh/experiments/chromium-command-line-switches/
-#
-# Example: Enable Vulkan rendering and VA-API hardware video decoding for better performance.
-# BRAVE_ENABLE="Vulkan,VaapiVideoDecoder,RawDraw"
-#
-# Example: Disable features you don't use to reduce memory and attack surface.
-# BRAVE_DISABLE="WebBluetooth,WebUSB,WebSerial,SharingHub"
+# Example: Enable Vulkan, disable WebUSB
+# BRAVE_ENABLE="Vulkan,VaapiVideoDecoder"
+# BRAVE_DISABLE="WebUSB,WebSerial"
 
-# --- GPU Control ---
-#
-# Force GPU acceleration ON, even if the wrapper thinks it's not available.
+# Example: Force GPU acceleration ON or OFF
 # BRAVE_FORCE_GPU=1
-#
-# Force GPU acceleration OFF. Useful for troubleshooting rendering issues.
 # BRAVE_DISABLE_GPU=1
 
-# --- Advanced Flag Overrides ---
-#
-# Use this to add any command-line flags not managed by the wrapper.
-# Flags with spaces must be quoted correctly within the string.
-#
-# Example: Force dark mode for web content and UI.
-# BRAVE_EXTRA_FLAGS='--force-dark-mode --enable-features=WebUIDarkMode'
-#
-# Example: Force all browser traffic through a local SOCKS5 proxy (e.g., Tor).
-# BRAVE_EXTRA_FLAGS='--proxy-server="socks5://127.0.0.1:9050" --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"'
-#
-# Example: Change the location of the user data directory.
-# BRAVE_EXTRA_FLAGS='--user-data-dir="${HOME}/.config/brave-alt-profile"'
-
-# --- Wayland/X11 Theming ---
-#
-# On some Wayland compositors (like Sway), you may need to set this for
-# GTK theming to apply correctly.
-# GTK_THEME="Adwaita:dark"
+# Example: Add extra command-line flags
+# BRAVE_EXTRA_FLAGS='--force-dark-mode'
 EOF
-  log "Success! Edit the new file to customize your Brave experience:"
-  log "nano ${ENV_FILE_PATH}"
+  log "Success! Edit the new file to customize: nano ${ENV_FILE_PATH}"
+}
+
+do_diagnose() {
+  log "Running diagnostics (mode: ${MODE})"
+  local unit_path="${UNIT_DIR}/${UNIT_NAME}"
+  local ok="[✓]" fail="[✗]" has_fail=0
+
+  log "--- 1. Checking Systemd Unit File ---"
+  if [[ ! -f "$unit_path" ]]; then
+    log "${fail} Unit file not found at: ${unit_path}"
+    log "      Run the 'install' command first."
+    has_fail=1
+  else
+    log "${ok} Unit file found: ${unit_path}"
+    if grep -q "StartLimitBurst=5" "$unit_path" && grep -q "StartLimitIntervalSec=60" "$unit_path"; then
+      log "${ok} Rate-limiting directives are present."
+    else
+      log "${fail} Rate-limiting directives are MISSING."
+      log "      This is the likely cause of a restart loop. Re-run 'install'."
+      has_fail=1
+    fi
+  fi
+
+  log "\n--- 2. Checking Service Status ---"
+  local -a sc_cmd=(systemctl); [[ "$MODE" == "user" ]] && sc_cmd+=(--user)
+  if ! status_output="$("${sc_cmd[@]}" status "$UNIT_NAME" 2>&1)"; then
+    log "Service status (command failed; this is ok if service is not running):"
+    printf "%s\n" "$status_output"
+  else
+    log "Service status:"; printf "%s\n" "$status_output"
+  fi
+  
+  log "\n--- 3. How to Check Logs for Crashes ---"
+  log "To see real-time logs and find the crash reason, run this command:"
+  if [[ "$MODE" == "user" ]]; then printf "  journalctl --user -fu %s\n" "$UNIT_NAME"
+  else printf "  journalctl -fu %s\n" "$UNIT_NAME"; fi
+  
+  log "\n--- 4. How to Test Flag Generation ---"
+  log "To test the flag logic without launching Brave, run:"
+  printf "  %s --print-effective-flags\n" "$BRAVE_SYMLINK"
+  
+  log "\n--- Diagnosis Complete ---"
+  if (( has_fail )); then
+    log "Found critical issues. Address items marked with [✗]."
+  else
+    log "No configuration issues found. Check logs for runtime errors."
+  fi
 }
 
 #==============================================================================
@@ -591,18 +497,16 @@ EOF
 #==============================================================================
 main() {
   ensure_tools
-  local subcmd
-  subcmd="$(parse_args "$@")"
-  # This must happen after parsing args so MODE and PREFIX are set.
-  setup_paths
+  parse_args "$@"
+  setup_paths # Must be after arg parsing
 
-  case "$subcmd" in
+  case "$SUBCMD" in
     install)      do_install ;;
     uninstall)    do_uninstall ;;
     init-config)  do_init_config ;;
-    *)            usage; die "Unknown subcommand: '$subcmd'" ;;
+    diagnose)     do_diagnose ;;
+    *)            usage; die "Unknown subcommand: '$SUBCMD'" ;;
   esac
 }
 
-# Pass all script arguments to the main function.
 main "$@"
