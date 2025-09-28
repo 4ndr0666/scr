@@ -1,16 +1,15 @@
 #!/bin/sh
 # Author: 4ndr0666
-
 # ================= // PROCESS //
-
-# A POSIX-compliant script that "normalizes" video files to mitigate potential
-# conflicts (e.g. monotonic timestamp errors during concatenation) while ensuring
-# lossless resolution. This script analyzes the input video for codec information
-# and errors, and then either copies the stream (with regenerated PTS) or re-encodes
-# the video (using libx264 with high quality) based on the analysis.
+# Description: "normalizes" video files to mitigate potential conflicts
+# (e.g. monotonic timestamp errors during concatenation) while ensuring
+# a high-quality, standardized output. This script analyzes the input video for
+# codec information and errors, and then either copies the stream (with regenerated
+# PTS) or re-encodes the video (using libx264 with a visually lossless setting)
+# based on the analysis.
 #
 # USAGE:
-#   sh process <input_file> [output_file]
+#   sh process.sh <input_file> [output_file]
 #
 #   - input_file   : Path to the source video file.
 #   - output_file  : (Optional) Desired output file (default: output.mp4).
@@ -21,104 +20,113 @@
 #   - Otherwise, the video is copied with regenerated presentation timestamps.
 # -----------------------------------------------------------------------------
 
-# Analyze
-
-### Outputs two sections:
-####   1) Codec information: codec_name, codec_type, avg_frame_rate, codec_long_name.
-####   2) Error logs (if any).
-
-analyze_video() {
-    input_file="$1"
-
-    #### Gather codec information
-    codec_info=$(ffprobe -v error -select_streams v:0 \
-        -show_entries stream=codec_name,codec_type,avg_frame_rate,codec_long_name \
-        -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>&1)
-
-    ##### Gather any error logs (trim blank lines)
-    error_logs=$(ffprobe -v error -show_entries stream=errors \
-        -of default=noprint_wrappers=1:nokey=1 "$input_file" 2>&1 | sed '/^[[:space:]]*$/d')
-
-    #### Print the analysis results: first the codec info, then any error logs.
-    printf "%s\n%s\n" "$codec_info" "$error_logs"
+# Check for required commands before proceeding
+command -v ffmpeg >/dev/null 2>&1 || {
+	echo "Error: ffmpeg is not installed. Aborting."
+	exit 1
+}
+command -v ffprobe >/dev/null 2>&1 || {
+	echo "Error: ffprobe is not installed. Aborting."
+	exit 1
 }
 
-# Process video
+# Analyze the video file for codec info and errors.
+# Outputs two sections:
+#   1) Codec information: codec_name, codec_type, avg_frame_rate, codec_long_name.
+#   2) Error logs (if any).
+analyze_video() {
+	input_file="$1"
 
-### Processes the input video file using the selected mode.
-####   - "copy" mode regenerates PTS with -fflags +genpts.
-####   - "reencode" mode re-encodes video using libx264 (CRF 17, preset slow) and copies audio.
+	# Gather codec information
+	codec_info=$(ffprobe -v error -select_streams v:0 \
+		-show_entries stream=codec_name,codec_type,avg_frame_rate,codec_long_name \
+		-of default=noprint_wrappers=1:nokey=1 "$input_file" 2>&1)
 
+	# Gather any error logs (trim blank lines to prevent false positives)
+	error_logs=$(ffprobe -v error -show_entries stream=errors \
+		-of default=noprint_wrappers=1:nokey=1 "$input_file" 2>&1 | sed '/^[[:space:]]*$/d')
+
+	# Print the analysis results: first the codec info, then any error logs.
+	printf "%s\n%s\n" "$codec_info" "$error_logs"
+}
+
+# Process the input video file using the selected mode.
+#   - "copy" mode regenerates PTS with -fflags +genpts.
+#   - "reencode" mode re-encodes video using libx264 (CRF 17, preset slow) and copies audio.
 process_video() {
-    input_file="$1"
-    output_file="$2"
-    mode="$3"
+	input_file="$1"
+	output_file="$2"
+	mode="$3"
 
-    if [ "$mode" = "copy" ]; then
-        if ! ffmpeg -i "$input_file" -c copy -fflags +genpts "$output_file"; then
-            echo "Processing failed for $input_file (copy mode)."
-            return 1
-        fi
-    elif [ "$mode" = "reencode" ]; then
-        if ! ffmpeg -i "$input_file" -c:v libx264 -crf 0 -preset slow -c:a copy "$output_file"; then
-            echo "Processing failed for $input_file (reencode mode)."
-            return 1
-        fi
-    else
-        echo "Invalid processing mode: $mode"
-        return 1
-    fi
+	echo "Starting processing of $input_file"
+	if [ "$mode" = "copy" ]; then
+		if ! ffmpeg -y -i "$input_file" -c copy -fflags +genpts "$output_file"; then
+			echo "Processing failed for $input_file (copy mode)." >&2
+			return 1
+		fi
+	elif [ "$mode" = "reencode" ]; then
+		# Using CRF 17 for a visually lossless, high-quality standard.
+		if ! ffmpeg -y -i "$input_file" -c:v libx264 -crf 17 -preset slow -c:a copy "$output_file"; then
+			echo "Processing failed for $input_file (reencode mode)." >&2
+			return 1
+		fi
+	else
+		echo "Invalid processing mode: $mode" >&2
+		return 1
+	fi
 
-    echo "Processing complete: $output_file"
+	echo "Processing complete: $output_file"
 }
 
 # Main entry point
-
 main() {
-    input_file="$1"
-    output_file="${2:-output.mp4}"
+	input_file="$1"
+	output_file="${2:-output.mp4}"
 
-    if [ -z "$input_file" ]; then
-        echo "Usage: $0 <input_file> [output_file]"
-        exit 1
-    fi
+	if [ -z "$input_file" ]; then
+		echo "Usage: $0 <input_file> [output_file]" >&2
+		exit 1
+	fi
 
-    if [ ! -f "$input_file" ]; then
-        echo "Error: Input file does not exist."
-        exit 1
-    fi
+	if [ ! -f "$input_file" ]; then
+		echo "Error: Input file '$input_file' does not exist." >&2
+		exit 1
+	fi
 
-    echo "Analyzing video: $input_file"
-    analysis_results=$(analyze_video "$input_file")
-    printf "%s\n" "$analysis_results"
+	echo "Analyzing video: $input_file"
+	analysis_results=$(analyze_video "$input_file")
+	printf "Analysis Results:\n%s\n" "$analysis_results"
 
-    #### Extract video codec (assumed to be the first line of the analysis output)
-    video_codec=$(echo "$analysis_results" | head -n 1)
+	# Extract video codec (assumed to be the first line of the analysis output)
+	video_codec=$(echo "$analysis_results" | head -n 1)
 
-    #### Extract error logs by removing the first line
-    errors_detected=$(echo "$analysis_results" | tail -n +2 | sed '/^[[:space:]]*$/d')
+	# Extract error logs by removing the codec info lines and trimming whitespace
+	errors_detected=$(echo "$analysis_results" | tail -n +2 | sed '/^[[:space:]]*$/d')
 
-    #### Default processing mode is "copy"
-    mode="copy"
+	# Default processing mode is "copy"
+	mode="copy"
 
-    #### If any errors are detected or the video codec is not "h264", select "reencode" mode.
-    if [ -n "$errors_detected" ] || [ "$video_codec" != "h264" ]; then
-        mode="reencode"
-    fi
+	# If any errors are detected or the video codec is not "h264", select "reencode" mode.
+	if [ -n "$errors_detected" ] || [ "$video_codec" != "h264" ]; then
+		mode="reencode"
+	fi
 
-    echo "Selected processing mode: $mode"
-    echo "Starting processing of $input_file"
+	echo "Selected processing mode: $mode"
 
-    #### Ensure the output file name is unique to avoid overwriting
-    base_name="${output_file%.*}"
-    extension="${output_file##*.}"
-    counter=1
-    while [ -f "$output_file" ]; do
-        output_file="${base_name}_${counter}.${extension}"
-        counter=$((counter + 1))
-    done
+	# Ensure the output file name is unique to avoid overwriting
+	final_output_file="$output_file"
+	if [ -f "$output_file" ]; then
+		base_name="${output_file%.*}"
+		extension="${output_file##*.}"
+		counter=1
+		while [ -f "$final_output_file" ]; do
+			final_output_file="${base_name}_${counter}.${extension}"
+			counter=$((counter + 1))
+		done
+		echo "Warning: Output file exists. Saving as '$final_output_file' to avoid overwrite."
+	fi
 
-    process_video "$input_file" "$output_file" "$mode"
+	process_video "$input_file" "$final_output_file" "$mode"
 }
 
 main "$@"
