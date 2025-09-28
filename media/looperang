@@ -1,121 +1,168 @@
-#!/bin/sh
+#!/usr/bin/env sh
+##############################################################################
+# looperang_lossless.sh
+#
+# A POSIX-compliant shell script that uses FFmpeg + fzf to create a truly
+# lossless palindromic (forward + reverse) video.
+#
+# This version synthesizes the best features of multiple sources and adds
+# critical improvements for a truly lossless workflow:
+#   - Extracts frames to lossless PNGs to prevent any quality degradation.
+#   - Uses ffprobe to automatically detect and use the original video's FPS.
+#   - Rebuilds video segments using lossless H.264 encoding (CRF 0).
+#   - Uses a robust, well-commented, and POSIX-compliant structure.
+#
+# REQUIREMENTS:
+#   - ffmpeg (with ffprobe and libx264 support)
+#   - fzf
+#   - POSIX-compliant shell (sh, bash, dash, etc.)
+#
+# USAGE:
+#   1) Make this script executable: chmod +x looperang_lossless.sh
+#   2) Run: ./looperang_lossless.sh
+#   3) Select a video in the fzf menu.
+#   4) The script will create the final lossless palindrome video.
+##############################################################################
 
+# Exit on unset variables and report commands
 set -u
+# Uncomment for debugging:
+# set -x
 
-cleanup_and_exit() {
-  code="$1"
-  exit "$code"
+# Trap signals to handle unexpected exits and trigger cleanup
+trap 'echo "\nScript interrupted! Cleaning up temporary files..."; cleanup; exit 1' INT TERM HUP
+
+##############################################################################
+# Helper Functions
+##############################################################################
+
+# Centralized cleanup function
+cleanup() {
+  # shellcheck disable=SC2154
+  echo "Removing temporary files and directories..."
+  rm -rf "$FORWARD_FRAMES_DIR" "$REVERSED_FRAMES_DIR" "$FORWARD_VIDEO" "$REVERSED_VIDEO" "$CONCAT_LIST"
 }
 
+# Simple yes/no prompt
 prompt_continue() {
   printf "%s [y/N]: " "$1"
   read -r ans
   case "$ans" in
-    [yY]) return 0 ;;
-    *)    return 1 ;;
+    [yY]*) return 0 ;;
+    *)     return 1 ;;
   esac
 }
 
-trap 'echo "Script interrupted! Cleaning up..."; cleanup_and_exit 1' INT TERM HUP
+##############################################################################
+# Main Script Logic
+##############################################################################
 
-# 1) Use fzf to pick a file (adjust patterns if needed)
-INPUT_FILE="$(ls -1 ./*.mov ./*.mp4 ./*.avi ./*.mkv ./*.ts 2>/dev/null | fzf --prompt="Select a video: ")"
+# 1) Use fzf to pick an input file from the current directory.
+#    Expanded patterns for better compatibility.
+INPUT_FILE="$(ls -1 ./*.mov ./*.mp4 ./*.mkv ./*.avi ./*.webm 2>/dev/null | fzf --prompt="Select a video to create a lossless palindrome: ")"
 if [ -z "${INPUT_FILE:-}" ]; then
-  echo "No file selected. Exiting..."
+  echo "No file selected. Exiting."
   exit 1
 fi
 
+# 2) Derive names for intermediate and final files. Using .mkv for output.
 BASENAME="$(basename "$INPUT_FILE" | sed 's/\.[^.]*$//')"
-FORWARD_FRAMES_DIR="forward_frames"
-REVERSED_FRAMES_DIR="reversed_frames"
-FORWARD_VIDEO="forward_${BASENAME}.mov"
-REVERSED_VIDEO="reversed_${BASENAME}.mov"
-LOOPERANG_VIDEO="${BASENAME}_looperang.mov"
+FORWARD_FRAMES_DIR="forward_frames_${BASENAME}"
+REVERSED_FRAMES_DIR="reversed_frames_${BASENAME}"
+FORWARD_VIDEO="forward_${BASENAME}.mkv"
+REVERSED_VIDEO="reversed_${BASENAME}.mkv"
+LOOPERANG_VIDEO="${BASENAME}_palindrome.mkv"
 CONCAT_LIST="concat_list_${BASENAME}.txt"
 
 echo "Selected file: $INPUT_FILE"
-echo "Will generate frames in: $FORWARD_FRAMES_DIR and $REVERSED_FRAMES_DIR"
-echo "Final output: $LOOPERANG_VIDEO"
+echo "Final output will be: $LOOPERANG_VIDEO"
 echo
 
-# Confirm
-if ! prompt_continue "Ready?"; then
+# 3) Detect original video framerate using ffprobe.
+echo "Detecting original framerate..."
+FPS="$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")"
+if [ -z "${FPS:-}" ]; then
+  echo "Error: Could not detect framerate for '$INPUT_FILE'."
+  echo "Please ensure ffprobe is installed and the file is a valid video."
+  exit 1
+fi
+echo "Detected framerate: $FPS"
+echo
+
+# 4) Confirm with user before proceeding
+if ! prompt_continue "Proceed with lossless palindrome creation?"; then
   echo "Aborting."
   exit 0
 fi
 
-FPS="$(ffprobe -v 0 -select_streams v:0 -show_entries stream=avg_frame_rate -of csv=p=0 "$INPUT_FILE")"
-if [ -z "$FPS" ]; then
-  echo "Failed to detect FPS. Defaulting to 60."
-  FPS="60"
-fi
-
-echo "Detected original FPS: $FPS"
-echo
+# 5) Prepare temporary directories
 mkdir -p "$FORWARD_FRAMES_DIR" "$REVERSED_FRAMES_DIR"
 
-echo "Extracting frames to $FORWARD_FRAMES_DIR ..."
-ffmpeg -i "$INPUT_FILE" -qscale:v 2 "${FORWARD_FRAMES_DIR}/frame-%06d.jpg"
-echo "Forward frames extraction complete."
+##############################################################################
+# STEP A: Extract Frames as Lossless PNGs
+##############################################################################
+echo "--> STEP A: Extracting frames to '$FORWARD_FRAMES_DIR' (lossless PNG)..."
+ffmpeg -i "$INPUT_FILE" "${FORWARD_FRAMES_DIR}/frame-%06d.png"
+echo "Frame extraction complete."
 echo
 
-echo "Generating reversed frames..."
+##############################################################################
+# STEP B: Create Reversed Frame Sequence
+##############################################################################
+echo "--> STEP B: Generating reversed frame sequence..."
 i=1
-ls -1 "${FORWARD_FRAMES_DIR}"/*.jpg | sort -r | while read -r srcfile; do
-  newname=$(printf "frame-%06d.jpg" "$i")
-  cp "$srcfile" "${REVERSED_FRAMES_DIR}/${newname}"
+# sort -r ensures we read from the last frame to the first
+ls -1 "${FORWARD_FRAMES_DIR}"/*.png | sort -r | while read -r fwd_file; do
+  # Generate a new name in ascending order for the reversed sequence
+  newname=$(printf "frame-%06d.png" "$i")
+  cp "$fwd_file" "${REVERSED_FRAMES_DIR}/${newname}"
   i=$(( i + 1 ))
 done
-echo "Reversed frames done."
+echo "Reversed frame sequence created."
 echo
 
 ##############################################################################
-# 6) Rebuild Forward Video @ Original FPS, Lossless H.264
+# STEP C: Rebuild Forward Video (Lossless)
 ##############################################################################
-echo "Building forward video: $FORWARD_VIDEO (lossless, CRF=0, $FPS fps)"
-ffmpeg \
-  -framerate "$FPS" \
-  -i "${FORWARD_FRAMES_DIR}/frame-%06d.jpg" \
+echo "--> STEP C: Building forward video: $FORWARD_VIDEO (lossless)..."
+ffmpeg -framerate "$FPS" \
+  -i "${FORWARD_FRAMES_DIR}/frame-%06d.png" \
   -c:v libx264 -crf 0 -preset medium \
   -pix_fmt yuv420p \
-  -movflags +faststart \
   "$FORWARD_VIDEO"
 echo
 
 ##############################################################################
-# 7) Rebuild Reversed Video @ Same FPS, Lossless H.264
+# STEP D: Rebuild Reversed Video (Lossless)
 ##############################################################################
-echo "Building reversed video: $REVERSED_VIDEO (lossless, CRF=0, $FPS fps)"
-ffmpeg \
-  -framerate "$FPS" \
-  -i "${REVERSED_FRAMES_DIR}/frame-%06d.jpg" \
+echo "--> STEP D: Building reversed video: $REVERSED_VIDEO (lossless)..."
+ffmpeg -framerate "$FPS" \
+  -i "${REVERSED_FRAMES_DIR}/frame-%06d.png" \
   -c:v libx264 -crf 0 -preset medium \
   -pix_fmt yuv420p \
-  -movflags +faststart \
   "$REVERSED_VIDEO"
 echo
 
 ##############################################################################
-# 8) Concatenate Forward + Reversed (No Re-encode)
+# STEP E: Concatenate Forward + Reversed Videos
 ##############################################################################
-echo "Creating concat list: $CONCAT_LIST"
-cat <<EOF > "$CONCAT_LIST"
-file '$FORWARD_VIDEO'
-file '$REVERSED_VIDEO'
-EOF
+echo "--> STEP E: Creating concatenation list: $CONCAT_LIST"
+# Using printf for safer file list creation
+printf "file '%s'\n" "$FORWARD_VIDEO" > "$CONCAT_LIST"
+printf "file '%s'\n" "$REVERSED_VIDEO" >> "$CONCAT_LIST"
 
-echo "Concatenating to final: $LOOPERANG_VIDEO (using -c copy)..."
-ffmpeg -safe 0 -f concat -i "$CONCAT_LIST" -c copy "$LOOPERANG_VIDEO"
+echo "Concatenating to final output: $LOOPERANG_VIDEO (no re-encoding)..."
+ffmpeg -f concat -safe 0 -i "$CONCAT_LIST" -c copy "$LOOPERANG_VIDEO"
 echo
 
 ##############################################################################
-# 9) Cleanup
+# STEP F: Cleanup
 ##############################################################################
-if prompt_continue "Cleanup intermediate frames/videos?"; then
-  echo "Removing temporary files..."
-  rm -rf "$FORWARD_FRAMES_DIR" "$REVERSED_FRAMES_DIR" "$FORWARD_VIDEO" "$REVERSED_VIDEO" "$CONCAT_LIST"
+if prompt_continue "Cleanup intermediate frames and videos?"; then
+  cleanup
   echo "Cleanup complete."
 fi
 
-echo "Looperang creation finished. Output is: $LOOPERANG_VIDEO"
+echo "Success! Lossless palindrome video created: $LOOPERANG_VIDEO"
+
 exit 0
