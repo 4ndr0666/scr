@@ -1,5 +1,7 @@
 # 🛡️ Brave Unified Wrapper & Systemd Installer
 
+An intelligent, idempotent installer and wrapper for the Brave browser, designed to provide a consistent, optimized, and centrally managed browsing experience on Linux systems.
+
 This project automates the setup of a powerful wrapper script that dynamically generates browser configurations on-the-fly, hardening privacy settings, optimizing performance, and allowing for deep, declarative customization through a single environment file.
 
 ## Features
@@ -48,59 +50,115 @@ Running Brave directly is fine, but it lacks consistency and ease of advanced co
     ```
     Your changes will apply the next time you start Brave.
 
-## Detailed Usage
+## Configuration Guide
 
-### Installing
+This is the control plane for your browser, located at `~/.config/brave/brave.env`. The wrapper script will `source` this file on every launch, loading your custom settings as environment variables.
 
--   **User Install (Recommended):**
-    ```bash
-    ./brave-install.sh --user install
-    ```
--   **Global Install (Requires sudo):**
-    ```bash
-    ./brave-install.sh --global install
-    ```
+### Primary Environment Variables
 
-### Uninstalling
+These are the main variables the wrapper script understands.
 
-The uninstaller is safe and will only remove files and links it created.
-bash
+| Variable              | Description                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `BRAVE_ENABLE`        | Comma or space-separated list of features to enable.                                                    |
+| `BRAVE_DISABLE`       | Comma or space-separated list of features to disable.                                                   |
+| `BRAVE_EXTRA_FLAGS`   | A string of additional raw command-line flags. **This is the power-user tool for ultimate control.**      |
+| `BRAVE_FORCE_GPU`     | Set to `1` to force GPU acceleration on, overriding the script's auto-detection.                        |
+| `BRAVE_DISABLE_GPU`   | Set to `1` to force GPU acceleration off. Useful for troubleshooting rendering issues.                   |
 
-./brave-install.sh --user uninstall
+### Recommended `BRAVE_ENABLE` Features
 
+Uncomment these in your `brave.env` file to enable modern performance and functionality.
 
-### Configuration (`~/.config/brave/brave.env`)
-
-This is the control center. After running `init-config`, you can edit this file to enable powerful features.
-
-#### Example: Performance Tuning
-
-To enable the Vulkan graphics backend and hardware-accelerated video decoding (requires `intel-media-driver` or similar), add this to your `brave.env`:
-bash
-
+```bash
 ~/.config/brave/brave.env
+```
+
+--- Recommended Enables ---
+Enables the modern, high-performance Vulkan graphics backend. Can offer better
+performance and lower CPU usage than OpenGL on supported systems (most modern GPUs).
+BRAVE_ENABLE="Vulkan"
+
+Enables hardware-accelerated video decoding via VA-API. Massively reduces CPU
+usage during video playback. Requires appropriate drivers (e.g., intel-media-driver).
 BRAVE_ENABLE="Vulkan,VaapiVideoDecoder"
 
+Enables drawing directly to screen memory, which can reduce latency on Wayland.
+BRAVE_ENABLE="Vulkan,VaapiVideoDecoder,RawDraw"
 
-#### Example: Privacy Hardening
+Enables parallel downloading to speed up large file downloads.
+BRAVE_ENABLE="ParallelDownloading"
 
-To disable features that could increase your browser's fingerprint or attack surface, add:
-bash
 
+### Recommended `BRAVE_DISABLE` Features
+
+Uncomment these to reduce your browser's attack surface, disable features you don't use, and conserve system resources.
+
+```bash
 ~/.config/brave/brave.env
+```
+
+--- Recommended Disables for Privacy & Security ---
+Disable various web hardware APIs if you don't use them. This significantly
+reduces the browser's attack surface.
 BRAVE_DISABLE="WebBluetooth,WebUSB,WebSerial,WebNFC"
 
+Disable Brave-specific cloud features you may not use.
+BRAVE_DISABLE="SharingHub,ReadLater"
 
-#### Example: Forcing a SOCKS5 Proxy (Tor)
 
-To route all Brave traffic through a local Tor daemon running on port 9050:
-bash
+### Advanced Scenarios with `BRAVE_EXTRA_FLAGS`
 
+This variable allows you to pass any command-line flags directly to the Brave binary.
+
+#### Scenario 1: Force Dark Mode & Theming
+
+```bash
 ~/.config/brave/brave.env
+```
+
+Force dark mode for both the browser UI and web content.
+BRAVE_EXTRA_FLAGS='--force-dark-mode --enable-features=WebUIDarkMode'
+
+On some Wayland systems, you may need to specify the GTK theme for it to apply correctly.
+This is a standard environment variable, not a flag.
+GTK_THEME="Adwaita:dark"
+
+
+#### Scenario 2: Route All Traffic Through a Tor Proxy
+
+This forces the browser to use a local Tor daemon (or any SOCKS5 proxy) for all of its traffic, enhancing privacy.
+
+```bash
+~/.config/brave/brave.env
+```
+
 BRAVE_EXTRA_FLAGS='--proxy-server="socks5://127.0.0.1:9050" --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"'
 
+#### Scenario 3: Create and Use an Alternate Profile
 
-### Diagnostics & Debugging
+Run a completely separate, sandboxed instance of Brave with its own settings, extensions, and cookies.
+
+```bash
+~/.config/brave/brave.env
+```
+
+Point Brave to a different directory for its user profile.
+BRAVE_EXTRA_FLAGS='--user-data-dir="${HOME}/.config/brave-work-profile"'
+
+#### Scenario 4: HiDPI Scaling
+
+Manually set the scaling factor for high-resolution displays, especially useful on Linux desktop environments where this can be inconsistent.
+
+```bash
+~/.config/brave/brave.env
+```
+
+BRAVE_EXTRA_FLAGS='--force-device-scale-factor=1.5'
+
+---
+
+## Diagnostics & Debugging
 
 If the browser isn't behaving as you expect, the wrapper has tools to help.
 
