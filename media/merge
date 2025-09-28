@@ -8,14 +8,15 @@ set -euo pipefail
 # or codec.
 # ---------------------------------------------------------
 
-declare -a TEMP_FILES=()
+## Temporary File & Directory Management
+declare -a TEMP_ITEMS=()
 cleanup_all() {
 	# Suppress errors as cleanup is a best-effort operation
-	rm -f "${TEMP_FILES[@]}" >/dev/null 2>&1
+	rm -rf "${TEMP_ITEMS[@]}" >/dev/null 2>&1
 }
 trap cleanup_all EXIT INT TERM
-register_temp_file() {
-	TEMP_FILES+=("$1")
+register_temp_item() {
+	TEMP_ITEMS+=("$1")
 }
 
 ## Utility Functions
@@ -50,7 +51,6 @@ check_deps() {
 		echo "Error: Neither 'realpath' nor 'readlink -f' found." >&2
 		exit 1
 	fi
-	# Export for use in subshells if needed, and to make it available to absolute_path
 	export REALPATH_CMD
 }
 
@@ -66,7 +66,7 @@ run_merge() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		-o | --output)
-			output_file="$2"
+			[[ -n "${2:-}" ]] && output_file="$2" || { echo "Error: -o requires an argument." >&2; exit 1; }
 			shift 2
 			;;
 		--fast-encode)
@@ -147,87 +147,125 @@ EOH
 	# --- Create FFmpeg Concat List File ---
 	local list_file
 	list_file=$(mktemp) || { echo "Failed to create temp list file" >&2; exit 1; }
-	register_temp_file "$list_file"
+	register_temp_item "$list_file"
 	for f in "${files[@]}"; do
-		# Correctly escape single quotes for the concat demuxer format
-		printf "file '%s'\n" "$(printf "%s" "$f" | sed "s/'/&\\\\&/g")" >>"$list_file"
+		printf "file '%s'\n" "$(printf "%s" "$f" | sed "s/'/''/g")" >>"$list_file"
 	done
 
 	# --- Stage 1: Attempt Lossless Stream Copy ---
 	echo "Attempting fast, lossless stream copy..." >&2
-	local -a stream_copy_cmd=(ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$list_file" -c copy "$output_file")
-	printv "Executing: ${stream_copy_cmd[*]}"
-	if "${stream_copy_cmd[@]}"; then
-		echo "✅ Stream copy successful: $output_file"
+	
+    set +e
+	ffmpeg -hide_banner -y -f concat -safe 0 -i "$list_file" -c copy "$output_file" >/dev/null 2>&1
+    local exit_code=$?
+    set -e
+
+	if [[ $exit_code -eq 0 ]]; then
+        echo "✅ Stream copy successful: $output_file"
 		exit 0
 	else
-		echo "⚠️  Stream copy failed. Incompatible streams detected. Falling back to lossless re-encode..." >&2
-		rm -f "$output_file" # Clean up failed/zero-byte output
+		echo "⚠️  Stream copy failed (Code: $exit_code). Incompatible streams detected. Falling back to re-encode..." >&2
+		rm -f "$output_file" 2>/dev/null || true # Clean up failed/zero-byte output, ignore errors
 	fi
 
-	# --- Stage 2: Fallback to Robust, Normalizing Re-encode ---
-	echo "Analyzing files for re-encode parameters..." >&2
+	# --- Stage 2: Fallback to Normalize-then-Concatenate Architecture ---
+	echo "Analyzing files for master format..." >&2
 	local max_w=0 max_h=0 max_fps=0.0
 	for inp in "${files[@]}"; do
 		local ffprobe_output
-		ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,avg_frame_rate "$inp")
+		ffprobe_output=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,avg_frame_rate "$inp" || echo "")
+		if [[ -z "$ffprobe_output" ]]; then echo "Warning: Could not probe '$inp'. Skipping for analysis." >&2; continue; fi
+
 		local w h fr
 		w=$(echo "$ffprobe_output" | awk -F= '/^width=/ {print $2}')
 		h=$(echo "$ffprobe_output" | awk -F= '/^height=/ {print $2}')
 		fr=$(echo "$ffprobe_output" | awk -F= '/^avg_frame_rate=/ {print $2}')
+		
 		[[ "$w" =~ ^[0-9]+$ ]] && ((w > max_w)) && max_w=$w
 		[[ "$h" =~ ^[0-9]+$ ]] && ((h > max_h)) && max_h=$h
-		if [[ -n "$fr" ]] && [[ "$(bc -l <<<"$(echo "$fr" | sed 's/\// /g' | awk '{print $1 / $2}') > $max_fps")" -eq 1 ]]; then
-			max_fps=$(echo "$fr" | sed 's/\// /g' | awk '{print $1 / $2}')
+		
+		if [[ -n "$fr" ]]; then
+			local fr_val
+			fr_val=$(echo "$fr" | awk -F/ '{if ($2) print $1/$2; else print $1}')
+			if (( $(echo "$fr_val > $max_fps" | bc -l 2>/dev/null || echo 0) )); then
+				max_fps="$fr_val"
+			fi
 		fi
 	done
+
+	if (( max_w == 0 || max_h == 0 )); then
+		echo "Error: Could not determine video dimensions from any input files." >&2
+		exit 1
+	fi
 
 	local target_res="${max_w}x${max_h}"
 	local target_fps
 	target_fps=$(printf "%.0f" "$max_fps")
-	[[ "$target_fps" -eq 0 ]] && target_fps=30 # Fallback if no FPS could be read
-	echo "Normalizing all clips to ${target_res} @ ${target_fps}fps..." >&2
+	[[ "$target_fps" -eq 0 ]] && target_fps=30
+	echo "Master format determined: ${target_res} @ ${target_fps}fps. Normalizing all clips..." >&2
 
-	# --- Build Filter Complex Command ---
-	local -a ffmpeg_cmd=(ffmpeg -hide_banner -loglevel error -y)
-	local filter_complex=""
-	local video_maps=""
-	local audio_maps=""
+	local temp_dir
+	temp_dir=$(mktemp -d) || { echo "Failed to create temp dir" >&2; exit 1; }
+	register_temp_item "$temp_dir"
+
+	local intermediate_list_file
+	intermediate_list_file=$(mktemp) || { echo "Failed to create intermediate list file" >&2; exit 1; }
+	register_temp_item "$intermediate_list_file"
+	
 	local i
 	for i in "${!files[@]}"; do
-		ffmpeg_cmd+=(-i "${files[$i]}")
-		# Normalize video stream
-		filter_complex+="[${i}:v]scale=${target_res}:force_original_aspect_ratio=decrease,pad=${target_res}:(ow-iw)/2:(oh-ih)/2,fps=${target_fps}[v${i}];"
-		video_maps+="[v${i}]"
-		# Normalize audio stream (resample to a common rate)
-		filter_complex+="[${i}:a]aresample=async=1:first_pts=0[a${i}];"
-		audio_maps+="[a${i}]"
+		local input_file="${files[$i]}"
+		local intermediate_file="$temp_dir/intermediate_$i.ts"
+		
+		echo "Normalizing clip $(($i + 1))/${#files[@]}..."
+		
+		local -a norm_cmd=(ffmpeg -hide_banner -loglevel error -y -i "$input_file")
+		local filter_complex="[0:v]scale=${target_res}:force_original_aspect_ratio=decrease,pad=${target_res}:(ow-iw)/2:(oh-ih)/2,fps=${target_fps}[vout]"
+		
+		if ! ffprobe -v quiet -select_streams a:0 "$input_file" >/dev/null 2>&1; then
+			printv "File '$input_file' has no audio. Synthesizing silent track."
+			norm_cmd+=(-f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000)
+			filter_complex+=";[1:a]anull[aout]"
+			norm_cmd+=(-shortest)
+		else
+			filter_complex+=";[0:a]aresample=async=1:first_pts=0[aout]"
+		fi
+		
+		norm_cmd+=(-filter_complex "$filter_complex" -map "[vout]" -map "[aout]")
+
+        # QUALITY FIX 1: Enforce lossless YUV444p pixel format to preserve all color data.
+        # QUALITY FIX 2: Use lossless FLAC audio codec instead of lossy AAC.
+		norm_cmd+=(-c:v libx264 -preset veryslow -qp 0 -pix_fmt yuv444p -c:a flac "$intermediate_file")
+		
+		printv "Executing: ${norm_cmd[*]}"
+		if ! "${norm_cmd[@]}"; then
+			echo "Error: Failed to normalize '$input_file'." >&2
+			exit 1
+		fi
+
+		printf "file '%s'\n" "$intermediate_file" >> "$intermediate_list_file"
 	done
 
-	local num_inputs=${#files[@]}
-	filter_complex+="${video_maps}concat=n=${num_inputs}:v=1:a=0[vout];"
-	filter_complex+="${audio_maps}concat=n=${num_inputs}:v=0:a=1[aout]"
-
-	ffmpeg_cmd+=(-filter_complex "$filter_complex" -map "[vout]" -map "[aout]")
-
-	# --- Set Encoding Options (Lossless vs. Fast) ---
+	echo "All clips normalized. Performing final concatenation..." >&2
+	local -a final_cmd=(ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$intermediate_list_file")
+	
 	if [[ "$fast_encode" -eq 1 ]]; then
-		echo "Using fast re-encode preset (crf=15)..." >&2
-		ffmpeg_cmd+=(-c:v libx264 -preset fast -crf 15)
+		echo "Using fast re-encode for final output..." >&2
+		final_cmd+=(-c:v libx264 -preset fast -crf 15 -c:a aac -b:a 192k)
 	else
-		echo "Using lossless re-encode preset (qp=0)..." >&2
-		ffmpeg_cmd+=(-c:v libx264 -preset veryslow -qp 0)
+		echo "Performing lossless stream copy for final output..." >&2
+		final_cmd+=(-c copy)
 	fi
-	ffmpeg_cmd+=(-pix_fmt yuv420p -c:a aac -b:a 192k "$output_file")
 
-	# --- Execute Final Command ---
-	printv "Executing: ${ffmpeg_cmd[*]}"
-	if "${ffmpeg_cmd[@]}"; then
-		echo "✅ Re-encoded merge complete: $output_file"
-	else
-		echo "❌ Re-encode failed." >&2
+	final_cmd+=("$output_file")
+	
+	printv "Executing: ${final_cmd[*]}"
+	if ! "${final_cmd[@]}"; then
+		echo "❌ Final concatenation failed." >&2
 		exit 1
 	fi
+	
+	echo "✅ Merge complete: $output_file"
 }
 
 # --- Script Entry Point ---
