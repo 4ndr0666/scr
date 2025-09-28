@@ -1,11 +1,54 @@
 #!/bin/sh
 #
-# Preview a markdown file in w3m
+# Preview a markdown file in w3m (robust version with stdin support)
 #
 
-if [ "z$1" = "z" ] ; then
-        echo "Usage: $0 file.mdwn"
-        exit 1
+# --- Dependency Checks ---
+# Ensure w3m is installed and executable
+if ! command -v w3m >/dev/null 2>&1; then
+    echo "Error: w3m is not installed or not in your PATH." >&2
+    echo "Please install it to use this script." >&2
+    exit 1
 fi
 
-markdown "$1" | w3m -T text/html
+# Find an available markdown processor, preferring pandoc
+if command -v pandoc >/dev/null 2>&1; then
+    MD_CMD="pandoc"
+elif command -v markdown >/dev/null 2>&1; then
+    MD_CMD="markdown"
+else
+    echo "Error: No markdown processor found." >&2
+    echo "Please install 'pandoc' or 'markdown'." >&2
+    exit 1
+fi
+
+# --- Main Logic ---
+
+# Case 1: Read from standard input if no file argument is provided
+if [ $# -eq 0 ]; then
+    # If stdin is connected to a terminal, the user likely ran it without input.
+    # Show usage instead of waiting for input that will never come.
+    if [ -t 0 ]; then
+        echo "Usage: $(basename "$0") <file.md>" >&2
+        echo "Or pipe markdown from stdin: echo '# Title' | $(basename "$0")" >&2
+        exit 1
+    fi
+    # Process standard input
+    "$MD_CMD" | w3m -T text/html
+
+# Case 2: Read from a single file argument
+elif [ $# -eq 1 ]; then
+    INPUT_FILE="$1"
+    if [ ! -f "$INPUT_FILE" ]; then
+        echo "Error: File not found or is not a regular file: '$INPUT_FILE'" >&2
+        exit 1
+    fi
+    # Process the file
+    "$MD_CMD" "$INPUT_FILE" | w3m -T text/html
+
+# Case 3: Too many arguments provided
+else
+    echo "Error: Too many arguments. Please provide only one file." >&2
+    echo "Usage: $(basename "$0") <file.md>" >&2
+    exit 1
+fi
