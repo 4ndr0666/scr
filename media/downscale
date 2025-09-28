@@ -1,124 +1,181 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Author: 4ndr0666
-set -eu
-# ======================= // DOWNSCALE.SH //
-## USAGE: downscale.sh <input_file> [output_file] [quality] [keep_audio]
-# -----------------------------------------------
-keep_audio="true"
-output_file=""
-input_file=""
+set -euo pipefail
+# ======================= // DOWNSCALE //
+# Description: Downscales videos with a resolution higher than 1080p.
+#---------------------------------------------
+
+# --- Default Settings ---
+KEEP_AUDIO="true"
+VERBOSE="false"
+FFMPEG_LOG_LEVEL="error"
+# Use CRF 0 for mathematically lossless H.264, which is highly compatible.
+# Use 'medium' preset as a balance between encoding speed and file size.
+ENCODE_PRESET="medium"
+ENCODE_CRF="0"
 
 # --- Functions ---
 print_usage() {
-  echo "Usage: $(basename "$0") [options] <input_file> [output_file]"
-  echo
-  echo "Prepares a video for services with a 1080p resolution limit (like TensorPix)."
-  echo "It downscales videos larger than 1080p using lossless quality. If the video is already compliant, it exits."
-  echo
-  echo "Options:"
-  echo "      --no-audio   Remove the audio stream from the output."
-  echo "  -h, --help       Display this help menu and exit."
-  echo
-  echo "Arguments:"
-  echo "  <input_file>     Required. Path to the source video."
-  echo "  [output_file]    Optional. Output name (default: <input>_1080p.mp4)."
+  cat <<EOF
+Usage: $(basename "$0") [options] <file-or-dir> [more...]
+
+Downscales videos larger than 1080p to a height of 1080p using a high-compatibility,
+lossless H.264 encoding, making them suitable for upscaling software.
+If a video is already compliant (1080p or smaller), it is skipped.
+
+You can pass multiple files or directories as arguments.
+
+Options:
+      --no-audio   Remove the audio stream from the output.
+  -v, --verbose    Enable verbose FFmpeg logging for debugging.
+  -h, --help       Display this help menu and exit.
+
+Arguments:
+  <file-or-dir>    Required. Path to a source video file or a directory to process recursively.
+EOF
 }
 
-# --- Argument Parsing ---
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -h|--help)
-      print_usage
-      exit 0
-      ;;
-    --no-audio)
-      keep_audio="false"
-      shift
-      ;;
-    -*)
-      echo "Error: Unknown option: $1" >&2
-      print_usage
-      exit 1
-      ;;
-    *)
-      if [ -z "$input_file" ]; then
-        input_file="$1"
-      elif [ -z "$output_file" ]; then
-        output_file="$1"
-      else
-        echo "Error: Too many arguments provided." >&2; print_usage; exit 1
-      fi
-      shift
-      ;;
-  esac
-done
+process_video() {
+  local input_file="$1"
 
-# --- Validation and Dependency Check ---
-if [ -z "$input_file" ]; then
-  echo "Error: Input file is required." >&2; print_usage; exit 1
-fi
-if [ ! -f "$input_file" ]; then
-  echo "Error: Input file '$input_file' does not exist." >&2; exit 1
-fi
-if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-  echo "Error: FFmpeg (including ffprobe) is not installed or not in PATH." >&2; exit 1
-fi
-
-# --- Main Logic ---
-height="$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$input_file" 2>/dev/null || echo "")"
-
-if [ -z "$height" ]; then
-  echo "Warning: Could not detect video height. Proceeding with conversion." >&2
-else
-  echo "Source video height detected: ${height}p."
-  if [ "$height" -le 1080 ]; then
-    echo "Video is already 1080p or smaller and is compliant. Skipping."
-    exit 0
+  if ! is_video "$input_file"; then
+    echo "Skipping non-video file: '$input_file'"
+    return
   fi
-  echo "Source is >1080p. Downscaling to 1080p."
-fi
 
-# --- Output File Naming ---
-if [ -z "$output_file" ]; then
-  input_basename="${input_file%.*}"
-  output_file="${input_basename}_1080p.mp4"
-fi
+  echo "--- Processing: '$input_file' ---"
 
-# Handle existing files by creating numbered copies (_1, _2, etc.)
-base_name="${output_file%.*}"
-extension="${output_file##*.}"
-counter=1
-while [ -f "$output_file" ]; do
-  output_file="${base_name}_${counter}.${extension}"
-  counter=$((counter + 1))
-done
-echo "Output file set to: '$output_file'."
+  # --- Get Video Height ---
+  local height
+  height="$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$input_file" 2>/dev/null || echo "")"
 
-# --- FFmpeg Parameter Setup ---
-filters="scale=-2:1080:flags=lanczos,format=yuv420p"
+  if [ -z "$height" ]; then
+    echo "Warning: Could not detect video height for '$input_file'. Proceeding with conversion." >&2
+  else
+    echo "Source video height detected: ${height}p."
+    if [ "$height" -le 1080 ]; then
+      echo "Video is already 1080p or smaller. Skipping."
+      return 0
+    fi
+    echo "Source is >1080p. Downscaling to 1080p."
+  fi
 
-if [ "$keep_audio" = "true" ]; then
-  audio_params="-c:a copy"
-  echo "Keeping original audio stream."
-else
-  audio_params="-an"
-  echo "Discarding audio stream."
-fi
+  # --- Determine Output File Name ---
+  local input_basename="${input_file%.*}"
+  local extension="${input_file##*.}"
+  local output_file="${input_basename}_1080p.mp4"
 
-# --- FFmpeg Execution ---
-echo "Starting lossless downscale for '$input_file'..."
-echo "FFmpeg command:"
-echo "ffmpeg -i \"$input_file\" -vf \"$filters\" -c:v libx264 -qp 0 -preset ultrafast $audio_params \"$output_file\""
+  # Handle existing files by creating numbered copies (_1, _2, etc.)
+  if [ -f "$output_file" ]; then
+    local base_name="${output_file%.*}"
+    local counter=1
+    while [ -f "$output_file" ]; do
+      output_file="${base_name}_${counter}.mp4"
+      counter=$((counter + 1))
+    done
+  fi
+  echo "Output file will be: '$output_file'"
 
-ffmpeg -i "$input_file" \
-  -vf "$filters" \
-  -c:v libx264 -qp 0 -preset ultrafast \
-  $audio_params \
-  "$output_file"
+  # --- FFmpeg Parameter Setup ---
+  local filters="scale=-2:1080:flags=lanczos,format=yuv420p"
+  local audio_params
 
-if [ $? -eq 0 ]; then
-  echo "Downscale complete. Output saved to '$output_file'."
-else
-  echo "Error: Downscale process failed for '$input_file'." >&2
-  exit 1
-fi
+  if [ "$KEEP_AUDIO" = "true" ]; then
+    audio_params="-c:a copy"
+    echo "Keeping original audio stream."
+  else
+    audio_params="-an"
+    echo "Discarding audio stream."
+  fi
+
+  # --- FFmpeg Execution ---
+  echo "Starting downscale..."
+  if [ "$VERBOSE" = "true" ]; then
+    echo "FFmpeg command:"
+    echo "ffmpeg -i \"$input_file\" -vf \"$filters\" -c:v libx264 -crf \"$ENCODE_CRF\" -preset \"$ENCODE_PRESET\" $audio_params -loglevel \"$FFMPEG_LOG_LEVEL\" \"$output_file\""
+  fi
+
+  ffmpeg -hide_banner -i "$input_file" \
+    -vf "$filters" \
+    -c:v libx264 -crf "$ENCODE_CRF" -preset "$ENCODE_PRESET" \
+    $audio_params \
+    -loglevel "$FFMPEG_LOG_LEVEL" \
+    "$output_file"
+
+  if [ $? -eq 0 ]; then
+    echo "Downscale complete. Output saved to '$output_file'."
+  else
+    echo "Error: Downscale process failed for '$input_file'." >&2
+    # Do not exit, just return 1 to allow processing of other files
+    return 1
+  fi
+}
+
+is_video() {
+  case "$(echo "$1" | awk -F. '{print tolower($NF)}')" in
+    mp4|mov|mkv|avi|webm|flv) return 0;;
+    *) return 1;;
+  esac
+}
+
+# --- Main Execution Logic ---
+main() {
+  local targets=()
+  # --- Argument Parsing ---
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        print_usage
+        exit 0
+        ;;
+      --no-audio)
+        KEEP_AUDIO="false"
+        shift
+        ;;
+      -v|--verbose)
+        VERBOSE="true"
+        FFMPEG_LOG_LEVEL="info"
+        shift
+        ;;
+      -*)
+        echo "Error: Unknown option: $1" >&2
+        print_usage
+        exit 1
+        ;;
+      *)
+        targets+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  # --- Validation and Dependency Check ---
+  if [ ${#targets[@]} -eq 0 ]; then
+    echo "Error: No input files or directories provided." >&2; print_usage; exit 1
+  fi
+  if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+    echo "Error: FFmpeg (including ffprobe) is not installed or not in your PATH." >&2; exit 1
+  fi
+
+  # --- Process all targets ---
+  for target in "${targets[@]}"; do
+    if [ ! -e "$target" ]; then
+      echo "Error: Input '$target' does not exist. Skipping." >&2
+      continue
+    fi
+
+    if [ -d "$target" ]; then
+      echo "=== Processing Directory: '$target' ==="
+      find "$target" -type f | while IFS= read -r file; do
+        process_video "$file"
+      done
+    elif [ -f "$target" ]; then
+      process_video "$target"
+    fi
+  done
+
+  echo "========================="
+  echo "All tasks complete."
+}
+
+main "$@"
