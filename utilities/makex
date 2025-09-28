@@ -1,17 +1,13 @@
 #!/bin/bash
 # Author: 4ndr0666
-# Enhanced by: AI Assistant
+# Enhanced by: Ψ-Anarch
 set -euo pipefail
 
 # ================= // MAKEX //
 ## Description: Manages executable permissions in a directory.
-#               1. Adds user executable permission to potential script files
-#                  (.sh extension or shell shebang).
-#               2. Removes executable permissions from files that should not
-#                  have them (e.g., .md, .txt, .pdf, .jpg).
-#               Excludes files within .git directories and processes only files
-#               that need their permissions changed.
-## Usage:       makex.sh [DIR]   (default: current dir)
+#               - Default Mode: Makes scripts executable, makes non-scripts non-executable.
+#               - Reverse Mode: Makes scripts non-executable, makes non-scripts executable.
+## Usage:       makex.sh [-r | --reverse] [DIR]   (default: current dir)
 # ----------------------------------------------------------------------------
 
 DEFAULT_DIR="."
@@ -20,7 +16,6 @@ SHEBANG_PATTERN='^#!.*\b(bash|sh|zsh|dash|ksh|ash)\b'
 # --- Configuration ---
 
 # Patterns for files that should NOT be made executable, even if they have a shebang.
-# Used in the "add executable" phase.
 EXEC_EXCLUSION_PATTERNS=(
     "*.md" "*.MD" "*.markdown"
     "*.txt" "*.TXT"
@@ -28,8 +23,7 @@ EXEC_EXCLUSION_PATTERNS=(
     "*.rst"
 )
 
-# Patterns for files that should NEVER be executable.
-# Used in the "remove executable" phase.
+# Patterns for files that should NEVER be executable (in default mode).
 NON_EXEC_PATTERNS=(
     "*.md" "*.MD" "*.markdown"
     "*.txt" "*.TXT"
@@ -42,7 +36,6 @@ NON_EXEC_PATTERNS=(
 
 # --- Color and Helper Functions ---
 
-# Declare color variables. They will remain empty if tput is not available or stdout is not a TTY.
 declare COLOR_GLOW="" COLOR_BUG="" COLOR_INFO="" COLOR_BANNER_START="" COLOR_RESET=""
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
@@ -57,15 +50,87 @@ GLOW() { printf '%s[✔️] %s%s\n' "$COLOR_GLOW" "$*" "$COLOR_RESET"; }
 BUG() { printf '%s[❌] %s%s\n' "$COLOR_BUG" "$*" "$COLOR_RESET" >&2; }
 INFO() { printf '%s[➡️] %s%s\n' "$COLOR_INFO" "$*" "$COLOR_RESET"; }
 
-pause_prompt() {
-    local oldstty
-    GLOW "Press any key to continue..."
-    if ! oldstty=$(stty -g); then BUG "Failed to save stty settings."; return 1; fi
-    if ! stty cbreak -echo; then BUG "Failed to set stty cbreak -echo."; return 1; fi
-    read -r -n 1 -s
-    stty "$oldstty" || BUG "Failed to restore stty settings."
-    printf '\n'
+usage() {
+    cat <<EOH
+Usage: ${0##*/} [-r | --reverse] [DIR]
+
+Manages executable permissions in a directory.
+
+Default Mode:
+  - Adds executable permission for the user (u+x) to shell scripts.
+  - Removes all executable permissions (a-x) from common non-script files
+    (e.g., .md, .txt, .jpg).
+
+Options:
+  -r, --reverse   Perform the opposite actions:
+                  - Removes user executable permission (u-x) from scripts.
+                  - Adds user executable permission (u+x) to non-scripts.
+  [DIR]           The target directory to process (default: current directory).
+  -h, --help      Show this help message.
+EOH
 }
+
+# --- Script Argument Parsing ---
+
+REVERSE_MODE=0
+declare -a positional_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -r|--reverse)
+        REVERSE_MODE=1
+        shift
+        ;;
+        -h|--help)
+        usage
+        exit 0
+        ;;
+        -*)
+        BUG "Error: Unknown option '$1'"
+        usage
+        exit 1
+        ;;
+        *)
+        positional_args+=("$1")
+        shift
+        ;;
+    esac
+done
+
+DIR="${positional_args[0]:-$DEFAULT_DIR}"
+if [ ! -d "$DIR" ]; then
+    BUG "Error: Directory '$DIR' not found or is not a directory."
+    exit 1
+fi
+
+# --- Mode-dependent variable setup ---
+
+declare MODE_NAME
+declare -a SCRIPT_PERM_CHECK_ARGS SCRIPT_CHMOD_OP SCRIPT_ACTION_VERB SCRIPT_PAST_TENSE_VERB
+declare -a NON_SCRIPT_PERM_CHECK_ARGS NON_SCRIPT_CHMOD_OP NON_SCRIPT_ACTION_VERB NON_SCRIPT_PAST_TENSE_VERB
+
+if [ "$REVERSE_MODE" -eq 1 ]; then
+    MODE_NAME="Reverse"
+    SCRIPT_PERM_CHECK_ARGS=("-perm" "/u=x") # Find scripts that ARE executable
+    SCRIPT_CHMOD_OP="u-x"
+    SCRIPT_ACTION_VERB="non-executable"
+    SCRIPT_PAST_TENSE_VERB="removed executable permission from"
+
+    NON_SCRIPT_PERM_CHECK_ARGS=("!" "-perm" "-u=x") # Find non-scripts that ARE NOT executable
+    NON_SCRIPT_CHMOD_OP="u+x"
+    NON_SCRIPT_ACTION_VERB="executable"
+    NON_SCRIPT_PAST_TENSE_VERB="made"
+else
+    MODE_NAME="Default"
+    SCRIPT_PERM_CHECK_ARGS=("!" "-perm" "-u=x") # Find scripts that ARE NOT executable
+    SCRIPT_CHMOD_OP="u+x"
+    SCRIPT_ACTION_VERB="executable"
+    SCRIPT_PAST_TENSE_VERB="made"
+
+    NON_SCRIPT_PERM_CHECK_ARGS=("-perm" "/a=x") # Find non-scripts that ARE executable
+    NON_SCRIPT_CHMOD_OP="a-x"
+    NON_SCRIPT_ACTION_VERB="non-executable"
+    NON_SCRIPT_PAST_TENSE_VERB="removed executable permission from"
+fi
 
 # --- Script Start ---
 
@@ -79,115 +144,98 @@ banner="███╗   ███╗ █████╗ ██╗  ██╗█�
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"
 
 printf '%s%s%s\n\n' "$COLOR_BANNER_START" "$banner" "$COLOR_RESET"
-printf "Managing executable permissions...\n\n"
-pause_prompt
+INFO "Running in $MODE_NAME mode."
+printf "Managing executable permissions in '$DIR'...\n\n"
 
-DIR="${1:-$DEFAULT_DIR}"
-if [ ! -d "$DIR" ]; then
-    BUG "Error: Directory '$DIR' not found or is not a directory."
-    exit 1
-fi
-
-TEMP_FILE_ADD=$(mktemp)
-TEMP_FILE_REMOVE=$(mktemp)
+TEMP_FILE_ADD=$(mtemp)
+TEMP_FILE_REMOVE=$(mtemp)
 trap 'rm -f "$TEMP_FILE_ADD" "$TEMP_FILE_REMOVE"' EXIT
 
 # Initialize counters for summary
-files_made_executable=0
-files_made_non_executable=0
+files_changed_phase1=0
+files_changed_phase2=0
 total_failures=0
 
 # ==============================================================================
-# PHASE 1: ADD EXECUTABLE PERMISSION TO SCRIPTS
+# PHASE 1: PROCESS SCRIPTS
 # ==============================================================================
-INFO "PHASE 1: Searching for scripts that need executable permission in '$DIR'..."
+INFO "PHASE 1: Searching for scripts to make $SCRIPT_ACTION_VERB..."
 
-# Build find command arguments for script exclusions
 declare -a find_exclusion_args=()
 for pattern in "${EXEC_EXCLUSION_PATTERNS[@]}"; do
     find_exclusion_args+=("!" "-name" "$pattern")
 done
 
-# NOTE: The `-name` predicate in `find` treats dotfiles (`.filename`) just
-# like regular files, so "*.sh" will match both "script.sh" and ".script.sh".
-# This ensures hidden scripts are correctly identified.
 find "$DIR" \
     -type f \
     ! -path "*/.git/*" \
     "${find_exclusion_args[@]}" \
     \( -name "*.sh" -o -exec sh -c 'head -n 1 "$0" | grep -Eq "$1"' {} "$SHEBANG_PATTERN" \; \) \
-    ! -perm -u=x \
+    "${SCRIPT_PERM_CHECK_ARGS[@]}" \
     -print0 > "$TEMP_FILE_ADD"
 
-# Process files to make them executable
 if [ -s "$TEMP_FILE_ADD" ]; then
     mapfile -d '' files_to_process < "$TEMP_FILE_ADD"
-    INFO "Found ${#files_to_process[@]} script(s) to make executable. Processing..."
+    INFO "Found ${#files_to_process[@]} script(s). Processing..."
     for file in "${files_to_process[@]}"; do
-        INFO "Attempting: chmod u+x '$file'"
-        if chmod u+x "$file"; then
-            GLOW "Success: made '$file' executable."
-            files_made_executable=$((files_made_executable + 1))
+        INFO "Attempting: chmod $SCRIPT_CHMOD_OP '$file'"
+        if chmod "$SCRIPT_CHMOD_OP" "$file"; then
+            GLOW "Success: $SCRIPT_PAST_TENSE_VERB '$file'."
+            files_changed_phase1=$((files_changed_phase1 + 1))
         else
-            BUG "Failure: could not make '$file' executable."
+            BUG "Failure: could not modify '$file'."
             total_failures=$((total_failures + 1))
         fi
     done
 else
-    GLOW "No scripts found requiring executable permission."
+    GLOW "No scripts found requiring permission changes."
 fi
 printf '\n'
 
 # ==============================================================================
-# PHASE 2: REMOVE EXECUTABLE PERMISSION FROM NON-SCRIPTS
+# PHASE 2: PROCESS NON-SCRIPTS
 # ==============================================================================
-INFO "PHASE 2: Searching for non-script files with executable permission..."
+INFO "PHASE 2: Searching for non-scripts to make $NON_SCRIPT_ACTION_VERB..."
 
-# Build find command arguments for non-executable patterns
 declare -a find_non_exec_args=()
 if [ ${#NON_EXEC_PATTERNS[@]} -gt 0 ]; then
-    # The first pattern needs to be without -o
     find_non_exec_args+=("-name" "${NON_EXEC_PATTERNS[0]}")
-    # Add the rest of the patterns with -o
     for ((i=1; i<${#NON_EXEC_PATTERNS[@]}; i++)); do
         find_non_exec_args+=("-o" "-name" "${NON_EXEC_PATTERNS[i]}")
     done
 fi
 
-# NOTE: As with the previous find command, the `-name` predicates below
-# will correctly match hidden files (e.g., "*.md" matches ".releasenotes.md").
 find "$DIR" \
     -type f \
-    -perm /a=x \
     ! -path "*/.git/*" \
+    "${NON_SCRIPT_PERM_CHECK_ARGS[@]}" \
     \( "${find_non_exec_args[@]}" \) \
     -print0 > "$TEMP_FILE_REMOVE"
 
-# Process files to make them non-executable
 if [ -s "$TEMP_FILE_REMOVE" ]; then
     mapfile -d '' files_to_process < "$TEMP_FILE_REMOVE"
-    INFO "Found ${#files_to_process[@]} non-script file(s) to make non-executable. Processing..."
+    INFO "Found ${#files_to_process[@]} non-script file(s). Processing..."
     for file in "${files_to_process[@]}"; do
-        INFO "Attempting: chmod a-x '$file'"
-        if chmod a-x "$file"; then
-            GLOW "Success: removed executable permission from '$file'."
-            files_made_non_executable=$((files_made_non_executable + 1))
+        INFO "Attempting: chmod $NON_SCRIPT_CHMOD_OP '$file'"
+        if chmod "$NON_SCRIPT_CHMOD_OP" "$file"; then
+            GLOW "Success: $NON_SCRIPT_PAST_TENSE_VERB '$file'."
+            files_changed_phase2=$((files_changed_phase2 + 1))
         else
-            BUG "Failure: could not remove executable permission from '$file'."
+            BUG "Failure: could not modify '$file'."
             total_failures=$((total_failures + 1))
         fi
     done
 else
-    GLOW "No non-script files found with incorrect executable permission."
+    GLOW "No non-script files found requiring permission changes."
 fi
 printf '\n'
 
 # ==============================================================================
 # SUMMARY
 # ==============================================================================
-INFO "Summary:"
-GLOW "  Scripts made executable: $files_made_executable"
-GLOW "  Non-scripts made non-executable: $files_made_non_executable"
+INFO "Summary for $MODE_NAME mode:"
+GLOW "  Script permissions changed: $files_changed_phase1"
+GLOW "  Non-script permissions changed: $files_changed_phase2"
 
 if [ "$total_failures" -gt 0 ]; then
     BUG "  Total operations failed: $total_failures"
