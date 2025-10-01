@@ -1,6 +1,5 @@
-# shellcheck disable=all
+#!/usr/bin/env bash
 #######################################################################
-######################## Customization Options ########################
 #######################################################################
 
 # User interface of choice (cli, dialog)
@@ -21,7 +20,7 @@ export MIRRORLIST_COUNTRY='United States'
 export AUR_HELPER="yay"
 
 # Directory where currently installed AUR packages are stored
-export AUR_DIR="/home/build"
+export AUR_DIR="/home/andro/.cache/yay"
 
 # Decide whether or not to upgrade AUR Packages while rebuilding
 export AUR_UPGRADE=false

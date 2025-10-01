@@ -1,6 +1,4 @@
-#!/usr/bin/env bash
-# shellcheck disable=all
-set -euo pipefail
+#!/bin/bash
 
 arch_news() {
     export COLUMNS

@@ -349,7 +349,6 @@ archive_one() {
     tar_args+=("-c")
     tar_args+=("-f" "$archive_path")
 
-    # *** FIX ***
     # Split the tar_flag string into an array to handle cases like "-I zstd".
     # This prevents the shell from passing "-I zstd" as a single, invalid argument.
     if [[ -n "$tar_flag" ]]; then
@@ -454,8 +453,8 @@ Cron Example (run hourly):
   0 * * * * /path/to/bkup.sh
 
 Config file: $CONFIG_FILE
-Log file: Determined by config or default (\$BACKUP_DIR/\$LOG_FILE_NAME_DEFAULT)
-Lock file: Determined by default (\$LOCK_FILE_DEFAULT)
+Log file: Determined by config or default (${BACKUP_DIR_DEFAULT}/${LOG_FILE_NAME_DEFAULT})
+Lock file: Determined by default ($LOCK_FILE_DEFAULT)
 EOF
 }
 
