@@ -1,4 +1,4 @@
-# Ars0n Sentinel Node - Genesis Protocol (v2.0 - Hardened)
+# Ars0n Sentinel Node - Genesis Protocol (v2.1 - Battle-Hardened)
 
 ## 1. Project Objective
 
@@ -91,14 +91,14 @@ The script will perform the following actions:
 1.  **Interrogate the System:** Dynamically finds the correct DietPi software IDs for all required packages.
 2.  **Install Payload:** Installs Docker, Docker Compose, PostgreSQL, Redis, and Git.
 3.  **Harden PostgreSQL:** Executes the authoritative `ALTER SYSTEM` and `pg_hba.conf` modifications required for network functionality.
-4.  **Acquire Framework:** Downloads and extracts the latest stable release of `ars0n-framework-v2` into `/opt/ars0n-framework`.
-5.  **Configure Environment:** Creates the necessary `.env` file and modifies the `docker-compose.yml` to seize Port 80.
+4.  **Acquire Framework:** Clones the `ars0n-framework-v2` repository into `/opt/ars0n-framework`.
+5.  **Configure Environment:** Creates the necessary `.env` file and a `docker-compose.override.yml` to seize Port 80.
 6.  **Create and Enable Autostart Service:** Forges a resilient `systemd` service to ensure the framework starts on boot.
-7.  **Ignition:** Calls the `Makefile` to build and launch the Docker stack for the first time.
+7.  **Ignition:** Builds and launches the Docker stack for the first time.
 
 ## 5. Day-to-Day Operations (`Makefile`)
 
-The `Makefile` is your primary tool for managing the Sentinel's services.
+The `Makefile` is your primary tool for managing the Sentinel's services from within the `/opt/ars0n-framework` directory.
 
 -   **Start the framework:** `make up`
 -   **Stop the framework:** `make down`

@@ -1,7 +1,6 @@
 # ==============================================================================
-# Ars0n Sentinel - Makefile v2.0
+# Ars0n Sentinel - Makefile v1.1
 # A simple Makefile for managing the ars0n-framework Docker stack.
-# Assumes execution from the framework directory (/opt/ars0n-framework).
 # ==============================================================================
 
 .PHONY: up down logs ps clean restart
