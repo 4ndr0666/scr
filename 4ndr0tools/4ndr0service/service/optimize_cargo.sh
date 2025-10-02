@@ -60,10 +60,16 @@ cargo_install_or_update() {
 }
 
 optimize_cargo_service() {
-	local -a CARGO_TOOLS
-	mapfile -t CARGO_TOOLS < <(jq -r '.cargo_tools[]' "$CONFIG_FILE")
-
 	log_info "Optimizing Cargo environment..."
+
+	if ! command -v jq &>/dev/null; then
+		log_error "jq is not installed. Please install it to proceed."
+		return 1
+	fi
+
+	local -a CARGO_TOOLS
+	# Provide a default empty array `[]` if .cargo_tools is null or missing to prevent jq error
+	mapfile -t CARGO_TOOLS < <(jq -r '(.cargo_tools // [])[]' "$CONFIG_FILE")
 
 	if ! command -v rustup &>/dev/null; then
 		install_rustup
@@ -77,9 +83,17 @@ optimize_cargo_service() {
 	check_directory_writable "$CARGO_HOME"
 	check_directory_writable "$RUSTUP_HOME"
 
-	for tool in "${CARGO_TOOLS[@]}"; do
-		cargo_install_or_update "$tool"
-	done
+	if [[ ${#CARGO_TOOLS[@]} -eq 0 ]]; then
+		log_info "No cargo tools to install from config."
+	else
+		for tool in "${CARGO_TOOLS[@]}"; do
+			# Skip if the tool name is empty for any reason
+			if [[ -z "$tool" ]]; then
+				continue
+			fi
+			cargo_install_or_update "$tool"
+		done
+	fi
 
 	log_info "Cargo & rustup optimization complete."
 }

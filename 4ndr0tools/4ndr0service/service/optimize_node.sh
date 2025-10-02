@@ -36,9 +36,10 @@ install_nvm() {
 
 install_node() {
 	local node_version
-	node_version=$(jq -r '.node_version' "$CONFIG_FILE")
+	# Provide a default value of "lts/*" if .node_version is null or missing
+	node_version=$(jq -r '.node_version // "lts/*"' "$CONFIG_FILE")
 	if ! command -v node &>/dev/null; then
-		log_info "Installing latest LTS Node.js via nvm."
+		log_info "Installing Node.js version '$node_version' via nvm."
 		nvm install "$node_version"
 		nvm use "$node_version"
 		nvm alias default "$node_version"
@@ -48,11 +49,28 @@ install_node() {
 }
 
 install_global_npm_tools() {
+	if ! command -v jq &>/dev/null; then
+		log_error "jq is not installed. Please install it to proceed."
+		return 1
+	fi
+
 	local -a NPM_GLOBAL_PACKAGES
-	mapfile -t NPM_GLOBAL_PACKAGES < <(jq -r '.npm_global_packages[]' "$CONFIG_FILE")
+	# Provide a default empty array `[]` if .npm_global_packages is null or missing to prevent jq error
+	mapfile -t NPM_GLOBAL_PACKAGES < <(jq -r '(.npm_global_packages // [])[]' "$CONFIG_FILE")
+
+	if [[ ${#NPM_GLOBAL_PACKAGES[@]} -eq 0 ]]; then
+		log_info "No global NPM packages to install from config."
+		return 0
+	fi
 
 	for tool in "${NPM_GLOBAL_PACKAGES[@]}"; do
-		if ! npm list -g --depth=0 | grep -qw "$tool"; then
+		# Skip if the tool name is empty for any reason
+		if [[ -z "$tool" ]]; then
+			continue
+		fi
+		
+		# Use exit code of `npm list` for a more reliable check than grep
+		if ! npm list -g --depth=0 "$tool" &>/dev/null; then
 			log_info "Installing global NPM tool: $tool"
 			npm install -g "$tool"
 		else
