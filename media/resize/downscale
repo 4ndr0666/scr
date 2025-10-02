@@ -16,10 +16,8 @@ KEEP_AUDIO="true"
 VERBOSE="false"
 # Use 'error' for quiet operation, 'info' for verbose.
 FFMPEG_LOG_LEVEL="error"
-# Use CRF 0 for mathematically lossless H.264, which is highly compatible.
 # Use 'medium' preset as a balance between encoding speed and file size.
 ENCODE_PRESET="medium"
-ENCODE_CRF="0"
 
 # --- Functions ---
 print_usage() {
@@ -28,7 +26,7 @@ print_usage() {
   # MODIFIED: Help text updated to reflect the new 720p default.
   cat <<'EOF'
 Downscales videos larger than 720p to a height of 720p using a high-compatibility,
-lossless H.264 encoding, making them suitable for upscaling software.
+mathematically lossless H.264 encoding, making them suitable for upscaling software.
 If a video is already compliant (720p or smaller), it is skipped.
 
 You can pass multiple files or directories as arguments.
@@ -107,16 +105,22 @@ process_video() {
   ffmpeg_args=(
     -hide_banner
     -i "$input_file"
-    # MODIFIED: Scale filter adjusted to the new target height of 720p.
+    # Explicitly map the first video stream to handle files with multiple
+    # video tracks (e.g., picture-in-picture) more predictably.
+    -map 0:v:0
     -vf "scale=-2:720:flags=lanczos,format=yuv420p"
     -c:v libx264
-    -crf "$ENCODE_CRF" # CRF 0 is mathematically lossless for libx264
+    # Use -qp 0 (Quantization Parameter) for true, mathematically lossless encoding.
+    -qp 0
     -preset "$ENCODE_PRESET"
   )
 
   if [[ "$KEEP_AUDIO" == "true" ]]; then
     printf "Keeping original audio stream.\n"
-    ffmpeg_args+=(-c:a copy)
+    # Explicitly map the first audio stream. The '?' makes it optional,
+    # preventing errors on videos with no audio. This is more robust than
+    # copying all audio streams, which can cause issues with complex files.
+    ffmpeg_args+=(-map 0:a:0? -c:a copy)
   else
     printf "Discarding audio stream.\n"
     ffmpeg_args+=(-an)
