@@ -295,8 +295,13 @@ load_config() {
         TAR_COMPRESS="$TAR_COMPRESS_DEFAULT"
     fi
 
-    # Load sources into array. Check explicitly if the array is empty after loading.
-    if ! jq -re '.sources[]' <<<"$config_content" | mapfile -t SOURCES || ((${#SOURCES[@]} == 0)); then
+    # *** FIX ***
+    # Load sources into array using a more robust method.
+    # We attempt to read using jq and mapfile, but ignore their exit codes.
+    # We then check if the resulting SOURCES array is empty and set a default if it is.
+    # This prevents unbound variable errors regardless of jq failures or config contents.
+    mapfile -t SOURCES < <(jq -re '.sources[]' <<<"$config_content") &>/dev/null || true
+    if ((${#SOURCES[@]} == 0)); then
         err "Could not load sources from config or sources array is empty. Using default source."
         SOURCES=("$HOME/.config/BraveSoftware")
     fi

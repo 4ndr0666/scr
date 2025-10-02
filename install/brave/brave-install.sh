@@ -116,7 +116,7 @@ setup_paths() {
   fi
   
   BIN_DIR="${PREFIX}/bin"; WRAPPER_PATH="${BIN_DIR}/brave-wrapper"
-  BRAVE_SYMLINK="${BIN_DIR}/brave"
+  BRAVE_SYMLINK="${BIN_DIR}/brave-beta"
   local target_xdg_config="${TARGET_HOME}/.config"; UNIT_DIR="${target_xdg_config}/systemd/user"
 }
 
@@ -152,7 +152,7 @@ write_wrapper() {
 	  local -A fds; local fdstr=""; for f in "${disable_feats[@]}"; do fds["$f"]=1; done
 	  if (( ${#fds[@]} > 0 )); then for f in "${!fds[@]}"; do fdstr+="${f},"; done; launch_args+=("--disable-features=${fdstr%,}"); fi
 	  local channel; local argv0; argv0="$(basename "${BASH_SOURCE[0]}")"
-	  case "$argv0" in brave|brave-wrapper) channel="brave" ;; *) channel="${argv0}" ;; esac
+	  case "$argv0" in brave-beta|brave-wrapper) channel="brave-beta" ;; *) channel="${argv0}" ;; esac
 	  local brave_bin; brave_bin="$(command -v "${channel}-browser" || command -v "$channel" || echo "")"
 	  [[ -z "$brave_bin" ]] && { printf '[x] Brave binary not found: %s\n' "$channel" >&2; exit 127; }
 	  if [[ "${1:-}" == "--print-effective-flags" ]]; then printf "Effective command:\n%q " "$brave_bin" "${launch_args[@]}" "$@"; printf '\n'; exit 0; fi
@@ -260,7 +260,7 @@ do_generate_default_config() {
   mkdir -p "$(dirname "$config_path")"
   tee "$config_path" >/dev/null <<-'EOF'
 	# To disable all GPU features, uncomment the next line:
-	# BRAVE_DISABLE_GPU=1
+	BRAVE_DISABLE_GPU=1
 	BRAVE_ENABLE=""
 	BRAVE_DISABLE=""
 	BRAVE_EXTRA_FLAGS=''
