@@ -1,7 +1,7 @@
 #!/bin/bash
-
+# Author: 4ndr0666
 # ==============================================================================
-# Ars0n Sentinel - Master Installation Script v1.1
+# Ars0n Sentinel - Master Installation Script v2.0
 # This script automates the installation and configuration of all required
 # software and the ars0n-framework itself.
 # Run this as root on a freshly provisioned DietPi system.
@@ -37,7 +37,12 @@ echo "[SUCCESS] Core services installed."
 # --- Step 3: Authoritative PostgreSQL Reconfiguration ---
 echo "[TASK 3/8] Performing authoritative reconfiguration of PostgreSQL..."
 sudo -u postgres psql -c "ALTER SYSTEM SET listen_addresses = '*';"
-echo "host    all             all             127.0.0.1/32            md5" >> /etc/postgresql/17/main/pg_hba.conf
+PG_HBA_CONF=$(find /etc/postgresql/ -name "pg_hba.conf")
+if [ -n "$PG_HBA_CONF" ]; then
+    echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA_CONF"
+else
+    echo "[WARN] Could not automatically find pg_hba.conf. Manual configuration may be required."
+fi
 systemctl restart postgresql
 sleep 5
 if ! pg_isready -h 127.0.0.1 -p 5432 | grep -q "accepting connections"; then
@@ -47,19 +52,22 @@ fi
 echo "[SUCCESS] PostgreSQL is configured and accepting connections."
 
 # --- Step 4: Deploy ars0n-framework ---
-echo "[TASK 4/8] Deploying ars0n-framework..."
+echo "[TASK 4/8] Deploying ars0n-framework via git clone..."
 rm -rf /opt/ars0n-framework
-wget -P /opt/ "https://github.com/R-s0n/ars0n-framework-v2/releases/download/beta-0.0.1/ars0n-framework-v2-beta-0.0.1.zip"
-unzip /opt/ars0n-framework-v2-beta-0.0.1.zip -d /opt/
-mv /opt/ars0n-framework-v2 /opt/ars0n-framework
-rm /opt/ars0n-framework-v2-beta-0.0.1.zip
+git clone https://github.com/R-s0n/ars0n-framework-v2.git /opt/ars0n-framework
 cd /opt/ars0n-framework
-echo "[SUCCESS] Framework acquired and extracted."
+echo "[SUCCESS] Framework acquired."
 
 # --- Step 5: Configure Framework Environment ---
 echo "[TASK 5/8] Configuring framework environment for Port 80 and host communication..."
 echo "REDIS_HOST=172.17.0.1" > .env
-sed -i 's/ports:/ports:\n      - "80:3000"/' docker-compose.yml
+cat << 'EOF' > docker-compose.override.yml
+version: '3.9'
+services:
+  client:
+    ports:
+      - "80:3000"
+EOF
 echo "[SUCCESS] Environment configured."
 
 # --- Step 6: Create Autostart Service ---
@@ -71,6 +79,7 @@ Requires=docker.service
 After=network-online.target docker.service
 
 [Service]
+Type=simple
 User=root
 WorkingDirectory=/opt/ars0n-framework
 ExecStart=/usr/bin/docker compose up
@@ -92,10 +101,10 @@ echo "[SUCCESS] ars0n.service enabled."
 # --- Step 8: Final Ignition ---
 echo "[TASK 8/8] IGNITION! Building and launching ars0n-framework stack..."
 echo "[INFO] This will take a long time as container images are downloaded and built."
-make up
+docker compose up -d --build
 
 # --- Final Verification ---
-sleep 15
+sleep 20 # Give containers a bit more time to start up
 echo "[INFO] Final verification..."
 docker compose ps
 echo ""

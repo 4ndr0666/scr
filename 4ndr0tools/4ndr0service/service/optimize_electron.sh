@@ -41,7 +41,7 @@ npm_global_install_or_update() {
 
 optimize_electron_service() {
 	local -a ELECTRON_TOOLS
-	mapfile -t ELECTRON_TOOLS < <(jq -r '(.electron_tools // [])[]' "$CONFIG_FILE")
+	mapfile -t ELECTRON_TOOLS < <(jq -r '.electron_tools[]' "$CONFIG_FILE")
 
 	log_info "Optimizing Electron environment..."
 

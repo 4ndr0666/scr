@@ -25,7 +25,7 @@ optimize_python_service() {
 	local PY_VERSION
 	PY_VERSION=$(jq -r '.python_version' "$CONFIG_FILE")
 	local -a TOOLS
-	mapfile -t TOOLS < <(jq -r '(.python_tools // [])[]' "$CONFIG_FILE")
+	mapfile -t TOOLS < <(jq -r '.python_tools[]' "$CONFIG_FILE")
 
 	log_info "Checking if Python is installed..."
 	if command -v python3 &>/dev/null; then

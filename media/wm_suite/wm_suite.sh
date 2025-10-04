@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 # v3.1.7 (Mathematical Lossless Quality - CRF 0, No Overwrite Prompt)
-set -euo pipefail
+#set -euo pipefail
 # ================== // WM_SUITE.SH //
 ## Description: Embeds a normalized, crisp watermark (resolution-aware).
 #  Lossless watermarking (FFV1 .mkv intermediate), then re-encode to H.264 .mp4.
@@ -34,7 +34,7 @@ VIDEO_FINAL_CODEC="libx264"
 # Set to CRF 0 for mathematically lossless H.264 encoding.
 # Be aware: This will result in very large file sizes.
 # Also, the 'format=yuv420p' filter still applies chroma subsampling if the source was higher chroma.
-VIDEO_FINAL_CRF=0       
+VIDEO_FINAL_CRF=0
 VIDEO_FINAL_PRESET="slow" # Default preset for final libx264 output
 AUDIO_MODE_FLAG="-an"    # Default: remove audio. Can be overridden by --keep-audio
 MAX_RESOLUTION=1080
@@ -215,7 +215,7 @@ resolve_watermark_file() {
     echo "Error: Configured watermark file '$WM_FILE' not found. Please update your configuration ($CONFIG_FILE)."
     exit 1
   fi
-  
+
   [[ "$VERBOSE" == 1 ]] && echo "Using watermark: $WM_FILE"
 
   # Pre-process watermark once globally
@@ -303,7 +303,7 @@ process_image() {
     -gravity "$(img_gravity)" -geometry +"${xoff}"+"${yoff}" -compose over -composite
     -strip # Remove EXIF/IPTC profiles, comments. This is a lossless operation for PNG.
   )
-  
+
   # Output is hardcoded to PNG. PNG is lossless by nature.
   magick_cmd+=("$out")
 
@@ -321,7 +321,7 @@ process_video() {
   # mktemp will use $TMPDIR if set, otherwise /tmp
   local intermediate_mkv="$(mktemp --suffix=.mkv.tmp)" # Temporary FFV1 output for first pass
   local watermarked_mp4_temp="$(mktemp --suffix=.mp4.tmp)" # Temporary H.264 MP4 of just the main video content
-  
+
   local final_output_mp4="$VID_OUT_DIR/${stem}_wm.mp4" # The actual final output file
 
   [[ -e "$final_output_mp4" ]] && { echo "Skip video (exists): $final_output_mp4"; return; }
@@ -352,7 +352,7 @@ process_video() {
     -filter_complex "$graph" \
     -map "[v]" -c:v "$VIDEO_INTERMEDIATE_CODEC" -qp "$VIDEO_INTERMEDIATE_QP" $AUDIO_MODE_FLAG \
     -f matroska "$intermediate_mkv"
-  
+
   TEMP_FILES+=("$intermediate_mkv") # Add intermediate file to cleanup list
   echo "Intermediate FFV1 MKV created: $intermediate_mkv"
 
@@ -391,14 +391,14 @@ process_video() {
     if (( has_intro == 1 || has_outro == 1 )); then
       local concat_list="$(mktemp --suffix=.txt)"
       TEMP_FILES+=("$concat_list") # Add concat list to cleanup
-      
+
       printf "%s\n" "${concat_files[@]}" > "$concat_list"
       [[ "$VERBOSE" == 1 ]] && { echo "  Concat list content:"; cat "$concat_list"; }
 
       # Perform concatenation using concat demuxer (fast and lossless if compatible streams)
       ffmpeg -hide_banner -loglevel "$FFLOGLEVEL" \
         -f concat -safe 0 -i "$concat_list" \
-        -c copy "$final_output_mp4" 
+        -c copy "$final_output_mp4"
       echo "Concatenated video (with intro/outro) -> $final_output_mp4"
     else
       # If --full was specified but no intro/outro files were found, just move the watermarked file

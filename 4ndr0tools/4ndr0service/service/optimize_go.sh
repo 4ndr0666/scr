@@ -82,28 +82,13 @@ setup_go_paths() {
 }
 
 install_go_tools() {
-	if ! command -v jq &>/dev/null; then
-		log_error "jq is not installed. Please install it to proceed."
-		return 1
-	fi
-
 	local -a GO_TOOLS
-	# Provide a default empty array `[]` if .go_tools is null or missing
-	mapfile -t GO_TOOLS < <(jq -r '(.go_tools // [])[]' "$CONFIG_FILE")
-
-	if [[ ${#GO_TOOLS[@]} -eq 0 ]]; then
-		log_info "No Go tools to install from config."
-		return 0
-	fi
+	mapfile -t GO_TOOLS < <(jq -r '.go_tools[]' "$CONFIG_FILE")
 
 	log_info "Installing or updating Go tools..."
 	for tool in "${GO_TOOLS[@]}"; do
-		if [[ -z "$tool" ]]; then
-			continue
-		fi
 		log_info "Installing/updating $tool..."
-		# Use modern `go install ...@latest` syntax
-		go install "$tool@latest" 2>/dev/null || log_warn "Warning: $tool install/update failed."
+		go install "$tool" 2>/dev/null || log_warn "Warning: $tool install/update failed."
 	done
 }
 
@@ -136,18 +121,6 @@ perform_go_cleanup() {
 	log_info "Final cleanup completed."
 }
 
-get_latest_go_version() {
-	if command -v pacman &>/dev/null; then
-		pacman -Si go | grep -F "Version" | awk '{print $3}'
-	elif command -v apt-cache &>/dev/null; then
-		apt-cache policy golang | grep -F "Candidate:" | awk '{print $2}'
-	elif command -v brew &>/dev/null; then
-		brew info go --json=v1 | jq -r '.[0].versions.stable'
-	else
-		echo ""
-	fi
-}
-
 optimize_go_service() {
 	log_info "Starting Go environment optimization..."
 	log_info "Checking if Go is installed and up to date..."
@@ -167,6 +140,7 @@ optimize_go_service() {
 	log_info "Ensuring Go environment variables are correct..."
 	setup_go_paths
 
+	log_info "Installing or updating Go tools..."
 	install_go_tools
 
 	log_info "Checking and managing permissions..."
@@ -182,10 +156,22 @@ optimize_go_service() {
 	perform_go_cleanup
 
 	log_info "Go environment optimization complete."
-	log_info "GOPATH: ${GOPATH:-}"
-	log_info "GOROOT: ${GOROOT:-}"
-	log_info "GOMODCACHE: ${GOMODCACHE:-}"
+	log_info "GOPATH: $GOPATH"
+	log_info "GOROOT: $GOROOT"
+	log_info "GOMODCACHE: $GOMODCACHE"
 	log_info "Go version: $(go version)"
+}
+
+get_latest_go_version() {
+	if command -v pacman &>/dev/null; then
+		pacman -Si go | grep -F "Version" | awk '{print $3}'
+	elif command -v apt-cache &>/dev/null; then
+		apt-cache policy golang | grep -F "Candidate:" | awk '{print $2}'
+	elif command -v brew &>/dev/null; then
+		brew info go --json=v1 | jq -r '.[0].versions.stable'
+	else
+		echo ""
+	fi
 }
 
 # Run optimization if executed directly

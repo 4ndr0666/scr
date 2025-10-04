@@ -1,114 +1,94 @@
 #!/bin/bash
-# Author: 4ndr0666
-# ==============================================================================
-# Ars0n Sentinel - Master Installation Script v2.0
-# This script automates the installation and configuration of all required
-# software and the ars0n-framework itself.
-# Run this as root on a freshly provisioned DietPi system.
-# ==============================================================================
 
-# --- Safety Check: Ensure the script is run as root ---
-if [ "$(id -u)" -ne 0 ]; then
-  echo "This script must be run as root. Please use 'sudo ./install.sh' or log in as root." >&2
-  exit 1
-fi
+# ==============================================================================
+# Ars0n Sentinel - Master Installation Script v4.0 (Final Kali ARM Doctrine)
+# This script automates the full installation, hardening, and deployment of
+# the ars0n-framework on a prepared Kali Linux ARM system.
+# Run this from the home directory of your non-root user.
+# ==============================================================================
 
 set -e # Exit immediately if a command exits with a non-zero status.
 
-echo "[INFO] Starting Ars0n Sentinel Payload Deployment..."
+echo "[INFO] Starting Ars0n Sentinel Full Deployment Protocol..."
 
-# --- Step 1: System Interrogation for Software IDs ---
-echo "[TASK 1/8] Acquiring ground truth for software IDs..."
-ID_DOCKER_COMPOSE=$(dietpi-software list | grep 'Docker Compose:' | awk '{print $2}')
-ID_POSTGRES=$(dietpi-software list | grep 'PostgreSQL:' | awk '{print $2}')
-ID_REDIS=$(dietpi-software list | grep 'Redis:' | awk '{print $2}')
-ID_GIT=$(dietpi-software list | grep 'Git:' | awk -F'|' '{print $1}' | awk '{print $2}')
-if [ -z "$ID_DOCKER_COMPOSE" ] || [ -z "$ID_POSTGRES" ] || [ -z "$ID_REDIS" ] || [ -z "$ID_GIT" ]; then
-    echo "[ERROR] Could not dynamically determine all required software IDs. Aborting." >&2
-    exit 1
-fi
-echo "[SUCCESS] Software IDs acquired."
+# --- Step 1: System Preparation & Hardening ---
+echo "[TASK 1/6] Updating system and installing core payload..."
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y docker.io docker-compose-v2 postgresql-client redis-tools git
+echo "[SUCCESS] Core payload installed."
 
-# --- Step 2: Install Core Software Payload ---
-echo "[TASK 2/8] Installing core software via dietpi-software..."
-dietpi-software install $ID_DOCKER_COMPOSE $ID_POSTGRES $ID_REDIS $ID_GIT
-echo "[SUCCESS] Core services installed."
+echo "[TASK 2/6] Configuring user permissions for Docker..."
+sudo usermod -aG docker ${USER}
+echo "[SUCCESS] User added to Docker group. A reboot will be required after this script completes."
 
-# --- Step 3: Authoritative PostgreSQL Reconfiguration ---
-echo "[TASK 3/8] Performing authoritative reconfiguration of PostgreSQL..."
-sudo -u postgres psql -c "ALTER SYSTEM SET listen_addresses = '*';"
-PG_HBA_CONF=$(find /etc/postgresql/ -name "pg_hba.conf")
-if [ -n "$PG_HBA_CONF" ]; then
-    echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA_CONF"
-else
-    echo "[WARN] Could not automatically find pg_hba.conf. Manual configuration may be required."
-fi
-systemctl restart postgresql
-sleep 5
-if ! pg_isready -h 127.0.0.1 -p 5432 | grep -q "accepting connections"; then
-    echo "[ERROR] PostgreSQL failed to become network-ready. Aborting." >&2
-    exit 1
-fi
-echo "[SUCCESS] PostgreSQL is configured and accepting connections."
+echo "[TASK 3/6] Hardening UFW for Docker compatibility..."
+sudo sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
+sudo ufw allow ssh
+sudo ufw allow 80/tcp
+sudo ufw allow 3000/tcp
+sudo ufw allow 8443/tcp
+sudo ufw allow 5432/tcp
+sudo ufw allow from 172.17.0.0/16 to any port 5432
+sudo ufw default allow outgoing
+sudo ufw --force enable
+echo "[SUCCESS] UFW configured and enabled."
 
-# --- Step 4: Deploy ars0n-framework ---
-echo "[TASK 4/8] Deploying ars0n-framework via git clone..."
-rm -rf /opt/ars0n-framework
-git clone https://github.com/R-s0n/ars0n-framework-v2.git /opt/ars0n-framework
-cd /opt/ars0n-framework
-echo "[SUCCESS] Framework acquired."
+# --- Step 2: Payload Deployment ---
+echo "[TASK 4/6] Acquiring and preparing ars0n-framework stable release..."
+mkdir -p ~/ars0n-deployment && cd ~/ars0n-deployment
+wget -q --show-progress $(curl -s https://api.github.com/repos/R-s0n/ars0n-framework-v2/releases/latest | grep "browser_download_url.*zip" | cut -d '"' -f 4)
+unzip -q *.zip
+rm *.zip
+cd ars0n-framework-v2-*
+echo "REDIS_HOST=$(hostname -I | awk '{print $1}')" > .env
+sed -i 's/"3000:3000"/"80:3000"/' docker-compose.yml
+FRAMEWORK_DIR=$(pwd)
+echo "[SUCCESS] Framework prepared in: $FRAMEWORK_DIR"
 
-# --- Step 5: Configure Framework Environment ---
-echo "[TASK 5/8] Configuring framework environment for Port 80 and host communication..."
-echo "REDIS_HOST=172.17.0.1" > .env
-cat << 'EOF' > docker-compose.override.yml
-version: '3.9'
-services:
-  client:
-    ports:
-      - "80:3000"
-EOF
-echo "[SUCCESS] Environment configured."
-
-# --- Step 6: Create Autostart Service ---
-echo "[TASK 6/8] Forging systemd autostart service..."
-cat << 'EOF' > /etc/systemd/system/ars0n.service
-[Unit]
+# --- Step 3: Autostart Service Configuration ---
+echo "[TASK 5/6] Forging and enabling systemd autostart service..."
+SERVICE_FILE_CONTENT="[Unit]
 Description=Ars0n Framework Sentinel Service
 Requires=docker.service
 After=network-online.target docker.service
 
 [Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/ars0n-framework
-ExecStart=/usr/bin/docker compose up
+Type=oneshot
+RemainAfterExit=yes
+User=${USER}
+Group=${USER}
+WorkingDirectory=${FRAMEWORK_DIR}
+ExecStart=/usr/bin/docker compose up -d --build
 ExecStop=/usr/bin/docker compose down
-Restart=always
+Restart=on-failure
 RestartSec=10s
 
 [Install]
 WantedBy=multi-user.target
-EOF
-echo "[SUCCESS] Service file created."
+"
+echo "$SERVICE_FILE_CONTENT" | sudo tee /etc/systemd/system/ars0n.service > /dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now ars0n.service
+echo "[SUCCESS] ars0n.service created and enabled."
 
-# --- Step 7: Enable Autostart Service ---
-echo "[TASK 7/8] Enabling and reloading systemd services..."
-systemctl enable ars0n.service
-systemctl daemon-reload
-echo "[SUCCESS] ars0n.service enabled."
-
-# --- Step 8: Final Ignition ---
-echo "[TASK 8/8] IGNITION! Building and launching ars0n-framework stack..."
-echo "[INFO] This will take a long time as container images are downloaded and built."
-docker compose up -d --build
-
-# --- Final Verification ---
-sleep 20 # Give containers a bit more time to start up
-echo "[INFO] Final verification..."
+# --- Step 4: Final Ignition ---
+echo "[TASK 6/6] Final verification..."
+sleep 20 # Give services time to initialize
+if ! systemctl is-active --quiet ars0n.service; then
+    echo "[ERROR] ars0n.service failed to start. Check 'journalctl -xeu ars0n.service'." >&2
+    exit 1
+fi
+echo "[SUCCESS] ars0n.service is active."
 docker compose ps
-echo ""
-echo "[SUCCESS] Ars0n Sentinel Deployment Complete."
-echo "Access the web interface at http://$(hostname -I | awk '{print $1}')"
-echo "Reboot now ('sudo reboot') to confirm autostart functionality."
+
+echo -e "\n\n[PROTOCOL COMPLETE]"
+echo "The Ars0n Sentinel is LIVE and operational."
+echo "Access the web interface at: http://$(hostname -I | awk '{print $1}')"
+echo "A reboot is required to finalize user group permissions for interactive Docker commands."
+echo "Reboot now? (y/n)"
+read -r response
+if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    sudo reboot
+fi
+
 exit 0

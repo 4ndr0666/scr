@@ -40,7 +40,7 @@ pipx_install_or_update() {
 
 optimize_venv_service() {
 	local -a VENV_PIPX_PACKAGES
-	mapfile -t VENV_PIPX_PACKAGES < <(jq -r '(.venv_pipx_packages // [])[]' "$CONFIG_FILE")
+	mapfile -t VENV_PIPX_PACKAGES < <(jq -r '.venv_pipx_packages[]' "$CONFIG_FILE")
 
 	log_info "Optimizing Python venv environment..."
 
