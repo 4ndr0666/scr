@@ -59,9 +59,21 @@ This protocol is a battle-tested, two-stage process. **Stage A** details the man
         sudo ufw default allow outgoing
         sudo ufw --force enable
         ```
-6.  **Reboot:** A reboot is recommended to ensure all changes, including user group modifications and firewall rules, are correctly applied.
+6. **PostgreSQL Authoritative Reconfiguration**
+
+The default PostgreSQL installation is hardened against network connections and must be given a direct, authoritative order to comply.
+
+1. **Issue the `listen_addresses` Override:** Use `ALTER SYSTEM` to write a high-priority configuration that forces the database to listen on all network interfaces.
     ```bash
-    sudo reboot
+    sudo -u postgres psql -c "ALTER SYSTEM SET listen_addresses = '*';"
+    ```
+2. **Configure Host-Based Authentication:** Command the system to trust local network connections for all users.
+    ```bash
+    echo "host    all             all             127.0.0.1/32            md5" | sudo tee -a /etc/postgresql/17/main/pg_hba.conf
+    ```
+3. **Restart the Service:** Ingest the new configuration.
+    ```bash
+    sudo systemctl restart postgresql
     ```
 
 ## 4. Phase 1, Stage B: Payload Deployment
@@ -200,7 +212,7 @@ sudo ufw allow 80/tcp
 sudo ufw allow 3000/tcp
 sudo ufw allow 8443/tcp
 sudo ufw allow 5432/tcp
-sudo ufw allow from 172.17.0.0/16 to any port 5432
+sudo ufw allow from 172.17.0.0/16
 sudo ufw default allow outgoing
 sudo ufw --force enable
 echo "[SUCCESS] UFW configured and enabled."
