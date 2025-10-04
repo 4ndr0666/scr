@@ -219,7 +219,7 @@ echo "[SUCCESS] UFW configured and enabled."
 
 # --- Step 2: Payload Deployment ---
 echo "[TASK 4/6] Acquiring and preparing ars0n-framework stable release..."
-mkdir -p ~/ars0n-deployment && cd ~/ars0n-deployment
+cd ~
 wget -q --show-progress $(curl -s https://api.github.com/repos/R-s0n/ars0n-framework-v2/releases/latest | grep "browser_download_url.*zip" | cut -d '"' -f 4)
 unzip -q *.zip
 rm *.zip
