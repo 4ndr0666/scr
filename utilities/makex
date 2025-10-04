@@ -36,6 +36,7 @@ NON_EXEC_PATTERNS=(
 
 # --- Color and Helper Functions ---
 
+# Declare color variables. They will remain empty if tput is not available or stdout is not a TTY.
 declare COLOR_GLOW="" COLOR_BUG="" COLOR_INFO="" COLOR_BANNER_START="" COLOR_RESET=""
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
@@ -147,8 +148,8 @@ printf '%s%s%s\n\n' "$COLOR_BANNER_START" "$banner" "$COLOR_RESET"
 INFO "Running in $MODE_NAME mode."
 printf "Managing executable permissions in '$DIR'...\n\n"
 
-TEMP_FILE_ADD=$(mtemp)
-TEMP_FILE_REMOVE=$(mtemp)
+TEMP_FILE_ADD=$(mktemp)
+TEMP_FILE_REMOVE=$(mktemp)
 trap 'rm -f "$TEMP_FILE_ADD" "$TEMP_FILE_REMOVE"' EXIT
 
 # Initialize counters for summary
