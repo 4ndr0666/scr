@@ -1,0 +1,208 @@
+version: "3.8"
+
+services:
+  api:
+    container_name: ars0n-framework-v2-api-1
+    build: ./server
+    ports:
+      - "8443:8443"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/ars0n
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: ars0n
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - temp_data:/tmp
+    dns:
+      - 127.0.0.11
+      - 8.8.8.8
+      - 1.1.1.1
+    dns_search: .
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+
+  ai_service:
+    container_name: ars0n-framework-v2-ai-service-1
+    build: ./ai_service
+    ports:
+      - "8000:8000"
+    depends_on:
+      - api
+    environment:
+      API_URL: http://api:8443
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+    profiles:
+      - ai
+
+  db:
+    container_name: ars0n-framework-v2-db-1
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ars0n
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+
+  client:
+    container_name: ars0n-framework-v2-client-1
+    build:
+      context: ./client
+      args:
+        REACT_APP_SERVER_IP: 192.168.1.92   # <-- exact fix from discussion
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+
+  # Other services (assetfinder, cewl, etc.) remain unchanged
+  assetfinder:
+    container_name: ars0n-framework-v2-assetfinder-1
+    build: ./docker/assetfinder
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  metabigor:
+    container_name: ars0n-framework-v2-metabigor-1
+    build: ./docker/metabigor
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  sublist3r:
+    container_name: ars0n-framework-v2-sublist3r-1
+    build: ./docker/sublist3r
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  subfinder:
+    container_name: ars0n-framework-v2-subfinder-1
+    build: ./docker/subfinder
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  shuffledns:
+    container_name: ars0n-framework-v2-shuffledns-1
+    build: ./docker/shuffledns
+    volumes:
+      - ./docker/shuffledns/wordlists:/app/wordlists
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  cewl:
+    container_name: ars0n-framework-v2-cewl-1
+    build: ./docker/cewl
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  gospider:
+    container_name: ars0n-framework-v2-gospider-1
+    build:
+      context: .
+      dockerfile: docker/gospider/Dockerfile
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  subdomainizer:
+    container_name: ars0n-framework-v2-subdomainizer-1
+    build:
+      context: .
+      dockerfile: docker/subdomainizer/Dockerfile
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  nuclei:
+    container_name: ars0n-framework-v2-nuclei-1
+    build: ./docker/nuclei
+    depends_on:
+      - api
+    volumes:
+      - temp_data:/tmp
+    entrypoint: ["sleep", "infinity"]
+    shm_size: '2g'
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  katana:
+    container_name: ars0n-framework-v2-katana-1
+    build:
+      context: ./docker/katana
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    volumes:
+      - temp_data:/tmp
+    entrypoint: ["sleep", "infinity"]
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+
+  httpx:
+    container_name: ars0n-framework-v2-httpx-1
+    build: ./docker/httpx
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+volumes:
+  postgres_data:
+  temp_data:
+
+networks:
+  ars0n-network:
+    driver: bridge
