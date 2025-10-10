@@ -26,6 +26,21 @@ services:
     networks:
       - ars0n-network
 
+  ai_service:
+    container_name: ars0n-framework-v2-ai-service-1
+    build: ./ai_service
+    ports:
+      - "8000:8000"
+    depends_on:
+      - api
+    environment:
+      API_URL: http://api:8443
+    restart: unless-stopped
+    networks:
+      - ars0n-network
+    profiles:
+      - ai
+
   db:
     container_name: ars0n-framework-v2-db-1
     image: postgres:latest
@@ -57,21 +72,6 @@ services:
     restart: unless-stopped
     networks:
       - ars0n-network
-
-  ai_service:
-    container_name: ars0n-framework-v2-ai-service-1
-    build: ./ai_service
-    ports:
-      - "8000:8000"
-    depends_on:
-      - api
-    environment:
-      API_URL: http://api:8443
-    restart: unless-stopped
-    networks:
-      - ars0n-network
-    profiles:
-      - ai
 
   assetfinder:
     container_name: ars0n-framework-v2-assetfinder-1
@@ -140,6 +140,14 @@ services:
     build:
       context: .
       dockerfile: docker/gospider/Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       - api
     entrypoint: ["sleep", "infinity"]
@@ -177,6 +185,12 @@ services:
     build:
       context: ./docker/katana
       dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
     depends_on:
       - api
     volumes:
@@ -189,6 +203,52 @@ services:
   httpx:
     container_name: ars0n-framework-v2-httpx-1
     build: ./docker/httpx
+    depends_on:
+      - api
+    volumes:
+      - temp_data:/tmp
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  dnsx:
+    container_name: ars0n-framework-v2-dnsx-1
+    build: ./docker/dnsx
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  ffuf:
+    container_name: ars0n-framework-v2-ffuf-1
+    build: ./docker/ffuf
+    depends_on:
+      - api
+    volumes:
+      - ./wordlists:/wordlists
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  github-recon:
+    container_name: ars0n-framework-v2-github-recon-1
+    build: ./docker/github-recon
+    depends_on:
+      - api
+    entrypoint: ["sleep", "infinity"]
+    restart: "no"
+    networks:
+      - ars0n-network
+
+  cloud_enum:
+    container_name: ars0n-framework-v2-cloud_enum-1
+    build:
+      context: .
+      dockerfile: docker/cloud_enum/Dockerfile
     depends_on:
       - api
     entrypoint: ["sleep", "infinity"]
