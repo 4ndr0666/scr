@@ -68,6 +68,11 @@ load_config() {
 	if [[ ! -f "$CONFIG_FILE" ]]; then
 		handle_error "Config file not found at $CONFIG_FILE"
 	fi
+
+	# Check if the config file is empty or not valid JSON
+	if [[ ! -s "$CONFIG_FILE" ]] || ! jq -e . >/dev/null 2>&1 <"$CONFIG_FILE"; then
+		handle_error "Config file is empty or not valid JSON at $CONFIG_FILE"
+	fi
 }
 
 # Prompt user for a configuration value and persist it

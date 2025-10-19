@@ -5,10 +5,22 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+FIX_MODE=false
+REPORT_MODE=false
+for arg in "$@"; do
+  case "$arg" in
+    --fix) FIX_MODE=true ;;
+    --report) REPORT_MODE=true ;;
+  esac
+done
+
+
 # PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
 # Source common.sh to ensure logging functions and PKG_PATH are available
 # shellcheck source=4ndr0tools/4ndr0service/common.sh
 source "$PKG_PATH/common.sh"
+# shellcheck source=../../settings_functions.sh
+source "$PKG_PATH/settings_functions.sh"
 
 # Ensure CONFIG_FILE is available
 create_config_if_missing
@@ -79,7 +91,7 @@ check_auditd_rules() {
 			else
 				log_info "No known directory for key $mkey. Skipping."
 			fi
-		done
+			done
 	else
 		log_info "All auditd rules are correctly set."
 	fi

@@ -83,7 +83,7 @@ setup_go_paths() {
 
 install_go_tools() {
 	local -a GO_TOOLS
-	mapfile -t GO_TOOLS < <(jq -r '.go_tools[]' "$CONFIG_FILE")
+	mapfile -t GO_TOOLS < <(jq -r '(.go_tools // [])[]' "$CONFIG_FILE")
 
 	log_info "Installing or updating Go tools..."
 	for tool in "${GO_TOOLS[@]}"; do

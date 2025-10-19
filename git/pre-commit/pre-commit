@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+###############################################################################
+# Git pre-commit hook (POSIX-sh, project-specific)
+# 1. Clean merge artifacts / whitespace via 0-tests/codex-merge-clean.sh
+# 2. shellcheck + shfmt on .sh
+# 3. ruff + black --check on .py
+# 4. Run fast pytest suite
+###############################################################################
+set -euo pipefail
+IFS=$'\n\t'
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+STAGED=$(git diff --cached --name-only)
+[ -z "$STAGED" ] && { echo "No staged files." ; exit 0; }
+
+# --------------------------------------------------------------------------- #
+# 1. Merge-artifact scrub
+0-tests/codex-merge-clean.sh $STAGED
+
+# --------------------------------------------------------------------------- #
+# 2. Shell lint / format
+SH_FILES=$(printf '%s\n' $STAGED | grep -E '\.sh$' || true)
+if [ -n "$SH_FILES" ]; then
+  echo "→ shellcheck"
+  shellcheck -x $SH_FILES
+
+  echo "→ shfmt"
+  shfmt -i 2 -ci -sr -w $SH_FILES
+  git add $SH_FILES
+fi
+
+# --------------------------------------------------------------------------- #
+# 3. Python lint / style
+PY_FILES=$(printf '%s\n' $STAGED | grep -E '\.py$' || true)
+if [ -n "$PY_FILES" ]; then
+  echo "→ ruff"
+  ruff $PY_FILES
+
+  echo "→ black --check"
+  black --check $PY_FILES
+fi
+
+# --------------------------------------------------------------------------- #
+# 4. Fast tests when Python touched
+if [ -n "$PY_FILES" ]; then
+  echo "→ pytest"
+  pytest -q
+fi
+
+echo "✓ pre-commit passed"
+exit 0

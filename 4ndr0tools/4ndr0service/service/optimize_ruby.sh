@@ -55,7 +55,7 @@ gem_install_or_update() {
 
 optimize_ruby_service() {
 	local -a RUBY_GEMS
-	mapfile -t RUBY_GEMS < <(jq -r '.ruby_gems[]' "$CONFIG_FILE")
+	mapfile -t RUBY_GEMS < <(jq -r '(.ruby_gems // [])[]' "$CONFIG_FILE")
 
 	log_info "Optimizing Ruby environment..."
 

@@ -69,7 +69,7 @@ optimize_cargo_service() {
 
 	local -a CARGO_TOOLS
 	# Provide a default empty array `[]` if .cargo_tools is null or missing to prevent jq error
-	mapfile -t CARGO_TOOLS < <(jq -r 'if .cargo_tools then .cargo_tools[] else empty end' "$CONFIG_FILE")
+	mapfile -t CARGO_TOOLS < <(jq -r '(.cargo_tools // [])[]' "$CONFIG_FILE")
 
 	if ! command -v rustup &>/dev/null; then
 		install_rustup
