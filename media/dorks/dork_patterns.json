@@ -1,0 +1,281 @@
+[
+  {
+    "category": "Direct Domain Patterns",
+    "patterns": [
+      { "name": "Primary .com", "query": "\"{company}.com\"" },
+      { "name": "Primary .net", "query": "\"{company}.net\"" },
+      { "name": "Primary .org", "query": "\"{company}.org\"" },
+      { "name": "Primary .app", "query": "\"{company}.app\"" },
+      { "name": "Primary .io", "query": "\"{company}.io\"" },
+      { "name": "Primary .co", "query": "\"{company}.co\"" },
+      { "name": "Primary .us", "query": "\"{company}.us\"" },
+      { "name": "Primary .biz", "query": "\"{company}.biz\"" }
+    ]
+  },
+  {
+    "category": "Subdomain Discovery",
+    "patterns": [
+      { "name": "All .com subdomains", "query": "site:*.{company}.com" },
+      { "name": "All .net subdomains", "query": "site:*.{company}.net" },
+      { "name": "All .org subdomains", "query": "site:*.{company}.org" },
+      { "name": "All .app subdomains", "query": "site:*.{company}.app" },
+      { "name": "All .io subdomains", "query": "site:*.{company}.io" }
+    ]
+  },
+  {
+    "category": "Domain Variations",
+    "patterns": [
+      { "name": "Company + domain", "query": "\"{company}\" \"domain\" \".com\"" },
+      { "name": "Company + website", "query": "\"{company}\" \"website\" \".com\"" },
+      { "name": "Company in URL", "query": "\"{company}\" inurl:{company}" },
+      { "name": "Company plural", "query": "\"{company}s.com\"" },
+      { "name": "Company with 'the'", "query": "\"the{company}.com\"" },
+      { "name": "Company with 'my'", "query": "\"my{company}.com\"" },
+      { "name": "Company with 'get'", "query": "\"get{company}.com\"" },
+      { "name": "Company with 'go'", "query": "\"go{company}.com\"" }
+    ]
+  },
+  {
+    "category": "Official Website References",
+    "patterns": [
+      { "name": "Visit our website", "query": "\"{company}\" \"visit our website\"" },
+      { "name": "Official website", "query": "\"{company}\" \"official website\"" },
+      { "name": "Company website", "query": "\"{company}\" \"company website\"" },
+      { "name": "Homepage references", "query": "\"{company}\" \"homepage\"" },
+      { "name": "WWW references", "query": "\"{company}\" \"www.\"" },
+      { "name": "HTTPS references", "query": "\"{company}\" \"https://\"" },
+      { "name": "URL references", "query": "\"{company}\" \"url\"" }
+    ]
+  },
+  {
+    "category": "Business & Marketing",
+    "patterns": [
+      { "name": "Press releases", "query": "\"{company}\" \"press release\" site:*.com" },
+      { "name": "About us pages", "query": "\"{company}\" inurl:about site:*.com" },
+      { "name": "Contact pages", "query": "\"{company}\" inurl:contact site:*.com" },
+      { "name": "Careers pages", "query": "\"{company}\" inurl:careers site:*.com" },
+      { "name": "Investor relations", "query": "\"{company}\" \"investor relations\"" },
+      { "name": "News mentions", "query": "\"{company}\" \"news\" site:*.com" }
+    ]
+  },
+  {
+    "category": "Technical Discovery",
+    "patterns": [
+      { "name": "SSL certificates", "query": "\"{company}\" site:crt.sh" },
+      { "name": "DNS records", "query": "\"{company}\" \"DNS\" \"record\"" },
+      { "name": "Whois data", "query": "\"{company}\" \"whois\" \"domain\"" },
+      { "name": "Domain registration", "query": "\"{company}\" \"domain registration\"" },
+      { "name": "Certificate transparency", "query": "\"{company}\" \"certificate transparency\"" }
+    ]
+  },
+  {
+    "category": "Brand Variations",
+    "patterns": [
+      { "name": "No spaces", "query": "\"{company}.com\"" },
+      { "name": "With dashes", "query": "\"{company}-dash.com\"" },
+      { "name": "With underscores", "query": "\"{company}_underscore.com\"" },
+      { "name": "Abbreviated", "query": "\"{company}_abbr.com\"" },
+      { "name": "First word only", "query": "\"{company}_first.com\"" },
+      { "name": "Last word only", "query": "\"{company}_last.com\"" }
+    ]
+  },
+  {
+    "category": "International Domains",
+    "patterns": [
+      { "name": "UK domains", "query": "\"{company}\" site:*.co.uk" },
+      { "name": "Canadian domains", "query": "\"{company}\" site:*.ca" },
+      { "name": "Australian domains", "query": "\"{company}\" site:*.com.au" },
+      { "name": "German domains", "query": "\"{company}\" site:*.de" },
+      { "name": "French domains", "query": "\"{company}\" site:*.fr" },
+      { "name": "European domains", "query": "\"{company}\" site:*.eu" },
+      { "name": "Japanese domains", "query": "\"{company}\" site:*.jp" },
+      { "name": "Brazilian domains", "query": "\"{company}\" site:*.br" },
+      { "name": "Spanish domains", "query": "\"{company}\" site:*.es" },
+      { "name": "Italian domains", "query": "\"{company}\" site:*.it" },
+      { "name": "Dutch domains", "query": "\"{company}\" site:*.nl" },
+      { "name": "Swiss domains", "query": "\"{company}\" site:*.ch" },
+      { "name": "Swedish domains", "query": "\"{company}\" site:*.se" },
+      { "name": "Indian domains", "query": "\"{company}\" site:*.in" }
+    ]
+  },
+  {
+    "category": "Social & Email Discovery",
+    "patterns": [
+      { "name": "Email domains", "query": "\"@{company}.com\"" },
+      { "name": "Contact emails", "query": "\"contact@{company}\"" },
+      { "name": "Info emails", "query": "\"info@{company}\"" },
+      { "name": "Support emails", "query": "\"support@{company}\"" },
+      { "name": "Social media links", "query": "\"{company}\" \"follow us\" site:*.com" },
+      { "name": "LinkedIn company", "query": "\"{company}\" site:linkedin.com" }
+    ]
+  },
+  {
+    "category": "File & Document Discovery",
+    "patterns": [
+      { "name": "PDF documents", "query": "\"{company}\" filetype:pdf site:*.com" },
+      { "name": "Word documents", "query": "\"{company}\" filetype:doc site:*.com" },
+      { "name": "Excel files", "query": "\"{company}\" filetype:xls site:*.com" },
+      { "name": "Privacy policies", "query": "\"{company}\" \"privacy policy\" site:*.com" },
+      { "name": "Terms of service", "query": "\"{company}\" \"terms of service\" site:*.com" },
+      { "name": "Annual reports", "query": "\"{company}\" \"annual report\" filetype:pdf" }
+    ]
+  },
+  {
+    "category": "WHOIS & Registration Patterns",
+    "patterns": [
+      { "name": "Registrant Organization", "query": "\"Registrant Organization\" \"{company}\"" },
+      { "name": "Registrant Name", "query": "\"Registrant Name\" \"{company}\"" },
+      { "name": "Registered to", "query": "\"Registered to\" \"{company}\"" },
+      { "name": "Domain Owner", "query": "\"Domain Owner\" \"{company}\"" },
+      { "name": "Domain registered by", "query": "\"Domain registered by\" \"{company}\"" }
+    ]
+  },
+  {
+    "category": "Reverse WHOIS & Domain Databases",
+    "patterns": [
+      { "name": "DomainTools WHOIS", "query": "\"{company}\" site:whois.domaintools.com" },
+      { "name": "WHOIS.com", "query": "\"{company}\" site:whois.com" },
+      { "name": "DomainBigData", "query": "\"{company}\" site:domainbigdata.com" },
+      { "name": "SecurityTrails", "query": "\"{company}\" site:securitytrails.com" },
+      { "name": "WhoXY", "query": "\"{company}\" site:whoxy.com" }
+    ]
+  },
+  {
+    "category": "Modern TLDs & Extensions",
+    "patterns": [
+      { "name": "AI domains", "query": "\"{company}\" site:*.ai" },
+      { "name": "XYZ domains", "query": "\"{company}\" site:*.xyz" },
+      { "name": "Tech domains", "query": "\"{company}\" site:*.tech" },
+      { "name": "Cloud domains", "query": "\"{company}\" site:*.cloud" },
+      { "name": "Inc domains", "query": "\"{company}\" site:*.inc" },
+      { "name": "Me domains", "query": "\"{company}\" site:*.me" },
+      { "name": "TV domains", "query": "\"{company}\" site:*.tv" },
+      { "name": "Info domains", "query": "\"{company}\" site:*.info" },
+      { "name": "Pro domains", "query": "\"{company}\" site:*.pro" },
+      { "name": "Site domains", "query": "\"{company}\" site:*.site" },
+      { "name": "Online domains", "query": "\"{company}\" site:*.online" },
+      { "name": "Store domains", "query": "\"{company}\" site:*.store" },
+      { "name": "Shop domains", "query": "\"{company}\" site:*.shop" },
+      { "name": "Dev domains", "query": "\"{company}\" site:*.dev" }
+    ]
+  },
+  {
+    "category": "Domain Portfolio & Brand Protection",
+    "patterns": [
+      { "name": "Domain portfolio", "query": "\"{company}\" \"domain portfolio\"" },
+      { "name": "Our domains", "query": "\"{company}\" \"our domains\"" },
+      { "name": "Brand protection", "query": "\"{company}\" \"brand protection\"" },
+      { "name": "List of domains", "query": "\"{company}\" \"list of domains\"" },
+      { "name": "All our domains", "query": "\"{company}\" \"all our domains\"" },
+      { "name": "Subsidiary domains", "query": "\"{company}\" \"subsidiary domains\"" },
+      { "name": "Acquired domains", "query": "\"{company}\" \"acquired domains\"" }
+    ]
+  },
+  {
+    "category": "Public Filings & Legal",
+    "patterns": [
+      { "name": "Intellectual property", "query": "\"{company}\" \"intellectual property\"" },
+      { "name": "Trademark domain", "query": "\"{company}\" \"trademark\" \"domain\"" },
+      { "name": "Legal domain", "query": "\"{company}\" \"legal\" \"domain\"" },
+      { "name": "Terms and conditions", "query": "\"{company}\" \"terms and conditions\" \"domain\"" }
+    ]
+  },
+  {
+    "category": "DNS & Certificate Transparency",
+    "patterns": [
+      { "name": "Google Transparency", "query": "\"{company}\" site:transparencyreport.google.com" },
+      { "name": "Censys", "query": "\"{company}\" site:censys.io" },
+      { "name": "Shodan", "query": "\"{company}\" site:shodan.io" },
+      { "name": "VirusTotal", "query": "\"{company}\" site:virustotal.com" }
+    ]
+  },
+  {
+    "category": "Press Releases & News",
+    "patterns": [
+      { "name": "Launches new domain", "query": "\"{company}\" \"launches new domain\"" },
+      { "name": "Announces new website", "query": "\"{company}\" \"announces new website\"" },
+      { "name": "Acquires domain", "query": "\"{company}\" \"acquires domain\"" }
+    ]
+  },
+  {
+    "category": "Public Code & Configuration Leaks",
+    "patterns": [
+      { "name": "GitHub README", "query": "\"{company}\" site:github.com inurl:README" },
+      { "name": "GitHub config", "query": "\"{company}\" site:github.com inurl:config" },
+      { "name": "Pastebin", "query": "\"{company}\" site:pastebin.com" },
+      { "name": "GitLab", "query": "\"{company}\" site:gitlab.com" },
+      { "name": "Bitbucket", "query": "\"{company}\" site:bitbucket.org" },
+      { "name": "ENV files", "query": "\"{company}\" \"domain\" filetype:env" },
+      { "name": "JSON files", "query": "\"{company}\" \"domain\" filetype:json" },
+      { "name": "YAML files", "query": "\"{company}\" \"domain\" filetype:yaml" },
+      { "name": "XML files", "query": "\"{company}\" \"domain\" filetype:xml" }
+    ]
+  },
+  {
+    "category": "Analytics & Tracking",
+    "patterns": [
+      { "name": "Google Analytics", "query": "\"{company}\" \"Google Analytics\" \"UA-\" site:*.com" },
+      { "name": "Google Tag Manager", "query": "\"{company}\" \"Google Tag Manager\" \"GTM-\" site:*.com" },
+      { "name": "Analytics.js", "query": "\"{company}\" \"analytics.js\" site:*.com" },
+      { "name": "Tracking ID", "query": "\"{company}\" \"tracking ID\" site:*.com" }
+    ]
+  },
+  {
+    "category": "Archive & Historical Data",
+    "patterns": [
+      { "name": "Web Archive", "query": "\"{company}\" site:web.archive.org" },
+      { "name": "Archive.org", "query": "\"{company}\" site:archive.org" },
+      { "name": "Archive.is", "query": "\"{company}\" site:archive.is" },
+      { "name": "Wayback Machine", "query": "\"{company}\" site:waybackmachine.org" }
+    ]
+  },
+  {
+    "category": "Domain Sale & Auction Sites",
+    "patterns": [
+      { "name": "Sedo", "query": "\"{company}\" site:sedo.com" },
+      { "name": "Afternic", "query": "\"{company}\" site:afternic.com" },
+      { "name": "Dan.com", "query": "\"{company}\" site:dan.com" },
+      { "name": "GoDaddy", "query": "\"{company}\" site:godaddy.com" },
+      { "name": "Namecheap", "query": "\"{company}\" site:namecheap.com" },
+      { "name": "Flippa", "query": "\"{company}\" site:flippa.com" }
+    ]
+  },
+  {
+    "category": "Security & Threat Intelligence",
+    "patterns": [
+      { "name": "VirusTotal", "query": "\"{company}\" site:virustotal.com" },
+      { "name": "AbuseIPDB", "query": "\"{company}\" site:abuseipdb.com" },
+      { "name": "ThreatCrowd", "query": "\"{company}\" site:threatcrowd.org" },
+      { "name": "Hybrid Analysis", "query": "\"{company}\" site:hybrid-analysis.com" }
+    ]
+  },
+  {
+    "category": "App Stores & Mobile",
+    "patterns": [
+      { "name": "Google Play Store", "query": "\"{company}\" site:play.google.com" },
+      { "name": "Apple App Store", "query": "\"{company}\" site:apps.apple.com" },
+      { "name": "App website", "query": "\"{company}\" \"app website\"" },
+      { "name": "Download our app", "query": "\"{company}\" \"download our app\"" }
+    ]
+  },
+  {
+    "category": "CDN & Hosting",
+    "patterns": [
+      { "name": "CDN references", "query": "\"{company}\" \"cdn\" site:*.com" },
+      { "name": "Hosted by", "query": "\"{company}\" \"hosted by\" site:*.com" },
+      { "name": "CloudFront", "query": "\"{company}\" \"cloudfront.net\"" },
+      { "name": "Azure Websites", "query": "\"{company}\" \"azurewebsites.net\"" },
+      { "name": "Heroku", "query": "\"{company}\" \"herokuapp.com\"" }
+    ]
+  },
+  {
+    "category": "Advanced Discovery Patterns",
+    "patterns": [
+      { "name": "Redirects to", "query": "\"{company}\" \"redirects to\"" },
+      { "name": "Formerly known as", "query": "\"{company}\" \"formerly known as\"" },
+      { "name": "Previously at", "query": "\"{company}\" \"previously at\"" },
+      { "name": "Parent company", "query": "\"{company}\" \"parent company\"" },
+      { "name": "Sister company", "query": "\"{company}\" \"sister company\"" }
+    ]
+  }
+]

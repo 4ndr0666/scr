@@ -1,149 +1,126 @@
-# ssh_audit.sh — Deterministic SSH audit + alignment for Kali/Linux hosts
+# ssh_audit.sh — Deterministic SSH Audit & Alignment (Universal)
 
 **Purpose:**  
-Pin host keys, install `authorized_keys` from GitHub and optional sources, harden `sshd`, verify a clean key-only handshake, and emit a per-host report. Designed for repeatable use in homelab and production.
-
-- **Client:** `andro@theworkpc` (`192.168.1.226`)
-- **Typical Host:** `kali@4ndr0kali` (e.g., `192.168.1.92`)
-- **Default alias:** `kali` in `~/.ssh/config`
+Pin host keys, install `authorized_keys` from GitHub (or optional sources), harden `sshd`, verify key-only authentication, and output per-host reports.
 
 ---
 
-## What it does
+## Features
 
-1. Ensures client prerequisites and sane SSH client settings.
-2. Pins the server’s **ED25519** host key into `~/.ssh/known_hosts` (hashed).
-3. Installs `authorized_keys` on the host from:
-   - `https://github.com/<github_user>.keys` (required)
-   - plus `--key-url` and/or `--key-file` if provided (de-duped).
+1. Ensures local SSH client prerequisites and directories.
+2. Pins the host’s **ED25519** key into `~/.ssh/known_hosts` (hashed).
+3. Installs merged public keys into the host’s `~/.ssh/authorized_keys`.
 4. Hardens `sshd_config`:
    - `PasswordAuthentication no`
    - `KbdInteractiveAuthentication no`
    - `PubkeyAuthentication yes`
    - `PermitRootLogin no`
-   - `X11Forwarding` and `AllowTcpForwarding` set by flags (default **no**)
-   - Prefer only the host’s ED25519 HostKey when present
-   - Optional `AllowUsers <user>`
-5. Writes a **Host block** for alias `kali` in `~/.ssh/config`.
-6. Verifies the handshake:
-   - Server host key algorithm is **ssh-ed25519**
-   - Auth method is **publickey**
-7. Outputs a per-host Markdown report to `~/.ssh_align/reports/`.
-
----
-
-## Requirements
-
-- Client tools: `ssh`, `ssh-keygen`, `ssh-keyscan`, `curl`, `nc` (auto-installed via distro pkg manager).
-- Ability to reach host TCP/22.
-- Initial access with either:
-  - existing key auth, or
-  - temporary password auth enabled on the host (only needed once to push keys).
+   - Optional: `AllowUsers <user>`
+   - Controlled: `AllowTcpForwarding` and `X11Forwarding`
+5. Writes or updates a host entry in `~/.ssh/config`.
+6. Verifies handshake → must use `ssh-ed25519` + `publickey`.
+7. Writes Markdown reports to `~/.ssh_align/reports/`.
 
 ---
 
 ## Usage
 
 ```bash
-ssh_audit.sh [--hosts "ip1 ip2"] [--user USER] [--github USER]
-             [--key-url URL] [--key-file PATH]
-             [--mode enforce|report|strict]
-             [--allow-forwarding yes|no] [--allow-x11 yes|no] [--no-allowusers]
-             [--version] [-h|--help]
+bash ssh_audit.sh [--hosts "ip1 ip2"] [--user <username>] [--github <username>]
+                  [--mode enforce|report|strict]
 ````
 
-**Defaults:**
-`--user kali` · `--github 4ndr0666` · `--hosts "192.168.1.92"` · `--mode enforce`
-Reports: `~/.ssh_align/reports` · Logs: `~/.ssh_align/logs`
-
-**Modes**
-
-* `enforce` (default): install keys, harden `sshd`, verify, report.
-* `report`: no changes, just verify and report.
-* `strict`: enforce + fail if any post-checks mismatch.
+If any required values are missing, you’ll be interactively prompted.
 
 ---
 
-## Common invocations
-
-Initial alignment on a single host:
+## Typical Run
 
 ```bash
-./ssh_audit.sh --hosts "192.168.1.92" --user kali --github 4ndr0666 --mode enforce
-```
-
-Dry report only:
-
-```bash
-./ssh_audit.sh --hosts "192.168.1.92" --user kali --github 4ndr0666 --mode report
-```
-
-Multiple hosts:
-
-```bash
-./ssh_audit.sh --hosts "192.168.1.92 192.168.1.93" --user kali --github 4ndr0666
-```
-
-Disallow forwarding and X11 explicitly (defaults already “no”):
-
-```bash
-./ssh_audit.sh --hosts "192.168.1.92" --allow-forwarding no --allow-x11 no
-```
-
-Add extra public keys from a URL or file, merged with your GitHub keys:
-
-```bash
-./ssh_audit.sh --hosts "192.168.1.92" \
-  --key-url https://example.com/pubkeys.txt \
-  --key-file /path/to/extra_authorized_keys
+bash ssh_audit.sh --mode enforce
+# Prompts:
+#   Enter host(s): 192.168.1.50
+#   Enter remote username: admin
+#   Enter GitHub username for key import: johndoe
 ```
 
 ---
 
-## Post-run verification
+## Modes
 
-Quick handshake check:
+| Mode        | Description                                           |
+| ----------- | ----------------------------------------------------- |
+| **enforce** | Install keys, harden `sshd`, verify, report (default) |
+| **report**  | Non-destructive audit only                            |
+| **strict**  | Enforce, then fail if post-checks mismatch            |
+
+---
+
+## Host Key Hygiene
+
+Always pre-trust new SSH endpoints to avoid hangs or MITM warnings:
 
 ```bash
-ssh -vvv -o ControlMaster=no -o ControlPath=none kali \
-  | grep -E 'Server host key:|Authenticated to .* using "publickey"'
+ssh-keyscan -t ed25519 <host> >> ~/.ssh/known_hosts
+ssh-keygen -H -f ~/.ssh/known_hosts
+rm -f ~/.ssh/known_hosts.old  # optional cleanup
 ```
-
-Expected lines:
-
-* `Server host key: ssh-ed25519 SHA256:<fingerprint>`
-* `Authenticated to ... using "publickey"`
 
 ---
 
 ## Outputs
 
-* **Client config:** `~/.ssh/config` updated with alias `kali`.
-* **Known hosts:** `~/.ssh/known_hosts` hashed entry for the host.
-* **Reports:** `~/.ssh_align/reports/<ip>.md`
-* **Logs:** `~/.ssh_align/logs/<ip>_YYYYMMDDThhmmss.log`
+| Type        | Location                                        |
+| ----------- | ----------------------------------------------- |
+| Reports     | `~/.ssh_align/reports/<host>_report.md`         |
+| Logs        | `~/.ssh_align/logs/`                            |
+| Known Hosts | `~/.ssh/known_hosts` (hashed)                   |
+| Config      | `~/.ssh/config` updated with current host block |
 
 ---
 
-## Security notes
+## Security Notes
 
-* GitHub key import uses `https://github.com/<user>.keys`. Keep your GitHub keys current.
-* Script enforces non-interactive sudo on the host for `sshd_config` edits.
-* `AllowUsers <user>` can be enforced by default. Disable with `--no-allowusers` if you manage access via other means (e.g., groups).
+* Pulls public keys securely from `https://github.com/<user>.keys`
+* Uses `sudo` only for modifying `/etc/ssh/sshd_config`
+* Idempotent: safe to rerun anytime; duplicates automatically removed.
+
+---
+
+## Example Integration
+
+```bash
+# Run interactive setup
+bash ssh_audit.sh
+
+# Run quietly with known values
+bash ssh_audit.sh --hosts "server1.local server2.local" \
+                  --user sysadmin \
+                  --github myuser \
+                  --mode enforce
+```
 
 ---
 
 ## Troubleshooting
 
-* **Port 22 closed:** open on firewall or adjust port and client Host block manually.
-* **Host key changed:** the script re-pins ED25519. Verify out-of-band if unexpected.
-* **Password login still works:** ensure `PasswordAuthentication no` in `sshd_config`. Re-run with `--mode strict`.
+* **SSH still asks for password:**
+  Check `/etc/ssh/sshd_config` → ensure `PasswordAuthentication no`.
+
+* **New host key warning:**
+  Refresh using:
+
+  ```bash
+  ssh-keygen -R <host>
+  ssh-keyscan -t ed25519 <host> >> ~/.ssh/known_hosts
+  ssh-keygen -H -f ~/.ssh/known_hosts
+  ```
+
+* **Firewall/Port blocked:**
+  Confirm with `nc -z <host> 22`.
 
 ---
 
-## Help
+## Version
 
-```bash
-./ssh_audit.sh --help
-./ssh_audit.sh --version
-```
+`ssh_audit.sh 3.1.0`
