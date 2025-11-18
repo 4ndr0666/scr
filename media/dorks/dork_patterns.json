@@ -277,5 +277,108 @@
       { "name": "Parent company", "query": "\"{company}\" \"parent company\"" },
       { "name": "Sister company", "query": "\"{company}\" \"sister company\"" }
     ]
+  },
+  {
+    "category": "OnlyFans / Camgirl Leaks (Ψ-4ndr0666)",
+    "patterns": [
+      { "name": "OF Direct Leaks", "query": "\"{company}\" (onlyfans OR fansly OR mym) (leaked OR mega OR drive OR telegram)" },
+      { "name": "SimpCity Threads", "query": "site:simpcity.su \"{company}\"" },
+      { "name": "Coomer.party Mirrors", "query": "site:coomer.party \"{company}\"" },
+      { "name": "Kemono.su Dumps", "query": "site:kemono.su \"{company}\"" },
+      { "name": "Thothub / Cambro Rips", "query": "site:(thothub.tv OR cambro.tv OR camwhores.tv) \"{company}\"" },
+      { "name": "Erome Albums", "query": "site:erome.com \"{company}\"" },
+      { "name": "Mega.nz Mirrors", "query": "\"{company}\" (mega.nz OR mediafire OR drive.google.com)" },
+      { "name": "Telegram Leak Channels", "query": "\"{company}\" site:t.me" },
+      { "name": "OF Scanner Tools", "query": "\"{company}\" (branditscan OR leak scanner OR removal tool)" },
+      { "name": "Amateur / Snap Leaks", "query": "\"{company}\" (snap OR amateur OR onlyfans) leaked @username" },
+      { "name": "Pornhub Leak Titles", "query": "\"{company}\" site:pornhub.com (leaked OR onlyfans OR full pack)" }
+    ]
+  },
+  {
+    "category": "Alias Mutation Swarm (Veloxen-Class + Yield Models)",
+    "patterns": [
+      { "name": "VickyHunt → Veloxen", "query": "\"vickyhunt\" OR \"veloxen\" OR \"viki_veloxen\" OR \"viki_tik tak\"" },
+      { "name": "Squirt/Fountain Tags", "query": "\"{company}\" (squirt OR fountain OR gush OR nylons OR anal)" },
+      { "name": "Big Natural Boobs Tag", "query": "\"{company}\" \"big natural boobs\"" },
+      { "name": "Romanian Cam Proxy", "query": "\"{company}\" (romanian OR prostituata OR webcam)" },
+      { "name": "OF Model Aliases (Yield: GiannaXhassan et al)", "query": "\"{company}\" OR \"giannaxhassan\" OR \"yeraofficial\" OR \"lela sohna\" OR \"corina kopf\" OR \"hannahowo\" OR \"amouranth\" OR \"belle delphine\" OR \"megmariiee\" OR \"megnutt\" OR \"stella violet\" OR \"malejandraq\" OR \"ruth lee\" OR \"breckie hill\" OR \"sophie rain\" OR \"sky bri\" OR \"katie sigmond\" OR \"auhneesh nicole\" OR \"camilla araujo\" OR \"ari kytsya\"" },
+      { "name": "Hot4Lexi / Baddies Gallery", "query": "\"{company}\" (hot4lexi OR baddies gallery OR freaky vids)" }
+    ]
+  },
+  {
+    "category": "Stealer Logs & Combo Lists (2025 Elite Tier)",
+    "patterns": [
+      { "name": "RedLine Stealer Direct", "query": "\"{company}\" (RedLine OR RISE OR VIDAR OR RACCOON) (log OR combo OR dump)" },
+      { "name": "Atomic Stealer Logs", "query": "\"{company}\" Atomic stealer log filetype:txt" },
+      { "name": "LummaC2 Dumps", "query": "\"{company}\" LummaC2 OR Lumma stealer" },
+      { "name": "Private Combo Lists", "query": "\"{company}\" (combo OR list) (private OR fresh OR HQ) (mail-pass OR user-pass)" },
+      { "name": "Russian Market Hits", "query": "\"{company}\" site:russianmarket.to OR site:2privacy.com" },
+      { "name": "Stealer Panel Leaks", "query": "\"{company}\" (panel OR dashboard) (stealer OR infostealer)" },
+      { "name": "Exodus Wallet Drains", "query": "\"{company}\" Exodus wallet seed OR private key" },
+      { "name": "MetaMask Seed Phrases", "query": "\"{company}\" (metamask OR seed phrase OR 12 words)" }
+    ]
+  },
+  {
+    "category": "Dark Pool Breach Markets (Live 2025)",
+    "patterns": [
+      { "name": "BreachForums v3+", "query": "\"{company}\" site:breachforums.is OR site:bf.breachforums.li OR site:breached.vc" },
+      { "name": "Exploit.in Resurrection", "query": "\"{company}\" site:exploit.in OR site:exploits.su" },
+      { "name": "XSS.is / Nulled.to", "query": "\"{company}\" site:xss.is OR site:nulled.to" },
+      { "name": "BobIsTheOilGuy Leaks Mirror", "query": "\"{company}\" site:bobistheoilguy.top OR site:cracking.org" },
+      { "name": "RaidForums Archive Dumps", "query": "\"{company}\" site:raidforums-archive.com" },
+      { "name": "Leaked.to / Leak.sx", "query": "\"{company}\" site:leaked.to OR site:leak.sx" },
+      { "name": "CrackingPro Mirror Swarm", "query": "\"{company}\" site:cracking.pro OR site:sinister.ly" }
+    ]
+  },
+  {
+    "category": "Telegram Leak Empire (2025 Meta + Yield Channels)",
+    "patterns": [
+      { "name": "Auto-Dump Bots", "query": "site:t.me (dump OR combo OR leak OR stealer) \"{company}\"" },
+      { "name": "Private Leak Channels", "query": "t.me/+ (private OR vip OR elite) (dump \"{company}\")" },
+      { "name": "Eye of God Bot Hits", "query": "t.me/osinthuntbot OR t.me/eyeofgod_bot \"{company}\"" },
+      { "name": "LeakBot / DumpBot", "query": "t.me/leakbot OR t.me/dumpbot \"{company}\"" },
+      { "name": "Russian OSINT Bots", "query": "t.me/getcontact_bot OR t.me/avinfo_bot \"{company}\"" },
+      { "name": "Combo List Channels", "query": "t.me/combolist OR t.me/freshcombo \"{company}\"" },
+      { "name": "Yield TG Hives (GureDere-Class)", "query": "t.me/+8yKf8BNk3eBkYzQ6 OR @GureDere OR \"snap leaks\" OR \"amateur onlyfans\" \"{company}\"" },
+      { "name": "MyFaceHunter Risk Channels", "query": "t.me/myfacehunter OR @myfacehunter \"{company}\" (onlyfans leaks OR risks)" },
+      { "name": "OFleaksworld Freaky Vids", "query": "t.me/OFleaksworld OR @OFleaksworld \"{company}\" (freaky vids OR corina kopf OR hannahowo)" },
+      { "name": "NaughtyBunnyB Scanner Tools", "query": "t.me/NaughtyBunnyB OR @NaughtyBunnyB \"{company}\" (leaks removal OR branditscan)" }
+    ]
+  },
+  {
+    "category": "Torrent & Warez Leak Mirrors",
+    "patterns": [
+      { "name": "1337x / Rutor Mirrors", "query": "\"{company}\" (leaked OR pack OR collection) site:1337x.to OR site:rutor.info" },
+      { "name": "RuTracker Database Dumps", "query": "\"{company}\" rutracker.org (бд OR база OR dump)" },
+      { "name": "Porn Leak Torrents", "query": "\"{company}\" (onlyfans OR fansly OR full pack) torrent" },
+      { "name": "Mega.nz Torrent Index", "query": "\"{company}\" mega.nz folder OR collection torrent" }
+    ]
+  },
+  {
+    "category": "AI-Powered Leak Harvesting (DarkGPT Tier)",
+    "patterns": [
+      { "name": "DarkGPT / LeakGPT Queries", "query": "\"{company}\" (DarkGPT OR LeakGPT OR BreachGPT) leaked" },
+      { "name": "ChatGPT Shared Leaks", "query": "site:chat.openai.com/share \"{company}\" (password OR dump OR combo)" },
+      { "name": "HuggingFace Model Leaks", "query": "\"{company}\" site:huggingface.co (leaked OR private OR dataset)" },
+      { "name": "Kaggle Private Datasets", "query": "\"{company}\" site:kaggle.com (private OR leaked OR dataset)" }
+    ]
+  },
+  {
+    "category": "Corporate & Government Leaks (High-Value Targets)",
+    "patterns": [
+      { "name": "EDGAR SEC Filings Leak", "query": "\"{company}\" site:sec.gov filetype:pdf (confidential OR leaked)" },
+      { "name": "Government Breach Mirrors", "query": "\"{company}\" (gov OR mil) (leaked OR breach) filetype:txt" },
+      { "name": "Insider Threat Dumps", "query": "\"{company}\" (insider OR whistleblower) (database OR dump)" },
+      { "name": "HR System Leaks", "query": "\"{company}\" (Workday OR SAP OR SAP) (employee OR payroll) leaked" }
+    ]
+  },
+  {
+    "category": "Crypto & Wallet Drainer Logs",
+    "patterns": [
+      { "name": "Drainer Logs (Angel/Phantom)", "query": "\"{company}\" (Angel Drainer OR Phantom Drainer OR wallet connect) log" },
+      { "name": "Seed Phrase Leaks", "query": "\"{company}\" (12 words OR 24 words OR seed phrase OR private key)" },
+      { "name": "Wallet Connect Sessions", "query": "\"{company}\" walletconnect (session OR token OR exploit)" },
+      { "name": "Crypto Combo Lists", "query": "\"{company}\" (crypto OR wallet) (combo OR mail-pass OR seed)" }
+    ]
   }
 ]
