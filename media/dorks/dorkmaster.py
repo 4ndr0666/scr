@@ -71,12 +71,15 @@ class MycelialSession:
             console.print(f"{prefix}{title}")
             self.print_tree(n, level + 1)
 
-# ===== UTILS =====
+# ===== UTILS – RICH MARKUP FIXED =====
+from rich.prompt import Prompt
+
 def prompt(msg):
-    return input(f"[bold cyan]{msg}[/bold cyan] ").strip()
+    """Rich-powered prompt with proper color rendering"""
+    return Prompt.ask(f"[bold red]{msg}[/bold red]")
 
 def choose_company_var():
-    val = prompt("Enter target (default: viki_veloxen):")
+    val = prompt("Enter target (default: viki_veloxen)")
     return val if val else "viki_veloxen"
 
 def validate_url(url):
