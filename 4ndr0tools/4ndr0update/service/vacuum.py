@@ -323,7 +323,9 @@ def install_missing_dependency_batch(dependencies):
 
     if to_install:
         # Single bulk install
-        success, result_output = execute_command(["sudo", "pacman", "-Sy", "--noconfirm"] + to_install)
+        success, result_output = execute_command(
+            ["sudo", "pacman", "-Sy", "--noconfirm"] + to_install
+        )
         if success:
             log_and_print(
                 f"{SUCCESS} Successfully installed missing dependencies: {to_install}",
@@ -918,7 +920,7 @@ def clean_aur_dir(aur_dir=None):
     log_and_print(f"{INFO} Cleaning AUR directory...", "info")
     if not aur_dir:
         # default
-        aur_dir = os.path.expanduser("/home/build/")
+        aur_dir = os.path.expanduser("/home/andro/.local/cache/yay//")
     with spinning_spinner():
         try:
             if not os.path.isdir(aur_dir):
@@ -1209,7 +1211,7 @@ def verify_installed_packages():
                 log_and_print(f"{FAILURE} Error writing pkglist: {str(e)}", "error")
 
             confirm = prompt_with_timeout(
-                f"Do you want to reinstall these packages to restore missing files? [y/N]: ",
+                "Do you want to reinstall these packages to restore missing files? [y/N]: ",
                 persistent=True,
             ).lower()
 
@@ -1274,7 +1276,7 @@ def verify_installed_packages():
                         "error",
                     )
                     log_and_print(
-                        f"Please install an AUR helper like 'yay' or 'paru'.", "error"
+                        "Please install an AUR helper like 'yay' or 'paru'.", "error"
                     )
 
             log_and_print(
@@ -2816,7 +2818,7 @@ def main():
     while True:
         os.system("clear")
         print(f"{GREEN}#{NC} --- {GREEN}//{NC} Vacuum {GREEN}//{NC}")
-        print(f"")
+        print("")
         print(
             f"{GREEN}1{NC}) Process Dependency Log             {GREEN}17{NC}) Clean Unnecessary Files"
         )
@@ -2864,7 +2866,7 @@ def main():
         )
         print(f"{GREEN}16{NC}) Clear Temp Folder                 {GREEN}Q{NC}) Quit")
         print(f"{GREEN}0{NC}) Run All Tasks")
-        print(f"")
+        print("")
         print(f"{GREEN}By your command:{NC}")
 
         command = prompt_with_timeout("Enter your choice: ", timeout=30, default="Q")
