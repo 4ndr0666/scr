@@ -1,3 +1,4 @@
+*.session
 # Test artifacts
 0-tests/*
 
