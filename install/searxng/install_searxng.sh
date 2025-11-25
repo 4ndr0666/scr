@@ -106,7 +106,7 @@ echo "[+] Bringing up SearXNG and Caddy containers"
 docker compose up -d
 
 # Autostart w SystemD
-info "Creating systemd service file..."
+echo "[+] Creating systemd service file..."
 sudo tee /etc/systemd/system/searxng.service > /dev/null <<EOF
 [Unit]
 Description=SearXNG Docker Compose Stack
@@ -128,7 +128,7 @@ WantedBy=multi-user.target
 EOF
 
 # Systemd Enable
-info "Reloading systemd daemon and enabling service..."
+echo "[+] Reloading systemd daemon and enabling service..."
 sudo systemctl daemon-reload
 sudo systemctl enable searxng.service
 
