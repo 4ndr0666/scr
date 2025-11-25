@@ -1,0 +1,104 @@
+[
+  {
+    "category": "Direct Domain Patterns",
+    "patterns": [
+      { "name": "Primary .com", "query": "\"{company}.com\"" },
+      { "name": "Primary .net", "query": "\"{company}.net\"" },
+      { "name": "Primary .org", "query": "\"{company}.org\"" },
+      { "name": "Primary .app", "query": "\"{company}.app\"" },
+      { "name": "Primary .io", "query": "\"{company}.io\"" },
+      { "name": "Primary .co", "query": "\"{company}.co\"" },
+      { "name": "Primary .us", "query": "\"{company}.us\"" },
+      { "name": "Primary .biz", "query": "\"{company}.biz\"" }
+    ]
+  },
+  {
+    "category": "Subdomain Discovery",
+    "patterns": [
+      { "name": "All .com subdomains", "query": "site:*.{company}.com" },
+      { "name": "All .net subdomains", "query": "site:*.{company}.net" },
+      { "name": "All .org subdomains", "query": "site:*.{company}.org" },
+      { "name": "All .app subdomains", "query": "site:*.{company}.app" },
+      { "name": "All .io subdomains", "query": "site:*.{company}.io" }
+    ]
+  },
+  {
+    "category": "NSFW Leak Forums, Mega Dumps & Torrent Indexers",
+    "patterns": [
+      { "name": "Bunkr", "query": "\"{company}\" site:bunkr.is OR site:bunkr.ru OR site:bunkr.la OR site:bunkr.su" },
+      { "name": "Coomer.party (OF, Fansly)", "query": "\"{company}\" site:coomer.party" },
+      { "name": "Kemono.party (Patreon)", "query": "\"{company}\" site:kemono.party" },
+      { "name": "Erome Albums", "query": "\"{company}\" site:erome.com" },
+      { "name": "Motherless", "query": "\"{company}\" site:motherless.com" },
+      { "name": "RedGIFs", "query": "\"{company}\" site:redgifs.com" },
+      { "name": "ImageFap", "query": "\"{company}\" site:imagefap.com" },
+      { "name": "Nudostar", "query": "\"{company}\" site:nudostar.com" },
+      { "name": "Nude-Celebs", "query": "\"{company}\" site:nude-celebs.com" },
+      { "name": "Pornhub", "query": "\"{company}\" site:pornhub.com" },
+      { "name": "SpankBang", "query": "\"{company}\" site:spankbang.com" },
+      { "name": "XVideos", "query": "\"{company}\" site:xvideos.com" },
+      { "name": "XNXX", "query": "\"{company}\" site:xnxx.com" },
+      { "name": "OnlyFans", "query": "\"{company}\" site:onlyfans.com" },
+      { "name": "Fansly", "query": "\"{company}\" site:fansly.com" },
+      { "name": "ManyVids", "query": "\"{company}\" site:manyvids.com" },
+      { "name": "Mega.nz/Folders", "query": "\"{company}\" site:mega.nz OR site:mega.nz/folder" },
+      { "name": "Mediafire", "query": "\"{company}\" site:mediafire.com" },
+      { "name": "Anonfiles/Gofile/Nopy", "query": "\"{company}\" site:anonfiles.com OR site:gofile.io OR site:nopy.to" },
+      { "name": "Zippyshare", "query": "\"{company}\" site:zippyshare.com" },
+      { "name": "PornLeaks", "query": "\"{company}\" site:pornleaks.net OR site:pornleak.top" },
+      { "name": "LeakedMe", "query": "\"{company}\" site:leakedme.com" },
+      { "name": "Torrent & Warez (1337x, Rutor, RuTracker, Pornolab, Eporner)", "query": "\"{company}\" site:1337x.to OR site:rutor.info OR site:rutracker.org OR site:pornolab.net OR site:eporner.com" },
+      { "name": "Simpcity", "query": "\"{company}\" site:simpcity.su" },
+      { "name": "Leak.sx / Leaked.to", "query": "\"{company}\" site:leak.sx OR site:leaked.to" },
+      { "name": "Thothub", "query": "\"{company}\" site:thothub.tv" },
+      { "name": "Cambro", "query": "\"{company}\" site:cambro.tv" },
+      { "name": "Camwhores", "query": "\"{company}\" site:camwhores.tv" },
+      { "name": "Amateur.tv", "query": "\"{company}\" site:amateur.tv" },
+      { "name": "EroProfile", "query": "\"{company}\" site:eroprofile.com" },
+      { "name": "Czechav", "query": "\"{company}\" site:czechav.com" },
+      { "name": "StripChat", "query": "\"{company}\" site:stripchat.com" },
+      { "name": "BongaCams", "query": "\"{company}\" site:bongacams.com" },
+      { "name": "Chaturbate", "query": "\"{company}\" site:chaturbate.com" },
+      { "name": "CamSoda", "query": "\"{company}\" site:camsoda.com" },
+      { "name": "MyFreeCams", "query": "\"{company}\" site:myfreecams.com" },
+      { "name": "WildSkirts", "query": "\"{company}\" site:wildskirts.com" },
+      { "name": "ImageVenue", "query": "\"{company}\" site:imagevenue.com" },
+      { "name": "CyberDrop", "query": "\"{company}\" site:cyberdrop.me" },
+      { "name": "DropMeFiles", "query": "\"{company}\" site:dropmefiles.com" },
+      { "name": "Pixhost", "query": "\"{company}\" site:pixhost.to" },
+      { "name": "ImgBB", "query": "\"{company}\" site:imgbb.com" },
+      { "name": "Imgur", "query": "\"{company}\" site:imgur.com" }
+    ]
+  },
+  {
+    "category": "Open Directory/Index & Archive Scrapes",
+    "patterns": [
+      { "name": "intitle:index of media", "query": "intitle:\"index of\" (mp4|jpg|avi|mkv|zip|rar|7z) \"{company}\"" },
+      { "name": "intitle:index of OF/fansly", "query": "intitle:\"index of\" (onlyfans|fansly|mega|collection) \"{company}\"" },
+      { "name": "Public S3 buckets", "query": "\"{company}\" site:s3.amazonaws.com" },
+      { "name": "DigitalOcean Spaces", "query": "\"{company}\" site:nyc3.digitaloceanspaces.com" },
+      { "name": "Wasabi/ExaVault", "query": "\"{company}\" site:wasabisys.com OR site:exavault.com" }
+    ]
+  },
+  {
+    "category": "Porn Search Engines & Reverse Image",
+    "patterns": [
+      { "name": "ThePornDB", "query": "\"{company}\" site:theporndb.com" },
+      { "name": "PervyLeaks", "query": "\"{company}\" site:pervyleaks.com" },
+      { "name": "Eroscripts", "query": "\"{company}\" site:eroscripts.com" },
+      { "name": "SauceNAO Reverse", "query": "\"{company}\" site:saucenao.com" },
+      { "name": "PornPics/Xbooru", "query": "\"{company}\" site:pornpics.com OR site:xbooru.com" }
+    ]
+  },
+  {
+    "category": "Legacy & Niche",
+    "patterns": [
+      { "name": "Nudography", "query": "\"{company}\" site:nudography.com" },
+      { "name": "CelebJihad", "query": "\"{company}\" site:celebjihad.com" },
+      { "name": "FarFarAwaySite", "query": "\"{company}\" site:farfarawaysite.com" },
+      { "name": "NudeVista", "query": "\"{company}\" site:nudevista.com" },
+      { "name": "XHamster", "query": "\"{company}\" site:xhamster.com" },
+      { "name": "Empflix", "query": "\"{company}\" site:empflix.com" }
+    ]
+  }
+]

@@ -1,0 +1,210 @@
+[
+  {
+    "category": "Direct Domain Patterns",
+    "patterns": [
+      { "name": "Primary .com", "query": "\"{company}.com\"" },
+      { "name": "Primary .net", "query": "\"{company}.net\"" },
+      { "name": "Primary .org", "query": "\"{company}.org\"" },
+      { "name": "Primary .app", "query": "\"{company}.app\"" },
+      { "name": "Primary .io", "query": "\"{company}.io\"" },
+      { "name": "Primary .co", "query": "\"{company}.co\"" },
+      { "name": "Primary .us", "query": "\"{company}.us\"" },
+      { "name": "Primary .biz", "query": "\"{company}.biz\"" }
+    ]
+  },
+  {
+    "category": "Subdomain Discovery",
+    "patterns": [
+      { "name": "All .com subdomains", "query": "site:*.{company}.com" },
+      { "name": "All .net subdomains", "query": "site:*.{company}.net" },
+      { "name": "All .org subdomains", "query": "site:*.{company}.org" },
+      { "name": "All .app subdomains", "query": "site:*.{company}.app" },
+      { "name": "All .io subdomains", "query": "site:*.{company}.io" }
+    ]
+  },
+  {
+    "category": "Mega & Mirror Leak Sources",
+    "patterns": [
+      { "name": "Mega.nz Leaks", "query": "\"{company}\" site:mega.nz" },
+      { "name": "Mega.nz Folder Index", "query": "\"{company}\" site:mega.nz/folder" },
+      { "name": "Mega/Drive/Mediafire Mirrors", "query": "\"{company}\" (mega.nz OR drive.google.com OR mediafire.com)" },
+      { "name": "AnonFiles, Gofile, Nopy", "query": "\"{company}\" site:anonfiles.com OR site:gofile.io OR site:nopy.to" },
+      { "name": "Zippyshare & Mirrors", "query": "\"{company}\" site:zippyshare.com OR site:upload.ee OR site:uloz.to" },
+      { "name": "Pixeldrain, DropMeFiles", "query": "\"{company}\" site:pixeldrain.com OR site:dropmefiles.com" }
+    ]
+  },
+  {
+    "category": "OF/Fansly/Camgirl/Alt NSFW",
+    "patterns": [
+      { "name": "OnlyFans Direct", "query": "\"{company}\" site:onlyfans.com" },
+      { "name": "Fansly", "query": "\"{company}\" site:fansly.com" },
+      { "name": "ManyVids", "query": "\"{company}\" site:manyvids.com" },
+      { "name": "Coomer.party", "query": "\"{company}\" site:coomer.party" },
+      { "name": "Kemono.party", "query": "\"{company}\" site:kemono.party" },
+      { "name": "Erome Albums", "query": "\"{company}\" site:erome.com" },
+      { "name": "Motherless", "query": "\"{company}\" site:motherless.com" },
+      { "name": "Bunkr NSFW Mirrors", "query": "\"{company}\" site:bunkr.is OR site:bunkr.ru OR site:bunkr.la OR site:bunkr.su" },
+      { "name": "Thothub/Cambro", "query": "\"{company}\" site:thothub.tv OR site:cambro.tv OR site:camwhores.tv" },
+      { "name": "Simpcity.su", "query": "\"{company}\" site:simpcity.su" },
+      { "name": "EroProfile", "query": "\"{company}\" site:eroprofile.com" },
+      { "name": "ImageFap", "query": "\"{company}\" site:imagefap.com" },
+      { "name": "Nudostar", "query": "\"{company}\" site:nudostar.com" },
+      { "name": "Nude-Celebs", "query": "\"{company}\" site:nude-celebs.com" },
+      { "name": "Pornhub Leaks", "query": "\"{company}\" site:pornhub.com" },
+      { "name": "XNXX, XVideos, SpankBang", "query": "\"{company}\" site:xnxx.com OR site:xvideos.com OR site:spankbang.com" }
+    ]
+  },
+  {
+    "category": "NSFW AI Models, Deepfakes & AI Meta",
+    "patterns": [
+      { "name": "CivitAI Model Leaks", "query": "\"{company}\" site:civitai.com (model OR checkpoint OR leak)" },
+      { "name": "HuggingFace Porn Models", "query": "\"{company}\" site:huggingface.co (nsfw OR porn OR leak OR dataset)" },
+      { "name": "DeepFake Community", "query": "\"{company}\" site:mrdeepfakes.com OR site:deepfakeporn.net" },
+      { "name": "PornPen AI Leaks", "query": "\"{company}\" site:pornpen.ai OR site:pornpen.net" },
+      { "name": "Lora/StableDiffusion Porn", "query": "\"{company}\" (lora OR sd OR stable diffusion) (porn OR leak OR nsfw)" },
+      { "name": "AI Model/Prompt Leaks", "query": "\"{company}\" (DarkGPT OR LeakGPT OR BreachGPT OR ai leak OR prompt leak)" }
+    ]
+  },
+  {
+    "category": "Obscure Porn Mirrors, Alt-Hosts, and Rip Channels",
+    "patterns": [
+      { "name": "OnlyLeaks", "query": "\"{company}\" site:onlyleaks.com" },
+      { "name": "OFArchive", "query": "\"{company}\" site:ofarchive.com" },
+      { "name": "NSFWdb", "query": "\"{company}\" site:nsfwdb.com" },
+      { "name": "WebmShare", "query": "\"{company}\" site:webmshare.com" },
+      { "name": "Pornhub Unlisted/VIP", "query": "\"{company}\" site:pornhub.com/unlisted OR site:pornhub.com/model" },
+      { "name": "MegaPack SubReddits", "query": "\"{company}\" site:reddit.com (megapack OR mega.nz OR full pack)" },
+      { "name": "Fapello", "query": "\"{company}\" site:fapello.com" },
+      { "name": "Nudex", "query": "\"{company}\" site:nudex.to" }
+    ]
+  },
+  {
+    "category": "Obscure Cam/Studio, Furry/Alt/Fetish, and Regional Boards",
+    "patterns": [
+      { "name": "E621 Furry Dumps", "query": "\"{company}\" site:e621.net" },
+      { "name": "FurAffinity NSFW", "query": "\"{company}\" site:furaffinity.net (nsfw OR leak)" },
+      { "name": "Rule34", "query": "\"{company}\" site:rule34.xxx" },
+      { "name": "X-Art", "query": "\"{company}\" site:x-art.com" },
+      { "name": "JoyReactor", "query": "\"{company}\" site:joyreactor.cc" },
+      { "name": "AmateurPorn", "query": "\"{company}\" site:amateurporn.com" },
+      { "name": "CamRip/CamVault", "query": "\"{company}\" site:camrip.net OR site:camvault.xyz" },
+      { "name": "E-Hentai/ExHentai", "query": "\"{company}\" site:e-hentai.org OR site:exhentai.org" },
+      { "name": "Hentai Foundry", "query": "\"{company}\" site:hentai-foundry.com" },
+      { "name": "Nifty Archive", "query": "\"{company}\" site:nifty.org" }
+    ]
+  },
+  {
+    "category": "Dark/Obfuscated Social, ZeroBin/AnonPaste, and Ephemeral/“Snap” Leaks",
+    "patterns": [
+      { "name": "ZeroBin/AnonPaste Pastebins", "query": "\"{company}\" site:zerobin.net OR site:anonpaste.org" },
+      { "name": "Ghostbin Paste Drops", "query": "\"{company}\" site:ghostbin.com" },
+      { "name": "JustPaste.it Leak Index", "query": "\"{company}\" site:justpaste.it" },
+      { "name": "Snapchat/Instagram Leak", "query": "\"{company}\" (snapchat OR ig) (pack OR dump OR mega OR leak)" },
+      { "name": "Ephemeral Leak Scanners", "query": "\"{company}\" (leak scanner OR ephemeral OR temp mail)" }
+    ]
+  },
+  {
+    "category": "Telegram/Discord Leak Bots, Invite Mirrors, and OF/Alt Content Channels",
+    "patterns": [
+      { "name": "Telegram Invite Mirrors", "query": "\"{company}\" site:t.me/joinchat OR site:t.me/addlist OR invite \"{company}\"" },
+      { "name": "Telegram Bot Dumps", "query": "\"{company}\" (dumpbot OR leakbot OR scraperbot OR getcontact_bot) site:t.me" },
+      { "name": "Discord Server Leaks", "query": "\"{company}\" site:discord.gg (leak OR dump OR nsfw)" },
+      { "name": "Discord CDN Mirrors", "query": "\"{company}\" cdn.discordapp.com" },
+      { "name": "Discord “Pack” Trading", "query": "\"{company}\" (discord OR server OR invite) (mega OR pack OR trade)" },
+      { "name": "Telegram Alt Content Channels", "query": "\"{company}\" (onlyfans OR mega OR fansly OR leaks) site:t.me" }
+    ]
+  },
+  {
+    "category": "Warez, Dump, Leak, Torrent, Breach",
+    "patterns": [
+      { "name": "1337x, Rutor, RuTracker, Pornolab, Eporner", "query": "\"{company}\" site:1337x.to OR site:rutor.info OR site:rutracker.org OR site:pornolab.net OR site:eporner.com" },
+      { "name": "Leak.sx / Leaked.to", "query": "\"{company}\" site:leak.sx OR site:leaked.to" },
+      { "name": "Cracking.org, Sinister.ly", "query": "\"{company}\" site:cracking.org OR site:sinister.ly OR site:cracking.pro" },
+      { "name": "PornLeaks / LeakedMe", "query": "\"{company}\" site:pornleaks.net OR site:leakedme.com" },
+      { "name": "Pastebin Dumps", "query": "\"{company}\" site:pastebin.com (dump OR combo OR leak)" },
+      { "name": "Ghostbin Dumps", "query": "\"{company}\" site:ghostbin.com (dump OR leak)" },
+      { "name": "Privatebin Dumps", "query": "\"{company}\" site:privatebin.net (leak OR combo)" }
+    ]
+  },
+  {
+    "category": "CDN, Mirror, Image Host, File Index",
+    "patterns": [
+      { "name": "Pixhost", "query": "\"{company}\" site:pixhost.to" },
+      { "name": "ImgBB", "query": "\"{company}\" site:imgbb.com" },
+      { "name": "Imgur", "query": "\"{company}\" site:imgur.com" },
+      { "name": "CyberDrop", "query": "\"{company}\" site:cyberdrop.me" },
+      { "name": "DropMeFiles", "query": "\"{company}\" site:dropmefiles.com" },
+      { "name": "ImageVenue", "query": "\"{company}\" site:imagevenue.com" },
+      { "name": "Gofile.io", "query": "\"{company}\" site:gofile.io" }
+    ]
+  },
+  {
+    "category": "Open Directory, Public Bucket, Unlisted Archive",
+    "patterns": [
+      { "name": "Index of Media", "query": "intitle:\"index of\" (mp4|jpg|avi|mkv|zip|rar|7z) \"{company}\"" },
+      { "name": "Index of OnlyFans/Fansly", "query": "intitle:\"index of\" (onlyfans|fansly|mega|collection) \"{company}\"" },
+      { "name": "S3 Buckets", "query": "\"{company}\" site:s3.amazonaws.com" },
+      { "name": "DigitalOcean Spaces", "query": "\"{company}\" site:nyc3.digitaloceanspaces.com" },
+      { "name": "Wasabi/ExaVault", "query": "\"{company}\" site:wasabisys.com OR site:exavault.com" }
+    ]
+  },
+  {
+    "category": "Porn Search, Reverse, Meta/AI",
+    "patterns": [
+      { "name": "ThePornDB", "query": "\"{company}\" site:theporndb.com" },
+      { "name": "PervyLeaks", "query": "\"{company}\" site:pervyleaks.com" },
+      { "name": "Eroscripts", "query": "\"{company}\" site:eroscripts.com" },
+      { "name": "SauceNAO Reverse", "query": "\"{company}\" site:saucenao.com" },
+      { "name": "PornPics/Xbooru", "query": "\"{company}\" site:pornpics.com OR site:xbooru.com" },
+      { "name": "ChatGPT Share Leaks", "query": "site:chat.openai.com/share \"{company}\" (password OR dump OR combo)" }
+    ]
+  },
+  {
+    "category": "Telegram, Discord, Social Pack Trading",
+    "patterns": [
+      { "name": "Telegram Leak Bots", "query": "site:t.me (dump OR combo OR leak OR stealer) \"{company}\"" },
+      { "name": "Telegram Channel Swarm", "query": "t.me/combolist OR t.me/freshcombo OR @GureDere \"{company}\"" },
+      { "name": "Discord.gg Leaks", "query": "\"{company}\" site:discord.gg (leak OR dump OR mega)" },
+      { "name": "Yield TG Hive", "query": "t.me/+8yKf8BNk3eBkYzQ6 OR t.me/myfacehunter \"{company}\"" }
+    ]
+  },
+  {
+    "category": "Deepweb, Darknet, Onion, Dread",
+    "patterns": [
+      { "name": "BreachForums (Web+Onion)", "query": "\"{company}\" site:breachforums.is OR site:bf.breachforums.li OR site:breached.vc OR site:breachforumsv2zq2.onion" },
+      { "name": "Exploit.in Resurrection", "query": "\"{company}\" site:exploit.in OR site:exploits.su OR site:exploitindarkweb.onion" },
+      { "name": "Nulled.to & XSS.is (Onion)", "query": "\"{company}\" site:nulledto3b7f4e3.onion OR site:xssforum7kmx6s.onion" },
+      { "name": "ZeroBin/OnionShare", "query": "\"{company}\" site:zerobinftagjpeee.onion OR site:onionshare*onion" },
+      { "name": "Ahmia Search", "query": "\"{company}\" site:msydqstlz2kzerdg.onion" },
+      { "name": "DeepPaste", "query": "\"{company}\" site:deeppaste.onion" },
+      { "name": "Haystack/Torch", "query": "\"{company}\" site:haystak5njsmn2hq.onion OR site:torchdeedp3i2j.onion" }
+    ]
+  },
+  {
+    "category": "Crypto, Wallet Drainer, Seed Leaks",
+    "patterns": [
+      { "name": "Drainer Logs", "query": "\"{company}\" (Angel Drainer OR Phantom Drainer OR wallet connect) log" },
+      { "name": "Seed Phrase Leak", "query": "\"{company}\" (12 words OR 24 words OR seed phrase OR private key)" },
+      { "name": "Crypto Combo/Seed", "query": "\"{company}\" (crypto OR wallet) (combo OR mail-pass OR seed)" }
+    ]
+  },
+  {
+    "category": "Mutation Swarm, Alias Swarm, Yield Models",
+    "patterns": [
+      { "name": "All known aliases", "query": "\"{company}\" OR \"giannaxhassan\" OR \"lela sohna\" OR \"corina kopf\" OR \"hannahowo\" OR \"belle delphine\" OR \"amouranth\" OR \"megmariiee\" OR \"megnutt\" OR \"stella violet\" OR \"ruth lee\" OR \"breckie hill\" OR \"sky bri\" OR \"malejandraq\" OR \"sophie rain\" OR \"katie sigmond\" OR \"camilla araujo\" OR \"ari kytsya\"" },
+      { "name": "OF/Amateur/Pack tags", "query": "\"{company}\" (onlyfans OR snap OR fansly OR mega) (leaked OR dump OR full pack)" },
+      { "name": "Simp/Baddie/RedGIFs", "query": "\"{company}\" (hot4lexi OR baddies gallery OR freaky vids OR redgifs OR baddie OR freaky OR full vid)" }
+    ]
+  },
+  {
+    "category": "Wayback/Archive, Niche, Legacy",
+    "patterns": [
+      { "name": "Internet Archive Adult", "query": "\"{company}\" site:archive.org details:collection:adult" },
+      { "name": "Wayback Mega Dumps", "query": "\"{company}\" site:web.archive.org filetype:zip OR filetype:rar" },
+      { "name": "Wayback OnlyFans", "query": "\"{company}\" site:web.archive.org (onlyfans OR fansly OR mega)" },
+      { "name": "FarFarAwaySite", "query": "\"{company}\" site:farfarawaysite.com" },
+      { "name": "WildSkirts", "query": "\"{company}\" site:wildskirts.com" },
+      { "name": "Nudography", "query": "\"{company}\" site:nudography.com" }
+    ]
+  }
+]

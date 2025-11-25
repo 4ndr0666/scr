@@ -1,0 +1,72 @@
+[
+  {
+    "category": "Emergent NSFW AI-Model Sharing & Deepfakes",
+    "patterns": [
+      { "name": "CivitAI Model Leaks", "query": "\"{company}\" site:civitai.com (model OR checkpoint OR leak)" },
+      { "name": "HuggingFace Porn Models", "query": "\"{company}\" site:huggingface.co (nsfw OR porn OR leak OR dataset)" },
+      { "name": "DeepFake Community", "query": "\"{company}\" site:mrdeepfakes.com OR site:deepfakeporn.net" },
+      { "name": "PornPen AI Leaks", "query": "\"{company}\" site:pornpen.ai OR site:pornpen.net" },
+      { "name": "Lora/StableDiffusion Porn", "query": "\"{company}\" (lora OR sd OR stable diffusion) (porn OR leak OR nsfw)" }
+    ]
+  },
+  {
+    "category": "Obscure Porn Mirrors, Alt-Hosts, and Rip Channels",
+    "patterns": [
+      { "name": "OnlyLeaks", "query": "\"{company}\" site:onlyleaks.com" },
+      { "name": "OFArchive", "query": "\"{company}\" site:ofarchive.com" },
+      { "name": "NSFWdb", "query": "\"{company}\" site:nsfwdb.com" },
+      { "name": "WebmShare", "query": "\"{company}\" site:webmshare.com" },
+      { "name": "Pornhub Unlisted/VIP", "query": "\"{company}\" site:pornhub.com/unlisted OR site:pornhub.com/model" },
+      { "name": "MegaPack SubReddits", "query": "\"{company}\" site:reddit.com (megapack OR mega.nz OR full pack)" },
+      { "name": "Fapello", "query": "\"{company}\" site:fapello.com" },
+      { "name": "Nudex", "query": "\"{company}\" site:nudex.to" }
+    ]
+  },
+  {
+    "category": "Obscure Cam/Studio, Furry/Alt/Fetish, and Regional Boards",
+    "patterns": [
+      { "name": "E621 Furry Dumps", "query": "\"{company}\" site:e621.net" },
+      { "name": "FurAffinity NSFW", "query": "\"{company}\" site:furaffinity.net (nsfw OR leak)" },
+      { "name": "Rule34", "query": "\"{company}\" site:rule34.xxx" },
+      { "name": "X-Art", "query": "\"{company}\" site:x-art.com" },
+      { "name": "JoyReactor", "query": "\"{company}\" site:joyreactor.cc" },
+      { "name": "AmateurPorn", "query": "\"{company}\" site:amateurporn.com" },
+      { "name": "CamRip/CamVault", "query": "\"{company}\" site:camrip.net OR site:camvault.xyz" },
+      { "name": "E-Hentai/ExHentai", "query": "\"{company}\" site:e-hentai.org OR site:exhentai.org" },
+      { "name": "Hentai Foundry", "query": "\"{company}\" site:hentai-foundry.com" },
+      { "name": "Nifty Archive", "query": "\"{company}\" site:nifty.org" }
+    ]
+  },
+  {
+    "category": "Dark/Obfuscated Social, ZeroBin/AnonPaste, and Ephemeral/“Snap” Leaks",
+    "patterns": [
+      { "name": "ZeroBin/AnonPaste Pastebins", "query": "\"{company}\" site:zerobin.net OR site:anonpaste.org" },
+      { "name": "Ghostbin Paste Drops", "query": "\"{company}\" site:ghostbin.com" },
+      { "name": "JustPaste.it Leak Index", "query": "\"{company}\" site:justpaste.it" },
+      { "name": "Snapchat/Instagram Leak", "query": "\"{company}\" (snapchat OR ig) (pack OR dump OR mega OR leak)" },
+      { "name": "Ephemeral Leak Scanners", "query": "\"{company}\" (leak scanner OR ephemeral OR temp mail)" }
+    ]
+  },
+  {
+    "category": "Telegram/Discord Leak Bots, Invite Mirrors, and OF/Alt Content Channels",
+    "patterns": [
+      { "name": "Telegram Invite Mirrors", "query": "\"{company}\" site:t.me/joinchat OR site:t.me/addlist OR invite \"{company}\"" },
+      { "name": "Telegram Bot Dumps", "query": "\"{company}\" (dumpbot OR leakbot OR scraperbot OR getcontact_bot) site:t.me" },
+      { "name": "Discord Server Leaks", "query": "\"{company}\" site:discord.gg (leak OR dump OR nsfw)" },
+      { "name": "Discord CDN Mirrors", "query": "\"{company}\" cdn.discordapp.com" },
+      { "name": "Discord “Pack” Trading", "query": "\"{company}\" (discord OR server OR invite) (mega OR pack OR trade)" },
+      { "name": "Telegram Alt Content Channels", "query": "\"{company}\" (onlyfans OR mega OR fansly OR leaks) site:t.me" }
+    ]
+  },
+  {
+    "category": "Deep/Emergent Darknet, Onion/Alt Markets (2025+) & Black Markets",
+    "patterns": [
+      { "name": "DarknetPaste/ZeroBin Onion", "query": "\"{company}\" site:zerobinftagjpeee.onion" },
+      { "name": "Hidden Wiki/Service Onion", "query": "\"{company}\" site:zqktlwi4fecvo6ri.onion" },
+      { "name": "DeepPaste/AnonFiles Onion", "query": "\"{company}\" site:deeppaste.onion OR site:anonfiles.com" },
+      { "name": "Dread Market Mirrors", "query": "\"{company}\" site:dreadytofopooda.onion OR site:dread*red7x4x3.onion" },
+      { "name": "DarkWeb Market Indexes", "query": "\"{company}\" (market OR forum OR leak OR dump) site:.onion" },
+      { "name": "NoLogs Pastebins", "query": "\"{company}\" (nologue OR pastebin OR onion) (nsfw OR leak)" }
+    ]
+  }
+]
