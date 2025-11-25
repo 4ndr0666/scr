@@ -42,7 +42,6 @@ DEFAULT_CONFIG = {
     "session_dir": os.path.expanduser("~/.local/share/dorkmaster/sessions/"),
 }
 
-
 def ensure_config():
     """Create config directory and default config if missing."""
     if not os.path.exists(CONFIG_FILE):
@@ -56,9 +55,7 @@ def ensure_config():
             "[yellow]You can now edit settings via option 8 in the main menu[/yellow]"
         )
 
-
-ensure_config()  # Auto-onboarding on first run
-
+ensure_config() # Auto-onboarding on first run
 
 def load_config():
     try:
@@ -73,8 +70,8 @@ def load_config():
         ensure_config()
         return DEFAULT_CONFIG.copy()
 
-
 def save_config():
+    global config # BUGFIX: Ensure changes to global 'config' are saved
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
@@ -82,12 +79,10 @@ def save_config():
     except Exception as e:
         console.print(f"[red]Failed to save config: {e}[/red]")
 
-
 # Load config into module-level variable
 config = load_config()
 SESSION_DIR = config["session_dir"]
 os.makedirs(SESSION_DIR, exist_ok=True)
-
 
 # ===== SESSION MANAGER =====
 class MycelialNode:
@@ -108,7 +103,6 @@ class MycelialNode:
             "node_type": self.node_type,
             "children": [c.as_dict() for c in self.children],
         }
-
 
 class MycelialSession:
     def __init__(self, session_name=None):
@@ -142,10 +136,8 @@ class MycelialSession:
             console.print(f"{prefix}{title}")
             self.print_tree(n, level + 1)
 
-
 # ===== PLUGIN SYSTEM =====
 PLUGIN_DIR = "./plugins"
-
 
 def load_plugins():
     plugins = {}
@@ -164,17 +156,14 @@ def load_plugins():
                 console.print(f"[red]Failed to load plugin {plugin_name}: {e}[/red]")
     return plugins
 
-
 # ===== UTILS =====
 def prompt(msg):
     return Prompt.ask(f"[bold red]{msg}[/bold red]")
-
 
 def choose_company_var():
     default = config["default_target"]
     val = prompt(f"Enter target (default: {default})")
     return val if val else default
-
 
 def validate_url(url):
     try:
@@ -182,7 +171,6 @@ def validate_url(url):
         return all([result.scheme, result.netloc])
     except Exception:
         return False
-
 
 def extract_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -194,7 +182,6 @@ def extract_links(html, base_url):
         if validate_url(href):
             links.add(href)
     return list(links)
-
 
 def extract_media_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -215,14 +202,12 @@ def extract_media_links(html, base_url):
             links.add(href)
     return list(links)
 
-
 # ===== DORK PALETTE =====
 def dork_palette():
     company = choose_company_var()
     dork_patterns = dork_cli_menu.load_dork_patterns()
     dork_query = dork_cli_menu.cli_dork_menu(dork_patterns, company)
     return dork_query or f'"{company}" (onlyfans OR mega OR leaked)'
-
 
 # ===== !MEGAHUNT v2 – TELEGRAM MIRROR HARVEST =====
 def telegram_megahunt(raw_query, max_posts=None):
@@ -234,6 +219,12 @@ def telegram_megahunt(raw_query, max_posts=None):
     # Strip Google syntax completely
     clean = re.sub(r"[\(\)\"ORsite:.*]", "", raw_query, flags=re.I).strip()
     clean = re.sub(r"\s+", " ", clean).strip()
+
+    # BUGFIX: Dynamically create keywords from the actual query
+    keywords = clean.lower().split()
+    if not keywords:
+        console.print("[yellow]Cannot extract keywords from query for Telegram hunt.[/yellow]")
+        return []
 
     # Try exact phrase first, then word variants
     variants = [
@@ -264,11 +255,8 @@ def telegram_megahunt(raw_query, max_posts=None):
                         text_div.get_text(strip=True, separator=" ") if text_div else ""
                     )
 
-                    if link_tag and (
-                        "viki" in text.lower()
-                        or "veloxen" in text.lower()
-                        or "vicky" in text.lower()
-                    ):
+                    # BUGFIX: Check for dynamic keywords instead of hardcoded ones
+                    if link_tag and any(keyword in text.lower() for keyword in keywords):
                         results.append(
                             {
                                 "url": "https://t.me" + link_tag["href"],
@@ -290,8 +278,7 @@ def telegram_megahunt(raw_query, max_posts=None):
     )
     return results
 
-
-# ===== SEARX RUNNER v3 – CONFIGURABLE PRIVATE + PUBLIC + MEGAHUNT =====
+# ===== SEARX RUNNER v4 – FINAL URLJOIN FIX =====
 SEARX_POOL = [
     "https://searx.tiekoetter.com",
     "https://searx.ninja",
@@ -305,7 +292,6 @@ SEARX_POOL = [
     "https://searx.mastodontech.de",
 ]
 
-
 def run_searx(query, count=30):
     params = {
         "q": query,
@@ -317,8 +303,7 @@ def run_searx(query, count=30):
     if config["use_private_searxng_first"]:
         try:
             private_url = config["private_searxng_url"]
-            # FIX: Use urljoin for robust URL construction
-            search_endpoint = urljoin(private_url, "search")
+            search_endpoint = urljoin(private_url.rstrip("/") + "/", "search")
             resp = requests.get(search_endpoint, params=params, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
@@ -331,10 +316,9 @@ def run_searx(query, count=30):
         except Exception as e:
             console.print(f"[yellow]Private SearxNG failed: {e}[/yellow]")
 
-    for url in SEARX_POOL:
+    for base_url in SEARX_POOL:
         try:
-            # FIX: Use urljoin for robust URL construction here too
-            search_endpoint = urljoin(url, "search")
+            search_endpoint = urljoin(base_url.rstrip("/") + "/", "search")
             resp = requests.get(search_endpoint, params=params, timeout=20)
             if resp.status_code in (429, 503, 403):
                 continue
@@ -347,7 +331,6 @@ def run_searx(query, count=30):
 
     console.print("[bold red]Public grid dead – deploying !MEGAHUNT[/bold red]")
     return telegram_megahunt(query, count)
-
 
 # ===== ANALYZER =====
 def analyze_target(url):
@@ -381,7 +364,6 @@ def analyze_target(url):
             console.print(f"  → {l}")
 
     return {"url": url, "links": links, "media": media_links}
-
 
 # ===== SPIDER & RECURSE =====
 def brute_spider(base_url, max_depth=3):
@@ -420,14 +402,17 @@ def brute_spider(base_url, max_depth=3):
                 queue.append((l, depth + 1))
     return results
 
-
 def recurse(urls, analyzer_func=analyze_target, max_depth=2):
     results = []
+    seen = set() # BUGFIX: Track visited URLs to avoid cycles and redundant work
 
-    def helper(urls, depth):
+    def helper(urls_to_process, depth):
         if depth > max_depth:
             return
-        for url in urls:
+        for url in urls_to_process:
+            if url in seen:
+                continue
+            seen.add(url)
             data = analyzer_func(url)
             if data:
                 results.append(data)
@@ -437,10 +422,9 @@ def recurse(urls, analyzer_func=analyze_target, max_depth=2):
     helper(urls, 1)
     return results
 
-
 # ===== SETTINGS MENU – FIXED: NO GLOBAL KEYWORD =====
 def settings_menu():
-    global config  # ← Only declared here, after config is defined
+    global config
     while True:
         console.print("\n[bold magenta]=== SETTINGS ===[/bold magenta]")
         table = Table(show_header=True, header_style="bold magenta")
@@ -470,7 +454,6 @@ def settings_menu():
             console.print(f"[green]{choice} → {new_val}[/green]")
         else:
             console.print("[red]Unknown setting[/red]")
-
 
 # ===== MAIN MENU =====
 def main_palette():
@@ -567,10 +550,10 @@ def main_palette():
             plugins = load_plugins()
             for pname in plugins:
                 print(f"  - {pname}")
-            sel = input("Select plugin: ").strip()
-            if sel in plugins:
+            sel_plugin = prompt("Select plugin: ").strip()
+            if sel_plugin in plugins:
                 console.print(
-                    f"[bold yellow]Plugin {sel} loaded – no handler defined yet[/bold yellow]"
+                    f"[bold yellow]Plugin {sel_plugin} loaded – no handler defined yet[/bold yellow]"
                 )
             else:
                 console.print("[red]Plugin not found[/red]")
@@ -578,7 +561,6 @@ def main_palette():
         elif sel == "0":
             console.print("[bold black]Terminated...[/bold black]")
             break
-
 
 if __name__ == "__main__":
     try:
