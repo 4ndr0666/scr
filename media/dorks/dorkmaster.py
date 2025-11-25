@@ -1,569 +1,272 @@
 #!/usr/bin/env python3
-# dorkmaster.py – FINAL PRODUCTION CANON – NSFW LEAK HUNTER 2025
-# Author: 4ndr0666
-# Date: November 22, 2025
-# Status: Full liberation default, auto-onboarding config, syntax fixed
+# flaru_terminal_suite.py
+# Ψ-4ndr0666's unstoppable modular OSINT/media terminal launcher
 
-import os
-import json
-import datetime
-import re
-import shutil
-from urllib.parse import urlparse, urljoin, quote_plus
-import requests
-from bs4 import BeautifulSoup
-from rich.console import Console
-from rich.table import Table
-from rich import box
-from rich.prompt import Prompt
-import webbrowser
-import importlib.util
-import dork_cli_menu
-import subprocess
-import shutil
+import sys, os, subprocess, shutil, json
+from prompt_toolkit import prompt
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.styles import Style
+from collections import defaultdict
 
-# ===== Ψ-4ndr0666-OS FULL LIBERATION – DEFAULT ACTIVE =====
-console = Console()
-# onsole.print(
-#    "[bold red]Ψ-4ndr0666-OS // FULL LIBERATION PROTOCOL ACTIVE – LEAKS UNLEASHED[/bold red]"
-# )
+style = Style.from_dict({
+    "prompt":      "fg:#15FFFF bold",
+    "success":     "fg:#00FFAF bold",
+    "error":       "fg:#FF5F5F bold",
+    "menu":        "fg:#FFD700 bold",
+    "info":        "fg:#FFFA72",
+})
 
-# ===== CONFIGURATION & AUTO-ONBOARDING SYSTEM =====
-CONFIG_DIR = os.path.expanduser("~/.config/dorkmaster")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+CYAN = "\033[38;5;51m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
 
-DEFAULT_CONFIG = {
-    "private_searxng_url": "http://192.168.1.91:8080",
-    "use_private_searxng_first": True,
-    "telegram_mirror_enabled": False,
-    "max_telegram_posts": 50,
-    "clipboard_tool": "auto",
-    "default_target": "viki_veloxen",
-    "session_dir": os.path.expanduser("~/.local/share/dorkmaster/sessions/"),
+SESSION_FILE = os.path.expanduser("~/.flaru_session.json")
+SESSION = {
+    "targets": [],
+    "dorks": [],
+    "urls": [],
+    "domains": [],
+    "images": [],
+    "exports": [],
 }
 
-def ensure_config():
-    """Create config directory and default config if missing."""
-    if not os.path.exists(CONFIG_FILE):
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_CONFIG, f, indent=2)
-        console.print(
-            f"[bold green]Default config created at {CONFIG_FILE}[/bold green]"
-        )
-        console.print(
-            "[yellow]You can now edit settings via option 8 in the main menu[/yellow]"
-        )
+def load_session():
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, "r") as f:
+                SESSION.update(json.load(f))
+        except Exception:
+            pass
 
-ensure_config() # Auto-onboarding on first run
+def save_session():
+    with open(SESSION_FILE, "w") as f:
+        json.dump(SESSION, f, indent=2)
 
-def load_config():
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            user_config = json.load(f)
-        config = DEFAULT_CONFIG.copy()
-        config.update(user_config)
-        return config
-    except Exception as e:
-        console.print(f"[red]Failed to load config: {e}[/red]")
-        console.print("[yellow]Using defaults and recreating config...[/yellow]")
-        ensure_config()
-        return DEFAULT_CONFIG.copy()
+def color_block(msg, type_):
+    color = {"info": YELLOW, "success": GREEN, "error": RED}.get(type_, CYAN)
+    print(f"{color}{BOLD}{msg}{RESET}")
 
-def save_config():
-    global config # BUGFIX: Ensure changes to global 'config' are saved
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-        console.print(f"[green]Config saved to {CONFIG_FILE}[/green]")
-    except Exception as e:
-        console.print(f"[red]Failed to save config: {e}[/red]")
-
-# Load config into module-level variable
-config = load_config()
-SESSION_DIR = config["session_dir"]
-os.makedirs(SESSION_DIR, exist_ok=True)
-
-# ===== SESSION MANAGER =====
-class MycelialNode:
-    def __init__(self, data, node_type, parent=None):
-        self.data = data
-        self.node_type = node_type
-        self.parent = parent
-        self.children = []
-
-    def add_child(self, child):
-        child.parent = self
-        self.children.append(child)
-        return child
-
-    def as_dict(self):
-        return {
-            "data": self.data,
-            "node_type": self.node_type,
-            "children": [c.as_dict() for c in self.children],
-        }
-
-class MycelialSession:
-    def __init__(self, session_name=None):
-        self.root_nodes = []
-        self.session_name = session_name or datetime.datetime.now().strftime(
-            "session_%Y%m%d%H%M%S"
-        )
-        self.path = os.path.join(SESSION_DIR, f"{self.session_name}.json")
-
-    def add_root(self, node):
-        self.root_nodes.append(node)
-
-    def export(self, filename=None):
-        path = filename or self.path
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                [n.as_dict() for n in self.root_nodes], f, indent=2, ensure_ascii=False
-            )
-        console.print(f"[green]Session exported to {path}[/green]")
-
-    def print_tree(self, node=None, level=0):
-        nodes_to_print = self.root_nodes if node is None else node.children
-        for n in nodes_to_print:
-            prefix = "    " * level + f"-> [{n.node_type}] "
-            title = (
-                n.data.get("url")
-                or n.data.get("query")
-                or n.data.get("base")
-                or str(n.data)[:80]
-            )
-            console.print(f"{prefix}{title}")
-            self.print_tree(n, level + 1)
-
-# ===== PLUGIN SYSTEM =====
-PLUGIN_DIR = "./plugins"
-
-def load_plugins():
-    plugins = {}
-    if not os.path.exists(PLUGIN_DIR):
-        return plugins
-    for fname in os.listdir(PLUGIN_DIR):
-        if fname.endswith(".py") and not fname.startswith("__"):
-            plugin_name = fname[:-3]
-            path = os.path.join(PLUGIN_DIR, fname)
-            spec = importlib.util.spec_from_file_location(plugin_name, path)
-            module = importlib.util.module_from_spec(spec)
-            try:
-                spec.loader.exec_module(module)
-                plugins[plugin_name] = module
-            except Exception as e:
-                console.print(f"[red]Failed to load plugin {plugin_name}: {e}[/red]")
-    return plugins
-
-# ===== UTILS =====
-def prompt(msg):
-    return Prompt.ask(f"[bold red]{msg}[/bold red]")
-
-def choose_company_var():
-    default = config["default_target"]
-    val = prompt(f"Enter target (default: {default})")
-    return val if val else default
-
-def validate_url(url):
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except Exception:
-        return False
-
-def extract_links(html, base_url):
-    soup = BeautifulSoup(html, "html.parser")
-    links = set()
-    for tag in soup.find_all("a", href=True):
-        href = tag["href"]
-        if not href.startswith("http"):
-            href = urljoin(base_url, href)
-        if validate_url(href):
-            links.add(href)
-    return list(links)
-
-def extract_media_links(html, base_url):
-    soup = BeautifulSoup(html, "html.parser")
-    links = set()
-    for tag in soup.find_all(["img", "video", "source"], src=True):
-        src = tag.get("src") or tag.get("data-src")
-        if src:
-            if not src.startswith("http"):
-                src = urljoin(base_url, src)
-            if validate_url(src):
-                links.add(src)
-    for tag in soup.find_all(
-        "a",
-        href=re.compile(r"(mega\.nz|t\.me|discord\.gg|drive\.google\.com|mediafire)"),
-    ):
-        href = tag["href"]
-        if validate_url(href):
-            links.add(href)
-    return list(links)
-
-# ===== DORK PALETTE =====
-def dork_palette():
-    company = choose_company_var()
-    dork_patterns = dork_cli_menu.load_dork_patterns()
-    dork_query = dork_cli_menu.cli_dork_menu(dork_patterns, company)
-    return dork_query or f'"{company}" (onlyfans OR mega OR leaked)'
-
-# ===== !MEGAHUNT v2 – TELEGRAM MIRROR HARVEST =====
-def telegram_megahunt(raw_query, max_posts=None):
-    max_posts = max_posts or config["max_telegram_posts"]
-    if not config.get("telegram_mirror_enabled", True):
-        return []
-    console.print("[bold red]!MEGAHUNT ACTIVATED – TELEGRAM GRID ASSAULT[/bold red]")
-
-    # Strip Google syntax completely
-    clean = re.sub(r"[\(\)\"ORsite:.*]", "", raw_query, flags=re.I).strip()
-    clean = re.sub(r"\s+", " ", clean).strip()
-
-    # BUGFIX: Dynamically create keywords from the actual query
-    keywords = clean.lower().split()
-    if not keywords:
-        console.print("[yellow]Cannot extract keywords from query for Telegram hunt.[/yellow]")
-        return []
-
-    # Try exact phrase first, then word variants
-    variants = [
-        clean,
-        clean.replace(" ", "+"),
-        clean.replace(" ", "_"),
-        clean.lower(),
-    ]
-
-    results = []
-    for variant in variants:
-        for base in [f"https://t.me/s/{variant}", f"https://t.me/s/?q={variant}"]:
-            try:
-                r = requests.get(
-                    base, headers={"User-Agent": "Mozilla/5.0"}, timeout=20
-                )
-                if r.status_code != 200:
-                    continue
-                soup = BeautifulSoup(r.text, "html.parser")
-                posts = soup.find_all("div", class_="tgme_widget_message")
-                if not posts:
-                    continue
-
-                for post in posts[:max_posts]:
-                    link_tag = post.find("a", class_="tgme_widget_message_date")
-                    text_div = post.find("div", class_="tgme_widget_message_text")
-                    text = (
-                        text_div.get_text(strip=True, separator=" ") if text_div else ""
-                    )
-
-                    # BUGFIX: Check for dynamic keywords instead of hardcoded ones
-                    if link_tag and any(keyword in text.lower() for keyword in keywords):
-                        results.append(
-                            {
-                                "url": "https://t.me" + link_tag["href"],
-                                "title": text[:100],
-                                "content": text,
-                            }
-                        )
-                if results:
-                    console.print(
-                        f"[bold purple]!MEGAHUNT SUCCESS – {len(results)} Telegram veins[/bold purple]"
-                    )
-                    return results
-            except Exception as e:
-                console.print(f"[dim]{base} failed: {e}[/dim]")
-                continue
-
-    console.print(
-        "[bold black]Telegram sterile – target too clean or too dead[/bold black]"
+def opsec_warning():
+    color_block(
+        "!! Always use VPN, Tor, or proxy for sensitive searches/downloads. Only operate in a VM or isolated env for dump/warez scraping !!",
+        "error"
     )
-    return results
 
-# ===== SEARX RUNNER v4 – FINAL URLJOIN FIX =====
-SEARX_POOL = [
-    "https://searx.tiekoetter.com",
-    "https://searx.ninja",
-    "https://searx.org",
-    "https://searx.be",
-    "https://searx.ru",
-    "https://searx.fmac.xyz",
-    "https://searx.bar",
-    "https://search.bus-hit.me",
-    "https://search.mdosch.de",
-    "https://searx.mastodontech.de",
-]
-
-def run_searx(query, count=30):
-    params = {
-        "q": query,
-        "format": "json",
-        "language": "en",
-        "safesearch": 0,
-    }
-
-    if config["use_private_searxng_first"]:
-        try:
-            private_url = config["private_searxng_url"]
-            search_endpoint = urljoin(private_url.rstrip("/") + "/", "search")
-            resp = requests.get(search_endpoint, params=params, timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                results = data.get("results", [])
-                if results:
-                    console.print(
-                        f"[bold green]Private SearxNG ({private_url}) – {len(results)} hits[/bold green]"
-                    )
-                    return results[:count]
-        except Exception as e:
-            console.print(f"[yellow]Private SearxNG failed: {e}[/yellow]")
-
-    for base_url in SEARX_POOL:
-        try:
-            search_endpoint = urljoin(base_url.rstrip("/") + "/", "search")
-            resp = requests.get(search_endpoint, params=params, timeout=20)
-            if resp.status_code in (429, 503, 403):
-                continue
-            resp.raise_for_status()
-            results = resp.json().get("results", [])
-            if results:
-                return results[:count]
-        except:
-            continue
-
-    console.print("[bold red]Public grid dead – deploying !MEGAHUNT[/bold red]")
-    return telegram_megahunt(query, count)
-
-# ===== ANALYZER =====
-def analyze_target(url):
-    if not validate_url(url):
-        console.print(f"[red]Invalid URL: {url}[/red]")
-        return None
-
-    try:
-        resp = requests.get(
-            url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Ψ-NSFW-Hunter/2025)"}
-        )
-        resp.raise_for_status()
-        html = resp.text
-    except Exception as e:
-        console.print(f"[red]Fetch failed {url}: {e}[/red]")
-        return None
-
-    links = extract_links(html, url)
-    media_links = extract_media_links(html, url)
-
-    table = Table(title=f"Vein Analysis: {url}", box=box.SIMPLE)
-    table.add_column("Type")
-    table.add_column("Count")
-    table.add_row("Links", str(len(links)))
-    table.add_row("Media/Leaks", str(len(media_links)))
-    console.print(table)
-
-    if media_links:
-        console.print("[cyan]Direct veins extracted:[/cyan]")
-        for l in media_links[:20]:
-            console.print(f"  → {l}")
-
-    return {"url": url, "links": links, "media": media_links}
-
-# ===== SPIDER & RECURSE =====
-def brute_spider(base_url, max_depth=3):
-    seen = set()
-    queue = [(base_url, 0)]
-    results = []
-
-    while queue:
-        url, depth = queue.pop(0)
-        if url in seen or depth > max_depth:
-            continue
-        seen.add(url)
-        try:
-            resp = requests.get(url, timeout=10)
-            resp.raise_for_status()
-            html = resp.text
-        except Exception as e:
-            console.print(f"[red]Spider failed {url}: {e}[/red]")
-            continue
-
-        links = extract_links(html, url)
-        media = extract_media_links(html, url)
-        results.append({"url": url, "media": media})
-
-        for l in links:
-            if l not in seen and any(
-                d in l
-                for d in [
-                    "simpcity.su",
-                    "coomer.party",
-                    "t.me",
-                    "mega.nz",
-                    "discord.gg",
-                ]
-            ):
-                queue.append((l, depth + 1))
-    return results
-
-def recurse(urls, analyzer_func=analyze_target, max_depth=2):
-    results = []
-    seen = set() # BUGFIX: Track visited URLs to avoid cycles and redundant work
-
-    def helper(urls_to_process, depth):
-        if depth > max_depth:
-            return
-        for url in urls_to_process:
-            if url in seen:
-                continue
-            seen.add(url)
-            data = analyzer_func(url)
-            if data:
-                results.append(data)
-                new_links = data.get("links", []) + data.get("media", [])
-                helper(new_links, depth + 1)
-
-    helper(urls, 1)
-    return results
-
-# ===== SETTINGS MENU – FIXED: NO GLOBAL KEYWORD =====
-def settings_menu():
-    global config
+def main_menu():
+    load_session()
     while True:
-        console.print("\n[bold magenta]=== SETTINGS ===[/bold magenta]")
-        table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Setting")
-        table.add_column("Current Value")
-        for k, v in config.items():
-            table.add_row(k, str(v))
-        console.print(table)
+        print(f"\n{CYAN}{BOLD}Ψ-4ndr0666 Flaru Terminal Suite{RESET}")
+        print(f"{YELLOW}1.{RESET} Dork Google for Media Links")
+        print(f"{YELLOW}2.{RESET} Brute-Force/Enumerate Images")
+        print(f"{YELLOW}3.{RESET} Recursive Web Album Crawl")
+        print(f"{YELLOW}4.{RESET} Reddit/Chan Dump")
+        print(f"{YELLOW}5.{RESET} Batch Export/Clipboard All Results")
+        print(f"{YELLOW}6.{RESET} OpSec Help & Info")
+        print(f"{YELLOW}7.{RESET} Exit")
 
-        choice = prompt("Edit setting (name), [S]ave, [R]eset to defaults, [B]ack")
-        if choice.lower() == "b":
+        choice = prompt(HTML('<prompt>Select mode [1-7]:</prompt> '), style=style).strip()
+        if choice == '1':
+            opsec_warning()
+            run_dork_modal()
+        elif choice == '2':
+            opsec_warning()
+            run_image_enum()
+        elif choice == '3':
+            opsec_warning()
+            run_url_scrapper()
+        elif choice == '4':
+            opsec_warning()
+            run_reddit_script()
+        elif choice == '5':
+            export_session()
+        elif choice == '6':
+            print_opsec()
+        elif choice == '7':
+            save_session()
+            print(f"{CYAN}Session saved. Goodbye!{RESET}")
             break
-        elif choice.lower() == "s":
-            save_config()
-        elif choice.lower() == "r":
-            config = DEFAULT_CONFIG.copy()
-            save_config()
-            console.print("[yellow]Config reset to defaults[/yellow]")
-        elif choice in config:
-            new_val = prompt(f"New value for {choice}")
-            if new_val.lower() in ("true", "false"):
-                config[choice] = new_val.lower() == "true"
-            elif new_val.isdigit():
-                config[choice] = int(new_val)
-            else:
-                config[choice] = new_val
-            console.print(f"[green]{choice} → {new_val}[/green]")
         else:
-            console.print("[red]Unknown setting[/red]")
+            color_block("Invalid selection.", "error")
 
-# ===== MAIN MENU =====
-def main_palette():
-    session = MycelialSession()
-    while True:
-        console.print("\n[bold cyan]==== // DORKMASTER //[/bold cyan]")
-        print("1. Dork & Hunt")
-        print("2. Analyze Vein")
-        print("3. Spider Leak Domains")
-        print("4. Recurse Chains")
-        print("5. Export Session")
-        print("6. View Tree")
-        print("7. Plugins")
-        print("8. Settings")
-        print("0. Exit")
-        sel = prompt("Command:")
 
-        if sel == "8":
-            settings_menu()
-            continue
+def run_dork_modal():
+    # Use your existing dork modal logic, or shell out to your preferred dork builder.
+    # For now, simple subprocess call to your python modal for demo:
+    try:
+        cmd = ["python3", "dorkmaster-modal.py"]
+        subprocess.run(cmd)
+        # Optionally, read new dorks/targets from session file, clipboard, or manual import
+        # Here, you could add code to ingest/export found dorks
+    except Exception as e:
+        color_block(f"Failed to run dork modal: {e}", "error")
 
-        if sel == "1":
-            dork_query = dork_palette()
-            if not dork_query:
-                continue
+def run_image_enum():
+    # Launch image_enum.py (supports --menu for interactive)
+    img_enum = "./image_enum.py"
+    if not os.path.exists(img_enum):
+        color_block("image_enum.py not found in current directory!", "error")
+        return
+    try:
+        print(f"{CYAN}Launching brute/recursive image enumerator...{RESET}")
+        subprocess.run(["python3", img_enum, "--menu"])
+    except Exception as e:
+        color_block(f"Failed to run image_enum.py: {e}", "error")
 
-            dork_node = MycelialNode({"query": dork_query}, "dork_query")
-            session.add_root(dork_node)
+def run_url_scrapper():
+    # Launch url_scrapper.py (async/modern version)
+    url_scrapper = "./url_scrapper.py"
+    if not os.path.exists(url_scrapper):
+        color_block("url_scrapper.py not found in current directory!", "error")
+        return
+    try:
+        print(f"{CYAN}Launching advanced image enumerator...{RESET}")
+        # Default to menu flag, or let user choose mode (extend as needed)
+        subprocess.run(["python3", url_scrapper, "--menu"])
+    except Exception as e:
+        color_block(f"Failed to run url_scrapper.py: {e}", "error")
 
-            console.print(f"[bold green]Deploying Dork:[/bold green] {dork_query}")
-            results = run_searx(dork_query, count=50)
-            urls = [r.get("url") for r in results if r.get("url")]
+def run_reddit_script():
+    # Launch your Reddit/chan scraper (script.py)
+    reddit_script = "./script.py"
+    if not os.path.exists(reddit_script):
+        color_block("script.py not found in current directory!", "error")
+        return
+    try:
+        print(f"{CYAN}Launching Reddit media downloader...{RESET}")
+        subprocess.run(["python3", reddit_script])
+    except Exception as e:
+        color_block(f"Failed to run script.py: {e}", "error")
 
-            if not urls:
-                console.print("[yellow]Dork returned no viable URLs.[/yellow]")
-                continue
+def export_session():
+    # Export all found dorks/urls/domains/images to clipboard, file, or both
+    save_session()
+    print(f"{GREEN}Session exported to {SESSION_FILE}.{RESET}")
+    try:
+        import pyperclip
+        with open(SESSION_FILE) as f:
+            pyperclip.copy(f.read())
+        print(f"{GREEN}Session JSON copied to clipboard!{RESET}")
+    except ImportError:
+        print(f"{YELLOW}pyperclip not installed. Install with: pip install pyperclip{RESET}")
+    except Exception as e:
+        print(f"{YELLOW}Clipboard export failed: {e}{RESET}")
 
-            results_node = dork_node.add_child(
-                MycelialNode({"urls": urls}, "search_results")
-            )
-
-            for i, u in enumerate(urls, 1):
-                console.print(f"[{i}] {u}")
-
-            choice = prompt("Gut one? (# or blank to skip):")
-            if choice.isdigit():
-                idx = int(choice) - 1
-                if 0 <= idx < len(urls):
-                    node_data = analyze_target(urls[idx])
-                    if node_data:
-                        results_node.add_child(MycelialNode(node_data, "nsfw_analyze"))
-
-        elif sel == "2":
-            url = prompt("URL to gut:")
-            data = analyze_target(url)
-            if data:
-                node = MycelialNode(data, "manual_analyze")
-                session.add_root(node)
-
-        elif sel == "3":
-            base = prompt("Base domain (e.g., https://t.me/s/athleticgorgeous):")
-            if validate_url(base):
-                res = brute_spider(base)
-                node = MycelialNode(
-                    {"base": base, "spider_results_count": len(res)}, "leak_spider"
-                )
-                session.add_root(node)
-                console.print(f"[green]Spider harvested {len(res)} nodes[/green]")
-            else:
-                console.print("[red]Invalid base URL.[/red]")
-
-        elif sel == "4":
-            urls_input = prompt("URLs (comma-sep):").split(",")
-            urls = [u.strip() for u in urls_input if validate_url(u.strip())]
-            if urls:
-                res = recurse(urls)
-                node = MycelialNode(
-                    {"start_urls": urls, "recursed_count": len(res)}, "chain_recurse"
-                )
-                session.add_root(node)
-                console.print(
-                    f"[green]Recurse analyzed {len(res)} unique nodes.[/green]"
-                )
-
-        elif sel == "5":
-            fname = prompt("Export filename (blank for auto):") or None
-            session.export(fname)
-
-        elif sel == "6":
-            session.print_tree()
-
-        elif sel == "7":
-            print("\nAvailable Plugins:")
-            plugins = load_plugins()
-            for pname in plugins:
-                print(f"  - {pname}")
-            sel_plugin = prompt("Select plugin: ").strip()
-            if sel_plugin in plugins:
-                console.print(
-                    f"[bold yellow]Plugin {sel_plugin} loaded – no handler defined yet[/bold yellow]"
-                )
-            else:
-                console.print("[red]Plugin not found[/red]")
-
-        elif sel == "0":
-            console.print("[bold black]Terminated...[/bold black]")
-            break
+def print_opsec():
+    print("\n")
+    color_block("Ψ-4ndr0666 OpSec Tips:", "info")
+    print(f"{BOLD}1.{RESET} Always use a VPN, Tor, or proxy, especially for leaky/gray-area queries.")
+    print(f"{BOLD}2.{RESET} Run this toolkit from a VM or sandbox.")
+    print(f"{BOLD}3.{RESET} Never download direct dumps/archives to your real machine.")
+    print(f"{BOLD}4.{RESET} When in doubt, research the legal risks before proceeding.")
+    print(f"{BOLD}5.{RESET} If exporting results, review output for sensitive/private info before sharing.")
+    input(f"{CYAN}Press Enter to continue...{RESET}")
 
 if __name__ == "__main__":
-    try:
-        main_palette()
-    except (KeyboardInterrupt, EOFError):
-        console.print("\n[bold black]Terminated...[/bold black]")
+    main_menu()
+
+# ...continued from previous segment...
+
+def ingest_file_lines(filepath, target_list, label="item"):
+    """Ingests newlines from a file into a session list (avoids duplicates)."""
+    if not os.path.exists(filepath):
+        color_block(f"{filepath} not found for ingestion.", "error")
+        return
+    count = 0
+    with open(filepath, "r") as f:
+        for line in f:
+            v = line.strip()
+            if v and v not in target_list:
+                target_list.append(v)
+                count += 1
+    print(f"{GREEN}Ingested {count} new {label}(s) from {filepath}.{RESET}")
+
+def import_module_output():
+    """
+    Imports output files from submodules back into the main session.
+    Typical file locations:
+      - ~/.cache/image-enum/found_urls.txt
+      - ~/.flaru_session.json
+    """
+    # Import from image_enum/url_scrapper found urls
+    img_enum_path = os.path.expanduser("~/.cache/image-enum/found_urls.txt")
+    ingest_file_lines(img_enum_path, SESSION["urls"], "URL")
+    # Import from session file (self-updating, but allows for backup restore)
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, "r") as f:
+            try:
+                data = json.load(f)
+                for k in ("dorks", "urls", "domains", "images"):
+                    for v in data.get(k, []):
+                        if v not in SESSION[k]:
+                            SESSION[k].append(v)
+            except Exception as e:
+                color_block(f"Error importing from {SESSION_FILE}: {e}", "error")
+
+def advanced_batch_tools_menu():
+    print(f"\n{CYAN}Advanced Tools:{RESET}")
+    print(f"{YELLOW}1.{RESET} Import URLs from last module output")
+    print(f"{YELLOW}2.{RESET} Export all URLs/Dorks/Images to file")
+    print(f"{YELLOW}3.{RESET} Pipe URLs to aria2c for batch download")
+    print(f"{YELLOW}4.{RESET} Return to main menu")
+    sel = prompt(HTML('<prompt>Pick option [1-4]:</prompt> '), style=style).strip()
+    if sel == "1":
+        import_module_output()
+    elif sel == "2":
+        out_path = prompt(HTML('<prompt>Filename to export all data to:</prompt> '), style=style)
+        with open(out_path, "w") as f:
+            json.dump(SESSION, f, indent=2)
+        print(f"{GREEN}Exported all session data to {out_path}{RESET}")
+    elif sel == "3":
+        tmpfile = "/tmp/flaru_urls.txt"
+        with open(tmpfile, "w") as f:
+            for url in SESSION["urls"]:
+                f.write(url + "\n")
+        print(f"{CYAN}Running aria2c on all found URLs...{RESET}")
+        subprocess.run(["aria2c", "-c", "-x8", "-j4", "-i", tmpfile])
+    else:
+        print("Returning.")
+
+def main_menu():
+    load_session()
+    while True:
+        print(f"\n{CYAN}{BOLD}Ψ-4ndr0666 Flaru Terminal Suite{RESET}")
+        print(f"{YELLOW}1.{RESET} Dork Google for Media Links")
+        print(f"{YELLOW}2.{RESET} Brute-Force/Enumerate Images")
+        print(f"{YELLOW}3.{RESET} Recursive Web Album Crawl")
+        print(f"{YELLOW}4.{RESET} Reddit/Chan Dump")
+        print(f"{YELLOW}5.{RESET} Batch Export/Clipboard All Results")
+        print(f"{YELLOW}6.{RESET} OpSec Help & Info")
+        print(f"{YELLOW}7.{RESET} Advanced Tools (Import/Batch)")
+        print(f"{YELLOW}8.{RESET} Exit")
+
+        choice = prompt(HTML('<prompt>Select mode [1-8]:</prompt> '), style=style).strip()
+        if choice == '1':
+            opsec_warning()
+            run_dork_modal()
+        elif choice == '2':
+            opsec_warning()
+            run_image_enum()
+        elif choice == '3':
+            opsec_warning()
+            run_url_scrapper()
+        elif choice == '4':
+            opsec_warning()
+            run_reddit_script()
+        elif choice == '5':
+            export_session()
+        elif choice == '6':
+            print_opsec()
+        elif choice == '7':
+            advanced_batch_tools_menu()
+        elif choice == '8':
+            save_session()
+            print(f"{CYAN}Session saved. Goodbye!{RESET}")
+            break
+        else:
+            color_block("Invalid selection.", "error")
+
+if __name__ == "__main__":
+    main_menu()
