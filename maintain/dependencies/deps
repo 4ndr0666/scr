@@ -303,6 +303,7 @@ fix_pacman_keyring() {
 # Refreshes pacman databases, attempting to fix keyring issues if the refresh fails.
 # Exits if database refresh cannot be achieved.
 refresh_pacman_databases() {
+	local db_refresh_attempted=false # Flag to track if a refresh was attempted
 	local db_refresh_successful=false # Flag to track if a refresh was successful
 
 	log_message "INFO" "Refreshing pacman database (pacman -Syy)..."
@@ -310,6 +311,7 @@ refresh_pacman_databases() {
 	# Attempt database refresh. Use tee to show progress to console while logging.
 	if pacman -Syy --noconfirm 2>&1 | tee -a "$LOGFILE"; then
 		log_message "INFO" "Pacman database refreshed successfully."
+		db_refresh_attempted=true
 		db_refresh_successful=true
 	else
 		log_message "ERROR" "Failed to refresh pacman database. Attempting keyring fix."
@@ -319,6 +321,7 @@ refresh_pacman_databases() {
 			log_message "INFO" "Re-attempting pacman database refresh after keyring fix..."
 			if pacman -Syy --noconfirm 2>&1 | tee -a "$LOGFILE"; then
 				log_message "INFO" "Pacman database refreshed successfully after re-attempt."
+				db_refresh_attempted=true
 				db_refresh_successful=true
 			else
 				log_message "ERROR" "Pacman database refresh failed again after keyring fix."
@@ -344,94 +347,6 @@ refresh_pacman_databases() {
 		exit 1
 	fi
 }
-get_arch() {
-    local arch
-    arch=$(grep -m 1 '^Architecture' /etc/pacman.conf | sed 's/Architecture = //')
-    if [[ -z "$arch" || "$arch" == "auto" ]]; then
-        arch=$(uname -m)
-    fi
-    echo "$arch"
-}
-
-get_package_path() {
-    local name="$1"
-    local version="$2"
-    local arch="$3"
-    local pkg_path_template="/var/cache/pacman/pkg/{name}-{version}-{arch}.pkg.{format}"
-    local _arch _format package_path
-
-    for _arch in "$arch" "any"; do
-        for _format in "tar.xz" "tar.zst"; do
-            package_path="${pkg_path_template//\{name\}/$name}"
-            package_path="${package_path//\{version\}/$version}"
-            package_path="${package_path//\{arch\}/$_arch}"
-            package_path="${package_path//\{format\}/$_format}"
-            if [[ -f "$package_path" ]]; then
-                echo "$package_path"
-                return 0
-            fi
-        done
-    done
-    return 1
-}
-
-get_package() {
-    local name="$1"
-    local version="$2"
-    local arch="$3"
-    local path
-
-    path=$(get_package_path "$name" "$version" "$arch")
-    if [[ -z "$path" ]]; then
-        log_message "INFO" "=> $name package is missing, downloading"
-        pacman -Swq --noconfirm "$name"
-        path=$(get_package_path "$name" "$version" "$arch")
-    fi
-
-    if [[ -z "$path" ]]; then
-        log_message "ERROR" "Failed to download package $name"
-        return 1
-    fi
-    echo "$path"
-}
-
-reacquire_and_verify_package() {
-    local pkg_name version pkg_path file_list missing_files=()
-    local pkg_id="$1"
-    local arch
-    arch=$(get_arch)
-
-    # Correctly split package ID into name and version.
-    pkg_name=$(echo "$pkg_id" | awk '{print $1}')
-    version=$(echo "$pkg_id" | awk '{print $2}')
-
-    log_message "INFO" "Verifying package: $pkg_name $version"
-    pkg_path=$(get_package "$pkg_name" "$version" "$arch")
-    if [[ -z "$pkg_path" ]]; then
-        log_message "ERROR" "Could not find or acquire package: $pkg_name"
-        return 1
-    fi
-
-    log_message "INFO" "Found package at: $pkg_path"
-    file_list=$(tar -tf "$pkg_path")
-    for file in $file_list; do
-        if [[ ! -e "/$file" ]]; then
-            missing_files+=("/$file")
-        fi
-    done
-
-    if [[ ${#missing_files[@]} -gt 0 ]]; then
-        log_message "WARN" "Missing files for package $pkg_name:"
-        for missing_file in "${missing_files[@]}"; do
-            log_message "WARN" "  - $missing_file"
-        done
-        # Here you can decide what to do with missing files, e.g., reinstall.
-        # For now, we just log them.
-    else
-        log_message "INFO" "All files for package $pkg_name are present."
-    fi
-}
-
 
 ## Cache
 
@@ -691,11 +606,6 @@ compute_missing_dependencies() {
             fi
         fi
     done <<< "$pacman_output"
-
-    # Now, verify the package contents
-    for pkg in "${target_pkgs[@]}"; do
-        reacquire_and_verify_package "$pkg"
-    done
 
     # Convert the set of missing dependencies to a sorted array.
     if [[ ${#missing_set[@]} -gt 0 ]]; then
