@@ -2,10 +2,16 @@
 # flaru.py
 # Ψ-4ndr0666 All-in-One Modular OSINT/Media/Leak Terminal Suite
 
-import sys, os, re, shutil, subprocess, json, argparse, asyncio
-from collections import deque, Counter
+import sys
+import os
+import re
+import shutil
+import subprocess
+import json
+import asyncio
+import webbrowser
+from collections import Counter
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 try:
@@ -15,7 +21,7 @@ try:
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.styles import Style
     import pyperclip
-except ImportError as e:
+except ImportError:
     print("\033[1;31mMissing required packages.\033[0m", file=sys.stderr)
     print("Install with: pip install prompt_toolkit pyperclip httpx beautifulsoup4")
     sys.exit(1)
@@ -55,7 +61,7 @@ XDG_CONFIG = get_xdg_dir("config", ".config/image-enum")
 DOWNLOADS_DIR = XDG_DATA / "downloads"
 LOG_FILE = XDG_CACHE / "enum.log"
 
-SESSION_FILE = os.path.expanduser("~/.flaru_session.json")
+SESSION_FILE = os.path.expanduser("$XDG_CACHE/dorkmaster/dorkmaster_session.json")
 SESSION = {
     "targets": [],
     "dorks": [],
@@ -86,8 +92,6 @@ def opsec_warning():
         "error",
     )
 
-
-# ...continued from previous segment...
 
 # --- Modal Dorkmaster (Google Dork Picker) ---
 DORK_CATEGORIES = [
@@ -224,8 +228,6 @@ def run_dork_modal():
                     f"{YELLOW}Not opening browser. Copy/paste dork manually if needed.{RESET}"
                 )
 
-
-# ...continued from previous segment...
 
 IMG_EXTS = [
     ".jpg",
@@ -429,8 +431,6 @@ class ImageEnumerator:
         await self._check_urls_parallel(candidates, verbose)
         self._print_summary(len(candidates))
 
-    # ...continued from previous segment...
-
     async def run_recursive(self, start_url, depth, verbose):
         print(BOLD(f"[Recursive Mode] Starting at {start_url} (depth: {depth})"))
         async with httpx.AsyncClient(
@@ -537,7 +537,7 @@ def run_reddit_downloader():
 def main_menu():
     load_session()
     while True:
-        print(f"\n{CYAN}{BOLD}Ψ-4ndr0666 Flaru Terminal Suite{RESET}")
+        print(f"\n{CYAN}{BOLD}Ψ === // DORKMASTER //{RESET}")
         print(f"{YELLOW}1.{RESET} Dork Google for Media Links")
         print(f"{YELLOW}2.{RESET} Brute-Force/Enumerate Images")
         print(f"{YELLOW}3.{RESET} Recursive Web Album Crawl")

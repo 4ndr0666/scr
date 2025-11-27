@@ -9,10 +9,7 @@ import argparse
 import asyncio
 import os
 import re
-import shutil
-import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin, urlparse
@@ -29,11 +26,13 @@ except ImportError:
     )
     sys.exit(1)
 
+
 # --- XDG Base Directory Specification ---
 def get_xdg_dir(kind: str, fallback: str) -> Path:
     """Retrieves an XDG base directory path."""
     var = f"XDG_{kind.upper()}_HOME"
     return Path(os.environ.get(var, str(Path.home() / fallback)))
+
 
 XDG_DATA = get_xdg_dir("data", ".local/share/image-enum")
 XDG_CACHE = get_xdg_dir("cache", ".cache/image-enum")
@@ -62,30 +61,36 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 )
 
+
 def ensure_dirs():
     for p in [XDG_DATA, XDG_CACHE, DOWNLOADS_DIR]:
         p.mkdir(parents=True, exist_ok=True)
     LOG_FILE.touch(exist_ok=True)
+
 
 def log(msg: str):
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as f:
         f.write(msg + "\n")
 
+
 def is_image_url(url: str) -> bool:
     return any(url.lower().split("?")[0].endswith(e) for e in IMG_EXTS)
+
 
 def parse_images(html: str, base_url: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     urls = set()
     for tag in soup.find_all("img"):
         src = tag.get("src") or ""
-        if not src: continue
+        if not src:
+            continue
         if not src.startswith("http"):
             src = urljoin(base_url, src)
         if is_image_url(src):
             urls.add(src)
     return list(urls)
+
 
 async def fetch_url(client, url: str, timeout=10) -> Optional[str]:
     try:
@@ -96,11 +101,13 @@ async def fetch_url(client, url: str, timeout=10) -> Optional[str]:
         log(f"[ERR] {url}: {e}")
         return None
 
+
 async def fetch_images_from_url(client, url: str) -> list:
     html = await fetch_url(client, url)
     if not html:
         return []
     return parse_images(html, url)
+
 
 async def download_image(client, url: str, out_dir: Path):
     fname = url.split("/")[-1].split("?")[0]
@@ -115,6 +122,7 @@ async def download_image(client, url: str, out_dir: Path):
     except Exception as e:
         print(f"[FAIL] {url}: {e}")
         log(f"[FAIL] {url}: {e}")
+
 
 async def recursive_enum(
     client,
@@ -148,6 +156,7 @@ async def recursive_enum(
             if urlparse(link).netloc == urlparse(base_url).netloc:
                 queue.append((link, d + 1))
 
+
 async def main_enum(
     url: str, depth: int, pattern: Optional[str], out_dir: Path, max_pages: int = 100
 ):
@@ -162,6 +171,7 @@ async def main_enum(
         print(f"\n[INFO] Found {len(image_urls)} unique images.")
         for img_url in image_urls:
             await download_image(client, img_url, out_dir)
+
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -182,6 +192,7 @@ def parse_args():
     )
     return p.parse_args()
 
+
 def main():
     args = parse_args()
     ensure_dirs()
@@ -189,6 +200,7 @@ def main():
     loop.run_until_complete(
         main_enum(args.url, args.depth, args.pattern, Path(args.outdir), args.max_pages)
     )
+
 
 if __name__ == "__main__":
     main()

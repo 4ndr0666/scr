@@ -102,11 +102,15 @@ def load_config():
                 config = json.load(f)
             logger.info(f"Configuration loaded from {CONFIG_FILE}.")
         except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {CONFIG_FILE}: {e}. Using default config.")
+            logger.error(
+                f"Error decoding JSON from {CONFIG_FILE}: {e}. Using default config."
+            )
             config = DEFAULT_CONFIG
     else:
         config = DEFAULT_CONFIG
-        logger.info(f"Config file not found. Creating default config at {CONFIG_FILE}...")
+        logger.info(
+            f"Config file not found. Creating default config at {CONFIG_FILE}..."
+        )
         save_config()
 
     # Ensure duplicates directory exists
@@ -142,7 +146,10 @@ def load_moved_files_log():
         except Exception as e:
             logger.error(f"Failed to load moved files log {MOVED_FILES_LOG}: {e}")
     else:
-        logger.info(f"{MOVED_FILES_LOG} not found. It will be created after moving duplicates.")
+        logger.info(
+            f"{MOVED_FILES_LOG} not found. It will be created after moving duplicates."
+        )
+
 
 def save_moved_files_log():
     """Saves newly moved files to the log."""
@@ -209,7 +216,9 @@ def configure_scan_directories():
 def configure_duplicates_folder():
     """Allows user to set the destination folder for duplicates."""
     print(f"\nCurrent destination folder for duplicates: {config['duplicates_dir']}")
-    new_dest = input("Enter new duplicates folder (or press Enter to keep current): ").strip()
+    new_dest = input(
+        "Enter new duplicates folder (or press Enter to keep current): "
+    ).strip()
     if new_dest:
         new_dest_path = Path(new_dest).expanduser().resolve()
         if not new_dest_path.exists():
@@ -218,7 +227,9 @@ def configure_duplicates_folder():
                 logger.info(f"Created duplicates directory: {new_dest_path}")
             except Exception as e:
                 logger.error(f"Failed to create directory {new_dest_path}: {e}")
-                print(f"ERROR: Could not create directory '{new_dest_path}'. Check logs.")
+                print(
+                    f"ERROR: Could not create directory '{new_dest_path}'. Check logs."
+                )
                 return
         config["duplicates_dir"] = str(new_dest_path)
         save_config()
@@ -252,7 +263,9 @@ def show_educational_info():
     print("   - Always verify crucial data backups before removal.")
     print("")
     print("5) Encouraging Manual Review:")
-    print("   - You can safely run 'jdupes' with '-n' or '-X size+=5k' filters to refine which duplicates to consider.")
+    print(
+        "   - You can safely run 'jdupes' with '-n' or '-X size+=5k' filters to refine which duplicates to consider."
+    )
     print("   - Run 'man jdupes' or 'jdupes --help' to learn more advanced usage.")
     print("")
     print("6) For advanced or custom workflows, integrate jdupes in scripts or use")
@@ -303,8 +316,12 @@ def move_duplicates(files_to_move):
     """Moves a list of files to the configured duplicates directory."""
     duplicates_dir = Path(config["duplicates_dir"]).expanduser().resolve()
     if not duplicates_dir.is_dir():
-        logger.error(f"Duplicates directory {duplicates_dir} does not exist or is not a directory.")
-        print(f"ERROR: Duplicates directory '{duplicates_dir}' is invalid. Check config.")
+        logger.error(
+            f"Duplicates directory {duplicates_dir} does not exist or is not a directory."
+        )
+        print(
+            f"ERROR: Duplicates directory '{duplicates_dir}' is invalid. Check config."
+        )
         return
 
     for src_path_str in files_to_move:
@@ -340,7 +357,11 @@ def move_duplicates(files_to_move):
 
 def delete_duplicates(files_to_delete):
     """Deletes a list of files permanently."""
-    confirm = input("Are you sure you want to PERMANENTLY DELETE these files? (yes/no): ").strip().lower()
+    confirm = (
+        input("Are you sure you want to PERMANENTLY DELETE these files? (yes/no): ")
+        .strip()
+        .lower()
+    )
     if confirm != "yes":
         print("Deletion cancelled.")
         return
@@ -353,13 +374,15 @@ def delete_duplicates(files_to_delete):
             continue
 
         if not file_path.is_file():
-            logger.warning(f"File not found or not a file (skipping deletion): {file_path}")
+            logger.warning(
+                f"File not found or not a file (skipping deletion): {file_path}"
+            )
             print(f"WARNING: File does not exist (skipping deletion): {file_path}")
             continue
 
         try:
             file_path.unlink()  # Delete the file
-            already_moved.add(str(file_path)) # Mark as processed
+            already_moved.add(str(file_path))  # Mark as processed
             logger.info(f"Deleted {file_path}")
             print(f"Deleted {file_path}")
         except Exception as e:
@@ -373,7 +396,9 @@ def run_duplicate_scan_and_process():
 
     if not scan_dirs:
         logger.warning("No directories specified in config. Please configure first.")
-        print("No directories specified. Please configure directories before scanning.\n")
+        print(
+            "No directories specified. Please configure directories before scanning.\n"
+        )
         return
 
     # Validate directories
@@ -412,7 +437,9 @@ def run_duplicate_scan_and_process():
     if len(current_duplicate_group) > 1:
         process_duplicate_group(current_duplicate_group)
 
-    print("\nDuplicate processing complete. Check log and duplicates folder for moved/deleted files.\n")
+    print(
+        "\nDuplicate processing complete. Check log and duplicates folder for moved/deleted files.\n"
+    )
     logger.info("jdupes scan and duplicate processing complete.")
     save_moved_files_log()
 
