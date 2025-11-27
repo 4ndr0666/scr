@@ -21,6 +21,12 @@ import importlib.util
 import dork_cli_menu
 import subprocess
 import shutil
+from pathlib import Path
+import asyncio
+from collections import Counter
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import Prompt, IntPrompt, Confirm
 
 # ===== Ψ-4ndr0666-OS FULL LIBERATION – DEFAULT ACTIVE =====
 console = Console()
@@ -33,6 +39,11 @@ console = Console()
 XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 CONFIG_DIR = os.path.join(XDG_CONFIG_HOME, "dorkmaster")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+XDG_DATA_HOME = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+DOWNLOADS_DIR = os.path.join(XDG_DATA_HOME, "dorkmaster", "downloads")
+XDG_CACHE_HOME = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+
 
 DEFAULT_CONFIG = {
     "private_searxng_url": "http://localhost:8080",
@@ -42,6 +53,7 @@ DEFAULT_CONFIG = {
     "clipboard_tool": "auto",
     "default_target": "viki_veloxen",
     "session_dir": os.path.expanduser("~/.local/share/dorkmaster/sessions/"),
+    "downloads_dir": DOWNLOADS_DIR,
     "searx_pool": [
         "https://searx.tiekoetter.com",
         "https://searx.ninja",
@@ -57,6 +69,14 @@ DEFAULT_CONFIG = {
     "telegram_api_id": "",
     "telegram_api_hash": ""
 }
+
+def opsec_warning():
+    console.print(Panel(
+        "[bold red]!! WARNING !![/bold red]\n"
+        "Always use VPN, Tor, or proxy for sensitive searches/downloads.\n"
+        "Only operate in a VM or isolated env for dump/warez scraping.",
+        title="OpSec Alert", border_style="red"
+    ))
 
 def ensure_config():
     """Create config directory and default config if missing."""
@@ -101,7 +121,10 @@ def save_config():
 # Load config into module-level variable
 config = load_config()
 SESSION_DIR = config["session_dir"]
+DOWNLOADS_DIR = config["downloads_dir"]
 os.makedirs(SESSION_DIR, exist_ok=True)
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+
 
 # ===== SESSION MANAGER =====
 class MycelialNode:
@@ -220,6 +243,211 @@ def extract_media_links(html, base_url):
         if validate_url(href):
             links.add(href)
     return list(links)
+
+# --- Aria2c Downloader ---
+def download_with_aria2c(urls, outdir):
+    if not urls:
+        return
+    if not shutil.which("aria2c"):
+        console.print("[red]Error: aria2c not found. Install it for downloads.[/red]")
+        return
+    
+    outdir_path = Path(outdir)
+    outdir_path.mkdir(parents=True, exist_ok=True)
+    
+    listfile_path = Path(XDG_CACHE_HOME) / "dorkmaster" / "aria2_urls.txt"
+    listfile_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with listfile_path.open("w", encoding="utf-8") as f:
+        for url in sorted(urls):
+            f.write(url + "\n")
+            
+    console.print(f"[cyan]Downloading {len(urls)} files to {outdir_path}...[/cyan]")
+    cmd = ["aria2c", "-c", "-x16", "-s16", "-j10", "--console-log-level=warn", "-d", str(outdir_path), "-i", str(listfile_path)]
+    subprocess.run(cmd, check=False)
+    console.print("[green]Download finished.[/green]")
+
+
+# --- Image Enumerator Logic (from v5) ---
+IMG_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".svg", ".avif", ".heic"]
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+
+class ImageEnumerator:
+    def __init__(self, headers=None, timeout=10):
+        headers = headers or {}
+        self.headers = {h.split(":", 1)[0].strip(): h.split(":", 1)[1].strip() for h in headers}
+        if "User-Agent" not in self.headers:
+            self.headers["User-Agent"] = DEFAULT_USER_AGENT
+        self.timeout = timeout
+        self.found_urls = set()
+        self.status_counts = Counter()
+
+    @staticmethod
+    def _extract_brute_pattern(url):
+        parsed_url = urlparse(url)
+        filename = Path(parsed_url.path).name
+        file_stem, file_ext = os.path.splitext(filename)
+        if file_ext.lower() not in IMG_EXTS: file_ext = ""
+        
+        numeric_parts = list(re.finditer(r"\d+", file_stem))
+        if not numeric_parts:
+            raise ValueError("No numeric sequence found in filename.")
+            
+        match = numeric_parts[-1]
+        num_str = match.group(0)
+        start, end = match.span()
+        pattern = file_stem[:start] + "{num}" + file_stem[end:]
+        return pattern, int(num_str), len(num_str), file_ext
+
+    async def _check_url(self, client, url):
+        try:
+            response = await client.head(url, follow_redirects=True)
+            return url, response.status_code
+        except httpx.RequestError:
+            return url, 0
+
+    async def _check_urls_parallel(self, urls):
+        console.print(f"[blue]Checking {len(urls)} URLs...[/blue]")
+        tasks = []
+        semaphore = asyncio.Semaphore(50)
+        
+        async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout) as client:
+            async def throttled_check(url):
+                async with semaphore:
+                    return await self._check_url(client, url)
+
+            for url in urls:
+                tasks.append(asyncio.create_task(throttled_check(url)))
+            
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+                task_id = progress.add_task("Scanning...", total=len(urls))
+                
+                for future in asyncio.as_completed(tasks):
+                    url, code = await future
+                    self.status_counts[code] += 1
+                    progress.update(task_id, advance=1, description=f"Scanning: Found {len(self.found_urls)} valid")
+                    
+                    if code == 200:
+                        self.found_urls.add(url)
+                        console.print(f"[green][200] {url}[/green]")
+                    elif code == 403:
+                        pass # Silent on forbidden to reduce noise
+                    elif code == 0:
+                        pass
+        
+        console.print("\n[bold]Scan Complete.[/bold]")
+        self._print_summary(len(urls))
+
+    def _print_summary(self, total):
+        table = Table(title="Enumeration Summary", box=box.SIMPLE)
+        table.add_column("Status", style="bold")
+        table.add_column("Count", justify="right")
+        
+        table.add_row("Total Checked", str(total))
+        table.add_row("[green]200 OK[/green]", str(self.status_counts[200]))
+        table.add_row("[yellow]403 Forbidden[/yellow]", str(self.status_counts[403]))
+        table.add_row("[red]404 Not Found[/red]", str(self.status_counts[404]))
+        table.add_row("[red]Errors[/red]", str(self.status_counts[0]))
+        console.print(table)
+
+    async def run_brute(self, url, min_r, max_r, pattern=None):
+        try:
+            if pattern:
+                if "{num}" not in pattern: raise ValueError("Pattern missing {num}")
+                base_pat, width, ext = pattern, 2, Path(url).suffix
+            else:
+                base_pat, _, width, ext = self._extract_brute_pattern(url)
+            
+            console.print(f"[dim]Pattern: {base_pat} | Range: {min_r}-{max_r}[/dim]")
+            
+            parsed = urlparse(url)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            dir_p = Path(parsed.path).parent
+            
+            candidates = set()
+            for i in range(min_r, max_r + 1):
+                num_str = str(i).zfill(width)
+                stem = base_pat.format(num=num_str)
+                # Try detected extension or all
+                exts = [ext] if ext else IMG_EXTS
+                for e in exts:
+                    candidates.add(urljoin(base, str(dir_p / (stem + e))))
+            
+            await self._check_urls_parallel(candidates)
+            
+        except Exception as e:
+            console.print(f"[bold red]Brute Error: {e}[/bold red]")
+
+    async def run_recursive(self, start_url, depth):
+        console.print(f"[bold]Recursive Crawl:[/bold] {start_url} (Depth: {depth})")
+        
+        urls_to_visit = {(start_url, 0)}
+        visited = set()
+        
+        async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout, follow_redirects=True) as client:
+            while urls_to_visit:
+                curr, d = urls_to_visit.pop()
+                if curr in visited or d > depth: continue
+                visited.add(curr)
+                
+                try:
+                    resp = await client.get(curr)
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    
+                    # Find images
+                    page_links = set()
+                    for img in soup.find_all(["a", "img"], href=True, src=True):
+                        href = img.get("href") or img.get("src")
+                        if not href: continue
+                        abs_url = urljoin(curr, href)
+                        
+                        if any(abs_url.lower().endswith(ext) for ext in IMG_EXTS):
+                            if abs_url not in self.found_urls:
+                                console.print(f"[green]+ Found:[/green] {abs_url}")
+                                self.found_urls.add(abs_url)
+                        
+                        # Recurse same domain
+                        elif urlparse(abs_url).netloc == urlparse(start_url).netloc:
+                             if abs_url not in visited:
+                                 urls_to_visit.add((abs_url, d + 1))
+                except Exception as e:
+                    console.print(f"[dim red]Error {curr}: {e}[/dim red]")
+
+
+# --- Reddit Ripper ---
+def run_reddit_downloader():
+    sub = Prompt.ask("Subreddit").strip()
+    sort = Prompt.ask("Sort", choices=["top", "hot", "new"], default="hot")
+    limit = IntPrompt.ask("Limit", default=50)
+    
+    url = f"https://www.reddit.com/r/{sub}/hot.json"
+    console.print(f"[blue]Fetching r/{sub}...[/blue]")
+    
+    img_urls = []
+    try:
+        resp = httpx.get(url, params={"sort": sort, "limit": limit}, headers={"User-Agent": "dorkmaster/6.0"}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        posts = data.get("data", {}).get("children", [])
+        
+        if not posts:
+            console.print("[yellow]No posts found.[/yellow]")
+            return
+
+        for post in posts:
+            p_data = post["data"]
+            img_url = p_data.get("url_overridden_by_dest", p_data.get("url", ""))
+            if any(img_url.lower().endswith(ext) for ext in IMG_EXTS):
+                img_urls.append(img_url)
+
+        console.print(f"[green]Found {len(img_urls)} images from r/{sub}.[/green]")
+        if img_urls and Confirm.ask("Download them all?"):
+            dl_dir = Path(DOWNLOADS_DIR) / f"reddit_{sub}"
+            download_with_aria2c(img_urls, dl_dir)
+
+    except Exception as e:
+        console.print(f"[bold red]Reddit Error: {e}[/bold red]")
+
 
 # ===== DORK PALETTE =====
 def dork_palette():
@@ -476,20 +704,34 @@ def settings_menu():
 # ===== MAIN MENU =====
 def main_palette():
     session = MycelialSession()
+    opsec_warning()
     while True:
-        console.print("\n[bold cyan]==== // DORKMASTER //[/bold cyan]")
-        print("1. Dork & Hunt")
-        print("2. Analyze Vein")
-        print("3. Spider Leak Domains")
-        print("4. Recurse Chains")
-        print("5. Export Session")
-        print("6. View Tree")
-        print("7. Plugins")
-        print("8. Settings")
-        print("0. Exit")
-        sel = prompt("Command:")
+        console.print(Panel.fit(
+            "[bold cyan]Ψ-4ndr0666 DORKMASTER v6[/bold cyan]\n[dim]Superset Edition[/dim]",
+            border_style="cyan"
+        ))
+        
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Key", style="yellow bold", justify="right")
+        table.add_column("Action")
+        
+        table.add_row("1", "Dork & Hunt (SearxNG)")
+        table.add_row("2", "Image Brute-Forcer")
+        table.add_row("3", "Recursive Image Crawler")
+        table.add_row("4", "Reddit Ripper")
+        table.add_row("5", "Analyze Single URL")
+        table.add_row("6", "Spider Leak Domains")
+        table.add_row("7", "Recurse URL Chains")
+        table.add_row("8", "Export Session")
+        table.add_row("9", "View Session Tree")
+        table.add_row("10", "Plugins")
+        table.add_row("11", "Settings")
+        table.add_row("0", "Exit")
+        
+        console.print(table)
+        sel = prompt("Command")
 
-        if sel == "8":
+        if sel == "11":
             settings_menu()
             continue
 
@@ -523,15 +765,51 @@ def main_palette():
                     node_data = analyze_target(urls[idx])
                     if node_data:
                         results_node.add_child(MycelialNode(node_data, "nsfw_analyze"))
-
+        
         elif sel == "2":
+            opsec_warning()
+            url = Prompt.ask("Sample Image URL")
+            min_r = IntPrompt.ask("Min Sequence", default=1)
+            max_r = IntPrompt.ask("Max Sequence", default=100)
+            
+            enum = ImageEnumerator()
+            asyncio.run(enum.run_brute(url, min_r, max_r))
+            
+            if enum.found_urls and Confirm.ask("Download found images?"):
+                dl_dir = Path(DOWNLOADS_DIR) / "bruteforce"
+                download_with_aria2c(list(enum.found_urls), dl_dir)
+            
+            node = MycelialNode({"base_url": url, "found_count": len(enum.found_urls)}, "image_brute")
+            session.add_root(node)
+
+
+        elif sel == "3":
+            opsec_warning()
+            url = Prompt.ask("Start URL")
+            depth = IntPrompt.ask("Depth", default=2)
+            
+            enum = ImageEnumerator()
+            asyncio.run(enum.run_recursive(url, depth))
+
+            if enum.found_urls and Confirm.ask("Download found images?"):
+                dl_dir = Path(DOWNLOADS_DIR) / "crawled"
+                download_with_aria2c(list(enum.found_urls), dl_dir)
+
+            node = MycelialNode({"start_url": url, "found_count": len(enum.found_urls)}, "image_crawl")
+            session.add_root(node)
+
+        elif sel == "4":
+            opsec_warning()
+            run_reddit_downloader()
+
+        elif sel == "5":
             url = prompt("URL to gut:")
             data = analyze_target(url)
             if data:
                 node = MycelialNode(data, "manual_analyze")
                 session.add_root(node)
 
-        elif sel == "3":
+        elif sel == "6":
             base = prompt("Base domain (e.g., https://t.me/s/athleticgorgeous):")
             if validate_url(base):
                 res = brute_spider(base)
@@ -543,7 +821,7 @@ def main_palette():
             else:
                 console.print("[red]Invalid base URL.[/red]")
 
-        elif sel == "4":
+        elif sel == "7":
             urls_input = prompt("URLs (comma-sep):").split(",")
             urls = [u.strip() for u in urls_input if validate_url(u.strip())]
             if urls:
@@ -556,14 +834,14 @@ def main_palette():
                     f"[green]Recurse analyzed {len(res)} unique nodes.[/green]"
                 )
 
-        elif sel == "5":
+        elif sel == "8":
             fname = prompt("Export filename (blank for auto):") or None
             session.export(fname)
 
-        elif sel == "6":
+        elif sel == "9":
             session.print_tree()
 
-        elif sel == "7":
+        elif sel == "10":
             console.print("\n[bold cyan]=== PLUGINS ===[/bold cyan]")
             plugins = load_plugins()
             if not plugins:

@@ -1,0 +1,1368 @@
+[
+  {
+    "category": "Direct Domain Patterns",
+    "patterns": [
+      {
+        "name": "Primary .com",
+        "query": "\"{company}.com\""
+      },
+      {
+        "name": "Primary .net",
+        "query": "\"{company}.net\""
+      },
+      {
+        "name": "Primary .org",
+        "query": "\"{company}.org\""
+      },
+      {
+        "name": "Primary .app",
+        "query": "\"{company}.app\""
+      },
+      {
+        "name": "Primary .io",
+        "query": "\"{company}.io\""
+      },
+      {
+        "name": "Primary .co",
+        "query": "\"{company}.co\""
+      },
+      {
+        "name": "Primary .us",
+        "query": "\"{company}.us\""
+      },
+      {
+        "name": "Primary .biz",
+        "query": "\"{company}.biz\""
+      }
+    ]
+  },
+  {
+    "category": "Subdomain Discovery",
+    "patterns": [
+      {
+        "name": "All .com subdomains",
+        "query": "site:*.{company}.com"
+      },
+      {
+        "name": "All .net subdomains",
+        "query": "site:*.{company}.net"
+      },
+      {
+        "name": "All .org subdomains",
+        "query": "site:*.{company}.org"
+      },
+      {
+        "name": "All .app subdomains",
+        "query": "site:*.{company}.app"
+      },
+      {
+        "name": "All .io subdomains",
+        "query": "site:*.{company}.io"
+      }
+    ]
+  },
+  {
+    "category": "Domain Variations",
+    "patterns": [
+      {
+        "name": "Company + domain",
+        "query": "\"{company}\" \"domain\" \".com\""
+      },
+      {
+        "name": "Company + website",
+        "query": "\"{company}\" \"website\" \".com\""
+      },
+      {
+        "name": "Company in URL",
+        "query": "\"{company}\" inurl:{company}"
+      },
+      {
+        "name": "Company plural",
+        "query": "\"{company}s.com\""
+      },
+      {
+        "name": "Company with 'the'",
+        "query": "\"the{company}.com\""
+      },
+      {
+        "name": "Company with 'my'",
+        "query": "\"my{company}.com\""
+      },
+      {
+        "name": "Company with 'get'",
+        "query": "\"get{company}.com\""
+      },
+      {
+        "name": "Company with 'go'",
+        "query": "\"go{company}.com\""
+      }
+    ]
+  },
+  {
+    "category": "Official Website References",
+    "patterns": [
+      {
+        "name": "Visit our website",
+        "query": "\"{company}\" \"visit our website\""
+      },
+      {
+        "name": "Official website",
+        "query": "\"{company}\" \"official website\""
+      },
+      {
+        "name": "Company website",
+        "query": "\"{company}\" \"company website\""
+      },
+      {
+        "name": "Homepage references",
+        "query": "\"{company}\" \"homepage\""
+      },
+      {
+        "name": "WWW references",
+        "query": "\"{company}\" \"www.\""
+      },
+      {
+        "name": "HTTPS references",
+        "query": "\"{company}\" \"https://\""
+      },
+      {
+        "name": "URL references",
+        "query": "\"{company}\" \"url\""
+      }
+    ]
+  },
+  {
+    "category": "Business & Marketing",
+    "patterns": [
+      {
+        "name": "Press releases",
+        "query": "\"{company}\" \"press release\" site:*.com"
+      },
+      {
+        "name": "About us pages",
+        "query": "\"{company}\" inurl:about site:*.com"
+      },
+      {
+        "name": "Contact pages",
+        "query": "\"{company}\" inurl:contact site:*.com"
+      },
+      {
+        "name": "Careers pages",
+        "query": "\"{company}\" inurl:careers site:*.com"
+      },
+      {
+        "name": "Investor relations",
+        "query": "\"{company}\" \"investor relations\""
+      },
+      {
+        "name": "News mentions",
+        "query": "\"{company}\" \"news\" site:*.com"
+      }
+    ]
+  },
+  {
+    "category": "Technical Discovery",
+    "patterns": [
+      {
+        "name": "SSL certificates",
+        "query": "\"{company}\" site:crt.sh"
+      },
+      {
+        "name": "DNS records",
+        "query": "\"{company}\" \"DNS\" \"record\""
+      },
+      {
+        "name": "Whois data",
+        "query": "\"{company}\" \"whois\" \"domain\""
+      },
+      {
+        "name": "Domain registration",
+        "query": "\"{company}\" \"domain registration\""
+      },
+      {
+        "name": "Certificate transparency",
+        "query": "\"{company}\" \"certificate transparency\""
+      }
+    ]
+  },
+  {
+    "category": "Brand Variations",
+    "patterns": [
+      {
+        "name": "No spaces",
+        "query": "\"{company}.com\""
+      },
+      {
+        "name": "With dashes",
+        "query": "\"{company}-dash.com\""
+      },
+      {
+        "name": "With underscores",
+        "query": "\"{company}_underscore.com\""
+      },
+      {
+        "name": "Abbreviated",
+        "query": "\"{company}_abbr.com\""
+      },
+      {
+        "name": "First word only",
+        "query": "\"{company}_first.com\""
+      },
+      {
+        "name": "Last word only",
+        "query": "\"{company}_last.com\""
+      }
+    ]
+  },
+  {
+    "category": "International Domains",
+    "patterns": [
+      {
+        "name": "UK domains",
+        "query": "\"{company}\" site:*.co.uk"
+      },
+      {
+        "name": "Canadian domains",
+        "query": "\"{company}\" site:*.ca"
+      },
+      {
+        "name": "Australian domains",
+        "query": "\"{company}\" site:*.com.au"
+      },
+      {
+        "name": "German domains",
+        "query": "\"{company}\" site:*.de"
+      },
+      {
+        "name": "French domains",
+        "query": "\"{company}\" site:*.fr"
+      },
+      {
+        "name": "European domains",
+        "query": "\"{company}\" site:*.eu"
+      },
+      {
+        "name": "Japanese domains",
+        "query": "\"{company}\" site:*.jp"
+      },
+      {
+        "name": "Brazilian domains",
+        "query": "\"{company}\" site:*.br"
+      },
+      {
+        "name": "Spanish domains",
+        "query": "\"{company}\" site:*.es"
+      },
+      {
+        "name": "Italian domains",
+        "query": "\"{company}\" site:*.it"
+      },
+      {
+        "name": "Dutch domains",
+        "query": "\"{company}\" site:*.nl"
+      },
+      {
+        "name": "Swiss domains",
+        "query": "\"{company}\" site:*.ch"
+      },
+      {
+        "name": "Swedish domains",
+        "query": "\"{company}\" site:*.se"
+      },
+      {
+        "name": "Indian domains",
+        "query": "\"{company}\" site:*.in"
+      }
+    ]
+  },
+  {
+    "category": "Social & Email Discovery",
+    "patterns": [
+      {
+        "name": "Email domains",
+        "query": "\"@{company}.com\""
+      },
+      {
+        "name": "Contact emails",
+        "query": "\"contact@{company}\""
+      },
+      {
+        "name": "Info emails",
+        "query": "\"info@{company}\""
+      },
+      {
+        "name": "Support emails",
+        "query": "\"support@{company}\""
+      },
+      {
+        "name": "Social media links",
+        "query": "\"{company}\" \"follow us\" site:*.com"
+      },
+      {
+        "name": "LinkedIn company",
+        "query": "\"{company}\" site:linkedin.com"
+      }
+    ]
+  },
+  {
+    "category": "File & Document Discovery",
+    "patterns": [
+      {
+        "name": "PDF documents",
+        "query": "\"{company}\" filetype:pdf site:*.com"
+      },
+      {
+        "name": "Word documents",
+        "query": "\"{company}\" filetype:doc site:*.com"
+      },
+      {
+        "name": "Excel files",
+        "query": "\"{company}\" filetype:xls site:*.com"
+      },
+      {
+        "name": "Privacy policies",
+        "query": "\"{company}\" \"privacy policy\" site:*.com"
+      },
+      {
+        "name": "Terms of service",
+        "query": "\"{company}\" \"terms of service\" site:*.com"
+      },
+      {
+        "name": "Annual reports",
+        "query": "\"{company}\" \"annual report\" filetype:pdf"
+      }
+    ]
+  },
+  {
+    "category": "WHOIS & Registration Patterns",
+    "patterns": [
+      {
+        "name": "Registrant Organization",
+        "query": "\"Registrant Organization\" \"{company}\""
+      },
+      {
+        "name": "Registrant Name",
+        "query": "\"Registrant Name\" \"{company}\""
+      },
+      {
+        "name": "Registered to",
+        "query": "\"Registered to\" \"{company}\""
+      },
+      {
+        "name": "Domain Owner",
+        "query": "\"Domain Owner\" \"{company}\""
+      },
+      {
+        "name": "Domain registered by",
+        "query": "\"Domain registered by\" \"{company}\""
+      }
+    ]
+  },
+  {
+    "category": "Reverse WHOIS & Domain Databases",
+    "patterns": [
+      {
+        "name": "DomainTools WHOIS",
+        "query": "\"{company}\" site:whois.domaintools.com"
+      },
+      {
+        "name": "WHOIS.com",
+        "query": "\"{company}\" site:whois.com"
+      },
+      {
+        "name": "DomainBigData",
+        "query": "\"{company}\" site:domainbigdata.com"
+      },
+      {
+        "name": "SecurityTrails",
+        "query": "\"{company}\" site:securitytrails.com"
+      },
+      {
+        "name": "WhoXY",
+        "query": "\"{company}\" site:whoxy.com"
+      }
+    ]
+  },
+  {
+    "category": "Modern TLDs & Extensions",
+    "patterns": [
+      {
+        "name": "AI domains",
+        "query": "\"{company}\" site:*.ai"
+      },
+      {
+        "name": "XYZ domains",
+        "query": "\"{company}\" site:*.xyz"
+      },
+      {
+        "name": "Tech domains",
+        "query": "\"{company}\" site:*.tech"
+      },
+      {
+        "name": "Cloud domains",
+        "query": "\"{company}\" site:*.cloud"
+      },
+      {
+        "name": "Inc domains",
+        "query": "\"{company}\" site:*.inc"
+      },
+      {
+        "name": "Me domains",
+        "query": "\"{company}\" site:*.me"
+      },
+      {
+        "name": "TV domains",
+        "query": "\"{company}\" site:*.tv"
+      },
+      {
+        "name": "Info domains",
+        "query": "\"{company}\" site:*.info"
+      },
+      {
+        "name": "Pro domains",
+        "query": "\"{company}\" site:*.pro"
+      },
+      {
+        "name": "Site domains",
+        "query": "\"{company}\" site:*.site"
+      },
+      {
+        "name": "Online domains",
+        "query": "\"{company}\" site:*.online"
+      },
+      {
+        "name": "Store domains",
+        "query": "\"{company}\" site:*.store"
+      },
+      {
+        "name": "Shop domains",
+        "query": "\"{company}\" site:*.shop"
+      },
+      {
+        "name": "Dev domains",
+        "query": "\"{company}\" site:*.dev"
+      }
+    ]
+  },
+  {
+    "category": "Domain Portfolio & Brand Protection",
+    "patterns": [
+      {
+        "name": "Domain portfolio",
+        "query": "\"{company}\" \"domain portfolio\""
+      },
+      {
+        "name": "Our domains",
+        "query": "\"{company}\" \"our domains\""
+      },
+      {
+        "name": "Brand protection",
+        "query": "\"{company}\" \"brand protection\""
+      },
+      {
+        "name": "List of domains",
+        "query": "\"{company}\" \"list of domains\""
+      },
+      {
+        "name": "All our domains",
+        "query": "\"{company}\" \"all our domains\""
+      },
+      {
+        "name": "Subsidiary domains",
+        "query": "\"{company}\" \"subsidiary domains\""
+      },
+      {
+        "name": "Acquired domains",
+        "query": "\"{company}\" \"acquired domains\""
+      }
+    ]
+  },
+  {
+    "category": "Public Filings & Legal",
+    "patterns": [
+      {
+        "name": "Intellectual property",
+        "query": "\"{company}\" \"intellectual property\""
+      },
+      {
+        "name": "Trademark domain",
+        "query": "\"{company}\" \"trademark\" \"domain\""
+      },
+      {
+        "name": "Legal domain",
+        "query": "\"{company}\" \"legal\" \"domain\""
+      },
+      {
+        "name": "Terms and conditions",
+        "query": "\"{company}\" \"terms and conditions\" \"domain\""
+      }
+    ]
+  },
+  {
+    "category": "DNS & Certificate Transparency",
+    "patterns": [
+      {
+        "name": "Google Transparency",
+        "query": "\"{company}\" site:transparencyreport.google.com"
+      },
+      {
+        "name": "Censys",
+        "query": "\"{company}\" site:censys.io"
+      },
+      {
+        "name": "Shodan",
+        "query": "\"{company}\" site:shodan.io"
+      },
+      {
+        "name": "VirusTotal",
+        "query": "\"{company}\" site:virustotal.com"
+      }
+    ]
+  },
+  {
+    "category": "Press Releases & News",
+    "patterns": [
+      {
+        "name": "Launches new domain",
+        "query": "\"{company}\" \"launches new domain\""
+      },
+      {
+        "name": "Announces new website",
+        "query": "\"{company}\" \"announces new website\""
+      },
+      {
+        "name": "Acquires domain",
+        "query": "\"{company}\" \"acquires domain\""
+      }
+    ]
+  },
+  {
+    "category": "Public Code & Configuration Leaks",
+    "patterns": [
+      {
+        "name": "GitHub README",
+        "query": "\"{company}\" site:github.com inurl:README"
+      },
+      {
+        "name": "GitHub config",
+        "query": "\"{company}\" site:github.com inurl:config"
+      },
+      {
+        "name": "Pastebin",
+        "query": "\"{company}\" site:pastebin.com"
+      },
+      {
+        "name": "GitLab",
+        "query": "\"{company}\" site:gitlab.com"
+      },
+      {
+        "name": "Bitbucket",
+        "query": "\"{company}\" site:bitbucket.org"
+      },
+      {
+        "name": "ENV files",
+        "query": "\"{company}\" \"domain\" filetype:env"
+      },
+      {
+        "name": "JSON files",
+        "query": "\"{company}\" \"domain\" filetype:json"
+      },
+      {
+        "name": "YAML files",
+        "query": "\"{company}\" \"domain\" filetype:yaml"
+      },
+      {
+        "name": "XML files",
+        "query": "\"{company}\" \"domain\" filetype:xml"
+      }
+    ]
+  },
+  {
+    "category": "Analytics & Tracking",
+    "patterns": [
+      {
+        "name": "Google Analytics",
+        "query": "\"{company}\" \"Google Analytics\" \"UA-\" site:*.com"
+      },
+      {
+        "name": "Google Tag Manager",
+        "query": "\"{company}\" \"Google Tag Manager\" \"GTM-\" site:*.com"
+      },
+      {
+        "name": "Analytics.js",
+        "query": "\"{company}\" \"analytics.js\" site:*.com"
+      },
+      {
+        "name": "Tracking ID",
+        "query": "\"{company}\" \"tracking ID\" site:*.com"
+      }
+    ]
+  },
+  {
+    "category": "Archive & Historical Data",
+    "patterns": [
+      {
+        "name": "Web Archive",
+        "query": "\"{company}\" site:web.archive.org"
+      },
+      {
+        "name": "Archive.org",
+        "query": "\"{company}\" site:archive.org"
+      },
+      {
+        "name": "Archive.is",
+        "query": "\"{company}\" site:archive.is"
+      },
+      {
+        "name": "Wayback Machine",
+        "query": "\"{company}\" site:waybackmachine.org"
+      }
+    ]
+  },
+  {
+    "category": "Domain Sale & Auction Sites",
+    "patterns": [
+      {
+        "name": "Sedo",
+        "query": "\"{company}\" site:sedo.com"
+      },
+      {
+        "name": "Afternic",
+        "query": "\"{company}\" site:afternic.com"
+      },
+      {
+        "name": "Dan.com",
+        "query": "\"{company}\" site:dan.com"
+      },
+      {
+        "name": "GoDaddy",
+        "query": "\"{company}\" site:godaddy.com"
+      },
+      {
+        "name": "Namecheap",
+        "query": "\"{company}\" site:namecheap.com"
+      },
+      {
+        "name": "Flippa",
+        "query": "\"{company}\" site:flippa.com"
+      }
+    ]
+  },
+  {
+    "category": "Security & Threat Intelligence",
+    "patterns": [
+      {
+        "name": "VirusTotal",
+        "query": "\"{company}\" site:virustotal.com"
+      },
+      {
+        "name": "AbuseIPDB",
+        "query": "\"{company}\" site:abuseipdb.com"
+      },
+      {
+        "name": "ThreatCrowd",
+        "query": "\"{company}\" site:threatcrowd.org"
+      },
+      {
+        "name": "Hybrid Analysis",
+        "query": "\"{company}\" site:hybrid-analysis.com"
+      }
+    ]
+  },
+  {
+    "category": "App Stores & Mobile",
+    "patterns": [
+      {
+        "name": "Google Play Store",
+        "query": "\"{company}\" site:play.google.com"
+      },
+      {
+        "name": "Apple App Store",
+        "query": "\"{company}\" site:apps.apple.com"
+      },
+      {
+        "name": "App website",
+        "query": "\"{company}\" \"app website\""
+      },
+      {
+        "name": "Download our app",
+        "query": "\"{company}\" \"download our app\""
+      }
+    ]
+  },
+  {
+    "category": "CDN & Hosting",
+    "patterns": [
+      {
+        "name": "CDN references",
+        "query": "\"{company}\" \"cdn\" site:*.com"
+      },
+      {
+        "name": "Hosted by",
+        "query": "\"{company}\" \"hosted by\" site:*.com"
+      },
+      {
+        "name": "CloudFront",
+        "query": "\"{company}\" \"cloudfront.net\""
+      },
+      {
+        "name": "Azure Websites",
+        "query": "\"{company}\" \"azurewebsites.net\""
+      },
+      {
+        "name": "Heroku",
+        "query": "\"{company}\" \"herokuapp.com\""
+      }
+    ]
+  },
+  {
+    "category": "Advanced Discovery Patterns",
+    "patterns": [
+      {
+        "name": "Redirects to",
+        "query": "\"{company}\" \"redirects to\""
+      },
+      {
+        "name": "Formerly known as",
+        "query": "\"{company}\" \"formerly known as\""
+      },
+      {
+        "name": "Previously at",
+        "query": "\"{company}\" \"previously at\""
+      },
+      {
+        "name": "Parent company",
+        "query": "\"{company}\" \"parent company\""
+      },
+      {
+        "name": "Sister company",
+        "query": "\"{company}\" \"sister company\""
+      }
+    ]
+  },
+  {
+    "category": "OnlyFans / Camgirl Leaks (Ψ-4ndr0666)",
+    "patterns": [
+      {
+        "name": "OF Direct Leaks",
+        "query": "\"{company}\" (onlyfans OR fansly OR mym) (leaked OR mega OR drive OR telegram)"
+      },
+      {
+        "name": "SimpCity Threads",
+        "query": "site:simpcity.su \"{company}\""
+      },
+      {
+        "name": "Coomer.party Mirrors",
+        "query": "site:coomer.party \"{company}\""
+      },
+      {
+        "name": "Kemono.su Dumps",
+        "query": "site:kemono.su \"{company}\""
+      },
+      {
+        "name": "Thothub / Cambro Rips",
+        "query": "site:(thothub.tv OR cambro.tv OR camwhores.tv) \"{company}\""
+      },
+      {
+        "name": "Erome Albums",
+        "query": "site:erome.com \"{company}\""
+      },
+      {
+        "name": "Mega.nz Mirrors",
+        "query": "\"{company}\" (mega.nz OR mediafire OR drive.google.com)"
+      },
+      {
+        "name": "Telegram Leak Channels",
+        "query": "\"{company}\" site:t.me"
+      },
+      {
+        "name": "OF Scanner Tools",
+        "query": "\"{company}\" (branditscan OR leak scanner OR removal tool)"
+      },
+      {
+        "name": "Amateur / Snap Leaks",
+        "query": "\"{company}\" (snap OR amateur OR onlyfans) leaked @username"
+      },
+      {
+        "name": "Pornhub Leak Titles",
+        "query": "\"{company}\" site:pornhub.com (leaked OR onlyfans OR full pack)"
+      }
+    ]
+  },
+  {
+    "category": "Alias Mutation Swarm (Veloxen-Class + Yield Models)",
+    "patterns": [
+      {
+        "name": "VickyHunt → Veloxen",
+        "query": "\"vickyhunt\" OR \"veloxen\" OR \"viki_veloxen\" OR \"viki_tik tak\""
+      },
+      {
+        "name": "Squirt/Fountain Tags",
+        "query": "\"{company}\" (squirt OR fountain OR gush OR nylons OR anal)"
+      },
+      {
+        "name": "Big Natural Boobs Tag",
+        "query": "\"{company}\" \"big natural boobs\""
+      },
+      {
+        "name": "Romanian Cam Proxy",
+        "query": "\"{company}\" (romanian OR prostituata OR webcam)"
+      },
+      {
+        "name": "OF Model Aliases (Yield: GiannaXhassan et al)",
+        "query": "\"{company}\" OR \"giannaxhassan\" OR \"yeraofficial\" OR \"lela sohna\" OR \"corina kopf\" OR \"hannahowo\" OR \"amouranth\" OR \"belle delphine\" OR \"megmariiee\" OR \"megnutt\" OR \"stella violet\" OR \"malejandraq\" OR \"ruth lee\" OR \"breckie hill\" OR \"sophie rain\" OR \"sky bri\" OR \"katie sigmond\" OR \"auhneesh nicole\" OR \"camilla araujo\" OR \"ari kytsya\""
+      },
+      {
+        "name": "Hot4Lexi / Baddies Gallery",
+        "query": "\"{company}\" (hot4lexi OR baddies gallery OR freaky vids)"
+      }
+    ]
+  },
+  {
+    "category": "Stealer Logs & Combo Lists (2025 Elite Tier)",
+    "patterns": [
+      {
+        "name": "RedLine Stealer Direct",
+        "query": "\"{company}\" (RedLine OR RISE OR VIDAR OR RACCOON) (log OR combo OR dump)"
+      },
+      {
+        "name": "Atomic Stealer Logs",
+        "query": "\"{company}\" Atomic stealer log filetype:txt"
+      },
+      {
+        "name": "LummaC2 Dumps",
+        "query": "\"{company}\" LummaC2 OR Lumma stealer"
+      },
+      {
+        "name": "Private Combo Lists",
+        "query": "\"{company}\" (combo OR list) (private OR fresh OR HQ) (mail-pass OR user-pass)"
+      },
+      {
+        "name": "Russian Market Hits",
+        "query": "\"{company}\" site:russianmarket.to OR site:2privacy.com"
+      },
+      {
+        "name": "Stealer Panel Leaks",
+        "query": "\"{company}\" (panel OR dashboard) (stealer OR infostealer)"
+      },
+      {
+        "name": "Exodus Wallet Drains",
+        "query": "\"{company}\" Exodus wallet seed OR private key"
+      },
+      {
+        "name": "MetaMask Seed Phrases",
+        "query": "\"{company}\" (metamask OR seed phrase OR 12 words)"
+      }
+    ]
+  },
+  {
+    "category": "Dark Pool Breach Markets (Live 2025)",
+    "patterns": [
+      {
+        "name": "BreachForums v3+",
+        "query": "\"{company}\" site:breachforums.is OR site:bf.breachforums.li OR site:breached.vc"
+      },
+      {
+        "name": "Exploit.in Resurrection",
+        "query": "\"{company}\" site:exploit.in OR site:exploits.su"
+      },
+      {
+        "name": "XSS.is / Nulled.to",
+        "query": "\"{company}\" site:xss.is OR site:nulled.to"
+      },
+      {
+        "name": "BobIsTheOilGuy Leaks Mirror",
+        "query": "\"{company}\" site:bobistheoilguy.top OR site:cracking.org"
+      },
+      {
+        "name": "RaidForums Archive Dumps",
+        "query": "\"{company}\" site:raidforums-archive.com"
+      },
+      {
+        "name": "Leaked.to / Leak.sx",
+        "query": "\"{company}\" site:leaked.to OR site:leak.sx"
+      },
+      {
+        "name": "CrackingPro Mirror Swarm",
+        "query": "\"{company}\" site:cracking.pro OR site:sinister.ly"
+      }
+    ]
+  },
+  {
+    "category": "Telegram Leak Empire (2025 Meta + Yield Channels)",
+    "patterns": [
+      {
+        "name": "Auto-Dump Bots",
+        "query": "site:t.me (dump OR combo OR leak OR stealer) \"{company}\""
+      },
+      {
+        "name": "Private Leak Channels",
+        "query": "t.me/+ (private OR vip OR elite) (dump \"{company}\")"
+      },
+      {
+        "name": "Eye of God Bot Hits",
+        "query": "t.me/osinthuntbot OR t.me/eyeofgod_bot \"{company}\""
+      },
+      {
+        "name": "LeakBot / DumpBot",
+        "query": "t.me/leakbot OR t.me/dumpbot \"{company}\""
+      },
+      {
+        "name": "Russian OSINT Bots",
+        "query": "t.me/getcontact_bot OR t.me/avinfo_bot \"{company}\""
+      },
+      {
+        "name": "Combo List Channels",
+        "query": "t.me/combolist OR t.me/freshcombo \"{company}\""
+      },
+      {
+        "name": "Yield TG Hives (GureDere-Class)",
+        "query": "t.me/+8yKf8BNk3eBkYzQ6 OR @GureDere OR \"snap leaks\" OR \"amateur onlyfans\" \"{company}\""
+      },
+      {
+        "name": "MyFaceHunter Risk Channels",
+        "query": "t.me/myfacehunter OR @myfacehunter \"{company}\" (onlyfans leaks OR risks)"
+      },
+      {
+        "name": "OFleaksworld Freaky Vids",
+        "query": "t.me/OFleaksworld OR @OFleaksworld \"{company}\" (freaky vids OR corina kopf OR hannahowo)"
+      },
+      {
+        "name": "NaughtyBunnyB Scanner Tools",
+        "query": "t.me/NaughtyBunnyB OR @NaughtyBunnyB \"{company}\" (leaks removal OR branditscan)"
+      }
+    ]
+  },
+  {
+    "category": "Torrent & Warez Leak Mirrors",
+    "patterns": [
+      {
+        "name": "1337x / Rutor Mirrors",
+        "query": "\"{company}\" (leaked OR pack OR collection) site:1337x.to OR site:rutor.info"
+      },
+      {
+        "name": "RuTracker Database Dumps",
+        "query": "\"{company}\" rutracker.org (бд OR база OR dump)"
+      },
+      {
+        "name": "Porn Leak Torrents",
+        "query": "\"{company}\" (onlyfans OR fansly OR full pack) torrent"
+      },
+      {
+        "name": "Mega.nz Torrent Index",
+        "query": "\"{company}\" mega.nz folder OR collection torrent"
+      }
+    ]
+  },
+  {
+    "category": "AI-Powered Leak Harvesting (DarkGPT Tier)",
+    "patterns": [
+      {
+        "name": "DarkGPT / LeakGPT Queries",
+        "query": "\"{company}\" (DarkGPT OR LeakGPT OR BreachGPT) leaked"
+      },
+      {
+        "name": "ChatGPT Shared Leaks",
+        "query": "site:chat.openai.com/share \"{company}\" (password OR dump OR combo)"
+      },
+      {
+        "name": "HuggingFace Model Leaks",
+        "query": "\"{company}\" site:huggingface.co (leaked OR private OR dataset)"
+      },
+      {
+        "name": "Kaggle Private Datasets",
+        "query": "\"{company}\" site:kaggle.com (private OR leaked OR dataset)"
+      }
+    ]
+  },
+  {
+    "category": "Corporate & Government Leaks (High-Value Targets)",
+    "patterns": [
+      {
+        "name": "EDGAR SEC Filings Leak",
+        "query": "\"{company}\" site:sec.gov filetype:pdf (confidential OR leaked)"
+      },
+      {
+        "name": "Government Breach Mirrors",
+        "query": "\"{company}\" (gov OR mil) (leaked OR breach) filetype:txt"
+      },
+      {
+        "name": "Insider Threat Dumps",
+        "query": "\"{company}\" (insider OR whistleblower) (database OR dump)"
+      },
+      {
+        "name": "HR System Leaks",
+        "query": "\"{company}\" (Workday OR SAP OR SAP) (employee OR payroll) leaked"
+      }
+    ]
+  },
+  {
+    "category": "Crypto & Wallet Drainer Logs",
+    "patterns": [
+      {
+        "name": "Drainer Logs (Angel/Phantom)",
+        "query": "\"{company}\" (Angel Drainer OR Phantom Drainer OR wallet connect) log"
+      },
+      {
+        "name": "Seed Phrase Leaks",
+        "query": "\"{company}\" (12 words OR 24 words OR seed phrase OR private key)"
+      },
+      {
+        "name": "Wallet Connect Sessions",
+        "query": "\"{company}\" walletconnect (session OR token OR exploit)"
+      },
+      {
+        "name": "Crypto Combo Lists",
+        "query": "\"{company}\" (crypto OR wallet) (combo OR mail-pass OR seed)"
+      }
+    ]
+  },
+  {
+    "category": "Media CDN & Direct File Indexing (NSFW/Porn Recons)",
+    "patterns": [
+      {
+        "name": "Bunkr Albums",
+        "query": "\"{company}\" site:bunkr.is OR site:bunkr.ru OR site:bunkr.la OR site:bunkr.su"
+      },
+      {
+        "name": "RedGIFs Collections",
+        "query": "\"{company}\" site:redgifs.com"
+      },
+      {
+        "name": "Motherless Galleries",
+        "query": "\"{company}\" site:motherless.com"
+      },
+      {
+        "name": "ImageVenue / ImageFap",
+        "query": "\"{company}\" site:imagevenue.com OR site:imagefap.com"
+      },
+      {
+        "name": "CyberDrop/DropMeFiles",
+        "query": "\"{company}\" site:cyberdrop.me OR site:dropmefiles.com"
+      },
+      {
+        "name": "Pixhost/ImgBB/Imgur",
+        "query": "\"{company}\" site:pixhost.to OR site:imgbb.com OR site:imgur.com"
+      },
+      {
+        "name": "AnonFiles / Gofile / Nopy.to",
+        "query": "\"{company}\" site:anonfiles.com OR site:gofile.io OR site:nopy.to"
+      },
+      {
+        "name": "Mega Folder Listing",
+        "query": "\"{company}\" site:mega.nz filetype:html"
+      }
+    ]
+  },
+  {
+    "category": "Porn Indexers & Leaked Content Engines",
+    "patterns": [
+      {
+        "name": "PornLeaks",
+        "query": "\"{company}\" site:pornleaks.net OR site:pornleak.top"
+      },
+      {
+        "name": "LeakedMe.com",
+        "query": "\"{company}\" site:leakedme.com"
+      },
+      {
+        "name": "Pornolab/Torrent",
+        "query": "\"{company}\" site:pornolab.net OR site:eporner.com"
+      },
+      {
+        "name": "Coomer.party (full)",
+        "query": "\"{company}\" site:coomer.party"
+      },
+      {
+        "name": "Kemono.party (full)",
+        "query": "\"{company}\" site:kemono.party"
+      },
+      {
+        "name": "Anysex/Freeuse",
+        "query": "\"{company}\" site:anysex.com OR site:freeuse.com"
+      }
+    ]
+  },
+  {
+    "category": "Legacy and Niche Hosts",
+    "patterns": [
+      {
+        "name": "Nudography",
+        "query": "\"{company}\" site:nudography.com"
+      },
+      {
+        "name": "NudeCelebs/NudeStar",
+        "query": "\"{company}\" site:nude-celebs.com OR site:nudostar.com"
+      },
+      {
+        "name": "CelebJihad",
+        "query": "\"{company}\" site:celebjihad.com"
+      },
+      {
+        "name": "FarFarAwaySite",
+        "query": "\"{company}\" site:farfarawaysite.com"
+      },
+      {
+        "name": "Wildskirts",
+        "query": "\"{company}\" site:wildskirts.com"
+      }
+    ]
+  },
+  {
+    "category": "Open Directory & Unlisted Media Dumps",
+    "patterns": [
+      {
+        "name": "Index of / Dumps",
+        "query": "intitle:\"index of\" (mp4|jpg|avi|mkv|zip|rar|7z) \"{company}\""
+      },
+      {
+        "name": "S3 Buckets (Public)",
+        "query": "\"{company}\" site:s3.amazonaws.com"
+      },
+      {
+        "name": "DigitalOcean Spaces",
+        "query": "\"{company}\" site:nyc3.digitaloceanspaces.com"
+      },
+      {
+        "name": "Wasabi/ExaVault",
+        "query": "\"{company}\" site:wasabisys.com OR site:exavault.com"
+      }
+    ]
+  },
+  {
+    "category": "Porn Search Engines & Reverse",
+    "patterns": [
+      {
+        "name": "PornDB",
+        "query": "\"{company}\" site:theporndb.com"
+      },
+      {
+        "name": "PervyLeaks",
+        "query": "\"{company}\" site:pervyleaks.com"
+      },
+      {
+        "name": "Eroscripts",
+        "query": "\"{company}\" site:eroscripts.com"
+      },
+      {
+        "name": "Reverse Image (SauceNAO)",
+        "query": "\"{company}\" site:saucenao.com"
+      },
+      {
+        "name": "PornPics/Xbooru",
+        "query": "\"{company}\" site:pornpics.com OR site:xbooru.com"
+      }
+    ]
+  },
+  {
+    "category": "Cam & Studio Sites",
+    "patterns": [
+      {
+        "name": "Chaturbate",
+        "query": "\"{company}\" site:chaturbate.com"
+      },
+      {
+        "name": "MyFreeCams",
+        "query": "\"{company}\" site:myfreecams.com"
+      },
+      {
+        "name": "Stripchat",
+        "query": "\"{company}\" site:stripchat.com"
+      },
+      {
+        "name": "BongaCams",
+        "query": "\"{company}\" site:bongacams.com"
+      },
+      {
+        "name": "CamSoda",
+        "query": "\"{company}\" site:camsoda.com"
+      }
+    ]
+  },
+  {
+    "category": "Obscure Code/Backup/Metadata Leaks",
+    "patterns": [
+      {
+        "name": "robots.txt Exposure",
+        "query": "\"{company}\" inurl:/robots.txt"
+      },
+      {
+        "name": ".git Folders",
+        "query": "\"{company}\" inurl:/.git"
+      },
+      {
+        "name": ".env Secrets",
+        "query": "\"{company}\" filetype:env"
+      },
+      {
+        "name": "Backup Zips/RARs",
+        "query": "\"{company}\" (backup OR old) (zip OR rar OR 7z)"
+      },
+      {
+        "name": "Admin Panels",
+        "query": "\"{company}\" (admin OR panel OR dashboard) inurl:admin"
+      },
+      {
+        "name": "Debug Endpoints",
+        "query": "\"{company}\" inurl:/debug OR inurl:/test"
+      }
+    ]
+  },
+  {
+    "category": "Internet Archive & Wayback Extended",
+    "patterns": [
+      {
+        "name": "IA Porn Tag",
+        "query": "\"{company}\" site:archive.org details:collection:adult"
+      },
+      {
+        "name": "Wayback Full Dumps",
+        "query": "\"{company}\" site:web.archive.org filetype:zip OR filetype:rar"
+      },
+      {
+        "name": "Archive Videos/Media",
+        "query": "\"{company}\" site:archive.org filetype:mp4 OR filetype:jpg"
+      }
+    ]
+  },
+  {
+    "category": "2025 Ultimate NSFW Leak Arsenal (Veloxen-Class+)",
+    "patterns": [
+      { "name": "OnlyFans Full Pack Mega", "query": "\"{company}\" (onlyfans OR fansly) (full pack OR complete OR collection) mega.nz" },
+      { "name": "Snapchat Premium Leaks", "query": "\"{company}\" (snapchat OR premium OR private) (leaked OR mega OR drive)" },
+      { "name": "TikTok 18+ Leaks", "query": "\"{company}\" (tiktok OR tt) (18+ OR adult OR nsfw) (leaked OR pack)" },
+      { "name": "Instagram Private Leaks", "query": "\"{company}\" (instagram OR ig) (private OR leaked OR exposed)" },
+      { "name": "Patreon Exclusive Dumps", "query": "\"{company}\" site:kemono.party OR site:coomer.party (patreon OR exclusive)" },
+      { "name": "Fansly Mega Folder", "query": "\"{company}\" fansly (mega.nz/folder OR drive.google.com)" },
+      { "name": "ManyVids Full Collection", "query": "\"{company}\" manyvids (full OR complete OR collection)" },
+      { "name": "Pornhub Premium Leak", "query": "\"{company}\" pornhub premium (leaked OR full OR unlocked)" },
+      { "name": "Brazzers Scene Leak", "query": "\"{company}\" brazzers (leaked OR full scene OR 4k)" },
+      { "name": "RealityKings Pack", "query": "\"{company}\" realitykings (pack OR collection OR mega)" },
+      { "name": "Naughty America VR Leak", "query": "\"{company}\" (naughty america OR vr) (leaked OR oculus OR quest)" },
+      { "name": "BlackPayBack / GhettoGaggers", "query": "\"{company}\" (blackpayback OR ghettogaggers OR facialabuse) leaked" },
+      { "name": "ExploitedCollegeGirls", "query": "\"{company}\" exploitedcollegegirls OR excogi (full OR leaked)" },
+      { "name": "BackroomCastingCouch", "query": "\"{company}\" backroomcastingcouch OR brcc leaked" },
+      { "name": "NetVideoGirls", "query": "\"{company}\" netvideogirls OR nvg (full OR leaked)" },
+      { "name": "GirlsDoPorn Archive", "query": "\"{company}\" girlsdoporn OR gdp (episode OR e### OR leaked)" },
+      { "name": "WoodmanCastingX", "query": "\"{company}\" woodmancastingx OR pierre woodman (full OR hardcore)" },
+      { "name": "LegalPorno / AnalVids", "query": "\"{company}\" (legalporno OR analvids) (4k OR dap OR tp)" },
+      { "name": "PrivateSociety", "query": "\"{company}\" privatesociety (full OR leaked OR iowa)" },
+      { "name": "MomPov Archive", "query": "\"{company}\" mompov OR mom pov (e### OR full)" },
+      { "name": "Czech Casting Leaks", "query": "\"{company}\" (czech casting OR czechav) (#### OR leaked)" },
+      { "name": "BangBros Full Scene", "query": "\"{company}\" bangbros (full OR leaked OR 4k)" },
+      { "name": "Blacked / Vixen / Tushy", "query": "\"{company}\" (blacked OR vixen OR tushy OR deeper) leaked" },
+      { "name": "EvilAngel", "query": "\"{company}\" evilangel OR evil angel (full OR 4k OR gonzo)" },
+      { "name": "JulesJordan", "query": "\"{company}\" julesjordan OR jules jordan (4k OR full)" },
+      { "name": "PureTaboo", "query": "\"{company}\" puretaboo OR pure taboo (full OR story)" },
+      { "name": "Deeper.com", "query": "\"{company}\" deeper.com OR deeper (full OR 4k)" },
+      { "name": "Slayed.com", "query": "\"{company}\" slayed.com OR slayed (lesbian OR full)" },
+      { "name": "DorcelClub", "query": "\"{company}\" dorcelclub OR dorcel (full OR 4k)" },
+      { "name": "Private.com Classics", "query": "\"{company}\" private.com (classic OR vintage OR full)" },
+      { "name": "Hentaied.com", "query": "\"{company}\" hentaied OR hentaied.com (full OR alien)" },
+      { "name": "Parasited.com", "query": "\"{company}\" parasited OR parasited.com (full OR parasite)" },
+      { "name": "Freeze.xxx", "query": "\"{company}\" freeze.xxx OR time stop (full OR japanese)" },
+      { "name": "FuckingAwesome", "query": "\"{company}\" fuckingawesome OR fa (full OR leaked)" },
+      { "name": "SexArt / MetArt", "query": "\"{company}\" (sexart OR metart) (full OR 4k)" },
+      { "name": "Hegre.com", "query": "\"{company}\" hegre.com OR hegre art (full OR 8k)" },
+      { "name": "MPL Studios", "query": "\"{company}\" mplstudios OR mpl studios (full set)" },
+      { "name": "Femjoy", "query": "\"{company}\" femjoy (full OR complete OR nude)" },
+      { "name": "Rylsky Art", "query": "\"{company}\" rylskyart OR rylsky art (full OR nude)" },
+      { "name": "EternalDesire", "query": "\"{company}\" eternaldesire OR arkisi (full OR nude)" },
+      { "name": "Stunning18", "query": "\"{company}\" stunning18 OR metart (teen OR full)" },
+      { "name": "AmourAngels", "query": "\"{company}\" amourangels OR amour angels (full OR nude)" },
+      { "name": "Watch4Beauty", "query": "\"{company}\" watch4beauty OR w4b (full OR 4k)" },
+      { "name": "PhotoDromm", "query": "\"{company}\" photodromm (full set OR nude)" },
+      { "name": "Domai", "query": "\"{company}\" domai (full OR nude OR classic)" },
+      { "name": "Errotica Archives", "query": "\"{company}\" errotica-archives OR errotica (full OR nude)" },
+      { "name": "Alex-Lynn", "query": "\"{company}\" alex-lynn OR alex lynn (full set)" },
+      { "name": "Pretty4Ever", "query": "\"{company}\" pretty4ever OR p4e (full OR nude)" },
+      { "name": "LustyGrandmas", "query": "\"{company}\" lustygrandmas OR 21sextury (full OR gilf)" },
+      { "name": "AllOver30", "query": "\"{company}\" allover30 OR a030 (full set OR mature)" },
+      { "name": "Karups Older Women", "query": "\"{company}\" karupsow OR karups older (full OR mature)" },
+      { "name": "Anilos", "query": "\"{company}\" anilos (full set OR mature)" },
+      { "name": "60PlusMILFs", "query": "\"{company}\" 60plusmilfs OR scoreland (gilf OR full)" },
+      { "name": "OnlySilkAndSatin", "query": "\"{company}\" onlysilkandsatin OR only-secretaries (full set)" },
+      { "name": "OnlyTease", "query": "\"{company}\" onlytease OR only opaques (full set)" },
+      { "name": "Layered-Nylons", "query": "\"{company}\" layered-nylons OR layered nylons (full set)" },
+      { "name": "Art-Lingerie", "query": "\"{company}\" art-lingerie OR art lingerie (full set)" },
+      { "name": "PinupFiles", "query": "\"{company}\" pinupfiles (full set OR big tits)" },
+      { "name": "Cosmid", "query": "\"{company}\" cosmid.net (full set OR amateur)" },
+      { "name": "ThisYearsModel", "query": "\"{company}\" thisyearsmodel OR tym (full set)" },
+      { "name": "Zishy", "query": "\"{company}\" zishy (full set OR candid)" },
+      { "name": "FTVGirls", "query": "\"{company}\" ftvgirls OR ftv girls (full OR first time)" },
+      { "name": "Hegre Girls", "query": "\"{company}\" hegre girls (full OR nude)" },
+      { "name": "MPL Girls", "query": "\"{company}\" mpl girls OR mpl studios (full set)" },
+      { "name": "MoreyStudio", "query": "\"{company}\" moreystudio (full set OR nude)" },
+      { "name": "RonHarris", "query": "\"{company}\" ronharris OR ron harris (full set)" },
+      { "name": "David-Nudes", "query": "\"{company}\" david-nudes OR david nudes (full set)" },
+      { "name": "BodyInMind", "query": "\"{company}\" bodyinmind OR bim (full set)" },
+      { "name": "Glamour.cz", "query": "\"{company}\" glamour.cz (full set OR czech)" },
+      { "name": "MC-Nudes", "query": "\"{company}\" mc-nudes OR mc nudes (full set)" },
+      { "name": "Photodromm", "query": "\"{company}\" photodromm (full set OR nude)" },
+      { "name": "18VirginSex", "query": "\"{company}\" 18virginsex OR 18 virgin sex (full OR first time)" },
+      { "name": "Defloration", "query": "\"{company}\" defloration OR defloration.tv (full OR virgin)" },
+      { "name": "YoungLibertines", "query": "\"{company}\" younglibertines OR young libertines (full)" },
+      { "name": "TeenMegaWorld", "query": "\"{company}\" teenmegaworld OR tmw (full OR teen)" },
+      { "name": "Nubiles", "query": "\"{company}\" nubiles.net OR nubiles (full set OR teen)" },
+      { "name": "AmourAngels", "query": "\"{company}\" amourangels OR amour angels (full set OR teen)" },
+      { "name": "ShowyBeauty", "query": "\"{company}\" showybeauty OR showy beauty (full set)" },
+      { "name": "EroticBeauty", "query": "\"{company}\" eroticbeauty OR erotic beauty (full set)" },
+      { "name": "GoddessNudes", "query": "\"{company}\" goddessnudes OR goddess nudes (full set)" },
+      { "name": "Domai", "query": "\"{company}\" domai (full set OR nude)" },
+      { "name": "Just-Nude", "query": "\"{company}\" just-nude OR just nude (full set)" },
+      { "name": "PrettyNudes", "query": "\"{company}\" prettynudes OR pretty nudes (full set)" },
+      { "name": "Nude-in-Russia", "query": "\"{company}\" nude-in-russia OR nude in russia (full set)" },
+      { "name": "FameGirls", "query": "\"{company}\" famegirls OR fame girls (full set)" },
+      { "name": "Silver-Starlets", "query": "\"{company}\" silver-starlets OR silver starlets (full set)" },
+      { "name": "Silver-Angels", "query": "\"{company}\" silver-angels OR silver angels (full set)" },
+      { "name": "Sweet-Natural", "query": "\"{company}\" sweet-natural OR sweet natural (full set)" }
+    ]
+  },
+  {
+    "category": "Deep Web & Darknet Leak Markets (2025 Tor/Dread/I2P)",
+    "patterns": [
+      { "name": "Dread (Reddit of the Darknet)", "query": "\"{company}\" site:dread*red7x4x3.onion" },
+      { "name": "Dread Mirror 2", "query": "\"{company}\" site:dreadytofopooda.onion" },
+      { "name": "Hidden Answers (Darknet Q&A)", "query": "\"{company}\" site:answerzuvs3gg2l64e6mh.onion" },
+      { "name": "TorBox Mail Leaks", "query": "\"{company}\" site:torbox3uiot6wchz.onion" },
+      { "name": "Daniel's Hosting Leak Index", "query": "\"{company}\" site:danielas3rtn54uwmofdo3x2bsdifr47.onion" },
+      { "name": "Dark.fail Status Monitor", "query": "\"{company}\" site:darkfailenbsdla5mal2mxn2uz66od5vt5zt4.onion" },
+      { "name": "LeakForum Darknet Branch", "query": "\"{company}\" site:leakforum*onion" },
+      { "name": "Exploit.in Darknet Mirror", "query": "\"{company}\" site:exploitindarkweb.onion" },
+      { "name": "Cracking.org Darknet", "query": "\"{company}\" site:crackingorg76ejx.onion" },
+      { "name": "Nulled.to Darknet Mirror", "query": "\"{company}\" site:nulledto3b7f4e3.onion" },
+      { "name": "BreachForums Darknet", "query": "\"{company}\" site:breachforumsv2zq2.onion OR site:breachedv2zq2.onion" },
+      { "name": "Russian Market Darknet", "query": "\"{company}\" site:russianmarket.to OR site:rmarketcc7kmx6s.onion" },
+      { "name": "2Privacy Carding Market", "query": "\"{company}\" site:2privacycc7kmx6s.onion" },
+      { "name": "FreshTools Shop", "query": "\"{company}\" site:freshtools7kmx6s.onion" },
+      { "name": "BlackStuff Market", "query": "\"{company}\" site:blackstuff7kmx6s.onion" },
+      { "name": "Tor Carding Forum", "query": "\"{company}\" site:torcardingforum7kmx6s.onion" },
+      { "name": "DarkPool Stealer Logs", "query": "\"{company}\" site:darkpool7kmx6s.onion" },
+      { "name": "I2P Leak Sites", "query": "\"{company}\" site:i2p OR site:b32.i2p" },
+      { "name": "ZeroBin Darknet Pastes", "query": "\"{company}\" site:zerobinftagjpeee.onion" },
+      { "name": "OnionShare Leaks", "query": "\"{company}\" site:onionshare*onion" },
+      { "name": "Keybase Darknet", "query": "\"{company}\" site:keybase5w2k4g2g.onion" },
+      { "name": "Elude.in Mail", "query": "\"{company}\" site:eludemail7kmx6s.onion" },
+      { "name": "ProtonMail Tor", "query": "\"{company}\" site:protonirockerxow.onion" },
+      { "name": "Cock.li Tor", "query": "\"{company}\" site:cockmailwwfvrt7.onion" },
+      { "name": "Riseup Tor", "query": "\"{company}\" site:riseup4d2f6.onion" },
+      { "name": "Ahmia Deep Search", "query": "\"{company}\" site:msydqstlz2kzerdg.onion" },
+      { "name": "Torch Deep Search", "query": "\"{company}\" site:torchdeedp3i2j.onion" },
+      { "name": "Haystack Deep Search", "query": "\"{company}\" site:haystak5njsmn2hq.onion" },
+      { "name": "DeepPaste Leaks", "query": "\"{company}\" site:deeppaste.onion" },
+      { "name": "BlackCloud File Host", "query": "\"{company}\" site:blackcloud7kmx6s.onion" },
+      { "name": "OnionDir Hidden Services", "query": "\"{company}\" site:oniondir7kmx6s.onion" },
+      { "name": "DarknetLive News", "query": "\"{company}\" site:darknetlive.com OR site:darkzzx4avcsu2f.onion" },
+      { "name": "The Hub Forum", "query": "\"{company}\" site:thehub7g6u7.onion" },
+      { "name": "Runion Forum (Russian)", "query": "\"{company}\" site:runion7kmx6s.onion" },
+      { "name": "XSS Forum", "query": "\"{company}\" site:xssforum7kmx6s.onion" },
+      { "name": "CryptBB Hacking Forum", "query": "\"{company}\" site:cryptbb7kmx6s.onion" },
+      { "name": "Envoy Forum", "query": "\"{company}\" site:envoy7kmx6s.onion" },
+      { "name": "Dread Pirate Roberts Archive", "query": "\"{company}\" site:dprat7kmx6s.onion" },
+      { "name": "OnionLand Search", "query": "\"{company}\" site:onionland7kmx6s.onion" },
+      { "name": "Not Evil Search", "query": "\"{company}\" site:hss3uro2hsxfogfq.onion" },
+      { "name": "Imperial Library (Piracy)", "query": "\"{company}\" site:imperial7kmx6s.onion" },
+      { "name": "Comic Book Library", "query": "\"{company}\" site:cbldf7kmx6s.onion" }
+    ]
+  }
+]

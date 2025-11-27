@@ -1,0 +1,5 @@
+httpx
+rich
+beautifulsoup4
+telethon
+pytest

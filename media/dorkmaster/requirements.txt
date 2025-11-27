@@ -1,0 +1,6 @@
+httpx
+rich
+beautifulsoup4
+telethon
+pyperclip
+pytest
