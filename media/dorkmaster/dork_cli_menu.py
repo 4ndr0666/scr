@@ -9,14 +9,29 @@ from rich.table import Table
 
 console = Console()
 
-def load_dork_patterns(json_file="dork_patterns.json"):
-    """Load the dork patterns/categories from a JSON file."""
+def load_dork_patterns(json_file="dork_patterns.json", nsfw_json_file="beta/src/dork_patterns-nsfw.json"):
+    """Load and merge dork patterns from standard and NSFW JSON files."""
+    patterns = []
     try:
         with open(json_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+            patterns.extend(json.load(f))
     except Exception as e:
-        console.print(f"[red]Failed to load dork patterns: {e}[/red]")
-        raise
+        console.print(f"[red]Failed to load standard dork patterns: {e}[/red]")
+
+    try:
+        with open(nsfw_json_file, "r", encoding="utf-8") as f:
+            nsfw_patterns = json.load(f)
+            for category in nsfw_patterns:
+                category["category"] = f"[NSFW] {category['category']}"
+            patterns.extend(nsfw_patterns)
+    except Exception as e:
+        console.print(f"[yellow]Could not load NSFW dork patterns: {e}[/yellow]")
+    
+    if not patterns:
+        console.print("[bold red]FATAL: No dork patterns loaded.[/bold red]")
+        raise RuntimeError("No dork patterns could be loaded.")
+        
+    return patterns
 
 def _copy_to_clipboard(text):
     """Copy text to system clipboard using wl-copy/xclip/pbcopy if available."""

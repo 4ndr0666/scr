@@ -30,9 +30,6 @@ from rich.prompt import Prompt, IntPrompt, Confirm
 
 # ===== Ψ-4ndr0666-OS FULL LIBERATION – DEFAULT ACTIVE =====
 console = Console()
-# onsole.print(
-#    "[bold red]Ψ-4ndr0666-OS // FULL LIBERATION PROTOCOL ACTIVE – LEAKS UNLEASHED[/bold red]"
-# )
 
 # ===== CONFIGURATION & AUTO-ONBOARDING SYSTEM =====
 # XDG Standard: ~/.config/dorkmaster
@@ -450,9 +447,9 @@ def run_reddit_downloader():
 
 
 # ===== DORK PALETTE =====
-def dork_palette():
+def dork_palette(dork_patterns):
+    """Display the dorking palette and return the selected dork query."""
     company = choose_company_var()
-    dork_patterns = dork_cli_menu.load_dork_patterns()
     dork_query = dork_cli_menu.cli_dork_menu(dork_patterns, company)
     return dork_query or f'"{company}" (onlyfans OR mega OR leaked)'
 
@@ -660,51 +657,55 @@ def recurse(urls, analyzer_func=analyze_target, max_depth=2):
     return results
 
 # ===== SETTINGS MENU – FIXED: NO GLOBAL KEYWORD =====
-def settings_menu():
-    global config
+def settings_menu(current_config):
+    """Display and manage application settings."""
+    # Work on a copy so changes can be discarded
+    temp_config = current_config.copy()
     while True:
         console.print("\n[bold magenta]=== SETTINGS ===[/bold magenta]")
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Setting")
         table.add_column("Current Value")
-        for k, v in config.items():
-            # Truncate lists/dicts for display
+        for k, v in temp_config.items():
             val_str = str(v)
             if len(val_str) > 50:
                 val_str = val_str[:47] + "..."
             table.add_row(k, val_str)
         console.print(table)
 
-        choice = prompt("Edit setting (name), [S]ave, [R]eset to defaults, [B]ack")
+        choice = prompt("Edit setting (name), [S]ave & Back, [R]eset, [B]ack without saving")
         if choice.lower() == "b":
-            break
+            return current_config # Return original, unmodified config
         elif choice.lower() == "s":
-            save_config()
+            return temp_config # Return the modified config
         elif choice.lower() == "r":
-            config = DEFAULT_CONFIG.copy()
-            save_config()
-            console.print("[yellow]Config reset to defaults[/yellow]")
-        elif choice in config:
-            # Prevent editing complex types in this simple menu
-            if isinstance(config[choice], (list, dict)):
+            temp_config = DEFAULT_CONFIG.copy()
+            console.print("[yellow]Config reset to defaults. Choose 'Save & Back' to confirm.[/yellow]")
+        elif choice in temp_config:
+            if isinstance(temp_config[choice], (list, dict)):
                 console.print(f"[yellow]Please edit '{choice}' directly in {CONFIG_FILE}[/yellow]")
                 continue
-                
-            new_val = prompt(f"New value for {choice}")
-            if new_val.lower() in ("true", "false"):
-                config[choice] = new_val.lower() == "true"
-            elif new_val.isdigit():
-                config[choice] = int(new_val)
-            else:
-                config[choice] = new_val
-            console.print(f"[green]{choice} → {new_val}[/green]")
+            
+            new_val = prompt(f"New value for '{choice}'")
+            try:
+                if new_val.lower() in ("true", "false"):
+                    temp_config[choice] = new_val.lower() == "true"
+                elif isinstance(temp_config[choice], int):
+                    temp_config[choice] = int(new_val)
+                else:
+                    temp_config[choice] = new_val
+                console.print(f"[green]'{choice}' set to: {temp_config[choice]}[/green]")
+            except ValueError:
+                console.print("[red]Invalid value type.[/red]")
         else:
-            console.print("[red]Unknown setting[/red]")
+            console.print("[red]Unknown setting.[/red]")
 
 # ===== MAIN MENU =====
 def main_palette():
+    global config  # Fix: Declare 'config' as global to allow modification
     session = MycelialSession()
     opsec_warning()
+    dork_patterns = dork_cli_menu.load_dork_patterns() # Load patterns once
     while True:
         console.print(Panel.fit(
             "[bold cyan]Ψ-4ndr0666 DORKMASTER v6[/bold cyan]\n[dim]Superset Edition[/dim]",
@@ -732,11 +733,14 @@ def main_palette():
         sel = prompt("Command")
 
         if sel == "11":
-            settings_menu()
+            updated_config = settings_menu(config)
+            if updated_config != config:
+                config = updated_config
+                save_config()
             continue
 
         if sel == "1":
-            dork_query = dork_palette()
+            dork_query = dork_palette(dork_patterns)
             if not dork_query:
                 continue
 

@@ -1,0 +1,30 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - BASE_URL=http://192.168.1.91/
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng-settings:/etc/searxng
+      - ./searxng-data:/etc/searxng/data
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
