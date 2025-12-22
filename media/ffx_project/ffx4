@@ -1104,7 +1104,7 @@ cmd_cleanmeta() {
 
 display_usage() {
 	cat <<EOF
-Usage: ffx3 [global options] <command> [arguments]
+Usage: ffx [global options] <command> [arguments]
 
 Global Options:
   -A, --advanced         Enable advanced interactive options.
@@ -1223,7 +1223,7 @@ main_dispatch() {
 		cmd_cleanmeta "$@"
 		;;
 	*)
-		echo "Unrecognized command: $cmd" 1>&2
+		echo "Unrecognized command: $cmd" >&2
 		display_usage
 
 		exit 1

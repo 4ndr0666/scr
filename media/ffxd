@@ -8,12 +8,12 @@ declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 
-mkdir -p "$XDG_RUNTIME_DIR/ffxd" || {
-	echo "Error: Could not create runtime directory $XDG_RUNTIME_DIR/ffxd" >&2
+mkdir -p "$XDG_CACHE_HOME/ffxd" || {
+	echo "Error: Could not create runtime directory $XDG_CACHE_HOME/ffxd/" >&2
 	exit 1
 }
 
-if ! TEMP_DIR=$(mktemp -d "$XDG_RUNTIME_DIR/ffxd/ffxd.XXXXXX"); then
+if ! TEMP_DIR=$(mktemp -d "$XDG_CACHE_HOME/ffxd/XXXXXX"); then
 	echo "Error: Could not create temporary directory" >&2
 	exit 1
 fi
@@ -27,9 +27,9 @@ declare BULK=false
 declare NOAUDIO=false
 declare MAX1080=false
 OUTPUT_DIR=$(pwd) # Default to current directory
-declare FPS=""
+declare FPS="60"
 declare PTS=""
-declare INTERPOLATE=false
+declare INTERPOLATE=true
 declare -a COMMAND_ARGS=()
 
 log_verbose() {

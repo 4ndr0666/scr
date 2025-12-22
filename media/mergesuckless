@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# mergesuckless — gapless, lossless, 60fps merge for mixed video/image inputs
+# usage: mergesuckless output.mp4 input1 input2 [...]
+
+set -euo pipefail
+
+[ "$#" -lt 3 ] && {
+    echo "usage: $0 output.mp4 input1 input2 [...]" >&2
+    exit 1
+}
+
+out="$1"; shift
+inputs=("$@")
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT INT TERM
+
+is_image() {
+    case "${1,,}" in
+        *.jpg|*.jpeg|*.png|*.webp|*.bmp|*.tif|*.tiff) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+has_audio() {
+    ffprobe -v error -select_streams a:0 \
+        -show_entries stream=index \
+        -of csv=p=0 "$1" | grep -q .
+}
+
+# ------------------------------------------------------------
+# PASS 1: determine maximum resolution
+# ------------------------------------------------------------
+max_w=0
+max_h=0
+
+for f in "${inputs[@]}"; do
+    read -r w h < <(
+        ffprobe -v error -select_streams v:0 \
+        -show_entries stream=width,height \
+        -of default=noprint_wrappers=1:nokey=1 "$f" | head -n2
+    )
+    [ "${w:-0}" -gt "$max_w" ] && max_w="$w"
+    [ "${h:-0}" -gt "$max_h" ] && max_h="$h"
+done
+
+w="$max_w"
+h="$max_h"
+fps=60
+img_dur=5
+
+# ------------------------------------------------------------
+# PASS 2: normalize every input to clean segments
+# ------------------------------------------------------------
+segments=()
+i=0
+
+for f in "${inputs[@]}"; do
+    seg="$tmpdir/seg_$i.mp4"
+    i=$((i+1))
+
+    if is_image "$f"; then
+        ffmpeg -hide_banner -loglevel error -y -fflags +genpts \
+            -loop 1 -framerate "$fps" -i "$f" \
+            -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
+            -filter_complex \
+"[0:v]setpts=PTS-STARTPTS,\
+scale=${w}:${h}:force_original_aspect_ratio=decrease,\
+pad=${w}:${h}:-1:-1,format=yuv420p[v]; \
+[1:a]asetpts=PTS-STARTPTS[a]" \
+            -map "[v]" -map "[a]" -t "$img_dur" \
+            -c:v libx264 -qp 0 -preset ultrafast \
+            -c:a aac -b:a 192k "$seg"
+
+    elif has_audio "$f"; then
+        ffmpeg -hide_banner -loglevel error -y -fflags +genpts \
+            -i "$f" \
+            -filter_complex \
+"[0:v]setpts=PTS-STARTPTS,\
+scale=${w}:${h}:force_original_aspect_ratio=decrease,\
+pad=${w}:${h}:-1:-1,format=yuv420p,fps=$fps[v]; \
+[0:a]asetpts=PTS-STARTPTS[a]" \
+            -map "[v]" -map "[a]" \
+            -c:v libx264 -qp 0 -preset ultrafast \
+            -c:a aac -b:a 192k "$seg"
+
+    else
+        ffmpeg -hide_banner -loglevel error -y -fflags +genpts \
+            -i "$f" \
+            -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
+            -filter_complex \
+"[0:v]setpts=PTS-STARTPTS,\
+scale=${w}:${h}:force_original_aspect_ratio=decrease,\
+pad=${w}:${h}:-1:-1,format=yuv420p,fps=$fps[v]; \
+[1:a]asetpts=PTS-STARTPTS[a]" \
+            -map "[v]" -map "[a]" \
+            -c:v libx264 -qp 0 -preset ultrafast \
+            -c:a aac -b:a 192k "$seg"
+    fi
+
+    segments+=("$seg")
+done
+
+# ------------------------------------------------------------
+# PASS 3: TRUE SEAMLESS CONCAT (FILTER, NOT DEMUXER)
+# ------------------------------------------------------------
+ff_args=()
+fc=""
+
+for idx in "${!segments[@]}"; do
+    ff_args+=(-i "${segments[$idx]}")
+    fc+="[$idx:v][$idx:a]"
+done
+
+fc+="concat=n=${#segments[@]}:v=1:a=1[v][a]"
+
+ffmpeg "${ff_args[@]}" \
+    -filter_complex "$fc" \
+    -map "[v]" -map "[a]" \
+    -c:v libx264 -qp 0 -preset ultrafast \
+    -c:a aac -b:a 192k \
+    "$out"
+
+echo "merged successfully (gapless, 60fps, qp=0): $out"
