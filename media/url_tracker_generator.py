@@ -1,6 +1,6 @@
 # url_tracker_generator.py
 # Run: python3 url_tracker_generator.py
-# Outputs: url-tracker.html — open in browser for auto :visited tracking
+# Outputs: url-tracker.html — visited vanish, Ctrl+Z undo with reverse animation + localStorage persistence
 
 urls = [
     "https://gofile.io/d/05v5zB",
@@ -153,10 +153,8 @@ urls = [
     "https://gofile.io/d/ZiHyQ9",
     "https://gofile.io/d/a4KUNh",
     "https://gofile.io/d/aSiYlL"
-    # Add or remove URLs here — works with any list
 ]
 
-# Escape braces in CSS by doubling them
 html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -169,18 +167,128 @@ html_template = """<!DOCTYPE html>
             --bg-dark: #0A131A;
             --accent-cyan: #15fafa;
             --text-primary: #e0ffff;
-            --text-secondary: #70c0c0;
         }}
         body {{ background: var(--bg-dark); color: var(--text-primary); font-family: 'Roboto Mono', monospace; padding: 40px; text-align: center; }}
         h1 {{ font-family: 'Cinzel Decorative', serif; font-size: 2.5rem; background: linear-gradient(to right, #15fafa, #15adad); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 20px; }}
-        .glyph {{ width: 120px; height: 120px; margin: 20px auto; filter: drop-shadow(0 0 20px var(--accent-cyan)); }}
+        .glyph {{ width: 120px; height: 120px; margin: 20px auto; filter: drop-shadow(0 0 20px var(--accent-cyan)); animation: pulse 4s infinite; }}
+        @keyframes pulse {{ 0%,100% {{ filter: drop-shadow(0 0 20px var(--accent-cyan)); }} 50% {{ filter: drop-shadow(0 0 30px var(--accent-cyan)); }} }}
         ul {{ list-style: none; padding: 0; max-width: 600px; margin: 0 auto; }}
-        li {{ margin: 12px 0; }}
-        a {{ display: block; padding: 14px 20px; background: rgba(10,15,26,0.7); border: 1px solid transparent; border-radius: 10px; color: #15fafa; text-decoration: none; font-size: 14px; transition: all 0.3s ease; box-shadow: 0 0 12px rgba(21,250,250,0.2); }}
-        a:hover {{ background: rgba(21,250,250,0.2); box-shadow: 0 0 20px rgba(21,250,250,0.5); transform: translateY(-2px); }}
-        a:visited {{ color: #70c0c0; text-decoration: line-through; background: rgba(21,125,125,0.25); box-shadow: none; }}
+        li {{ 
+            margin: 12px 0; 
+            overflow: hidden;
+            max-height: 80px;
+            transition: max-height 0.8s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.8s ease, margin 0.8s ease;
+        }}
+        li.vanished {{ 
+            max-height: 0; 
+            opacity: 0;
+            margin: 0;
+        }}
+        a {{ 
+            display: block; 
+            padding: 14px 20px; 
+            background: rgba(10,15,26,0.7); 
+            border: 1px solid transparent; 
+            border-radius: 10px; 
+            color: #15fafa; 
+            text-decoration: none; 
+            font-size: 14px; 
+            transition: all 0.4s ease; 
+            box-shadow: 0 0 12px rgba(21,250,250,0.2);
+        }}
+        a:hover {{ 
+            background: rgba(21,250,250,0.2); 
+            box-shadow: 0 0 25px rgba(21,250,250,0.6); 
+            transform: translateY(-3px); 
+        }}
+        a:visited {{ animation: dematerialize 1s forwards; }}
+        @keyframes dematerialize {{
+            0% {{ opacity: 1; transform: scale(1); filter: blur(0); }}
+            60% {{ opacity: 0.4; transform: scale(1.08); filter: blur(3px); }}
+            100% {{ opacity: 0; transform: scale(0.9); filter: blur(10px); }}
+        }}
+        @keyframes rematerialize {{
+            0% {{ opacity: 0; transform: scale(0.9); filter: blur(10px); max-height: 0; }}
+            60% {{ opacity: 0.4; transform: scale(1.08); filter: blur(3px); }}
+            100% {{ opacity: 1; transform: scale(1); filter: blur(0); max-height: 80px; }}
+        }}
+        li.rematerializing {{ animation: rematerialize 1s forwards; }}
         .info {{ margin-top: 40px; font-size: 14px; opacity: 0.8; }}
+        .counter {{ margin: 20px 0; font-size: 18px; }}
+        .undo-hint {{ margin-top: 10px; font-size: 12px; opacity: 0.6; }}
     </style>
+    <script>
+        const totalCount = {count};
+        let visibleCount = totalCount;
+        let undoStack = JSON.parse(localStorage.getItem('gofileUndoStack') || '[]');
+
+        function saveUndoStack() {{
+            localStorage.setItem('gofileUndoStack', JSON.stringify(undoStack));
+        }}
+
+        document.addEventListener('DOMContentLoaded', () => {{
+            const ul = document.querySelector('ul');
+            const lis = ul.querySelectorAll('li');
+
+            lis.forEach(li => {{
+                const a = li.querySelector('a');
+                if (a.matches(':visited')) {{
+                    li.classList.add('vanished');
+                    visibleCount--;
+                }}
+            }});
+            updateCounter();
+
+            lis.forEach(li => {{
+                const a = li.querySelector('a');
+                a.addEventListener('click', e => {{
+                    setTimeout(() => {{
+                        if (!li.classList.contains('vanished')) {{
+                            const liClone = li.cloneNode(true);
+                            undoStack.push({{html: li.outerHTML, url: a.href}});
+                            saveUndoStack();
+                            li.classList.add('vanished');
+                            visibleCount--;
+                            updateCounter();
+                        }}
+                    }}, 300);
+                }});
+            }});
+        }});
+
+        function updateCounter() {{
+            document.querySelector('.counter').textContent = `Remaining: ${{visibleCount}} / ${{totalCount}}`;
+        }}
+
+        // Ctrl+Z Undo with reverse animation
+        document.addEventListener('keydown', e => {{
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && undoStack.length > 0) {{
+                e.preventDefault();
+                const last = undoStack.pop();
+                saveUndoStack();
+
+                const ul = document.querySelector('ul');
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = last.html;
+                const restoredLi = tempDiv.firstChild;
+
+                const existing = [...ul.children].find(li => li.querySelector('a').href === last.url);
+                if (existing) {{
+                    ul.replaceChild(restoredLi, existing);
+                }} else {{
+                    ul.appendChild(restoredLi);
+                }}
+
+                restoredLi.classList.add('rematerializing');
+                visibleCount++;
+                updateCounter();
+
+                restoredLi.addEventListener('animationend', () => {{
+                    restoredLi.classList.remove('rematerializing');
+                }}, {{once: true}});
+            }}
+        }});
+    </script>
 </head>
 <body>
     <svg class="glyph" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -193,13 +301,15 @@ html_template = """<!DOCTYPE html>
     </svg>
 
     <h1>URL Ψ TRACKER — {count} LINKS</h1>
+    <div class="counter">Remaining: {count} / {count}</div>
 
     <ul>
 {links}    </ul>
 
     <div class="info">
-        Browser auto-marks visited links (strikethrough + dimmed).<br>
-        Click to open in new tab. Refresh page to update status.
+        Click → open + dematerialize<br>
+        Ctrl+Z → undo (reverse animation)<br>
+        <span class="undo-hint">Undo stack persists across sessions</span>
     </div>
 </body>
 </html>"""
@@ -209,10 +319,13 @@ for url in urls:
     short = url.replace("https://gofile.io/d/", "").replace("http://gofile.io/d/", "")
     links_html += f'        <li><a href="{url}" target="_blank">{short}</a></li>\n'
 
-output = html_template.format(count=len(urls), links=links_html)
+total_count = len(urls)
+output = html_template.format(count=total_count, links=links_html)
 
 with open("url-tracker.html", "w", encoding="utf-8") as f:
     f.write(output)
 
-print(f"Success: url-tracker.html generated with {len(urls)} links.")
-print("Open file in browser — visited links auto-update on refresh.")
+print(f"Resurrection complete: url-tracker.html generated with {len(urls)} links.")
+print("Click → dematerialize")
+print("Ctrl+Z → rematerialize with reverse animation")
+print("Undo stack persists via localStorage — eternal across sessions")
