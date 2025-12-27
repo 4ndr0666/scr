@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 # v3.1.7 (Mathematical Lossless Quality - CRF 0, No Overwrite Prompt)
-set -euo pipefail
+#set -euo pipefail
 # ================== // WM_SUITE.SH //
 ## Description: Embeds a normalized, crisp watermark (resolution-aware).
 #  Lossless watermarking (FFV1 .mkv intermediate), then re-encode to H.264 .mp4.
@@ -213,9 +213,43 @@ run_config_setup() {
 	echo ""
 }
 
-# Check for and load config file
+# New: Non-interactive auto-configuration when args present but no config
+auto_config_setup() {
+	echo "========================================================"
+	echo "  wm_suite.sh Auto-Configuration (non-interactive)"
+	echo "========================================================"
+	echo "No config found, but files/directories provided. Using defaults."
+	echo "Config created at: $CONFIG_FILE"
+	echo ""
+
+	mkdir -p "$PROJECT_ROOT"
+
+	local _wm_file_default="$SCRIPT_DIR/wm-XL.png"
+	local _intro_file_default="/Nas/Fanvue/video/Intro.mp4"
+	local _outro_file_default="/Nas/Fanvue/video/Outro.mp4"
+	local _tmpdir_default="$PROJECT_ROOT/tmp"
+
+	{
+		echo "# wm_suite.sh Configuration"
+		echo "WM_FILE=\"$_wm_file_default\""
+		echo "INTRO_FILE=\"$_intro_file_default\""
+		echo "OUTRO_FILE=\"$_outro_file_default\""
+		echo "CONFIG_TMPDIR_PATH=\"$_tmpdir_default\""
+		echo "WM_USE_SOURCE_ALPHA=\"$WM_USE_SOURCE_ALPHA\""
+	} >"$CONFIG_FILE"
+	chmod 600 "$CONFIG_FILE"
+	echo "Default config saved. Edit manually for custom paths."
+	echo "========================================================"
+	echo ""
+}
+
+# Check for and load config file - hybrid logic
 if [[ ! -f "$CONFIG_FILE" ]]; then
-	run_config_setup
+	if [[ ${#ARGS[@]} -gt 0 ]]; then
+		auto_config_setup
+	else
+		run_config_setup
+	fi
 fi
 # Source the config file to load WM_FILE, INTRO_FILE, OUTRO_FILE, CONFIG_TMPDIR_PATH
 source "$CONFIG_FILE"
@@ -474,7 +508,9 @@ handle_target() {
 			while IFS= read -r f; do
 				if is_video "$f"; then
 					process_video "$f"
-				elif is_image "$f"; then process_image "$f"; fi
+				elif is_image "$f"; then
+					process_image "$f"
+				fi
 			done
 	else
 		[[ "$VERBOSE" == 1 ]] && echo "Processing single file: $t"
@@ -482,9 +518,13 @@ handle_target() {
 			process_video "$t"
 		elif is_image "$t"; then
 			process_image "$t"
-		else echo "Skip unsupported: $t"; fi
+		else
+			echo "Skip unsupported: $t"
+		fi
 	fi
 }
 
-for target in "$@"; do handle_target "$target"; done
+for target in "$@"; do
+	handle_target "$target"
+done
 echo "Done."
