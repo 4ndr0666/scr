@@ -35,7 +35,7 @@ if [ -z "$OUT" ]; then
 fi
 
 # Basic loss settings
-CRF=28
+CRF=24
 PRESET="slow"
 
 # available codecs?
