@@ -1,70 +1,67 @@
 #!/bin/sh
-# compress — Compress video to a smaller size
-# Usage: compress [-h|--help] input_file output_file
-# Offers retries on failure.
+#
+# compression
+# Compress a video file with lossy encoding (default CRF=24).
+# Usage: compression <input-file> [output-file] [crf]
+#
 
 usage() {
-  cat <<EOF
-Usage: $0 [options] <input_file> <output_file>
-Compress a video with lossy encoding.
+    cat <<EOF
+compression: Lossy video compression script using ffmpeg.
+
+Usage:
+  $0 <input-file> [output-file] [crf-value]
+
 Options:
-  -h, --help      Show help
+  -h, --help     Show this help message
+
+Arguments:
+  <input-file>   Source video file
+  [output-file]  Output file (default: <input>-compressed.mp4)
+  [crf-value]    CRF quality factor (lower=better quality, default: 24)
+
 Example:
-  $0 big.mp4 small.mp4
+  $0 movie.mp4
+  $0 bigclip.mkv smallclip.mp4 28
+
+This script reports progress and file sizes.
 EOF
 }
 
-# Parse help
+# Help
 case "$1" in
-  -h|--help) usage && exit 0 ;;
+  -h|--help) usage; exit 0;;
 esac
 
-IN="$1"
-OUT="$2"
-
-if [ ! -f "$IN" ]; then
-  printf 'Error: input file "%s" missing\n' "$IN" >&2
-  usage
-  exit 1
-fi
-
-if [ -z "$OUT" ]; then
-  printf 'Error: missing output file\n' >&2
-  usage
-  exit 1
-fi
-
-# Basic loss settings
-CRF=24
-PRESET="slow"
-
-# available codecs?
-HAS_X265=$(ffmpeg -codecs 2>/dev/null | grep -q "libx265" && echo yes || echo no)
-
-printf 'Compressing "%s" → "%s"\n' "$IN" "$OUT"
-
-try_encode() {
-  if [ "$HAS_X265" = "yes" ]; then
-    printf 'Using H.265 (HEVC) codec …\n'
-    ffmpeg -i "$IN" -c:v libx265 -preset "$PRESET" -crf "$CRF" \
-           -c:a aac -b:a 96k "$OUT"
-  else
-    printf 'H.265 not available, falling back to H.264 …\n'
-    ffmpeg -i "$IN" -c:v libx264 -preset "$PRESET" -crf "$CRF" \
-           -c:a aac -b:a 128k "$OUT"
-  fi
-}
-
-try_encode
-if [ $? -ne 0 ]; then
-  printf 'Warning: initial compression failed, retrying …\n'
-  # fall back to milder preset
-  PRESET="medium"
-  try_encode
-  if [ $? -ne 0 ]; then
-    printf 'Error: compression ultimately failed\n' >&2
+if [ $# -lt 1 ]; then
+    echo "Error: Input file is required." >&2
+    usage
     exit 1
-  fi
 fi
 
-printf 'Compression complete.\n'
+IN="$1"
+if [ ! -f "$IN" ]; then
+    echo "Error: '$IN' not found." >&2
+    exit 2
+fi
+
+OUT="${2:-${IN%.*}-compressed.mp4}"
+CRF="${3:-24}"
+
+echo "Original size: $(du -h "$IN" | cut -f1)"
+
+echo "Compressing with CRF=$CRF..."
+ffmpeg -hide_banner -y -i "$IN" \
+  -c:v libx264 -preset medium -crf "$CRF" \
+  -c:a aac -b:a 128k "$OUT"
+RC=$?
+
+if [ $RC -ne 0 ]; then
+    echo "Primary compression failed; retrying with slower preset for better stability..."
+    ffmpeg -hide_banner -y -i "$IN" \
+      -c:v libx264 -preset slow -crf "$CRF" \
+      -c:a aac -b:a 128k "$OUT"
+fi
+
+echo "Final size: $(du -h "$OUT" | cut -f1)"
+echo "Compression complete. Saved as '$OUT'."

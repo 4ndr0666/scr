@@ -1,72 +1,97 @@
 #!/bin/sh
-# chunkify-500 — POSIX‑Friendly video segmenter by size
-# Usage: chunkify-500 [-h|--help] input_file target_bytes
-# Splits input video into parts each <= target size in bytes.
+#
+# chunkify-500
+# Split video into ~500MB segments (or specified size).
+# Usage: chunkify-500 <input-file> [max-size-MB]
+#
 
 usage() {
-  cat <<EOF
-Usage: $0 [options] <input_file> <max_size_bytes>
+    cat <<EOF
+chunkify-500: Split large video files into chunks by size.
+
+Usage:
+  $0 <input-file> [max-size-MB]
 Options:
-  -h, --help    Show this help message
-Example:
-  $0 large.mp4 500000000   # splits into ~500 MB pieces
+  -h, --help     Show this help message
+
+Arguments:
+  <input-file>   Video file to split
+  [max-size-MB]  Maximum size per part in megabytes (default: 500)
+
+Examples:
+  $0 movie.mp4
+  $0 bigvideo.mkv 250
+
+This script will create parts named:
+  movie_part001.mp4, movie_part002.mp4, ...
 EOF
 }
 
-# Default checks
-[ $# -eq 0 ] && usage && exit 1
-
-# Parse help
+# Help
 case "$1" in
-  -h|--help) usage && exit 0 ;;
+  -h|--help) usage; exit 0;;
 esac
 
-IN="$1"
-MAX_SIZE="$2"
-
-# Validate input
-if [ ! -f "$IN" ]; then
-  printf 'Error: input file "%s" not found\n' "$IN" >&2
-  exit 1
-fi
-
-case "$MAX_SIZE" in
-  ''|*[!0-9]*)
-    printf 'Error: invalid size "%s"\n' "$MAX_SIZE" >&2
+if [ $# -lt 1 ]; then
+    echo "Error: No input file specified." >&2
     usage
     exit 1
-    ;;
-esac
-
-printf 'Chunkifying "%s" into chunks ≤ %s bytes …\n' "$IN" "$MAX_SIZE"
-
-# total duration using ffprobe
-DURATION=$(ffprobe -v error -show_entries format=duration \
-  -of default=nokey=1:noprint_wrappers=1 "$IN")
-
-if [ -z "$DURATION" ]; then
-  printf 'Error: could not determine duration.\n' >&2
-  exit 1
 fi
 
-CUR=0
-PART=1
+IN="$1"
+if [ ! -f "$IN" ]; then
+    echo "Error: '$IN' not found." >&2
+    exit 2
+fi
 
-# Loop until full file encoded
-while [ "$(printf '%s < %s' "$CUR" "$DURATION" | bc)" -eq 1 ] 2>/dev/null; do
-  OUT="${IN%.*}_part${PART}.${IN##*.}"
-  printf 'Processing part %d: start=%.2f …\n' "$PART" "$CUR"
-  ffmpeg -ss "$CUR" -i "$IN" -fs "$MAX_SIZE" -c copy "$OUT"
-  if [ $? -ne 0 ]; then
-    printf 'Error: failed to write part %d\n' "$PART" >&2
-    exit 1
-  fi
+MAX_MB=${2:-500}
+MAX_BYTES=$((MAX_MB * 1024 * 1024))
+BASE="${IN%.*}"
+EXT="${IN##*.}"
 
-  # measure segment duration
-  SEG_DUR=$(ffprobe -v error -show_entries format=duration \
-    -of default=nokey=1:noprint_wrappers=1 "$OUT")
-  CUR=$(printf '%s + %s' "$CUR" "$SEG_DUR" | bc)
-  PART=$((PART + 1))
+# Get duration in seconds (ffprobe)
+DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$IN" 2>/dev/null)
+if [ -z "$DUR" ]; then
+    echo "Error retrieving duration." >&2
+    exit 3
+fi
+
+echo "Splitting '$IN' into parts of ~${MAX_MB}MB..."
+
+START=0
+IDX=1
+
+while [ "$(printf "%.0f" "$START")" -lt "$(printf "%.0f" "$DUR")" ]; do
+    PART=$(printf "%s_part%03d.%s" "$BASE" "$IDX" "$EXT")
+    echo "Creating part #$IDX: $PART"
+
+    # Attempt split; if fails, reduces size by 10% and retries
+    ATTEMPTS=0
+    SIZE_OK=1
+    while [ $ATTEMPTS -lt 3 ]; do
+        ffmpeg -nostats -hide_banner -ss "$START" -i "$IN" -c copy -fs "$MAX_BYTES" "$PART"
+        if [ $? -eq 0 ]; then
+            SIZE_OK=0
+            break
+        fi
+        ATTEMPTS=$((ATTEMPTS+1))
+        MAX_BYTES=$((MAX_BYTES * 9 / 10))
+        echo "Retry $ATTEMPTS with smaller target size ($MAX_BYTES bytes)..."
+    done
+
+    if [ $SIZE_OK -ne 0 ]; then
+        echo "Warning: Could not produce part #$IDX under target size." >&2
+    fi
+
+    # Report size
+    BYTES=$(stat -c%s "$PART")
+    echo "  → Created: $PART ($(printf "%.2f" "$(echo "$BYTES/1024/1024" | bc -l)") MB)"
+
+    # Advance start by approximate duration of last part
+    SEEN_DUR=$(ffprobe -v error -show_entries format=duration \
+      -of default=noprint_wrappers=1:nokey=1 "$PART")
+    START=$(echo "$START + $SEEN_DUR" | bc)
+    IDX=$((IDX+1))
 done
 
-printf 'Chunkificationcomplete: %d part(s) created.\n' $((PART - 1))
+echo "Splitting complete."
