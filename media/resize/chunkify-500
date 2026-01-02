@@ -1,97 +1,228 @@
 #!/bin/sh
-#
-# chunkify-500
-# Split video into ~500MB segments (or specified size).
-# Usage: chunkify-500 <input-file> [max-size-MB]
-#
+# chunkify-500: Video file splitter for adversarial OS workflows
+# 4ndr0666OS v3.0.0
 
-usage() {
-    cat <<EOF
-chunkify-500: Split large video files into chunks by size.
+set -eu
 
-Usage:
-  $0 <input-file> [max-size-MB]
-Options:
-  -h, --help     Show this help message
+CHUNK_SIZE=$((500 * 1024 * 1024))   # 500MB default
+REASSEMBLE=0
+INFILE=""
+OUTPREFIX=""
+RETRY=3
 
-Arguments:
-  <input-file>   Video file to split
-  [max-size-MB]  Maximum size per part in megabytes (default: 500)
+print_help() {
+  cat <<EOF
+chunkify-500: Losslessly split large video files into chunks (default 500MB).
 
-Examples:
-  $0 movie.mp4
-  $0 bigvideo.mkv 250
+USAGE:
+  $0 [OPTIONS] input_file
 
-This script will create parts named:
-  movie_part001.mp4, movie_part002.mp4, ...
+OPTIONS:
+  -s SIZE      Chunk size in MB (default: 500)
+  -o PREFIX    Output file prefix (default: input basename)
+  -r           Reassemble chunks into single file after split
+  -h, --help   Show this help and exit
+
+EXAMPLES:
+  $0 bigfile.mp4
+  $0 -s 2000 -o chunk_ hugevideo.mkv
+  $0 -r -o recomposed_ myvideo.mp4
+
+ENV:
+  Requires: ffmpeg, ffprobe, split, cat
+
+NOTES:
+- Output chunks named PREFIXNNN.EXT
+- Reassembly will create PREFIX_reassembled.EXT
 EOF
 }
 
-# Help
-case "$1" in
-  -h|--help) usage; exit 0;;
-esac
+human_size() {
+  awk '{
+    split("B KB MB GB TB PB", units);
+    s = $1;
+    for (i = 1; s >= 1024 && i < 6; i++) s /= 1024;
+    printf "%.2f %s\n", s, units[i]
+  }'
+}
 
-if [ $# -lt 1 ]; then
-    echo "Error: No input file specified." >&2
-    usage
-    exit 1
-fi
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
-IN="$1"
-if [ ! -f "$IN" ]; then
-    echo "Error: '$IN' not found." >&2
-    exit 2
-fi
-
-MAX_MB=${2:-500}
-MAX_BYTES=$((MAX_MB * 1024 * 1024))
-BASE="${IN%.*}"
-EXT="${IN##*.}"
-
-# Get duration in seconds (ffprobe)
-DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$IN" 2>/dev/null)
-if [ -z "$DUR" ]; then
-    echo "Error retrieving duration." >&2
-    exit 3
-fi
-
-echo "Splitting '$IN' into parts of ~${MAX_MB}MB..."
-
-START=0
-IDX=1
-
-while [ "$(printf "%.0f" "$START")" -lt "$(printf "%.0f" "$DUR")" ]; do
-    PART=$(printf "%s_part%03d.%s" "$BASE" "$IDX" "$EXT")
-    echo "Creating part #$IDX: $PART"
-
-    # Attempt split; if fails, reduces size by 10% and retries
-    ATTEMPTS=0
-    SIZE_OK=1
-    while [ $ATTEMPTS -lt 3 ]; do
-        ffmpeg -nostats -hide_banner -ss "$START" -i "$IN" -c copy -fs "$MAX_BYTES" "$PART"
-        if [ $? -eq 0 ]; then
-            SIZE_OK=0
-            break
-        fi
-        ATTEMPTS=$((ATTEMPTS+1))
-        MAX_BYTES=$((MAX_BYTES * 9 / 10))
-        echo "Retry $ATTEMPTS with smaller target size ($MAX_BYTES bytes)..."
-    done
-
-    if [ $SIZE_OK -ne 0 ]; then
-        echo "Warning: Could not produce part #$IDX under target size." >&2
-    fi
-
-    # Report size
-    BYTES=$(stat -c%s "$PART")
-    echo "  → Created: $PART ($(printf "%.2f" "$(echo "$BYTES/1024/1024" | bc -l)") MB)"
-
-    # Advance start by approximate duration of last part
-    SEEN_DUR=$(ffprobe -v error -show_entries format=duration \
-      -of default=noprint_wrappers=1:nokey=1 "$PART")
-    START=$(echo "$START + $SEEN_DUR" | bc)
-    IDX=$((IDX+1))
+# Arg parsing
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) print_help; exit 0 ;;
+    -s) shift; CHUNK_SIZE=$(( $1 * 1024 * 1024 )); shift ;;
+    -o) shift; OUTPREFIX="$1"; shift ;;
+    -r) REASSEMBLE=1; shift ;;
+    -*) fail "Unknown flag: $1";;
+    *) [ -z "$INFILE" ] && INFILE="$1" || fail "Multiple input files specified"; shift ;;
+  esac
 done
 
-echo "Splitting complete."
+[ -z "$INFILE" ] && { print_help; exit 1; }
+[ ! -f "$INFILE" ] && fail "Input file not found: $INFILE"
+
+BASENAME=${OUTPREFIX:-$(basename "$INFILE" | sed 's/\..*$//')}
+EXT=${INFILE##*.}
+TOTAL_SIZE=$(stat -c%s "$INFILE")
+echo "Splitting '$INFILE' ($(echo "$TOTAL_SIZE" | human_size)) into chunks of $(echo "$CHUNK_SIZE" | human_size)"
+
+# ffmpeg split (by duration estimation)
+DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$INFILE" 2>/dev/null)
+[ -z "$DURATION" ] && fail "Unable to determine video duration."
+AVG_BITRATE=$(awk "BEGIN {print $TOTAL_SIZE*8/($DURATION)}")
+
+SEGMENT_SEC=$(awk "BEGIN {print $CHUNK_SIZE*8/($AVG_BITRATE)}")
+SEGMENT_SEC=$(printf "%.0f" "$SEGMENT_SEC")
+[ "$SEGMENT_SEC" -le 0 ] && SEGMENT_SEC=30
+
+COUNT=1
+START=0
+
+split_retry() {
+  part="$1"
+  for attempt in $(seq 1 $RETRY); do
+    ffmpeg -y -v error -ss "$START" -t "$SEGMENT_SEC" -i "$INFILE" -c copy "${BASENAME}_$(printf '%03d' $COUNT).${EXT}" && return 0
+    echo "Retry $attempt/$RETRY for chunk $COUNT"
+    sleep 1
+  done
+  fail "Chunk $COUNT failed after $RETRY attempts."
+}
+
+while awk "BEGIN{exit !($START < $DURATION)}"; do
+  echo "Chunk $COUNT: [Start: $START sec, Dur: $SEGMENT_SEC sec] -> ${BASENAME}_$(printf '%03d' $COUNT).${EXT}"
+  split_retry "$COUNT"
+  SIZE=$(stat -c%s "${BASENAME}_$(printf '%03d' $COUNT).${EXT}")
+  echo "  ↳ Done: $(echo "$SIZE" | human_size)"
+  PART_LEN=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "${BASENAME}_$(printf '%03d' $COUNT).${EXT}" 2>/dev/null)
+  [ -z "$PART_LEN" ] && PART_LEN="$SEGMENT_SEC"
+  START=$(awk "BEGIN{print $START + $PART_LEN}")
+  COUNT=$((COUNT + 1))
+done
+
+echo "All chunks written."
+
+# Reassemble if requested
+if [ "$REASSEMBLE" -eq 1 ]; then
+  echo "Reassembling all chunks..."
+  cat ${BASENAME}_*.${EXT} > "${BASENAME}_reassembled.${EXT}"
+  R_SIZE=$(stat -c%s "${BASENAME}_reassembled.${EXT}")
+  echo "Reassembly complete: $(echo "$R_SIZE" | human_size) -> ${BASENAME}_reassembled.${EXT}"
+fi
+
+exit 0
+#!/bin/sh
+# chunkify-500: Video file splitter for adversarial OS workflows
+# 4ndr0666OS v3.0.0
+
+set -eu
+
+CHUNK_SIZE=$((500 * 1024 * 1024))   # 500MB default
+REASSEMBLE=0
+INFILE=""
+OUTPREFIX=""
+RETRY=3
+
+print_help() {
+  cat <<EOF
+chunkify-500: Losslessly split large video files into chunks (default 500MB).
+
+USAGE:
+  $0 [OPTIONS] input_file
+
+OPTIONS:
+  -s SIZE      Chunk size in MB (default: 500)
+  -o PREFIX    Output file prefix (default: input basename)
+  -r           Reassemble chunks into single file after split
+  -h, --help   Show this help and exit
+
+EXAMPLES:
+  $0 bigfile.mp4
+  $0 -s 2000 -o chunk_ hugevideo.mkv
+  $0 -r -o recomposed_ myvideo.mp4
+
+ENV:
+  Requires: ffmpeg, ffprobe, split, cat
+
+NOTES:
+- Output chunks named PREFIXNNN.EXT
+- Reassembly will create PREFIX_reassembled.EXT
+EOF
+}
+
+human_size() {
+  awk '{
+    split("B KB MB GB TB PB", units);
+    s = $1;
+    for (i = 1; s >= 1024 && i < 6; i++) s /= 1024;
+    printf "%.2f %s\n", s, units[i]
+  }'
+}
+
+fail() { echo "ERROR: $*" >&2; exit 1; }
+
+# Arg parsing
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) print_help; exit 0 ;;
+    -s) shift; CHUNK_SIZE=$(( $1 * 1024 * 1024 )); shift ;;
+    -o) shift; OUTPREFIX="$1"; shift ;;
+    -r) REASSEMBLE=1; shift ;;
+    -*) fail "Unknown flag: $1";;
+    *) [ -z "$INFILE" ] && INFILE="$1" || fail "Multiple input files specified"; shift ;;
+  esac
+done
+
+[ -z "$INFILE" ] && { print_help; exit 1; }
+[ ! -f "$INFILE" ] && fail "Input file not found: $INFILE"
+
+BASENAME=${OUTPREFIX:-$(basename "$INFILE" | sed 's/\..*$//')}
+EXT=${INFILE##*.}
+TOTAL_SIZE=$(stat -c%s "$INFILE")
+echo "Splitting '$INFILE' ($(echo "$TOTAL_SIZE" | human_size)) into chunks of $(echo "$CHUNK_SIZE" | human_size)"
+
+# ffmpeg split (by duration estimation)
+DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$INFILE" 2>/dev/null)
+[ -z "$DURATION" ] && fail "Unable to determine video duration."
+AVG_BITRATE=$(awk "BEGIN {print $TOTAL_SIZE*8/($DURATION)}")
+
+SEGMENT_SEC=$(awk "BEGIN {print $CHUNK_SIZE*8/($AVG_BITRATE)}")
+SEGMENT_SEC=$(printf "%.0f" "$SEGMENT_SEC")
+[ "$SEGMENT_SEC" -le 0 ] && SEGMENT_SEC=30
+
+COUNT=1
+START=0
+
+split_retry() {
+  part="$1"
+  for attempt in $(seq 1 $RETRY); do
+    ffmpeg -y -v error -ss "$START" -t "$SEGMENT_SEC" -i "$INFILE" -c copy "${BASENAME}_$(printf '%03d' $COUNT).${EXT}" && return 0
+    echo "Retry $attempt/$RETRY for chunk $COUNT"
+    sleep 1
+  done
+  fail "Chunk $COUNT failed after $RETRY attempts."
+}
+
+while awk "BEGIN{exit !($START < $DURATION)}"; do
+  echo "Chunk $COUNT: [Start: $START sec, Dur: $SEGMENT_SEC sec] -> ${BASENAME}_$(printf '%03d' $COUNT).${EXT}"
+  split_retry "$COUNT"
+  SIZE=$(stat -c%s "${BASENAME}_$(printf '%03d' $COUNT).${EXT}")
+  echo "  ↳ Done: $(echo "$SIZE" | human_size)"
+  PART_LEN=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "${BASENAME}_$(printf '%03d' $COUNT).${EXT}" 2>/dev/null)
+  [ -z "$PART_LEN" ] && PART_LEN="$SEGMENT_SEC"
+  START=$(awk "BEGIN{print $START + $PART_LEN}")
+  COUNT=$((COUNT + 1))
+done
+
+echo "All chunks written."
+
+# Reassemble if requested
+if [ "$REASSEMBLE" -eq 1 ]; then
+  echo "Reassembling all chunks..."
+  cat ${BASENAME}_*.${EXT} > "${BASENAME}_reassembled.${EXT}"
+  R_SIZE=$(stat -c%s "${BASENAME}_reassembled.${EXT}")
+  echo "Reassembly complete: $(echo "$R_SIZE" | human_size) -> ${BASENAME}_reassembled.${EXT}"
+fi
+
+exit 0

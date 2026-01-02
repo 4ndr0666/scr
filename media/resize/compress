@@ -1,67 +1,83 @@
 #!/bin/sh
-#
-# compression
-# Compress a video file with lossy encoding (default CRF=24).
-# Usage: compression <input-file> [output-file] [crf]
-#
+# compression: Lossy video compressor for adversarial OS workflows
+# 4ndr0666OS v3.0.0
 
-usage() {
-    cat <<EOF
-compression: Lossy video compression script using ffmpeg.
+set -eu
 
-Usage:
-  $0 <input-file> [output-file] [crf-value]
+IN=""
+OUT=""
+CRF=24
+PRESET="slow"
+RETRY=3
 
-Options:
-  -h, --help     Show this help message
+print_help() {
+  cat <<EOF
+compression: Efficient, lossy compression of video files.
 
-Arguments:
-  <input-file>   Source video file
-  [output-file]  Output file (default: <input>-compressed.mp4)
-  [crf-value]    CRF quality factor (lower=better quality, default: 24)
+USAGE:
+  $0 [OPTIONS] input_file [output_file]
 
-Example:
-  $0 movie.mp4
-  $0 bigclip.mkv smallclip.mp4 28
+OPTIONS:
+  -c CRF       Set CRF (quality: 18–30, default: 24)
+  -p PRESET    ffmpeg preset (ultrafast...veryslow, default: slow)
+  -h, --help   Show this help and exit
 
-This script reports progress and file sizes.
+EXAMPLES:
+  $0 video.mp4 compressed.mp4
+  $0 -c 22 -p medium video.mp4
+
+ENV:
+  Requires: ffmpeg, ffprobe
+
+NOTES:
+- Lower CRF = higher quality/larger size. Try 18–28.
+- Output will always overwrite if exists.
 EOF
 }
 
-# Help
-case "$1" in
-  -h|--help) usage; exit 0;;
-esac
+human_size() {
+  awk '{
+    split("B KB MB GB TB PB", units);
+    s = $1;
+    for (i = 1; s >= 1024 && i < 6; i++) s /= 1024;
+    printf "%.2f %s\n", s, units[i]
+  }'
+}
 
-if [ $# -lt 1 ]; then
-    echo "Error: Input file is required." >&2
-    usage
-    exit 1
-fi
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
-IN="$1"
-if [ ! -f "$IN" ]; then
-    echo "Error: '$IN' not found." >&2
-    exit 2
-fi
+# Parse args
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) print_help; exit 0 ;;
+    -c) shift; CRF="$1"; shift ;;
+    -p) shift; PRESET="$1"; shift ;;
+    -*) fail "Unknown flag: $1";;
+    *) [ -z "$IN" ] && IN="$1" || ([ -z "$OUT" ] && OUT="$1" || fail "Too many positional arguments"); shift ;;
+  esac
+done
 
-OUT="${2:-${IN%.*}-compressed.mp4}"
-CRF="${3:-24}"
+[ -z "$IN" ] && { print_help; exit 1; }
+[ ! -f "$IN" ] && fail "Input file not found: $IN"
+[ -z "$OUT" ] && OUT="compressed_${IN##*/}"
 
-echo "Original size: $(du -h "$IN" | cut -f1)"
+IN_SIZE=$(stat -c%s "$IN")
+echo "Compressing '$IN' ($(echo "$IN_SIZE" | human_size)) → $OUT [crf=$CRF, preset=$PRESET]"
 
-echo "Compressing with CRF=$CRF..."
-ffmpeg -hide_banner -y -i "$IN" \
-  -c:v libx264 -preset medium -crf "$CRF" \
-  -c:a aac -b:a 128k "$OUT"
-RC=$?
+do_compress() {
+  ffmpeg -y -v error -i "$IN" \
+    -c:v libx264 -preset "$PRESET" -crf "$CRF" \
+    -c:a aac -b:a 128k "$OUT"
+}
 
-if [ $RC -ne 0 ]; then
-    echo "Primary compression failed; retrying with slower preset for better stability..."
-    ffmpeg -hide_banner -y -i "$IN" \
-      -c:v libx264 -preset slow -crf "$CRF" \
-      -c:a aac -b:a 128k "$OUT"
-fi
+for attempt in $(seq 1 $RETRY); do
+  do_compress && break
+  echo "Retry $attempt/$RETRY for compression"
+  sleep 1
+  [ "$attempt" -eq "$RETRY" ] && fail "Compression failed after $RETRY attempts."
+done
 
-echo "Final size: $(du -h "$OUT" | cut -f1)"
-echo "Compression complete. Saved as '$OUT'."
+OUT_SIZE=$(stat -c%s "$OUT")
+echo "Compression complete: $(echo "$OUT_SIZE" | human_size) → $OUT"
+
+exit 0
