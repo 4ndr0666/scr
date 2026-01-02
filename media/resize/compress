@@ -1,0 +1,70 @@
+#!/bin/sh
+# compress — Compress video to a smaller size
+# Usage: compress [-h|--help] input_file output_file
+# Offers retries on failure.
+
+usage() {
+  cat <<EOF
+Usage: $0 [options] <input_file> <output_file>
+Compress a video with lossy encoding.
+Options:
+  -h, --help      Show help
+Example:
+  $0 big.mp4 small.mp4
+EOF
+}
+
+# Parse help
+case "$1" in
+  -h|--help) usage && exit 0 ;;
+esac
+
+IN="$1"
+OUT="$2"
+
+if [ ! -f "$IN" ]; then
+  printf 'Error: input file "%s" missing\n' "$IN" >&2
+  usage
+  exit 1
+fi
+
+if [ -z "$OUT" ]; then
+  printf 'Error: missing output file\n' >&2
+  usage
+  exit 1
+fi
+
+# Basic loss settings
+CRF=28
+PRESET="slow"
+
+# available codecs?
+HAS_X265=$(ffmpeg -codecs 2>/dev/null | grep -q "libx265" && echo yes || echo no)
+
+printf 'Compressing "%s" → "%s"\n' "$IN" "$OUT"
+
+try_encode() {
+  if [ "$HAS_X265" = "yes" ]; then
+    printf 'Using H.265 (HEVC) codec …\n'
+    ffmpeg -i "$IN" -c:v libx265 -preset "$PRESET" -crf "$CRF" \
+           -c:a aac -b:a 96k "$OUT"
+  else
+    printf 'H.265 not available, falling back to H.264 …\n'
+    ffmpeg -i "$IN" -c:v libx264 -preset "$PRESET" -crf "$CRF" \
+           -c:a aac -b:a 128k "$OUT"
+  fi
+}
+
+try_encode
+if [ $? -ne 0 ]; then
+  printf 'Warning: initial compression failed, retrying …\n'
+  # fall back to milder preset
+  PRESET="medium"
+  try_encode
+  if [ $? -ne 0 ]; then
+    printf 'Error: compression ultimately failed\n' >&2
+    exit 1
+  fi
+fi
+
+printf 'Compression complete.\n'

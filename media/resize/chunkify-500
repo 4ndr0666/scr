@@ -1,0 +1,72 @@
+#!/bin/sh
+# chunkify-500 — POSIX‑Friendly video segmenter by size
+# Usage: chunkify-500 [-h|--help] input_file target_bytes
+# Splits input video into parts each <= target size in bytes.
+
+usage() {
+  cat <<EOF
+Usage: $0 [options] <input_file> <max_size_bytes>
+Options:
+  -h, --help    Show this help message
+Example:
+  $0 large.mp4 500000000   # splits into ~500 MB pieces
+EOF
+}
+
+# Default checks
+[ $# -eq 0 ] && usage && exit 1
+
+# Parse help
+case "$1" in
+  -h|--help) usage && exit 0 ;;
+esac
+
+IN="$1"
+MAX_SIZE="$2"
+
+# Validate input
+if [ ! -f "$IN" ]; then
+  printf 'Error: input file "%s" not found\n' "$IN" >&2
+  exit 1
+fi
+
+case "$MAX_SIZE" in
+  ''|*[!0-9]*)
+    printf 'Error: invalid size "%s"\n' "$MAX_SIZE" >&2
+    usage
+    exit 1
+    ;;
+esac
+
+printf 'Chunkifying "%s" into chunks ≤ %s bytes …\n' "$IN" "$MAX_SIZE"
+
+# total duration using ffprobe
+DURATION=$(ffprobe -v error -show_entries format=duration \
+  -of default=nokey=1:noprint_wrappers=1 "$IN")
+
+if [ -z "$DURATION" ]; then
+  printf 'Error: could not determine duration.\n' >&2
+  exit 1
+fi
+
+CUR=0
+PART=1
+
+# Loop until full file encoded
+while [ "$(printf '%s < %s' "$CUR" "$DURATION" | bc)" -eq 1 ] 2>/dev/null; do
+  OUT="${IN%.*}_part${PART}.${IN##*.}"
+  printf 'Processing part %d: start=%.2f …\n' "$PART" "$CUR"
+  ffmpeg -ss "$CUR" -i "$IN" -fs "$MAX_SIZE" -c copy "$OUT"
+  if [ $? -ne 0 ]; then
+    printf 'Error: failed to write part %d\n' "$PART" >&2
+    exit 1
+  fi
+
+  # measure segment duration
+  SEG_DUR=$(ffprobe -v error -show_entries format=duration \
+    -of default=nokey=1:noprint_wrappers=1 "$OUT")
+  CUR=$(printf '%s + %s' "$CUR" "$SEG_DUR" | bc)
+  PART=$((PART + 1))
+done
+
+printf 'Chunkificationcomplete: %d part(s) created.\n' $((PART - 1))
