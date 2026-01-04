@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Let there be light!
+shopt -s checkwinsize
+(:)
+printf -v BUFFER '%*s' $((COLUMNS*LINES)) ' '
+printf '\033[48;2;255;255;255m%s\n\033[0m' "$BUFFER"
