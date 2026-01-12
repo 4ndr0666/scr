@@ -13,7 +13,7 @@ IFS=$'\n\t'
 # ──────────────────────────────────────────────────────────────────────────────
 readonly DEST="/opt/4ndr0service"
 readonly BIN_SYMLINK="/usr/local/bin/4ndr0service"
-readonly REPO_URL="https://github.com/4ndr0666/4ndr0service.git"  # CHANGE TO YOUR FORK IF NEEDED
+readonly REPO_URL="https://github.com/4ndr0666/scr/4ndr0tools/4ndr0service.git"  # CHANGE TO YOUR FORK IF NEEDED
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/4ndr0service"
 
 # ──────────────────────────────────────────────────────────────────────────────
