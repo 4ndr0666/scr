@@ -1,0 +1,12 @@
+# File: systemd/user/env_maintenance.service
+[Unit]
+Description=4ndr0service Daily Environment Verification & Healing
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/4ndr0service --fix --report
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+# File: systemd/user/env_maintenance.timer
+[Unit]
+Description=Daily 4ndr0service Environment Maintenance
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

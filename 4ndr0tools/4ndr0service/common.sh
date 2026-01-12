@@ -1,97 +1,119 @@
 #!/usr/bin/env bash
+# File: common.sh
+# Centralized utilities, hardened PATH, logging, error handling, retry wrappers
+# Optimized revision — all repeated patterns moved here
+
 set -euo pipefail
 IFS=$'\n\t'
-# ================= // COMMON.SH//
 
-ensure_pkg_path() {
-	if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
-		local caller="${BASH_SOURCE[1]:-${BASH_SOURCE[0]:-$0}}"
-		local script_dir
-		script_dir="$(cd -- "$(dirname -- "$caller")" && pwd -P)"
-		while [[ "$script_dir" != "/" ]]; do
-			if [[ -f "$script_dir/common.sh" ]]; then
-				PKG_PATH="$script_dir"
-				break
-			fi
-			script_dir="$(dirname "$script_dir")"
-		done
-		if [[ -z "${PKG_PATH:-}" ]]; then
-			echo "Error: Could not determine package base path." >&2
-			return 1
-		fi
-	fi
-	export PKG_PATH
-}
+# ──────────────────────────────────────────────────────────────────────────────
+# CANONICAL PKG_PATH — EMBEDDED BY INSTALL.SH — DO NOT MODIFY MANUALLY
+# ──────────────────────────────────────────────────────────────────────────────
+PKG_PATH="/opt/4ndr0service"
+export PKG_PATH
 
-ensure_pkg_path
-
-expand_path() {
-	local raw="$1"
-	echo "${raw/#\~/$HOME}"
-}
-
-# XDG Directory Defaults
+# ──────────────────────────────────────────────────────────────────────────────
+# XDG DEFAULTS + PATH INJECTION (deduplicated, idempotent)
+# ──────────────────────────────────────────────────────────────────────────────
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 
-# Configuration file
-export CONFIG_FILE="$XDG_CONFIG_HOME/4ndr0service/config.json"
-
-# Pyenv/Pipx Defaults
-if [[ -z "${PYENV_ROOT:-}" ]]; then
-	if [[ -d "$XDG_DATA_HOME/pyenv" ]]; then
-		export PYENV_ROOT="$XDG_DATA_HOME/pyenv"
-	else
-		export PYENV_ROOT="$HOME/.pyenv"
-	fi
-fi
-
+# Pyenv / Pipx / Poetry canonical paths
+export PYENV_ROOT="${PYENV_ROOT:-$XDG_DATA_HOME/pyenv}"
 export PIPX_HOME="${PIPX_HOME:-$XDG_DATA_HOME/pipx}"
 export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$PIPX_HOME/bin}"
 
-# Export pyenv, pipx, poetry, and local bin paths, avoiding duplicates.
-for dir in "$PYENV_ROOT/bin" "$PYENV_ROOT/shims" "$PIPX_BIN_DIR" "$HOME/.local/bin"; do
-	case ":$PATH:" in
-	*:"$dir:"*) ;;
-	*) PATH="$dir:$PATH" ;;
-	esac
-done
+# Inject into PATH once, deduplicated
+typeset -U path
+path=(
+    "$PYENV_ROOT/bin"
+    "$PYENV_ROOT/shims"
+    "$PIPX_BIN_DIR"
+    "$HOME/.local/bin"
+    "$path[@]"
+)
+
 export PATH
 
-# Utility functions for idempotent directory creation
-ensure_dir() {
-	local dir="$1"
-	[[ -d "$dir" ]] || mkdir -p "$dir"
-}
+# ──────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────
+export CONFIG_FILE="$XDG_CONFIG_HOME/4ndr0service/config.json"
 
-# Logging
-log_info() { echo -e "\033[1;32mINFO:\033[0m $*"; }
-log_warn() { echo -e "\033[1;33mWARN:\033[0m $*"; }
+# ──────────────────────────────────────────────────────────────────────────────
+# LOGGING & ERROR HANDLING
+# ──────────────────────────────────────────────────────────────────────────────
+log_info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
+log_warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 handle_error() {
-	log_warn "Error: $*"
-	exit 1
+    echo -e "\033[1;31m[ERROR]\033[0m $*" >&2
+    exit 1
 }
-trap 'handle_error "Line $LINENO: $BASH_COMMAND"' ERR
 
-# Execute multiple functions in parallel and wait for completion
+trap 'handle_error "Line $LINENO: $BASH_COMMAND failed"' ERR
+
+# ──────────────────────────────────────────────────────────────────────────────
+# UTILITY FUNCTIONS (centralized — used by all services)
+# ──────────────────────────────────────────────────────────────────────────────
+ensure_dir() {
+    local dir="$1"
+    [[ -d "$dir" ]] || mkdir -p "$dir" || handle_error "Failed to create: $dir"
+}
+
+check_directory_writable() {
+    local dir="$1"
+    [[ -w "$dir" ]] && log_info "Directory $dir is writable." ||
+        handle_error "Directory $dir is not writable!"
+}
+
+safe_jq_array() {
+    local key="$1" file="$2" default="[]"
+    jq -r --arg k "$key" --argjson def "$default" '.[$k] // $def | .[]' "$file" 2>/dev/null || echo ""
+}
+
+retry() {
+    local max=3 count=0
+    until "$@"; do
+        ((count++))
+        if ((count >= max)); then
+            handle_error "Command failed after $max retries: $*"
+        fi
+        log_warn "Retry $count/$max failed — waiting $((2**count))s..."
+        sleep $((2**count))
+    done
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PARALLEL EXECUTION (enhanced with GNU parallel if available)
+# ──────────────────────────────────────────────────────────────────────────────
 run_parallel_checks() {
-	local funcs=("$@")
-	local pids=()
+    local funcs=("$@")
+    local pids=() status=0
 
-	for f in "${funcs[@]}"; do
-		if declare -f "$f" >/dev/null; then
-			"$f" &
-			pids+=("$!")
-		else
-			log_warn "Function $f not found for parallel run."
-		fi
-	done
+    if command -v parallel >/dev/null 2>&1; then
+        # Prefer GNU parallel when installed
+        printf '%s\n' "${funcs[@]}" | parallel --halt now,fail=1 --joblog /tmp/4ndr0-parallel.log \
+            'bash -c "{}" || exit 1'
+        return $?
+    else
+        # Fallback to background jobs
+        for f in "${funcs[@]}"; do
+            if declare -f "$f" >/dev/null; then
+                "$f" &
+                pids+=("$!")
+            else
+                log_warn "Function $f not found for parallel execution."
+            fi
+        done
 
-	local status=0
-	for pid in "${pids[@]}"; do
-		wait "$pid" || status=1
-	done
-
-	return "$status"
+        for pid in "${pids[@]}"; do
+            wait "$pid" || status=1
+        done
+        return $status
+    fi
 }
+
+# Export all for sourcing
+export -f log_info log_warn handle_error ensure_dir check_directory_writable \
+    safe_jq_array retry run_parallel_checks
