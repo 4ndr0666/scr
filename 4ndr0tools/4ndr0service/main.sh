@@ -1,99 +1,108 @@
 #!/usr/bin/env bash
 # File: main.sh
-# Optimized entry point — hardened argument parsing, mode flags, core orchestration
+# Entry point for the 4ndr0service Suite.
 
+# ================ // 4ndr0service Main.sh //
+### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CANONICAL PKG_PATH — EMBEDDED BY INSTALL.SH
-# ──────────────────────────────────────────────────────────────────────────────
-PKG_PATH="/opt/4ndr0service"
-export PKG_PATH
+### Constants
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SOURCE COMMON (now the single source of truth)
-# ──────────────────────────────────────────────────────────────────────────────
-source "$PKG_PATH/common.sh"
+# shellcheck source=4ndr0tools/4ndr0service/common.sh
+source "$SCRIPT_DIR/common.sh"
+ensure_pkg_path
+
+# Source core modules
+# shellcheck source=4ndr0tools/4ndr0service/controller.sh
 source "$PKG_PATH/controller.sh"
+# shellcheck source=4ndr0tools/4ndr0service/manage_files.sh
+source "$PKG_PATH/manage_files.sh"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELP & USAGE
-# ──────────────────────────────────────────────────────────────────────────────
+### Help
 show_help() {
-    cat <<EOF
-4ndr0service Suite — Self-Healing Dev Environment Orchestrator
+	cat <<EOF
+4ndr0service Suite - Manage and Optimize Your Environment
 
-Usage: 4ndr0service [OPTIONS]
+Usage: $0 [--help] [--report] [--fix] [--parallel] [--test]
 
 Options:
-  --help       Show this help message
-  --report     Generate verification report only
-  --fix        Attempt automatic fixes where possible
-  --parallel   Run independent services/checks in parallel
-  --test       Run smoke tests + full verification (non-destructive)
-  --dry-run    Simulate actions without making changes
+  --help       Show this help message.
+  --report     Print a summary report after checks.
+  --fix        Attempt to automatically fix detected issues.
+  --parallel   Run independent checks in parallel.
+  --test       Run all checks and print structured logs for testing.
 
 Examples:
-  4ndr0service --report --fix
-  4ndr0service --parallel
-  4ndr0service --test
-
+  $0 --report
+  $0 --fix
+  $0 --parallel --fix
 EOF
-    exit 0
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# FLAG PARSING
-# ──────────────────────────────────────────────────────────────────────────────
-report_mode=false
-fix_mode=false
-parallel_mode=false
-test_mode=false
-dry_run=false
+# Mode flags
+report_mode="false"
+fix_mode="false"
+parallel="false"
+test_mode="false"
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --help)     show_help ;;
-        --report)   report_mode=true ;;
-        --fix)      fix_mode=true ;;
-        --parallel) parallel_mode=true ;;
-        --test)     test_mode=true ;;
-        --dry-run)  dry_run=true ;;
-        *)          log_warn "Unknown option: $1" && exit 1 ;;
-    esac
-    shift
+# Parse command-line arguments
+for arg in "$@"; do
+	case "$arg" in
+	--help)
+		show_help
+		exit 0
+		;;
+	--report)
+		report_mode="true"
+		;;
+	--fix)
+		fix_mode="true"
+		;;
+	--parallel)
+		parallel="true"
+		;;
+	--test)
+		test_mode="true"
+		;;
+	*)
+		echo "Unknown argument: $arg"
+		exit 1
+		;;
+	esac
 done
 
+# Export flags for sub-scripts
 export FIX_MODE="$fix_mode"
 export REPORT_MODE="$report_mode"
-export DRY_RUN="$dry_run"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CORE LOGIC
-# ──────────────────────────────────────────────────────────────────────────────
 run_core_checks() {
-    local report="$1" fix="$2" par="$3"
+	local report="$1"
+	local fix="$2"
+	local par="$3"
 
-    create_config_if_missing
-    load_config
+	REPORT_MODE="$report" FIX_MODE="$fix" export REPORT_MODE FIX_MODE
 
-    if [[ "$fix" == "true" || "$report" == "true" ]]; then
-        run_verification
-    elif [[ "$par" == "true" ]]; then
-        run_parallel_services
-    else
-        run_all_services
-    fi
+	create_config_if_missing
+
+	if [[ "$fix" == "true" || "$report" == "true" ]]; then
+		run_verification
+	else
+		if [[ "$par" == "true" ]]; then
+			run_parallel_services
+		else
+			run_all_services
+		fi
+	fi
 }
 
 if [[ "$test_mode" == "true" ]]; then
-    log_info "Running smoke test + full verification..."
-    run_core_checks true false false
-    log_info "Smoke test complete. Check logs above for details."
-    exit 0
-elif [[ $# -gt 0 || "$report_mode" == "true" || "$fix_mode" == "true" || "$parallel_mode" == "true" ]]; then
-    run_core_checks "$report_mode" "$fix_mode" "$parallel_mode"
-else
-    main_controller
+	run_core_checks "$report_mode" "$fix_mode" "$parallel"
+	cat "$LOG_FILE"
+	exit 0
+elif [[ $# -gt 0 ]]; then # Run core checks when arguments are provided
+	run_core_checks "$report_mode" "$fix_mode" "$parallel"
+else # No arguments, run interactive CLI
+	main_controller
 fi
