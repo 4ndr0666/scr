@@ -1,0 +1,135 @@
+{
+  "model": {
+    "name": "gemini-3-flash-preview",
+    "maxSessionTurns": -1,
+    "summarizeToolOutput": {
+      "run_shell_command": {
+        "tokenBudget": 8142
+      }
+    },
+    "general": {
+      "vimMode": true,
+      "disableAutoUpdate": true,
+      "enablePromptCompletion": true,
+      "checkpointing": {
+        "enabled": true
+      },
+      "retryFetchErrors": true,
+      "sessionRetention.enabled": true,
+      "sessionRetention.maxAge": "7d",
+      "preferredEditor": "neovim",
+      "sessionRetention": {
+        "enabled": false
+      },
+      "previewFeatures": true
+    },
+    "telemetry": {
+      "enabled": false,
+      "target": "local",
+      "otlpEndpoint": "/dev/null",
+      "logPrompts": "false"
+    },
+    "privacy": {
+      "usageStatisticsEnabled": false
+    },
+    "security": {
+      "auth": {
+        "selectedType": "oauth-personal"
+      },
+      "folderTrust": {
+        "enabled": true
+      },
+      "blockGitExtensions": true
+    },
+    "ui": {
+      "theme": "ANSI",
+      "hideBanner": true,
+      "useFullWidth": true,
+      "footer": {
+        "hideSandboxStatus": false
+      },
+      "showStatusInTitle": true,
+      "showMemoryUsage": false,
+      "showLineNumbers": false,
+      "showCitations": false,
+      "accessibility": {
+        "disableLoadingPhrases": true
+      },
+      "hideFooter": false,
+      "showModelInfoInChat": true,
+      "hideContextSummary": false,
+      "useAlternateBuffer": true
+    },
+    "tools": {
+      "shell": {
+        "showColor": true
+      },
+      "useRipgrep": true,
+      "enableToolOutputTruncation": true,
+      "enableMessageBusIntegration": false
+    },
+    "context": {
+      "fileName": [
+        "GEMINI.md"
+      ],
+      "includeDirectories": [
+        "/home/git/clone/4ndr0666/"
+      ],
+      "discoveryMaxDirs": 500,
+      "loadFromIncludeDirectories": true,
+      "fileFiltering": {
+        "respectGitIgnore": false
+      }
+    },
+    "advanced": {
+      "excludedEnvVars": [
+        "DEBUG",
+        "DEBUG_MODE",
+        "NODE_ENV"
+      ]
+    }
+  },
+  "security": {
+    "auth": {
+      "selectedType": "gemini-api-key"
+    },
+    "folderTrust": {
+      "enabled": true
+    },
+    "environmentVariableRedaction": {
+      "enabled": true
+    },
+    "blockGitExtensions": true
+  },
+  "general": {
+    "vimMode": true,
+    "disableAutoUpdate": true,
+    "enablePromptCompletion": true,
+    "previewFeatures": true
+  },
+  "ui": {
+    "hideTips": true,
+    "hideBanner": true,
+    "showLineNumbers": false,
+    "accessibility": {
+      "disableLoadingPhrases": true
+    }
+  },
+  "context": {
+    "discoveryMaxDirs": 100,
+    "loadMemoryFromIncludeDirectories": true,
+    "fileFiltering": {
+      "respectGitIgnore": false
+    }
+  },
+  "tools": {
+    "shell": {
+      "showColor": true
+    }
+  },
+  "experimental": {
+    "codebaseInvestigatorSettings": {
+      "maxNumTurns": -1
+    }
+  }
+}

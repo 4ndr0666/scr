@@ -1,89 +1,59 @@
 #!/usr/bin/env bash
 # File: settings_functions.sh
-# Description: Functions to modify/manage settings for 4ndr0service Suite.
+# Description: Interactive settings management for 4ndr0service.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# PKG_PATH is expected to be set and exported by common.sh
+# PKG_PATH set by common.sh
+# shellcheck source=./common.sh
+source "${PKG_PATH:-.}/common.sh"
 
 modify_settings() {
-	local editor
-	editor=$(jq -r '.settings_editor' "$CONFIG_FILE" || echo "vim")
-	if [[ -z "$editor" || ! $(command -v "$editor") ]]; then
-		editor="vim"
-	fi
-	"$editor" "$CONFIG_FILE"
-	log_info "Settings modified with $editor."
+    load_config
+    local editor
+    editor=$(jq -r '.settings_editor // "vim"' "$CONFIG_FILE")
+    
+    if ! command -v "$editor" &>/dev/null; then
+        log_warn "Editor '$editor' not found. Falling back."
+        fallback_editor
+    else
+        "$editor" "$CONFIG_FILE"
+        log_success "Settings modified."
+    fi
 }
 
 fallback_editor() {
-	select editor in "vim" "nano" "emacs" "micro" "lite-xl" "Exit"; do
-		case $REPLY in
-		1) vim "$CONFIG_FILE" && break ;;
-		2) nano "$CONFIG_FILE" && break ;;
-		3) emacs "$CONFIG_FILE" && break ;;
-		4) micro "$CONFIG_FILE" && break ;;
-		5) lite-xl "$CONFIG_FILE" && break ;;
-		6) break ;;
-		*) echo "Invalid selection." ;;
-		esac
-	done
+    PS3="Select editor: "
+    local editors=("vim" "nano" "emacs" "micro" "lite-xl" "Exit")
+    select opt in "${editors[@]}"; do
+        case $opt in
+            "Exit") break ;;
+            *) 
+                if [[ -n "$opt" ]]; then
+                    if command -v "$opt" &>/dev/null; then
+                        "$opt" "$CONFIG_FILE"
+                        break
+                    else
+                        log_warn "$opt not installed."
+                    fi
+                else
+                    echo "Invalid selection."
+                fi
+                ;;
+        esac
+    done
 }
 
-# Create default configuration file if missing
-create_config_if_missing() {
-	ensure_dir "$(dirname "$CONFIG_FILE")"
-	if [[ ! -f "$CONFIG_FILE" ]]; then
-		cat >"$CONFIG_FILE" <<'EOF'
-{
-  "settings_editor": "vim",
-  "required_env": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR"],
-  "directory_vars": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR"],
-  "tools": ["python3", "pipx", "pyenv", "poetry"],
-  "python_version": "3.10.14",
-  "python_tools": ["black", "flake8", "mypy", "pytest", "poetry"],
-  "cargo_tools": ["cargo-update", "cargo-audit"],
-  "electron_tools": ["electron-builder"],
-  "go_tools": ["golang.org/x/tools/gopls@latest", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"],
-  "node_version": "lts/*",
-  "npm_global_packages": ["npm", "yarn", "pnpm", "typescript", "eslint", "prettier"],
-  "ruby_gems": ["bundler", "rake", "rubocop"],
-  "venv_pipx_packages": ["black", "flake8", "mypy", "pytest"],
-  "audit_keywords": ["config_watch", "data_watch", "cache_watch"],
-  "tool_install_commands": {
-    "psql": {
-      "yay": "yay -S --noconfirm postgresql",
-      "pacman": "sudo pacman -S --needed --noconfirm postgresql"
-    }
-  }
-}
-EOF
-		log_info "Created default config at $CONFIG_FILE"
-	fi
-}
-
-# Ensure configuration file is present
-load_config() {
-	if [[ ! -f "$CONFIG_FILE" ]]; then
-		handle_error "Config file not found at $CONFIG_FILE"
-	fi
-
-	# Check if the config file is empty or not valid JSON
-	if [[ ! -s "$CONFIG_FILE" ]] || ! jq -e . >/dev/null 2>&1 <"$CONFIG_FILE"; then
-		handle_error "Config file is empty or not valid JSON at $CONFIG_FILE"
-	fi
-}
-
-# Prompt user for a configuration value and persist it
 prompt_config_value() {
-	local key="$1"
-	local default="$2"
-	local val
-	read -rp "Enter value for $key [$default]: " val
-	val="${val:-$default}"
-	local tmp
-	tmp="$(mktemp)"
-	jq --arg key "$key" --arg val "$val" '.[$key]=$val' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"
-	log_info "Set $key to $val in $CONFIG_FILE"
+    local key="$1"
+    local default="$2"
+    local val
+    read -rp "Enter value for $key [$default]: " val
+    val="${val:-$default}"
+    
+    local tmp
+    tmp="$(mktemp)"
+    jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"
+    log_success "Set $key to $val"
 }

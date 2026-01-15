@@ -1,38 +1,35 @@
 #!/usr/bin/env bats
 
-@test "CLI menu exits cleanly when 'Exit' is selected" {
-    # Run main.sh and provide '12' (Exit option) as input
-    # Use 'printf' to simulate user input
-    run bash -c "printf '12\n' | /opt/4ndr0service/main.sh"
-
-    # Assert that the script exited successfully
-    [ "$status" -eq 0 ]
-    # Assert that the output contains 'Terminated!'
-    [[ "$output" == *"Terminated!"* ]]
+setup() {
+    # Get the directory of the bats script
+    BATS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" >/dev/null 2>&1 && pwd)"
+    # Project root relative to this file
+    PROJECT_ROOT="$(cd "$BATS_DIR/../.." >/dev/null 2>&1 && pwd)"
+    export PKG_PATH="$PROJECT_ROOT"
 }
 
-@test "Audit function attempts to fix missing environment variables when --fix is used" {
-    # Unset environment variables to ensure fix logic is triggered
-    unset LOG_FILE PSQL_HOME MYSQL_HOME SQLITE_HOME MESON_HOME SQL_DATA_HOME SQL_CONFIG_HOME SQL_CACHE_HOME
+@test "CLI menu exits cleanly when 'Exit' is selected" {
+    # Run main.sh and provide '12' (Exit option) as input
+    run bash -c "printf '12\n' | $PROJECT_ROOT/main.sh --cli"
 
-    # Run main.sh with --fix argument directly
-    run /opt/4ndr0service/main.sh --fix
-
-    # Print stderr for debugging if the test fails
-    if [ "$status" -ne 0 ]; then
-        echo "Stderr: $stderr"
-    fi
-
-    # Assert that the script exited successfully
     [ "$status" -eq 0 ]
+    [[ "$output" == *"Goodbye!"* ]]
+}
 
-    # Assert that the output contains messages indicating fixes
-    [[ "$output" == *"Fixed: LOG_FILE set to"* ]]
-    [[ "$output" == *"Fixed: PSQL_HOME set to"* ]]
-    [[ "$output" == *"Fixed: MYSQL_HOME set to"* ]]
-    [[ "$output" == *"Fixed: SQLITE_HOME set to"* ]]
-    [[ "$output" == *"Fixed: MESON_HOME set to"* ]]
-    [[ "$output" == *"Fixed: SQL_DATA_HOME set to"* ]]
-    [[ "$output" == *"Fixed: SQL_CONFIG_HOME set to"* ]]
-    [[ "$output" == *"Fixed: SQL_CACHE_HOME set to"* ]]
+@test "Verification function runs with --fix" {
+    # Unset environment variables to ensure fix logic is triggered
+    # NVM_DIR is in required_env but not auto-set in common.sh top-level
+    unset NVM_DIR
+
+    run "$PROJECT_ROOT/main.sh" --fix --report
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Verifying environment alignment"* ]]
+    [[ "$output" == *"Fixed: NVM_DIR set"* ]]
+}
+
+@test "Help message displays correctly" {
+    run "$PROJECT_ROOT/main.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage:"* ]]
 }

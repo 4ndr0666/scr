@@ -1,82 +1,77 @@
 #!/usr/bin/env bash
-# File: optimize_python.sh
-# Production-grade Python toolchain bootstrapper for 4ndr0service
+# File: service/optimize_python.sh
+# Description: Python, Pyenv, and Pipx optimization (XDG-compliant).
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
+# shellcheck source=../common.sh
+source "${PKG_PATH:-.}/common.sh"
 
-optimize_python_service() {
-	# Initialize pyenv for the current shell session
-			if command -v pyenv &>/dev/null; then
-				local PYENV_ROOT_VAL
-				PYENV_ROOT_VAL="$(pyenv root)"
-	
-				if [[ ! -d "$PYENV_ROOT_VAL/plugins/pyenv-virtualenv" ]]; then
-					log_info "pyenv-virtualenv plugin not found. Installing..."
-					git clone https://github.com/pyenv/pyenv-virtualenv.git "$PYENV_ROOT_VAL/plugins/pyenv-virtualenv" || log_warn "Failed to install pyenv-virtualenv plugin."
-				fi
-	
-				eval "$(pyenv init -)"
-				eval "$(pyenv virtualenv-init -)"
-			fi
-	create_config_if_missing
-	local PY_VERSION
-	PY_VERSION=$(jq -r '.python_version' "$CONFIG_FILE")
-	local -a TOOLS
-	mapfile -t TOOLS < <(jq -r '(.python_tools // [])[]' "$CONFIG_FILE")
+export PYENV_ROOT="${XDG_DATA_HOME}/pyenv"
+export PIPX_HOME="${XDG_DATA_HOME}/pipx"
+export PIPX_BIN_DIR="${XDG_BIN_HOME}"
 
-	log_info "Checking if Python is installed..."
-	if command -v python3 &>/dev/null; then
-		local py_version
-		py_version="$(python3 --version 2>/dev/null || echo 'Unknown')"
-		log_info "Python is already installed: $py_version"
-	else
-		log_warn "Python not found."
-		if command -v pyenv &>/dev/null; then
-			log_info "Using pyenv to install Python $PY_VERSION..."
-			pyenv install -s "$PY_VERSION" || log_warn "pyenv install failed."
-			pyenv global "$PY_VERSION" || log_warn "could not set pyenv global version."
-			pyenv rehash || true
-			if command -v python3 &>/dev/null; then
-				log_info "Installed Python $PY_VERSION via pyenv."
-			else
-																log_warn "Python still not available. Please install a Python version via pyenv."
-																return 1
-															fi
-														else
-															handle_error "Python not found and pyenv not installed. Please install pyenv or python3 manually."
-														fi
-													fi
-												
-													# Use pyenv exec pip as canonical pip command.
-													local pip_cmd="pyenv exec pip"
-												
-													log_info "Ensuring pipx is installed..."
-													if command -v pipx &>/dev/null; then
-														log_info "pipx is already installed."
-													else
-														$pip_cmd install --user pipx || log_warn "Warning: pipx installation failed."
-														if command -v pipx &>/dev/null; then
-															log_info "pipx installed successfully."
-														fi
-													fi
-	log_info "Installing/updating base Python tools via pipx..."
-	for tool in "${TOOLS[@]}"; do
-		if ! pipx list | grep -q "${tool}"; then
-			log_info "Installing $tool with pipx..."
-			pipx install "$tool" || log_warn "Warning: Failed to install $tool via pipx."
-		else
-			log_info "$tool found; upgrading with pipx..."
-			pipx upgrade "$tool" || log_warn "Warning: Failed to upgrade $tool via pipx."
-		fi
-	done
-
-	log_info "Python environment setup complete."
+load_pyenv() {
+    if [[ -d "$PYENV_ROOT" ]]; then
+        path_prepend "$PYENV_ROOT/bin"
+        eval "$(pyenv init -)"
+        return 0
+    fi
+    return 1
 }
 
-# If run as a script, execute the optimization
+install_pyenv() {
+    log_info "Pyenv not found. Installing..."
+    curl https://pyenv.run | bash || handle_error "$LINENO" "Pyenv install failed."
+    load_pyenv
+}
+
+optimize_python_service() {
+    log_info "Optimizing Python environment..."
+    
+    # 1. Ensure Pyenv
+    if ! load_pyenv; then
+        install_pyenv
+    fi
+
+    # 2. Install Python Version
+    local py_ver
+    py_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
+    log_info "Ensuring Python $py_ver via pyenv..."
+    pyenv install -s "$py_ver"
+    pyenv global "$py_ver"
+
+    # 3. Ensure Pipx
+    if ! command -v pipx &>/dev/null; then
+        python3 -m pip install --user pipx || log_warn "Pipx install failed."
+    fi
+    pipx ensurepath --force &>/dev/null || true
+
+    # 4. Install Python Tools (Pipx)
+    local -a tools
+    mapfile -t tools < <(jq -r '(.python_tools // [])[]' "$CONFIG_FILE")
+    for tool in "${tools[@]}"; do
+        if ! pipx list | grep -q "$tool"; then
+            log_info "Installing $tool via pipx..."
+            pipx install "$tool" || log_warn "Pipx failed: $tool"
+        else
+            log_info "Upgrading $tool via pipx..."
+            pipx upgrade "$tool" || log_warn "Pipx upgrade failed: $tool"
+        fi
+    done
+
+    # 5. Global Venv optimization
+    local venv_path="${XDG_DATA_HOME}/virtualenv/.venv"
+    if [[ ! -d "$venv_path" ]]; then
+        log_info "Creating global venv at $venv_path..."
+        ensure_dir "$(dirname "$venv_path")"
+        python3 -m venv "$venv_path"
+    fi
+
+    log_success "Python optimization complete. Version: $(python3 --version | awk '{print $2}')"
+}
+
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-	optimize_python_service
+    optimize_python_service
 fi

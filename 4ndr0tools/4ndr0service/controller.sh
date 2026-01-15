@@ -1,120 +1,109 @@
 #!/usr/bin/env bash
 # File: controller.sh
-# Central controller for the 4ndr0service Suite.
+# Description: Central controller for 4ndr0service.
 
-# ================== // 4ndr0service controller.sh //
-### Debugging
 set -euo pipefail
 IFS=$'\n\t'
 
-# PKG_PATH is expected to be set and exported by common.sh, sourced by main.sh
-# SCRIPT_DIR is not needed here as PKG_PATH is available.
-
-# shellcheck source=4ndr0tools/4ndr0service/settings_functions.sh
+# shellcheck source=./common.sh
+source "${PKG_PATH:-.}/common.sh"
+# shellcheck source=./settings_functions.sh
 source "$PKG_PATH/settings_functions.sh"
-# shellcheck source=4ndr0tools/4ndr0service/manage_files.sh
+# shellcheck source=./manage_files.sh
 source "$PKG_PATH/manage_files.sh"
-# shellcheck source=4ndr0tools/4ndr0service/test/src/verify_environment.sh
+# shellcheck source=./test/src/verify_environment.sh
 source "$PKG_PATH/test/src/verify_environment.sh"
 
-# Set the plugins directory, defaulting to the bundled plugins folder
-plugins_dir="${PLUGINS_DIR:-$PKG_PATH/plugins}"
-
-# User interface mode (cli or dialog)
-: "${USER_INTERFACE:=cli}"
+PLUGINS_DIR="${PLUGINS_DIR:-"$PKG_PATH/plugins"}"
+USER_INTERFACE="${USER_INTERFACE:-cli}"
 
 load_plugins() {
-	if [[ ! -d "$plugins_dir" ]]; then
-		log_warn "Plugins directory '$plugins_dir' not found. Skipping."
-		return
-	fi
-	for plugin in "$plugins_dir"/*.sh; do
-		if [[ -f "$plugin" ]]; then
-			# shellcheck disable=SC1090
-			source "$plugin" || log_warn "Failed to load plugin '$plugin'."
-			log_info "Loaded plugin: $plugin"
-		fi
-	done
+    if [[ -d "$PLUGINS_DIR" ]]; then
+        for plugin in "$PLUGINS_DIR"/*.sh;
+ do
+            if [[ -f "$plugin" ]]; then
+                # shellcheck disable=SC1090
+                source "$plugin" || log_warn "Failed to load plugin: $plugin"
+                log_info "Loaded plugin: $(basename "$plugin")"
+            fi
+        done
+    fi
 }
 
 source_all_services() {
-	local services_dir="$PKG_PATH/service"
-	if [[ ! -d "$services_dir" ]]; then
-		handle_error "Services directory '$services_dir' does not exist."
-	fi
-	for script in "$services_dir"/optimize_*.sh; do
-		if [[ -f "$script" ]]; then
-			# shellcheck disable=SC1090
-			source "$script" || log_warn "Failed to source '$script'."
-			log_info "Sourced service script: '$script'."
-		fi
-	done
+    local services_dir="$PKG_PATH/service"
+    if [[ ! -d "$services_dir" ]]; then
+        handle_error "$LINENO" "Services directory missing: $services_dir"
+    fi
+    for script in "$services_dir"/optimize_*.sh;
+ do
+        if [[ -f "$script" ]]; then
+            # shellcheck disable=SC1090
+            source "$script" || log_warn "Failed to source service: $script"
+        fi
+    done
 }
 
 source_views() {
-	case "$USER_INTERFACE" in
-	cli)
-		local cli_script="$PKG_PATH/view/cli.sh"
-		if [[ -f "$cli_script" ]]; then
-			# shellcheck disable=SC1090
-			source "$cli_script" || handle_error "Failed to source '$cli_script'."
-			log_info "Sourced CLI interface script."
-			main_cli
-		else
-			handle_error "CLI script not found at '$cli_script'."
-		fi
-		;;
-	dialog)
-		local dialog_script="$PKG_PATH/view/dialog.sh"
-		if [[ -f "$dialog_script" ]]; then
-			# shellcheck disable=SC1090
-			source "$dialog_script" || handle_error "Failed to source '$dialog_script'."
-			log_info "Sourced Dialog interface script."
-			main_dialog
-		else
-			handle_error "Dialog script not found at '$dialog_script'."
-		fi
-		;;
-	*)
-		handle_error "Unknown USER_INTERFACE: '$USER_INTERFACE'."
-		;;
-	esac
+    local view_script="$PKG_PATH/view/${USER_INTERFACE}.sh"
+    if [[ -f "$view_script" ]]; then
+        # shellcheck disable=SC1090
+        source "$view_script" || handle_error "$LINENO" "Failed to source view: $view_script"
+        "main_${USER_INTERFACE}"
+    else
+        handle_error "$LINENO" "View script not found: $view_script"
+    fi
 }
 
 run_all_services() {
-	log_info "Running all services in sequence..."
-	optimize_go_service || log_warn "Go setup failed."
-	optimize_ruby_service || log_warn "Ruby setup failed."
-	optimize_cargo_service || log_warn "Cargo setup failed."
-	optimize_node_service || log_warn "Node.js + NVM setup failed."
-	optimize_meson_service || log_warn "Meson setup failed."
-	optimize_python_service || log_warn "Python setup failed."
-	optimize_electron_service || log_warn "Electron setup failed."
-	optimize_venv_service || log_warn "Venv setup failed."
-	log_info "All services have been attempted in sequence."
+    log_info "Running all services in sequence..."
+    source_all_services
+    
+    local -a services=(
+        "optimize_go_service"
+        "optimize_ruby_service"
+        "optimize_cargo_service"
+        "optimize_node_service"
+        "optimize_meson_service"
+        "optimize_python_service"
+        "optimize_electron_service"
+        "optimize_venv_service"
+    )
+
+    for svc in "${services[@]}"; do
+        if declare -f "$svc" >/dev/null;
+ then
+            $svc || log_warn "$svc failed."
+        else
+            log_warn "Service function not found: $svc"
+        fi
+    done
+    log_success "All services sequence complete."
 }
 
 run_parallel_services() {
-	log_info "Running selected services in parallel..."
-	run_parallel_checks \
-		"optimize_go_service" \
-		"optimize_ruby_service" \
-		"optimize_cargo_service"
-	log_info "Parallel services completed."
+    log_info "Running services in parallel..."
+    source_all_services
+    
+    # Selecting core services for parallel execution as in stable
+    run_parallel_checks \
+        "optimize_go_service" \
+        "optimize_ruby_service" \
+        "optimize_cargo_service"
+    
+    log_success "Parallel services completed."
 }
 
 export_functions() {
-	export -f log_info log_warn handle_error attempt_tool_install ensure_dir
-	export -f prompt_config_value create_config_if_missing load_config
-	export -f modify_settings fallback_editor
-	export -f load_plugins source_all_services source_views
-	export -f run_all_services run_parallel_services run_verification optimize_python_service
+    export -f log_info log_warn log_error log_success handle_error 
+    export -f ensure_dir ensure_xdg_dirs pkg_is_installed install_sys_pkg
+    export -f create_config_if_missing load_config modify_settings
+    export -f run_all_services run_parallel_services run_verification
 }
 
 main_controller() {
-	load_plugins
-	source_all_services
-	export_functions
-	source_views
+    load_plugins
+    source_all_services
+    export_functions
+    source_views
 }
-
