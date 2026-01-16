@@ -577,7 +577,7 @@ configure_ufw() {
 	log CAT "Configuring UFW firewall"
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
 		backup_file "$UFW_DEFAULTS_FILE" || log WARN "UFW defaults backup failed, proceeding..."
-		log INFO "Ensuring IPv6 is enabled in UFW config for complete kill switch"
+		#		log INFO "Ensuring IPv6 is enabled in UFW config for complete kill switch"
 		#		run_cmd_dry sed -i 's/IPV6=no/IPV6=yes/' "$UFW_DEFAULTS_FILE"
 	fi
 	log INFO "Resetting UFW rules"
