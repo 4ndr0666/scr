@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 # Synthesized by a Senior Software Architect
-# Version: 2.1.0 - Explicit IPv6 Purge & Kill-Switch
+# Version: 2.1.1 - Syntax Fix for UFW Insert & IPv6 Purge
 set -euo pipefail
 #================= // UFW.SH //
 
@@ -231,11 +231,13 @@ parse_dns_servers() {
 
 purge_ipv6_loopback() {
 	log INFO "Checking for lingering IPv6 loopback addresses"
-	if ip -6 addr show dev lo | grep -q "::1"; then
-		log CAT "Manually removing ::1 from lo interface"
-		run_cmd_dry ip -6 addr del ::1/128 dev lo || log WARN "Could not manually remove ::1"
+	# Detect any inet6 address on lo, not just ::1
+	if ip -6 addr show dev lo | grep -q "inet6"; then
+		log CAT "Purging all IPv6 addresses from lo interface"
+		# Use flush to ensure total removal
+		run_cmd_dry ip -6 addr flush dev lo || log WARN "Could not flush IPv6 on lo"
 	else
-		log OK "No IPv6 loopback address detected on lo"
+		log OK "No IPv6 addresses detected on lo"
 	fi
 }
 
@@ -346,8 +348,9 @@ configure_ufw() {
 	if ((VPN_FLAG)); then outpol="deny"; fi
 	run_cmd_dry ufw default "$outpol" outgoing
 
-	# Rule #1: Hard IPv6 Block
-	apply_ufw_rule "insert 1 deny from any to any v6 comment 'Global IPv6 Kill-switch'"
+	# Rule #1: Correct Syntax for IPv6 Block position
+	# Syntax: ufw insert [pos] [action] [proto] [from] [to]
+	apply_ufw_rule "insert 1 deny to any from any v6 comment 'Global IPv6 Kill-switch'"
 	apply_ufw_rule "deny proto ipv6 from any to any comment 'Fallback IPv6 Block'"
 
 	if [[ -n "$PRIMARY_IF" ]]; then
@@ -429,4 +432,3 @@ main() {
 }
 
 main "$@"
-// End Segment 1/1
