@@ -10,7 +10,7 @@ source "${PKG_PATH:-.}/common.sh"
 
 optimize_meson_service() {
     log_info "Optimizing Meson & Ninja build tools..."
-    
+
     install_sys_pkg "meson" || log_warn "Failed to install meson"
     install_sys_pkg "ninja" || log_warn "Failed to install ninja"
 

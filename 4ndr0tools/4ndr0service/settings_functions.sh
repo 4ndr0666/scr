@@ -13,7 +13,7 @@ modify_settings() {
     load_config
     local editor
     editor=$(jq -r '.settings_editor // "vim"' "$CONFIG_FILE")
-    
+
     if ! command -v "$editor" &>/dev/null; then
         log_warn "Editor '$editor' not found. Falling back."
         fallback_editor
@@ -28,19 +28,19 @@ fallback_editor() {
     local editors=("vim" "nano" "emacs" "micro" "lite-xl" "Exit")
     select opt in "${editors[@]}"; do
         case $opt in
-            "Exit") break ;;
-            *) 
-                if [[ -n "$opt" ]]; then
-                    if command -v "$opt" &>/dev/null; then
-                        "$opt" "$CONFIG_FILE"
-                        break
-                    else
-                        log_warn "$opt not installed."
-                    fi
+        "Exit") break ;;
+        *)
+            if [[ -n "$opt" ]]; then
+                if command -v "$opt" &>/dev/null; then
+                    "$opt" "$CONFIG_FILE"
+                    break
                 else
-                    echo "Invalid selection."
+                    log_warn "$opt not installed."
                 fi
-                ;;
+            else
+                echo "Invalid selection."
+            fi
+            ;;
         esac
     done
 }
@@ -51,7 +51,7 @@ prompt_config_value() {
     local val
     read -rp "Enter value for $key [$default]: " val
     val="${val:-$default}"
-    
+
     local tmp
     tmp="$(mktemp)"
     jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"

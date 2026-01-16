@@ -50,13 +50,35 @@ FORCE_CLI="false"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --help) show_help; exit 0 ;;
-        --report) REPORT_MODE="true"; shift ;;
-        --fix) FIX_MODE="true"; shift ;;
-        --parallel) PARALLEL="true"; shift ;;
-        --test) TEST_MODE="true"; shift ;;
-        --cli) FORCE_CLI="true"; shift ;;
-        *) log_error "Unknown argument: $1"; show_help; exit 1 ;;
+    --help)
+        show_help
+        exit 0
+        ;;
+    --report)
+        REPORT_MODE="true"
+        shift
+        ;;
+    --fix)
+        FIX_MODE="true"
+        shift
+        ;;
+    --parallel)
+        PARALLEL="true"
+        shift
+        ;;
+    --test)
+        TEST_MODE="true"
+        shift
+        ;;
+    --cli)
+        FORCE_CLI="true"
+        shift
+        ;;
+    *)
+        log_error "Unknown argument: $1"
+        show_help
+        exit 1
+        ;;
     esac
 done
 

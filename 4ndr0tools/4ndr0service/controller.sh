@@ -19,8 +19,7 @@ USER_INTERFACE="${USER_INTERFACE:-cli}"
 
 load_plugins() {
     if [[ -d "$PLUGINS_DIR" ]]; then
-        for plugin in "$PLUGINS_DIR"/*.sh;
- do
+        for plugin in "$PLUGINS_DIR"/*.sh; do
             if [[ -f "$plugin" ]]; then
                 # shellcheck disable=SC1090
                 source "$plugin" || log_warn "Failed to load plugin: $plugin"
@@ -35,8 +34,7 @@ source_all_services() {
     if [[ ! -d "$services_dir" ]]; then
         handle_error "$LINENO" "Services directory missing: $services_dir"
     fi
-    for script in "$services_dir"/optimize_*.sh;
- do
+    for script in "$services_dir"/optimize_*.sh; do
         if [[ -f "$script" ]]; then
             # shellcheck disable=SC1090
             source "$script" || log_warn "Failed to source service: $script"
@@ -58,7 +56,7 @@ source_views() {
 run_all_services() {
     log_info "Running all services in sequence..."
     source_all_services
-    
+
     local -a services=(
         "optimize_go_service"
         "optimize_ruby_service"
@@ -71,8 +69,7 @@ run_all_services() {
     )
 
     for svc in "${services[@]}"; do
-        if declare -f "$svc" >/dev/null;
- then
+        if declare -f "$svc" >/dev/null; then
             $svc || log_warn "$svc failed."
         else
             log_warn "Service function not found: $svc"
@@ -84,18 +81,18 @@ run_all_services() {
 run_parallel_services() {
     log_info "Running services in parallel..."
     source_all_services
-    
+
     # Selecting core services for parallel execution as in stable
     run_parallel_checks \
         "optimize_go_service" \
         "optimize_ruby_service" \
         "optimize_cargo_service"
-    
+
     log_success "Parallel services completed."
 }
 
 export_functions() {
-    export -f log_info log_warn log_error log_success handle_error 
+    export -f log_info log_warn log_error log_success handle_error
     export -f ensure_dir ensure_xdg_dirs pkg_is_installed install_sys_pkg
     export -f create_config_if_missing load_config modify_settings
     export -f run_all_services run_parallel_services run_verification

@@ -13,7 +13,7 @@ export VENV_PATH="${VENV_HOME}/.venv"
 
 optimize_venv_service() {
     log_info "Optimizing Python virtual environments..."
-    
+
     # 1. Ensure Python
     if ! command -v python3 &>/dev/null; then
         handle_error "$LINENO" "Python3 not found."
@@ -36,7 +36,7 @@ optimize_venv_service() {
     # 4. Pipx Packages (Config defined)
     local -a packages
     mapfile -t packages < <(jq -r '(.venv_pipx_packages // [])[]' "$CONFIG_FILE")
-    
+
     if [[ ${#packages[@]} -gt 0 ]]; then
         log_info "Ensuring pipx packages..."
         for pkg in "${packages[@]}"; do

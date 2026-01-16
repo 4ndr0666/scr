@@ -34,11 +34,11 @@ manage_files_main() {
     )
     select opt in "${options[@]}"; do
         case "$opt" in
-            "Batch Execute All Services") run_all_services ;;
-            "Batch Execute All in Parallel") run_parallel_services ;;
-            "Optional Backups") optional_backup ;;
-            "Exit") break ;;
-            *) echo "Invalid option." ;;
+        "Batch Execute All Services") run_all_services ;;
+        "Batch Execute All in Parallel") run_parallel_services ;;
+        "Optional Backups") optional_backup ;;
+        "Exit") break ;;
+        *) echo "Invalid option." ;;
         esac
     done
 }

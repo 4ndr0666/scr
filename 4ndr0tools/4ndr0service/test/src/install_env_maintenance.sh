@@ -14,8 +14,9 @@ ensure_dir "$SYSTEMD_USER_DIR"
 
 install_unit() {
     local src="$1"
-    local dest="$SYSTEMD_USER_DIR/$(basename "$src")"
-    
+    local dest
+    dest="$SYSTEMD_USER_DIR/$(basename "$src")"
+
     # Update PKG_PATH in the service file to point to current installation
     sed "s|ExecStart=.*|ExecStart=$PKG_PATH/main.sh --fix --report|g" "$src" > "$dest"
     log_info "Installed and patched unit: $dest"

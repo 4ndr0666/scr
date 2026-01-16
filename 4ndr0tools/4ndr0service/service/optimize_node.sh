@@ -30,7 +30,7 @@ install_nvm() {
 
 optimize_node_service() {
     log_info "Optimizing Node.js environment..."
-    
+
     # 1. Ensure NVM
     if ! load_nvm; then
         install_nvm
@@ -39,7 +39,7 @@ optimize_node_service() {
     # 2. Install/Use Node Version
     local node_ver
     node_ver=$(jq -r '.node_version // "lts/*"' "$CONFIG_FILE")
-    
+
     log_info "Ensuring Node $node_ver is installed..."
     nvm install "$node_ver" || log_warn "NVM install $node_ver failed."
     nvm use "$node_ver"
@@ -48,7 +48,7 @@ optimize_node_service() {
     # 3. Install Global Tools
     local -a tools
     mapfile -t tools < <(jq -r '(.npm_global_packages // [])[]' "$CONFIG_FILE")
-    
+
     for tool in "${tools[@]}"; do
         if ! npm list -g --depth=0 "$tool" &>/dev/null; then
             log_info "Installing global tool: $tool"

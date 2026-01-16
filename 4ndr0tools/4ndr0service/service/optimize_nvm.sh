@@ -23,16 +23,16 @@ remove_npmrc_prefix_conflict() {
 optimize_nvm_service() {
     log_info "Optimizing NVM..."
     remove_npmrc_prefix_conflict
-    
+
     if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
         local latest_nvm
         latest_nvm=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
         curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${latest_nvm}/install.sh" | bash
     fi
-    
+
     # shellcheck disable=SC1091
     source "$NVM_DIR/nvm.sh"
-    
+
     local node_ver
     node_ver=$(jq -r '.node_version // "lts/*"' "$CONFIG_FILE")
     nvm install "$node_ver"

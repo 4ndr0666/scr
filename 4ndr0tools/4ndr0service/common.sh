@@ -14,7 +14,17 @@ fi
 export COMMON_SOURCED=1
 
 # =============================================================================
-# 1. PATH DISCOVERY & INITIALIZATION
+# 1. ANSI COLORS
+# =============================================================================
+
+export C_RED='\033[0;31m'
+export C_GREEN='\033[0;32m'
+export C_YELLOW='\033[1;33m'
+export C_BLUE='\033[0;34m'
+export C_RESET='\033[0m'
+
+# =============================================================================
+# 2. PATH DISCOVERY & INITIALIZATION
 # =============================================================================
 
 # Ensure PKG_PATH is set relative to this script location
@@ -24,7 +34,7 @@ ensure_pkg_path() {
         local script_dir
         # Resolve symlinks to find the actual physical location
         script_dir="$(cd -- "$(dirname -- "$(readlink -f "$caller")")" && pwd -P)"
-        
+
         # Traverse up to find the root containing common.sh (max 3 levels)
         local count=0
         while [[ "$script_dir" != "/" && $count -lt 3 ]]; do
@@ -35,7 +45,7 @@ ensure_pkg_path() {
             script_dir="$(dirname "$script_dir")"
             ((count++))
         done
-        
+
         if [[ -z "${PKG_PATH:-}" ]]; then
             printf "CRITICAL ERROR: Could not determine package base path.\n" >&2
             exit 1
@@ -47,7 +57,7 @@ ensure_pkg_path() {
 ensure_pkg_path
 
 # =============================================================================
-# 2. LOGGING & ERROR HANDLING
+# 3. LOGGING & ERROR HANDLING
 # =============================================================================
 
 # ANSI Colors
@@ -85,7 +95,7 @@ handle_error() {
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 # =============================================================================
-# 3. XDG & ENVIRONMENT CONFIGURATION
+# 4. XDG & ENVIRONMENT CONFIGURATION
 # =============================================================================
 
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -116,15 +126,20 @@ ensure_xdg_dirs() {
 }
 
 # =============================================================================
-# 4. PACKAGE MANAGEMENT
+# 5. PACKAGE MANAGEMENT
 # =============================================================================
 
 detect_pkg_manager() {
-    if command -v pacman &>/dev/null; then echo "pacman"
-    elif command -v apt-get &>/dev/null; then echo "apt"
-    elif command -v dnf &>/dev/null; then echo "dnf"
-    elif command -v brew &>/dev/null; then echo "brew"
-    else echo "unknown"
+    if command -v pacman &>/dev/null; then
+        echo "pacman"
+    elif command -v apt-get &>/dev/null; then
+        echo "apt"
+    elif command -v dnf &>/dev/null; then
+        echo "dnf"
+    elif command -v brew &>/dev/null; then
+        echo "brew"
+    else
+        echo "unknown"
     fi
 }
 
@@ -133,11 +148,11 @@ pkg_is_installed() {
     local mgr
     mgr=$(detect_pkg_manager)
     case "$mgr" in
-        pacman) pacman -Qi "$pkg" &>/dev/null ;;
-        apt) dpkg -l "$pkg" &>/dev/null ;;
-        dnf) rpm -q "$pkg" &>/dev/null ;;
-        brew) brew list "$pkg" &>/dev/null ;;
-        *) command -v "$pkg" &>/dev/null ;;
+    pacman) pacman -Qi "$pkg" &>/dev/null ;;
+    apt) dpkg -l "$pkg" &>/dev/null ;;
+    dnf) rpm -q "$pkg" &>/dev/null ;;
+    brew) brew list "$pkg" &>/dev/null ;;
+    *) command -v "$pkg" &>/dev/null ;;
     esac
 }
 
@@ -152,16 +167,19 @@ install_sys_pkg() {
     mgr=$(detect_pkg_manager)
     log_info "Installing $pkg using $mgr..."
     case "$mgr" in
-        pacman) sudo pacman -S --noconfirm --needed "$pkg" ;;
-        apt) sudo apt-get update && sudo apt-get install -y "$pkg" ;;
-        dnf) sudo dnf install -y "$pkg" ;;
-        brew) brew install "$pkg" ;;
-        *) log_warn "Manual installation required: $pkg"; return 1 ;;
+    pacman) sudo pacman -S --noconfirm --needed "$pkg" ;;
+    apt) sudo apt-get update && sudo apt-get install -y "$pkg" ;;
+    dnf) sudo dnf install -y "$pkg" ;;
+    brew) brew install "$pkg" ;;
+    *)
+        log_warn "Manual installation required: $pkg"
+        return 1
+        ;;
     esac
 }
 
 # =============================================================================
-# 5. CONFIGURATION MANAGEMENT
+# 6. CONFIGURATION MANAGEMENT
 # =============================================================================
 
 create_config_if_missing() {
@@ -203,7 +221,7 @@ load_config() {
 }
 
 # =============================================================================
-# 6. SHELL CONFIG UTILS
+# 7. SHELL CONFIG UTILS
 # =============================================================================
 
 ensure_config_line() {
@@ -211,7 +229,7 @@ ensure_config_line() {
     local line="$2"
     [[ ! -f "$file" ]] && touch "$file"
     if ! grep -Fxq "$line" "$file"; then
-        printf "%s\n" "$line" >> "$file"
+        printf "%s\n" "$line" >>"$file"
         log_success "Added config to $file"
     fi
 }
@@ -219,7 +237,7 @@ ensure_config_line() {
 path_prepend() {
     local dir="$1"
     if [[ -d "${dir}" ]] && [[ ":$PATH:" != *":${dir}:"* ]]; then
-        export PATH="${dir}${PATH:+":$PATH"}"
+        export PATH="${dir}${PATH:+:$PATH}"
         log_info "Prepended to PATH: ${dir}"
     fi
 }
@@ -232,7 +250,7 @@ run_parallel_checks() {
     for f in "${funcs[@]}"; do
         if declare -f "$f" >/dev/null; then
             "$f" &
-            pids+=("$!")
+            pids+=($!)
         else
             log_warn "Function $f not found for parallel run."
         fi

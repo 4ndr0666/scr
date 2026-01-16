@@ -10,7 +10,7 @@ source "${PKG_PATH:-.}/common.sh"
 
 optimize_go_service() {
     log_info "Optimizing Go environment..."
-    
+
     # 1. Install Go
     if ! command -v go &>/dev/null; then
         install_sys_pkg "go" || handle_error "$LINENO" "Failed to install Go."
@@ -27,7 +27,7 @@ optimize_go_service() {
     # 3. Install Tools from Config
     local -a tools
     mapfile -t tools < <(jq -r '(.go_tools // [])[]' "$CONFIG_FILE")
-    
+
     if [[ ${#tools[@]} -gt 0 ]]; then
         log_info "Installing/Updating Go tools..."
         for tool in "${tools[@]}"; do

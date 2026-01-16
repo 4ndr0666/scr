@@ -12,7 +12,7 @@ export GEM_HOME="${XDG_DATA_HOME}/gem"
 
 optimize_ruby_service() {
     log_info "Optimizing Ruby environment..."
-    
+
     # 1. Ensure Ruby
     if ! command -v ruby &>/dev/null; then
         install_sys_pkg "ruby" || handle_error "$LINENO" "Failed to install Ruby."
@@ -28,7 +28,7 @@ optimize_ruby_service() {
     # 3. Install Gems from Config
     local -a gems
     mapfile -t gems < <(jq -r '(.ruby_gems // [])[]' "$CONFIG_FILE")
-    
+
     for gem in "${gems[@]}"; do
         if ! gem list -i "$gem" &>/dev/null; then
             log_info "Installing $gem..."

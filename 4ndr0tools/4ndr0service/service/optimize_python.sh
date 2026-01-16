@@ -5,12 +5,14 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Source common library
 # shellcheck source=../common.sh
 source "${PKG_PATH:-.}/common.sh"
 
-export PYENV_ROOT="${XDG_DATA_HOME}/pyenv"
-export PIPX_HOME="${XDG_DATA_HOME}/pipx"
-export PIPX_BIN_DIR="${XDG_BIN_HOME}"
+export PYENV_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/pyenv"
+export PIPX_HOME="$XDG_DATA_HOME/pipx"
+export PIPX_BIN_DIR="$PIPX_HOME/bin"
+export VENV_HOME="$XDG_DATA_HOME/virtualenv"
 
 load_pyenv() {
     if [[ -d "$PYENV_ROOT" ]]; then
@@ -37,7 +39,7 @@ optimize_python_service() {
 
     # 2. Install Python Version
     local py_ver
-    py_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
+    py_ver=$(jq -r '.python_version // "3.14.2"' "$CONFIG_FILE")
     log_info "Ensuring Python $py_ver via pyenv..."
     pyenv install -s "$py_ver"
     pyenv global "$py_ver"
@@ -61,12 +63,11 @@ optimize_python_service() {
         fi
     done
 
-    # 5. Global Venv optimization
-    local venv_path="${XDG_DATA_HOME}/virtualenv/.venv"
-    if [[ ! -d "$venv_path" ]]; then
-        log_info "Creating global venv at $venv_path..."
-        ensure_dir "$(dirname "$venv_path")"
-        python3 -m venv "$venv_path"
+    # 4. Global Venv
+    if [[ ! -d "$VENV_HOME/.venv" ]]; then
+        log_info "Creating global venv at $VENV_HOME/.venv..."
+        ensure_dir "$VENV_HOME"
+        python3 -m venv "$VENV_HOME/.venv"
     fi
 
     log_success "Python optimization complete. Version: $(python3 --version | awk '{print $2}')"

@@ -18,14 +18,17 @@ DRY_RUN=false
 # ──────────────────────────────────────────────────────────────────────────────
 # UTILITY FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
-log_info()  { printf "\033[1;32m[INFO]\033[0m  %s\n" "$*"; }
-log_warn()  { printf "\033[1;33m[WARN]\033[0m  %s\n" "$*"; }
+log_info() { printf "\033[1;32m[INFO]\033[0m  %s\n" "$*"; }
+log_warn() { printf "\033[1;33m[WARN]\033[0m  %s\n" "$*"; }
 log_error() { printf "\033[1;31m[ERROR]\033[0m %s\n" "$*"; }
 
 # Wrapper for executing commands with dry-run support
 run() {
     local cmd_str
-    cmd_str="$(IFS=' '; echo "$*")"
+    cmd_str="$(
+        IFS=' '
+        echo "$*"
+    )"
     if [[ "${DRY_RUN}" == "true" ]]; then
         printf "\033[1;34m[DRY-RUN]\033[0m Would run: %s\n" "${cmd_str}"
     else
@@ -65,19 +68,19 @@ EOF
 # ──────────────────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -n|--dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            usage
-            exit 1
-            ;;
+    -n | --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
     esac
 done
 
@@ -100,7 +103,7 @@ fi
 # 2. Sync files if source and destination differ
 if [[ "${SOURCE_DIR}" != "${INSTALL_LOCATION}" ]]; then
     log_info "Synchronizing files to ${INSTALL_LOCATION}..."
-    
+
     # Ensure parent directory exists (requires sudo if in /opt)
     PARENT_DIR="$(dirname "${INSTALL_LOCATION}")"
     if [[ ! -d "${PARENT_DIR}" ]]; then
