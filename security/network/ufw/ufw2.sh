@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# Version: 2.1.2 - Final UFW Syntax Validation & Interface-Specific Blocking
+# Version: 2.1.3 - Final Syntax Stabilization
 set -euo pipefail
 #================= // UFW.SH //
 
@@ -345,12 +345,9 @@ configure_ufw() {
 	if ((VPN_FLAG)); then outpol="deny"; fi
 	run_cmd_dry ufw default "$outpol" outgoing
 
-	# FIXED SYNTAX FOR IPv6 POSITIONING
-	# Rule #1 is inserted specifically for your primary interface to ensure it's hit first.
-	if [[ -n "$PRIMARY_IF" ]]; then
-		apply_ufw_rule "insert 1 deny on $PRIMARY_IF from any to any v6 comment 'Primary Interface IPv6 Kill'"
-	fi
-	apply_ufw_rule "deny proto ipv6 from any to any comment 'Fallback IPv6 Global Block'"
+	# Removed 'insert' logic to avoid syntax crashes. 
+	# These rules are applied immediately after reset, so they become the foundation.
+	apply_ufw_rule "deny to any from any v6 comment 'Global IPv6 Kill-switch'"
 
 	if [[ -n "$PRIMARY_IF" ]]; then
 		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
@@ -388,7 +385,7 @@ tear_down() {
 	run_cmd_dry ufw --force reset
 	run_cmd_dry ufw default deny incoming
 	run_cmd_dry ufw default allow outgoing
-	run_cmd_dry ufw add deny out to ::/0
+	run_cmd_dry ufw deny out to ::/0
 	run_cmd_dry ufw enable
 }
 
