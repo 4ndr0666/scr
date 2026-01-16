@@ -1,0 +1,6 @@
+#!/bin/bash
+# 4ndr0666
+# killv6
+# Deletes the ipv6 address on the system loopback device
+
+sudo ip addr del ::1/128 dev lo
