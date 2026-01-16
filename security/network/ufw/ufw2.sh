@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# Version: 2.1.3 - Final Syntax Stabilization
+# Version: 2.1.5 - Sequential Logic Recovery
 set -euo pipefail
 #================= // UFW.SH //
 
@@ -333,6 +333,9 @@ EOF
 
 configure_ufw() {
 	log CAT "Configuring UFW Firewall"
+	
+	# IPv6=yes is required in the defaults file for UFW to even process IPv6 rules,
+	# even if we are using those rules to block it.
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
 		run_cmd_dry sed -i 's/IPV6=no/IPV6=yes/' "$UFW_DEFAULTS_FILE"
 	fi
@@ -345,9 +348,11 @@ configure_ufw() {
 	if ((VPN_FLAG)); then outpol="deny"; fi
 	run_cmd_dry ufw default "$outpol" outgoing
 
-	# Removed 'insert' logic to avoid syntax crashes. 
-	# These rules are applied immediately after reset, so they become the foundation.
-	apply_ufw_rule "deny to any from any v6 comment 'Global IPv6 Kill-switch'"
+	# RULES APPLIED IN ORDER OF PRECEDENCE
+	# We use standard 'ufw deny' which places them at the top of the chain post-reset.
+	# Standard CIDR ::/0 is the most stable way to target all IPv6.
+	apply_ufw_rule "deny from any to any proto ipv6 comment 'Global IPv6 Kill-switch'"
+	apply_ufw_rule "deny from any to any v6 comment 'Global IPv6 Kill-switch v6'"
 
 	if [[ -n "$PRIMARY_IF" ]]; then
 		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
@@ -385,7 +390,8 @@ tear_down() {
 	run_cmd_dry ufw --force reset
 	run_cmd_dry ufw default deny incoming
 	run_cmd_dry ufw default allow outgoing
-	run_cmd_dry ufw deny out to ::/0
+	# Specific CIDR for cleanup
+	run_cmd_dry ufw deny from any to any proto ipv6
 	run_cmd_dry ufw enable
 }
 
