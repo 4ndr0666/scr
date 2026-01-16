@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# Synthesized by a Senior Software Architect
-# Version: 2.1.1 - Syntax Fix for UFW Insert & IPv6 Purge
+# Version: 2.1.2 - Final UFW Syntax Validation & Interface-Specific Blocking
 set -euo pipefail
 #================= // UFW.SH //
 
@@ -231,10 +230,8 @@ parse_dns_servers() {
 
 purge_ipv6_loopback() {
 	log INFO "Checking for lingering IPv6 loopback addresses"
-	# Detect any inet6 address on lo, not just ::1
 	if ip -6 addr show dev lo | grep -q "inet6"; then
 		log CAT "Purging all IPv6 addresses from lo interface"
-		# Use flush to ensure total removal
 		run_cmd_dry ip -6 addr flush dev lo || log WARN "Could not flush IPv6 on lo"
 	else
 		log OK "No IPv6 addresses detected on lo"
@@ -348,10 +345,12 @@ configure_ufw() {
 	if ((VPN_FLAG)); then outpol="deny"; fi
 	run_cmd_dry ufw default "$outpol" outgoing
 
-	# Rule #1: Correct Syntax for IPv6 Block position
-	# Syntax: ufw insert [pos] [action] [proto] [from] [to]
-	apply_ufw_rule "insert 1 deny to any from any v6 comment 'Global IPv6 Kill-switch'"
-	apply_ufw_rule "deny proto ipv6 from any to any comment 'Fallback IPv6 Block'"
+	# FIXED SYNTAX FOR IPv6 POSITIONING
+	# Rule #1 is inserted specifically for your primary interface to ensure it's hit first.
+	if [[ -n "$PRIMARY_IF" ]]; then
+		apply_ufw_rule "insert 1 deny on $PRIMARY_IF from any to any v6 comment 'Primary Interface IPv6 Kill'"
+	fi
+	apply_ufw_rule "deny proto ipv6 from any to any comment 'Fallback IPv6 Global Block'"
 
 	if [[ -n "$PRIMARY_IF" ]]; then
 		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
