@@ -611,7 +611,8 @@ configure_ufw() {
 	log INFO "Applying base firewall rules"
 	if [[ -n "$PRIMARY_IF" ]]; then
 		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
-		apply_ufw_rule "deny proto ipv6 from any to any"
+		# Blocks all ipv6 comms.
+		#apply_ufw_rule "deny proto ipv6 from any to any"
 		local primary_ip_cidr
 		# Robustly handle interfaces with multiple IPs by taking the first one.
 		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+' | head -n 1)
@@ -621,7 +622,6 @@ configure_ufw() {
 			if [[ -n "$local_subnet" ]]; then
 				apply_ufw_rule "allow in on $PRIMARY_IF from $local_subnet to any comment 'Allow LAN IN'"
 				apply_ufw_rule "allow out on $PRIMARY_IF to $local_subnet from any comment 'Allow LAN OUT'"
-				apply_ufw_rule "deny proto ipv6 from any to any"
 				log OK "Local network access rules applied for subnet $local_subnet on $PRIMARY_IF"
 			else
 				log WARN "Could not calculate local subnet from CIDR $primary_ip_cidr"

@@ -2,8 +2,9 @@
 media/dorkmaster/env
 compare
 *.session
+
 # Test artifacts
-0-tests/*
+0-tests/
 
 ## Logs and Runtime
 npm-debug.log*
