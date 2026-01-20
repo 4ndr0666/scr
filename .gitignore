@@ -127,3 +127,5 @@ media/url_tracker_generator/generated/
 media/url_tracker_generator/urls/
 *~b~
 *.bak
+0-tests/
+0-tests/lib
