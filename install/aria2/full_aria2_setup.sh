@@ -77,7 +77,7 @@ create_aria2_conf() {
 # Aria2 Configuration File
 
 # Basic Settings
-dir=/sto2/Downloads/
+dir=/s3/Downloads/
 # Continue downloading partially downloaded files
 continue=true
 # Maximum number of concurrent downloads
@@ -120,7 +120,8 @@ bt-tracker=/home/andro/.config/aria2/trackerlist.txt
 
 # Logging
 # Log file path
-log=/home/andro/.config/aria2/aria2.log
+
+=/home/andro/.config/aria2/aria2.log
 # Log level (error, warning, info, debug)
 log-level=warn
 
@@ -157,7 +158,7 @@ create_systemd_service() {
 [Unit]
 Description=Aria2c Download Manager
 After=network.target
-RequiresMountsFor=/sto2/Downloads/
+RequiresMountsFor=/s3/Downloads/
 
 [Service]
 Type=simple
@@ -418,8 +419,8 @@ verify_aria2() {
         exit 1
     fi
 
-    log "Verifying the download in /sto2/Downloads/..."
-    ls -lh /sto2/Downloads/
+    log "Verifying the download in /s3/Downloads/..."
+    ls -lh /s3/Downloads/
 
     log "Displaying the last 10 lines of aria2.log..."
     if [[ -f "$LOG_FILE" ]]; then
@@ -440,10 +441,10 @@ main() {
     SERVICE_FILE="/etc/systemd/system/aria2.service"
     USER_NAME="andro"
     ARIA2_BIN="/usr/bin/aria2c"
-    DOWNLOAD_DIR="/sto2/Downloads/"
+    DOWNLOAD_DIR="/s3/Downloads/"
     TRACKER_FILE="$CONFIG_DIR/trackerlist.txt"
     SESSION_FILE="$CONFIG_DIR/aria2.session"
-    UPDATE_SCRIPT_PATH="/Nas/Build/git/syncing/scr/maintain/cron/aria2/update_trackers.sh"
+    UPDATE_SCRIPT_PATH="${XDG_CONFIG_HOME:-$HOME}/aria2/update_trackers.sh"
     CRON_JOB="0 2 * * * $UPDATE_SCRIPT_PATH >> $CONFIG_DIR/trackers_update.log 2>&1"
     LOG_FILE="$CONFIG_DIR/aria2.log"
 
@@ -459,7 +460,7 @@ main() {
     remove_duplicate_options "$ARIA2_CONF_PATH" "continue"
 
     # Step 1.2: Pre-create the log file
-    ensure_log_file "$LOG_FILE"
+#    ensure_log_file "$LOG_FILE"
 
     # Step 2: Create systemd service file
     create_systemd_service "$SERVICE_FILE" "$USER_NAME" "$ARIA2_BIN" "$ARIA2_CONF_PATH"
@@ -483,7 +484,7 @@ main() {
     configure_systemd_service "aria2"
 
     # Step 8: Configure Firewall
-    configure_firewall
+#    configure_firewall
 
     # Step 9: Verify aria2 setup
     verify_aria2 "$ARIA2_CONF_PATH" "$LOG_FILE"

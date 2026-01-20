@@ -2,7 +2,7 @@
 # shellcheck disable=all
 
 # Define variables
-UPDATE_SCRIPT_PATH="/Nas/Build/git/syncing/scr/maintain/cron/aria2/update_trackers.sh"
+UPDATE_SCRIPT_PATH="/home/git/clone/4ndr0666/scr/maintain/cron/aria2/update_trackers.sh"
 CRON_JOB="0 2 * * * $UPDATE_SCRIPT_PATH >> /home/andro/.config/aria2/trackers_update.log 2>&1"
 
 # Ensure the update script exists
