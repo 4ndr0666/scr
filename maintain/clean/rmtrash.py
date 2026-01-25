@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-
 """
-A script to remove specified directories and files considered unnecessary or "shitty" from the user's home directory.
+Author: 4ndr0666
+Desc: Removes specified directories and files below.
 """
 
 import os
 import shutil
 
-shittyfiles = [
+trash = [
     "~/.adobe",
     "~/.macromedia",
     "~/.FRD/log/app.log",
@@ -97,19 +97,19 @@ def yesno(question, default="n"):
     return answer == "y"
 
 
-def remove_shitty_files():
+def remove_trash():
     """
     Removes the files and directories listed in 'shittyfiles'.
     """
-    print("Found shitty files:")
+    print("Found trash files:")
     found_files = [
         os.path.expanduser(file_path)
-        for file_path in shittyfiles
+        for file_path in trash
         if os.path.exists(os.path.expanduser(file_path))
     ]
 
     if not found_files:
-        print("No shitty files found :)")
+        print("No trash files found :)")
         return
 
     if yesno("Remove all?", default="n"):
@@ -124,4 +124,4 @@ def remove_shitty_files():
 
 
 if __name__ == "__main__":
-    remove_shitty_files()
+    remove_trash()
