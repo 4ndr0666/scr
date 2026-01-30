@@ -11,7 +11,6 @@ import rarfile
 import logging
 from pathlib import Path
 
-
 # Use a user-specific directory for logs
 log_dir = os.path.expanduser("~/dirmaid_logs")
 if not os.path.exists(log_dir):
