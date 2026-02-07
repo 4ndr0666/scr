@@ -1,0 +1,388 @@
+Graphics Feature Status
+=======================
+*   Canvas: Software only. Hardware acceleration disabled
+*   Direct Rendering Display Compositor: Disabled
+*   Compositing: Software only. Hardware acceleration disabled
+*   Multiple Raster Threads: Disabled
+*   OpenGL: Disabled
+*   Rasterization: Software only. Hardware acceleration disabled
+*   Raw Draw: Disabled
+*   Skia Graphite: Disabled
+*   TreesInViz: Disabled
+*   Video Decode: Software only. Hardware acceleration disabled
+*   Video Encode: Software only. Hardware acceleration disabled
+*   Vulkan: Disabled
+*   WebGL: Disabled
+*   WebGPU: Disabled
+*   WebNN: Disabled
+
+Version Information
+===================
+Data exported              : 2026-02-03T08:15:53.426Z
+Chrome version             : Chrome/144.0.7559.97
+Operating system           : Linux 6.18.7-arch1-1
+Software rendering list URL: https://chromium.googlesource.com/chromium/src/+/80be69ef794ba862ff256b0b23f051cbbc32e1ed/gpu/config/software_rendering_list.json
+Driver bug list URL        : https://chromium.googlesource.com/chromium/src/+/80be69ef794ba862ff256b0b23f051cbbc32e1ed/gpu/config/gpu_driver_bug_list.json
+ANGLE commit id            : a96fca8d5ee2
+2D graphics backend        : Skia/144 ee20d565acb08dece4a32e3f209cdd41119015ca
+Command Line               : /opt/brave.com/brave-beta/brave --allowlisted-extension-id=clngdbkpkpeebahjckkjfobafhncgmne
+--allowlisted-extension-id=cndobhdcpmpilkebeebeecgminfhkpcj
+--allowlisted-extension-id=fkmndomobhappcddmpfdiadfljkfcacl
+--allowlisted-extension-id=mcocemchijjfcfifbdpkflhocimbjajh 
+--allowlisted-extension-id=bjbkefcbkndmpmpbbhhdmmcpehglcacf 
+--allowlisted-extension-id=hgegihapiofjgmmgigbblnjaicgjhoko 
+--allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb 
+--allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg 
+--ozone-platform=wayland
+--disk-cache-size=104857600
+--renderer-process-limit=2
+--use-wayland-explicit-grab
+--site-per-process
+--disable-crash-reporter
+--disable-crashpad-for-testing
+--disable-crashpad-forwarding
+--disable-dev-shm-usage
+--disable-gaia-services
+--disable-gpu
+--disable-webbluetooth
+--disable-webusb
+--disable-webserial
+--disable-webnfc
+--disable-gpu-compositing
+--disable-gpu-driver-bug-workarounds
+--disable-gpu-early-init
+--disable-gpu-memory-buffer-compositor-resources
+--disable-gpu-memory-buffer-video-frames
+--disable-gpu-process-for-dx12-info-collection
+--disable-gpu-program-cache
+--disable-gpu-rasterization
+--disable-gpu-sandbox
+--disable-gpu-shader-disk-cache
+--disable-gpu-vsync
+--disable-gpu-watchdog
+--disable-login-screen-apps
+--disable-metal-shader-cache
+--disable-renderer-backgrounding
+--disable-shared-workers
+--disable-third-party-keyboard-workaround
+--disable-threaded-compositing
+--disable-timeouts-for-profiling
+--disable-usb-keyboard-detect
+--disable-virtual-keyboard --disable-domain-reliability --enable-dom-distiller --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --lso-url=https://no-thanks.invalid --variations-server-url=https://variations.brave.com/seed --variations-insecure-server-url=https://variations.brave.com/seed --flag-switches-begin --cast-streaming-force-disable-hardware-h264 --cast-streaming-force-disable-hardware-vp8 --cast-streaming-force-disable-hardware-vp9 --disable-accelerated-2d-canvas --disable-accelerated-video-decode --disable-gpu-rasterization --disable-zero-copy --enable-hardware-overlays --wallet-service-use-sandbox=0 --enable-features=AutomaticUsbDetach,BlockV8OptimizerOnUnfamiliarSitesSetting,BraveExtensionNetworkBlocking,BraveFallbackDoHProvider,BraveGoogleSignInPermission,BraveLocalhostAccessPermission,BraveReduceLanguage,BraveRoundTimeStamps,Containers,DevToolsLiveEdit,DisableProcessReuse,ExtensionsManifestV2,LanguageDetectionAPI,LocalNetworkAccessChecks:LocalNetworkAccessChecksWarn/false,LocalNetworkAccessChecksWebRTC,LocalNetworkAccessChecksWebSockets,LocalNetworkAccessChecksWebTransport,OmniboxTabSwitchByDefault,ParallelDownloading,PermissionSiteSettingsRadioButton,ReduceAcceptLanguage,ReduceAcceptLanguageHTTP,ShowRelatedWebsiteSetsPermissionGrants,WaylandSessionManagement,WebContentsForceDark,brave-override-download-danger-level --disable-features=AIChat,AIChatAgentProfile,AIChatContextMenuRewriteInPlace,AIChatFirst,AIChatHistory,AIChatUserChoiceTool,AIPromptAPI,AIPromptAPIMultimodalInput,AIProofreadingAPI,AIRewriter,AIRewriterAPI,AISummarizationAPI,AIWriterAPI,AdblockOnlyMode,AiModeOmniboxEntryPoint,AllowAiModeMatches,AllowAllSitesToInitiateMirroring,AllowedToFallbackToCustomNotificationAd,AppStoreBillingDebug,AutofillAndPasswordsInSameSurface,AutofillEnableAiBasedAmountExtraction,AutofillEnableAllowlistForBmoCardCategoryBenefits,AutofillEnableAmountExtraction,AutofillEnableAmountExtractionTesting,AutofillEnableBuyNowPayLater,AutofillEnableBuyNowPayLaterForExternallyLinked,AutofillEnableBuyNowPayLaterForKlarna,AutofillEnableBuyNowPayLaterSyncing,AutofillEnableCardBenefitsForAmericanExpress,AutofillEnableCardBenefitsForBmo,AutofillEnableCardBenefitsIph,AutofillEnableCardInfoRuntimeRetrieval,AutofillEnableCvcStorageAndFilling,AutofillEnableCvcStorageAndFillingEnhancement,AutofillEnableCvcStorageAndFillingStandaloneFormEnhancement,AutofillEnableEmailOrLoyaltyCardsFilling,AutofillEnableFlatRateCardBenefitsFromCurinos,AutofillEnableFpanRiskBasedAuthentication,AutofillEnableLoyaltyCardsFilling,AutofillEnableMultipleRequestInVirtualCardDownstreamEnrollment,AutofillEnableNewFopDisplayDesktop,AutofillEnablePrefetchingRiskDataForRetrieval,AutofillEnableSaveAndFill,AutofillEnableVcn3dsAuthentication,AutofillShowBubblesBasedOnPriorities,AutofillShowTypePredictions,AutofillUpstream,AutofillVcnEnrollStrikeExpiryTime,BraveAdblockCookieListDefault,BraveAdblockExperimentalListDefault,BraveAdblockMobileNotificationsListDefault,BraveNewsCardPeek,BraveNewsFeedUpdate,BraveNtpSearchWidget,BraveRewardsAllowSelfCustodyProviders,BraveRewardsAllowUnsupportedWalletProviders,BraveRewardsGemini,BraveRewardsPlatformCreatorDetection,BraveSyncDefaultPasswords,BraveVerticalTabHideCompletely,BraveWalletAnkrBalances,BraveWalletBitcoin,BraveWalletCardano,BraveWalletTransactionSimulations,BraveWalletZCash,CastAllowAllIPs,CastEnableStreamingWithHiDPI,CastStreamingAv1,CastStreamingHardwareHevc,CastStreamingMediaVideoEncoder,CastStreamingVp8,CastStreamingVp9,CosmeticFilterSyncLoad,CustomNotificationAds,CustomSiteDistillerScripts,DiscountAutofill,EnableOopPrintDrivers,EnableTabMuting,FedCmAutofill,GeolocationElement,GetDisplayMediaConfersActivation,HardwareMediaKeyHandling,HistoryMoreSearchResults,IPH_AutofillCreditCardBenefit,LensOverlayPermissionBubbleAlt,MerchantTrust,MlUrlScoreCaching,NativeBraveWallet,NtpSharepointModule,OmniboxFocusTriggersWebAndSRPZeroSuggest,OmniboxMiaZPS,OmniboxShowPopupOnMouseReleased,OpenAIChatFromBraveSearch,PageContextEnabledInitially,ProfileSignalsReportingEnabled,RichSearchWidgets,SavePasswordsContextualUi,SearchAggregatorProvider,SearchPrefetchServicePrefetching,SecurePaymentConfirmationAvailabilityAPI,SecurePaymentConfirmationFallback,ServiceWorkerAutoPreload,ShowSuggestionsOnAutofocus,Speedreader,SyncAutofillLoyaltyCard,SyncAutofillWalletCredentialData,SystemKeyboardLock,ThreeButtonPasswordSaveDialog,TranslationAPI,UrlScoringModel,VulkanFromANGLE,WebAuthenticationPasskeyUpgrade,WebPaymentsExperimentalFeatures,WebUsbDeviceDetection,YourSavedInfoSettingsPage,ZeroSuggestPrefetchingOnSRP,fill-on-account-select --flag-switches-end --ozone-platform=wayland --component-updater=url-source=https://go-updater.brave.com/extensions --render-node-override=/dev/dri/renderD128   https://
+Executable path            :
+
+Driver Information
+==================
+Initialization time             : 0
+In-process GPU                  : false
+Skia Backend                    : None
+Passthrough Command Decoder     : true
+Sandboxed                       : true
+GPU0                            : VENDOR= 0x0000, DEVICE=0x0000
+Optimus                         : false
+AMD switchable                  : false
+Pixel shader version            : 
+Vertex shader version           : 
+Max. MSAA samples               : 
+Machine model name              : 
+Machine model version           : 
+GL implementation parts         : (gl=disabled,angle=none)
+Display type                    : 
+GL_VENDOR                       : Disabled
+GL_RENDERER                     : Disabled
+GL_VERSION                      : Disabled
+GL_EXTENSIONS                   : 
+Disabled Extensions             : 
+Disabled WebGL Extensions       : 
+Window system binding vendor    : 
+Window system binding version   : 
+Window system binding extensions: 
+XDG_CURRENT_DESKTOP             : Hyprland
+XDG_SESSION_TYPE                : wayland
+Interfaces exposed by the Wayland compositor: wl_seat:9 wl_data_device_manager:3 wl_compositor:6 wl_subcompositor:1 wl_shm:1 wp_viewporter:1 wp_tearing_control_manager_v1:1 wp_fractional_scale_manager_v1:1 zxdg_output_manager_v1:3 wp_cursor_shape_manager_v1:2 zwp_idle_inhibit_manager_v1:1 zwp_relative_pointer_manager_v1:1 zxdg_decoration_manager_v1:1 wp_alpha_modifier_v1:1 zwlr_gamma_control_manager_v1:1 ext_foreign_toplevel_list_v1:1 zwp_pointer_gestures_v1:3 zwlr_foreign_toplevel_manager_v1:3 zwp_keyboard_shortcuts_inhibit_manager_v1:1 zwp_text_input_manager_v1:1 zwp_text_input_manager_v3:1 zwp_pointer_constraints_v1:1 zwlr_output_power_manager_v1:1 xdg_activation_v1:1 ext_idle_notifier_v1:2 hyprland_lock_notifier_v1:1 ext_session_lock_manager_v1:1 zwp_input_method_manager_v2:1 zwp_virtual_keyboard_manager_v1:1 zwlr_virtual_pointer_manager_v1:2 zwlr_output_manager_v1:4 org_kde_kwin_server_decoration_manager:1 hyprland_focus_grab_manager_v1:1 zwp_tablet_manager_v2:1 zwlr_layer_shell_v1:5 wp_presentation:2 xdg_wm_base:7 zwlr_data_control_manager_v1:2 zwp_primary_selection_device_manager_v1:1 xwayland_shell_v1:1 zwlr_screencopy_manager_v1:3 hyprland_toplevel_export_manager_v1:2 hyprland_toplevel_mapping_manager_v1:1 hyprland_global_shortcuts_manager_v1:1 xdg_wm_dialog_v1:1 wp_single_pixel_buffer_manager_v1:1 wp_security_context_manager_v1:1 hyprland_ctm_control_manager_v1:2 hyprland_surface_manager_v1:2 wp_content_type_manager_v1:1 xdg_toplevel_tag_manager_v1:1 xdg_system_bell_v1:1 ext_workspace_manager_v1:1 ext_data_control_manager_v1:1 wp_pointer_warp_v1:1 wp_fifo_manager_v1:1 wp_commit_timing_manager_v1:1 wp_color_manager_v1:1 wp_drm_lease_device_v1:1 wl_output:4 zwp_linux_dmabuf_v1:5 wl_drm:2 wl_output:4
+Ozone platform                  : wayland
+Direct rendering version        : unknown
+Reset notification strategy     : 0x0000
+GPU process crash count         : 0
+
+Problems Detected
+=================
+*   WebGPU has been disabled via blocklist or the command line.
+    Disabled Features: webgpu
+
+*   Accelerated rasterization has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: rasterization
+
+*   Accelerated video encode has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: video_encode
+
+*   Accelerated video decode has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: video_decode
+
+*   WebGL has been disabled via blocklist or the command line.
+    Disabled Features: webgl
+
+*   Gpu compositing has been disabled, either via blocklist, about:flags or the command line. The browser will fall back to software compositing and hardware acceleration will be unavailable.
+    Disabled Features: gpu_compositing
+
+*   Accelerated 2D canvas is unavailable: either disabled via blocklist or the command line.
+    Disabled Features: 2d_canvas
+
+*   GPU process was unable to boot: GPU access is disabled in chrome://settings.
+    Disabled Features: all
+
+Dawn Info
+=========
+
+<CPU>  Vulkan backend - SwiftShader Device (Subzero)
+----------------------------------------------------
+
+[WebGPU Status]
+---------------
+*   Blocklisted - crbug.com/40057808: CPU adapters not fully tested or conformant.
+
+[Adapter Supported Features]
+----------------------------
+*   core-features-and-limits
+*   depth-clip-control
+*   depth32float-stencil8
+*   texture-compression-bc
+*   texture-compression-bc-sliced-3d
+*   texture-compression-etc2
+*   texture-compression-astc
+*   texture-compression-astc-sliced-3d
+*   timestamp-query
+*   indirect-first-instance
+*   rg11b10ufloat-renderable
+*   bgra8unorm-storage
+*   float32filterable
+*   float32blendable
+*   clip-distances
+*   subgroups
+*   texture-component-swizzle
+*   dawn-internal-usages
+*   dawn-multi-planar-formats
+*   dawn-native
+*   implicit-device-synchronization
+*   transient-attachments
+*   unorm16texture-formats
+*   adapter-properties-memory-heaps
+*   adapter-properties-vk
+*   dawn-format-capabilities
+*   shared-texture-memory-opaque-fd
+*   shared-fence-vk-semaphore-opaque-fd
+*   dawn-load-resolve-texture
+*   flexible-texture-views
+
+[Enabled Toggle Names]
+----------------------
+*   lazy_clear_resource_on_first_use: 
+    (https://crbug.com/dawn/145):
+    Clears resource to zero on first usage. This initializes the resource so
+    that no dirty bits from recycled memory is present in the new resource.
+
+*   use_temporary_buffer_in_texture_to_texture_copy: 
+    (https://crbug.com/dawn/42):
+    Split texture-to-texture copy into two copies: copy from source texture
+    into a temporary buffer, and copy from the temporary buffer into the
+    destination texture when copying between compressed textures that don't
+    have block-aligned sizes. This workaround is enabled by default on all
+    Vulkan drivers to solve an issue in the Vulkan SPEC about the
+    texture-to-texture copies with compressed formats. See #1005
+    (https://github.com/KhronosGroup/Vulkan-Docs/issues/1005) for more
+    details.
+
+*   vulkan_use_d32s8: 
+    (https://crbug.com/dawn/286):
+    Vulkan mandates support of either D32_FLOAT_S8 or D24_UNORM_S8. When
+    available the backend will use D32S8 (toggle to on) but setting the toggle
+    to off will make it use the D24S8 format when possible.
+
+*   vulkan_use_s8: 
+    (https://crbug.com/dawn/666):
+    Vulkan has a pure stencil8 format but it is not universally available.
+    When this toggle is on, the backend will use S8 for the stencil8 format,
+    otherwise it will fallback to D32S8 or D24S8.
+
+*   disallow_spirv: 
+    (https://crbug.com/1214923):
+    Disallow usage of SPIR-V completely so that only WGSL is used for shader
+    modules. This is useful to prevent a Chromium renderer process from
+    successfully sending SPIR-V code to be compiled in the GPU process.
+
+*   vulkan_use_demote_to_helper_invocation_extension: 
+    (https://crbug.com/42250787):
+    Sets the use of the vulkan demote to helper extension
+
+*   use_placeholder_fragment_in_vertex_only_pipeline: 
+    (https://crbug.com/dawn/136):
+    Use a placeholder empty fragment shader in vertex only render pipeline.
+    This toggle must be enabled for OpenGL ES backend, the Vulkan Backend, and
+    serves as a workaround by default enabled on some Metal devices with Intel
+    GPU to ensure the depth result is correct.
+
+*   timestamp_quantization: 
+    (https://crbug.com/dawn/1800):
+    Enable timestamp queries quantization to reduce the precision of timers
+    that can be created with timestamp queries.
+
+*   use_vulkan_zero_initialize_workgroup_memory_extension: 
+    (https://crbug.com/dawn/1302):
+    Initialize workgroup memory with OpConstantNull on Vulkan when the Vulkan
+    extension VK_KHR_zero_initialize_workgroup_memory is supported.
+
+*   use_vulkan_memory_model: 
+    (https://crbug.com/392606604):
+    Use the Vulkan Memory Model if available.
+
+*   vulkan_direct_variable_access_transform_handle: 
+    (https://crbug.com/387000529):
+    Transform handles using direct variable access.
+
+*   enable_integer_range_analysis_in_robustness: 
+    (https://crbug.com/348701956):
+    Compute the range of the index with Integer Range Analysis in the
+    robustness transform and skip doing index clamping when the out of bound
+    access cannot happen.
+
+*   use_spirv_1_4: 
+    (https://crbug.com/422421915):
+    Use SPIR-V 1.4 if available
+
+*   blob_cache_hash_validation: 
+    (https://crbug.com/429938352):
+    Enable hash validation when loading/storing from/to the blob cache
+
+*   decompose_uniform_buffers: 
+    (https://crbug.com/448452698):
+    Decompose uniform buffers into arrays of vec4<u32> on backends for Vulkan
+    and OpenGL.
+
+[WebGPU Required Toggles - enabled]
+-----------------------------------
+*   disallow_spirv: 
+    (https://crbug.com/1214923):
+    Disallow usage of SPIR-V completely so that only WGSL is used for shader
+    modules. This is useful to prevent a Chromium renderer process from
+    successfully sending SPIR-V code to be compiled in the GPU process.
+
+*   timestamp_quantization: 
+    (https://crbug.com/dawn/1800):
+    Enable timestamp queries quantization to reduce the precision of timers
+    that can be created with timestamp queries.
+
+Compositor Information
+======================
+Tile Update Mode: One-copy
+Partial Raster  : Enabled
+
+Display(s) Information
+======================
+Info                          : Display[62] bounds=[1920,0 1920x1080], workarea=[1920,0 1920x1080], scale=1, rotation=0, panel_rotation=0 external detected
+Color space (all)             : {primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}
+Buffer format (all)           : RGBA_8888
+Color volume                  : {name:'srgb', r:[0.6400, 0.3300], g:[0.3000, 0.6000], b:[0.1500, 0.0600], w:[0.3127, 0.3290]}
+SDR white level in nits       : 203
+HDR relative maximum luminance: 1
+Bits per color component      : 8
+Bits per pixel                : 24
+Info                          : Display[65] bounds=[0,0 1920x1080], workarea=[0,0 1920x1080], scale=1, rotation=0, panel_rotation=0 external detected
+Color space (all)             : {primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}
+Buffer format (all)           : RGBA_8888
+Color volume                  : {name:'srgb', r:[0.6400, 0.3300], g:[0.3000, 0.6000], b:[0.1500, 0.0600], w:[0.3127, 0.3290]}
+SDR white level in nits       : 203
+HDR relative maximum luminance: 1
+Bits per color component      : 8
+Bits per pixel                : 24
+
+Video Acceleration Information
+==============================
+Decoding: 
+Encoding:
+
+Vulkan Information
+==================
+
+Device Performance Information
+==============================
+
+Driver Information for Hardware GPU
+===================================
+Initialization time             : 0
+In-process GPU                  : false
+Skia Backend                    : None
+Passthrough Command Decoder     : true
+Sandboxed                       : true
+GPU0                            : VENDOR= 0x0000, DEVICE=0x0000
+Optimus                         : false
+AMD switchable                  : false
+Pixel shader version            : 
+Vertex shader version           : 
+Max. MSAA samples               : 
+Machine model name              : 
+Machine model version           : 
+GL implementation parts         : (gl=disabled,angle=none)
+Display type                    : 
+GL_VENDOR                       : Disabled
+GL_RENDERER                     : Disabled
+GL_VERSION                      : Disabled
+GL_EXTENSIONS                   : 
+Disabled Extensions             : 
+Disabled WebGL Extensions       : 
+Window system binding vendor    : 
+Window system binding version   : 
+Window system binding extensions: 
+XDG_CURRENT_DESKTOP             : Hyprland
+XDG_SESSION_TYPE                : wayland
+Interfaces exposed by the Wayland compositor: wl_seat:9 wl_data_device_manager:3 wl_compositor:6 wl_subcompositor:1 wl_shm:1 wp_viewporter:1 wp_tearing_control_manager_v1:1 wp_fractional_scale_manager_v1:1 zxdg_output_manager_v1:3 wp_cursor_shape_manager_v1:2 zwp_idle_inhibit_manager_v1:1 zwp_relative_pointer_manager_v1:1 zxdg_decoration_manager_v1:1 wp_alpha_modifier_v1:1 zwlr_gamma_control_manager_v1:1 ext_foreign_toplevel_list_v1:1 zwp_pointer_gestures_v1:3 zwlr_foreign_toplevel_manager_v1:3 zwp_keyboard_shortcuts_inhibit_manager_v1:1 zwp_text_input_manager_v1:1 zwp_text_input_manager_v3:1 zwp_pointer_constraints_v1:1 zwlr_output_power_manager_v1:1 xdg_activation_v1:1 ext_idle_notifier_v1:2 hyprland_lock_notifier_v1:1 ext_session_lock_manager_v1:1 zwp_input_method_manager_v2:1 zwp_virtual_keyboard_manager_v1:1 zwlr_virtual_pointer_manager_v1:2 zwlr_output_manager_v1:4 org_kde_kwin_server_decoration_manager:1 hyprland_focus_grab_manager_v1:1 zwp_tablet_manager_v2:1 zwlr_layer_shell_v1:5 wp_presentation:2 xdg_wm_base:7 zwlr_data_control_manager_v1:2 zwp_primary_selection_device_manager_v1:1 xwayland_shell_v1:1 zwlr_screencopy_manager_v1:3 hyprland_toplevel_export_manager_v1:2 hyprland_toplevel_mapping_manager_v1:1 hyprland_global_shortcuts_manager_v1:1 xdg_wm_dialog_v1:1 wp_single_pixel_buffer_manager_v1:1 wp_security_context_manager_v1:1 hyprland_ctm_control_manager_v1:2 hyprland_surface_manager_v1:2 wp_content_type_manager_v1:1 xdg_toplevel_tag_manager_v1:1 xdg_system_bell_v1:1 ext_workspace_manager_v1:1 ext_data_control_manager_v1:1 wp_pointer_warp_v1:1 wp_fifo_manager_v1:1 wp_commit_timing_manager_v1:1 wp_color_manager_v1:1 wp_drm_lease_device_v1:1 wl_output:4 zwp_linux_dmabuf_v1:5 wl_drm:2 wl_output:4
+Ozone platform                  : wayland
+Direct rendering version        : unknown
+Reset notification strategy     : 0x0000
+GPU process crash count         : 0
+
+Graphics Feature Status for Hardware GPU
+========================================
+*   Canvas: Software only. Hardware acceleration disabled
+*   Direct Rendering Display Compositor: Disabled
+*   Compositing: Software only. Hardware acceleration disabled
+*   Multiple Raster Threads: Disabled
+*   OpenGL: Disabled
+*   Rasterization: Software only. Hardware acceleration disabled
+*   Raw Draw: Disabled
+*   Skia Graphite: Disabled
+*   TreesInViz: Disabled
+*   Video Decode: Software only. Hardware acceleration disabled
+*   Video Encode: Software only. Hardware acceleration disabled
+*   Vulkan: Disabled
+*   WebGL: Disabled
+*   WebGPU: Disabled
+*   WebNN: Disabled
+
+Problems Detected for Hardware GPU
+==================================
+*   WebGPU has been disabled via blocklist or the command line.
+    Disabled Features: webgpu
+
+*   Accelerated rasterization has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: rasterization
+
+*   Accelerated video encode has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: video_encode
+
+*   Accelerated video decode has been disabled, either via blocklist, about:flags or the command line.
+    Disabled Features: video_decode
+
+*   WebGL has been disabled via blocklist or the command line.
+    Disabled Features: webgl
+
+*   Gpu compositing has been disabled, either via blocklist, about:flags or the command line. The browser will fall back to software compositing and hardware acceleration will be unavailable.
+    Disabled Features: gpu_compositing
+
+*   Accelerated 2D canvas is unavailable: either disabled via blocklist or the command line.
+    Disabled Features: 2d_canvas
+
+*   GPU process was unable to boot: GPU access is disabled in chrome://settings.
+    Disabled Features: all
+
+Log Messages
+============
