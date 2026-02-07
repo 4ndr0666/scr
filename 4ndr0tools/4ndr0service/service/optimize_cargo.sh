@@ -20,17 +20,20 @@ optimize_cargo_service() {
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path || handle_error "$LINENO" "Rustup installation failed."
     fi
 
-    # 2. Setup Paths
+    # 2. Setup Paths & Environment
     path_prepend "${CARGO_HOME}/bin"
     # shellcheck disable=SC1091
     [[ -s "${CARGO_HOME}/env" ]] && source "${CARGO_HOME}/env"
 
-    # 3. Update Toolchain
-    log_info "Updating Rust toolchains..."
+    # 3. Toolchain & Registry Maintenance
+    log_info "Updating Rust toolchains & sanitizing registry..."
     rustup update stable || log_warn "Toolchain update failed."
     rustup default stable &>/dev/null || true
+    
+    # Manual registry thinning (Reclaims inodes)
+    rm -rf "${CARGO_HOME}/registry/index/*" 2>/dev/null
 
-    # 4. Install Cargo Tools from Config
+    # 4. Install/Update Cargo Tools from Config
     local -a tools
     mapfile -t tools < <(jq -r '(.cargo_tools // [])[]' "$CONFIG_FILE")
     

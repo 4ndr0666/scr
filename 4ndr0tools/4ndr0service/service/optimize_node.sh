@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # File: service/optimize_node.sh
 # Description: Node.js (via NVM) environment optimization (XDG-compliant).
+# Logic: Integrated with Deep Clean protocols for Yarn/Corepack health.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -36,7 +37,7 @@ optimize_node_service() {
         install_nvm
     fi
 
-    # 2. Install/Use Node Version
+    # 2. Sync Node Version from Config
     local node_ver
     node_ver=$(jq -r '.node_version // "lts/*"' "$CONFIG_FILE")
 
@@ -45,7 +46,21 @@ optimize_node_service() {
     nvm use "$node_ver"
     nvm alias default "$node_ver"
 
-    # 3. Install Global Tools
+    # 3. Deep Maintenance Logic (Surgical Liquidation)
+    log_info "Sanitizing Node.js toolchain caches..."
+    
+    # Prune Corepack Artifacts (Solves Yarn MODULE_NOT_FOUND issues)
+    rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/node/corepack" 2>/dev/null
+    
+    # Prune NPX binary cache (Reclaims significant disk space)
+    rm -rf "$HOME/.npm/_npx" 2>/dev/null
+    
+    if command -v corepack &>/dev/null; then
+        corepack enable
+        log_info "Corepack shims refreshed."
+    fi
+
+    # 4. Global Tool Synchronization
     local -a tools
     mapfile -t tools < <(jq -r '(.npm_global_packages // [])[]' "$CONFIG_FILE")
 
@@ -58,6 +73,12 @@ optimize_node_service() {
             npm update -g "$tool" || log_warn "Failed to update $tool"
         fi
     done
+
+    # 5. Specialized Store Pruning
+    if command -v pnpm &>/dev/null; then
+        log_info "Pruning PNPM store..."
+        pnpm store prune >/dev/null 2>&1 || true
+    fi
 
     log_success "Node optimization complete. Version: $(node --version)"
 }
