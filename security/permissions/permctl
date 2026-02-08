@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# permctl - Penultimate Permissions Suite for Power Users
+# Consolidated from 4ndr0666's arsenal: permmaster, factoryreset, reset_permissions, standardperms, set_advanced_permissions, acl_manager, permissionsctl5, groupacc
+# Date: 2026-02-07
+# Run as root or auto-escalate
+# Usage: permctl <subcommand> [options] [path]
+
+set -euo pipefail
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONFIG & GLOBALS
+# ──────────────────────────────────────────────────────────────────────────────
+
+LOG_FILE="/var/log/permctl.log"
+BACKUP_DIR="/var/backups/permctl/$(date +%Y%m%d_%H%M%S)"
+EXCLUDED_PATHS=("/dev" "/proc" "/sys" "/run" "/tmp" "/mnt" "/media" "/lost+found" "/etc/skel")
+DEFAULT_USER="$(whoami)"
+DEFAULT_GROUP="root"
+
+log() { echo "[$(date +%F_%T)] [$1] $2" | tee -a "$LOG_FILE"; }
+err() { log "ERROR" "$1"; exit 1; }
+confirm() { read -rp "$1 [y/N]: " r; [[ $r =~ ^[Yy]$ ]]; }
+
+# Auto-escalate
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CORE FUNCTIONS (merged from all scripts)
+# ──────────────────────────────────────────────────────────────────────────────
+
+backup_permissions() {
+    local path="$1" type="$2"  # type: full / acl / ownership
+    mkdir -p "$BACKUP_DIR" || err "Failed to create backup dir $BACKUP_DIR"
+    case "$type" in
+        full)
+            find "$path" \( -path "${EXCLUDED_PATHS[0]}" -prune \) -o -exec stat --format '%A %a %U %G %n' {} \; > "$BACKUP_DIR/ownerships.txt"
+            getfacl -Rn --one-file-system "$path" > "$BACKUP_DIR/acls.acl"
+            log "INFO" "Full backup of $path to $BACKUP_DIR"
+            ;;
+        acl) getfacl -Rn --one-file-system "$path" > "$BACKUP_DIR/acls.acl"; log "INFO" "ACL backup of $path" ;;
+        ownership) find "$path" -exec stat --format '%U %G %n' {} \; > "$BACKUP_DIR/ownerships.txt"; log "INFO" "Ownership backup of $path" ;;
+    esac
+}
+
+restore_permissions() {
+    local path="$1" backup_dir="$2"
+    if [[ ! -d "$backup_dir" ]]; then err "Backup dir $backup_dir not found"; fi
+
+    # Restore ownership
+    while read -r owner group file; do
+        chown "$owner:$group" "$file" 2>/dev/null || warn "Failed chown $file"
+    done < "$backup_dir/ownerships.txt"
+
+    # Restore ACLs
+    setfacl --restore="$backup_dir/acls.acl" || warn "Failed ACL restore"
+
+    log "INFO" "Restore complete from $backup_dir to $path"
+}
+
+audit_permissions() {
+    local path="$1"
+    pacman -Qkk "$path" 2>&1 | grep 'permission' || log "INFO" "No permission issues in $path"
+    find "$path" -exec stat --format '%A %a %U %G %n' {} \; > /tmp/audit.txt
+    log "INFO" "Audit of $path saved to /tmp/audit.txt"
+}
+
+fix_pacman() {
+    pacman -Qkk --force || err "pacman fix failed"
+    log "INFO" "Pacman permissions fixed"
+}
+
+reset_factory() {
+    local path="${1:-/}"
+    declare -A dir_perms=( ["/bin"]=755 ["/boot"]=755 ["/dev"]=755 ["/etc"]=755 ["/home"]=755 ["/lib"]=755 ["/lib64"]=755 ["/opt"]=755 ["/proc"]=555 ["/root"]=700 ["/run"]=755 ["/srv"]=755 ["/sys"]=555 ["/tmp"]=1777 ["/usr"]=755 ["/var"]=755 ["/boot/efi"]=755 ["/usr/local"]=755 ["$HOME/.config"]=700 ["$HOME/.local"]=700 ["$HOME/.cache"]=700 ["$HOME/.gnupg"]=700 ["$HOME/.ssh"]=700 )
+
+    for d in "${!dir_perms[@]}"; do
+        [[ -d "$d" ]] && chmod "${dir_perms[$d]}" "$d" || warn "Dir $d missing"
+    done
+
+    declare -A file_perms=( ["/etc/sudoers"]=440 ["/etc/shadow"]=600 ["/etc/gshadow"]=600 ["/etc/passwd"]=644 ["/etc/group"]=644 ["/etc/fstab"]=644 ["/etc/hosts"]=644 ["/etc/hostname"]=644 ["/var/log/syslog"]=640 ["/var/log/messages"]=640 ["/var/log/auth.log"]=640 ["/var/log/secure"]=640 ["/etc/ssh/sshd_config"]=600 ["/etc/pam.d"]=755 ["/etc/security"]=755 )
+
+    for f in "${!file_perms[@]}"; do
+        [[ -f "$f" ]] && chmod "${file_perms[$f]}" "$f" || warn "File $f missing"
+    done
+
+    log "INFO" "Factory reset complete for $path"
+}
+
+set_standard() {
+    local path="${1:-$PWD}"
+    find "$path" -type d -exec chmod 700 {} \;
+    find "$path" -type f -exec chmod 600 {} \;
+    log "INFO" "Standard perms set on $path"
+}
+
+acl_get() {
+    local path="$1"
+    getfacl -Rn --one-file-system "$path" || err "getfacl failed"
+}
+
+acl_set() {
+    local path="$1" acl_entry="$2"
+    setfacl -m "$acl_entry" "$path" || err "setfacl failed"
+}
+
+user_group() {
+    local user="$1" action="$2" group="$3"
+    case "$action" in
+        add) usermod -aG "$group" "$user" ;;
+        remove) gpasswd -d "$user" "$group" ;;
+        *) err "Invalid user-group action" ;;
+    esac
+    log "INFO" "User $user $action group $group"
+}
+
+own_it() {
+    local path="$1" user="$2" group="$3"
+    chown -R "$user:$group" "$path" && chmod -R ug+rwx "$path"
+    log "INFO" "Ownership set on $path"
+}
+
+compaudit() {
+    local path="$1" user="$2" group="$3"
+    chown -R "$user:$group" "$path" && chmod -R og-w "$path"
+    log "INFO" "Compaudit on $path"
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI PARSER
+# ──────────────────────────────────────────────────────────────────────────────
+
+usage() {
+    echo "permctl <subcommand> [options] [path]"
+    echo "Subcommands: backup restore audit fix-pacman reset-factory set-standard acl-get acl-set user-group own-it compaudit"
+    echo "Options: --dry-run --user= --group= --type= (full/acl/ownership) --acl-entry= --action= (add/remove)"
+    exit 1
+}
+
+dry_run=false
+user="root"
+group="root"
+type="full"
+acl_entry=""
+action=""
+path=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        backup|restore|audit|fix-pacman|reset-factory|set-standard|acl-get|acl-set|user-group|own-it|compaudit) subcmd="$1" ;;
+        --dry-run) dry_run=true ;;
+        --user=*) user="${1#*=}" ;;
+        --group=*) group="${1#*=}" ;;
+        --type=*) type="${1#*=}" ;;
+        --acl-entry=*) acl_entry="${1#*=}" ;;
+        --action=*) action="${1#*=}" ;;
+        --help) usage ;;
+        *) path="$1" ;;
+    esac
+    shift
+done
+
+[[ -z "$subcmd" ]] && usage
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EXECUTION
+# ──────────────────────────────────────────────────────────────────────────────
+
+if $dry_run; then
+    log "INFO" "Dry-run mode — no changes"
+fi
+
+case "$subcmd" in
+    backup) backup_permissions "${path:-/}" "$type" ;;
+    restore) restore_permissions "${path:-/}" "$BACKUP_DIR" ;;
+    audit) audit_permissions "${path:-/}" ;;
+    fix-pacman) fix_pacman ;;
+    reset-factory) reset_factory "${path:-/}" ;;
+    set-standard) set_standard "${path:-$PWD}" ;;
+    acl-get) acl_get "${path:-$PWD}" ;;
+    acl-set) acl_set "${path:-$PWD}" "$acl_entry" ;;
+    user-group) user_group "$user" "$action" "$group" ;;
+    own-it) own_it "${path:-$PWD}" "$user" "$group" ;;
+    compaudit) compaudit "${path:-$PWD}" "$user" "$group" ;;
+esac
+
+echo "Done. Log at $LOG_FILE"
