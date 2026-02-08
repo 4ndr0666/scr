@@ -1,0 +1,69 @@
+#!/bin/sh
+# ==============================================================================
+# Script Name: playdir_pro
+# Author: Ψ-4ndr0666 (4NDR0666OS Optimized)
+# Version: 9.0 (Atomic Logic - Zero Regression)
+# Description: Unified high-performance media/image streamer for mpv.
+# Usage: playdir_pro <file|directory|recent> [duration] [--images-only]
+# ==============================================================================
+
+# 1. Environment & Strict Mode
+set -eu
+IFS='
+'
+
+# 2. Input Initialization
+[ "$#" -ge 1 ] || { printf 'Usage: %s <path> [duration] [--images-only]\n' "${0##*/}" >&2; exit 1; }
+
+INPUT="$1"
+DURATION="${2:-5}"
+IMG_ONLY=0
+
+# Detect flag
+case "$*" in *"--images-only"*) IMG_ONLY=1 ;; esac
+
+# 3. Extension Definitions (Verbatim from your successful core)
+IMG_EXT="-iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif' -o -iname '*.webp' -o -iname '*.bmp' -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.svg' -o -iname '*.ico' -o -iname '*.heic'"
+VID_EXT="-iname '*.mp4' -o -iname '*.mkv' -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.wmv' -o -iname '*.ts'"
+
+# 4. Branching Logic
+if [ "$INPUT" = "recent" ] || echo "$INPUT" | grep -q "^recent://"; then
+    # --- RECENT/GVFS LOGIC (Isolated) ---
+    IMG_REGEX='\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif|svg|ico|heic)$'
+    VID_REGEX='\.(mp4|mkv|avi|mov|wmv|ts)$'
+    
+    FILTER="$IMG_REGEX"
+    [ "$IMG_ONLY" -eq 0 ] && FILTER="($IMG_REGEX|$VID_REGEX)"
+    
+    PLAYLIST=$(gio list recent:// | grep -iE "$FILTER" | while read -r line; do
+        gio info -a "standard::target-uri" "recent:///$line" | awk '/target-uri/ {print $3}'
+    done | sort -V)
+else
+    # --- LOCAL POSIX LOGIC (Verbatim Restore) ---
+    if [ -d "$INPUT" ]; then
+        TARGET="$INPUT"
+    elif [ -f "$INPUT" ]; then
+        TARGET=$(dirname -- "$INPUT")
+    else
+        exit 1
+    fi
+
+    cd "$TARGET" || exit 1
+
+    if [ "$IMG_ONLY" -eq 1 ]; then
+        FIND_CMD="find . -maxdepth 1 -type f \( $IMG_EXT \)"
+    else
+        FIND_CMD="find . -maxdepth 1 -type f \( $IMG_EXT -o $VID_EXT \)"
+    fi
+    PLAYLIST=$(eval "$FIND_CMD" | sort -V)
+fi
+
+# 5. Execution
+if [ -z "$PLAYLIST" ]; then
+    exit 1
+fi
+
+echo "$PLAYLIST" | exec mpv \
+    --profile=playdir \
+    --image-display-duration="$DURATION" \
+    --playlist=-
