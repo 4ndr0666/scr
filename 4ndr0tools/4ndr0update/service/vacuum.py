@@ -20,6 +20,7 @@ import threading
 import itertools
 import json
 import tempfile
+import socket
 from contextlib import contextmanager
 
 ############################
@@ -50,7 +51,7 @@ SPINNER_STYLES = {
     "bars": "|/-\\",
     "arrows": "←↖↑↗→↘↓↙",
 }
-DEFAULT_SPINNER_STYLE = SPINNER_STYLES["dots"]  # Change style if desired
+DEFAULT_SPINNER_STYLE = SPINNER_STYLES["dots"]
 
 
 @contextmanager
@@ -78,15 +79,14 @@ def spinning_spinner(symbols=DEFAULT_SPINNER_STYLE, speed=0.1):
     finally:
         spinner_running.clear()
         spinner_thread.join()
-        # Clear the spinner line
         sys.stdout.write(" " * 10 + "\r")
         sys.stdout.flush()
 
 
-GREEN = "\033[38;2;21;255;255m"  # Purposely more cyan
+GREEN = "\033[38;2;21;255;255m"
 BOLD = "\033[1m"
 RED = "\033[0;31m"
-NC = "\033[0m"  # No Color
+NC = "\033[0m"
 SUCCESS = "✔️"
 FAILURE = "❌"
 INFO = "➡️"
