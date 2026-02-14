@@ -8,14 +8,14 @@ The result is a smaller, reproducible image that boots on equal-or-larger cards.
 
 ## Features
 
-- **Safe capture**: refuses to write the output to the same device as the source.
-- **Partition-aware sizing**: trims image to the last used sector.
-- **Automatic ext4 shrink**: if the root partition is ext4 and last on disk.
-- **Flexible compression**: `xz` (default), `gzip`, or `zstd`.
-- **Checksum**: outputs a SHA-256 alongside the image.
-- **Verification mode**: optional `fsck -n` + read-only mounts on all partitions.
-- **Progress**: uses `ddrescue` when available, else `dd` with `pv` if present.
-- **Logging options**: colored, quiet, JSON, or log-file mode.
+1. **Safe capture**: refuses to write the output to the same device as the source.
+2. **Partition-aware sizing**: trims image to the last used sector.
+3. **Automatic ext4 shrink**: if the root partition is ext4 and last on disk.
+4. **Flexible compression**: `xz` (default), `gzip`, or `zstd`.
+5. **Checksum**: outputs a SHA-256 alongside the image.
+6. **Verification mode**: optional `fsck -n` + read-only mounts on all partitions.
+7. **Progress**: uses `ddrescue` when available, else `dd` with `pv` if present.
+8. **Logging options**: colored, quiet, JSON, or log-file mode.
 
 ---
 
@@ -28,12 +28,12 @@ The result is a smaller, reproducible image that boots on equal-or-larger cards.
 
 ```bash
 sudo ./pi-image-capture.sh -s /dev/sdb -o ./raspi.img.xz --verify
-````
+```
 
 This produces:
 
-* `raspi.img.xz`
-* `raspi.img.xz.sha256`
+1. `raspi.img.xz`
+2. `raspi.img.xz.sha256`
 
 ---
 
@@ -132,18 +132,14 @@ Or use GUI tools like **Raspberry Pi Imager** or **balenaEtcher**.
 
 ## Notes and Limitations
 
-* Shrinking works only when the **root filesystem is ext4 and the last partition**.
-  Otherwise, the image is still captured but not reduced in size.
-* LUKS, btrfs, or ZFS root filesystems are not shrunk. The capture still works.
-* Capturing **must be done on a powered-off Pi** to avoid corruption.
-* The target SD must be at least as large as the resulting `.img`.
-* `--verify` adds runtime but catches most corruption issues early.
+1. Shrinking works only when the **root filesystem is ext4 and the last partition**. Otherwise, the image is still captured but not reduced in size.
+2. LUKS, btrfs, or ZFS root filesystems are not shrunk. The capture still works.
+3. Capturing **must be done on a powered-off Pi** to avoid corruption.
+4. The target SD must be at least as large as the resulting `.img`.
+5. `--verify` adds runtime but catches most corruption issues early.
 
 ---
 
 ## License
 
 MIT
-
-```
-```
