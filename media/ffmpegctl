@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154,SC2034
+#
+# ffmpegctl.sh
+# Ψ-4ndr0666 High-Performance Media Orchestrator (v6.0.0)
+#
+# COHESION REPORT:
+# - Replaced all string-based command construction with Bash Arrays (Zero injection risk).
+# - Replaced brittle `find | fzf` with `find -print0 | fzf --read0` for safe filename handling.
+# - Fixed hardware acceleration flags and pixel format mapping.
+# - Dynamic audio probing to prevent stream mapping crashes.
+# - Refined interpolation filter syntax.
+
+set -eo pipefail
+
+###############################################################################
+# Global State
+###############################################################################
+DEPENDENCIES=(ffmpeg ffprobe fzf magick)
+INPUT_FILE=""
+OUTPUT_FILE=""
+FPS="60"
+WIDTH="3840"
+HEIGHT="2160"
+VIDEO_CODEC="libx264"
+PIX_FMT="yuv420p"
+ENCODE_MODE="crf" # crf or bitrate
+CRF_VAL="18"
+BITRATE_VAL="10M"
+HW_ACCEL=""
+HAS_AUDIO=false
+MULTI_PASS=false
+VERBOSE=false
+
+###############################################################################
+# 1. Dependency Management & Setup
+###############################################################################
+command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+check_deps() {
+    for cmd in "${DEPENDENCIES[@]}"; do
+        if ! command_exists "$cmd"; then
+            echo "[!] Missing dependency: $cmd. Please install it."
+            exit 1
+        fi
+    done
+}
+
+prompt_verbose() {
+    read -rp "[?] Enable verbose logging? [y/N]: " ans
+    if [[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]]; then
+        VERBOSE=true
+    fi
+}
+
+###############################################################################
+# 2. File Selection (Hardened against spaces/special chars)
+###############################################################################
+select_input() {
+    echo "[Ψ] Scanning for media files..."
+    # Safe null-terminated find and fzf
+    INPUT_FILE=$(find . -maxdepth 3 -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.avi" \) -print0 | fzf --read0 --prompt="Select Input File: " --height=40% --layout=reverse)
+    
+    if [[ -z "$INPUT_FILE" ]]; then
+        echo "[-] No file selected. Exiting."
+        exit 1
+    fi
+    echo "[+] Selected: $INPUT_FILE"
+}
+
+prompt_output() {
+    local ext="${INPUT_FILE##*.}"
+    local base="${INPUT_FILE%.*}"
+    local default_out="${base}_processed.mp4"
+    
+    read -rp "[?] Output file path [default: $default_out]: " ans
+    OUTPUT_FILE="${ans:-$default_out}"
+}
+
+probe_audio() {
+    if ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$INPUT_FILE" | grep -q '^[0-9]'; then
+        HAS_AUDIO=true
+        echo "[+] Audio stream detected."
+    else
+        HAS_AUDIO=false
+        echo "[-] No audio stream detected."
+    fi
+}
+
+###############################################################################
+# 3. Encoding Parameters
+###############################################################################
+configure_encoding() {
+    echo "--- Encoding Profile ---"
+    echo "1) High Quality (CRF 18)"
+    echo "2) Web Streaming (CRF 23)"
+    echo "3) Archival (CRF 0 - Lossless)"
+    echo "4) Target Bitrate (For multi-pass)"
+    read -rp "Choice [1]: " ans
+    case "${ans:-1}" in
+        1) ENCODE_MODE="crf"; CRF_VAL="18";;
+        2) ENCODE_MODE="crf"; CRF_VAL="23";;
+        3) ENCODE_MODE="crf"; CRF_VAL="0";;
+        4) 
+            ENCODE_MODE="bitrate"
+            read -rp "Enter target bitrate (e.g., 5M, 10M) [10M]: " b_ans
+            BITRATE_VAL="${b_ans:-10M}"
+            
+            read -rp "[?] Enable 2-pass encoding for target bitrate? [y/N]: " mp_ans
+            if [[ "${mp_ans,,}" == "y" ]]; then MULTI_PASS=true; fi
+            ;;
+        *) ENCODE_MODE="crf"; CRF_VAL="18";;
+    esac
+
+    read -rp "[?] Target FPS [default: 60]: " fps_ans
+    FPS="${fps_ans:-60}"
+
+    read -rp "[?] Target Width [default: 1920]: " w_ans
+    WIDTH="${w_ans:-1920}"
+    read -rp "[?] Target Height [default: 1080]: " h_ans
+    HEIGHT="${h_ans:-1080}"
+}
+
+configure_hardware() {
+    echo "--- Codec & Hardware Acceleration ---"
+    echo "1) libx264 (Software - CPU)"
+    echo "2) h264_nvenc (NVIDIA GPU)"
+    echo "3) h264_qsv (Intel QuickSync)"
+    echo "4) h264_vaapi (AMD/Intel Linux)"
+    read -rp "Choice [1]: " ans
+    
+    case "${ans:-1}" in
+        1) VIDEO_CODEC="libx264"; PIX_FMT="yuv420p"; HW_ACCEL="";;
+        2) VIDEO_CODEC="h264_nvenc"; PIX_FMT="yuv420p"; HW_ACCEL="cuda";;
+        3) VIDEO_CODEC="h264_qsv"; PIX_FMT="nv12"; HW_ACCEL="qsv";;
+        4) VIDEO_CODEC="h264_vaapi"; PIX_FMT="vaapi"; HW_ACCEL="vaapi";;
+        *) VIDEO_CODEC="libx264"; PIX_FMT="yuv420p"; HW_ACCEL="";;
+    esac
+}
+
+###############################################################################
+# 4. Filter Graph Construction
+###############################################################################
+build_filter_graph() {
+    # We use a localized filter graph. 
+    # Minterpolate for FPS, scale/pad for resolution, format for pixel format.
+    # Note: Hardware encoders often need specific pixel formats immediately before encoding.
+    
+    local filter="minterpolate='fps=${FPS}:mi_mode=mci:me_mode=bidir:me=epzs',"
+    filter+="scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,"
+    filter+="pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+    filter+="format=${PIX_FMT}"
+    
+    echo "$filter"
+}
+
+###############################################################################
+# 5. Execution Engine (Array-Based, Zero Eval)
+###############################################################################
+execute_ffmpeg() {
+    local filter_graph
+    filter_graph="$(build_filter_graph)"
+
+    # Base FFmpeg arguments
+    local cmd=(ffmpeg -y)
+    
+    if [[ "$VERBOSE" == false ]]; then
+        cmd+=(-hide_banner -loglevel error)
+    fi
+
+    # Hardware acceleration input flags
+    if [[ -n "$HW_ACCEL" ]]; then
+        if [[ "$HW_ACCEL" == "vaapi" ]]; then
+            cmd+=(-hwaccel vaapi -hwaccel_output_format vaapi -vaapi_device /dev/dri/renderD128)
+        else
+            cmd+=(-hwaccel "$HW_ACCEL")
+        fi
+    fi
+
+    cmd+=(-i "$INPUT_FILE")
+
+    if [[ "$MULTI_PASS" == true && "$ENCODE_MODE" == "bitrate" ]]; then
+        echo "[Ψ] Initiating Pass 1..."
+        local pass1=("${cmd[@]}")
+        pass1+=(-vf "$filter_graph" -c:v "$VIDEO_CODEC" -b:v "$BITRATE_VAL" -pass 1 -an -f mp4 /dev/null)
+        
+        [[ "$VERBOSE" == true ]] && echo "[EXEC] ${pass1[*]}"
+        "${pass1[@]}"
+
+        echo "[Ψ] Initiating Pass 2..."
+        local pass2=("${cmd[@]}")
+        pass2+=(-vf "$filter_graph" -c:v "$VIDEO_CODEC" -b:v "$BITRATE_VAL" -pass 2)
+        
+        if [[ "$HAS_AUDIO" == true ]]; then
+            pass2+=(-c:a aac -b:a 192k)
+        else
+            pass2+=(-an)
+        fi
+        pass2+=("$OUTPUT_FILE")
+        
+        [[ "$VERBOSE" == true ]] && echo "[EXEC] ${pass2[*]}"
+        "${pass2[@]}"
+        
+    else
+        echo "[Ψ] Initiating Single-Pass Encoding..."
+        local single=("${cmd[@]}")
+        single+=(-vf "$filter_graph" -c:v "$VIDEO_CODEC")
+        
+        if [[ "$ENCODE_MODE" == "crf" ]]; then
+            single+=(-crf "$CRF_VAL")
+        else
+            single+=(-b:v "$BITRATE_VAL")
+        fi
+
+        if [[ "$HAS_AUDIO" == true ]]; then
+            single+=(-c:a aac -b:a 192k)
+        else
+            single+=(-an)
+        fi
+        
+        single+=("$OUTPUT_FILE")
+        
+        [[ "$VERBOSE" == true ]] && echo "[EXEC] ${single[*]}"
+        "${single[@]}"
+    fi
+
+    echo "[+] Target Reached: $OUTPUT_FILE"
+}
+
+###############################################################################
+# Main
+###############################################################################
+check_deps
+prompt_verbose
+select_input
+prompt_output
+probe_audio
+configure_encoding
+configure_hardware
+execute_ffmpeg
+
+# Cleanup multipass log files if they exist
+rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree

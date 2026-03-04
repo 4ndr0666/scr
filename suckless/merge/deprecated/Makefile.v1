@@ -1,0 +1,47 @@
+# suckless-merge — Ψ-4ndr0666 Build Configuration (v3.0.2)
+# Designed for 4NDR0666OS.
+# 
+# Usage:
+#   make            - Build the hardened binary
+#   make install    - Deploy to /usr/local/bin
+#   make uninstall  - Remove from system
+#   make clean      - Scrub build artifacts
+
+.POSIX:
+
+CC      = cc
+# Optimization -O2 and stripping -s for stealth/performance.
+# Note: _POSIX_C_SOURCE and _DEFAULT_SOURCE are defined in source 
+# for absolute portability across hardened kernels.
+CFLAGS  = -Wall -Wextra -std=c99 -O2 -pedantic
+LDFLAGS = -s
+
+PREFIX  = /usr/local
+BINDIR  = $(PREFIX)/bin
+
+TARGET  = merge
+SRC     = suckless-merge.c
+OBJ     = $(SRC:.c=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ)
+
+.c.o:
+	$(CC) $(CFLAGS) -c $<
+
+install: $(TARGET)
+	@echo "[Ψ] Deploying $(TARGET) to $(DESTDIR)$(BINDIR)..."
+	mkdir -p $(DESTDIR)$(BINDIR)
+	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+
+uninstall:
+	@echo "[Ψ] Purging $(TARGET) from system..."
+	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
+
+clean:
+	@echo "[Ψ] Scrubbing object files and binary..."
+	rm -f $(TARGET) $(OBJ)
+
+.PHONY: all install uninstall clean

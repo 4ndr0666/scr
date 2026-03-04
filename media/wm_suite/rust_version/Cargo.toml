@@ -1,0 +1,18 @@
+[package]
+name = "wm_suite_rs"
+version = "5.0.0"
+edition = "2021"
+authors = ["Ψ-4ndr0666 <root@akasha.dev>"]
+description = "High-performance, parallel media orchestration and watermarking engine."
+
+[dependencies]
+# Rayon provides the parallel iterator extension for fearless concurrency
+rayon = "1.8.0"
+
+[profile.release]
+# Optimize for execution speed and strip symbols for forensic stealth
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

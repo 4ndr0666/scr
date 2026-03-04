@@ -13,7 +13,7 @@ RESET='\033[0m'
 
 show_help() {
 	echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${RESET}"
-	echo -e "${CYAN}│${RESET}   ${GLOW}💀 Ψ • - ⦑ 4NDR0SCRIPT : SCRIPT PRIMER ⦒ - • Ψ 💀${RESET}        ${CYAN}│${RESET}"
+	echo -e "${CYAN}│${RESET}           ${GLOW}💀 Ψ • - ⦑ 4NDR0SCRIPT : SCRIPT PRIMER ⦒ - • Ψ 💀${RESET}                   ${CYAN}│${RESET}"
 	echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${RESET}"
 	echo -e " Usage: 4ndr0script [OPTIONS] <filename>"
 	echo -e ""
