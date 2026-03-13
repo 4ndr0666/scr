@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ψ RSS Reader • Electric Glass 2026</title>
+
+  <!-- Electric-Glass palette & effects -->
+  <style>
+    :root {
+      --bg-deep:        #0A0F1A;
+      --panel-primary:  #101827;
+      --panel-accent:   #070B14;
+      --accent-cyan:    #15fafa;
+      --accent-mid:     #15adad;
+      --accent-dark:    #157d7d;
+      --text-primary:   #e0ffff;
+      --text-secondary: #a0f0f0;
+      --text-tertiary:  #70c0c0;
+      --glow-soft:      0 4px 15px rgba(21, 250, 250, 0.2);
+      --glow-intense:   0 8px 25px rgba(21, 250, 250, 0.45);
+      --error-red:      #ff4d4d;
+    }
+
+    [data-theme="light"] {
+      --bg-deep:        #f0f4f8;
+      --panel-primary:  #ffffff;
+      --panel-accent:   #e8eff7;
+      --accent-cyan:    #00b7c3;
+      --accent-mid:     #009ca8;
+      --accent-dark:    #007f8a;
+      --text-primary:   #0d1b2a;
+      --text-secondary: #33415c;
+      --text-tertiary:  #5c7189;
+      --glow-soft:      0 4px 15px rgba(0, 183, 195, 0.18);
+      --glow-intense:   0 8px 25px rgba(0, 183, 195, 0.35);
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .glyph-container {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 1.2rem;
+      filter: drop-shadow(0 0 10px var(--accent-cyan));
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-mid), var(--accent-dark));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      max-width: 900px;
+      margin: 0 auto 1.5rem;
+      justify-content: center;
+      align-items: center;
+    }
+
+    input[type="url"] {
+      flex: 1 1 400px;
+      padding: 0.9rem 1.3rem;
+      font-size: 1.05rem;
+      background: var(--panel-accent);
+      border: 1px solid var(--accent-mid);
+      border-radius: 10px;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    input[type="url"]:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: var(--glow-soft);
+    }
+
+    button, .btn {
+      padding: 0.8rem 1.6rem;
+      font-size: 1rem;
+      background: var(--accent-dark);
+      border: 1px solid var(--accent-mid);
+      color: var(--text-primary);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover, .btn:hover {
+      background: var(--accent-mid);
+      box-shadow: var(--glow-intense);
+    }
+
+    .theme-toggle {
+      background: transparent;
+      border: 1px solid var(--accent-mid);
+      padding: 0.6rem;
+      font-size: 1.2rem;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #feed-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 2rem;
+    }
+
+    aside {
+      background: var(--panel-primary);
+      border: 1px solid var(--accent-mid)/50;
+      border-radius: 14px;
+      padding: 1.4rem;
+      height: fit-content;
+      position: sticky;
+      top: 2rem;
+    }
+
+    .category-list {
+      list-style: none;
+      margin-top: 1rem;
+    }
+
+    .category-list li {
+      padding: 0.6rem 0;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: color 0.2s;
+    }
+
+    .category-list li:hover,
+    .category-list li.active {
+      color: var(--accent-cyan);
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 1.6rem;
+    }
+
+    .feed-card {
+      background: var(--panel-primary);
+      border: 1px solid var(--accent-mid)/60;
+      border-radius: 16px;
+      padding: 1.8rem;
+      backdrop-filter: blur(8px);
+      box-shadow: var(--glow-soft);
+      transition: all 0.25s;
+    }
+
+    .feed-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--glow-intense);
+    }
+
+    .feed-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.2rem;
+    }
+
+    .feed-title {
+      color: var(--accent-cyan);
+      font-size: 1.8rem;
+    }
+
+    .entry {
+      padding: 1.3rem;
+      border-left: 4px solid var(--accent-mid);
+      margin: 1.2rem 0;
+      background: var(--panel-accent)/30;
+      border-radius: 10px;
+      position: relative;
+    }
+
+    .entry-title a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 1.35rem;
+    }
+
+    .entry-title a:hover {
+      color: var(--accent-cyan);
+    }
+
+    .meta {
+      color: var(--text-tertiary);
+      font-size: 0.9rem;
+      margin: 0.5rem 0;
+    }
+
+    .embed-wrapper {
+      position: relative;
+      margin: 1rem 0;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+      cursor: pointer;
+      min-height: 200px;
+    }
+
+    .embed-poster {
+      width: 100%;
+      height: auto;
+      display: block;
+      object-fit: cover;
+      background: #111;
+    }
+
+    .embed-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 4rem;
+      transition: opacity 0.3s;
+      z-index: 2;
+    }
+
+    .embed-overlay:hover {
+      opacity: 0.85;
+    }
+
+    .embed-container {
+      display: none;
+      position: relative;
+      padding-bottom: 56.25%;
+      height: 0;
+      overflow: hidden;
+    }
+
+    .embed-container iframe {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none;
+    }
+
+    .embed-error {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,77,77,0.3);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      text-align: center;
+      padding: 1rem;
+      z-index: 3;
+    }
+
+    .embed-error button {
+      margin-top: 0.8rem;
+      padding: 0.6rem 1.2rem;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid white;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .embed-error button:hover {
+      background: rgba(255,255,255,0.4);
+    }
+
+    .loading, .error {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-tertiary);
+      font-size: 1.2rem;
+    }
+
+    .loading::after {
+      content: " …";
+      animation: dots 1.5s steps(5, end) infinite;
+    }
+
+    @keyframes dots {
+      0%,20%  { content: "."; }
+      40%     { content: ".."; }
+      60%     { content: "..."; }
+      80%,100%{ content: ""; }
+    }
+
+    #pagination {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    #load-more {
+      padding: 1rem 2.5rem;
+      font-size: 1.1rem;
+    }
+
+    #auto-refresh {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 900px) {
+      #feed-container {
+        grid-template-columns: 1fr;
+      }
+      aside {
+        position: static;
+      }
+    }
+  </style>
+
+  <!-- DOMPurify CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+</head>
+<body data-theme="dark">
+
+  <header>
+    <div class="glyph-container">
+      <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="var(--accent-cyan)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 64,12 A 52,52 0 1 1 63.9,12 Z" stroke-dasharray="21.78 21.78" stroke-width="2"/>
+        <path d="M 64,20 A 44,44 0 1 1 63.9,20 Z" stroke-dasharray="10 10" stroke-width="1.5" opacity="0.7"/>
+        <path d="M64 30 L91.3 47 L91.3 81 L64 98 L36.7 81 L36.7 47 Z"/>
+        <text x="64" y="67" text-anchor="middle" dominant-baseline="middle" fill="var(--accent-cyan)" font-size="56" font-weight="700" font-family="'Cinzel Decorative', serif">Ψ</text>
+      </svg>
+    </div>
+    <h1>Ψ RSS Reader 2026</h1>
+  </header>
+
+  <div class="controls">
+    <input type="url" id="feed-url" placeholder="https://example.com/feed" value="https://xcandid.vip/feed/"/>
+    <button onclick="loadFeed()">Load / Refresh</button>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">☀︎/☾</button>
+    <div id="auto-refresh">
+      <input type="checkbox" id="autorefresh-cb"/>
+      <label for="autorefresh-cb">Auto-refresh (10 min)</label>
+    </div>
+    <button onclick="exportOPML()" title="Export feed as OPML">Export OPML</button>
+  </div>
+
+  <div id="feed-container">
+    <aside>
+      <h3>Categories</h3>
+      <ul class="category-list" id="category-list">
+        <li data-cat="all" class="active">All</li>
+      </ul>
+    </aside>
+
+    <main>
+      <div id="feed-header" class="feed-card" style="display:none;">
+        <div class="feed-header">
+          <h2 id="feed-title" class="feed-title"></h2>
+          <button onclick="copyCurrentFeedUrl()">Copy URL</button>
+        </div>
+      </div>
+
+      <div id="entries"></div>
+
+      <div id="pagination">
+        <button id="load-more" onclick="loadMore()" style="display:none;">Load More</button>
+      </div>
+
+      <div id="status" class="loading">Enter URL and click Load / Refresh</div>
+    </main>
+  </div>
+
+  <script>
+    // ──────────────────────────────────────────────
+    // State
+    // ──────────────────────────────────────────────
+    let currentFeedUrl = '';
+    let allItems = [];
+    let filteredItems = [];
+    let currentPage = 1;
+    const itemsPerPage = 10;
+    let autoRefreshTimer = null;
+    let activeCategory = 'all';
+
+    const proxyChain = [
+      'https://corsproxy.io/?',
+      'https://api.allorigins.win/raw?url=',
+      'https://thingproxy.freeboard.io/fetch/',
+      'https://api.codetabs.com/v1/proxy?quest=',
+      'https://crossorigin.me/',
+      '' // direct
+    ];
+
+    // ──────────────────────────────────────────────
+    // Theme persistence
+    // ──────────────────────────────────────────────
+    function toggleTheme() {
+      const current = document.documentElement.dataset.theme;
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('rss-theme', next);
+    }
+
+    if (localStorage.getItem('rss-theme') === 'light') {
+      document.documentElement.dataset.theme = 'light';
+    }
+
+    // ──────────────────────────────────────────────
+    // Load feed
+    // ──────────────────────────────────────────────
+    async function loadFeed() {
+      const urlInput = document.getElementById('feed-url');
+      const status = document.getElementById('status');
+      const entriesDiv = document.getElementById('entries');
+
+      currentFeedUrl = urlInput.value.trim();
+      if (!currentFeedUrl) return alert("Enter a feed URL");
+
+      status.textContent = 'Fetching feed…';
+      status.className = 'loading';
+      entriesDiv.innerHTML = '';
+
+      let xmlText = '';
+      let success = false;
+
+      for (const proxy of proxyChain) {
+        try {
+          const target = proxy ? proxy + encodeURIComponent(currentFeedUrl) : currentFeedUrl;
+          const response = await fetch(target, {
+            headers: { 'Origin': window.location.origin || 'http://localhost:8000' },
+            redirect: 'follow',
+            cache: 'no-store'
+          });
+
+          if (!response.ok) continue;
+
+          xmlText = await response.text();
+          success = true;
+          break;
+        } catch (err) {
+          console.warn(`Proxy ${proxy || 'direct'} failed:`, err.message);
+        }
+      }
+
+      if (!success) {
+        status.textContent = 'All proxies failed. Run via local server or check console.';
+        status.className = 'error';
+        return;
+      }
+
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, 'text/xml');
+
+        if (doc.querySelector('parsererror')) {
+          throw new Error('XML parse error');
+        }
+
+        const channel = doc.querySelector('channel') || doc.querySelector('feed');
+        const feedTitle = channel?.querySelector('title')?.textContent.trim() || 'Untitled Feed';
+        document.getElementById('feed-title').textContent = feedTitle;
+        document.getElementById('feed-header').style.display = 'block';
+
+        allItems = Array.from(doc.querySelectorAll('item, entry')).map(item => {
+          const title = item.querySelector('title')?.textContent.trim() || 'Untitled';
+          const linkEl = item.querySelector('link');
+          const link = linkEl?.getAttribute('href') || linkEl?.textContent.trim() || '#';
+          const pubDate = item.querySelector('pubDate, published, updated')?.textContent.trim() || '';
+          const contentNode = item.querySelector('content\\:encoded, description');
+          const content = contentNode?.innerHTML.trim() || '';
+
+          const iframeMatch = content.match(/<iframe[^>]+src=["'](.*?)["']/i);
+          const embedSrc = iframeMatch ? iframeMatch[1] : '';
+
+          const imgMatch = content.match(/<img[^>]+src=["'](.*?)["']/i);
+          const posterSrc = imgMatch ? imgMatch[1] : '';
+
+          const categories = Array.from(item.querySelectorAll('category'))
+            .map(c => c.textContent.trim())
+            .filter(Boolean);
+
+          return { title, link, pubDate, content, embedSrc, posterSrc, categories };
+        });
+
+        const catSet = new Set(['all']);
+        allItems.forEach(item => item.categories.forEach(c => catSet.add(c)));
+        const catList = document.getElementById('category-list');
+        catList.innerHTML = '<li data-cat="all" class="active">All</li>';
+        [...catSet].sort().forEach(cat => {
+          if (cat === 'all') return;
+          const li = document.createElement('li');
+          li.textContent = cat;
+          li.dataset.cat = cat;
+          catList.appendChild(li);
+        });
+
+        filterByCategory('all');
+        renderPage();
+
+        status.textContent = `Loaded ${allItems.length} items (${filteredItems.length} visible)`;
+        status.className = '';
+
+        setupAutoRefresh();
+      } catch (err) {
+        status.textContent = `Parse error: ${err.message}`;
+        status.className = 'error';
+      }
+    }
+
+    function filterByCategory(cat) {
+      activeCategory = cat;
+      document.querySelectorAll('#category-list li').forEach(li => {
+        li.classList.toggle('active', li.dataset.cat === cat);
+      });
+
+      if (cat === 'all') {
+        filteredItems = [...allItems];
+      } else {
+        filteredItems = allItems.filter(item => item.categories.includes(cat));
+      }
+
+      currentPage = 1;
+      renderPage();
+    }
+
+    function renderPage() {
+      const entriesDiv = document.getElementById('entries');
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageItems = filteredItems.slice(start, end);
+
+      let html = '';
+      pageItems.forEach(item => {
+        const safeContent = DOMPurify.sanitize(item.content || '');
+
+        html += `
+          <div class="feed-card entry">
+            <div class="entry-title">
+              <a href="${item.link}" target="_blank" rel="noopener noreferrer">${item.title}</a>
+            </div>
+            ${item.pubDate ? `<div class="meta">${new Date(item.pubDate).toLocaleString()}</div>` : ''}
+            ${item.embedSrc ? `
+              <div class="embed-wrapper" data-src="${item.embedSrc}" onclick="activateEmbed(this)">
+                ${item.posterSrc ? 
+                  `<img class="embed-poster" src="${item.posterSrc}" alt="Preview" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27 text-anchor=%27middle%27 x=%2750%25%27 fill=%27%23ccc%27>⚠</text></svg>'">` :
+                  `<div class="embed-poster" style="height:360px;background:#111;display:flex;align-items:center;justify-content:center;color:#555;font-size:2rem;">No preview</div>`
+                }
+                <div class="embed-overlay">▶</div>
+                <div class="embed-container">
+                  <iframe src="" frameborder="0" allowfullscreen loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+                </div>
+                <div class="embed-error" style="display:none;">
+                  <div>Embed blocked or failed</div>
+                  <button onclick="retryEmbed(this);event.stopPropagation()">Retry</button>
+                  <a href="${item.embedSrc}" target="_blank" style="color:white;margin-top:0.5rem;display:inline-block;">Open in new tab</a>
+                </div>
+              </div>
+            ` : ''}
+            ${safeContent ? `<div style="color:var(--text-secondary); margin-top:1rem;">${safeContent}</div>` : ''}
+          </div>`;
+      });
+
+      entriesDiv.innerHTML = html || '<p style="text-align:center;color:var(--text-tertiary);">No items match this category.</p>';
+
+      document.getElementById('load-more').style.display =
+        end < filteredItems.length ? 'block' : 'none';
+    }
+
+    function activateEmbed(wrapper) {
+      const iframe = wrapper.querySelector('iframe');
+      const src = wrapper.dataset.src;
+      const errorDiv = wrapper.querySelector('.embed-error');
+      const overlay = wrapper.querySelector('.embed-overlay');
+      const container = wrapper.querySelector('.embed-container');
+
+      if (!iframe || !src) return;
+
+      // Clear previous error
+      errorDiv.style.display = 'none';
+
+      // Set src only once
+      if (!iframe.src) {
+        console.log('[Embed] Activating:', src);
+        iframe.src = src;
+
+        // Debug events
+        iframe.onload = () => console.log('[Embed] Loaded:', src);
+        iframe.onerror = () => {
+          console.error('[Embed] Error:', src);
+          errorDiv.style.display = 'flex';
+        };
+
+        // Security violation listener
+        iframe.addEventListener('error', e => {
+          console.error('[Embed] Security / load error:', e);
+          errorDiv.style.display = 'flex';
+        });
+      }
+
+      overlay.style.display = 'none';
+      container.style.display = 'block';
+    }
+
+    function retryEmbed(btn) {
+      const wrapper = btn.closest('.embed-wrapper');
+      const iframe = wrapper.querySelector('iframe');
+      if (iframe) {
+        console.log('[Embed] Retrying:', wrapper.dataset.src);
+        iframe.src = 'about:blank'; // reset
+        setTimeout(() => {
+          iframe.src = wrapper.dataset.src;
+        }, 400);
+      }
+      event.stopPropagation();
+    }
+
+    function loadMore() {
+      currentPage++;
+      renderPage();
+    }
+
+    function setupAutoRefresh() {
+      const cb = document.getElementById('autorefresh-cb');
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      if (cb.checked) {
+        autoRefreshTimer = setInterval(loadFeed, 10 * 60 * 1000);
+      }
+    }
+
+    document.getElementById('autorefresh-cb').addEventListener('change', setupAutoRefresh);
+
+    document.getElementById('category-list').addEventListener('click', e => {
+      if (e.target.tagName === 'LI') {
+        filterByCategory(e.target.dataset.cat);
+      }
+    });
+
+    function copyCurrentFeedUrl() {
+      navigator.clipboard.writeText(currentFeedUrl)
+        .then(() => alert('Copied to clipboard'))
+        .catch(() => alert('Copy failed'));
+    }
+
+    function exportOPML() {
+      if (!currentFeedUrl) return alert('Load a feed first');
+      const opml = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head><title>Exported from Ψ RSS Reader</title></head>
+  <body>
+    <outline text="${document.getElementById('feed-title').textContent || 'Feed'}" type="rss" xmlUrl="${currentFeedUrl}"/>
+  </body>
+</opml>`;
+      const blob = new Blob([opml], {type: 'text/xml'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'feeds-export.opml';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        loadFeed();
+      }
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        document.getElementById('feed-url').focus();
+      }
+    });
+
+    // Debug helper: load all embeds on current page
+    window.loadAllEmbeds = () => {
+      document.querySelectorAll('.embed-wrapper').forEach(w => activateEmbed(w));
+      console.log('All visible embeds activated');
+    };
+  </script>
+</body>
+</html>
