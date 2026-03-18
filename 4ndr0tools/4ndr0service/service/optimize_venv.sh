@@ -10,7 +10,7 @@ IFS=$'\n\t'
 source "${PKG_PATH:-.}/common.sh"
 
 export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
-export VENV_PATH="${VENV_HOME}/.venv"
+export VENV_PATH="${VENV_HOME}/venv"
 # Define PIPX location for manual intervention
 export PIPX_VENVS="${XDG_DATA_HOME:-$HOME/.local/share}/pipx/venvs"
 
@@ -26,7 +26,7 @@ optimize_venv_service() {
     ensure_dir "$VENV_HOME"
     if [[ ! -d "$VENV_PATH" ]]; then
         log_info "Creating global venv at $VENV_PATH..."
-        python3 -m venv "$VENV_PATH" || handle_error "$LINENO" "Venv creation failed."
+        python3 -m venv "$VENV_PATH"
     fi
 
     # 3. Update Venv Pip
@@ -35,6 +35,7 @@ optimize_venv_service() {
     source "$VENV_PATH/bin/activate"
     pip install --upgrade pip || log_warn "Pip upgrade failed."
     deactivate
+    [[ -d "$PYENV_ROOT" ]] && pyenv rehash
 
     # 4. Pipx Health Check (Nuclear Amputation Protocol)
     # Detects corruption -> Tries Force Repair -> Tries Uninstall -> Forces FS Deletion

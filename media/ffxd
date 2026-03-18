@@ -236,7 +236,7 @@ Commands:
   composite <input(s)> Composite multiple video files into a grid.
   looperang <input>    Create a boomerang effect video.
   slowmo <input>       Create a slow-motion video.
-  fix <input>          Fix common video issues (e.g., VFR to CFR).
+  fix <input> [ref]    Fix video issues (VFR to CFR, Moov recovery via untrunc).
   clean                Clean up ffxd temporary/cache files.
   probe <input>        Show media information using ffprobe.
   help                 Show this help message.
@@ -628,9 +628,9 @@ cmd_looperang() {
 	reverse_cmd+=(
 		# Use a codec that supports reverse and is fast (e.g., libx264 with fast preset)
 		# Or ideally, use stream copy if possible, but reverse filter requires re-encoding.
-		-c:v libx264 -preset fast
+		"-c:v" "libx264" "-preset" "fast"
 	)
-	if ! "$NOAUDIO"; then reverse_cmd+=("-c:a aac"); fi # Add audio codec if needed
+	if ! "$NOAUDIO"; then reverse_cmd+=("-c:a" "aac"); fi # Add audio codec if needed
 	reverse_cmd+=("$reversed_temp")
 
 	log_verbose "Executing: ${reverse_cmd[*]}"
@@ -778,12 +778,13 @@ cmd_slowmo() {
 cmd_fix() {
 	log_verbose "Executing command: fix with args: $*"
 	local input_file="$1"
+	local ref_file="${2:-}"
 	local output_file="$OUTPUT_DIR/fixed_output.mp4" # Simple output naming
 	local -a ffmpeg_common_opts
 
-	if [[ $# -ne 1 ]]; then
-		log_error "Command 'fix' requires exactly one input file."
-		echo "Usage: ffxd fix [global options] <input>" >&2
+	if [[ -z "$input_file" ]]; then
+		log_error "Command 'fix' requires at least one input file."
+		echo "Usage: ffxd fix [global options] <input> [reference_mp4]" >&2
 		exit 1
 	fi
 
@@ -797,6 +798,40 @@ cmd_fix() {
 		log_error "Could not create output directory: $OUTPUT_DIR"
 		exit 1
 	}
+
+	# --- DIAGNOSTIC PROTOCOL: MOOV ATOM HUNT & RESURRECTION ---
+	log_verbose "Initiating Phase 3 Diagnostics: Probing '$input_file' for 'moov' atom..."
+	local working_target="$input_file"
+	
+	if ! ffprobe -v trace "$input_file" 2>&1 | grep -q "type:'moov'"; then
+		log_error "CRITICAL: 'moov' atom not found. Container is severed."
+		if [[ -n "$ref_file" && -f "$ref_file" ]]; then
+			log_verbose "Genetic donor '$ref_file' detected. Executing 'untrunc' resurrection..."
+			if command -v untrunc >/dev/null 2>&1; then
+				untrunc "$ref_file" "$input_file"
+				local untrunc_out="${input_file}_fixed.mp4"
+				if [[ -f "$untrunc_out" ]]; then
+					log_verbose "Container resurrected. Grafting successful."
+					working_target="$untrunc_out"
+				else
+					log_error "Resurrection failed. Target data is unrecoverable."
+					exit 1
+				fi
+			else
+				log_error "'untrunc' binary not found. Aborting graft."
+				exit 1
+			fi
+		else
+			log_verbose "No donor provided. Falling back to raw bitstream carving..."
+			local carved_out="$OUTPUT_DIR/carved_payload.h264"
+			ffmpeg -y -i "$input_file" -vcodec copy -bsf:v h264_mp4toannexb "$carved_out"
+			log_verbose "Raw payload carved to '$carved_out'. Manual muxing required. Exiting."
+			return 0
+		fi
+	else
+		log_verbose "Container integrity verified. Proceeding to temporal synchronization."
+	fi
+	# ----------------------------------------------------------
 
 	# Build common ffmpeg options (only relevant ones like noaudio, max1080 might apply)
 	local -a common_opts_output
@@ -824,12 +859,12 @@ cmd_fix() {
 
 	local -a ffmpeg_cmd=(
 		ffmpeg -y # Overwrite output file
-		-i "$input_file"
+		-i "$working_target"
 		-r "$target_fps"            # Force constant frame rate
-		-c:v libx264 -preset medium # Re-encode video
+		"-c:v" "libx264" "-preset" "medium" # Re-encode video
 	)
 	if ! "$NOAUDIO"; then
-		ffmpeg_cmd+=("-c:a aac") # Re-encode audio
+		ffmpeg_cmd+=("-c:a" "aac") # Re-encode audio
 	else
 		ffmpeg_cmd+=("-an") # Remove audio
 	fi
@@ -844,7 +879,7 @@ cmd_fix() {
 			continue
 		fi
 		case "$opt" in
-		"-f" | "-p" | "-i") skip_next=true ;; # Skip these and their arguments
+		"-r") skip_next=true ;; # Target FFmpeg's framerate param
 		*) filtered_common_opts+=("$opt") ;;
 		esac
 	done
@@ -855,7 +890,7 @@ cmd_fix() {
 	log_verbose "Executing: ${ffmpeg_cmd[*]}"
 	"${ffmpeg_cmd[@]}"
 
-	log_verbose "Finished fixing video '$input_file' to '$output_file'."
+	log_verbose "Finished fixing video '$working_target' to '$output_file'."
 }
 
 cmd_clean() {

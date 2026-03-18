@@ -27,6 +27,21 @@ export C_RESET='\033[0m'
 # 2. PATH DISCOVERY & INITIALIZATION
 # =============================================================================
 
+# XDG Base Directory fallbacks
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+# Offensive Suite Paths (Derived from XDG)
+export PYENV_ROOT="${XDG_DATA_HOME}/pyenv"
+export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
+export BIN_DIR="${HOME}/.local/bin"
+
+# Internal Tooling (Relative to PKG_PATH resolved in main.sh)
+# PKG_PATH is set via readlink -f in the entry point
+export CONFIG_FILE="${XDG_CONFIG_HOME}/4ndr0service/config.json"
+export LOG_FILE="${XDG_CACHE_HOME}/4ndr0service/service.log"
+
 # Ensure PKG_PATH is set relative to this script location
 ensure_pkg_path() {
     if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
@@ -104,12 +119,22 @@ export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 
+# Cohesion Variables (Aligning with config.json constraints)
+export PIPX_HOME="${PIPX_HOME:-$XDG_DATA_HOME/pipx}"
+export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
+export NVM_DIR="${NVM_DIR:-$XDG_DATA_HOME/nvm}"
+export PSQL_HOME="${PSQL_HOME:-$XDG_DATA_HOME/psql}"
+export MYSQL_HOME="${MYSQL_HOME:-$XDG_DATA_HOME/mysql}"
+
 # Application Config File
 export CONFIG_FILE="$XDG_CONFIG_HOME/4ndr0service/config.json"
 export LOG_FILE="$XDG_CACHE_HOME/4ndr0service/service.log"
 
 ensure_dir() {
-    local dir="$1"
+    local dir="${1:-}"
+    if [[ -z "$dir" ]]; then
+        return 0
+    fi
     if [[ ! -d "$dir" ]]; then
         mkdir -p "$dir"
         log_info "Created directory: $dir"

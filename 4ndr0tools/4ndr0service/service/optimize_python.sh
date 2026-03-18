@@ -9,11 +9,6 @@ IFS=$'\n\t'
 # shellcheck source=../common.sh
 source "${PKG_PATH:-.}/common.sh"
 
-export PYENV_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/pyenv"
-export PIPX_HOME="$XDG_DATA_HOME/pipx"
-export PIPX_BIN_DIR="$PIPX_HOME/bin"
-export VENV_HOME="$XDG_DATA_HOME/virtualenv"
-
 load_pyenv() {
     if [[ -d "$PYENV_ROOT" ]]; then
         path_prepend "$PYENV_ROOT/bin"
@@ -37,13 +32,31 @@ optimize_python_service() {
         install_pyenv
     fi
 
+    # Use the dynamic PYENV_ROOT from common.sh
+    if [[ -d "$PYENV_ROOT" ]]; then
+        path_prepend "$PYENV_ROOT/bin"
+        eval "$("$PYENV_ROOT/bin/pyenv" init -)"
+        
+        # Ghost Link Integrity: pyenv/env -> virtualenv/venv
+        if [[ ! -L "$PYENV_ROOT/env" ]]; then
+            log_warn "Ghost link missing. Restoring: $PYENV_ROOT/env -> $VENV_HOME/venv"
+            ln -sf "$VENV_HOME/venv" "$PYENV_ROOT/env"
+        fi
+        
+        # Ensure your baseline 3.10.14 version
+        pyenv global "3.10.14" 2>/dev/null || log_warn "Version 3.10.14 not in pyenv. Using system fallback."
+        pyenv rehash
+    fi
+
     # 2. Install Python Version
     local py_ver
-    py_ver=$(jq -r '.python_version // "3.14.2"' "$CONFIG_FILE")
+    py_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
     log_info "Ensuring Python $py_ver via pyenv..."
     pyenv install -s "$py_ver"
     pyenv global "$py_ver"
 
+    pyenv rehash
+    
     # 3. Ensure Pipx
     if ! command -v pipx &>/dev/null; then
         python3 -m pip install --user pipx || log_warn "Pipx install failed."
@@ -63,13 +76,14 @@ optimize_python_service() {
         fi
     done
 
-    # 4. Global Venv
-    if [[ ! -d "$VENV_HOME/.venv" ]]; then
-        log_info "Creating global venv at $VENV_HOME/.venv..."
+    # 4. Global Venv (Aligned with Ascension/Purge Protocols)
+    export VENV_PATH="${VENV_HOME}/venv"
+    if [[ ! -d "$VENV_PATH" ]]; then
+        log_info "Creating global venv at $VENV_PATH..."
         ensure_dir "$VENV_HOME"
-        python3 -m venv "$VENV_HOME/.venv"
+        python3 -m venv "$VENV_PATH"
     fi
-
+    
     log_success "Python optimization complete. Version: $(python3 --version | awk '{print $2}')"
 }
 

@@ -12,6 +12,17 @@ FIX_MODE="${FIX_MODE:-false}"
 REPORT_MODE="${REPORT_MODE:-false}"
 
 run_verification() {
+# Add to run_verification()
+    log_info "Verifying Offensive Tooling Hives..."
+
+    for hive in "stig" "ImgCodeCheck"; do
+        if [[ ! -d "$VENV_HOME/$hive" ]]; then
+            log_warn "Offensive hive missing: $hive. Potential logical dissolution."
+        else
+            log_success "Verified hive: $hive"
+        fi
+    done
+
     log_info "Verifying environment alignment..."
     load_config
     
