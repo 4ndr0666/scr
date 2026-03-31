@@ -76,8 +76,8 @@ check_deps() {
 	for dep in ffmpeg ffprobe awk bc; do
 		command_exists "$dep" || die "Required dependency '$dep' is not installed."
 	done
-	if ! command_exists timeout; then
-	fi
+#	if ! command_exists timeout; then
+#	fi
 }
 
 absolute_path() {
