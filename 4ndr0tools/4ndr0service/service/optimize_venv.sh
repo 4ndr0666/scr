@@ -1,112 +1,114 @@
 #!/usr/bin/env bash
-# File: service/optimize_venv.sh
-# Description: Centralized Virtualenv Maintenance (XDG-compliant).
-# Logic: Includes Physical Liquidation for deadlocked venvs & Pipefail Bypass.
+# 4ndr0666OS: Hardened Virtualenv & Pipx Maintenance Service
+# - Logic: Nuclear Amputation Protocol for Metadata Deadlocks
+# - Sync: Derived Pipx Pathing & XDG Artifact Scrubbing
+# - Compliance: SC2155 (Exit Integrity), SC1091 (Venv Sourcing)
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=../common.sh
+# shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
+# ---[ DYNAMIC PATH RESOLUTION ]---
+# Aligning with common.sh Single Source of Truth
 export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
 export VENV_PATH="${VENV_HOME}/venv"
-# Define PIPX location for manual intervention
-export PIPX_VENVS="${XDG_DATA_HOME:-$HOME/.local/share}/pipx/venvs"
+# Derived from PIPX_HOME to prevent path drift
+export PIPX_VENVS="${PIPX_HOME:-$XDG_DATA_HOME/pipx}/venvs"
 
 optimize_venv_service() {
-    log_info "Optimizing Python virtual environments..."
+    log_info "Synchronizing Hive Integrity..."
 
-    # 1. Ensure Python
-    if ! command -v python3 &>/dev/null; then
-        handle_error "$LINENO" "Python3 not found."
-    fi
-
-    # 2. Create Global Venv
-    ensure_dir "$VENV_HOME"
+    # 1. Global Hive Maintenance
     if [[ ! -d "$VENV_PATH" ]]; then
-        log_info "Creating global venv at $VENV_PATH..."
+        log_info "Initializing Main Hive Venv: $VENV_PATH"
+        ensure_dir "$VENV_HOME"
         python3 -m venv "$VENV_PATH"
     fi
 
-    # 3. Update Venv Pip
-    log_info "Updating pip in global venv..."
+    # 2. Hive Core Update
+    log_info "Updating Pip in Global Hive..."
     # shellcheck disable=SC1091
     source "$VENV_PATH/bin/activate"
-    pip install --upgrade pip || log_warn "Pip upgrade failed."
+    pip install --upgrade pip || log_warn "Hive Pip upgrade suppressed (Check network/build)."
     deactivate
+    
+    # Rehash runtimes to acknowledge new Hive binaries
     [[ -d "$PYENV_ROOT" ]] && pyenv rehash
 
-    # 4. Pipx Health Check (Nuclear Amputation Protocol)
-    # Detects corruption -> Tries Force Repair -> Tries Uninstall -> Forces FS Deletion
+    # 3. Nuclear Amputation Protocol (Pipx Metadata Repair)
     if command -v pipx &>/dev/null; then
         local pipx_out
         pipx_out=$(pipx list 2>&1 || true)
         
         if [[ "$pipx_out" == *"missing internal pipx metadata"* ]]; then
-             log_warn "Pipx registry corruption detected..."
+             log_warn "Pipx Registry Corruption: Initiating Amputation..."
+             
              local broken_pkgs
              broken_pkgs=$(echo "$pipx_out" | awk '/package .* has missing internal pipx metadata/ {print $2}' | sort -u)
              
              for bpkg in $broken_pkgs; do
-                 log_info "Attempting force-repair on: $bpkg"
+                 log_info "Attempting Sector Repair: $bpkg"
                  if ! pipx install --force "$bpkg"; then
-                     log_error "Repair failed for $bpkg (Build/Network Error)."
-                     log_warn "Amputating $bpkg to restore registry health..."
+                     log_error "Metadata Deadlock: Repair failed for $bpkg"
                      
-                     # 1. Try standard uninstall
+                     # Atomic Liquidation of Broken Venv
                      if ! pipx uninstall "$bpkg"; then
-                         log_warn "Standard uninstall failed (Metadata Missing)."
-                         log_warn "Initiating Nuclear Option (Filesystem Deletion)..."
-                         
-                         # 2. Manual FS Deletion (The Fix for Deadlock)
+                         log_warn "Standard Purge Failed. Executing Nuclear FS Deletion..."
                          local target_dir="$PIPX_VENVS/$bpkg"
                          if [[ -d "$target_dir" ]]; then
                              rm -rf "$target_dir"
-                             log_success "Manually liquidated venv: $target_dir"
-                         else
-                             log_error "Could not locate venv directory at $target_dir"
+                             log_success "Liquidated Sector: $target_dir"
                          fi
                      else
-                         log_success "Standard uninstall successful."
+                         log_success "Standard Purge Complete: $bpkg"
                      fi
                  else
-                     log_success "Successfully repaired $bpkg"
+                     log_success "Metadata Restored: $bpkg"
                  fi
              done
         fi
     fi
 
-    # 5. Pipx Packages (Config defined)
-    local -a packages
-    mapfile -t packages < <(jq -r '(.venv_pipx_packages // [])[]' "$CONFIG_FILE")
+    # 4. Pipx Package Synchronization
+    local -a pkgs
+    mapfile -t pkgs < <(jq -r '(.venv_pipx_packages // [])[]' "$CONFIG_FILE")
 
-    if [[ ${#packages[@]} -gt 0 ]]; then
-        log_info "Ensuring pipx packages..."
-        for pkg in "${packages[@]}"; do
-            # BYPASS PIPEFAIL: Use (cmd || true) to prevent exit code from failing the check
-            # if pipx list has minor warnings but still outputs text.
-            if ! (pipx list 2>/dev/null || true) | grep -q "$pkg"; then
-                pipx install "$pkg" || log_warn "Pipx install failed: $pkg"
+    if [[ ${#pkgs[@]} -gt 0 ]]; then
+        log_info "Ensuring Isolated Tool Sync..."
+        for p in "${pkgs[@]}"; do
+            # Pipefail Bypass: Check presence without triggering ERR trap on warnings
+            if ! (pipx list 2>/dev/null || true) | grep -q "$p"; then
+                log_info "Deploying: $p"
+                pipx install "$p" || log_warn "Deployment failed: $p"
             fi
         done
     fi
 
-    # 6. Routine Cleaning & Maintenance
-    log_info "Performing routine Python toolchain maintenance..."
-    
-    if command -v pip &>/dev/null; then
-        pip cache purge >/dev/null 2>&1 || true
-    fi
-
-    # Optimized XDG Scrubbing (Depth-Limited)
-    log_info "Scrubbing XDG UI artifacts (GPUCache/Code Cache)..."
+    # 5. Routine Artifact Liquidation (The Scrub)
+    log_info "Purging System Artifacts (GPUCache / Code Cache)..."
     find "${XDG_CONFIG_HOME:-$HOME/.config}" -maxdepth 3 -type d -name "GPUCache" -exec rm -rf {} + 2>/dev/null || true
     find "${XDG_CACHE_HOME:-$HOME/.cache}" -maxdepth 3 -type d -name "Code Cache" -exec rm -rf {} + 2>/dev/null || true
+    
+    # Flush toolchain caches
+    pip cache purge >/dev/null 2>&1 || true
 
-    log_success "Venv optimization complete."
+    log_success "Hive Synchronization Complete."
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
+# ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ -z "${PKG_PATH:-}" ]]; then
+        _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+        readonly _CURRENT_SVC_DIR
+        PKG_PATH="$(dirname "$_CURRENT_svc_dir")"
+        export PKG_PATH
+    fi
+
+    # shellcheck source=/dev/null
+    source "$PKG_PATH/common.sh"
     optimize_venv_service
 fi

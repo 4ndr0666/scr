@@ -1,0 +1,28 @@
+
+In cli.sh line 9:
+source "${PKG_PATH:-.}/common.sh"
+       ^------------------------^ SC1091 (info): Not following: ../common.sh was not specified as input (see shellcheck -x).
+
+
+In cli.sh line 62:
+        readonly _CURRENT_VIEW_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+                 ^---------------^ SC2155 (warning): Declare and assign separately to avoid masking return values.
+
+
+In cli.sh line 64:
+        export PKG_PATH="$(dirname "$_CURRENT_VIEW_DIR")"
+               ^------^ SC2155 (warning): Declare and assign separately to avoid masking return values.
+
+
+In cli.sh line 69:
+    source "$PKG_PATH/common.sh"
+           ^-------------------^ SC1091 (info): Not following: ./common.sh was not specified as input (see shellcheck -x).
+
+
+In cli.sh line 70:
+    source "$PKG_PATH/controller.sh"
+           ^-----------------------^ SC1091 (info): Not following: ./controller.sh was not specified as input (see shellcheck -x).
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2155 -- Declare and assign separately to ...
+  https://www.shellcheck.net/wiki/SC1091 -- Not following: ../common.sh was n...

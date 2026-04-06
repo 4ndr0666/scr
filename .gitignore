@@ -117,6 +117,12 @@ secrets.json
 
 # .gitignore
 maintain/clean/google/dietpi/credentials.json
+pi-20250902T025643Z.img
+pi-20250902T025643Z.img.map
+pi-20250902T025643Z.img.map.bak
+pi-20250902T025643Z.img.xz
+install/pi/pi-20250902T100844Z.img.zst.sha256
+install/pi/pi-20250902T100844Z.img.map
 media/url_tracker_generator/generated/
 media/url_tracker_generator/urls/
 *~b~
@@ -124,8 +130,5 @@ media/url_tracker_generator/urls/
 0-tests/
 0-tests/lib
 0-tests/*
-../system/diagnostics/graphics/*
-media/dorkmaster/ATSCAN/
-valid_urls.txt
-media/url_scraper/valid_urls.txt
-package-lock.json
+../system/diagnostics/graphics/about-gpu-2026-02-03T08-16-13-214Z.txt
+media/dorkmaster/ATSCAN

@@ -24,7 +24,7 @@ show_help() {
     cat <<EOF
 4ndr0service Suite - Manage and Optimize Your Environment
 
-Usage: $0 [options] 
+Usage: $0 [options]
 
 Options:
   --help       Show this help message.
@@ -84,8 +84,18 @@ done
 
 run_core_checks() {
     initialize_suite
+
+    # Ψ-Hardening: Verify Ghost Link Integrity
+    local GHOST_LINK="${PYENV_ROOT}/env"
+    if [[ ! -L "$GHOST_LINK" ]]; then
+        log_warn "Ghost Link anomaly detected. Restoring bridge..."
+        ln -sf "${VENV_HOME}/venv" "$GHOST_LINK"
+    fi
+
     if [[ "$FIX_MODE" == "true" || "$REPORT_MODE" == "true" ]]; then
         run_verification
+        # Ψ-Sync: Signal .zshrc to re-index SCR path
+        touch "${XDG_CACHE_HOME}/.scr_dirty"
     else
         if [[ "$PARALLEL" == "true" ]]; then
             run_parallel_services

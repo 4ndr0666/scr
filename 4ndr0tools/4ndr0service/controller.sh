@@ -53,29 +53,21 @@ source_views() {
     fi
 }
 
+# Proposed dynamic service execution
 run_all_services() {
     log_info "Running all services in sequence..."
     source_all_services
 
-    local -a services=(
-        "optimize_go_service"
-        "optimize_ruby_service"
-        "optimize_cargo_service"
-        "optimize_node_service"
-        "optimize_meson_service"
-        "optimize_python_service"
-        "optimize_electron_service"
-        "optimize_venv_service"
-    )
+    # Dynamically find all functions matching the optimization pattern
+    local -a services
+    mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$')
 
     for svc in "${services[@]}"; do
-        if declare -f "$svc" >/dev/null; then
-            $svc || log_warn "$svc failed."
-        else
-            log_warn "Service function not found: $svc"
-        fi
+        $svc || log_warn "$svc failed."
     done
     log_success "All services sequence complete."
+    touch "${XDG_CACHE_HOME}/.scr_dirty"
+    log_success "Path cache marked for re-indexing."
 }
 
 run_parallel_services() {
@@ -89,6 +81,8 @@ run_parallel_services() {
         "optimize_cargo_service"
 
     log_success "Parallel services completed."
+    touch "${XDG_CACHE_HOME}/.scr_dirty"
+    log_sucess "Path cache marked for re-indexing."
 }
 
 export_functions() {

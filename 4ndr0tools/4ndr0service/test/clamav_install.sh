@@ -1,118 +1,64 @@
 #!/usr/bin/env bash
-# File: clamav_orchestrator.sh
-# Version: 4NDR0666OS_v5.3_NEON_CORE
-# Description: High-performance, immersive ClamAV hardening engine.
+# File: service/clamav_install.sh
+# Version: 4NDR0666OS_v5.4_HARDENED
+# Description: Integrated ClamAV Sentinel for 4ndr0service.
 
 set -euo pipefail
+IFS=$'\n\t'
 
-# --- Configuration ---
-CYAN='\033[38;5;51m'
-GLOW='\033[1;36m'
-RED='\033[38;5;196m'
-RESET='\033[0m'
-FRAME_TOP="┌────────────────────────────────────────────────────────────┐"
-FRAME_BTM="└────────────────────────────────────────────────────────────┘"
+# shellcheck source=../common.sh
+source "${PKG_PATH:-.}/common.sh"
 
+# ---[ CONFIGURATION ]---
 CLAM_USER="clamav"
 CLAM_GROUP="clamav"
-REQUIRED_DIRS=("/var/lib/clamav" "/var/log/clamav" "/run/clamav")
-LOG_FILE="/var/log/clamav/freshclam.log"
+# Standard Arch paths
 CONFIG_FILE="/etc/clamav/clamd.conf"
+FRESHCLAM_CONF="/etc/clamav/freshclam.conf"
 
-# --- Immersive UI Elements ---
-log_header() {
-	clear
-	echo -e "${CYAN}${FRAME_TOP}${RESET}"
-	echo -e "${CYAN}│${RESET}   ${GLOW}💀 Ψ • - ⦑ 4NDR0666OS : CLAMAV SENTINEL ⦒ - • Ψ 💀${RESET}       ${CYAN}│${RESET}"
-	echo -e "${CYAN}${FRAME_BTM}${RESET}"
+optimize_clamav_service() {
+    log_info "Synchronizing ClamAV Sentinel..."
+
+    # 1. Deployment
+    if ! pkg_is_installed "clamav"; then
+        install_sys_pkg "clamav"
+    fi
+
+    # 2. Hive Initialization (Required Dirs)
+    local required_dirs=("/var/lib/clamav" "/var/log/clamav" "/run/clamav")
+    for dir in "${required_dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            sudo mkdir -p "$dir"
+            sudo chown "$CLAM_USER:$CLAM_GROUP" "$dir"
+        fi
+    done
+
+    # 3. Kernel Parameter Tuning (Microcode Injection)
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log_info "Injecting Performance Microcode into clamd.conf..."
+        sudo sed -i 's|^#LocalSocket .*|LocalSocket /run/clamav/clamd.ctl|' "$CONFIG_FILE"
+        sudo sed -i 's|^#ConcurrentDatabaseReload .*|ConcurrentDatabaseReload yes|' "$CONFIG_FILE"
+    fi
+
+    # 4. Signature Sync
+    log_info "Syncing Virus Definitions (Freshclam)..."
+    sudo freshclam || log_warn "Freshclam sync interrupted."
+
+    # 5. Service Persistence
+    log_info "Enabling ClamAV Daemons..."
+    sudo systemctl enable --now clamav-daemon clamav-freshclam
+    
+    log_success "ClamAV Sentinel is ACTIVE."
 }
 
-log_op() { echo -e " ${CYAN}Ψ${RESET} [${GLOW}SYSTEM${RESET}] :: $1"; }
-log_ok() { echo -e " ${CYAN}Ψ${RESET} [${GLOW}ACTIVE${RESET}] :: $1"; }
-log_warn() { echo -e " ${CYAN}!${RESET} [${RED}CAUTION${RESET}] :: $1"; }
-
-ask_auth() {
-	echo -ne "\n ${CYAN}»${RESET} ${GLOW}INITIALIZE PROTOCOL? (Y/N):${RESET} "
-	read -r response
-	if [[ ! "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-		echo -e " ${RED}Execution Terminated.${RESET}"
-		exit 1
-	fi
-}
-
-# --- Functional Logic (Idempotent) ---
-audit_fs() {
-	log_op "Synchronizing Filesystem Matrix..."
-	for dir in "${REQUIRED_DIRS[@]}"; do
-		[[ ! -d "$dir" ]] && sudo mkdir -p "$dir"
-		if [[ "$(stat -c '%U:%G' "$dir")" != "$CLAM_USER:$CLAM_GROUP" ]]; then
-			sudo chown -R "$CLAM_USER":"$CLAM_GROUP" "$dir"
-		fi
-		sudo chmod 755 "$dir"
-	done
-	[[ ! -f "$LOG_FILE" ]] && sudo touch "$LOG_FILE"
-	sudo chown "$CLAM_USER":"$CLAM_GROUP" "$LOG_FILE"
-	log_ok "Filesystem state: NOMINAL"
-}
-
-inject_hardening() {
-	log_op "Injecting Performance Microcode..."
-	local changes=0
-	if [[ -f "$CONFIG_FILE" ]]; then
-		if ! grep -q "^LocalSocket /run/clamav/clamd.ctl" "$CONFIG_FILE"; then
-			sudo sed -i 's|^#LocalSocket .*|LocalSocket /run/clamav/clamd.ctl|' "$CONFIG_FILE"
-			((changes++))
-		fi
-		if ! grep -q "^ConcurrentDatabaseReload yes" "$CONFIG_FILE"; then
-			sudo sed -i 's|^#ConcurrentDatabaseReload .*|ConcurrentDatabaseReload yes|' "$CONFIG_FILE"
-			((changes++))
-		fi
-	fi
-	[[ $changes -gt 0 ]] && log_ok "Kernel parameters: TUNED" || log_ok "Kernel parameters: STABLE"
-}
-
-setup_persistence() {
-	log_op "Establishing Persistence Loop..."
-	local svc="/etc/systemd/system/clamav-audit.service"
-	local tmr="/etc/systemd/system/clamav-audit.timer"
-	local self_path
-	self_path=$(realpath "$0")
-
-	if [[ ! -f "$svc" ]]; then
-		cat <<EOF | sudo tee "$svc" >/dev/null
-[Unit]
-Description=4NDR0666OS ClamAV Maintenance
-[Service]
-Type=oneshot
-ExecStart=$self_path --auto
-EOF
-		cat <<EOF | sudo tee "$tmr" >/dev/null
-[Unit]
-Description=Daily ClamAV Sentinel Audit
-[Timer]
-OnCalendar=daily
-Persistent=true
-[Install]
-WantedBy=timers.target
-EOF
-		sudo systemctl daemon-reload
-		sudo systemctl enable --now clamav-audit.timer
-		log_ok "Persistence: ESTABLISHED"
-	else
-		log_ok "Persistence: VERIFIED"
-	fi
-}
-
-# --- Main Entry ---
-if [[ "${1:-}" == "--auto" ]]; then
-	audit_fs
-	exit 0
+# Standalone Bootstrap
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ -z "${PKG_PATH:-}" ]]; then
+        _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+        readonly _CURRENT_SVC_DIR
+        PKG_PATH="$(dirname "$_CURRENT_SVC_DIR")"
+        export PKG_PATH
+    fi
+    source "$PKG_PATH/common.sh"
+    optimize_clamav_service
 fi
-
-log_header
-ask_auth
-audit_fs
-inject_hardening
-setup_persistence
-
-echo -e "\n${CYAN}─── [ SYSTEM READY : 4NDR0666OS SECURITY ACTIVE ] ───${RESET}\n"

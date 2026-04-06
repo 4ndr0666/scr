@@ -5,7 +5,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=../common.sh
+# shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
 main_cli() {
@@ -54,3 +54,28 @@ main_cli() {
         esac
     done
 }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
+# ──────────────────────────────────────────────────────────────────────────────
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ -z "${PKG_PATH:-}" ]]; then
+        # Declare then assign to capture potential readlink/dirname failures
+        _CURRENT_VIEW_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+        readonly _CURRENT_VIEW_DIR
+        
+        PKG_PATH="$(dirname "$_CURRENT_VIEW_DIR")"
+        export PKG_PATH
+    fi
+
+    # Source dependencies with null-check for linter
+    # shellcheck source=/dev/null
+    source "$PKG_PATH/common.sh"
+    # shellcheck source=/dev/null
+    source "$PKG_PATH/controller.sh"
+
+    # Execute entry point
+    if declare -f main_cli >/dev/null; then
+        main_cli
+    fi
+fi

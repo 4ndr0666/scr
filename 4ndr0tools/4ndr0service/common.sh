@@ -34,7 +34,7 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 # Offensive Suite Paths (Derived from XDG)
 export PYENV_ROOT="${XDG_DATA_HOME}/pyenv"
-export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
+export VENV_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/virtualenv"
 export BIN_DIR="${HOME}/.local/bin"
 
 # Internal Tooling (Relative to PKG_PATH resolved in main.sh)
@@ -154,31 +154,11 @@ ensure_xdg_dirs() {
 # 5. PACKAGE MANAGEMENT
 # =============================================================================
 
-detect_pkg_manager() {
-    if command -v pacman &>/dev/null; then
-        echo "pacman"
-    elif command -v apt-get &>/dev/null; then
-        echo "apt"
-    elif command -v dnf &>/dev/null; then
-        echo "dnf"
-    elif command -v brew &>/dev/null; then
-        echo "brew"
-    else
-        echo "unknown"
-    fi
-}
+detect_pkg_manager() { echo "pacman"; }
 
 pkg_is_installed() {
-    local pkg="$1"
-    local mgr
-    mgr=$(detect_pkg_manager)
-    case "$mgr" in
-    pacman) pacman -Qi "$pkg" &>/dev/null ;;
-    apt) dpkg -l "$pkg" &>/dev/null ;;
-    dnf) rpm -q "$pkg" &>/dev/null ;;
-    brew) brew list "$pkg" &>/dev/null ;;
-    *) command -v "$pkg" &>/dev/null ;;
-    esac
+    local pkg="${1:-}"
+    [[ -z "$pkg" ]] && pacman -Qi "$pkg" &>/dev/null
 }
 
 install_sys_pkg() {
@@ -187,20 +167,8 @@ install_sys_pkg() {
         log_info "$pkg is already installed."
         return 0
     fi
-
-    local mgr
-    mgr=$(detect_pkg_manager)
-    log_info "Installing $pkg using $mgr..."
-    case "$mgr" in
-    pacman) sudo pacman -S --noconfirm --needed "$pkg" ;;
-    apt) sudo apt-get update && sudo apt-get install -y "$pkg" ;;
-    dnf) sudo dnf install -y "$pkg" ;;
-    brew) brew install "$pkg" ;;
-    *)
-        log_warn "Manual installation required: $pkg"
-        return 1
-        ;;
-    esac
+    log_info "Deploying $pkg via Pacman..."
+    sudo pacman -S --noconfirm --needed "$pkg"
 }
 
 # =============================================================================

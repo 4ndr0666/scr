@@ -1,37 +1,36 @@
 #!/usr/bin/env bash
 # File: install_env_maintenance.sh
-# Description: Installs and enables systemd maintenance units for 4ndr0service.
+# Description: Deployment engine for systemd environment healing.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# Source common for path and logging
-# shellcheck source=../../common.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../..")" && pwd -P)/common.sh"
+# Fixed Source Bootstrap
+_SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+# Path to common.sh relative to test/src/
+source "$(dirname "$(dirname "$_SCRIPT_DIR")")/common.sh"
 
 SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 ensure_dir "$SYSTEMD_USER_DIR"
 
 install_unit() {
     local src="$1"
-    local dest
-    dest="$SYSTEMD_USER_DIR/$(basename "$src")"
+    local dest="$SYSTEMD_USER_DIR/$(basename "$src")"
 
-    # Update PKG_PATH in the service file to point to current installation
+    # Patch the ExecStart to use the absolute PKG_PATH resolved at runtime
     sed "s|ExecStart=.*|ExecStart=$PKG_PATH/main.sh --fix --report|g" "$src" > "$dest"
-    log_info "Installed and patched unit: $dest"
+    log_info "Patched and deployed: $dest"
 }
 
+# Deploy all units from the systemd/user/ source directory
 for unit in "$PKG_PATH/systemd/user/"*.{service,timer}; do
-    if [[ -f "$unit" ]]; then
-        install_unit "$unit"
-    fi
+    [[ -f "$unit" ]] && install_unit "$unit"
 done
 
 log_info "Reloading systemd user daemon..."
 systemctl --user daemon-reload
 
-log_info "Enabling maintenance timer..."
+log_info "Enabling Maintenance Sentinel..."
 systemctl --user enable --now env_maintenance.timer
 
-log_success "4ndr0service maintenance scheduled."
+log_success "4ndr0service Healing Loop ACTIVE."
