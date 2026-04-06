@@ -128,3 +128,4 @@ media/url_tracker_generator/urls/
 media/dorkmaster/ATSCAN/
 valid_urls.txt
 media/url_scraper/valid_urls.txt
+package-lock.json
