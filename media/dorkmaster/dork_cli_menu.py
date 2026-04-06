@@ -9,28 +9,15 @@ from rich.table import Table
 
 console = Console()
 
-def load_dork_patterns(json_file="dork_patterns.json", nsfw_json_file="beta/src/dork_patterns-nsfw.json"):
-    """Load and merge dork patterns from standard and NSFW JSON files."""
+def load_dork_patterns(json_file="dork_patterns.json"):
+    """Load and merge dork patterns from canonical JSON (NSFW already embedded)."""
     patterns = []
     try:
         with open(json_file, "r", encoding="utf-8") as f:
             patterns.extend(json.load(f))
     except Exception as e:
-        console.print(f"[red]Failed to load standard dork patterns: {e}[/red]")
-
-    try:
-        with open(nsfw_json_file, "r", encoding="utf-8") as f:
-            nsfw_patterns = json.load(f)
-            for category in nsfw_patterns:
-                category["category"] = f"[NSFW] {category['category']}"
-            patterns.extend(nsfw_patterns)
-    except Exception as e:
-        console.print(f"[yellow]Could not load NSFW dork patterns: {e}[/yellow]")
-    
-    if not patterns:
-        console.print("[bold red]FATAL: No dork patterns loaded.[/bold red]")
+        console.print(f"[red]Failed to load dork patterns: {e}[/red]")
         raise RuntimeError("No dork patterns could be loaded.")
-        
     return patterns
 
 def _copy_to_clipboard(text):
@@ -56,7 +43,7 @@ def cli_dork_menu(dork_patterns, company="TARGET"):
         console.print("\n[bold red]Ψ-4ndr0666-OS // NSFW DORK ARSENAL v∞.NSFW[/bold red]")
         for i, category in enumerate(dork_patterns, 1):
             cat_name = category.get("category", "Unknown")
-            if any(x in cat_name.lower() for x in ["leak", "onlyfans", "mega", "telegram", "porn"]):
+            if any(x in cat_name.lower() for x in ["leak", "onlyfans", "mega", "telegram", "porn", "gallery"]):
                 console.print(f"[bold magenta]{i}.[/bold magenta] [bold yellow]{cat_name}[/bold yellow]")
             else:
                 console.print(f"[cyan]{i}.[/cyan] {cat_name}")
@@ -96,7 +83,7 @@ def cli_dork_menu(dork_patterns, company="TARGET"):
                 console.print("[red]Invalid selection.[/red]")
 
 if __name__ == "__main__":
-    company = input("Enter target (default: viki_veloxen): ").strip() or "viki_veloxen"
+    company = input("Enter target (default: ari_dugarte): ").strip() or "ari_dugarte"
     patterns = load_dork_patterns()
     dork = cli_dork_menu(patterns, company)
     if dork:

@@ -9,22 +9,24 @@ import json
 import datetime
 import re
 import shutil
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, quote_plus
 import httpx
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.prompt import Prompt
+import webbrowser
 import importlib.util
 import dork_cli_menu
 import subprocess
+import shutil
 from pathlib import Path
 import asyncio
 from collections import Counter
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import IntPrompt, Confirm
+from rich.prompt import Prompt, IntPrompt, Confirm
 
 # ===== Ψ-4ndr0666-OS FULL LIBERATION – DEFAULT ACTIVE =====
 console = Console()
@@ -62,21 +64,16 @@ DEFAULT_CONFIG = {
         "https://searx.mastodontech.de",
     ],
     "telegram_api_id": "",
-    "telegram_api_hash": "",
+    "telegram_api_hash": ""
 }
 
-
 def opsec_warning():
-    console.print(
-        Panel(
-            "[bold red]!! WARNING !![/bold red]\n"
-            "Always use VPN, Tor, or proxy for sensitive searches/downloads.\n"
-            "Only operate in a VM or isolated env for dump/warez scraping.",
-            title="OpSec Alert",
-            border_style="red",
-        )
-    )
-
+    console.print(Panel(
+        "[bold red]!! WARNING !![/bold red]\n"
+        "Always use VPN, Tor, or proxy for sensitive searches/downloads.\n"
+        "Only operate in a VM or isolated env for dump/warez scraping.",
+        title="OpSec Alert", border_style="red"
+    ))
 
 def ensure_config():
     """Create config directory and default config if missing."""
@@ -91,9 +88,7 @@ def ensure_config():
             "[yellow]You can now edit settings via option 8 in the main menu[/yellow]"
         )
 
-
-ensure_config()  # Auto-onboarding on first run
-
+ensure_config() # Auto-onboarding on first run
 
 def load_config():
     try:
@@ -101,6 +96,7 @@ def load_config():
             user_config = json.load(f)
         config = DEFAULT_CONFIG.copy()
         config.update(user_config)
+        # Ensure pool exists even if old config
         if "searx_pool" not in config:
             config["searx_pool"] = DEFAULT_CONFIG["searx_pool"]
         return config
@@ -110,16 +106,14 @@ def load_config():
         ensure_config()
         return DEFAULT_CONFIG.copy()
 
-
 def save_config():
-    global config
+    global config # BUGFIX: Ensure changes to global 'config' are saved
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
         console.print(f"[green]Config saved to {CONFIG_FILE}[/green]")
     except Exception as e:
         console.print(f"[red]Failed to save config: {e}[/red]")
-
 
 # Load config into module-level variable
 config = load_config()
@@ -148,7 +142,6 @@ class MycelialNode:
             "node_type": self.node_type,
             "children": [c.as_dict() for c in self.children],
         }
-
 
 class MycelialSession:
     def __init__(self, session_name=None):
@@ -182,10 +175,8 @@ class MycelialSession:
             console.print(f"{prefix}{title}")
             self.print_tree(n, level + 1)
 
-
 # ===== PLUGIN SYSTEM =====
 PLUGIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")
-
 
 def load_plugins():
     plugins = {}
@@ -204,17 +195,14 @@ def load_plugins():
                 console.print(f"[red]Failed to load plugin {plugin_name}: {e}[/red]")
     return plugins
 
-
 # ===== UTILS =====
 def prompt(msg):
     return Prompt.ask(f"[bold red]{msg}[/bold red]")
-
 
 def choose_company_var():
     default = config["default_target"]
     val = prompt(f"Enter target (default: {default})")
     return val if val else default
-
 
 def validate_url(url):
     try:
@@ -222,7 +210,6 @@ def validate_url(url):
         return all([result.scheme, result.netloc])
     except Exception:
         return False
-
 
 def extract_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -234,7 +221,6 @@ def extract_links(html, base_url):
         if validate_url(href):
             links.add(href)
     return list(links)
-
 
 def extract_media_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -255,7 +241,6 @@ def extract_media_links(html, base_url):
             links.add(href)
     return list(links)
 
-
 # --- Aria2c Downloader ---
 def download_with_aria2c(urls, outdir):
     if not urls:
@@ -263,56 +248,31 @@ def download_with_aria2c(urls, outdir):
     if not shutil.which("aria2c"):
         console.print("[red]Error: aria2c not found. Install it for downloads.[/red]")
         return
-
+    
     outdir_path = Path(outdir)
     outdir_path.mkdir(parents=True, exist_ok=True)
-
+    
     listfile_path = Path(XDG_CACHE_HOME) / "dorkmaster" / "aria2_urls.txt"
     listfile_path.parent.mkdir(parents=True, exist_ok=True)
 
     with listfile_path.open("w", encoding="utf-8") as f:
         for url in sorted(urls):
             f.write(url + "\n")
-
+            
     console.print(f"[cyan]Downloading {len(urls)} files to {outdir_path}...[/cyan]")
-    cmd = [
-        "aria2c",
-        "-c",
-        "-x16",
-        "-s16",
-        "-j10",
-        "--console-log-level=warn",
-        "-d",
-        str(outdir_path),
-        "-i",
-        str(listfile_path),
-    ]
+    cmd = ["aria2c", "-c", "-x16", "-s16", "-j10", "--console-log-level=warn", "-d", str(outdir_path), "-i", str(listfile_path)]
     subprocess.run(cmd, check=False)
     console.print("[green]Download finished.[/green]")
 
 
 # --- Image Enumerator Logic (from v5) ---
-IMG_EXTS = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".gif",
-    ".bmp",
-    ".tiff",
-    ".svg",
-    ".avif",
-    ".heic",
-]
+IMG_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".svg", ".avif", ".heic"]
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-
 
 class ImageEnumerator:
     def __init__(self, headers=None, timeout=10):
         headers = headers or {}
-        self.headers = {
-            h.split(":", 1)[0].strip(): h.split(":", 1)[1].strip() for h in headers
-        }
+        self.headers = {h.split(":", 1)[0].strip(): h.split(":", 1)[1].strip() for h in headers}
         if "User-Agent" not in self.headers:
             self.headers["User-Agent"] = DEFAULT_USER_AGENT
         self.timeout = timeout
@@ -324,13 +284,12 @@ class ImageEnumerator:
         parsed_url = urlparse(url)
         filename = Path(parsed_url.path).name
         file_stem, file_ext = os.path.splitext(filename)
-        if file_ext.lower() not in IMG_EXTS:
-            file_ext = ""
-
+        if file_ext.lower() not in IMG_EXTS: file_ext = ""
+        
         numeric_parts = list(re.finditer(r"\d+", file_stem))
         if not numeric_parts:
             raise ValueError("No numeric sequence found in filename.")
-
+            
         match = numeric_parts[-1]
         num_str = match.group(0)
         start, end = match.span()
@@ -348,42 +307,31 @@ class ImageEnumerator:
         console.print(f"[blue]Checking {len(urls)} URLs...[/blue]")
         tasks = []
         semaphore = asyncio.Semaphore(50)
-
-        async with httpx.AsyncClient(
-            headers=self.headers, timeout=self.timeout
-        ) as client:
-
+        
+        async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout) as client:
             async def throttled_check(url):
                 async with semaphore:
                     return await self._check_url(client, url)
 
             for url in urls:
                 tasks.append(asyncio.create_task(throttled_check(url)))
-
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
+            
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
                 task_id = progress.add_task("Scanning...", total=len(urls))
-
+                
                 for future in asyncio.as_completed(tasks):
                     url, code = await future
                     self.status_counts[code] += 1
-                    progress.update(
-                        task_id,
-                        advance=1,
-                        description=f"Scanning: Found {len(self.found_urls)} valid",
-                    )
-
+                    progress.update(task_id, advance=1, description=f"Scanning: Found {len(self.found_urls)} valid")
+                    
                     if code == 200:
                         self.found_urls.add(url)
                         console.print(f"[green][200] {url}[/green]")
                     elif code == 403:
-                        pass
+                        pass # Silent on forbidden to reduce noise
                     elif code == 0:
                         pass
-
+        
         console.print("\n[bold]Scan Complete.[/bold]")
         self._print_summary(len(urls))
 
@@ -391,7 +339,7 @@ class ImageEnumerator:
         table = Table(title="Enumeration Summary", box=box.SIMPLE)
         table.add_column("Status", style="bold")
         table.add_column("Count", justify="right")
-
+        
         table.add_row("Total Checked", str(total))
         table.add_row("[green]200 OK[/green]", str(self.status_counts[200]))
         table.add_row("[yellow]403 Forbidden[/yellow]", str(self.status_counts[403]))
@@ -402,64 +350,63 @@ class ImageEnumerator:
     async def run_brute(self, url, min_r, max_r, pattern=None):
         try:
             if pattern:
-                if "{num}" not in pattern:
-                    raise ValueError("Pattern missing {num}")
+                if "{num}" not in pattern: raise ValueError("Pattern missing {num}")
                 base_pat, width, ext = pattern, 2, Path(url).suffix
             else:
                 base_pat, _, width, ext = self._extract_brute_pattern(url)
-
+            
             console.print(f"[dim]Pattern: {base_pat} | Range: {min_r}-{max_r}[/dim]")
-
+            
             parsed = urlparse(url)
             base = f"{parsed.scheme}://{parsed.netloc}"
             dir_p = Path(parsed.path).parent
-
+            
             candidates = set()
             for i in range(min_r, max_r + 1):
                 num_str = str(i).zfill(width)
                 stem = base_pat.format(num=num_str)
+                # Try detected extension or all
                 exts = [ext] if ext else IMG_EXTS
                 for e in exts:
                     candidates.add(urljoin(base, str(dir_p / (stem + e))))
-
+            
             await self._check_urls_parallel(candidates)
-
+            
         except Exception as e:
             console.print(f"[bold red]Brute Error: {e}[/bold red]")
 
     async def run_recursive(self, start_url, depth):
         console.print(f"[bold]Recursive Crawl:[/bold] {start_url} (Depth: {depth})")
-
+        
         urls_to_visit = {(start_url, 0)}
         visited = set()
-
-        async with httpx.AsyncClient(
-            headers=self.headers, timeout=self.timeout, follow_redirects=True
-        ) as client:
+        
+        async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout, follow_redirects=True) as client:
             while urls_to_visit:
                 curr, d = urls_to_visit.pop()
-                if curr in visited or d > depth:
-                    continue
+                if curr in visited or d > depth: continue
                 visited.add(curr)
-
+                
                 try:
                     resp = await client.get(curr)
                     soup = BeautifulSoup(resp.text, "html.parser")
-
+                    
+                    # Find images
+                    page_links = set()
                     for img in soup.find_all(["a", "img"], href=True, src=True):
                         href = img.get("href") or img.get("src")
-                        if not href:
-                            continue
+                        if not href: continue
                         abs_url = urljoin(curr, href)
-
+                        
                         if any(abs_url.lower().endswith(ext) for ext in IMG_EXTS):
                             if abs_url not in self.found_urls:
                                 console.print(f"[green]+ Found:[/green] {abs_url}")
                                 self.found_urls.add(abs_url)
-
+                        
+                        # Recurse same domain
                         elif urlparse(abs_url).netloc == urlparse(start_url).netloc:
-                            if abs_url not in visited:
-                                urls_to_visit.add((abs_url, d + 1))
+                             if abs_url not in visited:
+                                 urls_to_visit.add((abs_url, d + 1))
                 except Exception as e:
                     console.print(f"[dim red]Error {curr}: {e}[/dim red]")
 
@@ -469,22 +416,17 @@ def run_reddit_downloader():
     sub = Prompt.ask("Subreddit").strip()
     sort = Prompt.ask("Sort", choices=["top", "hot", "new"], default="hot")
     limit = IntPrompt.ask("Limit", default=50)
-
+    
     url = f"https://www.reddit.com/r/{sub}/hot.json"
     console.print(f"[blue]Fetching r/{sub}...[/blue]")
-
+    
     img_urls = []
     try:
-        resp = httpx.get(
-            url,
-            params={"sort": sort, "limit": limit},
-            headers={"User-Agent": "dorkmaster/6.0"},
-            timeout=15,
-        )
+        resp = httpx.get(url, params={"sort": sort, "limit": limit}, headers={"User-Agent": "dorkmaster/6.0"}, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         posts = data.get("data", {}).get("children", [])
-
+        
         if not posts:
             console.print("[yellow]No posts found.[/yellow]")
             return
@@ -506,10 +448,10 @@ def run_reddit_downloader():
 
 # ===== DORK PALETTE =====
 def dork_palette(dork_patterns):
+    """Display the dorking palette and return the selected dork query."""
     company = choose_company_var()
     dork_query = dork_cli_menu.cli_dork_menu(dork_patterns, company)
     return dork_query or f'"{company}" (onlyfans OR mega OR leaked)'
-
 
 # ===== !MEGAHUNT v2 – TELEGRAM MIRROR HARVEST =====
 def telegram_megahunt(raw_query, max_posts=None):
@@ -518,16 +460,17 @@ def telegram_megahunt(raw_query, max_posts=None):
         return []
     console.print("[bold red]!MEGAHUNT ACTIVATED – TELEGRAM GRID ASSAULT[/bold red]")
 
+    # Strip Google syntax completely
     clean = re.sub(r"[\(\)\"ORsite:.*]", "", raw_query, flags=re.I).strip()
     clean = re.sub(r"\s+", " ", clean).strip()
 
+    # BUGFIX: Dynamically create keywords from the actual query
     keywords = clean.lower().split()
     if not keywords:
-        console.print(
-            "[yellow]Cannot extract keywords from query for Telegram hunt.[/yellow]"
-        )
+        console.print("[yellow]Cannot extract keywords from query for Telegram hunt.[/yellow]")
         return []
 
+    # Try exact phrase first, then word variants
     variants = [
         clean,
         clean.replace(" ", "+"),
@@ -540,7 +483,9 @@ def telegram_megahunt(raw_query, max_posts=None):
         for variant in variants:
             for base in [f"https://t.me/s/{variant}", f"https://t.me/s/?q={variant}"]:
                 try:
-                    r = client.get(base, headers={"User-Agent": "Mozilla/5.0"})
+                    r = client.get(
+                        base, headers={"User-Agent": "Mozilla/5.0"}
+                    )
                     if r.status_code != 200:
                         continue
                     soup = BeautifulSoup(r.text, "html.parser")
@@ -552,14 +497,11 @@ def telegram_megahunt(raw_query, max_posts=None):
                         link_tag = post.find("a", class_="tgme_widget_message_date")
                         text_div = post.find("div", class_="tgme_widget_message_text")
                         text = (
-                            text_div.get_text(strip=True, separator=" ")
-                            if text_div
-                            else ""
+                            text_div.get_text(strip=True, separator=" ") if text_div else ""
                         )
 
-                        if link_tag and any(
-                            keyword in text.lower() for keyword in keywords
-                        ):
+                        # BUGFIX: Check for dynamic keywords instead of hardcoded ones
+                        if link_tag and any(keyword in text.lower() for keyword in keywords):
                             results.append(
                                 {
                                     "url": "https://t.me" + link_tag["href"],
@@ -580,7 +522,6 @@ def telegram_megahunt(raw_query, max_posts=None):
         "[bold black]Telegram sterile – target too clean or too dead[/bold black]"
     )
     return results
-
 
 def run_searx(query, count=30):
     params = {
@@ -618,12 +559,11 @@ def run_searx(query, count=30):
                 results = resp.json().get("results", [])
                 if results:
                     return results[:count]
-            except Exception:
+            except:
                 continue
 
     console.print("[bold red]Public grid dead – deploying !MEGAHUNT[/bold red]")
     return telegram_megahunt(query, count)
-
 
 # ===== ANALYZER =====
 def analyze_target(url):
@@ -633,10 +573,7 @@ def analyze_target(url):
 
     try:
         resp = httpx.get(
-            url,
-            timeout=15,
-            headers={"User-Agent": "Mozilla/5.0 (Ψ-NSFW-Hunter/2025)"},
-            follow_redirects=True,
+            url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Ψ-NSFW-Hunter/2025)"}, follow_redirects=True
         )
         resp.raise_for_status()
         html = resp.text
@@ -656,11 +593,10 @@ def analyze_target(url):
 
     if media_links:
         console.print("[cyan]Direct veins extracted:[/cyan]")
-        for link in media_links[:20]:
-            console.print(f"  → {link}")
+        for l in media_links[:20]:
+            console.print(f"  → {l}")
 
     return {"url": url, "links": links, "media": media_links}
-
 
 # ===== SPIDER & RECURSE =====
 def brute_spider(base_url, max_depth=3):
@@ -686,9 +622,9 @@ def brute_spider(base_url, max_depth=3):
             media = extract_media_links(html, url)
             results.append({"url": url, "media": media})
 
-            for link in links:
-                if link not in seen and any(
-                    d in link
+            for l in links:
+                if l not in seen and any(
+                    d in l
                     for d in [
                         "simpcity.su",
                         "coomer.party",
@@ -697,13 +633,12 @@ def brute_spider(base_url, max_depth=3):
                         "discord.gg",
                     ]
                 ):
-                    queue.append((link, depth + 1))
+                    queue.append((l, depth + 1))
     return results
-
 
 def recurse(urls, analyzer_func=analyze_target, max_depth=2):
     results = []
-    seen = set()
+    seen = set() # BUGFIX: Track visited URLs to avoid cycles and redundant work
 
     def helper(urls_to_process, depth):
         if depth > max_depth:
@@ -721,223 +656,10 @@ def recurse(urls, analyzer_func=analyze_target, max_depth=2):
     helper(urls, 1)
     return results
 
-
-class GalleryEnumerator:
-    """Universal temple for CDN bucket + WP sitemap → media enumeration.
-    Hardened: Conditional WP sitemap, always brute numeric bucket,
-    intermediate saves on every step, dynamic filename, full-res upgrade."""
-
-    def __init__(self):
-        self.headers = httpx.Headers(
-            {"User-Agent": "Mozilla/5.0 (Compatible; 4ndr0666-GalleryHunter/2026)"}
-        )
-        self.found_media = set()
-        self.output_dir = Path(DOWNLOADS_DIR) / "temple_results"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        console.print(f"[dim]Temple output directory: {self.output_dir}[/dim]")
-
-    async def fetch_sitemap(self, domain):
-        console.print(f"[cyan]Fetching WP sitemaps from {domain}...[/cyan]")
-        sitemap_url = f"https://{domain}/wp-sitemap.xml"
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=20) as client:
-                resp = await client.get(sitemap_url)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "xml")
-                sitemaps = [loc.text.strip() for loc in soup.find_all("loc")]
-                console.print(f"[green]→ Found {len(sitemaps)} sitemaps[/green]")
-                return sitemaps
-        except Exception as e:
-            console.print(f"[red]Sitemap fetch failed: {e}[/red]")
-            return []
-
-    async def extract_gallery_urls(self, sitemaps):
-        urls = []
-        async with httpx.AsyncClient(headers=self.headers, timeout=20) as client:
-            for s in sitemaps:
-                if "posts-post" not in s.lower():
-                    continue
-                try:
-                    resp = await client.get(s)
-                    resp.raise_for_status()
-                    soup = BeautifulSoup(resp.text, "xml")
-                    new_urls = [
-                        loc.text.strip()
-                        for loc in soup.find_all("loc")
-                        if any(
-                            x in loc.text.lower()
-                            for x in ["gallery", "picture", "video", "photoshoot"]
-                        )
-                    ]
-                    urls.extend(new_urls)
-                    console.print(
-                        f"[green]→ Extracted {len(new_urls)} gallery URLs from {s}[/green]"
-                    )
-                except Exception as e:
-                    console.print(f"[yellow]Skipped sitemap {s}: {e}[/yellow]")
-                    continue
-        console.print(
-            f"[bold green]Total galleries discovered: {len(urls)}[/bold green]"
-        )
-        return urls
-
-    async def scrape_gallery_media(self, gallery_url):
-        console.print(
-            f"[blue]Scraping gallery (full-res upgrade): {gallery_url}[/blue]"
-        )
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=20) as client:
-                resp = await client.get(gallery_url)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "html.parser")
-                cdn_links = []
-
-                for tag in soup.find_all(["img", "video", "source", "a"]):
-                    for attr in [
-                        "data-full",
-                        "data-original",
-                        "data-src",
-                        "src",
-                        "href",
-                        "srcset",
-                    ]:
-                        src = tag.get(attr)
-                        if not src:
-                            continue
-
-                        if attr == "srcset":
-                            candidates = [
-                                x.strip().split()[0]
-                                for x in src.split(",")
-                                if x.strip()
-                            ]
-                            if candidates:
-                                src = max(candidates, key=len)
-
-                        if not src or not any(
-                            c in src for c in ["cdn.", "uecdn.es", "celebhottie"]
-                        ):
-                            continue
-
-                        if not src.startswith("http"):
-                            src = urljoin(gallery_url, src)
-
-                        original_src = src
-                        src = re.sub(
-                            r"[-_](thumb|thumbnail|icon|small|preview|tn|low|mini)\b",
-                            "",
-                            src,
-                            flags=re.I,
-                        )
-                        src = re.sub(r"[-_](\d{2,4}x\d{2,4})", "", src)
-                        src = re.sub(r"[-_]\d{2,4}w", "", src)
-
-                        if src != original_src:
-                            cdn_links.append(original_src)
-                            cdn_links.append(src)
-                        else:
-                            cdn_links.append(src)
-
-                seen = set()
-                unique_links = [
-                    link for link in cdn_links if not (link in seen or seen.add(link))
-                ]
-
-                self.found_media.update(unique_links)
-                console.print(
-                    f"[green]→ {len(unique_links)} media links extracted (full-res upgraded)[/green]"
-                )
-                self._save_current_results()
-        except Exception as e:
-            console.print(f"[red]Gallery scrape failed for {gallery_url}: {e}[/red]")
-
-    async def brute_numeric_bucket(self, cdn_base, id_range, filename_patterns=None):
-        if filename_patterns is None:
-            filename_patterns = [
-                "sara-silverman",
-                "poster",
-                "cover",
-                "thumb",
-                "video",
-                "full",
-                "index",
-                "",
-            ]
-        console.print(
-            f"[cyan]Bruting numeric bucket {cdn_base} range {id_range}...[/cyan]"
-        )
-        candidates = []
-        for i in range(id_range[0], id_range[1] + 1):
-            for name in filename_patterns:
-                for ext in [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov"]:
-                    url = f"{cdn_base.rstrip('/')}/{i}/{name}{ext}".replace("//", "/")
-                    candidates.append(url)
-
-        async with httpx.AsyncClient(headers=self.headers, timeout=8) as client:
-            tasks = [client.head(u, follow_redirects=True) for u in candidates]
-            for resp in await asyncio.gather(*tasks, return_exceptions=True):
-                if isinstance(resp, httpx.Response) and resp.status_code == 200:
-                    self.found_media.add(str(resp.url))
-                    console.print(f"[green][200] {resp.url}[/green]")
-
-        console.print(
-            f"[bold green]Bucket brute complete — {len(self.found_media)} total media[/bold green]"
-        )
-        self._save_current_results()
-
-    def _save_current_results(self):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_file = (
-            self.output_dir / f"media_{self.output_dir.parent.name}_{timestamp}.txt"
-        )  # dynamic
-        with open(save_file, "w", encoding="utf-8") as f:
-            for link in sorted(self.found_media):
-                f.write(link + "\n")
-        console.print(
-            f"[dim]Intermediate save: {len(self.found_media)} links → {save_file.name}[/dim]"
-        )
-
-    async def run_full_enumeration(
-        self, domain, cdn_base, numeric_range=(1000, 8000), filename_patterns=None
-    ):
-        console.print(f"[dim]Temple output directory: {self.output_dir}[/dim]")
-
-        # Conditional WP sitemap (skip on pure CDNs like elmundo)
-        is_wp_like = any(
-            k in domain.lower() for k in ["wordpress", "blog", "news", "celebhottie"]
-        )
-        if is_wp_like:
-            sitemaps = await self.fetch_sitemap(domain)
-            if sitemaps:
-                galleries = await self.extract_gallery_urls(sitemaps)
-                for g in galleries[:150]:
-                    await self.scrape_gallery_media(g)
-
-        # Always run numeric brute (core for elmundo-style CDNs)
-        await self.brute_numeric_bucket(cdn_base, numeric_range, filename_patterns)
-
-        # Final save with dynamic domain name
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_file = self.output_dir / f"media_{domain}_{timestamp}.txt"
-        with open(save_file, "w", encoding="utf-8") as f:
-            for link in sorted(self.found_media):
-                f.write(link + "\n")
-
-        console.print(
-            f"[bold green]✓ Final save: {len(self.found_media)} media links to {save_file}[/bold green]"
-        )
-
-        if self.found_media and Confirm.ask("Download all discovered media now?"):
-            download_with_aria2c(
-                list(self.found_media), self.output_dir / f"download_{timestamp}"
-            )
-
-        return sorted(list(self.found_media))
-
-
 # ===== SETTINGS MENU – FIXED: NO GLOBAL KEYWORD =====
 def settings_menu(current_config):
     """Display and manage application settings."""
+    # Work on a copy so changes can be discarded
     temp_config = current_config.copy()
     while True:
         console.print("\n[bold magenta]=== SETTINGS ===[/bold magenta]")
@@ -951,25 +673,19 @@ def settings_menu(current_config):
             table.add_row(k, val_str)
         console.print(table)
 
-        choice = prompt(
-            "Edit setting (name), [S]ave & Back, [R]eset, [B]ack without saving"
-        )
+        choice = prompt("Edit setting (name), [S]ave & Back, [R]eset, [B]ack without saving")
         if choice.lower() == "b":
-            return current_config
+            return current_config # Return original, unmodified config
         elif choice.lower() == "s":
-            return temp_config
+            return temp_config # Return the modified config
         elif choice.lower() == "r":
             temp_config = DEFAULT_CONFIG.copy()
-            console.print(
-                "[yellow]Config reset to defaults. Choose 'Save & Back' to confirm.[/yellow]"
-            )
+            console.print("[yellow]Config reset to defaults. Choose 'Save & Back' to confirm.[/yellow]")
         elif choice in temp_config:
             if isinstance(temp_config[choice], (list, dict)):
-                console.print(
-                    f"[yellow]Please edit '{choice}' directly in {CONFIG_FILE}[/yellow]"
-                )
+                console.print(f"[yellow]Please edit '{choice}' directly in {CONFIG_FILE}[/yellow]")
                 continue
-
+            
             new_val = prompt(f"New value for '{choice}'")
             try:
                 if new_val.lower() in ("true", "false"):
@@ -978,33 +694,28 @@ def settings_menu(current_config):
                     temp_config[choice] = int(new_val)
                 else:
                     temp_config[choice] = new_val
-                console.print(
-                    f"[green]'{choice}' set to: {temp_config[choice]}[/green]"
-                )
+                console.print(f"[green]'{choice}' set to: {temp_config[choice]}[/green]")
             except ValueError:
                 console.print("[red]Invalid value type.[/red]")
         else:
             console.print("[red]Unknown setting.[/red]")
 
-
 # ===== MAIN MENU =====
 def main_palette():
-    global config
+    global config  # Fix: Declare 'config' as global to allow modification
     session = MycelialSession()
     opsec_warning()
-    dork_patterns = dork_cli_menu.load_dork_patterns()
+    dork_patterns = dork_cli_menu.load_dork_patterns() # Load patterns once
     while True:
-        console.print(
-            Panel.fit(
-                "[bold cyan]Ψ-4ndr0666 DORKMASTER v6[/bold cyan]\n[dim]Superset Edition[/dim]",
-                border_style="cyan",
-            )
-        )
-
+        console.print(Panel.fit(
+            "[bold cyan]Ψ-4ndr0666 DORKMASTER v6[/bold cyan]\n[dim]Superset Edition[/dim]",
+            border_style="cyan"
+        ))
+        
         table = Table(show_header=False, box=None, padding=(0, 2))
         table.add_column("Key", style="yellow bold", justify="right")
         table.add_column("Action")
-
+        
         table.add_row("1", "Dork & Hunt (SearxNG)")
         table.add_row("2", "Image Brute-Forcer")
         table.add_row("3", "Recursive Image Crawler")
@@ -1016,27 +727,10 @@ def main_palette():
         table.add_row("9", "View Session Tree")
         table.add_row("10", "Plugins")
         table.add_row("11", "Settings")
-        table.add_row("12", "Universal Gallery Enumeration Temple")
         table.add_row("0", "Exit")
-
+        
         console.print(table)
         sel = prompt("Command")
-
-        if sel == "12":
-            domain = prompt("Domain (e.g. celebhottie.com)")
-            cdn_base = prompt("CDN base (e.g. https://cdn.celebhottie.com)")
-            enum = GalleryEnumerator()
-            media = asyncio.run(enum.run_full_enumeration(domain, cdn_base))
-            console.print(
-                f"[bold green]Universal Temple complete — {len(media)} media links mapped and saved[/bold green]"
-            )
-            if media and Confirm.ask("Download all discovered media now?"):
-                download_with_aria2c(
-                    media,
-                    Path(DOWNLOADS_DIR)
-                    / f"download_{domain}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                )
-            continue
 
         if sel == "11":
             updated_config = settings_menu(config)
@@ -1075,30 +769,29 @@ def main_palette():
                     node_data = analyze_target(urls[idx])
                     if node_data:
                         results_node.add_child(MycelialNode(node_data, "nsfw_analyze"))
-
+        
         elif sel == "2":
             opsec_warning()
             url = Prompt.ask("Sample Image URL")
             min_r = IntPrompt.ask("Min Sequence", default=1)
             max_r = IntPrompt.ask("Max Sequence", default=100)
-
+            
             enum = ImageEnumerator()
             asyncio.run(enum.run_brute(url, min_r, max_r))
-
+            
             if enum.found_urls and Confirm.ask("Download found images?"):
                 dl_dir = Path(DOWNLOADS_DIR) / "bruteforce"
                 download_with_aria2c(list(enum.found_urls), dl_dir)
-
-            node = MycelialNode(
-                {"base_url": url, "found_count": len(enum.found_urls)}, "image_brute"
-            )
+            
+            node = MycelialNode({"base_url": url, "found_count": len(enum.found_urls)}, "image_brute")
             session.add_root(node)
+
 
         elif sel == "3":
             opsec_warning()
             url = Prompt.ask("Start URL")
             depth = IntPrompt.ask("Depth", default=2)
-
+            
             enum = ImageEnumerator()
             asyncio.run(enum.run_recursive(url, depth))
 
@@ -1106,9 +799,7 @@ def main_palette():
                 dl_dir = Path(DOWNLOADS_DIR) / "crawled"
                 download_with_aria2c(list(enum.found_urls), dl_dir)
 
-            node = MycelialNode(
-                {"start_url": url, "found_count": len(enum.found_urls)}, "image_crawl"
-            )
+            node = MycelialNode({"start_url": url, "found_count": len(enum.found_urls)}, "image_crawl")
             session.add_root(node)
 
         elif sel == "4":
@@ -1160,11 +851,11 @@ def main_palette():
             if not plugins:
                 console.print("[yellow]No plugins found.[/yellow]")
                 continue
-
+                
             plugin_names = list(plugins.keys())
             for i, pname in enumerate(plugin_names, 1):
                 print(f"{i}. {pname}")
-
+            
             sel_plugin = prompt("Select plugin # (or 0 to back): ")
             if sel_plugin.isdigit():
                 idx = int(sel_plugin) - 1
@@ -1173,26 +864,23 @@ def main_palette():
                     module = plugins[pname]
                     if hasattr(module, "run"):
                         try:
-                            console.print(
-                                f"[bold green]Running {pname}...[/bold green]"
-                            )
+                            console.print(f"[bold green]Running {pname}...[/bold green]")
                             module.run(config, console)
                         except Exception as e:
                             console.print(f"[red]Plugin crashed: {e}[/red]")
                     else:
-                        console.print(
-                            f"[yellow]Plugin '{pname}' has no run() method.[/yellow]"
-                        )
+                        console.print(f"[yellow]Plugin '{pname}' has no run() method.[/yellow]")
                 elif idx != -1:
-                    console.print("[red]Invalid selection.[/red]")
+                     console.print("[red]Invalid selection.[/red]")
 
         elif sel == "0":
             console.print("[bold black]Terminated...[/bold black]")
             break
-
 
 if __name__ == "__main__":
     try:
         main_palette()
     except (KeyboardInterrupt, EOFError):
         console.print("\n[bold black]Terminated...[/bold black]")
+
+
