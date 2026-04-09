@@ -1,91 +1,147 @@
-*url-tracker.html
-media/dorkmaster/env
-compare
+# ──────────────────────────────────────────────────────────────────────────────
+# 4NDR0666OS UNIFIED SET - ABSOLUTE CONTAINMENT MANIFEST [v2.0]
+# Combined: Local Ops + Tradecraft + escalation + VS/MSVC + Multi-Log
+# ──────────────────────────────────────────────────────────────────────────────
+
+# == 1. SECRETS, IDENTITY & CREDENTIALS ==
+secrets.json
+*.env
+*.env.*
+.env
+.env.local
+*.local
+*.pem
+*.key
+.ssh/
+.secret/
+auth_tokens.json
+*.jks
+project.p2p
+
+# == 2. OFFENSIVE TRADECRAFT & RESEARCH ==
+compare         # Command/artifact suppression
+0-tests/        # Local test suites
+recon_results/  # Target discovery data
+threat_reports/ # Engagement reports
+payload_stubs/  # Isolated exploit code
+scans/          # Tool output (Nmap, Burp, ZAP)
+targets.txt     # Target lists
+payloads/generated_*
+.gemini/        # AI model context
+.ai_checkpoints/
+.prompt_history/
+matrix_cache.json
+finalize_temp/
+.burp/          
+.ZAP/           
 *.session
 
-# Test artifacts
-0-tests/
+# == 3. RUNTIME & LANGUAGES ==
+## Python / Mypy
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
+*$py.class
+.Python
+.pytest_cache/
+.mypy_cache/
+.codex-venv/
+.hypothesis/
+*.egg-info/
+*.egg
 
-## Logs and Runtime
+## Node / JS / Web
+node_modules/
+jspm_packages/
+.npm/
+.yarn/cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-*.log
-*.log.*
-*.pid
-*.db
-logs
-*.log
-
-## Editor and Shell
-.p10k.zsh
-.zcompdump
-.bash_history
-.zsh_history
-.vscode/
-.vscode/*
-!.vscode/extensions.json
-.idea/
-*.swp
-*.swo
-*.bak
-*.swo
-*.swn
-*.~?
-*~
-
-## Python caches
-.mypy_cache/
-__pycache__/
-*.py[cod]
-*.egg-info
-.pytest_cache/
-*.pyc
-*.pyo
-build/
+.next/
+.svelte-kit/
 dist/
-out/
+dist-ssr/
+tsconfig.tsbuildinfo
+.eslintcache
 
-## Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-.yarn/cache/
-dist
-dist-ssr
-*.local
-
-## C/C++/Rust/Go
+## C / C++ / Rust / Go / MSVC
 target/
-*.dll
+bin/
+out/
+build/
 *.o
 *.ko
 *.a
 *.so
+*.dll
 *.exe
-
-## Operating‑system Noise
-.thumbnails/
-$RECYCLE.BIN/
-desktop.ini
-*history*
-Thumbs.db
-.ssh/
-.DS_Store
-*.cache*
-*tmp*
-*.tmp*
-*.pyc
-*.part
+*.lib
+*.obj
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
 
-## Archives
+## Vendor
+vendor/
+
+# == 4. INFRASTRUCTURE & VIRTUALIZATION ==
+.terraform/
+*.tfstate*
+.pulumi/
+.docker/
+docker-compose.override.yml
+*.dockerlog
+
+# == 5. MOBILE RESEARCH ==
+.gradle/
+Captures/
+*.apk
+*.dex
+*.ipa
+
+# == 6. EDITOR, SHELL & OS NOISE ==
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.project
+.settings/
+.p10k.zsh
+.zcompdump
+.bash_history
+.zsh_history
+.history/
+.nvm/
+*history*
+.thumbnails/
+$RECYCLE.BIN/
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# == 7. LOGS, BACKUPS & TEMPORARY ==
+logs/
+*.log
+*.log.*
+*.pid
+*.db
+*.bak
+*.swp
+*.swo
+*.swn
+*.sw?
+*.~?
+*~
+*tmp*
+*.tmp*
+*.cache*
+*.part
+
+# == 8. ARCHIVES & RECON MEDIA ==
 *.zip
 *.tar
 *.tar.*
@@ -93,12 +149,9 @@ Thumbs.db
 *.gz
 *.bz2
 *.xz
-
-## Large Media
-.codex-venv/
-*.webm
 *.iso
 *.img
+*.webm
 *.mp4
 *.mkv
 *.mp3
@@ -108,27 +161,15 @@ Thumbs.db
 *.flv
 *.webp
 
-## Vendor
-vendor/
 
-## Secrets
-secrets.json
-*.env
-
-# .gitignore
+# === Directory Specific .gitignore === #
 maintain/clean/google/dietpi/credentials.json
-pi-20250902T025643Z.img
-pi-20250902T025643Z.img.map
-pi-20250902T025643Z.img.map.bak
-pi-20250902T025643Z.img.xz
-install/pi/pi-20250902T100844Z.img.zst.sha256
-install/pi/pi-20250902T100844Z.img.map
 media/url_tracker_generator/generated/
 media/url_tracker_generator/urls/
-*~b~
-*.bak
-0-tests/
-0-tests/lib
-0-tests/*
 ../system/diagnostics/graphics/about-gpu-2026-02-03T08-16-13-214Z.txt
 media/dorkmaster/ATSCAN
+*url-tracker.html
+media/dorkmaster/env
+compare
+*.session
+
