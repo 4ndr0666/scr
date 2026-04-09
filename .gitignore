@@ -19,15 +19,15 @@ auth_tokens.json
 project.p2p
 
 # == 2. OFFENSIVE TRADECRAFT & RESEARCH ==
-compare         # Command/artifact suppression
-0-tests/        # Local test suites
-recon_results/  # Target discovery data
-threat_reports/ # Engagement reports
-payload_stubs/  # Isolated exploit code
-scans/          # Tool output (Nmap, Burp, ZAP)
-targets.txt     # Target lists
+compare         
+0-tests/*        
+recon_results/  
+threat_reports/
+payload_stubs/  
+scans/         
+targets.txt    
 payloads/generated_*
-.gemini/        # AI model context
+.gemini/       
 .ai_checkpoints/
 .prompt_history/
 matrix_cache.json
