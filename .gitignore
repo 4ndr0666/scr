@@ -141,27 +141,6 @@ logs/
 *.cache*
 *.part
 
-# == 8. ARCHIVES & RECON MEDIA ==
-*.zip
-*.tar
-*.tar.*
-*.7z
-*.gz
-*.bz2
-*.xz
-*.iso
-*.img
-*.webm
-*.mp4
-*.mkv
-*.mp3
-*.m4v
-*.gif
-*.3gp
-*.flv
-*.webp
-
-
 # === Directory Specific .gitignore === #
 maintain/clean/google/dietpi/credentials.json
 media/url_tracker_generator/generated/
