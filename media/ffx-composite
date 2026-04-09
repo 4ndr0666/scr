@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# ffx-composite  —  Batch FFmpeg composite generator
+# Accepts any number of video files; groups them into batches of up to 4 and
+# produces one 1920x1080 composite MP4 per batch.
+#
+# Usage: ffx-composite FILE [FILE ...]
+#
+# Output: composite_part1.mp4, composite_part2.mp4, ...
+set -euo pipefail
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+readonly CANVAS_W=1920
+readonly CANVAS_H=1080
+
+# Encoding settings — ref: ffmpeg_deep-research.pdf §H.264 Encoding Practices
+# CRF 18 = visually lossless; yuv420p = mandatory for broad H.264 compatibility;
+# +faststart = moves moov atom to front for streaming playback.
+readonly VID_OPTS=(-c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium -movflags +faststart)
+readonly AUD_OPTS=(-c:a aac)
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+log()  { printf '\033[36m[ffx-composite]\033[0m %s\n'    "$*"; }
+ok()   { printf '\033[32m[OK]\033[0m %s\n'               "$*"; }
+err()  { printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# cell_vf W H
+# Emits the canonical scale+pad+setsar filter string for one composite cell.
+# Ref: spec §2 — scale=W:H:force_original_aspect_ratio=decrease,
+#                 pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1
+# setsar=1 is mandatory: without it hstack/vstack can fail when inputs have
+# non-square SAR (e.g. anamorphic or mismatched source pixels).
+cell_vf() {
+    local w="$1" h="$2"
+    printf 'scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1' \
+        "$w" "$h" "$w" "$h"
+}
+
+# build_filter_complex N
+# Prints the complete filter_complex string for a batch of N inputs.
+# All filter chains are single-line strings (no embedded newlines) — this is
+# required because FFmpeg parses filter_complex as a flat string; embedded
+# shell newlines inside double-quotes cause "Unable to parse filter graph".
+build_filter_complex() {
+    local n="$1"
+
+    # Cell dimensions per canonical layout (ref: spec §1):
+    #   1 → fullscreen  1920x1080
+    #   2 → hstack      960x1080  each
+    #   3 → 1920x540 top  +  960x540 bottom x2
+    #   4 → 2x2 grid    960x540  each
+    local cw1=$CANVAS_W          ch1=$CANVAS_H
+    local cw2=$(( CANVAS_W / 2 )) ch2=$CANVAS_H
+    local cw3t=$CANVAS_W          ch3t=$(( CANVAS_H / 2 ))
+    local cw3b=$(( CANVAS_W / 2 )) ch3b=$(( CANVAS_H / 2 ))
+    local cw4=$(( CANVAS_W / 2 )) ch4=$(( CANVAS_H / 2 ))
+
+    case "$n" in
+    1)
+        # Input 0 scaled to full 1920x1080 canvas.
+        printf '[0:v]%s[v]' "$(cell_vf "$cw1" "$ch1")"
+        ;;
+    2)
+        # Two equal columns side-by-side; hstack joins them.
+        printf '[0:v]%s[s0];[1:v]%s[s1];[s0][s1]hstack=inputs=2[v]' \
+            "$(cell_vf "$cw2" "$ch2")" \
+            "$(cell_vf "$cw2" "$ch2")"
+        ;;
+    3)
+        # Input 0 occupies the full-width top half.
+        # Inputs 1+2 are equal cells on the bottom half, joined by hstack,
+        # then stacked under input 0 via vstack.
+        printf '[0:v]%s[s0];[1:v]%s[s1];[2:v]%s[s2];[s1][s2]hstack=inputs=2[bot];[s0][bot]vstack=inputs=2[v]' \
+            "$(cell_vf "$cw3t" "$ch3t")" \
+            "$(cell_vf "$cw3b" "$ch3b")" \
+            "$(cell_vf "$cw3b" "$ch3b")"
+        ;;
+    4)
+        # 2x2 grid: top row = [s0][s1] hstack; bottom row = [s2][s3] hstack;
+        # vstack both rows.
+        printf '[0:v]%s[s0];[1:v]%s[s1];[2:v]%s[s2];[3:v]%s[s3];[s0][s1]hstack=inputs=2[top];[s2][s3]hstack=inputs=2[bot];[top][bot]vstack=inputs=2[v]' \
+            "$(cell_vf "$cw4" "$ch4")" \
+            "$(cell_vf "$cw4" "$ch4")" \
+            "$(cell_vf "$cw4" "$ch4")" \
+            "$(cell_vf "$cw4" "$ch4")"
+        ;;
+    *)
+        err "build_filter_complex: unsupported input count: ${n} (max 4)"
+        ;;
+    esac
+}
+
+# process_batch BATCH_NUM FILE [FILE ...]
+# Runs a single ffmpeg composite call for the given batch.
+process_batch() {
+    local batch_num="$1"; shift
+    local -a files=("$@")
+    local n="${#files[@]}"
+    local output="composite_part${batch_num}.mp4"
+
+    log "Batch ${batch_num}: compositing ${n} file(s) -> ${output}"
+    local idx=1
+    for f in "${files[@]}"; do
+        log "  Input ${idx}: ${f}"
+        (( idx++ )) || true
+    done
+
+    # Build the flat -i argument list.
+    local -a ff_inputs=()
+    local f
+    for f in "${files[@]}"; do
+        ff_inputs+=("-i" "$f")
+    done
+
+    # Build the filter_complex string.
+    local fc
+    fc="$(build_filter_complex "$n")"
+    log "  filter_complex: ${fc}"
+
+    # Execute FFmpeg.
+    # -map "[v]"   — the composited video output labelled [v] by filter_complex
+    # -map "0:a?"  — audio from input 0 only; ? makes it optional (no crash
+    #               if the first file is silent) — ref: spec §4
+    ffmpeg -hide_banner -y \
+        "${ff_inputs[@]}" \
+        -filter_complex "$fc" \
+        -map "[v]" \
+        -map "0:a?" \
+        "${VID_OPTS[@]}" \
+        "${AUD_OPTS[@]}" \
+        "$output"
+
+    ok "Batch ${batch_num} complete -> ${output}"
+}
+
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
+
+# Dependency check — ffmpeg is the only hard requirement.
+command -v ffmpeg >/dev/null 2>&1 || err "ffmpeg is not installed or not in PATH."
+
+# Require at least one argument.
+if [[ $# -lt 1 ]]; then
+    printf 'Usage: %s FILE [FILE ...]\n' "$(basename "$0")" >&2
+    printf 'Accepts any number of video files and composites them in batches of 4.\n' >&2
+    exit 1
+fi
+
+# Validate every input file before starting any batch.
+# Failing early on a missing file is preferable to failing halfway through.
+log "Validating ${#} input file(s)..."
+for f in "$@"; do
+    [[ -f "$f" ]] || err "File not found: ${f}"
+    [[ -r "$f" ]] || err "File not readable: ${f}"
+done
+log "All files validated."
+
+total_files=$#
+log "Total input files: ${total_files}. Batching into groups of up to 4."
+
+batch_num=1
+total_batches=$(( (total_files + 3) / 4 ))
+log "Expected composite outputs: ${total_batches}"
+
+# Main batching loop.
+# Collects up to 4 positional arguments per iteration, shifts them off,
+# and calls process_batch.  The inner while condition is evaluated BEFORE
+# each shift so $# is always checked before it can reach -1.
+while [[ $# -gt 0 ]]; do
+    batch_files=()
+
+    # Collect up to 4 files for this batch by shifting them off $@.
+    while [[ ${#batch_files[@]} -lt 4 && $# -gt 0 ]]; do
+        batch_files+=("$1")
+        shift
+    done
+
+    process_batch "$batch_num" "${batch_files[@]}"
+    (( batch_num++ )) || true
+done
+
+log "All ${total_batches} composite(s) generated successfully."

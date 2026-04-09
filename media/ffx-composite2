@@ -1,0 +1,468 @@
+#!/usr/bin/env bash
+# ffx-composite v2.0
+# Resilient batch composite generator.
+#
+# Usage: ffx-composite FILE [FILE ...]
+#
+# Randomly shuffles all inputs, assigns them to batches of 1-4, then for each
+# batch: picks the layout that geometrically fits the actual aspect ratios
+# present, composites all panels simultaneously onto a 1920x1080 canvas, and
+# randomly applies either trim-to-shortest or loop-to-longest duration handling.
+#
+# Outputs: composite_part1.mp4, composite_part2.mp4, ...
+#
+# Key FFmpeg flags applied (ref: ffmpeg_deep-research.pdf, Filter-chains.md):
+#   fps=N,setpts=PTS-STARTPTS  — normalise all streams to common FPS and reset
+#                                timestamps to 0; this is what makes panels play
+#                                simultaneously rather than sequentially.
+#   scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:…:color=black,setsar=1
+#                              — spec-mandated cell filter; setsar=1 prevents
+#                                hstack/vstack SAR-mismatch errors.
+#   -profile:v high -level 4.0 — H.264 High Profile, supports 1080p30.
+#   -pix_fmt yuv420p           — mandatory for broad H.264 player compatibility.
+#   -threads 0                 — use all available CPU cores for encoding.
+#   -max_muxing_queue_size 1024 — prevents buffer overflow when audio and video
+#                                 run at different rates (common in compositing).
+#   -movflags +faststart       — moov atom at file start; required for streaming.
+#   -b:a 192k -ac 2            — stereo 192 kbps AAC.
+set -euo pipefail
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+readonly CANVAS_W=1920
+readonly CANVAS_H=1080
+readonly NORM_FPS=30     # all streams normalised to this FPS before stacking
+
+# =============================================================================
+# EPHEMERAL WORK DIR — destroyed unconditionally on any exit (CORE DIRECTIVE 3)
+# =============================================================================
+WORK_DIR=$(mktemp -d -t ffx-composite.XXXXXXXX)
+trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+log() { printf '\033[36m[composite]\033[0m %s\n' "$*"; }
+ok()  { printf '\033[32m[OK]\033[0m %s\n' "$*"; }
+die() { printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+for _dep in ffmpeg ffprobe awk; do
+    command -v "$_dep" >/dev/null 2>&1 || die "$_dep is not installed or not in PATH."
+done
+
+# =============================================================================
+# SHUFFLE — uses shuf(1) when available; pure-bash Fisher-Yates fallback
+# =============================================================================
+shuffle_files() {
+    local -n _sf="$1"
+    if command -v shuf >/dev/null 2>&1; then
+        mapfile -t _sf < <(printf '%s\n' "${_sf[@]}" | shuf)
+    else
+        local i j tmp n="${#_sf[@]}"
+        for (( i=n-1; i>0; i-- )); do
+            j=$(( RANDOM % (i+1) ))
+            tmp="${_sf[$i]}"; _sf[$i]="${_sf[$j]}"; _sf[$j]="$tmp"
+        done
+    fi
+}
+
+# =============================================================================
+# PROBE HELPERS
+# All read calls from process substitutions are guarded with || true.
+# This is mandatory under set -euo pipefail: read(1) exits 1 on EOF, which
+# would otherwise kill the script when ffprobe returns empty output.
+# =============================================================================
+
+# probe_wh FILE → "W H"
+probe_wh() {
+    local _w=0 _h=0
+    read -r _w _h < <(
+        ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height \
+            -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
+    ) || true
+    [[ "$_w" =~ ^[0-9]+$ ]] || _w=$CANVAS_W
+    [[ "$_h" =~ ^[0-9]+$ && "$_h" -gt 0 ]] || _h=$CANVAS_H
+    printf '%d %d' "$_w" "$_h"
+}
+
+# probe_duration FILE → seconds (float string)
+probe_duration() {
+    ffprobe -v error -show_entries format=duration \
+        -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null || echo "60"
+}
+
+# =============================================================================
+# CELL FILTER STRING
+# Embeds fps normalisation and PTS reset BEFORE scale+pad so all panels
+# start at t=0 and run at the same frame rate, enabling true simultaneous
+# parallel playback.  Without fps+setpts, panels play sequentially.
+# =============================================================================
+cell_vf() {
+    local cw="$1" ch="$2"
+    printf 'fps=%d,setpts=PTS-STARTPTS,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1' \
+        "$NORM_FPS" "$cw" "$ch" "$cw" "$ch"
+}
+
+# =============================================================================
+# AR FITNESS SCORE: how well video (vw×vh) fits a cell (cw×ch).
+# Returns integer 0-100; 100 = perfect aspect-ratio match, 0 = extreme mismatch.
+# Uses log-ratio distance so portrait-in-landscape is penalised symmetrically.
+# =============================================================================
+ar_score() {
+    awk -v vw="$1" -v vh="$2" -v cw="$3" -v ch="$4" '
+        BEGIN {
+            if (vh<=0 || ch<=0) { print 0; exit }
+            vr = vw / vh
+            cr = cw / ch
+            r  = vr / cr
+            if (r < 1) r = 1/r
+            printf "%d", int(100 / r)
+        }'
+}
+
+# =============================================================================
+# AWK SORT HELPER — sorts "idx W H" lines by AR (W/H) ascending
+# =============================================================================
+_awk_sort_by_ar='
+    { idx[NR]=$1; ar[NR]=$2/$3; n=NR }
+    END {
+        for (i=2; i<=n; i++) {
+            ki=idx[i]; ka=ar[i]; j=i-1
+            while (j>=1 && ar[j]>ka) {
+                idx[j+1]=idx[j]; ar[j+1]=ar[j]; j--
+            }
+            idx[j+1]=ki; ar[j+1]=ka
+        }
+        for (k=1; k<=n; k++) printf "%d ", idx[k]
+    }'
+
+# =============================================================================
+# LAYOUT DATABASE
+# Nine layouts covering N=1,2,3,4.  Two options for N=2, four for N=3, two
+# for N=4.  The AR-fitness scorer chooses the best one for each batch.
+#
+# L_SLOTS: space-separated "W:H" per slot (left-to-right, top-to-bottom).
+# L_FC:    filter_complex template; CELL0…CELL3 are replaced at build time.
+# =============================================================================
+declare -a L_IDS=() L_SLOTS=() L_FC=()
+
+# --- N=1 ---
+L_IDS+=("fullscreen")
+L_SLOTS+=("1920:1080")
+L_FC+=('[0:v]CELL0[v]')
+
+# --- N=2: portrait-cell hstack (good for portrait/square sources) ---
+L_IDS+=("hstack")
+L_SLOTS+=("960:1080 960:1080")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[s0][s1]hstack=inputs=2[v]')
+
+# --- N=2: landscape-cell vstack (good for landscape sources) ---
+L_IDS+=("vstack")
+L_SLOTS+=("1920:540 1920:540")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[s0][s1]vstack=inputs=2[v]')
+
+# --- N=3: one wide top (1920x540), two equal bottom (960x540 each) ---
+L_IDS+=("top1_bot2")
+L_SLOTS+=("1920:540 960:540 960:540")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s1][s2]hstack=inputs=2[bot];[s0][bot]vstack=inputs=2[v]')
+
+# --- N=3: two equal top (960x540 each), one wide bottom (1920x540) ---
+L_IDS+=("top2_bot1")
+L_SLOTS+=("960:540 960:540 1920:540")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s0][s1]hstack=inputs=2[top];[top][s2]vstack=inputs=2[v]')
+
+# --- N=3: one tall left (960x1080), two stacked right (960x540 each) ---
+L_IDS+=("left1_right2")
+L_SLOTS+=("960:1080 960:540 960:540")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s1][s2]vstack=inputs=2[right];[s0][right]hstack=inputs=2[v]')
+
+# --- N=3: two stacked left (960x540 each), one tall right (960x1080) ---
+L_IDS+=("left2_right1")
+L_SLOTS+=("960:540 960:540 960:1080")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s0][s1]vstack=inputs=2[left];[left][s2]hstack=inputs=2[v]')
+
+# --- N=4: 2x2 grid, all 960x540 (good for landscape sources) ---
+L_IDS+=("grid2x2")
+L_SLOTS+=("960:540 960:540 960:540 960:540")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[3:v]CELL3[s3];[s0][s1]hstack=inputs=2[top];[s2][s3]hstack=inputs=2[bot];[top][bot]vstack=inputs=2[v]')
+
+# --- N=4: four portrait columns, all 480x1080 (good for portrait sources) ---
+L_IDS+=("row4")
+L_SLOTS+=("480:1080 480:1080 480:1080 480:1080")
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[3:v]CELL3[s3];[s0][s1][s2][s3]hstack=inputs=4[v]')
+
+# =============================================================================
+# LAYOUT EVALUATION
+# _eval_layout LAYOUT_IDX FILES_NAMEREF WHS_NAMEREF
+#
+# For a given layout and batch, computes the greedy AR-optimal assignment of
+# files to slots (sort both by AR ascending, match i→i).  Sets _LAST_SCORE
+# and writes the ordered file list to $WORK_DIR/order_CIDX (one path per line)
+# so callers can read it safely even for filenames containing special chars.
+# =============================================================================
+_LAST_SCORE=0
+
+_eval_layout() {
+    local cidx="$1"
+    local -n _ev_files="$2"
+    local -n _ev_whs="$3"
+    local n="${#_ev_files[@]}"
+    local -a slots=( ${L_SLOTS[$cidx]} )
+
+    # Build awk input: "file_idx W H" per line, sort by AR ascending
+    local f_awk_in="" fi
+    for fi in "${!_ev_whs[@]}"; do
+        f_awk_in+="${fi} ${_ev_whs[$fi]}"$'\n'
+    done
+    local f_order
+    f_order=$(printf '%s' "$f_awk_in" | awk "$_awk_sort_by_ar") || true
+
+    # Sort slot indices by cell AR ascending
+    local s_awk_in="" si sw sh
+    for si in "${!slots[@]}"; do
+        IFS=':' read -r sw sh <<< "${slots[$si]}"
+        s_awk_in+="${si} ${sw} ${sh}"$'\n'
+    done
+    local s_order
+    s_order=$(printf '%s' "$s_awk_in" | awk "$_awk_sort_by_ar") || true
+
+    local -a fi_arr=( $f_order )
+    local -a si_arr=( $s_order )
+
+    # Build slot→file assignment and compute total fitness score
+    local -a assignment=()
+    local total_score=0 fw fh k
+    for k in "${!fi_arr[@]}"; do
+        fi="${fi_arr[$k]}"
+        si="${si_arr[$k]}"
+        assignment[$si]=$fi
+        read -r fw fh <<< "${_ev_whs[$fi]}"
+        IFS=':' read -r sw sh <<< "${slots[$si]}"
+        local sc; sc=$(ar_score "$fw" "$fh" "$sw" "$sh")
+        (( total_score += sc )) || true
+    done
+
+    _LAST_SCORE=$total_score
+
+    # Write ordered file list to a temp file (safe for any filename)
+    local order_file="$WORK_DIR/order_${cidx}"
+    : > "$order_file"
+    for si in $(seq 0 $((n-1))); do
+        printf '%s\n' "${_ev_files[${assignment[$si]}]}" >> "$order_file"
+    done
+}
+
+# =============================================================================
+# LAYOUT SELECTION
+# select_layout FILE [FILE ...]
+#
+# Evaluates every candidate layout for the given batch size, picks the one with
+# the highest total AR fitness score.  Ties are broken randomly (per spec §3).
+# Sets globals _BEST_LAYOUT_IDX and _BEST_FILE_ORDER.
+# =============================================================================
+_BEST_LAYOUT_IDX=0
+declare -a _BEST_FILE_ORDER=()
+
+select_layout() {
+    local -a _sl_files=("$@")
+    local n="${#_sl_files[@]}"
+
+    # Probe WxH for each file (|| true guards are inside probe_wh)
+    local -a _sl_whs=()
+    local f
+    for f in "${_sl_files[@]}"; do
+        _sl_whs+=("$(probe_wh "$f")")
+    done
+
+    # Collect candidate layout indices whose slot count matches N
+    local -a cands=()
+    local i
+    for i in "${!L_IDS[@]}"; do
+        local slots=( ${L_SLOTS[$i]} )
+        if (( ${#slots[@]} == n )); then
+            cands+=("$i")
+        fi
+    done
+
+    # Evaluate each candidate; track the best score and all tied winners
+    local best_score=-1
+    local -a top_cands=()
+    local cidx
+    for cidx in "${cands[@]}"; do
+        _eval_layout "$cidx" _sl_files _sl_whs
+        if (( _LAST_SCORE > best_score )); then
+            best_score=$_LAST_SCORE
+            top_cands=("$cidx")
+        elif (( _LAST_SCORE == best_score )); then
+            top_cands+=("$cidx")
+        fi
+    done
+
+    # Random selection among equally-scored layouts
+    local pick=$(( RANDOM % ${#top_cands[@]} ))
+    _BEST_LAYOUT_IDX="${top_cands[$pick]}"
+
+    # Re-run assignment for chosen layout if it was not the last one evaluated
+    local last_cand="${cands[-1]}"
+    if [[ "$_BEST_LAYOUT_IDX" != "$last_cand" ]]; then
+        _eval_layout "$_BEST_LAYOUT_IDX" _sl_files _sl_whs
+    fi
+
+    # Read ordered file list from temp file into global array
+    _BEST_FILE_ORDER=()
+    while IFS= read -r line; do
+        _BEST_FILE_ORDER+=("$line")
+    done < "$WORK_DIR/order_${_BEST_LAYOUT_IDX}"
+}
+
+# =============================================================================
+# BUILD FILTER_COMPLEX
+# Substitutes CELL0…CELL3 in the layout template with the actual cell_vf
+# strings for each slot's exact dimensions.
+# =============================================================================
+build_fc() {
+    local cidx="$1"; shift
+    local -a files=("$@")
+    local fc="${L_FC[$cidx]}"
+    local -a slots=( ${L_SLOTS[$cidx]} )
+    local i sw sh cvf
+    for i in "${!files[@]}"; do
+        IFS=':' read -r sw sh <<< "${slots[$i]}"
+        cvf="$(cell_vf "$sw" "$sh")"
+        fc="${fc//CELL${i}/$cvf}"
+    done
+    printf '%s' "$fc"
+}
+
+# =============================================================================
+# PROCESS BATCH
+# =============================================================================
+process_batch() {
+    local batch_num="$1"; shift
+    local -a files=("$@")
+    local n="${#files[@]}"
+    local output="composite_part${batch_num}.mp4"
+
+    log "--- Batch ${batch_num}: ${n} input(s) -> ${output} ---"
+
+    # Select best layout and optimal file-to-slot ordering
+    select_layout "${files[@]}"
+    local cidx="$_BEST_LAYOUT_IDX"
+    local -a ordered=("${_BEST_FILE_ORDER[@]}")
+    local -a slots=( ${L_SLOTS[$cidx]} )
+
+    log "  Layout : ${L_IDS[$cidx]}"
+    local i
+    for i in "${!ordered[@]}"; do
+        log "  Slot ${i}  [${slots[$i]}] <- $(basename "${ordered[$i]}")"
+    done
+
+    # ── Duration mode (random per batch) ──────────────────────────────────────
+    # Mode 0 (trim-to-shortest): every panel stops when the shortest ends.
+    # Mode 1 (loop-to-longest):  each panel loops independently until the
+    #                             longest clip's original duration is reached.
+    local dur_mode=$(( RANDOM % 2 ))
+    local -a ff_inputs=()
+    local -a dur_flags=()
+
+    if (( dur_mode == 0 )); then
+        log "  Duration: trim-to-shortest  (-shortest)"
+        for f in "${ordered[@]}"; do ff_inputs+=(-i "$f"); done
+        dur_flags=(-shortest)
+    else
+        log "  Duration: loop-to-longest"
+        # Probe every clip's original duration; find the maximum
+        local max_dur="0" d
+        for f in "${ordered[@]}"; do
+            d="$(probe_duration "$f")"
+            max_dur="$(awk -v a="$max_dur" -v b="$d" 'BEGIN{ printf "%.6f", (a+0>b+0)?a:b }')"
+        done
+        log "  Max duration: ${max_dur}s"
+        # -stream_loop -1 MUST precede each -i flag for the loop to take effect
+        for f in "${ordered[@]}"; do ff_inputs+=(-stream_loop -1 -i "$f"); done
+        # -t on the output trims to the original max duration after looping
+        dur_flags=(-t "$max_dur")
+    fi
+
+    # ── Assemble filter_complex ────────────────────────────────────────────────
+    local fc; fc="$(build_fc "$cidx" "${ordered[@]}")"
+
+    # ── Execute FFmpeg ─────────────────────────────────────────────────────────
+    # Notable flags (ref: ffmpeg_deep-research.pdf §H.264 Encoding Practices):
+    #   -profile:v high -level 4.0  H.264 High Profile; supports 1080p30.
+    #   -threads 0                  auto multicore (all available CPUs).
+    #   -max_muxing_queue_size 1024 prevents buffer overflow in complex graphs.
+    #   -r NORM_FPS                 enforce constant frame rate on output.
+    #   -b:a 192k -ac 2             stereo 192 kbps AAC; -ac 2 normalises
+    #                               mono/multichannel sources to stereo.
+    ffmpeg -hide_banner -y \
+        "${ff_inputs[@]}" \
+        -filter_complex "$fc" \
+        -map "[v]" \
+        -map "0:a?" \
+        -c:v libx264 \
+        -profile:v high \
+        -level:v 4.0 \
+        -pix_fmt yuv420p \
+        -crf 18 \
+        -preset medium \
+        -threads 0 \
+        -r "$NORM_FPS" \
+        -c:a aac \
+        -b:a 192k \
+        -ac 2 \
+        -max_muxing_queue_size 1024 \
+        -movflags +faststart \
+        "${dur_flags[@]}" \
+        "$output"
+
+    ok "Batch ${batch_num} complete -> ${output}"
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+if [[ $# -lt 1 ]]; then
+    printf 'Usage: %s FILE [FILE ...]\n' "$(basename "$0")" >&2
+    printf 'Composites all inputs onto a 1920x1080 canvas in random batches of 1-4.\n' >&2
+    exit 1
+fi
+
+# Validate all inputs up-front before any FFmpeg work begins (EAFP: let the
+# kernel report access failures rather than guessing)
+for _f in "$@"; do
+    [[ -f "$_f" && -r "$_f" ]] || die "File not found or not readable: $_f"
+done
+
+declare -a ALL_FILES=("$@")
+log "${#ALL_FILES[@]} input file(s) validated."
+
+# Shuffle the complete file list
+shuffle_files ALL_FILES
+log "Files shuffled. Processing in random batches of 1-4."
+
+# Main batching loop — random batch sizes, consuming all files
+batch_num=1
+idx=0
+total="${#ALL_FILES[@]}"
+
+while (( idx < total )); do
+    remaining=$(( total - idx ))
+    max_n=$(( remaining < 4 ? remaining : 4 ))
+    n=$(( (RANDOM % max_n) + 1 ))
+
+    batch=()
+    for (( j=0; j<n; j++, idx++ )); do
+        batch+=("${ALL_FILES[$idx]}")
+    done
+
+    process_batch "$batch_num" "${batch[@]}"
+    (( batch_num++ )) || true
+done
+
+log "Done. Generated $((batch_num - 1)) composite(s)."

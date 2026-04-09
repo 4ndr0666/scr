@@ -82,7 +82,7 @@ run_parallel_services() {
 
     log_success "Parallel services completed."
     touch "${XDG_CACHE_HOME}/.scr_dirty"
-    log_sucess "Path cache marked for re-indexing."
+    log_success "Path cache marked for re-indexing."
 }
 
 export_functions() {
