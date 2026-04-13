@@ -39,32 +39,36 @@ DOWNLOADS_DIR = os.path.join(XDG_DATA_HOME, "dorkmaster", "downloads")
 XDG_CACHE_HOME = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-
 DEFAULT_CONFIG = {
-    "private_searxng_url": "http://localhost:8080",
-    "use_private_searxng_first": True,
+    "use_private_searxng_first": False,           # Disabled by default
+    "private_searxng_url": "http://localhost:8080",  # Kept for manual override
     "telegram_mirror_enabled": False,
     "max_telegram_posts": 50,
     "clipboard_tool": "auto",
-    "default_target": "viki_veloxen",
+    "default_target": "ari_dugarte",
     "session_dir": os.path.expanduser("~/.local/share/dorkmaster/sessions/"),
     "downloads_dir": DOWNLOADS_DIR,
+    # Public SearxNG pool — curated from https://searx.space/ (high uptime April 2026)
     "searx_pool": [
         "https://searx.tiekoetter.com",
-        "https://searx.ninja",
-        "https://searx.org",
+        "https://searx.oloke.xyz",
+        "https://searx.namejeff.xyz",
+        "https://searx.party",
+        "https://search.rhscz.eu",
+        "https://search.bladerunn.in",
+        "https://searxng.website",
+        "https://search.serpensin.com",
+        "https://searx.ro",
+        "https://search.einfachzocken.eu",
         "https://searx.be",
-        "https://searx.ru",
         "https://searx.fmac.xyz",
         "https://searx.bar",
-        "https://search.bus-hit.me",
         "https://search.mdosch.de",
         "https://searx.mastodontech.de",
     ],
     "telegram_api_id": "",
     "telegram_api_hash": "",
 }
-
 
 def opsec_warning():
     console.print(
@@ -84,12 +88,9 @@ def ensure_config():
         os.makedirs(CONFIG_DIR, exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, indent=2)
-        console.print(
-            f"[bold green]Default config created at {CONFIG_FILE}[/bold green]"
-        )
-        console.print(
-            "[yellow]You can now edit settings via option 8 in the main menu[/yellow]"
-        )
+        console.print(f"[green]✓ Default config created at {CONFIG_FILE}[/bold green]")
+        console.print("[yellow]You can now edit settings via option 8 in the main menu[/yellow]")
+
 
 
 ensure_config()  # Auto-onboarding on first run
@@ -583,6 +584,7 @@ def telegram_megahunt(raw_query, max_posts=None):
 
 
 def run_searx(query, count=30):
+    """Unified SearxNG search with public pool priority + optional private instance"""
     params = {
         "q": query,
         "format": "json",
@@ -591,40 +593,47 @@ def run_searx(query, count=30):
     }
 
     with httpx.Client(timeout=20, follow_redirects=True) as client:
-        if config["use_private_searxng_first"]:
+        # Optional private instance (disabled by default)
+        if config.get("use_private_searxng_first", False):
             try:
-                private_url = config["private_searxng_url"]
+                private_url = config.get("private_searxng_url", "http://localhost:8080")
                 search_endpoint = urljoin(private_url.rstrip("/") + "/", "search")
                 resp = client.get(search_endpoint, params=params, timeout=15)
                 if resp.status_code == 200:
                     data = resp.json()
                     results = data.get("results", [])
                     if results:
-                        console.print(
-                            f"[bold green]Private SearxNG ({private_url}) – {len(results)} hits[/bold green]"
-                        )
+                        console.print(f"[bold green]Private SearxNG ({private_url}) — {len(results)} hits[/bold green]")
                         return results[:count]
             except Exception as e:
                 console.print(f"[yellow]Private SearxNG failed: {e}[/yellow]")
 
+        # Main public pool (randomized for better uptime and rate-limit dodging)
+        import random
         pool = config.get("searx_pool", [])
+        random.shuffle(pool)   # Rotate instances each run
+
         for base_url in pool:
             try:
                 search_endpoint = urljoin(base_url.rstrip("/") + "/", "search")
-                resp = client.get(search_endpoint, params=params)
+                resp = client.get(search_endpoint, params=params, timeout=15)
+                
                 if resp.status_code in (429, 503, 403):
                     continue
+                    
                 resp.raise_for_status()
-                results = resp.json().get("results", [])
+                data = resp.json()
+                results = data.get("results", [])
+                
                 if results:
+                    console.print(f"[green]✓ SearxNG ({base_url}) — {len(results)} results[/green]")
                     return results[:count]
             except Exception:
                 continue
 
-    console.print("[bold red]Public grid dead – deploying !MEGAHUNT[/bold red]")
-    return telegram_megahunt(query, count)
-
-
+    # No automatic fallback to Telegram/MEGAHUNT
+    console.print("[yellow]All SearxNG instances unreachable. No results returned.[/yellow]")
+    return []
 # ===== ANALYZER =====
 def analyze_target(url):
     if not validate_url(url):
