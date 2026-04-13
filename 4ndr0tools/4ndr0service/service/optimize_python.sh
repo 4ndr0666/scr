@@ -27,6 +27,10 @@ load_pyenv() {
 
 install_pyenv() {
     log_warn "Pyenv missing from $PYENV_ROOT. Initiating deployment..."
+    if ! command -v curl &>/dev/null; then
+        log_error "Dependency missing: curl. Pyenv deployment aborted."
+        return 1
+    fi
     curl https://pyenv.run | bash || handle_error "$LINENO" "Pyenv deployment failed."
     load_pyenv
 }
@@ -34,9 +38,14 @@ install_pyenv() {
 optimize_python_service() {
     log_info "Synchronizing Python Matrix..."
 
+    # 0. Dependency Pre-Flight
+    if ! command -v jq &>/dev/null; then
+        log_warn "Dependency missing: jq. Dynamic JSON parsing will be degraded."
+    fi
+
     # 1. Pyenv Bootstrap & Initial Shimming
     if ! load_pyenv; then
-        install_pyenv
+        install_pyenv || exit 1
     fi
 
     # 2. Ghost Link Idempotency (Phase 3 Sync)
@@ -55,9 +64,10 @@ optimize_python_service() {
     fi
 
     # 3. Version Enforcement & Baseline Alignment
-    # Reads from config.json, defaults to the 'Ascension' baseline 3.10.14
-    local target_ver
-    target_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
+    local target_ver="3.10.14" # Hardcoded fallback
+    if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
+        target_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
+    fi
     
     log_info "Ensuring Python $target_ver via Pyenv Hive..."
     pyenv install -s "$target_ver"
@@ -67,21 +77,36 @@ optimize_python_service() {
     # 4. Pipx Isolation & Tool Sync
     # We skip 'pipx ensurepath' to prevent interference with .zprofile static PATH
     if ! command -v pipx &>/dev/null; then
-        log_info "Bootstrapping Pipx into user-site..."
-        python3 -m pip install --user pipx || log_warn "Pipx bootstrap failed."
+        log_warn "Pipx absent. Executing PEP-668 compliant bootstrap..."
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm python-pipx
+        else
+            python3 -m pip install --user pipx || log_error "Failed to bypass PEP-668. Manual pipx install required."
+        fi
     fi
 
-    local -a py_tools
-    mapfile -t py_tools < <(jq -r '(.python_tools // [])[]' "$CONFIG_FILE")
-    for tool in "${py_tools[@]}"; do
-        if ! pipx list | grep -q "$tool"; then
-            log_info "Deploying tool to Hive sector: $tool"
-            pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
+    # 5. Dynamic Tool Injection Matrix
+    if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
+        local -a py_tools
+        # Suppress stderr to prevent pipefail crash on malformed JSON
+        mapfile -t py_tools < <(jq -r '(.python_tools // [])[]' "$CONFIG_FILE" 2>/dev/null || true)
+        
+        if [[ ${#py_tools[@]} -gt 0 ]]; then
+            for tool in "${py_tools[@]}"; do
+                if ! pipx list | grep -q "$tool"; then
+                    log_info "Deploying tool to Hive sector: $tool"
+                    pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
+                else
+                    log_info "Verifying tool integrity: $tool"
+                    pipx upgrade "$tool" >/dev/null 2>&1 || log_warn "Pipx upgrade failed for: $tool"
+                fi
+            done
         else
-            log_info "Verifying tool integrity: $tool"
-            pipx upgrade "$tool" || log_warn "Pipx upgrade failed for: $tool"
+            log_info "No Python tools specified in matrix config."
         fi
-    done
+    else
+        log_warn "Matrix config unavailable or jq missing. Skipping dynamic tool injection."
+    fi
 
     # 5. Global Hive Check (Phase 4 Sync)
     # Ensure the main venv exists for the 'py()' function override

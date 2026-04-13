@@ -6,6 +6,28 @@
 #   - Source of truth for XDG compliance.
 
 set -euo pipefail
+# ──────────────────────────────────────────────────────────────────────────────
+# [4NDR0666OS] AUTONOMIC MUTEX LOCK (USER-SCOPED)
+# Prevents systemd daemon race conditions while allowing multi-user isolation.
+# ──────────────────────────────────────────────────────────────────────────────
+if [[ -z "${_4NDR0_MUTEX_LOCKED:-}" ]]; then
+    # Scope the lockfile to the specific user executing the script
+    _LOCK_FILE="/tmp/4ndr0service_${EUID:-$(id -u)}.lock"
+    
+    # Check if we can write to it, otherwise attempt to clear a dead root lock
+    if [[ -e "$_LOCK_FILE" && ! -w "$_LOCK_FILE" ]]; then
+        echo -e "\033[38;5;196m[FATAL] Lockfile $_LOCK_FILE is owned by another user (likely root). Execute 'sudo rm $_LOCK_FILE' to clear the blockage.\033[0m" >&2
+        exit 1
+    fi
+
+    exec 200>"$_LOCK_FILE"
+    if ! flock -n 200; then
+        echo -e "\033[38;5;208m[WARN] Matrix is currently locked by an active process for UID ${EUID}. Aborting collision cycle.\033[0m" >&2
+        exit 1
+    fi
+    export _4NDR0_MUTEX_LOCKED=1
+fi
+
 IFS=$'\n\t'
 
 if [[ -n "${COMMON_SOURCED:-}" ]]; then
