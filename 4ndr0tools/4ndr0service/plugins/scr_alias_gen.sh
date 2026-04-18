@@ -21,6 +21,9 @@ plugin_scr_alias_gen() {
 
     local scr_root='/home/git/clone/4ndr0666/scr'
     local alias_file="${XDG_CACHE_HOME:-$HOME/.cache}/4ndr0service/tool_aliases.zsh"
+    
+    # 4NDR0-Filter: List of system commands that MUST NOT be aliased
+    local reserved=("cal" "gcal" "ncal" "cd" "ls" "git" "grep" "cat" "ps" "top" "kill")
 
     if [[ ! -d "$scr_root" ]]; then
         log_warn "SCR repository not found at $scr_root. Skipping alias generation."
@@ -46,6 +49,12 @@ plugin_scr_alias_gen() {
 
         # Skip hidden files
         [[ "$tool_name" =~ ^\..* ]] && continue
+        
+        # Collision Check
+        if [[ " ${reserved[*]} " =~ " ${tool_name} " ]]; then
+            log_warn "Collision: Skipping reserved command '$tool_name'"
+            continue
+        fi
 
         echo "alias ${tool_name}=\"${tool_path}\"" >> "$alias_file"
         ((count++))
