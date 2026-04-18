@@ -20,9 +20,22 @@ main_dialog() {
         return
     fi
 
+    # Shared script paths — declared once to avoid repeated path construction
+    local asc_script="$PKG_PATH/ascension.sh"
+    local purge_script="$PKG_PATH/purge_matrix.sh"
+
     while true; do
+        # FIX: list-height corrected from 16 to 15.
+        # Entries: items 1-14 + item 0 (Exit) = 15 visible rows.
+        # Previous value of 16 over-allocated and caused blank rows on terminals
+        # that did not have extra space, and clipped on smaller terminals.
+        #
+        # FIX: Renamed opaque internal terms to user-facing descriptions:
+        #   10 "Ascension Sync"   → "Sync Python Hive & Ghost Links"
+        #   11 "Inject Hive Tool" → "Install Isolated Python Tool"
+        #   12 "Purge Matrix"     → "Deep Clean: Remove Dead Artifacts"
         REPLY=$(dialog --stdout --title "4ndr0666OS | 4ndr0service" \
-            --menu "Main Menu: Operational Vectors" 25 65 16 \
+            --menu "Main Menu: Operational Vectors" 25 70 15 \
             1  "Go Optimization" \
             2  "Ruby Optimization" \
             3  "Cargo Optimization" \
@@ -32,9 +45,9 @@ main_dialog() {
             7  "Electron Optimization" \
             8  "Venv Optimization" \
             9  "Audit/Verification (Toggle Fix)" \
-            10 "Ascension Sync" \
-            11 "Inject Hive Tool" \
-            12 "Purge Matrix" \
+            10 "Sync Python Hive & Ghost Links" \
+            11 "Install Isolated Python Tool" \
+            12 "Deep Clean: Remove Dead Artifacts" \
             13 "File Management" \
             14 "Settings" \
             0  "Exit") || break
@@ -60,34 +73,38 @@ main_dialog() {
             run_verification
             ;;
         10)
-            local asc_script="$PKG_PATH/ascension.sh"
+            # Enforces Ghost Links, sanitizes the virtualenv hive, and audits
+            # the Python environment layout.
             if [[ -x "$asc_script" ]]; then
                 "$asc_script" --sync
             else
-                dialog --msgbox "ascension.sh not found at $asc_script" 6 50
+                dialog --msgbox "ascension.sh not found at $asc_script" 6 55
             fi
             ;;
         11)
+            # Installs a Python package into its own isolated virtualenv and
+            # creates a Ghost Link in ~/.local/bin for PATH access.
             local inject_tool
-            inject_tool=$(dialog --stdout --title "Inject Hive Tool" \
-                --inputbox "Enter tool name to inject into the Hive:" 8 50) || true
+            inject_tool=$(dialog --stdout \
+                --title "Install Isolated Python Tool" \
+                --inputbox "Package name to install into isolated Hive venv:" 8 55) || true
             if [[ -n "$inject_tool" ]]; then
-                local asc_script="$PKG_PATH/ascension.sh"
                 if [[ -x "$asc_script" ]]; then
                     "$asc_script" --inject "$inject_tool"
                 else
-                    dialog --msgbox "ascension.sh not found at $asc_script" 6 50
+                    dialog --msgbox "ascension.sh not found at $asc_script" 6 55
                 fi
             fi
             ;;
         12)
-            if dialog --title "Purge Matrix" \
-                      --yesno "Execute kinetic purge? This will liquidate dead artifacts and rebuild AUR orphans." 7 65; then
-                local purge_script="$PKG_PATH/purge_matrix.sh"
+            # Removes broken symlinks, stale virtualenv dirs, rebuilds AUR
+            # packages against the current Python runtime, clears __pycache__.
+            if dialog --title "Deep Clean: Remove Dead Artifacts" \
+                      --yesno "Proceed? This removes dead symlinks, stale venv dirs, and __pycache__ trees, then rebuilds AUR orphans." 8 65; then
                 if [[ -x "$purge_script" ]]; then
                     "$purge_script" --force
                 else
-                    dialog --msgbox "purge_matrix.sh not found at $purge_script" 6 50
+                    dialog --msgbox "purge_matrix.sh not found at $purge_script" 6 55
                 fi
             fi
             ;;

@@ -1,0 +1,11 @@
+[Unit]
+Description=4ndr0service Environment Maintenance Run
+Documentation=https://github.com/4ndr0666/4ndr0service
+After=network.target
+
+[Service]
+Type=oneshot
+# ExecStart is patched at install time by install_env_maintenance.sh
+ExecStart=/opt/4ndr0service/main.sh --fix --report
+StandardOutput=journal
+StandardError=journal

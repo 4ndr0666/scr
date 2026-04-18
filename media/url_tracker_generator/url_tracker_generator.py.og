@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-# url_tracker_generator.py — 4NDR0666OS v4.1 (Superset Absolute — Thumbnail Annihilation)
-# Full original visual dematerialization + outerHTML undo stack + glyph restored.
-# Zero regressions. Thumbnails surgically removed. bysevepoin /e/ only.
-
+# url_tracker_generator2.py
+# Takes a list of urls and outputs an html file to track visited links.
 import os
 import re
 import sys
 import glob
-import subprocess
 from html import unescape
 
 
@@ -18,10 +15,9 @@ def find_next_filename():
         base = os.path.basename(f)
         if base.startswith("url-tracker-") and base.endswith(".html"):
             try:
-                num_part = base[len("url-tracker-") : -5]
-                if num_part.isdigit():
-                    numbers.append(int(num_part))
-            except ValueError:
+                num = int(base[len("url-tracker-") : -5])
+                numbers.append(num)
+            except:
                 pass
     next_num = 1 if not numbers else max(numbers) + 1
     return f"url-tracker-{next_num}.html"
@@ -29,40 +25,35 @@ def find_next_filename():
 
 def select_file_with_fzf():
     try:
+        import subprocess
+
         result = subprocess.run(
-            ["fzf", "--height=20", "--border", "--prompt=Select Source > "],
-            capture_output=True,
-            text=True,
-            check=False,
+            ["fzf", "--height=20", "--border"], input="", capture_output=True, text=True
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-    except Exception:
+    except:
         pass
     return None
 
 
 def get_urls_from_input():
-    print("Ψ [4NDR0666OS] Select input method:")
-    print("    [1] Pick a file containing URLs (via fzf)")
-    print("    [2] Paste URLs or HTML directly (end with blank line or Ctrl+D)")
-    choice = input("Vector (1 or 2) [default: 2] > ").strip() or "2"
+    print("Ψ Select input method:")
+    print("   [1] Pick a file containing URLs")
+    print("   [2] Paste URLs directly (end with blank line or Ctrl+D)")
+    choice = input("Choose (1 or 2) [default: 2]: ").strip() or "2"
 
     raw_text = ""
     if choice == "1":
         filepath = select_file_with_fzf()
         if not filepath or not os.path.exists(filepath):
-            print("Ψ [!] No file selected or unreachable. Falling back to paste.")
+            print("No file selected or file not found. Falling back to paste.")
         else:
-            try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                    raw_text = f.read()
-                print(f"Ψ Loaded target: {filepath}")
-            except Exception as e:
-                print(f"Ψ [!] Read error: {e}")
-
-    if not raw_text:
-        print("\nΨ Paste content (Double-Enter or Ctrl+D to terminate):")
+            with open(filepath, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+            print(f"Loaded from: {filepath}")
+    else:
+        print("\nPaste URLs or HTML (multi-line OK). Finish with blank line or Ctrl+D:")
         lines = []
         while True:
             try:
@@ -75,69 +66,71 @@ def get_urls_from_input():
         raw_text = "\n".join(lines)
 
     if not raw_text.strip():
-        print("Ψ [!] Null input. Aborting.")
+        print("No input received. Exiting.")
         sys.exit(1)
 
-    return extract_all_urls(raw_text)
+    return extract_and_reconstruct_urls(raw_text)
 
 
-def extract_all_urls(text):
+def extract_and_reconstruct_urls(text):
     urls = set()
 
-    text = unescape(text)
-    text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
-    text = text.replace("\\/", "/")
+    # 1. Extract from HTML href attributes (handles escaped HTML entities)
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', text)
+    for h in hrefs:
+        h = unescape(h.strip())
+        if h.startswith(("http://", "https://")):
+            urls.add(h)
 
-    patterns = [
-        r'(?i)href=["\'](.*?)["\']',
-        r'(?i)src=["\'](.*?)["\']',
-        r'(?i)data-[a-z]+=["\'](.*?)["\']',
-        r'(https?://[^\s"\'<>`\\]+)',
-        r'((?:https?://|//)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+[^\s<>"\'\\]*)',
-    ]
+    # 2. Find any potential URL patterns in plain text
+    # Full URLs + domain/path fragments that look like streaming links
+    candidates = re.findall(
+        r'(https?://[^\s<>"\']+|(//)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+[^\s<>"\']*)',
+        text,
+    )
+    for candidate in candidates:
+        url = candidate[0] if candidate[0] else candidate[1]
+        url = url.strip()
 
-    for pat in patterns:
-        for match in re.findall(pat, text):
-            m = match[0] if isinstance(match, tuple) else match
-            m = str(m).strip().strip("\"'<>\\")
-            if not m:
-                continue
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith(("http://", "https://")):
+            pass
+        elif re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+", url):
+            # Common streaming path pattern without scheme/domain → prepend https://
+            url = "https://" + url
+        else:
+            continue  # skip garbage
 
-            lower_m = m.lower()
-            if "img-place.com" in lower_m and re.search(r"0000\.jpg", lower_m):
-                continue
-            if (
-                re.search(r"\.(jpg|jpeg|png|gif|webp|svg)(?:[?#]|$)", lower_m)
-                and "bysevepoin" not in lower_m
-            ):
-                continue
+        urls.add(url)
 
-            if m.startswith("//"):
-                m = "https:" + m
-            elif "bysevepoin.com" in lower_m and not m.startswith("http"):
-                m = "https://" + m.replace("https://", "").replace("http://", "")
-
-            if m.startswith(("http://", "https://")):
-                urls.add(m)
-
+    # 3. Clean numbered lists and re-scan
     cleaned = re.sub(r"^\d+\.\s*", "", text, flags=re.MULTILINE)
-    extra = re.findall(
-        r'(https?://[^\s<>"\'\\]+|(//)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+[^\s<>"\'\\]*)',
+    extra_candidates = re.findall(
+        r'(https?://[^\s<>"\']+|(//)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+[^\s<>"\']*)',
         cleaned,
     )
-    for match in extra:
-        m = match[0] if match[0] else match[1]
-        m = str(m).strip().strip("\"'<>\\")
-        if m and (m.startswith(("http://", "https://")) or m.startswith("//")):
-            if m.startswith("//"):
-                m = "https:" + m
-            if "img-place.com" in m.lower() and "0000.jpg" in m.lower():
-                continue
-            urls.add(m)
+    for candidate in extra_candidates:
+        url = candidate[0] if candidate[0] else candidate[1]
+        url = url.strip()
 
-    url_list = sorted(list(urls))
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith(("http://", "https://")):
+            pass
+        elif re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+", url):
+            url = "https://" + url
+        else:
+            continue
+
+        urls.add(url)
+
+    # Final validation: only keep proper http/https URLs
+    valid_urls = {u for u in urls if u.startswith(("http://", "https://"))}
+
+    url_list = sorted(list(valid_urls))
     print(
-        f"Ψ Reconstructed {len(url_list)} unique high-value /e/ vectors (thumbnails annihilated)."
+        f"Universal extraction complete: {len(url_list)} unique valid URLs reconstructed."
     )
     return url_list
 
@@ -146,9 +139,7 @@ def generate_html(urls, output_file):
     total_count = len(urls)
     links_html = ""
     for url in urls:
-        short = url.split("/")[-1] if "/" in url else url
-        if not short:
-            short = url
+        short = url.split("/")[-1]
         links_html += f'        <li data-url="{url}"><a href="{url}" target="_blank">{short}</a></li>\n'
 
     html_template = f"""<!DOCTYPE html>
@@ -166,6 +157,7 @@ def generate_html(urls, output_file):
             --accent-cyan: #15fafa;
             --accent-mid: #15adad;
             --text-primary: #e0ffff;
+            --text-secondary: #a0f0f0;
         }}
         body {{ background: var(--bg-dark); color: var(--text-primary); font-family: 'Roboto Mono', monospace; padding: 40px; text-align: center; margin: 0; min-height: 100vh; }}
         h1 {{ font-family: 'Cinzel Decorative', serif; font-size: 3rem; background: linear-gradient(to right, #15fafa, #15adad, #157d7d); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 20px; }}
@@ -195,7 +187,7 @@ def generate_html(urls, output_file):
       <text x="64" y="74" text-anchor="middle" dominant-baseline="middle" fill="#15fafa" font-size="56" font-weight="700" font-family="'Cinzel Decorative', serif">Ψ</text>
     </svg>
         <h1>Ψ URL TRACKER</h1>
-        <div class="counter" id="counter">Remaining: {total_count} / {total_count}</div>
+        <div class="counter">Remaining: {total_count} / {total_count}</div>
         <ul id="url-list">
 {links_html}        </ul>
         <div class="info">
@@ -213,7 +205,7 @@ def generate_html(urls, output_file):
         let totalCount = {total_count};
         let visibleCount = totalCount - visited.size;
         const ul = document.getElementById('url-list');
-        const counter = document.getElementById('counter');
+        const counter = document.querySelector('.counter');
 
         function saveVisited() {{ localStorage.setItem(STORAGE_KEY_VISITED, JSON.stringify([...visited])); }}
         function saveUndo() {{ localStorage.setItem(STORAGE_KEY_UNDO, JSON.stringify(undoStack)); }}
@@ -279,14 +271,10 @@ def generate_html(urls, output_file):
 
 
 if __name__ == "__main__":
-    try:
-        urls = get_urls_from_input()
-        if not urls:
-            print("No valid URLs found. Exiting.")
-            sys.exit(1)
-        output_file = find_next_filename()
-        generate_html(urls, output_file)
-        print("Undo Visited Links: Ctrl+Z")
-    except KeyboardInterrupt:
-        print("\nΨ [ABORTED] Session terminated by operative.")
-        sys.exit(130)
+    urls = get_urls_from_input()
+    if not urls:
+        print("No valid URLs found. Exiting.")
+        sys.exit(1)
+    output_file = find_next_filename()
+    generate_html(urls, output_file)
+    print("Undo Visited Links: Ctrl+Z")

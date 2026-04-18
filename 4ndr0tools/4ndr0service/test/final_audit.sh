@@ -16,20 +16,24 @@ for arg in "$@"; do
 done
 export FIX_MODE REPORT_MODE
 
-# Resolve PKG_PATH: this script lives at test/final_audit.sh, so ".." is the
-# project root where common.sh resides.
+# ── PATH RESOLUTION ───────────────────────────────────────────────────────────
+# FIX: Previous version used ${PKG_PATH:-$(dirname ...)} which short-circuits
+#      when PKG_PATH is already stale in the environment.  Always self-resolve
+#      unconditionally from BASH_SOURCE[0].  This script is at test/final_audit.sh
+#      so dirname x1 is the project root.
 _AUDIT_SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
-export PKG_PATH="${PKG_PATH:-$(dirname "$_AUDIT_SCRIPT_DIR")}"
+_COMPUTED_PKG_PATH="$(dirname "$_AUDIT_SCRIPT_DIR")"
+
+if [[ ! -f "$_COMPUTED_PKG_PATH/common.sh" ]]; then
+    echo "[FATAL] Cannot locate common.sh. Expected: $_COMPUTED_PKG_PATH/common.sh" >&2
+    exit 1
+fi
+
+export PKG_PATH="$_COMPUTED_PKG_PATH"
 
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 
-# FIX: Original exec-forked verify_environment.sh as a subprocess
-#      (`FIX_MODE="$FIX_MODE" "$verify_script"`). A forked subprocess inherits
-#      exported variables but NOT shell functions (log_info, handle_error, etc.)
-#      defined in the parent's sourced common.sh, so it crashed immediately.
-#      Correct approach: source the file so its functions land in the current
-#      shell, then call run_verification() directly.
 # shellcheck source=./src/verify_environment.sh
 source "$PKG_PATH/test/src/verify_environment.sh"
 
