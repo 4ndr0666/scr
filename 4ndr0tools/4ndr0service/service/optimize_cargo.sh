@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# File: service/optimize_cargo.sh
 # 4ndr0666OS: Hardened Rust/Cargo Optimization Service
 # - Integration: Rustup Hive + Cargo-Update Delta Sync
 # - Logic: Registry/Index Sanitization (Inode Recovery)
@@ -10,18 +11,18 @@ IFS=$'\n\t'
 # shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
-# ---[ PATH ALIGNMENT ]---
-# Runtimes = Data. Locked to Hive architecture.
 export CARGO_HOME="${XDG_DATA_HOME}/cargo"
 export RUSTUP_HOME="${XDG_DATA_HOME}/rustup"
 
 optimize_cargo_service() {
     log_info "Synchronizing Cargo Matrix..."
-    
+
     # 1. Rustup Infrastructure
     if ! command -v rustup &>/dev/null; then
         log_info "Rustup missing from Hive. Initiating deployment..."
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path || handle_error "$LINENO" "Rustup deployment failed."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --no-modify-path \
+            || handle_error "$LINENO" "Rustup deployment failed."
     fi
 
     # 2. Environment Activation
@@ -33,27 +34,29 @@ optimize_cargo_service() {
     log_info "Updating Toolchains & Purging Registry Index..."
     rustup update stable || log_warn "Toolchain update failed."
     rustup default stable &>/dev/null || true
-    
-    # Manual registry thinning (Absolute Zero Protocol)
-    rm -rf "${CARGO_HOME}/registry/index/*" 2>/dev/null
+
+    # FIX: Original used `rm -rf "${CARGO_HOME}/registry/index/*"` — the glob
+    #      was inside double-quotes so the shell never expanded it; rm received
+    #      a literal asterisk as the path argument, which is a no-op on any sane
+    #      filesystem.  The glob must be outside quotes for shell expansion.
+    # shellcheck disable=SC2086
+    rm -rf ${CARGO_HOME}/registry/index/* 2>/dev/null || true
 
     # 4. Cargo Tool Synchronization (Delta-Aware)
     local tools_json
     tools_json=$(jq -r '(.cargo_tools // [])[]' "$CONFIG_FILE")
     local -a c_tools
     mapfile -t c_tools <<< "$tools_json"
-    
-    if [[ ${#c_tools[@]} -gt 0 ]]; then
+
+    if [[ ${#c_tools[@]} -gt 0 && -n "${c_tools[0]}" ]]; then
         log_info "Synchronizing Cargo Tools..."
-        
-        # Check for cargo-update presence for efficient syncing
+
         local has_updater=false
-        if command -v cargo-install-update &>/dev/null; then
-            has_updater=true
-        fi
+        command -v cargo-install-update &>/dev/null && has_updater=true
 
         for tool in "${c_tools[@]}"; do
-            if ! cargo install --list | grep -q "^$tool "; then
+            [[ -z "$tool" ]] && continue
+            if ! cargo install --list | grep -q "^${tool} "; then
                 log_info "Deploying tool: $tool"
                 cargo install "$tool" || log_warn "Cargo failed to deploy: $tool"
             else
@@ -72,11 +75,10 @@ optimize_cargo_service() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
+# STANDALONE BOOTSTRAP
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ -z "${PKG_PATH:-}" ]]; then
-        # Capture physical location to find common.sh
         _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
         readonly _CURRENT_SVC_DIR
         PKG_PATH="$(dirname "$_CURRENT_SVC_DIR")"

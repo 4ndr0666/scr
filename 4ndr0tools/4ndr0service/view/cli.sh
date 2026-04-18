@@ -21,6 +21,9 @@ main_cli() {
         "Electron Optimization"
         "Venv Optimization"
         "Audit/Verification"
+        "Ascension Sync"
+        "Inject Hive Tool"
+        "Purge Matrix"
         "File Management"
         "Settings"
         "Exit"
@@ -28,24 +31,59 @@ main_cli() {
 
     select opt in "${options[@]}"; do
         case "$opt" in
-        "Go Optimization") optimize_go_service ;;
-        "Ruby Optimization") optimize_ruby_service ;;
-        "Cargo Optimization") optimize_cargo_service ;;
-        "Node.js Optimization") optimize_node_service ;;
-        "Meson Optimization") optimize_meson_service ;;
-        "Python Optimization") optimize_python_service ;;
+        "Go Optimization")       optimize_go_service ;;
+        "Ruby Optimization")     optimize_ruby_service ;;
+        "Cargo Optimization")    optimize_cargo_service ;;
+        "Node.js Optimization")  optimize_node_service ;;
+        "Meson Optimization")    optimize_meson_service ;;
+        "Python Optimization")   optimize_python_service ;;
         "Electron Optimization") optimize_electron_service ;;
-        "Venv Optimization") optimize_venv_service ;;
+        "Venv Optimization")     optimize_venv_service ;;
         "Audit/Verification")
             read -rp "Run audit in fix mode? (y/N): " fix_choice
             if [[ "${fix_choice,,}" == "y" ]]; then
-                FIX_MODE="true" run_verification
+                export FIX_MODE="true"
             else
-                FIX_MODE="false" run_verification
+                export FIX_MODE="false"
+            fi
+            run_verification
+            ;;
+        "Ascension Sync")
+            local asc_script="$PKG_PATH/ascension.sh"
+            if [[ -x "$asc_script" ]]; then
+                "$asc_script" --sync
+            else
+                log_warn "ascension.sh not found at $asc_script"
+            fi
+            ;;
+        "Inject Hive Tool")
+            read -rp "Tool name to inject into Hive: " inject_tool
+            if [[ -n "$inject_tool" ]]; then
+                local asc_script="$PKG_PATH/ascension.sh"
+                if [[ -x "$asc_script" ]]; then
+                    "$asc_script" --inject "$inject_tool"
+                else
+                    log_warn "ascension.sh not found at $asc_script"
+                fi
+            else
+                log_warn "No tool name provided."
+            fi
+            ;;
+        "Purge Matrix")
+            read -rp "Execute kinetic purge? This will liquidate dead artifacts. (y/N): " purge_choice
+            if [[ "${purge_choice,,}" == "y" ]]; then
+                local purge_script="$PKG_PATH/purge_matrix.sh"
+                if [[ -x "$purge_script" ]]; then
+                    "$purge_script" --force
+                else
+                    log_warn "purge_matrix.sh not found at $purge_script"
+                fi
+            else
+                log_info "Purge aborted."
             fi
             ;;
         "File Management") manage_files_main ;;
-        "Settings") modify_settings ;;
+        "Settings")        modify_settings ;;
         "Exit")
             log_info "Goodbye!"
             exit 0
@@ -56,25 +94,21 @@ main_cli() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
+# STANDALONE BOOTSTRAP
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ -z "${PKG_PATH:-}" ]]; then
-        # Declare then assign to capture potential readlink/dirname failures
         _CURRENT_VIEW_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
         readonly _CURRENT_VIEW_DIR
-        
         PKG_PATH="$(dirname "$_CURRENT_VIEW_DIR")"
         export PKG_PATH
     fi
 
-    # Source dependencies with null-check for linter
     # shellcheck source=/dev/null
     source "$PKG_PATH/common.sh"
     # shellcheck source=/dev/null
     source "$PKG_PATH/controller.sh"
 
-    # Execute entry point
     if declare -f main_cli >/dev/null; then
         main_cli
     fi

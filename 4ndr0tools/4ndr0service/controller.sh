@@ -18,15 +18,32 @@ PLUGINS_DIR="${PLUGINS_DIR:-"$PKG_PATH/plugins"}"
 USER_INTERFACE="${USER_INTERFACE:-cli}"
 
 load_plugins() {
-    if [[ -d "$PLUGINS_DIR" ]]; then
-        for plugin in "$PLUGINS_DIR"/*.sh; do
-            if [[ -f "$plugin" ]]; then
-                # shellcheck disable=SC1090
-                source "$plugin" || log_warn "Failed to load plugin: $plugin"
-                log_info "Loaded plugin: $(basename "$plugin")"
-            fi
-        done
+    if [[ ! -d "$PLUGINS_DIR" ]]; then
+        return 0
     fi
+
+    for plugin in "$PLUGINS_DIR"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+
+        # Unset PLUGIN_REGISTER before sourcing so a plugin that omits it
+        # does not accidentally inherit a previous plugin's value.
+        unset PLUGIN_REGISTER
+
+        # shellcheck disable=SC1090
+        if source "$plugin"; then
+            log_info "Loaded plugin: $(basename "$plugin")"
+            # FIX: After sourcing, invoke the plugin's registered entry point
+            #      if it declared one.  This is the convention that converts
+            #      plugin_scr_alias_gen (and any future plugin) from dead code
+            #      into an automatically executed service.
+            if [[ -n "${PLUGIN_REGISTER:-}" ]] && declare -f "${PLUGIN_REGISTER}" >/dev/null 2>&1; then
+                log_info "Executing plugin entry point: ${PLUGIN_REGISTER}"
+                "${PLUGIN_REGISTER}" || log_warn "Plugin ${PLUGIN_REGISTER} returned non-zero."
+            fi
+        else
+            log_warn "Failed to load plugin: $plugin"
+        fi
+    done
 }
 
 source_all_services() {
@@ -53,18 +70,17 @@ source_views() {
     fi
 }
 
-# Proposed dynamic service execution
 run_all_services() {
     log_info "Running all services in sequence..."
     source_all_services
 
-    # Dynamically find all functions matching the optimization pattern
     local -a services
     mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$')
 
     for svc in "${services[@]}"; do
-        $svc || log_warn "$svc failed."
+        "$svc" || log_warn "$svc failed."
     done
+
     log_success "All services sequence complete."
     touch "${XDG_CACHE_HOME}/.scr_dirty"
     log_success "Path cache marked for re-indexing."
@@ -74,7 +90,6 @@ run_parallel_services() {
     log_info "Running services in parallel..."
     source_all_services
 
-    # Selecting core services for parallel execution as in stable
     run_parallel_checks \
         "optimize_go_service" \
         "optimize_ruby_service" \

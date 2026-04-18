@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# File: service/optimize_node.sh
 # 4ndr0666OS: Hardened Node.js/NVM Optimization Service
 # - Integration: NVM + Corepack + NPM Global Sync
 # - Alignment: Unified XDG_DATA_HOME for Runtimes
@@ -10,8 +11,6 @@ IFS=$'\n\t'
 # shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
-# ---[ PATH ALIGNMENT ]---
-# Unifying NVM to DATA_HOME (Runtimes = Data)
 export NVM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvm"
 
 load_nvm() {
@@ -26,11 +25,12 @@ load_nvm() {
 install_nvm() {
     log_info "NVM not found. Deploying to $NVM_DIR..."
     ensure_dir "$NVM_DIR"
-    
+
     local latest_nvm
     latest_nvm=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
-    
-    curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${latest_nvm}/install.sh" | bash || handle_error "$LINENO" "NVM install failed."
+
+    curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${latest_nvm}/install.sh" \
+        | bash || handle_error "$LINENO" "NVM install failed."
     load_nvm || handle_error "$LINENO" "Failed to load NVM after bootstrap."
 }
 
@@ -53,29 +53,40 @@ optimize_node_service() {
 
     # 3. Surgical Liquidation (Sanitization)
     log_info "Pruning Toolchain Artifacts..."
-    
-    # Prune Corepack Artifacts (Solves MODULE_NOT_FOUND schisms)
-    rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/node/corepack" 2>/dev/null
-    
-    # Prune NPX binary cache (Artifact Liquidation)
-    rm -rf "$HOME/.npm/_npx" 2>/dev/null
-    
+    rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/node/corepack" 2>/dev/null || true
+    rm -rf "$HOME/.npm/_npx" 2>/dev/null || true
+
+    # Enable corepack shims BEFORE syncing global tools so that yarn/pnpm
+    # binaries managed by corepack are in place before npm sees them.
     if command -v corepack &>/dev/null; then
         corepack enable
         log_info "Corepack shims refreshed."
     fi
 
     # 4. Global Tool Synchronization
+    # FIX: The original check used `npm list -g --depth=0 "$tool"` to decide
+    # between install and update.  This fails for yarn and pnpm when they are
+    # managed by corepack: corepack places its own shims at the NVM bin path,
+    # so `npm list -g` reports them as absent (npm didn't install them), causing
+    # the branch to fall to `npm install -g` which then collides with the
+    # existing corepack binary and emits EEXIST.
+    #
+    # Correct strategy:
+    #   a) If the binary already exists anywhere on PATH → update only (no install).
+    #   b) If it does not exist at all → install via npm.
+    # This is safe for both npm-managed and corepack-managed packages because
+    # `npm update -g` is idempotent and does not re-create existing shims.
     local -a global_tools
     mapfile -t global_tools < <(jq -r '(.npm_global_packages // [])[]' "$CONFIG_FILE")
 
     for tool in "${global_tools[@]}"; do
-        if ! npm list -g --depth=0 "$tool" &>/dev/null; then
-            log_info "Isolated Deployment: $tool"
-            npm install -g "$tool" || log_warn "NPM failed to deploy: $tool"
-        else
+        [[ -z "$tool" ]] && continue
+        if command -v "$tool" &>/dev/null || npm list -g --depth=0 "$tool" &>/dev/null; then
             log_info "Syncing tool state: $tool"
             npm update -g "$tool" || log_warn "NPM sync failed: $tool"
+        else
+            log_info "Isolated Deployment: $tool"
+            npm install -g "$tool" || log_warn "NPM failed to deploy: $tool"
         fi
     done
 
@@ -89,11 +100,10 @@ optimize_node_service() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
+# STANDALONE BOOTSTRAP
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ -z "${PKG_PATH:-}" ]]; then
-        # Capture physical location to find common.sh
         _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
         readonly _CURRENT_SVC_DIR
         PKG_PATH="$(dirname "$_CURRENT_SVC_DIR")"

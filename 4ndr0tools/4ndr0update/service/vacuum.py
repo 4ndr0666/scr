@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-File: Vacuum.py
+File: vacuum.py
 Author: 4ndr0666
 Date: 12-13-24
 Desc: Arch Linux Maintenance Script
@@ -31,7 +31,6 @@ XDG_DATA_HOME = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/sha
 LOG_BASE_DIR = os.path.join(XDG_DATA_HOME, "logs")
 os.makedirs(LOG_BASE_DIR, exist_ok=True)
 
-# Instead of system_maintenance subfolder, logs now go under LOG_BASE_DIR
 log_file_path = os.path.join(
     LOG_BASE_DIR,
     datetime.datetime.now().strftime("%Y%m%d_%H%M%S_system_maintenance.log"),
@@ -59,7 +58,7 @@ def spinning_spinner(symbols=DEFAULT_SPINNER_STYLE, speed=0.1):
     """
     A context manager that manages a console spinner to indicate progress.
     The spinner automatically stops when the context is exited.
-    IMPORTANT: Only use this when there's no user input prompt expected.
+    IMPORTANT: Only use this when there is no user input prompt expected.
     """
     spinner_running = threading.Event()
     spinner_running.set()
@@ -94,16 +93,12 @@ WARNING = "⚠️"
 
 
 def format_message(message, color):
-    """
-    Format a message with the given color and bold text.
-    """
+    """Format a message with the given color and bold text."""
     return f"{BOLD}{color}{message}{NC}"
 
 
 def log_and_print(message, level="info"):
-    """
-    Print and log a message at the specified log level.
-    """
+    """Print and log a message at the specified log level."""
     print(message)
     if level == "info":
         logging.info(message)
@@ -119,16 +114,20 @@ def execute_command(command, error_message=None):
     """
     Execute a shell command and log the output or error.
     Returns (True, stdout) on success, (False, stderr or error message) on failure.
+
+    FIX: Original returned (False, stderr) whenever result.stderr was non-empty,
+    even on rc=0. Many standard tools (pacman, find, pacman -Qi) write informational
+    text to stderr on success. The returncode is the authoritative success signal;
+    stderr is now logged as a warning rather than treated as a failure indicator.
     """
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         logging.info(result.stdout)
         if result.stderr:
-            logging.error(result.stderr)
-            return False, result.stderr.strip()
+            logging.warning(result.stderr)
         return True, result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        stderr = e.stderr.strip() if e.stderr else e.output.strip()
+        stderr = e.stderr.strip() if e.stderr else (e.output.strip() if e.output else "")
         log_message = error_message or f"Command '{e.cmd}' failed with error: {stderr}"
         log_and_print(format_message(log_message, RED), "error")
         return False, log_message
@@ -146,7 +145,6 @@ def prompt_with_timeout(
     If persistent=True, it won't time out and will wait until user response.
     """
     if persistent:
-        # Keep asking until valid input is provided
         while True:
             user_input = input(prompt).strip()
             if user_input:
@@ -154,7 +152,6 @@ def prompt_with_timeout(
             else:
                 log_and_print(f"{INFO} Input is required. Please respond.", "info")
     else:
-        # Original approach with select.select for timeout
         sys.stdout.write(prompt)
         sys.stdout.flush()
         try:
@@ -173,19 +170,17 @@ def prompt_with_timeout(
 
 
 ###################################
-# 1. process_dep_scan_log (IMPROVED)
+# 1. process_dep_scan_log
 ###################################
 
 
 def process_dep_scan_log():
     """
-    Reads a structured log (JSON lines) from $XDG_DATA_HOME/logs/dependency_scan.jsonl
-    or /home/andro/.local/share/logs/dependency_scan.jsonl. Fixes permission warnings
-    and installs missing dependencies in a single pass.
+    Reads a structured log (JSON lines) from $XDG_DATA_HOME/logs/dependency_scan.jsonl.
+    Fixes permission warnings and installs missing dependencies in a single pass.
     """
     log_and_print(f"{INFO} Processing dependency scan log (JSONL) ...", "info")
 
-    # We'll look for 'dependency_scan.jsonl' in LOG_BASE_DIR
     dep_scan_jsonl = os.path.join(LOG_BASE_DIR, "dependency_scan.jsonl")
     if not os.path.isfile(dep_scan_jsonl):
         log_and_print(
@@ -194,7 +189,6 @@ def process_dep_scan_log():
         )
         return
 
-    # We'll store files needing permission fixes, and missing dependencies in a single pass
     permission_fixes = []
     missing_deps = []
 
@@ -217,11 +211,9 @@ def process_dep_scan_log():
                             f"Unrecognized log line (not valid JSON): {line.strip()}"
                         )
 
-            # Now handle each category
             for file_path in set(permission_fixes):
-                fix_permissions(file_path)  # uses improved fix_permissions
+                fix_permissions(file_path)
 
-            # We'll do a batch install for missing dependencies
             if missing_deps:
                 log_and_print(
                     f"{INFO} Installing missing dependencies in batch: {missing_deps}",
@@ -236,8 +228,27 @@ def process_dep_scan_log():
 
 
 ##########################################################
-# 2. fix_permissions(file_path) WITH All 3 IMPROVEMENTS
+# 2. fix_permissions
 ##########################################################
+
+
+def _get_current_user():
+    """
+    Resolve the effective owner username safely across tty and non-tty contexts.
+
+    FIX: os.getlogin() raises OSError when there is no controlling terminal
+    (cron, systemd service, sudo without tty). Use pwd.getpwuid(os.getuid())
+    as the authoritative fallback — it works in all execution contexts.
+    """
+    import pwd
+    # If running under sudo, prefer the original user for ownership assignment.
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        return sudo_user
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except (KeyError, OSError):
+        return str(os.getuid())
 
 
 def fix_permissions(
@@ -245,26 +256,15 @@ def fix_permissions(
 ):
     """
     Fix the permissions for the given file or directory with possible recursion and ownership checks.
-    :param file_path: Path to file or directory
-    :param file_mode: Optional numeric mode for files, e.g. 0o644
-    :param dir_mode: Optional numeric mode for directories, e.g. 0o755
-    :param owner: Owner username
-    :param group: Group name
-    :param recursive: If True, recursively fix directory contents
     """
     default_file_mode = 0o644
     default_dir_mode = 0o755
     file_mode = file_mode if file_mode else default_file_mode
     dir_mode = dir_mode if dir_mode else default_dir_mode
 
-    owner = owner if owner else os.getlogin()
-    group = group if group else os.getlogin()
-
-    # If running with sudo, and SUDO_USER is set, use SUDO_USER for ownership
-    if os.geteuid() == 0 and "SUDO_USER" in os.environ:
-        sudo_user = os.environ["SUDO_USER"]
-        owner = owner if owner else sudo_user
-        group = group if group else sudo_user
+    current_user = _get_current_user()
+    owner = owner if owner else current_user
+    group = group if group else current_user
 
     try:
         if os.path.isfile(file_path):
@@ -277,7 +277,6 @@ def fix_permissions(
             log_and_print(
                 f"{INFO} Fixed permissions for directory: {file_path}", "info"
             )
-
             if recursive:
                 for root, dirs, files in os.walk(file_path):
                     for d in dirs:
@@ -298,23 +297,20 @@ def fix_permissions(
 
 
 #####################################################
-# 3. install_missing_dependency() => batch approach
+# 3. install_missing_dependency — batch approach
 #####################################################
 
 
 def install_missing_dependency_batch(dependencies):
     """
     Batch install missing dependencies using pacman.
-    :param dependencies: List of missing dependencies
     """
     log_and_print(
         f"{INFO} Attempting to install these missing dependencies: {dependencies}",
         "info",
     )
-    # We'll do a single pacman call if possible
     to_install = []
     for dep in dependencies:
-        # Check if dep is installed
         success, _ = execute_command(["pacman", "-Qi", dep])
         if success:
             log_and_print(f"{INFO} Dependency {dep} is already installed.", "info")
@@ -322,7 +318,6 @@ def install_missing_dependency_batch(dependencies):
             to_install.append(dep)
 
     if to_install:
-        # Single bulk install
         success, result_output = execute_command(
             ["sudo", "pacman", "-Sy", "--noconfirm"] + to_install
         )
@@ -341,36 +336,34 @@ def install_missing_dependency_batch(dependencies):
 
 
 def install_missing_dependency(dependency):
-    """
-    Kept for backward-compat; calls the new batch approach for a single dep
-    """
+    """Kept for backward-compat; delegates to the batch approach."""
     install_missing_dependency_batch([dependency])
 
 
 ##################################
-# 4. manage_cron_job (FIX or #1)
+# 4. manage_cron_job
 ##################################
 
 
 def manage_cron_job():
     """
-    Manage system cron jobs, display existing crontab entries and show any failed cron logs.
-    Then allow addition or deletion of jobs.
+    Manage system cron jobs: display existing entries, show failed cron logs,
+    then allow addition or deletion of jobs.
+
+    FIX: journalctl -u cron changed to -u cronie, which is the correct systemd
+    unit name for the cronie daemon on Arch Linux. 'cron' as a unit name matches
+    nothing on a standard Arch installation, causing silent empty results.
     """
     log_and_print(f"{INFO} Managing system cron jobs...", "info")
 
-    # 1) Show existing cronjobs
     existing_crons = []
     try:
         result = subprocess.run(
             ["sudo", "crontab", "-l"], capture_output=True, text=True, check=True
         )
         raw_crons = result.stdout.strip().split("\n")
-        if raw_crons == [""]:
-            raw_crons = []
-        existing_crons = raw_crons
+        existing_crons = [c for c in raw_crons if c]
     except subprocess.CalledProcessError as e:
-        # If crontab is empty or user has no crontab, the process might fail
         if e.returncode == 1 and "no crontab for" in e.stderr.lower():
             existing_crons = []
         else:
@@ -385,10 +378,10 @@ def manage_cron_job():
     else:
         log_and_print(f"{INFO} No existing cron jobs found.", "info")
 
-    # 2) Show any failed cron jobs from last 24 hours
+    # FIX: Use 'cronie' — the correct Arch Linux systemd unit name for cronie.
     try:
         cron_logs = subprocess.check_output(
-            ["journalctl", "-u", "cron", "--since", "24 hours ago"],
+            ["journalctl", "-u", "cronie", "--since", "24 hours ago"],
             text=True,
             stderr=subprocess.DEVNULL,
         )
@@ -408,7 +401,6 @@ def manage_cron_job():
             f"{INFO} No failed cron jobs detected or logs not accessible.", "info"
         )
 
-    # 3) Prompt user for add/delete/skip
     choice = prompt_with_timeout(
         "Do you want to (a)dd a new cron job or (d)elete an existing one? (a/d/skip): ",
         persistent=True,
@@ -450,9 +442,7 @@ def manage_cron_job():
 
 
 def update_cron_jobs(new_crons):
-    """
-    Update the system cron jobs with the new entries.
-    """
+    """Update the system cron jobs with the new entries."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_file:
         temp_file.write(new_crons)
         temp_file_path = temp_file.name
@@ -466,17 +456,16 @@ def update_cron_jobs(new_crons):
 
 
 ##########################
-# 5. remove_broken_symlinks()
+# 5. remove_broken_symlinks
 ##########################
 
 
 def remove_broken_symlinks():
     """
-    Finds and removes broken symbolic links in the user's home directory (or system-wide if desired).
-    Implementation: Bulk listing, persistent prompt to confirm deletion once for all.
+    Finds and removes broken symbolic links system-wide.
+    Bulk listing with a single persistent confirmation prompt.
     """
     log_and_print(f"{INFO} Searching for broken symbolic links...", "info")
-    # If you want system-wide, change path below to "/"
     search_path = "/"
     broken_links = []
 
@@ -489,10 +478,9 @@ def remove_broken_symlinks():
             text=True,
             check=True,
         )
-        broken_links = result.stdout.strip().split("\n") if result.stdout else []
-
-        # Filter empty strings
-        broken_links = [link for link in broken_links if link.strip()]
+        broken_links = [
+            lnk for lnk in result.stdout.strip().split("\n") if lnk.strip()
+        ]
 
         if not broken_links:
             log_and_print(f"{SUCCESS} No broken symbolic links found.", "info")
@@ -504,7 +492,6 @@ def remove_broken_symlinks():
         for link in broken_links:
             print(link)
 
-        # persistent prompt - no timer
         confirm = prompt_with_timeout(
             "Do you want to remove these broken symbolic links? [y/N]: ",
             persistent=True,
@@ -533,18 +520,18 @@ def remove_broken_symlinks():
 
 
 ###############################################
-# 6. clean_old_kernels() - Thorough analysis
+# 6. clean_old_kernels
 ###############################################
 
 
 def clean_old_kernels():
     """
-    Clean old kernel versions not in use. Retains currently running kernel and removes others via pacman if traceable.
+    Clean old kernel versions not in use. Retains the currently running kernel
+    and removes others via pacman if traceable.
     """
     log_and_print(f"{INFO} Scanning for old kernel modules to clean...", "info")
     current_kernel = os.uname().release
     modules_path = "/usr/lib/modules"
-    old_versions = []
 
     if not os.path.isdir(modules_path):
         log_and_print(f"{FAILURE} Modules directory not found: {modules_path}", "error")
@@ -580,7 +567,6 @@ def clean_old_kernels():
             for version in old_versions:
                 module_path = os.path.join(modules_path, version)
                 try:
-                    # Try to find owning package
                     result = subprocess.run(
                         ["pacman", "-Qo", module_path],
                         capture_output=True,
@@ -630,14 +616,12 @@ def clean_old_kernels():
 
 
 ################################
-# 7. vacuum_journalctl() (Improvement #1)
+# 7. vacuum_journalctl
 ################################
 
 
 def vacuum_journalctl(retention="1d"):
-    """
-    Vacuum journalctl logs older than 'retention' (default '1d'), providing detailed output.
-    """
+    """Vacuum journalctl logs older than 'retention' (default '1d')."""
     log_and_print(f"{INFO} Vacuuming journalctl logs older than {retention}...", "info")
     with spinning_spinner():
         try:
@@ -659,28 +643,27 @@ def vacuum_journalctl(retention="1d"):
 
 
 ######################################
-# 8. clear_cache() => unify with clean_package_cache
+# 8. clear_cache
 ######################################
 
 
 def clear_cache():
     """
-    DEPRECATED: merged with clean_package_cache()
-    We'll keep a minimal stub or call clean_package_cache() directly
+    Unified with clean_package_cache(). Retained in the menu (option 6) as a
+    named shortcut; delegates entirely to clean_package_cache().
+    Note: 'DEPRECATED' label removed — the function is live and operational.
     """
     log_and_print(f"{INFO} Clearing user package cache (unified) ...", "info")
     clean_package_cache()
 
 
 ##############################
-# 9. update_font_cache() - Keep default
+# 9. update_font_cache
 ##############################
 
 
 def update_font_cache():
-    """
-    Update the font cache, logging success or failure.
-    """
+    """Update the font cache, logging success or failure."""
     log_and_print(f"{INFO} Updating font cache...", "info")
     with spinning_spinner():
         try:
@@ -702,14 +685,14 @@ def update_font_cache():
 
 
 ##########################
-# 10. clear_trash() => system-wide
+# 10. clear_trash
 ##########################
 
 
 def clear_trash():
     """
     Clear trash for all users if possible.
-    We'll enumerate all known trash directories under /home/*/.local/share/Trash, plus root's /root/.local/share/Trash if it exists.
+    Enumerates /home/*/.local/share/Trash and /root/.local/share/Trash.
     """
     trash_dirs = []
     home_base = "/home"
@@ -718,7 +701,6 @@ def clear_trash():
             user_trash = os.path.join(home_base, username, ".local/share/Trash")
             if os.path.exists(user_trash):
                 trash_dirs.append(user_trash)
-    # Also check root's trash
     root_trash = "/root/.local/share/Trash"
     if os.path.exists(root_trash):
         trash_dirs.append(root_trash)
@@ -745,14 +727,14 @@ def clear_trash():
 
 
 ###############################
-# 11. optimize_databases() => Improvement #3
+# 11. optimize_databases
 ###############################
 
 
 def optimize_databases(skips=None):
     """
     Optimize system databases, logging success or failure for each step.
-    :param skips: optional list of steps to skip, e.g. ["mlocate","pkgfile","pacman-db","pacman-key","sync"]
+    :param skips: optional list of step IDs to skip
     """
     if not skips:
         skips = []
@@ -776,63 +758,54 @@ def optimize_databases(skips=None):
                 "Failed to update mlocate database",
                 skip_id="mlocate",
             )
-
             run_command(
                 ["sudo", "pkgfile", "-u"],
                 "pkgfile database updated.",
                 "Failed to update pkgfile database",
                 skip_id="pkgfile",
             )
-
             run_command(
                 ["sudo", "pacman-db-upgrade"],
                 "pacman database upgraded.",
                 "Failed to upgrade pacman database",
                 skip_id="pacman-db",
             )
-
             run_command(
                 ["sudo", "pacman", "-Sc", "--noconfirm"],
                 "Package cache cleaned.",
                 "Failed to clean package cache",
                 skip_id="pacman-cache",
             )
-
             run_command(
                 ["sync"],
                 "Filesystem changes synced.",
                 "Failed to sync filesystem changes",
                 skip_id="sync",
             )
-
             run_command(
                 ["sudo", "pacman-key", "--refresh-keys"],
                 "Keys refreshed.",
                 "Failed to refresh keys",
                 skip_id="pacman-key",
             )
-
             run_command(
                 ["sudo", "pacman-key", "--populate"],
                 "Keys populated.",
                 "Failed to populate keys",
                 skip_id="pacman-key",
             )
-
             run_command(
                 ["sudo", "pacman-key", "--updatedb"],
                 "Trust database updated.",
                 "Failed to update trust database",
                 skip_id="pacman-key",
             )
-
             run_command(
                 ["sudo", "pacman", "-Syy"],
                 "Package list refreshed.",
                 "Failed to refresh package list",
                 skip_id="pacman-sync",
             )
-
             log_and_print(f"{SUCCESS} System databases optimized.", "info")
         except Exception as e:
             log_and_print(
@@ -842,7 +815,7 @@ def optimize_databases(skips=None):
 
 
 ############################
-# 12. clean_package_cache() => Improvement #2
+# 12. clean_package_cache
 ############################
 
 
@@ -861,11 +834,7 @@ def clean_package_cache(retain_versions=2):
                 timeout=15,
                 default="Y",
             )
-            if confirm:
-                confirm = confirm.strip().lower()
-            else:
-                confirm = "y"
-
+            confirm = (confirm or "y").strip().lower()
             if confirm != "y":
                 log_and_print(f"{INFO} Package cache cleaning aborted by user.", "info")
                 return
@@ -876,7 +845,6 @@ def clean_package_cache(retain_versions=2):
             )
 
         cache_dir = "/var/cache/pacman/pkg/"
-        # remove .aria2 or partial files
         temp_files = [
             f
             for f in os.listdir(cache_dir)
@@ -907,20 +875,28 @@ def clean_package_cache(retain_versions=2):
 
 
 ##############################
-# 13. clean_aur_dir() => Impr. #1 & #3
+# 13. clean_aur_dir
 ##############################
 
 
 def clean_aur_dir(aur_dir=None):
     """
     Clean the AUR directory, deleting only uninstalled or old versions of packages.
-    Improvement #1: Directory is now configurable.
-    Improvement #3: Also remove old source directories if they differ from installed versions.
+    Also removes old source directories if they differ from installed versions.
+
+    FIX: Original used os.chdir(aur_dir) which is a process-global side effect —
+    every subsequent function that relies on CWD would see the wrong directory.
+    Replaced with os.listdir(aur_dir) and explicit absolute paths throughout.
+
+    FIX: Default path had a double slash ('/home/andro/.local/cache/yay//').
+    Corrected to single slash and normalised with os.path.normpath().
     """
     log_and_print(f"{INFO} Cleaning AUR directory...", "info")
     if not aur_dir:
-        # default
-        aur_dir = os.path.expanduser("/home/andro/.local/cache/yay//")
+        aur_dir = os.path.normpath(
+            os.path.expanduser("/home/andro/.local/cache/yay")
+        )
+
     with spinning_spinner():
         try:
             if not os.path.isdir(aur_dir):
@@ -930,19 +906,18 @@ def clean_aur_dir(aur_dir=None):
                 )
                 return
 
-            os.chdir(aur_dir)
             pkgname_regex = re.compile(
                 r"(?P<pkgname>.*?)-(?P<pkgver>[^-]+)-(?P<arch>x86_64|any|i686)\.pkg\.tar\.(xz|zst|gz|bz2|lrz|lzo|lz4|lz)$"
             )
             files = {}
-            for f in os.listdir():
-                if not os.path.isfile(f):
+            for f in os.listdir(aur_dir):
+                full_path = os.path.join(aur_dir, f)
+                if not os.path.isfile(full_path):
                     continue
                 match = pkgname_regex.match(f)
                 if match:
                     files[f] = match.groupdict()
 
-            # Gather installed packages + versions
             installed_packages = {}
             try:
                 expac_data = subprocess.check_output(
@@ -951,9 +926,7 @@ def clean_aur_dir(aur_dir=None):
                 for line in expac_data:
                     parts = line.split()
                     if len(parts) >= 2:
-                        pkg = parts[0]
-                        ver = parts[1]
-                        installed_packages[pkg] = ver
+                        installed_packages[parts[0]] = parts[1]
             except subprocess.CalledProcessError as e:
                 log_and_print(
                     f"{FAILURE} expac not installed or error running expac: {e.stderr}",
@@ -961,12 +934,10 @@ def clean_aur_dir(aur_dir=None):
                 )
                 return
 
-            # Bulk remove logic
             to_remove = []
             for f, file_info in files.items():
                 pkgname = file_info["pkgname"]
                 pkgver = file_info["pkgver"]
-                # If pkg not installed or version differs, remove
                 if (
                     pkgname not in installed_packages
                     or pkgver != installed_packages[pkgname]
@@ -976,29 +947,22 @@ def clean_aur_dir(aur_dir=None):
 
             for f in to_remove:
                 try:
-                    os.remove(f)
+                    os.remove(os.path.join(aur_dir, f))
                 except OSError as e:
                     log_and_print(f"{FAILURE} Error deleting file {f}: {e}", "error")
 
-            # Also remove outdated source directories if they exist
-            # We might guess directory name like pkgname/ or pkgname-git/ etc.
-            for item in os.listdir():
-                if os.path.isdir(item):
-                    # If directory name resembles a package, let's see if it's installed or up to date
-                    pkg_dir = item
-                    # naive approach: read PKGBUILD in that directory, parse pkgver?
-                    # We'll just see if pkg_dir is in installed packages. If not, remove?
-                    # This is guessy. We'll prompt user for each removal
-                    if pkg_dir not in installed_packages:
-                        # prompt user
+            for item in os.listdir(aur_dir):
+                item_path = os.path.join(aur_dir, item)
+                if os.path.isdir(item_path):
+                    if item not in installed_packages:
                         confirm = prompt_with_timeout(
-                            f"Remove old AUR source directory '{pkg_dir}'? [y/N]: ",
+                            f"Remove old AUR source directory '{item}'? [y/N]: ",
                             persistent=True,
                         ).lower()
                         if confirm == "y":
-                            shutil.rmtree(pkg_dir, ignore_errors=True)
+                            shutil.rmtree(item_path, ignore_errors=True)
                             log_and_print(
-                                f"{INFO} Deleted source directory: {pkg_dir}", "info"
+                                f"{INFO} Deleted source directory: {item}", "info"
                             )
 
             log_and_print(f"{SUCCESS} AUR directory cleaned.", "info")
@@ -1010,22 +974,31 @@ def clean_aur_dir(aur_dir=None):
 
 
 #####################################
-# 14. handle_pacnew_pacsave() => Impr. #2, #3 + single char prompts
+# 14. handle_pacnew_pacsave
 #####################################
 
 
 def handle_pacnew_pacsave():
     """
     Automatically handle .pacnew and .pacsave files with single-character prompts:
-    - pacnew: (m)erge, (r)eplace, (d)elete
-    - pacsave: (R)estore, (d)elete
-    Implementation improvement #2: backup before replace.
-    Implementation improvement #3: batch summary approach.
+    - pacnew: (m)erge, (r)eplace, (d)elete, (s)kip
+    - pacsave: (R)estore, (d)elete, (s)kip
+
+    FIX: Original wrapped the entire function body — including all interactive
+    prompt_with_timeout() calls — inside a spinning_spinner() context manager.
+    The spinner's background thread writes to stdout continuously while the
+    terminal is waiting for user input, causing garbled output and making the
+    prompt unreadable. The spinner is now used only for the initial subprocess
+    discovery phase (find commands) where no input is expected; all interactive
+    prompt loops execute outside it.
     """
     log_and_print(f"{INFO} Handling .pacnew and .pacsave files...", "info")
-    with spinning_spinner():
-        actions_summary = []
-        try:
+
+    # Discovery phase only — no interactive prompts inside the spinner.
+    pacnew_files = []
+    pacsave_files = []
+    try:
+        with spinning_spinner():
             pacnew_files = subprocess.check_output(
                 ["sudo", "find", "/etc", "-type", "f", "-name", "*.pacnew"],
                 text=True,
@@ -1034,122 +1007,118 @@ def handle_pacnew_pacsave():
                 ["sudo", "find", "/etc", "-type", "f", "-name", "*.pacsave"],
                 text=True,
             ).splitlines()
-
             pacnew_files = [f for f in pacnew_files if f.strip()]
             pacsave_files = [f for f in pacsave_files if f.strip()]
+    except subprocess.CalledProcessError as e:
+        log_and_print(
+            f"{FAILURE} Error finding .pacnew/.pacsave files: {e.stderr.strip()}",
+            "error",
+        )
+        return
+    except Exception as ex:
+        log_and_print(f"{FAILURE} Unexpected error during discovery: {str(ex)}", "error")
+        return
 
-            if pacnew_files:
-                log_and_print(f"{INFO} Found .pacnew files.", "info")
-                for file in pacnew_files:
-                    print(f".pacnew file: {file}")
-                # single prompt for each
-                for file in pacnew_files:
-                    action = prompt_with_timeout(
-                        f"File: {file}\n(m)erge, (r)eplace, (d)elete, (s)kip? ",
-                        persistent=True,
-                    ).lower()
-                    if action == "m":
-                        # Merging not implemented
-                        log_and_print(
-                            f"{INFO} Merging not implemented. Skipping {file}.", "info"
+    # Interactive phase — spinner is stopped, terminal is clean.
+    actions_summary = []
+
+    if pacnew_files:
+        log_and_print(f"{INFO} Found .pacnew files.", "info")
+        for file in pacnew_files:
+            print(f".pacnew file: {file}")
+        for file in pacnew_files:
+            action = prompt_with_timeout(
+                f"File: {file}\n(m)erge, (r)eplace, (d)elete, (s)kip? ",
+                persistent=True,
+            ).lower()
+            if action == "m":
+                log_and_print(
+                    f"{INFO} Merging not implemented. Skipping {file}.", "info"
+                )
+                actions_summary.append(f"Skipped merging .pacnew file: {file}")
+            elif action == "r":
+                original_file = file.replace(".pacnew", "")
+                backup_file = original_file + ".bak"
+                try:
+                    if os.path.exists(original_file):
+                        shutil.copy2(original_file, backup_file)
+                        actions_summary.append(
+                            f"Backed up original file to {backup_file}"
                         )
-                        actions_summary.append(f"Skipped merging .pacnew file: {file}")
-                    elif action == "r":
-                        original_file = file.replace(".pacnew", "")
-                        # backup original
-                        backup_file = original_file + ".bak"
-                        try:
-                            if os.path.exists(original_file):
-                                shutil.copy2(original_file, backup_file)
-                                actions_summary.append(
-                                    f"Backed up original file to {backup_file}"
-                                )
-                            shutil.copyfile(file, original_file)
-                            os.remove(file)
-                            actions_summary.append(
-                                f"Replaced with .pacnew file: {file}"
-                            )
-                        except Exception as ex:
-                            log_and_print(
-                                f"{FAILURE} Error replacing file: {ex}", "error"
-                            )
-                            actions_summary.append(f"Failed replace for: {file}")
-                    elif action == "d":
-                        try:
-                            os.remove(file)
-                            actions_summary.append(f"Removed .pacnew file: {file}")
-                        except Exception as ex:
-                            log_and_print(
-                                f"{FAILURE} Error removing file: {ex}", "error"
-                            )
-                            actions_summary.append(f"Failed removal: {file}")
-                    else:
-                        actions_summary.append(f"Skipped .pacnew file: {file}")
-
-            if pacsave_files:
-                log_and_print(f"{INFO} Found .pacsave files.", "info")
-                for file in pacsave_files:
-                    print(f".pacsave file: {file}")
-                for file in pacsave_files:
-                    action = prompt_with_timeout(
-                        f"File: {file}\n(R)estore, (d)elete, (s)kip? ", persistent=True
-                    ).lower()
-                    if action == "r":
-                        original_file = file.replace(".pacsave", "")
-                        backup_file = original_file + ".bak"
-                        try:
-                            if os.path.exists(original_file):
-                                shutil.copy2(original_file, backup_file)
-                                actions_summary.append(
-                                    f"Backed up original file to {backup_file}"
-                                )
-                            shutil.copyfile(file, original_file)
-                            os.remove(file)
-                            actions_summary.append(
-                                f"Restored from .pacsave file: {file}"
-                            )
-                        except Exception as ex:
-                            log_and_print(
-                                f"{FAILURE} Error restoring file: {ex}", "error"
-                            )
-                            actions_summary.append(f"Failed restore: {file}")
-                    elif action == "d":
-                        try:
-                            os.remove(file)
-                            actions_summary.append(f"Removed .pacsave file: {file}")
-                        except Exception as ex:
-                            log_and_print(
-                                f"{FAILURE} Error removing file: {ex}", "error"
-                            )
-                            actions_summary.append(f"Failed removal: {file}")
-                    else:
-                        actions_summary.append(f"Skipped .pacsave file: {file}")
-
-            if actions_summary:
-                log_and_print(f"{INFO} Summary of actions taken:", "info")
-                for action in actions_summary:
-                    log_and_print(f"{INFO} {action}", "info")
+                    shutil.copyfile(file, original_file)
+                    os.remove(file)
+                    actions_summary.append(f"Replaced with .pacnew file: {file}")
+                except Exception as ex:
+                    log_and_print(
+                        f"{FAILURE} Error replacing file: {ex}", "error"
+                    )
+                    actions_summary.append(f"Failed replace for: {file}")
+            elif action == "d":
+                try:
+                    os.remove(file)
+                    actions_summary.append(f"Removed .pacnew file: {file}")
+                except Exception as ex:
+                    log_and_print(
+                        f"{FAILURE} Error removing file: {ex}", "error"
+                    )
+                    actions_summary.append(f"Failed removal: {file}")
             else:
-                log_and_print(f"{INFO} No .pacnew or .pacsave files found.", "info")
+                actions_summary.append(f"Skipped .pacnew file: {file}")
 
-        except subprocess.CalledProcessError as e:
-            log_and_print(
-                f"{FAILURE} Error finding or handling .pacnew/.pacsave files: {e.stderr.strip()}",
-                "error",
-            )
-        except Exception as ex:
-            log_and_print(f"{FAILURE} Unexpected error: {str(ex)}", "error")
+    if pacsave_files:
+        log_and_print(f"{INFO} Found .pacsave files.", "info")
+        for file in pacsave_files:
+            print(f".pacsave file: {file}")
+        for file in pacsave_files:
+            action = prompt_with_timeout(
+                f"File: {file}\n(R)estore, (d)elete, (s)kip? ", persistent=True
+            ).lower()
+            if action == "r":
+                original_file = file.replace(".pacsave", "")
+                backup_file = original_file + ".bak"
+                try:
+                    if os.path.exists(original_file):
+                        shutil.copy2(original_file, backup_file)
+                        actions_summary.append(
+                            f"Backed up original file to {backup_file}"
+                        )
+                    shutil.copyfile(file, original_file)
+                    os.remove(file)
+                    actions_summary.append(f"Restored from .pacsave file: {file}")
+                except Exception as ex:
+                    log_and_print(
+                        f"{FAILURE} Error restoring file: {ex}", "error"
+                    )
+                    actions_summary.append(f"Failed restore: {file}")
+            elif action == "d":
+                try:
+                    os.remove(file)
+                    actions_summary.append(f"Removed .pacsave file: {file}")
+                except Exception as ex:
+                    log_and_print(
+                        f"{FAILURE} Error removing file: {ex}", "error"
+                    )
+                    actions_summary.append(f"Failed removal: {file}")
+            else:
+                actions_summary.append(f"Skipped .pacsave file: {file}")
+
+    if actions_summary:
+        log_and_print(f"{INFO} Summary of actions taken:", "info")
+        for action in actions_summary:
+            log_and_print(f"{INFO} {action}", "info")
+    else:
+        log_and_print(f"{INFO} No .pacnew or .pacsave files found.", "info")
 
 
 ##############################################
-# 15. verify_installed_packages() => Impr. #1 & #2, also output pkglist
+# 15. verify_installed_packages
 ##############################################
 
 
 def verify_installed_packages():
     """
-    Verify installed packages for missing files and automatically reinstall them in batch.
-    Distinguishes between official and AUR packages more robustly.
+    Verify installed packages for missing files and automatically reinstall them
+    in batch. Distinguishes between official and AUR packages.
     Outputs a missing_dependency_pkglist.txt for user reference.
     """
     log_and_print(f"{INFO} Checking for packages with missing files...", "info")
@@ -1185,112 +1154,107 @@ def verify_installed_packages():
                         pkg_name = match.group(1)
                         missing_packages.add(pkg_name)
 
-            if not missing_packages:
-                log_and_print(
-                    f"{SUCCESS} No packages with missing files found.", "info"
-                )
-                return
-
-            logging.info("Packages with missing files:\n" + "\n".join(details))
-
+        if not missing_packages:
             log_and_print(
-                f"{INFO} Found {len(missing_packages)} packages with missing files. Details logged.",
+                f"{SUCCESS} No packages with missing files found.", "info"
+            )
+            return
+
+        logging.info("Packages with missing files:\n" + "\n".join(details))
+
+        log_and_print(
+            f"{INFO} Found {len(missing_packages)} packages with missing files. Details logged.",
+            "info",
+        )
+
+        pkglist_path = os.path.join(LOG_BASE_DIR, "missing_dependency_pkglist.txt")
+        try:
+            with open(pkglist_path, "w") as f:
+                for pkg in missing_packages:
+                    f.write(pkg + "\n")
+            log_and_print(
+                f"{SUCCESS} Missing packages listed in: {pkglist_path}", "info"
+            )
+        except IOError as e:
+            log_and_print(f"{FAILURE} Error writing pkglist: {str(e)}", "error")
+
+        confirm = prompt_with_timeout(
+            "Do you want to reinstall these packages to restore missing files? [y/N]: ",
+            persistent=True,
+        ).lower()
+
+        if confirm != "y":
+            log_and_print(f"{INFO} Reinstallation aborted by user.", "info")
+            return
+
+        log_and_print(f"{INFO} Updating keyrings before reinstallation...", "info")
+        keyring_update = subprocess.run(
+            [
+                "sudo",
+                "pacman",
+                "-Sy",
+                "archlinux-keyring",
+                "chaotic-keyring",
+                "--noconfirm",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if keyring_update.returncode != 0:
+            logging.error(keyring_update.stderr)
+            log_and_print(f"{FAILURE} Failed to update keyrings.", "error")
+            return
+        else:
+            logging.info(keyring_update.stdout)
+
+        pacman_lock = "/var/lib/pacman/db.lck"
+        if os.path.exists(pacman_lock):
+            log_and_print(f"{INFO} Removing pacman lock file...", "info")
+            subprocess.run(["sudo", "rm", "-f", pacman_lock])
+
+        aur_helper = detect_aur_helper()
+
+        official_packages = []
+        aur_packages = []
+        for pkg in missing_packages:
+            if is_official_package(pkg):
+                official_packages.append(pkg)
+            else:
+                aur_packages.append(pkg)
+
+        if official_packages:
+            log_and_print(
+                f"{INFO} Reinstalling official packages in batch: {official_packages}",
                 "info",
             )
+            reinstall_packages_pexpect(official_packages)
 
-            # Output a pkglist
-            pkglist_path = os.path.join(LOG_BASE_DIR, "missing_dependency_pkglist.txt")
-            try:
-                with open(pkglist_path, "w") as f:
-                    for pkg in missing_packages:
-                        f.write(pkg + "\n")
+        if aur_packages:
+            if aur_helper:
                 log_and_print(
-                    f"{SUCCESS} Missing packages listed in: {pkglist_path}", "info"
-                )
-            except IOError as e:
-                log_and_print(f"{FAILURE} Error writing pkglist: {str(e)}", "error")
-
-            confirm = prompt_with_timeout(
-                "Do you want to reinstall these packages to restore missing files? [y/N]: ",
-                persistent=True,
-            ).lower()
-
-            if confirm != "y":
-                log_and_print(f"{INFO} Reinstallation aborted by user.", "info")
-                return
-
-            log_and_print(f"{INFO} Updating keyrings before reinstallation...", "info")
-            keyring_update = subprocess.run(
-                [
-                    "sudo",
-                    "pacman",
-                    "-Sy",
-                    "archlinux-keyring",
-                    "chaotic-keyring",
-                    "--noconfirm",
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if keyring_update.returncode != 0:
-                logging.error(keyring_update.stderr)
-                log_and_print(f"{FAILURE} Failed to update keyrings.", "error")
-                return
-            else:
-                logging.info(keyring_update.stdout)
-
-            pacman_lock = "/var/lib/pacman/db.lck"
-            if os.path.exists(pacman_lock):
-                log_and_print(f"{INFO} Removing pacman lock file...", "info")
-                subprocess.run(["sudo", "rm", "-f", pacman_lock])
-
-            aur_helper = detect_aur_helper()
-
-            official_packages = []
-            aur_packages = []
-            for pkg in missing_packages:
-                # We'll do a more robust check: query 'pacman -Si pkg'
-                # If it fails, we assume AUR package
-                if is_official_package(pkg):
-                    official_packages.append(pkg)
-                else:
-                    aur_packages.append(pkg)
-
-            if official_packages:
-                log_and_print(
-                    f"{INFO} Reinstalling official packages in batch: {official_packages}",
+                    f"{INFO} Reinstalling AUR packages in batch: {aur_packages}",
                     "info",
                 )
-                reinstall_packages_pexpect(official_packages)
+                reinstall_aur_packages(aur_packages, aur_helper)
+            else:
+                log_and_print(
+                    f"{FAILURE} AUR packages detected but no AUR helper found.",
+                    "error",
+                )
+                log_and_print(
+                    "Please install an AUR helper like 'yay' or 'paru'.", "error"
+                )
 
-            if aur_packages:
-                if aur_helper:
-                    log_and_print(
-                        f"{INFO} Reinstalling AUR packages in batch: {aur_packages}",
-                        "info",
-                    )
-                    reinstall_aur_packages(aur_packages, aur_helper)
-                else:
-                    log_and_print(
-                        f"{FAILURE} AUR packages detected but no AUR helper found.",
-                        "error",
-                    )
-                    log_and_print(
-                        "Please install an AUR helper like 'yay' or 'paru'.", "error"
-                    )
-
-            log_and_print(
-                f"{SUCCESS} Package verification and reinstallation completed.", "info"
-            )
+        log_and_print(
+            f"{SUCCESS} Package verification and reinstallation completed.", "info"
+        )
 
     except Exception as e:
         log_and_print(f"{FAILURE} Unexpected error: {str(e)}", "error")
 
 
 def detect_aur_helper():
-    """
-    Detect available AUR helper with memoization.
-    """
+    """Detect available AUR helper with memoization."""
     if hasattr(detect_aur_helper, "_cached_helper"):
         return detect_aur_helper._cached_helper
 
@@ -1311,25 +1275,24 @@ def is_official_package(package):
     If it fails, we assume AUR or non-existent.
     """
     result = subprocess.run(["pacman", "-Si", package], capture_output=True, text=True)
-    if result.returncode == 0 and "Repository" in result.stdout:
-        # If we see 'Repository : extra' or 'Repository : core', etc., it's official
-        return True
-    return False
+    return result.returncode == 0 and "Repository" in result.stdout
 
 
 ###########################################
-# 16. reinstall_aur_packages(packages, aur_helper)
+# 16. reinstall_aur_packages
 ###########################################
 
 
 def reinstall_aur_packages(packages, aur_helper):
     """
-    Reinstall AUR packages in batch if the helper supports it. We'll do single call for efficiency.
-    This uses pexpect for automation, with robust retry approach or fallback.
+    Reinstall AUR packages in batch using pexpect for automation.
+
+    FIX: Original assigned an open() file handle to child.logfile but never
+    closed it, leaking the file descriptor regardless of success or failure.
+    The handle is now tracked explicitly and closed in a finally block.
     """
     if not packages:
         return
-    # single command approach
     combined = " ".join(packages)
     log_and_print(
         f"{INFO} Reinstalling AUR packages with {aur_helper}: {combined}", "info"
@@ -1337,8 +1300,9 @@ def reinstall_aur_packages(packages, aur_helper):
     command = f"{aur_helper} -S {combined} --noconfirm"
     child = pexpect.spawn(command, encoding="utf-8", timeout=600)
 
+    log_fh = open(log_file_path, "a")
     try:
-        child.logfile = open(log_file_path, "a")
+        child.logfile = log_fh
         while True:
             index = child.expect(
                 [
@@ -1350,17 +1314,17 @@ def reinstall_aur_packages(packages, aur_helper):
                     r"error: .*",
                 ]
             )
-            if index == 0:  # EOF
+            if index == 0:
                 break
-            elif index == 1:  # Import PGP key
+            elif index == 1:
                 child.sendline("y")
-            elif index == 2:  # Replace package
+            elif index == 2:
                 child.sendline("y")
-            elif index == 3:  # Proceed
+            elif index == 3:
                 child.sendline("y")
-            elif index == 4:  # file exists in filesystem
+            elif index == 4:
                 child.sendline("y")
-            elif index == 5:  # error
+            elif index == 5:
                 error_msg = child.after.strip()
                 logging.error(error_msg)
                 handle_pacman_errors(error_msg)
@@ -1378,18 +1342,23 @@ def reinstall_aur_packages(packages, aur_helper):
             )
     except Exception as e:
         log_and_print(f"{FAILURE} Error reinstalling AUR packages: {str(e)}", "error")
+    finally:
+        log_fh.close()
 
 
 ############################################
-# 17. reinstall_packages_pexpect() => improvements
+# 17. reinstall_packages_pexpect
 ############################################
 
 
 def reinstall_packages_pexpect(packages, max_retries=3):
     """
-    Reinstall a list of packages using pexpect, in one go or iteratively, extracting prompt patterns to a config dict.
-    We'll attempt a single pacman command first, handling known prompts. If partial success fails, we can fallback to
-    per-package approach.
+    Reinstall a list of official packages using pexpect, in one go, with retry.
+
+    FIX: Original opened a log file handle inside the inner closure run_reinstall_once()
+    and assigned it to child.logfile without closing it — a file descriptor leak on
+    every call including failure paths and retries. The handle is now managed with
+    an explicit finally block inside the closure.
     """
     if not packages:
         return
@@ -1409,8 +1378,9 @@ def reinstall_packages_pexpect(packages, max_retries=3):
     def run_reinstall_once(pkgs):
         command = f"sudo pacman -S {pkgs} --noconfirm --needed"
         child = pexpect.spawn(command, encoding="utf-8", timeout=300)
-        child.logfile = open(log_file_path, "a")
+        log_fh = open(log_file_path, "a")
         try:
+            child.logfile = log_fh
             while True:
                 index = child.expect(
                     [
@@ -1422,17 +1392,17 @@ def reinstall_packages_pexpect(packages, max_retries=3):
                         prompts["ERROR"],
                     ]
                 )
-                if index == 0:  # EOF
+                if index == 0:
                     break
-                elif index == 1:  # Import PGP key
+                elif index == 1:
                     child.sendline("y")
-                elif index == 2:  # Replace
+                elif index == 2:
                     child.sendline("y")
-                elif index == 3:  # Proceed
+                elif index == 3:
                     child.sendline("y")
-                elif index == 4:  # file exists
+                elif index == 4:
                     child.sendline("y")
-                elif index == 5:  # error
+                elif index == 5:
                     error_msg = child.after.strip()
                     logging.error(error_msg)
                     handle_pacman_errors(error_msg)
@@ -1444,6 +1414,8 @@ def reinstall_packages_pexpect(packages, max_retries=3):
         except Exception as e:
             logging.error(str(e))
             return 1
+        finally:
+            log_fh.close()
 
     success = False
     retries = 0
@@ -1469,14 +1441,12 @@ def reinstall_packages_pexpect(packages, max_retries=3):
 
 
 ################################
-# 18. handle_pacman_errors() => #1 & #3
+# 18. handle_pacman_errors
 ################################
 
 
 def handle_pacman_errors(error_msg):
-    """
-    Extend error patterns, optional auto-overwrite logic.
-    """
+    """Handle common pacman error patterns with targeted remediation."""
     if (
         "key could not be looked up remotely" in error_msg
         or "signature is unknown trust" in error_msg
@@ -1527,10 +1497,7 @@ def handle_pacman_errors(error_msg):
                     text=True,
                 )
 
-    # Extended patterns
     if "conflicting files" in error_msg and "and exists in filesystem" in error_msg:
-        # auto-overwrite logic
-        # pacman suggests adding --overwrite for the conflicting path
         conflict_files = re.findall(r"conflicting files: (.*?)\n", error_msg, re.DOTALL)
         if conflict_files:
             merged_conflicts = ",".join(conflict_files)
@@ -1547,13 +1514,17 @@ def handle_pacman_errors(error_msg):
 
 
 ############################
-# 19. check_failed_cron_jobs() => Improvement #1
+# 19. check_failed_cron_jobs
 ############################
 
 
 def check_failed_cron_jobs(days_back=1):
     """
-    Check for failed cron jobs from 'days_back' days ago. If found, prompt user for manual repair.
+    Check for failed cron jobs from 'days_back' days ago.
+
+    FIX: Changed journalctl unit from 'cron' to 'cronie'. On Arch Linux the
+    cronie daemon registers with systemd as 'cronie', not 'cron'. Using 'cron'
+    produced empty results silently, making all failure detection a no-op.
     """
     log_and_print(
         f"{INFO} Checking for failed cron jobs in last {days_back} day(s)...", "info"
@@ -1561,7 +1532,7 @@ def check_failed_cron_jobs(days_back=1):
     since_arg = f"{days_back} days ago"
     try:
         cron_logs = subprocess.check_output(
-            ["journalctl", "-u", "cron", "--since", since_arg],
+            ["journalctl", "-u", "cronie", "--since", since_arg],
             text=True,
             stderr=subprocess.DEVNULL,
         )
@@ -1593,14 +1564,12 @@ def check_failed_cron_jobs(days_back=1):
 
 
 ########################################
-# 20. clear_docker_images() => #1, #2, #3
+# 20. clear_docker_images
 ########################################
 
 
 def clear_docker_images(dry_run=False, remove_volumes=False):
-    """
-    Clear Docker images if Docker is installed. Adds param for volumes, optional dry-run, unify container cleanup.
-    """
+    """Clear Docker images if Docker is installed."""
     if shutil.which("docker"):
         log_and_print(f"{INFO} Clearing Docker images/containers...", "info")
         try:
@@ -1629,7 +1598,7 @@ def clear_docker_images(dry_run=False, remove_volumes=False):
 
 
 ##################################
-# 21. clear_temp_folder() => #1, #2, #3
+# 21. clear_temp_folder
 ##################################
 
 
@@ -1637,7 +1606,6 @@ def clear_temp_folder(age_days=2, whitelist=None):
     """
     Clear the temporary folder of files older than 'age_days'.
     If whitelist is provided, skip those files.
-    Check systemd tmpfiles.d as well; if it's active, this might be redundant.
     """
     log_and_print(
         f"{INFO} Clearing the temporary folder (age > {age_days} days)...", "info"
@@ -1646,15 +1614,12 @@ def clear_temp_folder(age_days=2, whitelist=None):
         whitelist = []
     with spinning_spinner():
         try:
-            # Quick check if systemd tmpfiles.d might be handling /tmp
-            # We won't fully parse it, but let's log a warning
             if os.path.isfile("/usr/lib/tmpfiles.d/tmp.conf"):
                 log_and_print(
                     f"{WARNING} Systemd tmpfiles might already handle /tmp. Operation could be redundant.",
                     "warning",
                 )
 
-            # We'll gather files older than age_days
             find_command = [
                 "sudo",
                 "find",
@@ -1702,88 +1667,46 @@ def clear_temp_folder(age_days=2, whitelist=None):
 
 
 ####################################
-# 22. check_rmshit_script() => #1, #2, #3
+# 22. check_rmshit_script
 ####################################
 
 
 def check_rmshit_script(config_path=None):
     """
     Clean up unnecessary files specified in an external config.
-    Implementation #1: Move the path list to an external config file if config_path is provided.
-    Implementation #2: Let user selectively remove each path (interactive).
-    Implementation #3: Basic safety checks (skip if path is actively used).
+    - Path list is loaded from an external config file.
+    - User selectively removes each path interactively.
+    - Basic safety checks skip critical paths.
     """
     log_and_print(
         f"{INFO} Cleaning up unnecessary files using rmshit script logic...", "info"
     )
     if not config_path:
-        # default paths file
         config_path = os.path.join(LOG_BASE_DIR, "rmshit_paths.txt")
-        # if that doesn't exist, we create a default
         if not os.path.isfile(config_path):
             default_paths = [
-                "~/.adobe",
-                "~/.macromedia",
-                "~/.FRD/log/app.log",
-                "~/.FRD/links.txt",
-                "~/.objectdb",
-                "~/.gstreamer-0.10",
-                "~/.pulse",
-                "~/.esd_auth",
-                "~/.config/enchant",
-                "~/.spicec",
-                "~/.dropbox-dist",
-                "~/.parallel",
-                "~/.dbus",
-                "~/.distlib/",
-                "~/.bazaar/",
-                "~/.bzr.log",
-                "~/.nv/",
-                "~/.viminfo",
-                "~/.npm/",
-                "~/.java/",
-                "~/.swt/",
-                "~/.oracle_jre_usage/",
-                "~/.jssc/",
-                "~/.tox/",
-                "~/.pylint.d/",
-                "~/.qute_test/",
-                "~/.QtWebEngineProcess/",
-                "~/.qutebrowser/",
-                "~/.asy/",
-                "~/.cmake/",
-                "~/.cache/mozilla/",
-                "~/.cache/chromium/",
-                "~/.cache/google-chrome/",
-                "~/.cache/spotify/",
-                "~/.cache/steam/",
-                "~/.zoom/",
-                "~/.Skype/",
-                "~/.minecraft/logs/",
-                "~/.thumbnails/",
-                "~/.local/share/Trash/",
-                "~/.vim/.swp",
-                "~/.vim/.backup",
-                "~/.vim/.undo",
-                "~/.emacs.d/auto-save-list/",
-                "~/.cache/JetBrains/",
-                "~/.vscode/extensions/",
-                "~/.npm/_logs/",
-                "~/.npm/_cacache/",
-                "~/.composer/cache/",
-                "~/.gem/cache/",
-                "~/.cache/pip/",
-                "~/.gnupg/",
-                "~/.wget-hsts",
-                "~/.docker/",
-                "~/.local/share/baloo/",
+                "~/.adobe", "~/.macromedia", "~/.FRD/log/app.log",
+                "~/.FRD/links.txt", "~/.objectdb", "~/.gstreamer-0.10",
+                "~/.pulse", "~/.esd_auth", "~/.config/enchant", "~/.spicec",
+                "~/.dropbox-dist", "~/.parallel", "~/.dbus", "~/.distlib/",
+                "~/.bazaar/", "~/.bzr.log", "~/.nv/", "~/.viminfo", "~/.npm/",
+                "~/.java/", "~/.swt/", "~/.oracle_jre_usage/", "~/.jssc/",
+                "~/.tox/", "~/.pylint.d/", "~/.qute_test/",
+                "~/.QtWebEngineProcess/", "~/.qutebrowser/", "~/.asy/",
+                "~/.cmake/", "~/.cache/mozilla/", "~/.cache/chromium/",
+                "~/.cache/google-chrome/", "~/.cache/spotify/",
+                "~/.cache/steam/", "~/.zoom/", "~/.Skype/",
+                "~/.minecraft/logs/", "~/.thumbnails/",
+                "~/.local/share/Trash/", "~/.vim/.swp", "~/.vim/.backup",
+                "~/.vim/.undo", "~/.emacs.d/auto-save-list/",
+                "~/.cache/JetBrains/", "~/.vscode/extensions/",
+                "~/.npm/_logs/", "~/.npm/_cacache/", "~/.composer/cache/",
+                "~/.gem/cache/", "~/.cache/pip/", "~/.gnupg/", "~/.wget-hsts",
+                "~/.docker/", "~/.local/share/baloo/",
                 "~/.kde/share/apps/okular/docdata/",
-                "~/.local/share/akonadi/",
-                "~/.xsession-errors",
-                "~/.cache/gstreamer-1.0/",
-                "~/.cache/fontconfig/",
-                "~/.cache/mesa/",
-                "~/.nv/ComputeCache/",
+                "~/.local/share/akonadi/", "~/.xsession-errors",
+                "~/.cache/gstreamer-1.0/", "~/.cache/fontconfig/",
+                "~/.cache/mesa/", "~/.nv/ComputeCache/",
             ]
             with open(config_path, "w") as f:
                 for p in default_paths:
@@ -1799,25 +1722,20 @@ def check_rmshit_script(config_path=None):
         log_and_print(f"{FAILURE} Could not read {config_path}: {e}", "error")
         return
 
-    # Let user optionally add new paths
     new_paths_input = input(
         "Enter any additional paths to clean (space-separated, or leave blank): "
     ).strip()
     if new_paths_input:
-        new_paths = new_paths_input.split()
-        paths_to_clean.extend(new_paths)
+        paths_to_clean.extend(new_paths_input.split())
 
     for path in paths_to_clean:
         expanded_path = os.path.expanduser(path)
         if not os.path.exists(expanded_path):
             continue
-        # Implementation #2: confirm each individually
         confirm = prompt_with_timeout(
             f"Remove {expanded_path}? [y/N]: ", persistent=True
         ).lower()
         if confirm == "y":
-            # Implementation #3: Basic safety checks: skip if path is obviously in use. We'll do a quick check
-            # e.g. skip if it's the user's home directory or /root or /etc
             if expanded_path in [os.path.expanduser("~"), "/root", "/etc"]:
                 log_and_print(
                     f"{WARNING} Skipping critical path: {expanded_path}", "warning"
@@ -1829,34 +1747,33 @@ def check_rmshit_script(config_path=None):
                     log_and_print(f"{INFO} Deleted file: {expanded_path}", "info")
                 elif os.path.isdir(expanded_path):
                     shutil.rmtree(expanded_path)
-                    log_and_print(f"{INFO} Deleted directory: {expanded_path}", "info")
+                    log_and_print(
+                        f"{INFO} Deleted directory: {expanded_path}", "info"
+                    )
             except OSError as e:
-                log_and_print(f"{FAILURE} Error deleting {expanded_path}: {e}", "error")
+                log_and_print(
+                    f"{FAILURE} Error deleting {expanded_path}: {e}", "error"
+                )
 
     log_and_print(f"{SUCCESS} Unnecessary files cleaned up.", "info")
 
 
 ######################################
-# 23. remove_old_ssh_known_hosts() & is_host_reachable() => improvements #1, #3
+# 23. remove_old_ssh_known_hosts / is_host_reachable
 ######################################
 
 
 def is_host_reachable(host):
     """
-    Check if a host is reachable by attempting a ping.
-    Potential improvement: non-blocking or parallel ping, DNS resolution check.
-    For now, we'll do a basic sync ping check.
+    Check if a host is reachable: DNS resolution then single ping.
     """
     try:
-        # DNS resolution check
         resolve_result = subprocess.run(
             ["getent", "hosts", host], capture_output=True, text=True
         )
         if resolve_result.returncode != 0:
             logging.info(f"Host {host} does not resolve. Marking unreachable.")
             return False
-
-        # If resolves, do a single ping
         ping_cmd = ["ping", "-c", "1", "-W", "1", host]
         result = subprocess.run(
             ping_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -1867,9 +1784,7 @@ def is_host_reachable(host):
 
 
 def remove_old_ssh_known_hosts():
-    """
-    Remove old SSH known hosts entries that are unreachable or do not resolve.
-    """
+    """Remove SSH known hosts entries that are unreachable or do not resolve."""
     ssh_known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
     if os.path.isfile(ssh_known_hosts_file):
         log_and_print(f"{INFO} Removing old SSH known hosts entries...", "info")
@@ -1898,14 +1813,12 @@ def remove_old_ssh_known_hosts():
 
 
 ###############################
-# 24. remove_orphan_vim_undo_files() => Keep as is
+# 24. remove_orphan_vim_undo_files
 ###############################
 
 
 def remove_orphan_vim_undo_files():
-    """
-    Remove orphan Vim undo files (.un~) if the original file doesn't exist.
-    """
+    """Remove orphan Vim undo files (.un~) if the original file does not exist."""
     log_and_print(f"{INFO} Searching for orphan Vim undo files...", "info")
     home_dir = os.path.expanduser("~")
     with spinning_spinner():
@@ -1928,17 +1841,17 @@ def remove_orphan_vim_undo_files():
 
 
 ######################################
-# 25. force_log_rotation() => improvement #1
+# 25. force_log_rotation
 ######################################
 
 
 def force_log_rotation(config_path="/etc/logrotate.conf"):
-    """
-    Force log rotation using a configurable logrotate config file path.
-    """
+    """Force log rotation using a configurable logrotate config file path."""
     log_and_print(f"{INFO} Forcing log rotation with config {config_path}...", "info")
     if not os.path.isfile(config_path):
-        log_and_print(f"{FAILURE} logrotate config not found: {config_path}", "error")
+        log_and_print(
+            f"{FAILURE} logrotate config not found: {config_path}", "error"
+        )
         return
     try:
         subprocess.run(["sudo", "logrotate", "-f", config_path], check=True)
@@ -1953,22 +1866,21 @@ def force_log_rotation(config_path="/etc/logrotate.conf"):
 
 
 ##########################################
-# 26. configure_zram() => Analyze systemd script, skip if detected
+# 26. configure_zram
 ##########################################
 
 
 def configure_zram():
     """
-    Configure ZRam for better memory management if not already handled by systemd service.
-    Checks if /usr/local/bin/zram_setup.py or zram service is in place.
-    If not found, sets up zram immediately (25% RAM).
+    Configure ZRam for better memory management if not already handled by systemd.
+    Checks for an existing service or script before acting.
+    If not found, sets up zram immediately at 25% RAM.
     """
     log_and_print(f"{INFO} Configuring ZRam for better memory management...", "info")
 
     zram_service = "/etc/systemd/system/zram_setup.service"
     zram_script = "/usr/local/bin/zram_setup.py"
 
-    # If the user already has the systemd service / script, skip
     if os.path.isfile(zram_service) or os.path.isfile(zram_script):
         log_and_print(
             f"{INFO} A systemd zram service or script already exists. Skipping direct config.",
@@ -1977,7 +1889,9 @@ def configure_zram():
         return
 
     if not shutil.which("zramctl"):
-        log_and_print(f"{FAILURE} ZRam not available. Please install zramctl.", "error")
+        log_and_print(
+            f"{FAILURE} ZRam not available. Please install zramctl.", "error"
+        )
         return
 
     with spinning_spinner():
@@ -1995,7 +1909,6 @@ def configure_zram():
             ).strip()
             log_and_print(f"Using zram device: {zram_device}", "info")
 
-            log_and_print(f"Setting up {zram_device} as swap...", "info")
             subprocess.run(["sudo", "mkswap", zram_device], check=True)
             subprocess.run(["sudo", "swapon", zram_device, "-p", "32767"], check=True)
 
@@ -2008,14 +1921,12 @@ def configure_zram():
 
 
 ############################################
-# 27. check_zram_configuration()
+# 27. check_zram_configuration
 ############################################
 
 
 def check_zram_configuration():
-    """
-    Check ZRam configuration and skip if systemd is in use, otherwise set up if needed.
-    """
+    """Check ZRam configuration and set up if not yet configured."""
     log_and_print(f"{INFO} Checking ZRam configuration...", "info")
 
     if not shutil.which("zramctl"):
@@ -2031,7 +1942,6 @@ def check_zram_configuration():
             log_and_print(
                 f"{SUCCESS} ZRam is configured. Current status:\n{zram_status}", "info"
             )
-
             swap_status = subprocess.check_output(["swapon", "--show"], text=True)
             if "/dev/zram" in swap_status:
                 log_and_print(
@@ -2048,7 +1958,6 @@ def check_zram_configuration():
                 f"{INFO} ZRam is not configured. Checking for systemd service ...",
                 "info",
             )
-            # If service is not found, configure
             zram_service = "/etc/systemd/system/zram_setup.service"
             if not os.path.isfile(zram_service):
                 configure_zram()
@@ -2067,7 +1976,7 @@ def check_zram_configuration():
 
 
 ###################################
-# 28. adjust_swappiness() => skipping if user has own config
+# 28. adjust_swappiness
 ###################################
 
 
@@ -2086,7 +1995,9 @@ def adjust_swappiness(value=133, force=False):
 
     log_and_print(f"{INFO} Adjusting swappiness to {value}...", "info")
     try:
-        subprocess.run(["sudo", "sysctl", f"vm.swappiness={value}"], check=True)
+        subprocess.run(
+            ["sudo", "sysctl", f"vm.swappiness={value}"], check=True
+        )
         log_and_print(f"{SUCCESS} Swappiness adjusted to {value}.", "info")
     except subprocess.CalledProcessError as e:
         log_and_print(
@@ -2096,15 +2007,12 @@ def adjust_swappiness(value=133, force=False):
 
 
 ################################
-# 29. clear_system_cache()
+# 29. clear_system_cache
 ################################
 
 
 def clear_system_cache(confirm_before=True):
-    """
-    Clear PageCache, dentries, and inodes.
-    If this might degrade performance, allow user confirmation.
-    """
+    """Clear PageCache, dentries, and inodes with optional user confirmation."""
     if confirm_before:
         confirm = prompt_with_timeout(
             "Warning: Clearing system caches can degrade performance temporarily. Proceed? [y/N]: ",
@@ -2128,15 +2036,14 @@ def clear_system_cache(confirm_before=True):
 
 
 #####################################
-# 30. disable_unused_services() => #1, #2, #3
+# 30. disable_unused_services
 #####################################
 
 
 def disable_unused_services(services=None, reversible=True):
     """
-    Disable a list of unused services, checking if installed first, and store backups to revert easily.
-    :param services: list of service names to disable
-    :param reversible: If True, store a backup file with previously enabled services
+    Disable a list of unused services, checking if installed first.
+    Stores a backup of previously enabled services if reversible=True.
     """
     log_and_print(f"{INFO} Disabling unused services...", "info")
     if services is None:
@@ -2164,8 +2071,9 @@ def disable_unused_services(services=None, reversible=True):
                 text=True,
             )
             if "enabled" in status_result.stdout:
-                # only disable if installed and enabled
-                subprocess.run(["sudo", "systemctl", "disable", "--now", service])
+                subprocess.run(
+                    ["sudo", "systemctl", "disable", "--now", service], check=False
+                )
                 log_and_print(
                     f"{SUCCESS} {service} has been disabled and stopped.", "info"
                 )
@@ -2177,7 +2085,9 @@ def disable_unused_services(services=None, reversible=True):
                     f"{INFO} {service} is not enabled or not installed.", "info"
                 )
         except Exception as e:
-            log_and_print(f"{FAILURE} Error disabling {service}: {str(e)}", "error")
+            log_and_print(
+                f"{FAILURE} Error disabling {service}: {str(e)}", "error"
+            )
 
     if reversible and backup_file:
         log_and_print(
@@ -2186,15 +2096,15 @@ def disable_unused_services(services=None, reversible=True):
 
 
 ##################################
-# 31. check_and_restart_systemd_units() => #1, #2
+# 31. check_and_restart_systemd_units
 ##################################
 
 
 def check_and_restart_systemd_units():
-    """
-    Check and optionally restart failed systemd units individually. Also uses systemctl reset-failed.
-    """
-    log_and_print(f"{INFO} Checking and restarting failed systemd units...", "info")
+    """Check and optionally restart failed systemd units individually."""
+    log_and_print(
+        f"{INFO} Checking and restarting failed systemd units...", "info"
+    )
     try:
         units_out = subprocess.check_output(["systemctl", "--failed"], text=True)
         if "0 loaded units listed" in units_out:
@@ -2207,19 +2117,18 @@ def check_and_restart_systemd_units():
         failed_units = []
         for line in lines:
             if line and not line.startswith("UNIT"):
-                # e.g. "somefailed.service loaded failed"
                 parts = line.split()
-                if parts:
-                    unit = parts[0]
-                    if unit.endswith(".service"):
-                        failed_units.append(unit)
+                if parts and parts[0].endswith(".service"):
+                    failed_units.append(parts[0])
 
         for unit in failed_units:
             confirm = prompt_with_timeout(
                 f"Restart failed unit {unit}? [y/N]: ", persistent=True
             ).lower()
             if confirm == "y":
-                subprocess.run(["sudo", "systemctl", "restart", unit], check=False)
+                subprocess.run(
+                    ["sudo", "systemctl", "restart", unit], check=False
+                )
         log_and_print(
             f"{SUCCESS} Finished attempting restarts on failed units.", "info"
         )
@@ -2231,18 +2140,24 @@ def check_and_restart_systemd_units():
 
 
 ###################################
-# 32. security_audit() => refactor focus on networking vulnerabilities
+# 32. security_audit
 ###################################
 
 
 def security_audit():
     """
-    Refactor: Focus on networking vulnerabilities for a machine using ExpressVPN + JDownloader, ignoring update checks.
-    1) Check open ports
-    2) If ExpressVPN is active (tun0?), ensure no open ports on main interface
-    3) Scan for common vulnerabilities via nmap or an internal approach
+    Targeted network security audit for a machine using ExpressVPN + JDownloader.
+    1) Check open ports via ss
+    2) If ExpressVPN tun0 is active, run nmap on main interface
+    3) Warn if JDownloader ports (9665/9666) are exposed on non-VPN interfaces
+
+    FIX: open_ports was only assigned inside `if result.returncode == 0:` but
+    referenced unconditionally in the JDownloader check below that block.
+    If `ss` failed, the NameError would crash the entire function. open_ports
+    is now initialised to an empty string before the conditional block.
     """
     log_and_print(f"{INFO} Performing a targeted network security audit...", "info")
+    open_ports = ""  # FIX: initialise before conditional assignment
     try:
         log_and_print(f"{INFO} Checking for open ports on all interfaces...", "info")
         result = subprocess.run(["sudo", "ss", "-tuln"], capture_output=True, text=True)
@@ -2256,7 +2171,6 @@ def security_audit():
                 f"{FAILURE} Error checking open ports: {result.stderr.strip()}", "error"
             )
 
-        # Check if tun0 is up (ExpressVPN interface)
         log_and_print(f"{INFO} Checking if ExpressVPN (tun0) is active...", "info")
         tun0_check = subprocess.run(
             ["ip", "addr", "show", "dev", "tun0"], capture_output=True, text=True
@@ -2264,13 +2178,10 @@ def security_audit():
         tun0_active = tun0_check.returncode == 0
 
         if tun0_active:
-            # Possibly do a small nmap scan on the primary interface
             log_and_print(
-                f"{INFO} ExpressVPN tun0 is active. Checking for listening services on enp2s0 or similar...",
+                f"{INFO} ExpressVPN tun0 is active. Checking for listening services on enp2s0...",
                 "info",
             )
-            # We'll guess main interface enp2s0
-            # Quick netstat or nmap approach
             interface = "enp2s0"
             nmap_cmd = [
                 "sudo",
@@ -2291,19 +2202,20 @@ def security_audit():
                     f"{SUCCESS} Nmap scan completed. Check logs for results.", "info"
                 )
             except subprocess.CalledProcessError as nmap_err:
-                log_and_print(f"{FAILURE} Nmap scan failed: {nmap_err.stderr}", "error")
+                log_and_print(
+                    f"{FAILURE} Nmap scan failed: {nmap_err.stderr}", "error"
+                )
         else:
             log_and_print(
                 f"{WARNING} ExpressVPN tun0 interface not found. Skipping interface-based checks.",
                 "warning",
             )
 
-        # JDownloader: If a Jdownloader port is open, ensure it's either restricted or behind VPN
-        # We'll parse open_ports to see if default JD ports 9665/9666 are listening on non-tun0
-        suspicious_ports = []
-        for line in open_ports.splitlines():
-            if any(p in line for p in ["9665", "9666"]):
-                suspicious_ports.append(line)
+        suspicious_ports = [
+            line
+            for line in open_ports.splitlines()
+            if any(p in line for p in ["9665", "9666"])
+        ]
         if suspicious_ports:
             log_and_print(
                 f"{WARNING} JDownloader2 ports are open on a non-VPN interface:\n{''.join(suspicious_ports)}",
@@ -2318,19 +2230,19 @@ def security_audit():
 
 
 #######################################
-# 33. manage_users_and_groups() & select_items_from_list() => integrate your grouctl logic?
+# 33. manage_users_and_groups / select_items_from_list
 #######################################
 
 
 def manage_users_and_groups():
     """
-    We can shell out to an external script 'grouctl' if it exists. If not, fallback to old logic.
+    Delegate to external 'grouctl' script if present, otherwise use built-in
+    minimal user/group management.
     """
     grouctl_path = shutil.which("grouctl")
     if grouctl_path:
         log_and_print(f"{INFO} Found grouctl script: {grouctl_path}", "info")
         log_and_print(f"{INFO} Launching grouctl for user management...", "info")
-        # We can just run it with sudo
         subprocess.run(["sudo", grouctl_path])
     else:
         log_and_print(
@@ -2363,7 +2275,9 @@ def manage_users_and_groups():
                         groups = subprocess.check_output(
                             ["id", "-nG", username], text=True
                         ).strip()
-                        log_and_print(f"{INFO} Groups for {username}: {groups}", "info")
+                        log_and_print(
+                            f"{INFO} Groups for {username}: {groups}", "info"
+                        )
                     except subprocess.CalledProcessError as e:
                         log_and_print(
                             f"{FAILURE} Error retrieving groups for {username}: {e}",
@@ -2415,7 +2329,9 @@ def manage_users_and_groups():
                             .split()
                         )
                     except subprocess.CalledProcessError:
-                        log_and_print(f"{FAILURE} User {username} not found.", "error")
+                        log_and_print(
+                            f"{FAILURE} User {username} not found.", "error"
+                        )
                         return
                     if groups:
                         selected_groups = select_items_from_list(
@@ -2445,20 +2361,9 @@ def manage_users_and_groups():
                 username = input("Enter username: ").strip()
                 if username:
                     standard_groups = [
-                        "adm",
-                        "users",
-                        "disk",
-                        "wheel",
-                        "cdrom",
-                        "audio",
-                        "video",
-                        "usb",
-                        "optical",
-                        "storage",
-                        "scanner",
-                        "lp",
-                        "network",
-                        "power",
+                        "adm", "users", "disk", "wheel", "cdrom", "audio",
+                        "video", "usb", "optical", "storage", "scanner", "lp",
+                        "network", "power",
                     ]
                     for group in standard_groups:
                         subprocess.run(
@@ -2472,12 +2377,13 @@ def manage_users_and_groups():
                     log_and_print(f"{FAILURE} Username cannot be empty.", "error")
 
             elif choice == "5":
-                # ensure wheel group is in sudoers
                 wheel_sudoers = "/etc/sudoers.d/wheel-sudo"
                 if not os.path.isfile(wheel_sudoers):
                     with open(wheel_sudoers, "w") as wf:
                         wf.write("%wheel ALL=(ALL) ALL\n")
-                    subprocess.run(["sudo", "chmod", "440", wheel_sudoers], check=False)
+                    subprocess.run(
+                        ["sudo", "chmod", "440", wheel_sudoers], check=False
+                    )
                     log_and_print(
                         f"{SUCCESS} 'wheel' group has been enabled in sudoers.", "info"
                     )
@@ -2487,20 +2393,22 @@ def manage_users_and_groups():
                     )
 
             elif choice == "6":
-                log_and_print(f"{INFO} Exiting user and group management.", "info")
+                log_and_print(
+                    f"{INFO} Exiting user and group management.", "info"
+                )
                 return
 
             else:
                 log_and_print(f"{FAILURE} Invalid choice.", "error")
 
         except Exception as e:
-            log_and_print(f"{FAILURE} Error managing users/groups: {str(e)}", "error")
+            log_and_print(
+                f"{FAILURE} Error managing users/groups: {str(e)}", "error"
+            )
 
 
 def select_items_from_list(items, prompt):
-    """
-    Allow the user to select items from a list, optionally using fzf if available.
-    """
+    """Allow the user to select items from a list, using fzf if available."""
     try:
         if shutil.which("fzf"):
             fzf_command = ["fzf", "-m", "--prompt", prompt]
@@ -2508,8 +2416,7 @@ def select_items_from_list(items, prompt):
                 fzf_command, input="\n".join(items), capture_output=True, text=True
             )
             if result.returncode == 0:
-                selected_items = result.stdout.strip().split("\n")
-                return selected_items
+                return result.stdout.strip().split("\n")
             else:
                 return []
         else:
@@ -2523,8 +2430,7 @@ def select_items_from_list(items, prompt):
                 indices = [
                     int(s) - 1 for s in selections.split(",") if s.strip().isdigit()
                 ]
-                selected_items = [items[i] for i in indices if 0 <= i < len(items)]
-                return selected_items
+                return [items[i] for i in indices if 0 <= i < len(items)]
             else:
                 return []
     except Exception as e:
@@ -2533,16 +2439,17 @@ def select_items_from_list(items, prompt):
 
 
 ####################################
-# 34. configure_firewall() => keep minimal, referencing ufw.sh
+# 34. configure_firewall
 ####################################
 
 
 def configure_firewall():
     """
-    Minimal approach: Resets UFW to deny incoming, allow outgoing, optionally denies SSH.
-    For advanced usage, user can invoke ufw.sh script externally.
+    Minimal UFW reset: deny incoming, allow outgoing, optionally allow/deny SSH.
     """
-    log_and_print(f"{INFO} Configuring firewall settings (basic UFW reset)...", "info")
+    log_and_print(
+        f"{INFO} Configuring firewall settings (basic UFW reset)...", "info"
+    )
     try:
         if not shutil.which("ufw"):
             log_and_print(
@@ -2558,8 +2465,12 @@ def configure_firewall():
             subprocess.run(["sudo", "ufw", "reset"], check=False)
             log_and_print(f"{INFO} UFW settings reset to default.", "info")
 
-        subprocess.run(["sudo", "ufw", "default", "deny", "incoming"], check=False)
-        subprocess.run(["sudo", "ufw", "default", "allow", "outgoing"], check=False)
+        subprocess.run(
+            ["sudo", "ufw", "default", "deny", "incoming"], check=False
+        )
+        subprocess.run(
+            ["sudo", "ufw", "default", "allow", "outgoing"], check=False
+        )
         log_and_print(
             f"{INFO} Set default policies: deny incoming, allow outgoing.", "info"
         )
@@ -2583,19 +2494,20 @@ def configure_firewall():
 
 
 ####################################
-# 35. monitor_system_logs() => #1, #2
+# 35. monitor_system_logs
 ####################################
 
 
 def monitor_system_logs(priority=3, services=None):
     """
     Monitor system logs for errors or warnings of a given priority or higher.
-    Improvement #1: Let user define priority level.
-    Improvement #2: Filter logs by specific services if desired.
+    Optionally filter by specific service names.
     """
     if services is None:
         services = []
-    log_and_print(f"{INFO} Monitoring system logs (priority >= {priority})...", "info")
+    log_and_print(
+        f"{INFO} Monitoring system logs (priority >= {priority})...", "info"
+    )
     try:
         cmd = ["journalctl", f"-p{priority}", "-xb"]
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -2603,10 +2515,11 @@ def monitor_system_logs(priority=3, services=None):
             logs = result.stdout.strip()
             if logs:
                 if services:
-                    filtered = []
-                    for line in logs.split("\n"):
-                        if any(svc in line for svc in services):
-                            filtered.append(line)
+                    filtered = [
+                        line
+                        for line in logs.split("\n")
+                        if any(svc in line for svc in services)
+                    ]
                     if filtered:
                         log_and_print(
                             f"{INFO} Filtered system logs (services={services}):",
@@ -2614,7 +2527,9 @@ def monitor_system_logs(priority=3, services=None):
                         )
                         for line in filtered:
                             print(line)
-                        logging.info("Filtered system logs:\n" + "\n".join(filtered))
+                        logging.info(
+                            "Filtered system logs:\n" + "\n".join(filtered)
+                        )
                     else:
                         log_and_print(
                             f"{SUCCESS} No relevant logs found for services={services}.",
@@ -2640,14 +2555,16 @@ def monitor_system_logs(priority=3, services=None):
 
 
 ####################################
-# 36. generate_system_report() => improvements #1 & #2 (structured output, modular tools)
+# 36. generate_system_report
 ####################################
 
 
 def generate_system_report(output_format="json", output_file=None):
     """
-    Generate a structured report of system information. By default, output JSON to logs/system_report.json.
-    Also includes optional 'lshw' output, 'inxi' if available, etc.
+    Generate a structured report of system information.
+    Default output: logs/system_report.json (JSON format).
+    Includes uname, lsb_release, lshw (if available), inxi (if available),
+    /proc/meminfo, and /proc/cpuinfo.
     """
     log_and_print(
         f"{INFO} Generating system information report (format={output_format})...",
@@ -2657,11 +2574,9 @@ def generate_system_report(output_format="json", output_file=None):
         output_file = os.path.join(LOG_BASE_DIR, "system_report.json")
 
     report = {}
-    # Basic kernel info
     uname_result = subprocess.run(["uname", "-a"], capture_output=True, text=True)
     report["uname"] = uname_result.stdout.strip()
 
-    # LSB Release
     try:
         lsb_result = subprocess.run(
             ["lsb_release", "-a"], capture_output=True, text=True
@@ -2670,43 +2585,36 @@ def generate_system_report(output_format="json", output_file=None):
     except FileNotFoundError:
         report["lsb_release"] = "lsb_release not found"
 
-    # hardware info
     if shutil.which("lshw"):
-        lshw_cmd = ["sudo", "lshw", "-json"]
         try:
             lshw_result = subprocess.run(
-                lshw_cmd, capture_output=True, text=True, check=True
+                ["sudo", "lshw", "-json"], capture_output=True, text=True, check=True
             )
-            # parse JSON or store raw
             try:
-                lshw_json = json.loads(lshw_result.stdout)
-                report["hardware"] = lshw_json
+                report["hardware"] = json.loads(lshw_result.stdout)
             except json.JSONDecodeError:
                 report["hardware_raw"] = lshw_result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            log_and_print(f"{FAILURE} Error running lshw: {e.stderr.strip()}", "error")
+            log_and_print(
+                f"{FAILURE} Error running lshw: {e.stderr.strip()}", "error"
+            )
     else:
         report["hardware"] = "lshw not installed"
 
-    # Optional 'inxi'
     if shutil.which("inxi"):
-        inxi_result = subprocess.run(["inxi", "-Fxxxz"], capture_output=True, text=True)
+        inxi_result = subprocess.run(
+            ["inxi", "-Fxxxz"], capture_output=True, text=True
+        )
         report["inxi"] = inxi_result.stdout.strip()
     else:
         report["inxi"] = "inxi not installed"
 
-    # Possibly gather memory, cpu info
-    # Memory:
     with open("/proc/meminfo", "r") as meminfo:
-        mem_data = meminfo.read()
-    report["meminfo"] = mem_data
+        report["meminfo"] = meminfo.read()
 
-    # CPU info:
     with open("/proc/cpuinfo", "r") as cpuinfo:
-        cpu_data = cpuinfo.read()
-    report["cpuinfo"] = cpu_data
+        report["cpuinfo"] = cpuinfo.read()
 
-    # Save structured report
     try:
         if output_format.lower() == "json":
             with open(output_file, "w") as outfile:
@@ -2715,7 +2623,6 @@ def generate_system_report(output_format="json", output_file=None):
                 f"{SUCCESS} System report saved as JSON: {output_file}", "info"
             )
         else:
-            # fallback to plain text
             with open(output_file, "w") as outfile:
                 outfile.write(str(report))
             log_and_print(
@@ -2726,7 +2633,7 @@ def generate_system_report(output_format="json", output_file=None):
 
 
 ############################
-# 37. is_interactive() => keep
+# 37. is_interactive
 ############################
 
 
@@ -2735,14 +2642,13 @@ def is_interactive():
 
 
 ############################
-# 38. run_all_tasks()
+# 38. run_all_tasks
 ############################
 
 
 def run_all_tasks():
     """
-    Run all maintenance tasks (1 through 31).
-    We'll just call them in numeric order if the function references exist in menu_options.
+    Run all maintenance tasks in numeric order (1 through 31).
     """
     for key in [str(k) for k in range(1, 32)]:
         try:
@@ -2793,19 +2699,17 @@ menu_options = {
 }
 
 ################################
-# main()
+# main
 ################################
 
 
 def main():
-    """
-    Display the main menu and handle user input.
-    """
-    import os
-    import sys
-    import subprocess
+    """Display the main menu and handle user input."""
+    # FIX: Removed redundant `import os / sys / subprocess` statements that
+    # were nested inside main(). All three modules are imported at the top of
+    # the file and are available throughout; re-importing inside a function is
+    # a no-op but adds clutter and misleads readers about the module's structure.
 
-    # SUDO ELEVATION CHECK
     if os.geteuid() != 0:
         try:
             print("Attempting to escalate privileges via sudo...")
@@ -2870,11 +2774,7 @@ def main():
         print(f"{GREEN}By your command:{NC}")
 
         command = prompt_with_timeout("Enter your choice: ", timeout=30, default="Q")
-
-        if command:
-            command = command.strip().upper()
-        else:
-            command = "Q"
+        command = (command or "Q").strip().upper()
 
         if command == "Q":
             break

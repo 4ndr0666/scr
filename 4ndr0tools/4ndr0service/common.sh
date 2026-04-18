@@ -6,15 +6,14 @@
 #   - Source of truth for XDG compliance.
 
 set -euo pipefail
+
 # ──────────────────────────────────────────────────────────────────────────────
 # [4NDR0666OS] AUTONOMIC MUTEX LOCK (USER-SCOPED)
 # Prevents systemd daemon race conditions while allowing multi-user isolation.
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ -z "${_4NDR0_MUTEX_LOCKED:-}" ]]; then
-    # Scope the lockfile to the specific user executing the script
     _LOCK_FILE="/tmp/4ndr0service_${EUID:-$(id -u)}.lock"
-    
-    # Check if we can write to it, otherwise attempt to clear a dead root lock
+
     if [[ -e "$_LOCK_FILE" && ! -w "$_LOCK_FILE" ]]; then
         echo -e "\033[38;5;196m[FATAL] Lockfile $_LOCK_FILE is owned by another user (likely root). Execute 'sudo rm $_LOCK_FILE' to clear the blockage.\033[0m" >&2
         exit 1
@@ -37,6 +36,10 @@ export COMMON_SOURCED=1
 
 # =============================================================================
 # 1. ANSI COLORS
+# FIX: The original file exported these variables then immediately re-declared
+#      them with `declare -r`.  Under `set -euo pipefail`, re-declaring an
+#      already-exported variable as readonly raises a fatal error.  Single
+#      authoritative `export` block; no `declare -r` anywhere in this file.
 # =============================================================================
 
 export C_RED='\033[0;31m'
@@ -46,33 +49,43 @@ export C_BLUE='\033[0;34m'
 export C_RESET='\033[0m'
 
 # =============================================================================
-# 2. PATH DISCOVERY & INITIALIZATION
+# 2. XDG BASE DIRECTORY SPECIFICATION  (single authoritative block)
+# FIX: Original had two separate export blocks for XDG vars (Sections 2 & 4)
+#      which created redundancy and a maintenance hazard.  Unified here.
 # =============================================================================
 
-# XDG Base Directory fallbacks
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 
 # Offensive Suite Paths (Derived from XDG)
 export PYENV_ROOT="${XDG_DATA_HOME}/pyenv"
-export VENV_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/virtualenv"
+export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
 export BIN_DIR="${HOME}/.local/bin"
 
-# Internal Tooling (Relative to PKG_PATH resolved in main.sh)
-# PKG_PATH is set via readlink -f in the entry point
+# Cohesion Variables (Aligning with config.json constraints)
+export PIPX_HOME="${PIPX_HOME:-$XDG_DATA_HOME/pipx}"
+export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
+export NVM_DIR="${NVM_DIR:-$XDG_DATA_HOME/nvm}"
+export PSQL_HOME="${PSQL_HOME:-$XDG_DATA_HOME/psql}"
+export MYSQL_HOME="${MYSQL_HOME:-$XDG_DATA_HOME/mysql}"
+
+# Application Config & Log Paths
 export CONFIG_FILE="${XDG_CONFIG_HOME}/4ndr0service/config.json"
 export LOG_FILE="${XDG_CACHE_HOME}/4ndr0service/service.log"
 
-# Ensure PKG_PATH is set relative to this script location
+# =============================================================================
+# 3. PKG_PATH DISCOVERY
+# =============================================================================
+
 ensure_pkg_path() {
     if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
         local caller="${BASH_SOURCE[0]:-$0}"
         local script_dir
-        # Resolve symlinks to find the actual physical location
         script_dir="$(cd -- "$(dirname -- "$(readlink -f "$caller")")" && pwd -P)"
 
-        # Traverse up to find the root containing common.sh (max 3 levels)
         local count=0
         while [[ "$script_dir" != "/" && $count -lt 3 ]]; do
             if [[ -f "$script_dir/common.sh" ]]; then
@@ -94,15 +107,8 @@ ensure_pkg_path() {
 ensure_pkg_path
 
 # =============================================================================
-# 3. LOGGING & ERROR HANDLING
+# 4. LOGGING & ERROR HANDLING
 # =============================================================================
-
-# ANSI Colors
-declare -r C_RED='\033[0;31m'
-declare -r C_GREEN='\033[0;32m'
-declare -r C_YELLOW='\033[1;33m'
-declare -r C_BLUE='\033[0;34m'
-declare -r C_RESET='\033[0m'
 
 log_info() {
     printf "${C_BLUE}[INFO]${C_RESET} %s %s\n" "$(date +'%H:%M:%S')" "$*"
@@ -120,7 +126,6 @@ log_error() {
     printf "${C_RED}[FAIL]${C_RESET} %s %s\n" "$(date +'%H:%M:%S')" "$*" >&2
 }
 
-# Robust error handler
 handle_error() {
     local line_no="$1"
     local command="$2"
@@ -132,31 +137,12 @@ handle_error() {
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 # =============================================================================
-# 4. XDG & ENVIRONMENT CONFIGURATION
+# 5. FILESYSTEM UTILITIES
 # =============================================================================
-
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-export XDG_BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
-
-# Cohesion Variables (Aligning with config.json constraints)
-export PIPX_HOME="${PIPX_HOME:-$XDG_DATA_HOME/pipx}"
-export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
-export NVM_DIR="${NVM_DIR:-$XDG_DATA_HOME/nvm}"
-export PSQL_HOME="${PSQL_HOME:-$XDG_DATA_HOME/psql}"
-export MYSQL_HOME="${MYSQL_HOME:-$XDG_DATA_HOME/mysql}"
-
-# Application Config File
-export CONFIG_FILE="$XDG_CONFIG_HOME/4ndr0service/config.json"
-export LOG_FILE="$XDG_CACHE_HOME/4ndr0service/service.log"
 
 ensure_dir() {
     local dir="${1:-}"
-    if [[ -z "$dir" ]]; then
-        return 0
-    fi
+    [[ -z "$dir" ]] && return 0
     if [[ ! -d "$dir" ]]; then
         mkdir -p "$dir"
         log_info "Created directory: $dir"
@@ -173,14 +159,21 @@ ensure_xdg_dirs() {
 }
 
 # =============================================================================
-# 5. PACKAGE MANAGEMENT
+# 6. PACKAGE MANAGEMENT
+# FIX: pkg_is_installed() logic was inverted. Original:
+#        `[[ -z "$pkg" ]] && pacman -Qi "$pkg" &>/dev/null`
+#      This called pacman when $pkg was EMPTY (guaranteed failure) and silently
+#      returned exit-0 ("installed") for every non-empty value without querying
+#      pacman at all, meaning install_sys_pkg() never installed anything.
+#      Corrected: guard returns 1 on empty input, then pacman is queried.
 # =============================================================================
 
 detect_pkg_manager() { echo "pacman"; }
 
 pkg_is_installed() {
     local pkg="${1:-}"
-    [[ -z "$pkg" ]] && pacman -Qi "$pkg" &>/dev/null
+    [[ -z "$pkg" ]] && return 1
+    pacman -Qi "$pkg" &>/dev/null
 }
 
 install_sys_pkg() {
@@ -194,13 +187,13 @@ install_sys_pkg() {
 }
 
 # =============================================================================
-# 6. CONFIGURATION MANAGEMENT
+# 7. CONFIGURATION MANAGEMENT
 # =============================================================================
 
 create_config_if_missing() {
     ensure_dir "$(dirname "$CONFIG_FILE")"
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        cat >"$CONFIG_FILE" <<EOF
+        cat >"$CONFIG_FILE" <<'ENDOFCONFIG'
 {
   "settings_editor": "vim",
   "required_env": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR", "NVM_DIR", "PSQL_HOME", "MYSQL_HOME"],
@@ -217,7 +210,7 @@ create_config_if_missing() {
   "venv_pipx_packages": ["black", "flake8", "mypy", "pytest"],
   "audit_keywords": ["config_watch", "data_watch", "cache_watch"]
 }
-EOF
+ENDOFCONFIG
         log_success "Created default config at $CONFIG_FILE"
     fi
 }
@@ -236,7 +229,7 @@ load_config() {
 }
 
 # =============================================================================
-# 7. SHELL CONFIG UTILS
+# 8. SHELL CONFIG UTILS
 # =============================================================================
 
 ensure_config_line() {
@@ -257,7 +250,8 @@ path_prepend() {
     fi
 }
 
-# Execute multiple functions in parallel and wait for completion
+# Execute multiple functions in parallel and wait for all to complete.
+# Returns 1 if any worker failed; 0 if all succeeded.
 run_parallel_checks() {
     local funcs=("$@")
     local pids=()
@@ -278,6 +272,10 @@ run_parallel_checks() {
 
     return "$status"
 }
+
+# =============================================================================
+# 9. SUITE INITIALIZATION
+# =============================================================================
 
 initialize_suite() {
     ensure_xdg_dirs
