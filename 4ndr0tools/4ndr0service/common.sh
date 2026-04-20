@@ -32,7 +32,7 @@ IFS=$'\n\t'
 if [[ -n "${COMMON_SOURCED:-}" ]]; then
     return 0
 fi
-export COMMON_SOURCED=1
+COMMON_SOURCED=1
 
 # =============================================================================
 # 1. ANSI COLORS
