@@ -6,9 +6,8 @@ Description=Memory Policing Daemon
 After=network.target
 
 [Service]
-Type=forking
-PIDFile=/var/run/mem-police.pid
-ExecStart=/usr/bin/mem-police
+Type=simple
+ExecStart=/usr/local/bin/mem-police --foreground
 Restart=always
 RestartSec=5s
 

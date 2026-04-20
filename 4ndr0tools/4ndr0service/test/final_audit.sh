@@ -17,10 +17,8 @@ done
 export FIX_MODE REPORT_MODE
 
 # ── PATH RESOLUTION ───────────────────────────────────────────────────────────
-# FIX: Previous version used ${PKG_PATH:-$(dirname ...)} which short-circuits
-#      when PKG_PATH is already stale in the environment.  Always self-resolve
-#      unconditionally from BASH_SOURCE[0].  This script is at test/final_audit.sh
-#      so dirname x1 is the project root.
+# Always self-resolve PKG_PATH unconditionally from BASH_SOURCE[0].
+# This script is at test/final_audit.sh so dirname x1 is the project root.
 _AUDIT_SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 _COMPUTED_PKG_PATH="$(dirname "$_AUDIT_SCRIPT_DIR")"
 
@@ -34,8 +32,10 @@ export PKG_PATH="$_COMPUTED_PKG_PATH"
 # shellcheck source=../common.sh
 source "$PKG_PATH/common.sh"
 
-# shellcheck source=./src/verify_environment.sh
-source "$PKG_PATH/test/src/verify_environment.sh"
+# FIX: Path updated from test/src/verify_environment.sh to test/verify_environment.sh
+#      following the tree restructure that eliminated the redundant src/ subdir.
+# shellcheck source=./verify_environment.sh
+source "$PKG_PATH/test/verify_environment.sh"
 
 check_systemd_bus() {
     log_info "Checking systemd user scope bus connection..."

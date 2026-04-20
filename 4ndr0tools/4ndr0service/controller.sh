@@ -11,8 +11,11 @@ source "${PKG_PATH:-.}/common.sh"
 source "$PKG_PATH/settings_functions.sh"
 # shellcheck source=./manage_files.sh
 source "$PKG_PATH/manage_files.sh"
-# shellcheck source=./test/src/verify_environment.sh
-source "$PKG_PATH/test/src/verify_environment.sh"
+# FIX: Path updated from test/src/verify_environment.sh to test/verify_environment.sh
+#      The test/src/ subdirectory was structurally redundant; verify_environment.sh
+#      now lives directly under test/ in the production tree.
+# shellcheck source=./test/verify_environment.sh
+source "$PKG_PATH/test/verify_environment.sh"
 
 PLUGINS_DIR="${PLUGINS_DIR:-"$PKG_PATH/plugins"}"
 USER_INTERFACE="${USER_INTERFACE:-cli}"
@@ -32,10 +35,6 @@ load_plugins() {
         # shellcheck disable=SC1090
         if source "$plugin"; then
             log_info "Loaded plugin: $(basename "$plugin")"
-            # FIX: After sourcing, invoke the plugin's registered entry point
-            #      if it declared one.  This is the convention that converts
-            #      plugin_scr_alias_gen (and any future plugin) from dead code
-            #      into an automatically executed service.
             if [[ -n "${PLUGIN_REGISTER:-}" ]] && declare -f "${PLUGIN_REGISTER}" >/dev/null 2>&1; then
                 log_info "Executing plugin entry point: ${PLUGIN_REGISTER}"
                 "${PLUGIN_REGISTER}" || log_warn "Plugin ${PLUGIN_REGISTER} returned non-zero."

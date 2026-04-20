@@ -25,11 +25,11 @@ fi
 INFO "Compiling mem-police..."
 if cc -O2 -std=c11 -Wall -Wextra -pedantic \
      -D_POSIX_C_SOURCE=200809L \
-     -o mem-police mem-police.c
+     -o mem-police mem-police.c -lpcre2-8
 then
     GLOW "Compilation succeeded"
 else
-    BUG  "Compilation failed"
+    BUG  "Compilation failed. Ensure libpcre2-dev or pcre2-devel is installed."
     exit 1
 fi
 
@@ -38,9 +38,9 @@ if install -m755 mem-police /usr/local/bin/; then
     GLOW "mem-police installed successfully."
     echo ""
     printf '%s\n' "Start mem-police as root with:
-$(tput setaf 4)  /usr/local/bin/mem-police &$(tput sgr0)
-or for logging:
-$(tput setaf 4)  sudo sh -c '/usr/local/bin/mem-police 2>&1 | tee /var/log/mem-police.log' &$(tput sgr0)"
+$(tput setaf 4)  systemctl start mem-police$(tput sgr0)
+or for interactive logging:
+$(tput setaf 4)  sudo /usr/local/bin/mem-police --foreground$(tput sgr0)"
 else
     BUG  "Installation failed."
     exit 1

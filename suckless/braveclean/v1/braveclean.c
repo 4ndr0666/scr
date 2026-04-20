@@ -1,15 +1,15 @@
 /*
  * braveclean.c — High-performance browser sanitizer
- * Version: 2.1.3 (Protocol Restored + Dynamic Colors + WAL Mitigation)
+ * Version: 2.1.2 (Protocol Restored)
  *
  * COHESION REPORT:
  * - CRITICAL FIX: Reverted unauthorized target expansion. Vacuum logic now 
  * strictly targets ONLY *.sqlite files, perfectly mirroring V1 behavior.
- * - CRITICAL FIX: Restored the exact deep-clean directory array from V1.
- * - NEW: sleep(2) implemented to allow OS to safely flush WAL journals.
- * - NEW: isatty() dynamic color parser prevents ANSI garbage in log files.
+ * - CRITICAL FIX: Restored the exact deep-clean directory array from V1 
+ * ("GPUCache", "Code Cache", "Service Worker", "ShaderCache", "GrShaderCache").
+ * - Retained safe_path_join() and NFTW() for C-level memory safety and speed.
  *
- * Build: gcc -O2 braveclean.c -o braveclean -lsqlite3
+ * Build: make
  */
 
 #include <stdio.h>
@@ -23,6 +23,7 @@
 #include <sqlite3.h>
 #include <errno.h>
 #include <signal.h>
+#include <time.h>
 #include <limits.h>
 
 /* Fallback for systems without PATH_MAX */
@@ -30,18 +31,11 @@
 #define PATH_MAX 4096
 #endif
 
-/* --- DYNAMIC ANSI COLORS --- */
-/* Only output color codes if running in an interactive terminal */
-static const char *get_color(const char *ansi_code) {
-    if (isatty(STDOUT_FILENO)) return ansi_code;
-    return "";
-}
-
-#define RED    get_color("\033[31m")
-#define GREEN  get_color("\033[32m")
-#define YELLOW get_color("\033[33m")
-#define CYAN   get_color("\033[36m")
-#define RESET  get_color("\033[0m")
+#define RED     "\033[31m"
+#define GREEN   "\033[32m"
+#define YELLOW  "\033[33m"
+#define CYAN    "\033[36m"
+#define RESET   "\033[0m"
 
 /* --- UTILS --- */
 
@@ -58,6 +52,15 @@ static void
 log_warn(const char *msg, const char *detail) 
 {
     fprintf(stderr, "%s[!] %s: %s%s\n", YELLOW, msg, detail ? detail : "", RESET);
+}
+
+static void
+xnanosleep(long nsec)
+{
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = nsec;
+    nanosleep(&req, NULL);
 }
 
 /* * Safe Path Join
@@ -268,8 +271,8 @@ main(void)
     const char *targets[] = {"firefox", "chrome", "chromium", "brave", NULL};
     for (int i=0; targets[i]; i++) terminate_proc(targets[i]);
     
-    // Give OS time to release file locks and WAL journals (2s)
-    sleep(2); 
+    // Give OS time to release file locks (500ms)
+    xnanosleep(500000000L); 
 
     // 2. Clean Phase
     handle_chromium_variant(home, "Brave", ".config/BraveSoftware/Brave-Browser");

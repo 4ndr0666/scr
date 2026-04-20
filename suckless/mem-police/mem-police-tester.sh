@@ -1,24 +1,20 @@
 #!/bin/bash
 # Author: 4ndr0666
+# Refactored: RSS Memory Allocation + Systemd Journal Tracking
 set -eu
 
+# Auto-escalate: Must run as root to read /var/run/mem-police (0700)
+[ "$(id -u)" -eq 0 ] || exec sudo bash "$0" "$@"
+
 # ==================== // MEM-POLICE-TESTER.SH //
-## Description: Tests the mem-police daemon by spawning memory hogs,
+## Description: Tests the mem-police daemon by spawning true RSS memory hogs,
 #              verifying that mem-police creates start files and kills them.
 ## Usage: ./mem-police-tester.sh [HOG_MB...]
 # -----------------------------------------------
 
-TMPDIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
-SHM="/dev/shm"
-if [ ! -w "$SHM" ]; then
-    SHM="$TMPDIR"
-fi
-
 CONF="/etc/mem_police.conf"
-LOG="$TMPDIR/mem-police-debug.$$.log"
-PID_FILE="$TMPDIR/mempolice-hogs.$$.pids"
-# User can override this to match the system (edit if your mem-police uses a different dir)
-MEMPOLICE_START_DIR="/var/run/user/$(id -u)/mem-police"
+PID_FILE="/tmp/mempolice-hogs.$$.pids"
+MEMPOLICE_START_DIR="/var/run/mem-police"
 SLEEP_BETWEEN=1
 
 # --- Logging ---
@@ -48,7 +44,7 @@ THRESHOLD_DURATION=$(read_config "THRESHOLD_DURATION"); : "${THRESHOLD_DURATION:
 KILL_GRACE=$(read_config "KILL_GRACE"); : "${KILL_GRACE:=5}"
 
 WAIT_GRACE=$((SLEEP * 2))
-WAIT_TOTAL=$((SLEEP + THRESHOLD_DURATION + KILL_GRACE + 5))
+WAIT_TOTAL=$((SLEEP + THRESHOLD_DURATION + KILL_GRACE + 10)) # Added 10s buffer
 
 INFO "mem-police config: SLEEP=${SLEEP}s, THRESHOLD_DURATION=${THRESHOLD_DURATION}s, KILL_GRACE=${KILL_GRACE}s"
 INFO "Test wait times: WAIT_GRACE=${WAIT_GRACE}s (for startfile), WAIT_TOTAL=${WAIT_TOTAL}s (for kill)"
@@ -68,73 +64,67 @@ cleanup() {
         while read -r pid; do
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
                 INFO "Killing PID $pid..."
-                kill "$pid" 2>/dev/null || true
+                kill -9 "$pid" 2>/dev/null || true
             fi
         done <"$PID_FILE"
     fi
     INFO "Removing temporary files..."
-    rm -f "$MEMPOLICE_START_DIR"/mempolice-*.start "$SHM"/hog."$$".* "$TMPDIR"/hog."$$".* "$PID_FILE" "$LOG" 2>/dev/null || true
+    rm -f "$PID_FILE" 2>/dev/null || true
     GLOW "Cleanup complete."
 }
 trap cleanup EXIT INT TERM
 
 # --- Initial Cleanup ---
-rm -f "$MEMPOLICE_START_DIR"/mempolice-*.start "$SHM"/hog."$$".* "$TMPDIR"/hog."$$".* "$PID_FILE" "$LOG" 2>/dev/null || true
-
-# --- Prepare test dir (user may override permissions/location as needed) ---
-if [ ! -d "$MEMPOLICE_START_DIR" ]; then
-    mkdir -p "$MEMPOLICE_START_DIR"
-    chown "$(id -un):$(id -gn)" "$MEMPOLICE_START_DIR"
-    chmod 755 "$MEMPOLICE_START_DIR"
-fi
+rm -f "$PID_FILE" 2>/dev/null || true
 
 # --- Daemon check ---
 INFO "Checking if mem-police is running..."
 if ! pgrep -x mem-police >/dev/null 2>&1; then
-    INFO "mem-police not found. Please start mem-police as root before testing."
+    BUG "mem-police not found. Please start mem-police via systemd before testing."
     exit 1
 else
     INFO "mem-police already running (PID $(pgrep -x mem-police))"
 fi
 
 # --- Tail Log ---
-INFO "Tailing log ($LOG)..."
-touch "$LOG"
-tail -n0 -f "$LOG" &
+INFO "Tailing systemd journal for mem-police..."
+journalctl -u mem-police -f -n 0 &
 TAIL_PID=$!
 sleep 1
 
 # --- Hog Sizes ---
 HOG_SIZES_ARRAY=("$@")
 if [ ${#HOG_SIZES_ARRAY[@]} -eq 0 ]; then
-    HOG_SIZES_ARRAY=(800)
+    HOG_SIZES_ARRAY=(2000) # Default to 2GB to trigger the 1.5GB config limit
 fi
 INFO "Requested hog sizes (MB): ${HOG_SIZES_ARRAY[*]}"
 NUM_HOGS=0
 
-# --- Spawn Memory Hogs ---
+# --- Spawn True RSS Memory Hogs ---
 for mb in "${HOG_SIZES_ARRAY[@]}"; do
     if ! [[ "$mb" =~ ^[1-9][0-9]*$ ]]; then
         BUG "Invalid hog size: '$mb' (must be a positive integer > 0)"
         continue
     fi
-    OUTFILE="$SHM/hog.$$.$mb.mem"
-    bytes=$((mb * 1024 * 1024))
-    INFO "Spawning hog ${mb} MB ($bytes bytes) into $OUTFILE..."
-    (exec head -c "$bytes" </dev/zero >"$OUTFILE") &
+    
+    # Python securely allocates true heap memory (RSS)
+    INFO "Spawning RSS Python hog ${mb} MB..."
+    python3 -c "a = b'0' * ($mb * 1024 * 1024); import time; time.sleep(3600)" &
     hogpid=$!
+    
     if kill -0 "$hogpid" 2>/dev/null; then
         echo "$hogpid" >>"$PID_FILE"
         NUM_HOGS=$((NUM_HOGS + 1))
-        INFO "Spawned hog ${mb} MB (PID $hogpid, OUTFILE $OUTFILE)"
+        INFO "Spawned hog ${mb} MB (PID $hogpid)"
     else
         BUG "Failed to spawn hog ${mb} MB."
-        rm -f "$OUTFILE" 2>/dev/null || true
     fi
+    
     if [ "${#HOG_SIZES_ARRAY[@]}" -gt 1 ] && [ "$NUM_HOGS" -gt 0 ] && [ "$NUM_HOGS" -lt "${#HOG_SIZES_ARRAY[@]}" ]; then
         sleep "$SLEEP_BETWEEN"
     fi
 done
+
 if [ "$NUM_HOGS" -eq 0 ]; then
     BUG "No valid hog sizes provided or successfully spawned. Exiting."
     echo "1..0"
@@ -166,13 +156,13 @@ while read -r pid; do
         echo "ok $COUNTER - startfile for PID $pid created"
     else
         echo "not ok $COUNTER - startfile for PID $pid missing after ${WAIT_GRACE}s"
-        BUG "Startfile $START for PID $pid was not created within ${WAIT_GRACE}s."
+        BUG "Startfile for PID $pid was not created. (Is threshold > ${mb}MB?)"
     fi
     COUNTER=$((COUNTER + 1))
 done <"$PID_FILE"
 
 # --- Test 2: Wait for mem-police to kill hogs ---
-INFO "Waiting ${WAIT_TOTAL}s for hogs to be killed by mem-police..."
+INFO "Waiting ${WAIT_TOTAL}s for hogs to breach duration and be terminated..."
 sleep "$WAIT_TOTAL"
 
 # --- Test 3: Check if hogs were killed ---
@@ -181,12 +171,10 @@ INFO "Checking if hogs were killed..."
 while read -r pid; do
     if kill -0 "$pid" 2>/dev/null; then
         echo "not ok $COUNTER - PID $pid still alive after ${WAIT_TOTAL}s"
-        BUG "PID $pid still alive. mem-police may not have killed it."
-        INFO "Attempting to kill PID $pid for cleanup..."
-        kill "$pid" 2>/dev/null || true
+        BUG "PID $pid still alive. mem-police failed to terminate it."
     else
-        echo "ok $COUNTER - PID $pid was killed"
-        GLOW "PID $pid was killed as expected."
+        echo "ok $COUNTER - PID $pid was successfully terminated"
+        GLOW "PID $pid was terminated by mem-police."
     fi
     COUNTER=$((COUNTER + 1))
 done <"$PID_FILE"

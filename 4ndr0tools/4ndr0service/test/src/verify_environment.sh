@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# File: test/src/verify_environment.sh
+# File: test/verify_environment.sh
 # Description: Alpha Auditor for 4ndr0service environment integrity.
+# NOTE: Moved from test/src/verify_environment.sh → test/verify_environment.sh.
+#       The test/src/ subdirectory was structurally redundant; this file belongs
+#       directly under test/ alongside final_audit.sh.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=../../common.sh
+# shellcheck source=../common.sh
 source "${PKG_PATH:-.}/common.sh"
 
 # FIX: Do NOT set FIX_MODE / REPORT_MODE at module scope (source-time).
 #      Doing so shadows the caller's exported value because Bash evaluates
 #      `VAR="${VAR:-default}"` at the point the line executes — i.e., the
 #      moment this file is sourced — before run_verification() is called.
-#      The defaults are now applied inside the function where they are used,
+#      The defaults are applied inside the function where they are used,
 #      so the caller's environment is always respected.
 
 run_verification() {

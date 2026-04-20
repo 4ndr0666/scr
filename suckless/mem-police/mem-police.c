@@ -1,8 +1,7 @@
 /*
- * mem-police.c — Robust memory policing daemon, with metrics, config reload, and pattern-based whitelisting.
+ * mem-police.c — Robust memory policing daemon
+ * Version: 3.0 (statm optimization, PCRE2 regex, PID reuse immunity)
  * Compile: cc -O2 -std=c11 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200809L -o mem-police mem-police.c -lpcre2-8
- * Requires: /etc/mem_police.conf, /var/run/mem-police (0700, root), creates /var/run/mem-police.pid
- *           PCRE2 library for regex/pattern matching (install: libpcre2-dev or pcre2-devel)
  */
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -32,7 +31,7 @@
 #define CONFIG_PATH           "/etc/mem_police.conf"
 #define STARTFILE_DIR         "/var/run/mem-police"
 #define PIDFILE_PATH          "/var/run/mem-police.pid"
-#define METRICS_PATH          "/run/mem-police/metrics"
+#define METRICS_PATH          STARTFILE_DIR "/metrics"
 #define DEFAULT_SLEEP         10
 #define PATHBUF               PATH_MAX
 #define MAX_WHITELIST_LEN     2048
@@ -175,7 +174,7 @@ static void check_startfile_dir(void) {
         }
     } else {
         if (!S_ISDIR(st.st_mode) || (st.st_mode & 077) != 0) {
-            log_syslog(LOG_ERR, "[mem-police] %s is not a secure directory (must be 0700, owned by root)", STARTFILE_DIR);
+            log_syslog(LOG_ERR, "[mem-police] %s is not a secure directory (must be 0700, root owned)", STARTFILE_DIR);
             exit(EXIT_FAILURE);
         }
         if (st.st_uid != 0) {
@@ -196,7 +195,7 @@ static void check_config_permissions(void) {
         exit(EXIT_FAILURE);
     }
     if ((st.st_mode & 077) != 0) {
-        log_syslog(LOG_ERR, "[mem-police] Config file %s permissions too open (must be 0600 or stricter)", config_path);
+        log_syslog(LOG_ERR, "[mem-police] Config file %s permissions too open (must be 0600)", config_path);
         exit(EXIT_FAILURE);
     }
 }
@@ -282,12 +281,10 @@ static void load_config(mempolice_config_t *cfg) {
                         (PCRE2_SPTR8)tok, PCRE2_ZERO_TERMINATED, 0, &errorcode, &erroffs, NULL
                     );
                     if (!cfg->whitelist_regex[cfg->whitelist_count]) {
-                        log_syslog(LOG_WARNING, "[mem-police] Whitelist regex '%s' invalid at offset %d", tok, (int)erroffs);
+                        log_syslog(LOG_WARNING, "[mem-police] Whitelist regex '%s' invalid", tok);
                         cfg->whitelist_regex[cfg->whitelist_count] = NULL;
                     }
                     cfg->whitelist_count++;
-                } else {
-                    log_syslog(LOG_WARNING, "[mem-police] Whitelist truncated: maximum %d entries supported. Ignoring '%s'.", MAX_WHITELIST, tok);
                 }
             }
             if (cfg->whitelist_count == 0) {
@@ -299,11 +296,11 @@ static void load_config(mempolice_config_t *cfg) {
     }
     fclose(f);
 
-    if (!have_threshold) log_syslog(LOG_ERR, "[mem-police] Missing required config: THRESHOLD_MB"), exit(EXIT_FAILURE);
-    if (!have_kill) log_syslog(LOG_ERR, "[mem-police] Missing required config: KILL_SIGNAL"), exit(EXIT_FAILURE);
-    if (!have_duration) log_syslog(LOG_ERR, "[mem-police] Missing required config: THRESHOLD_DURATION"), exit(EXIT_FAILURE);
-    if (!have_grace) log_syslog(LOG_ERR, "[mem-police] Missing required config: KILL_GRACE"), exit(EXIT_FAILURE);
-    if (!have_whitelist) log_syslog(LOG_ERR, "[mem-police] Missing required config: WHITELIST"), exit(EXIT_FAILURE);
+    if (!have_threshold) log_syslog(LOG_ERR, "[mem-police] Missing config: THRESHOLD_MB"), exit(EXIT_FAILURE);
+    if (!have_kill) log_syslog(LOG_ERR, "[mem-police] Missing config: KILL_SIGNAL"), exit(EXIT_FAILURE);
+    if (!have_duration) log_syslog(LOG_ERR, "[mem-police] Missing config: THRESHOLD_DURATION"), exit(EXIT_FAILURE);
+    if (!have_grace) log_syslog(LOG_ERR, "[mem-police] Missing config: KILL_GRACE"), exit(EXIT_FAILURE);
+    if (!have_whitelist) log_syslog(LOG_ERR, "[mem-police] Missing config: WHITELIST"), exit(EXIT_FAILURE);
 }
 
 static int is_whitelisted(const char *cmd, const char *exe, const mempolice_config_t *cfg) {
@@ -357,30 +354,23 @@ static unsigned long long get_start_time(pid_t pid) {
     return start_time;
 }
 
+/* O(1) Memory Polling via statm */
 static int get_mem_mb(pid_t pid) {
     char path[PATHBUF];
-    int ret = snprintf(path, sizeof path, "/proc/%d/status", (int)pid);
+    int ret = snprintf(path, sizeof path, "/proc/%d/statm", (int)pid);
     if (ret < 0 || (size_t)ret >= sizeof path) return -1;
+    
     FILE *f = fopen(path, "r");
     if (!f) return -1;
-    char buf[256];
-    int mem = -1;
-    while (fgets(buf, sizeof buf, f)) {
-        if (strncmp(buf, "VmRSS:", 6) == 0) {
-            char *num_start = buf + 6;
-            while (num_start && isspace((unsigned char)*num_start)) num_start++;
-            long kb;
-            char *endptr;
-            errno = 0;
-            kb = strtol(num_start, &endptr, 10);
-            if (errno == 0 && endptr != num_start &&
-                (*endptr == ' ' || *endptr == '\t' || *endptr == '\n' || *endptr == '\0'))
-                mem = (int)(kb / 1024);
-            break;
-        }
-    }
+
+    long size, resident;
+    int parsed = fscanf(f, "%ld %ld", &size, &resident);
     fclose(f);
-    return mem;
+
+    if (parsed != 2) return -1;
+
+    long page_size = sysconf(_SC_PAGESIZE);
+    return (int)((resident * page_size) / (1024 * 1024));
 }
 
 static int get_comm(pid_t pid, char *out, size_t olen) {
@@ -413,26 +403,19 @@ static int get_exe(pid_t pid, char *out, size_t olen) {
 
 static void clean_orphaned_startfiles(void) {
     DIR *dp = opendir(STARTFILE_DIR);
-    if (!dp) {
-        log_syslog(LOG_WARNING, "[mem-police] opendir(%s): %s", STARTFILE_DIR, strerror(errno));
-        return;
-    }
+    if (!dp) return;
     struct dirent *de;
     while ((de = readdir(dp)) != NULL) {
-        if (de->d_type != DT_REG)
-            continue;
-        if (strncmp(de->d_name, STARTFILE_PREFIX, STARTFILE_PREFIX_LEN) != 0)
-            continue;
+        if (de->d_type != DT_REG) continue;
+        if (strncmp(de->d_name, STARTFILE_PREFIX, STARTFILE_PREFIX_LEN) != 0) continue;
         const char *suffix = de->d_name + STARTFILE_PREFIX_LEN;
         char *endptr;
         errno = 0;
         long pid = strtol(suffix, &endptr, 10);
-        if (errno != 0 || endptr == suffix || strcmp(endptr, ".start") != 0 || pid <= 0)
-            continue;
+        if (errno != 0 || endptr == suffix || strcmp(endptr, ".start") != 0 || pid <= 0) continue;
         if (kill((pid_t)pid, 0) == -1 && errno == ESRCH) {
             char filepath[PATHBUF];
-            int ret = snprintf(filepath, sizeof filepath, "%s/%s", STARTFILE_DIR, de->d_name);
-            if (ret < 0 || (size_t)ret >= sizeof filepath) continue;
+            snprintf(filepath, sizeof filepath, "%s/%s", STARTFILE_DIR, de->d_name);
             if (unlink(filepath) == 0)
                 log_syslog(LOG_INFO, "[mem-police] Removed orphaned startfile: %s", filepath);
         }
@@ -441,42 +424,22 @@ static void clean_orphaned_startfiles(void) {
 }
 
 static void sig_handler(int signum) {
-    if (signum == SIGINT || signum == SIGTERM) {
-        keep_running = 0;
-        log_syslog(LOG_INFO, "[mem-police] Caught signal %d, shutting down...", signum);
-    } else if (signum == SIGHUP) {
-        need_reload = 1;
-        log_syslog(LOG_INFO, "[mem-police] Received SIGHUP, will reload config.");
-    } else if (signum == SIGUSR1) {
-        need_dump_state = 1;
-    }
+    if (signum == SIGINT || signum == SIGTERM) keep_running = 0;
+    else if (signum == SIGHUP) need_reload = 1;
+    else if (signum == SIGUSR1) need_dump_state = 1;
 }
 
 static int write_statefile_atomic(const char *startfile, pid_t pid, time_t threshold_time, time_t sig_sent_time,
                                   unsigned long long start_time, const char *cmd) {
     char tmp_path[PATHBUF];
-    int ret = snprintf(tmp_path, sizeof tmp_path, "%s.tmp", startfile);
-    if (ret < 0 || (size_t)ret >= sizeof tmp_path) return -1;
+    snprintf(tmp_path, sizeof tmp_path, "%s.tmp", startfile);
     int sf_fd = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-    if (sf_fd == -1) {
-        log_syslog(LOG_WARNING, "[mem-police] Failed to open temp state file %s: %s", tmp_path, strerror(errno));
-        return -1;
-    }
+    if (sf_fd == -1) return -1;
     FILE *sf = fdopen(sf_fd, "w");
-    if (!sf) {
-        log_syslog(LOG_WARNING, "[mem-police] fdopen failed for %s: %s", tmp_path, strerror(errno));
-        close(sf_fd); unlink(tmp_path);
-        return -1;
-    }
+    if (!sf) { close(sf_fd); unlink(tmp_path); return -1; }
     int w = fprintf(sf, "%ld %ld %d %llu %s\n", (long)threshold_time, (long)sig_sent_time, pid, start_time, cmd);
-    if (w < 0 || fclose(sf) != 0) {
-        log_syslog(LOG_WARNING, "[mem-police] Failed to close temp state file %s: %s", tmp_path, strerror(errno));
-        unlink(tmp_path); return -1;
-    }
-    if (rename(tmp_path, startfile) != 0) {
-        log_syslog(LOG_WARNING, "[mem-police] Failed to rename temp state file %s to %s: %s", tmp_path, startfile, strerror(errno));
-        unlink(tmp_path); return -1;
-    }
+    if (w < 0 || fclose(sf) != 0) { unlink(tmp_path); return -1; }
+    if (rename(tmp_path, startfile) != 0) { unlink(tmp_path); return -1; }
     return 0;
 }
 
@@ -506,49 +469,20 @@ static void dump_state(void) {
         }
     }
     closedir(dp);
-    if (found == 0)
-        log_syslog(LOG_INFO, "[mem-police] DUMP: No hogs currently detected.");
-}
-
-static void check_pid_namespace(void) {
-    char my_ns[PATHBUF], init_ns[PATHBUF];
-    ssize_t r1 = readlink("/proc/self/ns/pid", my_ns, sizeof(my_ns) - 1);
-    ssize_t r2 = readlink("/proc/1/ns/pid", init_ns, sizeof(init_ns) - 1);
-    if (r1 < 0 || r2 < 0) return;
-    my_ns[r1] = '\0'; init_ns[r2] = '\0';
-    if (strcmp(my_ns, init_ns) != 0)
-        log_syslog(LOG_WARNING, "[mem-police] WARNING: Running in a non-root PID namespace!");
+    if (found == 0) log_syslog(LOG_INFO, "[mem-police] DUMP: No hogs detected.");
 }
 
 int main(int argc, char *argv[]) {
     openlog("mem-police", LOG_PID | LOG_CONS, LOG_DAEMON);
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--config") == 0) {
-            if (i + 1 >= argc) {
-                usage(argv[0]);
-                return EXIT_FAILURE;
-            }
-            config_path = argv[++i];
-        } else if (strcmp(argv[i], "--foreground") == 0) {
-            opt_foreground = 1;
-        } else if (strcmp(argv[i], "--help") == 0) {
-            usage(argv[0]);
-            return 0;
-        } else {
-            usage(argv[0]);
-            return EXIT_FAILURE;
-        }
+        if (strcmp(argv[i], "--config") == 0) config_path = argv[++i];
+        else if (strcmp(argv[i], "--foreground") == 0) opt_foreground = 1;
+        else { usage(argv[0]); return EXIT_FAILURE; }
     }
 
-    if (geteuid() != 0) {
-        log_syslog(LOG_ERR, "[mem-police] must be run as root");
-        return EXIT_FAILURE;
-    }
+    if (geteuid() != 0) { log_syslog(LOG_ERR, "[mem-police] must run as root"); return EXIT_FAILURE; }
 
-    check_pid_namespace();
-
-    if (!opt_foreground)
-        daemonize();
+    if (!opt_foreground) daemonize();
     signal(SIGCHLD, SIG_IGN);
     write_pidfile();
     atexit(remove_pidfile);
@@ -558,107 +492,89 @@ int main(int argc, char *argv[]) {
 
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
-    signal(SIGPIPE, SIG_IGN);
     signal(SIGHUP,  sig_handler);
     signal(SIGUSR1, sig_handler);
+    signal(SIGPIPE, SIG_IGN);
 
     for (;;) {
         if (!keep_running) break;
-        if (need_reload) {
-            log_syslog(LOG_INFO, "[mem-police] Reloading config...");
-            load_config(&config);
-            need_reload = 0;
-        }
-        if (need_dump_state) {
-            dump_state();
-            need_dump_state = 0;
-        }
+        if (need_reload) { load_config(&config); need_reload = 0; }
+        if (need_dump_state) { dump_state(); need_dump_state = 0; }
         clean_orphaned_startfiles();
 
         DIR *dp = opendir("/proc");
-        if (!dp) {
-            log_syslog(LOG_ERR, "[mem-police] opendir(/proc): %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
+        if (!dp) exit(EXIT_FAILURE);
+        
         time_t now = time(NULL);
         struct dirent *de;
         int hog_count = 0, killed_count = 0;
+        
         while ((de = readdir(dp)) != NULL) {
             if (!keep_running) break;
             pid_t pid = parse_pid_dir(de->d_name);
             if (pid < 0) continue;
+            
             char cmd[MAX_CMDLEN], exe[MAX_EXELEN];
             if (get_comm(pid, cmd, sizeof cmd) < 0) continue;
             get_exe(pid, exe, sizeof exe);
             if (is_whitelisted(cmd, exe, &config)) continue;
+            
             int mem = get_mem_mb(pid);
             if (mem < 0) continue;
+            
             unsigned long long start_time = get_start_time(pid);
             if (!start_time) continue;
+            
             char startfile[PATHBUF];
-            int ret_path = snprintf(startfile, sizeof startfile, "%s/%s%d.start", STARTFILE_DIR, STARTFILE_PREFIX, (int)pid);
-            if (ret_path < 0 || (size_t)ret_path >= sizeof startfile) continue;
+            snprintf(startfile, sizeof startfile, "%s/%s%d.start", STARTFILE_DIR, STARTFILE_PREFIX, (int)pid);
 
             if (mem > config.threshold_mb) {
                 hog_count++;
                 time_t threshold_time = 0, sig_sent_time = 0;
-                int file_pid = 0;
+                int file_pid = 0, state_valid = 0;
                 unsigned long long file_start_time = 0;
                 char file_cmd[MAX_CMDLEN] = "";
-                int state_valid = 0;
                 struct stat st;
+                
                 if (stat(startfile, &st) == 0) {
                     FILE *sf = fopen(startfile, "r");
                     if (sf) {
-                        int r = fscanf(sf, "%ld %ld %d %llu", &threshold_time, &sig_sent_time, &file_pid, &file_start_time);
-                        if (r == 4) {
-                            int c;
-                            while ((c = fgetc(sf)) != EOF && isspace((unsigned char)c) && c != '\n');
+                        if (fscanf(sf, "%ld %ld %d %llu", &threshold_time, &sig_sent_time, &file_pid, &file_start_time) == 4) {
+                            int c; while ((c = fgetc(sf)) != EOF && isspace((unsigned char)c) && c != '\n');
                             if (c != EOF) {
                                 ungetc(c, sf);
                                 if (fgets(file_cmd, sizeof(file_cmd), sf)) {
                                     file_cmd[strcspn(file_cmd, "\n")] = '\0';
                                     if (file_pid == pid && file_start_time == start_time && strcmp(file_cmd, cmd) == 0)
                                         state_valid = 1;
-                                    else {
-                                        log_syslog(LOG_WARNING, "[mem-police] Invalid/stale state file for PID %d (%s), removing: %s", pid, cmd, startfile);
-                                        unlink(startfile);
-                                    }
+                                    else unlink(startfile);
                                 }
                             }
-                        } else {
-                            log_syslog(LOG_WARNING, "[mem-police] Invalid state file format for PID %d (%s), removing: %s", pid, cmd, startfile);
-                            unlink(startfile);
-                        }
+                        } else unlink(startfile);
                         fclose(sf);
                     }
                 }
+                
                 if (!state_valid) {
                     if (write_statefile_atomic(startfile, pid, now, 0L, start_time, cmd) == 0)
-                        log_syslog(LOG_INFO, "[mem-police] PID %d (%s) memory %dMB > threshold %dMB. Timer started.", pid, cmd, mem, config.threshold_mb);
+                        log_syslog(LOG_INFO, "[mem-police] PID %d (%s) mem %dMB > %dMB. Timer started.", pid, cmd, mem, config.threshold_mb);
                     continue;
                 }
                 if (sig_sent_time == 0 && (now - threshold_time) > config.threshold_duration) {
-                    log_syslog(LOG_INFO, "[mem-police] PID %d (%s) memory %dMB > threshold %dMB for >%d secs. Sending signal %d.", pid, cmd, mem, config.threshold_mb, config.threshold_duration, config.kill_signal);
-                    if (kill(pid, config.kill_signal) < 0)
-                        log_syslog(LOG_WARNING, "[mem-police] kill(%d, %d) failed: %s", pid, config.kill_signal, strerror(errno));
+                    log_syslog(LOG_INFO, "[mem-police] PID %d (%s) signaled (%d)", pid, cmd, config.kill_signal);
+                    kill(pid, config.kill_signal);
                     write_statefile_atomic(startfile, pid, threshold_time, now, start_time, cmd);
                     continue;
                 }
                 if (sig_sent_time > 0 && (now - sig_sent_time) > config.kill_grace) {
-                    log_syslog(LOG_INFO, "[mem-police] PID %d (%s) did not terminate after signal %d. Grace period >%d secs expired. Sending SIGKILL.", pid, cmd, config.kill_signal, config.kill_grace);
-                    if (kill(pid, SIGKILL) < 0)
-                        log_syslog(LOG_WARNING, "[mem-police] kill(%d, SIGKILL) failed: %s", pid, strerror(errno));
+                    log_syslog(LOG_INFO, "[mem-police] PID %d (%s) SIGKILL sent.", pid, cmd);
+                    kill(pid, SIGKILL);
                     unlink(startfile);
                     killed_count++;
                     continue;
                 }
             } else {
-                if (unlink(startfile) == 0) {
-                    // Optionally log removal
-                } else if (errno != ENOENT) {
-                    log_syslog(LOG_WARNING, "[mem-police] Failed to remove state file %s: %s", startfile, strerror(errno));
-                }
+                if (unlink(startfile) == 0) { /* Process recovered */ }
             }
         }
         closedir(dp);
@@ -666,7 +582,6 @@ int main(int argc, char *argv[]) {
         if (!keep_running) break;
         sleep(config.sleep_secs);
     }
-    log_syslog(LOG_INFO, "[mem-police] Shutdown complete.");
     free_whitelist_regex(&config);
     closelog();
     return 0;

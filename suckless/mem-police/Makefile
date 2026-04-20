@@ -1,26 +1,32 @@
-# Makefile for the mem-police project
+# Ψ-4ndr0666 Production Build System
+# Artifact: mem-police (Memory Policing Daemon)
+# Version: 3.0
 
 CC         := cc
 CFLAGS     := -O2 -std=c11 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200809L
 LDFLAGS    := -lpcre2-8
 TARGET     := mem-police
-INSTALLDIR := /usr/local/sbin
+# Aligned with mem-police.service:
+INSTALLDIR := /usr/local/bin
 TESTER     := mem-police-tester.sh
 
 .PHONY: all build install uninstall test lint clean help
 
 all: build
 
-build: $(TARGET) # Compile the C daemon
-	@echo "🏗️  Building $(TARGET)..."
+# Explicit file target leverages Make's timestamp tracking
+$(TARGET): $(TARGET).c
+	@echo "🏗️  Compiling $(TARGET)..."
 	@$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c $(LDFLAGS)
+
+build: $(TARGET)
 	@echo "✅ Build complete!"
 
-install: build # Install the daemon and test script
+install: build # Install the daemon and test script securely
 	@echo "📦 Installing $(TARGET) to $(INSTALLDIR)..."
-	@sudo cp -f $(TARGET) $(INSTALLDIR)/
-	@echo "📦 Installing $(TESTER) to $(INSTALL-DIR)..."
-	@sudo cp -f $(TESTER) $(INSTALLDIR)/
+	@sudo install -m 0755 $(TARGET) $(INSTALLDIR)/
+	@echo "📦 Installing $(TESTER) to $(INSTALLDIR)..."
+	@sudo install -m 0755 $(TESTER) $(INSTALLDIR)/
 	@echo "✅ Installation complete!"
 
 uninstall: # Remove the installed files
