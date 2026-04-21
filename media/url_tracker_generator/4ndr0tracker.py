@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# url_tracker_generator.py — 4NDR0666OS v4.1 (Superset Absolute — Thumbnail Annihilation)
-# Full original visual dematerialization + outerHTML undo stack + glyph restored.
-# Zero regressions. Thumbnails surgically removed. Base64 Offline Fonts. bysevepoin /e/ only.
+# url_tracker_generator.py — 4NDR0666OS v5.0 (Superset Absolute — Thumbnail Annihilation)
+# Full visual dematerialization + layout gap mitigation + outerHTML undo stack + glyph restored.
+# Zero regressions. Thumbnails surgically removed. Base64 Offline Fonts. CRT + Purge protocols.
 
 import os
 import re
@@ -10,7 +10,7 @@ import glob
 import subprocess
 import urllib.request
 import base64
-from html import unescape
+from html import unescape, escape
 
 
 def find_next_filename():
@@ -143,9 +143,7 @@ def extract_all_urls(text):
             urls.add(m)
 
     url_list = sorted(list(urls))
-    print(
-        f"{len(url_list)} Valid URLs Synthesized!"
-    )
+    print(f"{len(url_list)} Valid Vectors Synthesized!")
     return url_list
 
 
@@ -187,7 +185,10 @@ def generate_html(urls, output_file):
         short = url.split("/")[-1] if "/" in url else url
         if not short:
             short = url
-        links_html += f'        <li data-url="{url}"><a href="{url}" target="_blank">{short}</a></li>\n'
+        # Payload sanitization armor applied here
+        clean_url = escape(url)
+        clean_short = escape(short)
+        links_html += f'        <li data-url="{clean_url}"><a href="{clean_url}" target="_blank">{clean_short}</a></li>\n'
 
     # Fetch fonts and encode to Base64 during generation
     font_styles = fetch_base64_fonts()
@@ -206,14 +207,22 @@ def generate_html(urls, output_file):
             --accent-mid: #15adad;
             --text-primary: #e0ffff;
         }}
-        body {{ background: var(--bg-dark); color: var(--text-primary); font-family: 'Roboto Mono', monospace; padding: 40px; text-align: center; margin: 0; min-height: 100vh; }}
-        h1 {{ font-family: 'Cinzel Decorative', serif; font-weight: 700; font-size: 3rem; background: linear-gradient(to right, #15fafa, #15adad, #157d7d); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 20px; }}
-        .glyph {{ width: 160px; height: 160px; margin: 20px auto; filter: drop-shadow(0 0 30px var(--accent-cyan)); animation: pulse 4s infinite alternate; }}
+        body {{ background: var(--bg-dark); color: var(--text-primary); font-family: 'Roboto Mono', monospace; padding: 40px; text-align: center; margin: 0; min-height: 100vh; position: relative; }}
+        
+        /* CRT Scanline Protocol */
+        body::after {{
+            content: " "; display: block; position: fixed; top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 999; background-size: 100% 2px, 3px 100%; pointer-events: none;
+        }}
+
+        h1 {{ font-family: 'Cinzel Decorative', serif; font-weight: 700; font-size: 3rem; background: linear-gradient(to right, #15fafa, #15adad, #157d7d); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 20px; position: relative; z-index: 2; }}
+        .glyph {{ width: 160px; height: 160px; margin: 20px auto; filter: drop-shadow(0 0 30px var(--accent-cyan)); animation: pulse 4s infinite alternate; position: relative; z-index: 2; }}
         @keyframes pulse {{ 0% {{ filter: drop-shadow(0 0 20px var(--accent-cyan)); }} 100% {{ filter: drop-shadow(0 0 40px var(--accent-cyan)); }} }}
-        .container {{ max-width: 800px; margin: 0 auto; }}
+        .container {{ max-width: 800px; margin: 0 auto; position: relative; z-index: 2; }}
         ul {{ list-style: none; padding: 0; }}
         li {{ margin: 16px 0; overflow: hidden; transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1); }}
-        li.vanished {{ max-height: 0; opacity: 0; margin: 0; padding: 0; }}
+        li.vanished {{ max-height: 0; opacity: 0; margin: 0; padding: 0; border: none; }}
         a {{ display: block; padding: 18px 24px; background: rgba(16,24,39,0.8); border: 1px solid rgba(21,173,173,0.4); border-radius: 12px; color: var(--accent-cyan); text-decoration: none; font-size: 1rem; transition: all 0.4s ease; box-shadow: 0 4px 15px rgba(21,250,250,0.2); }}
         a:hover {{ background: rgba(21,250,250,0.15); border-color: var(--accent-cyan); box-shadow: 0 8px 30px rgba(21,250,250,0.5); transform: translateY(-4px); }}
         @keyframes dematerialize {{ 0% {{ opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }} 50% {{ opacity: 0.3; transform: scale(1.05) translateY(-10px); filter: blur(5px); }} 100% {{ opacity: 0; transform: scale(0.95) translateY(-20px); filter: blur(15px); }} }}
@@ -228,17 +237,17 @@ def generate_html(urls, output_file):
 <body>
     <div class="container">
     <svg class="glyph" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="var(--accent-cyan)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-          <path class="glyph-ring-1" d="M 64,12 A 52,52 0 1 1 63.9,12 Z" stroke-dasharray="21.78 21.78" stroke-width="2" />
-          <path class="glyph-ring-2" d="M 64,20 A 44,44 0 1 1 63.9,20 Z" stroke-dasharray="10 10" stroke-width="1.5" opacity="0.7" />
-          <path class="glyph-hex" d="M64 30 L91.3 47 L91.3 81 L64 98 L36.7 81 L36.7 47 Z" />
-          <text x="64" y="67" text-anchor="middle" dominant-baseline="middle" fill="var(--accent-cyan)" stroke="none" font-size="56" font-weight="700" style="font-family: 'Orbitron', sans-serif;" class="glyph-core-psi">Ψ</text>
+      <path class="glyph-ring-1" d="M 64,12 A 52,52 0 1 1 63.9,12 Z" stroke-dasharray="21.78 21.78" stroke-width="2" />
+      <path class="glyph-ring-2" d="M 64,20 A 44,44 0 1 1 63.9,20 Z" stroke-dasharray="10 10" stroke-width="1.5" opacity="0.7" />
+      <path class="glyph-hex" d="M64 30 L91.3 47 L91.3 81 L64 98 L36.7 81 L36.7 47 Z" />
+      <text x="64" y="67" text-anchor="middle" dominant-baseline="middle" fill="var(--accent-cyan)" stroke="none" font-size="56" font-weight="700" style="font-family: 'Orbitron', sans-serif;" class="glyph-core-psi">Ψ</text>
     </svg>
          <h1>4NDR0 // TRACKER</h1>
         <div class="counter" id="counter">0 of {total_count} visited // CTRL+Z to Restore</div>
         <ul id="url-list">
 {links_html}        </ul>
         <div class="info">
-            <span class="undo-hint">Persistence eternal via localStorage</span>
+            <span class="undo-hint">Persistence eternal via localStorage<br>CTRL+SHIFT+X to Purge Data</span>
         </div>
         <footer>
             4NDR0666OS Ψ 4NDR0TRACKER • 2026
@@ -270,15 +279,28 @@ def generate_html(urls, output_file):
                     li.classList.add('vanished');
                     visibleCount--;
                     updateCounter();
+                    
+                    // DOM Gap Mitigation Protocol
+                    li.addEventListener('animationend', () => {{
+                        if (li.classList.contains('vanished')) {{
+                            li.style.display = 'none';
+                        }}
+                    }}, {{once: true}});
                 }}
             }}
         }}
 
+        // Initial load mitigation sweep
         document.querySelectorAll('li[data-url]').forEach(li => {{
-            if (visited.has(li.dataset.url)) li.classList.add('vanished');
+            if (visited.has(li.dataset.url)) {{
+                li.classList.add('vanished');
+                li.style.display = 'none'; 
+            }}
         }});
+        
         updateCounter();
         console.log('%cΨ 4NDR0-TRACKER INITIALIZED — 100/100 vectors loaded', 'color:#00f0ff; font-family:Orbitron');
+        
         ul.addEventListener('click', e => {{
             let a = e.target.closest('a');
             if (a) {{
@@ -289,7 +311,8 @@ def generate_html(urls, output_file):
         }});
 
         document.addEventListener('keydown', e => {{
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && undoStack.length > 0) {{
+            // Restore Protocol
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z' && undoStack.length > 0) {{
                 e.preventDefault();
                 const lastHtml = undoStack.pop();
                 saveUndo();
@@ -297,16 +320,30 @@ def generate_html(urls, output_file):
                 tempDiv.innerHTML = lastHtml.trim();
                 const restoredLi = tempDiv.firstChild;
                 const url = restoredLi.dataset.url;
+                
                 visited.delete(url);
                 saveVisited();
+                
                 const existing = ul.querySelector(`li[data-url="${{url}}"]`);
                 if (existing) ul.replaceChild(restoredLi, existing);
                 else ul.appendChild(restoredLi);
+                
+                restoredLi.style.display = ''; // Re-inject to document flow
                 restoredLi.classList.remove('vanished');
                 restoredLi.classList.add('rematerializing');
                 visibleCount++;
                 updateCounter();
                 restoredLi.addEventListener('animationend', () => restoredLi.classList.remove('rematerializing'), {{once: true}});
+            }}
+            
+            // Purge Protocol
+            if (e.ctrlKey && e.shiftKey && (e.key === 'x' || e.key === 'X')) {{
+                e.preventDefault();
+                if (confirm('[Ψ] WARNING: INITIATING TOTAL MEMORY PURGE. ALL PERSISTENCE VECTORS WILL BE ERASED. PROCEED?')) {{
+                    localStorage.removeItem(STORAGE_KEY_VISITED);
+                    localStorage.removeItem(STORAGE_KEY_UNDO);
+                    location.reload();
+                }}
             }}
         }});
     </script>
@@ -315,7 +352,7 @@ def generate_html(urls, output_file):
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_template)
-    print(f"\nGenerated Filename: {output_file} ({total_count} links)")
+    print(f"\nGenerated Target: {output_file} ({total_count} units locked)")
 
 
 if __name__ == "__main__":
