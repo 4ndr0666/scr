@@ -39,12 +39,20 @@ WORK_DIR="${USER_HOME}/searxng"
 
 # === Dependency & System Prep ===
 log "Updating system & installing Docker..."
+
+eval curl -sSfL 'https://download.docker.com/linux/debian/gpg' | gpg --dearmor -o /etc/apt/trusted.gpg.d/dietpi-docker.gpg --yes
+eval echo 'deb https://download.docker.com/linux/debian trixie stable' > /etc/apt/sources.list.d/docker.list
+
+mkdir -p /mnt/dietpi_userdata/Music /mnt/dietpi_userdata/Pictures /mnt/dietpi_userdata/Video /mnt/dietpi_userdata/downloads /var/www /opt /usr/local/bin
+chown $USER:$USER /mnt/dietpi_userdata/Music /mnt/dietpi_userdata/Pictures /mnt/dietpi_userdata/Video /mnt/dietpi_userdata/downloads
+chmod 0775 /mnt/dietpi_userdata/Music /mnt/dietpi_userdata/Pictures /mnt/dietpi_userdata/Video /mnt/dietpi_userdata/downloads
+
 if command -v nala &>/dev/null; then
     sudo nala update && sudo nala upgrade -y
-    sudo nala install -y docker.io docker-compose-v2 curl wget unzip ca-certificates
+    sudo nala install -y docker-compose curl wget unzip ca-certificates
 else
     sudo apt update && sudo apt upgrade -y
-    sudo apt install -y docker.io docker-compose-v2 curl wget unzip ca-certificates
+    sudo apt install -y docker-compose curl wget unzip ca-certificates
 fi
 
 log "Ensuring docker group membership..."
@@ -124,8 +132,8 @@ EOF
 
 # Launch
 log "Pulling images & starting stack..."
-docker compose pull --quiet
-docker compose up -d --remove-orphans
+docker-compose pull --quiet
+docker-compose up -d --remove-orphans
 
 # Systemd — universal
 sudo tee /etc/systemd/system/searxng.service > /dev/null <<EOF
