@@ -2,7 +2,6 @@
 Description=4ndr0service Environment Maintenance Run
 Documentation=https://github.com/4ndr0666/4ndr0service
 After=network.target
-ConditionUser=!root
 
 [Service]
 Type=oneshot
@@ -10,7 +9,3 @@ Type=oneshot
 ExecStart=/opt/4ndr0service/main.sh --fix --report
 StandardOutput=journal
 StandardError=journal
-Restart=on-failure
-RestartSec=60
-StartLimitIntervalSec=300
-StartLimitBurst=3

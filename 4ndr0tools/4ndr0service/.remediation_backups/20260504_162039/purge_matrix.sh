@@ -56,13 +56,9 @@ run_purge() {
     # Kept here for standalone --force invocations; idempotent with the suite.
     log_info "Sterilizing virtualenv hive..."
     for garbage in "--site-packages" ".venv"; do
-        # D-07 FIX: Use VENV_HOME:? to catch unset variable before path construction.
-        # Use rm -- to prevent any path component beginning with '--' being
-        # interpreted as a flag by rm (POSIX end-of-options separator).
-        local target
-        target="${VENV_HOME:?VENV_HOME is unset — cannot safely remove hive artifacts}/${garbage}"
+        local target="${VENV_HOME}/${garbage}"
         if [[ -d "$target" ]]; then
-            rm -rf -- "$target"
+            rm -rf "$target"
             log_success "Liquidated: $target"
         fi
     done

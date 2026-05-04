@@ -11,13 +11,12 @@ IFS=$'\n\t'
 # shellcheck source=../common.sh
 source "${PKG_PATH:-.}/common.sh"
 
-# D-17 FIX (clarification): Do NOT set FIX_MODE / REPORT_MODE inside THIS file
-# at source-time. The correct pattern is for callers (final_audit.sh, main.sh)
-# to set and export these variables BEFORE sourcing this file. The defaults
-# below are applied as local variables inside run_verification() so the caller's
-# exported values are always respected and never shadowed by this module.
-# final_audit.sh correctly sets FIX_MODE/REPORT_MODE at its top level before
-# sourcing — that pattern is intentional and correct.
+# FIX: Do NOT set FIX_MODE / REPORT_MODE at module scope (source-time).
+#      Doing so shadows the caller's exported value because Bash evaluates
+#      `VAR="${VAR:-default}"` at the point the line executes — i.e., the
+#      moment this file is sourced — before run_verification() is called.
+#      The defaults are applied inside the function where they are used,
+#      so the caller's environment is always respected.
 
 run_verification() {
     # Apply defaults locally; never overwrite the caller's environment.

@@ -55,20 +55,8 @@ _rollback() {
         log_error "Install aborted (exit $exit_code). Rolling back..."
         [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && sudo rm -f "$SYMLINK_PATH" 2>/dev/null || true
         if [[ -n "$_INSTALL_LOCATION" && -d "$_INSTALL_LOCATION" ]]; then
-            # D-10 FIX: Constrain rollback rm -rf to known-safe path prefixes.
-            # Prevents a TOCTOU symlink attack from redirecting the removal to
-            # an arbitrary path (e.g., /etc, /usr) between normalize_path()
-            # and the rollback trap firing.
-            case "$_INSTALL_LOCATION" in
-                /opt/*|/home/*|/usr/local/*|/tmp/*)
-                    sudo rm -rf "$_INSTALL_LOCATION" 2>/dev/null || true
-                    log_warn "Removed partial installation at $_INSTALL_LOCATION"
-                    ;;
-                *)
-                    log_error "Rollback REFUSED: '$_INSTALL_LOCATION' is outside safe prefixes (/opt, /home, /usr/local, /tmp)."
-                    log_error "Remove manually: sudo rm -rf '$_INSTALL_LOCATION'"
-                    ;;
-            esac
+            sudo rm -rf "$_INSTALL_LOCATION" 2>/dev/null || true
+            log_warn "Removed partial installation at $_INSTALL_LOCATION"
         fi
     fi
 }

@@ -35,19 +35,12 @@ optimize_cargo_service() {
     rustup update stable || log_warn "Toolchain update failed."
     rustup default stable &>/dev/null || true
 
-    # D-05 FIX: Original wiped the entire registry index on every run, forcing
-    # Cargo to re-download all index data — catastrophic on metered/air-gapped
-    # systems. Replaced with age-gated pruning of stale pack/crate files only.
-    # Index structure is preserved; only files older than 7 days (pack) or
-    # 30 days (crate cache) are removed.
-    if [[ -d "${CARGO_HOME}/registry/index" ]]; then
-        find "${CARGO_HOME}/registry/index" -type f -name "*.pack" -mtime +7 -delete 2>/dev/null || true
-        log_info "Cargo registry index: stale pack files pruned (>7 days)."
-    fi
-    if [[ -d "${CARGO_HOME}/registry/cache" ]]; then
-        find "${CARGO_HOME}/registry/cache" -type f -name "*.crate" -mtime +30 -delete 2>/dev/null || true
-        log_info "Cargo registry cache: stale crate files pruned (>30 days)."
-    fi
+    # FIX: Original used `rm -rf "${CARGO_HOME}/registry/index/*"` — the glob
+    #      was inside double-quotes so the shell never expanded it; rm received
+    #      a literal asterisk as the path argument, which is a no-op on any sane
+    #      filesystem.  The glob must be outside quotes for shell expansion.
+    # shellcheck disable=SC2086
+    rm -rf ${CARGO_HOME}/registry/index/* 2>/dev/null || true
 
     # 4. Cargo Tool Synchronization (Delta-Aware)
     local tools_json

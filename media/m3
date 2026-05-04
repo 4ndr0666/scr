@@ -21,7 +21,7 @@ CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/m3u8/m3u8.conf"
 # Core Defaults
 THREAD_COUNT=8
 RETRY_COUNT=5
-TMP_DIR="/tmp/n_m3u8dl_tmp"
+TMP_DIR="/s4/tmp/"
 SAVE_DIR="$PWD"
 SAVE_NAME=""
 PROXY_URL=""

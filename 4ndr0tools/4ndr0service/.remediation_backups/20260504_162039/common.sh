@@ -85,14 +85,6 @@ export LOG_FILE="${XDG_CACHE_HOME}/4ndr0service/service.log"
 # =============================================================================
 
 ensure_pkg_path() {
-    # D-14 NOTE: This fallback walker is intentionally shallow (3 levels up).
-    # All production entry points (main.sh, final_audit.sh, ascension.sh,
-    # purge_matrix.sh, install_env_maintenance.sh) set PKG_PATH explicitly via
-    # self-resolution before sourcing common.sh, so this function only activates
-    # during interactive debugging where PKG_PATH was not pre-set.
-    # Risk: a parent directory containing an unrelated common.sh within 3 levels
-    # could be found instead. If this is a concern for your deployment layout,
-    # always set PKG_PATH explicitly before sourcing common.sh.
     if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
         local caller="${BASH_SOURCE[0]:-$0}"
         local script_dir

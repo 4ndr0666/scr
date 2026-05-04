@@ -32,14 +32,6 @@ plugin_scr_alias_gen() {
     # matching a shell builtin or common util) was aliased, hijacking it globally.
     # Now we only regenerate when the dirty flag exists or the manifest is absent.
     if [[ -f "$alias_file" && ! -f "$dirty_flag" ]]; then
-        # D-16 FIX: Verify scr_root still exists before serving cached manifest.
-        # If the SCR repository was moved or deleted after the last generation,
-        # the cached aliases would point to non-existent paths indefinitely.
-        if [[ ! -d "$scr_root" ]]; then
-            log_warn "SCR root $scr_root no longer exists. Invalidating stale alias manifest."
-            rm -f "$alias_file"
-            return 0
-        fi
         log_info "SCR alias manifest is current. Skipping regeneration."
         return 0
     fi

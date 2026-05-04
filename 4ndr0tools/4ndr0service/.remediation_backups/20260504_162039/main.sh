@@ -86,13 +86,7 @@ run_core_checks() {
     initialize_suite
 
     # Ψ-Hardening: Verify Ghost Link Integrity
-    # D-13 FIX: ensure_dir must be called before ln -sf. If ${VENV_HOME}/venv
-    # does not exist yet when the symlink is created, the link is dangling.
-    # optimize_python_service() will later create the venv, but any process
-    # that resolves the Ghost Link before that runs will see a broken path.
     local GHOST_LINK="${PYENV_ROOT}/env"
-    ensure_dir "${VENV_HOME}/venv"
-    ensure_dir "$(dirname "$GHOST_LINK")"
     if [[ ! -L "$GHOST_LINK" ]]; then
         log_warn "Ghost Link anomaly detected. Restoring bridge..."
         ln -sf "${VENV_HOME}/venv" "$GHOST_LINK"

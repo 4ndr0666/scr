@@ -28,17 +28,10 @@ optimize_venv_service() {
 
     # 2. Hive Core Update
     log_info "Updating Pip in Global Hive..."
-    # D-11 FIX: Gate deactivate on successful activation. If the venv at
-    # $VENV_PATH was corrupted between the -d check above and this source,
-    # 'source activate' fails and 'deactivate' would be undefined — triggering
-    # the ERR trap under set -euo pipefail and killing the service run.
     # shellcheck disable=SC1091
-    if source "$VENV_PATH/bin/activate" 2>/dev/null; then
-        pip install --upgrade pip || log_warn "Hive Pip upgrade suppressed (Check network/build)."
-        deactivate
-    else
-        log_warn "Could not activate venv at $VENV_PATH — skipping pip upgrade. Venv may be corrupted; run with --fix to recreate."
-    fi
+    source "$VENV_PATH/bin/activate"
+    pip install --upgrade pip || log_warn "Hive Pip upgrade suppressed (Check network/build)."
+    deactivate
 
     # Rehash runtimes to acknowledge new Hive binaries
     [[ -d "$PYENV_ROOT" ]] && pyenv rehash

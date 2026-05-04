@@ -116,16 +116,10 @@ run_parallel_services() {
 }
 
 export_functions() {
-    # D-15 FIX: Only export what parallel worker subshells (spawned via &)
-    # actually require at runtime. Full function export pollutes every child
-    # process environment and can trigger "readonly variable" fatal errors if
-    # common.sh is re-sourced in a child that inherited an exported-readonly var.
-    # Functions available via 'source' in the parent shell do NOT need export -f
-    # for direct calls; only & subshells require it.
     export -f log_info log_warn log_error log_success handle_error
-    export -f ensure_dir path_prepend install_sys_pkg
-    # run_parallel_services subshell workers need these:
-    export -f optimize_go_service optimize_ruby_service optimize_cargo_service 2>/dev/null || true
+    export -f ensure_dir ensure_xdg_dirs pkg_is_installed install_sys_pkg
+    export -f create_config_if_missing load_config modify_settings
+    export -f run_all_services run_parallel_services run_verification
 }
 
 main_controller() {
