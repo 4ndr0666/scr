@@ -322,3 +322,5 @@ initialize_suite() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     initialize_suite
 fi
+# D-02 REMEDIATION PENDING MANUAL REVIEW — see audit report
+# D-02 REMEDIATION PENDING MANUAL REVIEW — see audit report

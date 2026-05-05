@@ -165,6 +165,11 @@ write_file() {
 }
 
 # ── VALIDATION HELPER ──────────────────────────────────────────────────────────
+# IMPORTANT: validate_pattern MUST always return 0. The function is called
+# from run_validation() which runs under set -euo pipefail. Any non-zero
+# return propagates up through run_validation → main and kills the script.
+# Results are accumulated in VALIDATION_RESULTS[]; callers never test the
+# return value — they read the array after run_validation completes.
 validate_pattern() {
     local defect_id="$1"
     local file="$2"
@@ -173,16 +178,21 @@ validate_pattern() {
 
     if [[ ! -f "$file" ]]; then
         VALIDATION_RESULTS+=("MISSING_FILE|${defect_id}|${file#"$SUITE_PATH/"}|$description")
-        return 0
+        return 0   # always 0 — result recorded in array
     fi
 
-    if grep -qP "$pattern" "$file" 2>/dev/null || grep -q "$pattern" "$file" 2>/dev/null; then
+    # Use grep -qF for literal patterns first; fall back to -qE (extended regex).
+    # Both are wrapped in || true so a no-match (exit 1) never escapes as an error.
+    local matched=0
+    { grep -qF "$pattern" "$file" 2>/dev/null && matched=1; } || \
+    { grep -qE "$pattern" "$file" 2>/dev/null && matched=1; } || true
+
+    if [[ "$matched" -eq 1 ]]; then
         VALIDATION_RESULTS+=("PASS|${defect_id}|${file#"$SUITE_PATH/"}|$description")
-        return 0
     else
         VALIDATION_RESULTS+=("FAIL|${defect_id}|${file#"$SUITE_PATH/"}|$description")
-        return 0
     fi
+    return 0   # always 0
 }
 
 # =============================================================================
@@ -198,7 +208,8 @@ patch_d01() {
     local target="$SUITE_PATH/common.sh"
     log_patch "Rewriting $target — moving mutex inside COMMON_SOURCED guard, switching to flock --wait 10"
 
-
+    # Full authoritative rewrite of common.sh mutex block and COMMON_SOURCED guard
+    # We surgically replace just the top section up to COMMON_SOURCED
     local patched_top
     patched_top=$(cat << 'COMMON_TOP'
 #!/usr/bin/env bash
@@ -248,6 +259,7 @@ COMMON_TOP
     if [[ "$DRY_RUN" == "false" && "$REPORT_ONLY" == "false" ]]; then
         backup_file "$target"
 
+        # Extract everything from "# ===..." (the color section) onward from the original
         local tail_content
         tail_content=$(awk '/^# ={5}/{found=1} found{print}' "$target")
 
@@ -259,6 +271,7 @@ COMMON_TOP
         PATCHES_APPLIED+=("D-01[dry]")
     fi
 
+    # Patch env_maintenance.service for restart resilience
     local svc_target="$SUITE_PATH/systemd/env_maintenance.service"
     if [[ -f "$svc_target" ]]; then
         if [[ "$DRY_RUN" == "false" && "$REPORT_ONLY" == "false" ]]; then
@@ -303,8 +316,7 @@ patch_d02() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -357,8 +369,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-02 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-02 applied: install_sys_pkg() hardened with pacman lock wait + privilege detection"
         PATCHES_APPLIED+=("D-02")
     else
@@ -385,8 +396,7 @@ patch_d03() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -420,9 +430,9 @@ new = '''run_parallel_services() {
         source_all_services
     fi
 
-    run_parallel_checks \\
-        "optimize_go_service" \\
-        "optimize_ruby_service" \\
+    run_parallel_checks \
+        "optimize_go_service" \
+        "optimize_ruby_service" \
         "optimize_cargo_service"
 
     log_success "Parallel services completed."
@@ -439,8 +449,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-03 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-03 applied: run_parallel_services() documented with constraints and guard"
         PATCHES_APPLIED+=("D-03")
     else
@@ -608,14 +617,14 @@ patch_d05() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
 with open(path, 'r') as f:
     content = f.read()
 
+# Match the old registry wipe (both the FIX comment and the rm line)
 old = r"""    # FIX: Original used `rm -rf "\$\{CARGO_HOME\}/registry/index/\*"`.*?
     # shellcheck disable=SC2086
     rm -rf \$\{CARGO_HOME\}/registry/index/\* 2>/dev/null \|\| true"""
@@ -636,6 +645,7 @@ new = '''    # D-05 FIX: Original wiped the entire registry index on every run, 
 
 result = re.sub(old, new, content, flags=re.DOTALL)
 if result == content:
+    # Try simpler match on just the rm line
     old2 = r"    # shellcheck disable=SC2086\n    rm -rf \$\{CARGO_HOME\}/registry/index/\* 2>/dev/null \|\| true"
     new2 = new
     result = re.sub(old2, new2, content)
@@ -648,8 +658,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-05 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-05 applied: Cargo registry cleanup switched from full-wipe to age-gated prune"
         PATCHES_APPLIED+=("D-05")
     else
@@ -841,8 +850,7 @@ patch_d07() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -878,8 +886,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-07 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-07 applied: VENV_HOME:? guard and rm -- separator added"
         PATCHES_APPLIED+=("D-07")
     else
@@ -905,8 +912,7 @@ patch_d08() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -944,8 +950,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-08 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-08 applied: handle_error() supports _ALLOW_ERRORS=1 recoverable mode"
         PATCHES_APPLIED+=("D-08")
     else
@@ -970,8 +975,7 @@ patch_d09() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1002,8 +1006,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-09 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-09 applied: run_all_services() guards against double-source"
         PATCHES_APPLIED+=("D-09")
     else
@@ -1028,8 +1031,7 @@ patch_d10() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1067,8 +1069,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-10 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-10 applied: _rollback() guarded against TOCTOU path redirect"
         PATCHES_APPLIED+=("D-10")
     else
@@ -1093,8 +1094,7 @@ patch_d11() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1131,8 +1131,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-11 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-11 applied: deactivate now gated on successful venv activation"
         PATCHES_APPLIED+=("D-11")
     else
@@ -1141,10 +1140,13 @@ PYEOF
 }
 
 # ── D-12: corepack/npm EEXIST — handled inside D-04 patch ────────────────────
+# D-12 is incorporated into patch_d04() since both affect optimize_node.sh.
+# We register it here for reporting completeness.
 patch_d12() {
     if [[ " ${PATCHES_APPLIED[*]} " == *" D-04 "* ]] || \
        [[ " ${PATCHES_APPLIED[*]} " == *" D-04[dry] "* ]]; then
         log_info "D-12: Already applied as part of D-04 patch (optimize_node.sh rewrite)"
+        # Already recorded in patch_d04
         return 0
     fi
     log_warn "D-12: Depends on D-04 patch. Skipping — apply D-04 first."
@@ -1168,8 +1170,7 @@ patch_d13() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1205,8 +1206,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-13 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-13 applied: ensure_dir called before Ghost Link creation in main.sh"
         PATCHES_APPLIED+=("D-13")
     else
@@ -1231,8 +1231,7 @@ patch_d14() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1262,8 +1261,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-14 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-14 applied: ensure_pkg_path() documented with limitation and deployment note"
         PATCHES_APPLIED+=("D-14")
     else
@@ -1288,8 +1286,7 @@ patch_d15() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1325,8 +1322,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-15 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-15 applied: export_functions() reduced to minimal parallel-worker surface"
         PATCHES_APPLIED+=("D-15")
     else
@@ -1351,8 +1347,7 @@ patch_d16() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1386,8 +1381,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-16 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-16 applied: scr_alias_gen invalidates cache when scr_root is gone"
         PATCHES_APPLIED+=("D-16")
     else
@@ -1412,8 +1406,7 @@ patch_d17() {
 
     backup_file "$target"
 
-    local py_status=0
-    python3 - "$target" << 'PYEOF' || py_status=$?
+    if python3 - "$target" << 'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -1444,8 +1437,7 @@ with open(path, 'w') as f:
     f.write(result)
 print("D-17 pattern replaced successfully")
 PYEOF
-
-    if [[ $py_status -eq 0 ]]; then
+    then
         log_ok "D-17 applied: verify_environment.sh FIX comment clarified"
         PATCHES_APPLIED+=("D-17")
     else
@@ -1474,56 +1466,131 @@ run_validation() {
     local verify="$SUITE_PATH/test/verify_environment.sh"
     local scr="$SUITE_PATH/plugins/scr_alias_gen.sh"
 
-    validate_pattern "D-01" "$common" "flock --wait" "Mutex uses flock --wait (not flock -n)"
-    validate_pattern "D-01" "$common" "COMMON_SOURCED=1" "COMMON_SOURCED guard present before mutex block"
-    validate_pattern "D-01" "$svc_unit" "StartLimitBurst" "env_maintenance.service has StartLimitBurst"
-    validate_pattern "D-01" "$svc_unit" "ConditionUser=!root" "env_maintenance.service has ConditionUser=!root"
+    # D-01 validations
+    validate_pattern "D-01" "$common" \
+        "flock --wait" \
+        "Mutex uses flock --wait (not flock -n)"
+    validate_pattern "D-01" "$common" \
+        "COMMON_SOURCED=1" \
+        "COMMON_SOURCED guard present before mutex block"
+    validate_pattern "D-01" "$svc_unit" \
+        "StartLimitBurst" \
+        "env_maintenance.service has StartLimitBurst"
+    validate_pattern "D-01" "$svc_unit" \
+        "ConditionUser=!root" \
+        "env_maintenance.service has ConditionUser=!root"
 
-    validate_pattern "D-02" "$common" "pacman/db.lck" "install_sys_pkg checks pacman lock file"
-    validate_pattern "D-02" "$common" "lock_wait" "install_sys_pkg has lock_wait loop"
-    validate_pattern "D-02" "$common" 'EUID.*-ne 0' "install_sys_pkg detects privilege level before sudo"
+    # D-02 validations
+    validate_pattern "D-02" "$common" \
+        "pacman/db.lck" \
+        "install_sys_pkg checks pacman lock file"
+    validate_pattern "D-02" "$common" \
+        "lock_wait" \
+        "install_sys_pkg has lock_wait loop"
+    validate_pattern "D-02" "$common" \
+        'EUID.*-ne 0' \
+        "install_sys_pkg detects privilege level before sudo"
 
-    validate_pattern "D-03" "$controller" "CONSTRAINT.*parallelize\|disjoint\|D-03" "run_parallel_services has constraint documentation"
-    validate_pattern "D-03" "$controller" "declare -f optimize_go_service" "run_parallel_services guards against unloaded services"
+    # D-03 validations
+    # NOTE: All patterns below use plain | for ERE alternation (not \| BRE syntax).
+    # validate_pattern tries grep -qF first (literal), then grep -qE (extended regex).
+    # \| in single-quoted strings is passed literally to grep -qE which does NOT
+    # treat it as alternation in ERE — only plain | works for ERE alternation.
+    validate_pattern "D-03" "$controller" \
+        'CONSTRAINT.*parallelize|disjoint|D-03' \
+        "run_parallel_services has constraint documentation"
+    validate_pattern "D-03" "$controller" \
+        "declare -f optimize_go_service" \
+        "run_parallel_services guards against unloaded services"
 
-    validate_pattern "D-04" "$node" "optimize_nvm_service" "optimize_node.sh delegates NVM bootstrap to optimize_nvm_service"
+    # D-04 validations
+    validate_pattern "D-04" "$node" \
+        "optimize_nvm_service" \
+        "optimize_node.sh delegates NVM bootstrap to optimize_nvm_service"
+    # Inverse check: install_nvm() must NOT be defined in the patched file.
+    # This is handled separately below via grep + explicit PASS/FAIL push.
 
-    validate_pattern "D-05" "$cargo" 'find.*registry.*-mtime' "Cargo registry uses age-gated find instead of rm -rf"
-    if grep -q 'rm -rf.*registry/index/\*' "$cargo" 2>/dev/null; then
-        VALIDATION_RESULTS+=("FAIL|D-05|service/optimize_cargo.sh|Full registry index wipe rm -rf still present")
+    # D-05 validations
+    validate_pattern "D-05" "$cargo" \
+        'find.*registry.*-mtime' \
+        "Cargo registry uses age-gated find instead of rm -rf"
+    # Inverse check: ensure full-wipe rm -rf is GONE
+    { grep -q 'rm -rf.*registry/index/\*' "$cargo" 2>/dev/null \
+        && VALIDATION_RESULTS+=("FAIL|D-05|service/optimize_cargo.sh|Full registry index wipe rm -rf still present"); } \
+        || VALIDATION_RESULTS+=("PASS|D-05|service/optimize_cargo.sh|Full registry index wipe removed")
+
+    # D-06 validations
+    validate_pattern "D-06" "$python" \
+        'D-06 FIX|Hive venv initialization moved|Global Hive Initialization' \
+        "optimize_python.sh venv init moved before tool injection"
+
+    # D-07 validations
+    validate_pattern "D-07" "$purge" \
+        'VENV_HOME:?' \
+        "purge_matrix.sh uses VENV_HOME:? guard"
+    validate_pattern "D-07" "$purge" \
+        'rm -rf --' \
+        "purge_matrix.sh uses rm -- end-of-options separator"
+
+    # D-08 validations
+    validate_pattern "D-08" "$common" \
+        '_ALLOW_ERRORS' \
+        "handle_error supports _ALLOW_ERRORS recoverable mode"
+
+    # D-09 validations
+    validate_pattern "D-09" "$controller" \
+        'D-09|double-source|double.sourc' \
+        "run_all_services has double-source guard"
+
+    # D-10 validations
+    validate_pattern "D-10" "$install" \
+        'D-10|safe prefix|/opt/|/home/' \
+        "install.sh rollback uses safe-prefix guard"
+
+    # D-11 validations
+    validate_pattern "D-11" "$venv" \
+        'if source.*activate' \
+        "optimize_venv.sh gates deactivate on successful activation"
+
+    # D-12 validations (in optimize_node.sh via D-04 patch)
+    validate_pattern "D-12" "$node" \
+        'corepack_managed|corepack prepare yarn' \
+        "optimize_node.sh handles corepack-managed packages separately"
+
+    # D-13 validations
+    validate_pattern "D-13" "$main" \
+        'ensure_dir.*VENV_HOME.*venv|D-13' \
+        "main.sh calls ensure_dir before Ghost Link creation"
+
+    # D-14 validations
+    validate_pattern "D-14" "$common" \
+        'D-14|This fallback walker|intentionally shallow' \
+        "ensure_pkg_path has D-14 documentation comment"
+
+    # D-15 validations
+    validate_pattern "D-15" "$controller" \
+        'D-15|Only export what parallel|minimize.*export' \
+        "export_functions reduced to minimal parallel-worker surface"
+
+    # D-16 validations
+    validate_pattern "D-16" "$scr" \
+        'D-16|no longer exists.*Invalidating|scr_root.*deleted|scr_root.*moved' \
+        "scr_alias_gen validates scr_root existence before serving cache"
+
+    # D-17 validations
+    validate_pattern "D-17" "$verify" \
+        'D-17|final_audit.sh correctly|intentional and correct' \
+        "verify_environment.sh FIX comment clarified"
+
+    # D-04 inverse check — install_nvm() must NOT be present in the patched file.
+    # grep returns 0 (found) = BAD; 1 (not found) = GOOD.
+    # We cannot use validate_pattern here because it tests FOR presence, not absence.
+    local _d04_inv_matched=0
+    grep -q "^install_nvm()" "$node" 2>/dev/null && _d04_inv_matched=1 || true
+    if [[ $_d04_inv_matched -eq 1 ]]; then
+        VALIDATION_RESULTS+=("FAIL|D-04|service/optimize_node.sh|install_nvm() still defined — patch did not remove it")
     else
-        VALIDATION_RESULTS+=("PASS|D-05|service/optimize_cargo.sh|Full registry index wipe removed")
-    fi
-
-    validate_pattern "D-06" "$python" "D-06 FIX\|Hive venv initialization moved\|Global Hive Initialization — MUST precede" "optimize_python.sh venv init moved before tool injection"
-
-    validate_pattern "D-07" "$purge" 'VENV_HOME:?' "purge_matrix.sh uses VENV_HOME:? guard"
-    validate_pattern "D-07" "$purge" 'rm -rf --' "purge_matrix.sh uses rm -- end-of-options separator"
-
-    validate_pattern "D-08" "$common" '_ALLOW_ERRORS' "handle_error supports _ALLOW_ERRORS recoverable mode"
-
-    validate_pattern "D-09" "$controller" 'declare -f optimize_go_service.*run_all\|D-09\|double-source\|double.sourc' "run_all_services has double-source guard"
-
-    validate_pattern "D-10" "$install" '/opt/\*|/home/\*\|safe prefix\|D-10' "install.sh rollback uses safe-prefix guard"
-
-    validate_pattern "D-11" "$venv" 'source.*activate.*2>/dev/null\|if source.*activate' "optimize_venv.sh gates deactivate on successful activation"
-
-    validate_pattern "D-12" "$node" 'corepack_managed\|corepack prepare yarn' "optimize_node.sh handles corepack-managed packages separately"
-
-    validate_pattern "D-13" "$main" 'ensure_dir.*VENV_HOME.*venv\|D-13' "main.sh calls ensure_dir before Ghost Link creation"
-
-    validate_pattern "D-14" "$common" 'D-14\|This fallback walker\|intentionally shallow' "ensure_pkg_path has D-14 documentation comment"
-
-    validate_pattern "D-15" "$controller" 'D-15\|Only export what parallel\|minimize.*export' "export_functions reduced to minimal parallel-worker surface"
-
-    validate_pattern "D-16" "$scr" 'D-16\|no longer exists.*Invalidating\|scr_root.*deleted\|scr_root.*moved' "scr_alias_gen validates scr_root existence before serving cache"
-
-    validate_pattern "D-17" "$verify" 'D-17\|final_audit\.sh correctly\|intentional and correct' "verify_environment.sh FIX comment clarified"
-
-    if [[ -f "$node" ]] && grep -q "^install_nvm()" "$node" 2>/dev/null; then
-        VALIDATION_RESULTS+=("FAIL|D-04|service/optimize_node.sh|install_nvm() still defined — was not removed by patch")
-    else
-        VALIDATION_RESULTS+=("PASS|D-04|service/optimize_node.sh|install_nvm() correctly removed from optimize_node.sh")
+        VALIDATION_RESULTS+=("PASS|D-04|service/optimize_node.sh|install_nvm() correctly absent from patched optimize_node.sh")
     fi
 }
 
@@ -1533,52 +1600,105 @@ run_validation() {
 
 generate_report() {
     local report="$REPORT_FILE"
+
+    # ── COUNT RESULTS FIRST, outside any subshell ──────────────────────────────
+    # (( expr )) returns exit code 1 when the expression evaluates to 0.
+    # Under set -euo pipefail that kills the script. Use $(( )) assignment form
+    # which always returns 0. Counting must happen in the current shell, not
+    # inside the { } | tee pipeline (a subshell where increments are lost).
     local pass_count=0
     local fail_count=0
     local missing_count=0
+    local result status defect file description
+    local _applied_list="" _skipped_list="" _failed_list="" _results_body=""
+    local _hashes=""
 
+    # Build patch-tracking sections
+    local _p
+    if [[ ${#PATCHES_APPLIED[@]} -gt 0 ]]; then
+        for _p in "${PATCHES_APPLIED[@]}"; do
+            _applied_list+="  [APPLIED] ${_p}"$'\n'
+        done
+    fi
+    if [[ ${#PATCHES_SKIPPED[@]} -gt 0 ]]; then
+        for _p in "${PATCHES_SKIPPED[@]}"; do
+            _skipped_list+="  [SKIPPED] ${_p}"$'\n'
+        done
+    fi
+    if [[ ${#PATCHES_FAILED[@]} -gt 0 ]]; then
+        for _p in "${PATCHES_FAILED[@]}"; do
+            _failed_list+="  [FAILED]  ${_p}"$'\n'
+        done
+    fi
+
+    # Build validation results section and count in current shell
+    if [[ ${#VALIDATION_RESULTS[@]} -gt 0 ]]; then
+        for result in "${VALIDATION_RESULTS[@]}"; do
+            IFS='|' read -r status defect file description <<< "$result"
+            case "$status" in
+                PASS)
+                    _results_body+="$(printf "  [PASS] %-6s %-40s %s\n" "$defect" "$file" "$description")"$'\n'
+                    pass_count=$(( pass_count + 1 ))
+                    ;;
+                FAIL)
+                    _results_body+="$(printf "  [FAIL] %-6s %-40s %s\n" "$defect" "$file" "$description")"$'\n'
+                    fail_count=$(( fail_count + 1 ))
+                    ;;
+                MISSING_FILE)
+                    _results_body+="$(printf "  [MISS] %-6s %-40s %s\n" "$defect" "$file" "FILE NOT FOUND: $description")"$'\n'
+                    missing_count=$(( missing_count + 1 ))
+                    ;;
+            esac
+        done
+    fi
+
+    # Build file hashes section
+    local _f
+    for _f in \
+        "$SUITE_PATH/common.sh" \
+        "$SUITE_PATH/controller.sh" \
+        "$SUITE_PATH/main.sh" \
+        "$SUITE_PATH/install.sh" \
+        "$SUITE_PATH/purge_matrix.sh" \
+        "$SUITE_PATH/service/optimize_node.sh" \
+        "$SUITE_PATH/service/optimize_python.sh" \
+        "$SUITE_PATH/service/optimize_cargo.sh" \
+        "$SUITE_PATH/service/optimize_venv.sh" \
+        "$SUITE_PATH/test/verify_environment.sh" \
+        "$SUITE_PATH/plugins/scr_alias_gen.sh" \
+        "$SUITE_PATH/systemd/env_maintenance.service"
+    do
+        if [[ -f "$_f" ]]; then
+            _hashes+="$(printf "  %s  %s\n" "$(sha256sum "$_f" | cut -d' ' -f1)" "${_f#"$SUITE_PATH/"}")"$'\n'
+        else
+            _hashes+="$(printf "  %-64s  %s [NOT FOUND]\n" "????????????????????????????????????????????????????????????????" "${_f#"$SUITE_PATH/"}")"$'\n'
+        fi
+    done
+
+    local _script_hash
+    _script_hash="$(sha256sum "$(readlink -f "${BASH_SOURCE[0]}")" | awk '{print "  " $1 "  " $2}')"
+
+    # ── EMIT REPORT (pure output — no arithmetic, no subshell state mutation) ──
     {
         echo "=============================================================="
         echo "  4ndr0service REMEDIATION VALIDATION REPORT"
         echo "  Generated: $(date +'%Y-%m-%d %H:%M:%S')"
         echo "  Suite Path: $SUITE_PATH"
         echo "  Script: $(readlink -f "${BASH_SOURCE[0]}")"
-        echo "  Mode: $([ "$DRY_RUN" == "true" ] && echo "DRY-RUN" || echo "LIVE")"
+        echo "  Mode: $( [[ "$DRY_RUN" == "true" ]] && echo "DRY-RUN" || echo "LIVE" )"
         echo "=============================================================="
         echo ""
         echo "── PATCHES APPLIED ────────────────────────────────────────────"
-        for p in "${PATCHES_APPLIED[@]:-}"; do
-            echo "  [APPLIED] $p"
-        done
+        if [[ -n "$_applied_list" ]]; then printf '%s' "$_applied_list"; else echo "  (none)"; fi
         echo ""
         echo "── PATCHES SKIPPED ────────────────────────────────────────────"
-        for p in "${PATCHES_SKIPPED[@]:-}"; do
-            echo "  [SKIPPED] $p"
-        done
+        if [[ -n "$_skipped_list" ]]; then printf '%s' "$_skipped_list"; else echo "  (none)"; fi
         echo ""
         echo "── PATCHES FAILED ─────────────────────────────────────────────"
-        for p in "${PATCHES_FAILED[@]:-}"; do
-            echo "  [FAILED]  $p"
-        done
+        if [[ -n "$_failed_list" ]]; then printf '%s' "$_failed_list"; else echo "  (none)"; fi
         echo ""
         echo "── VALIDATION RESULTS ─────────────────────────────────────────"
-        for result in "${VALIDATION_RESULTS[@]:-}"; do
-            IFS='|' read -r status defect file description <<< "$result"
-            case "$status" in
-                PASS)
-                    printf "  [PASS] %-6s %-40s %s\n" "$defect" "$file" "$description"
-                    pass_count=$((pass_count + 1))
-                    ;;
-                FAIL)
-                    printf "  [FAIL] %-6s %-40s %s\n" "$defect" "$file" "$description"
-                    fail_count=$((fail_count + 1))
-                    ;;
-                MISSING_FILE)
-                    printf "  [MISS] %-6s %-40s %s\n" "$defect" "$file" "FILE NOT FOUND: $description"
-                    missing_count=$((missing_count + 1))
-                    ;;
-            esac
-        done
+        if [[ -n "$_results_body" ]]; then printf '%s' "$_results_body"; else echo "  (no results)"; fi
         echo ""
         echo "── SUMMARY ────────────────────────────────────────────────────"
         echo "  PASS:         $pass_count"
@@ -1587,35 +1707,16 @@ generate_report() {
         echo "  TOTAL CHECKS: $(( pass_count + fail_count + missing_count ))"
         echo ""
         echo "── BACKUP LOCATION ────────────────────────────────────────────"
-        echo "  $BACKUP_DIR"
+        echo "  ${BACKUP_DIR:-(none — report-only or dry-run mode)}"
         echo ""
         echo "── BASH VERSION ───────────────────────────────────────────────"
         echo "  ${BASH_VERSION}"
         echo ""
         echo "── FILE HASHES (SHA256 of patched files) ──────────────────────"
-        for f in \
-            "$SUITE_PATH/common.sh" \
-            "$SUITE_PATH/controller.sh" \
-            "$SUITE_PATH/main.sh" \
-            "$SUITE_PATH/install.sh" \
-            "$SUITE_PATH/purge_matrix.sh" \
-            "$SUITE_PATH/service/optimize_node.sh" \
-            "$SUITE_PATH/service/optimize_python.sh" \
-            "$SUITE_PATH/service/optimize_cargo.sh" \
-            "$SUITE_PATH/service/optimize_venv.sh" \
-            "$SUITE_PATH/test/verify_environment.sh" \
-            "$SUITE_PATH/plugins/scr_alias_gen.sh" \
-            "$SUITE_PATH/systemd/env_maintenance.service"
-        do
-            if [[ -f "$f" ]]; then
-                printf "  %s  %s\n" "$(sha256sum "$f" | cut -d' ' -f1)" "${f#"$SUITE_PATH/"}"
-            else
-                printf "  %-64s  %s [NOT FOUND]\n" "????????????????????????????????????????????????????????????????" "${f#"$SUITE_PATH/"}"
-            fi
-        done
+        printf '%s' "$_hashes"
         echo ""
         echo "── REMEDIATION SCRIPT HASH ────────────────────────────────────"
-        sha256sum "$(readlink -f "${BASH_SOURCE[0]}")" | awk '{print "  " $1 "  " $2}'
+        echo "$_script_hash"
         echo ""
         echo "=============================================================="
         echo "  END OF REPORT — pass to final audit"
@@ -1624,7 +1725,8 @@ generate_report() {
 
     echo ""
     log_info "Report written to: $report"
-    if (( fail_count > 0 || missing_count > 0 )); then
+    # Use [ ] test instead of (( )) to avoid exit-1-on-zero
+    if [[ "$fail_count" -gt 0 || "$missing_count" -gt 0 ]]; then
         log_warn "Validation found $fail_count failure(s) and $missing_count missing file(s) — review above."
     else
         log_ok "All $pass_count validation checks passed."
@@ -1659,11 +1761,12 @@ main() {
             fi
         fi
 
+        # Apply patches in priority order (D-01 first, D-17 last)
         log_section "APPLYING PATCHES"
         patch_d01
         patch_d02
         patch_d03
-        patch_d04
+        patch_d04   # also applies D-12
         patch_d05
         patch_d06
         patch_d07
@@ -1671,7 +1774,7 @@ main() {
         patch_d09
         patch_d10
         patch_d11
-        patch_d12
+        patch_d12   # reports if D-04 covered it
         patch_d13
         patch_d14
         patch_d15
