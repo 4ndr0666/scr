@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2154
 # Author: 4ndr0666
 # Final Synthesis by: Ψ-Anarch
+# File: ffxv.sh (Production Release)
+# description: A dual-mode CLI tool and interactive menu to apply ffmpeg filters.
 set -euo pipefail
-# ================== // FFX-VIDLINE v5 (Synthesis) //
-## Description: A dual-mode CLI tool and interactive menu to apply
-#              ffmpeg filters and operations.
-# ---------------------------------------
 
 ## Colors
 GREEN='\033[0;32m' CYAN='\033[36m' RED='\033[0;31m' RESET='\033[0m'
@@ -49,7 +48,6 @@ trap 'error_exit "Unexpected script failure near line ${LINENO}"' ERR
 ## Dependencies
 check_deps() {
   printf '%bChecking dependencies...%b\n' "$CYAN" "$RESET"
-  # RESTORED: fzf is required for the interactive menu's file picker.
   for cmd in ffmpeg ffprobe bc fzf; do
     command -v "$cmd" &>/dev/null || error_exit "Dependency missing: '$cmd'"
   done
@@ -66,7 +64,6 @@ unique_output_name() {
   printf '%s\n' "$cand"
 }
 
-# RESTORED: Function to interactively choose a file.
 choose_file() {
   printf '%bSelect input video:%b\n' "$CYAN" "$RESET" >&2
   local f; f="$(fzf)" || return 1
@@ -101,17 +98,15 @@ EOF
 
 # ── Command Runners ────────────────────────────────────────────────────────
 run_ffmpeg() {
-    # This function is identical to the pure CLI version.
-    # It constructs and runs the final ffmpeg command.
-    local infile=$1 outfile=$2 pass_opts=()
+    local infile=$1 outfile=$2
     local -a cmd filter_args
     cmd=(ffmpeg "${pre_input_opts[@]}" -y -i "$infile")
 
     if [[ -n $complex_filter_chain ]]; then
         local full_filter_chain="$complex_filter_chain"
         if ((${#filters[@]})); then
-        local IFS=,
-        full_filter_chain="${full_filter_chain},${filters[*]}"
+            local IFS=,
+            full_filter_chain="${full_filter_chain},${filters[*]}"
         fi
         filter_args=(-filter_complex "$full_filter_chain")
     elif ((${#filters[@]})); then
@@ -218,19 +213,18 @@ parse_args() {
   done
 }
 
-# RESTORED: The interactive command forge.
 show_menu() {
   local choice v p c s f d t r out=()
   {
     printf '%b--- INTERACTIVE COMMAND BUILDER (d=done, q=quit) ---%b\n' "$CYAN" "$RESET"
     printf '%b--- Filters ---%b\n' "$GREEN" "$RESET"
-    printf ' 1) FPS            2) Scale        3) Pad           4) Fade In/Out\n'
-    printf ' 5) Draw Text      6) Deflicker    7) Deinterlace   8) Denoise\n'
-    printf ' 9) Deband         10) Sharpen     11) Deshake      12) Edge Detect\n'
+    printf ' 1) FPS            2) Scale        3) Pad            4) Fade In/Out\n'
+    printf ' 5) Draw Text      6) Deflicker    7) Deinterlace    8) Denoise\n'
+    printf ' 9) Deband         10) Sharpen     11) Deshake       12) Edge Detect\n'
     printf ' 13) Reverse       14) Ping-Pong   15) Color Enhance 16) Tonemap HDR->SDR\n'
     printf ' 17) Stabilize\n'
     printf '%b--- Speed & Time ---%b\n' "$GREEN" "$RESET"
-    printf ' 18) Slow Motion   19) Speed Up    20) Cut / Trim   21) Loop\n'
+    printf ' 18) Slow Motion   19) Speed Up    20) Cut / Trim    21) Loop\n'
     printf '%b--- Encoding & Format ---%b\n' "$GREEN" "$RESET"
     printf ' 22) Convert Fmt   23) Quality Preset 24) Set CRF    25) Set Bitrate\n'
     printf ' 26) Enable 2-Pass 27) Set x264 Preset 28) Video Codec 29) Audio Codec\n'
@@ -279,40 +273,44 @@ show_menu() {
     esac
     printf '%bOperation added.%b\n' "$GREEN" "$RESET" >&2
   done
-  printf '%s\n' "${out[@]}"
+  
+  # Print null-delimited array elements to prevent word-splitting on complex arguments like titles
+  for arg in "${out[@]}"; do
+    printf '%s\0' "$arg"
+  done
 }
-
 
 # ── Main ───────────────────────────────────────────────────────────────────
 main() {
   check_deps
 
-  # RESTORED: Dual-mode execution logic.
-  # If arguments are passed, parse them directly.
-  # Otherwise, launch the interactive menu to build the arguments.
   if (($# > 0)); then
     parse_args "$@"
   else
-    mapfile -t menu_args < <(show_menu) || {
+    # Use mapfile with -d '' to safely handle spaces and special chars returned by show_menu
+    mapfile -d '' -t menu_args < <(show_menu) || {
       printf '%bExiting at user request.%b\n' "$CYAN" "$RESET" >&2
       exit 0
     }
     parse_args "${menu_args[@]}"
   fi
 
-  # After parsing, prompt for a file if it wasn't provided.
   if [[ -z $INPUT_FILE ]]; then
     INPUT_FILE=$(choose_file) || exit 1
   fi
   [[ ! -r $INPUT_FILE ]] && error_exit "Cannot read input file: '$INPUT_FILE'"
 
-  # Process dynamic filters that require probing the input file
   if [[ -n $fade_params ]]; then
     printf '%bProbing video duration for fade effect...%b\n' "$CYAN" "$RESET"
-    local duration; duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")
+    local duration
+    duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")
+    if ! [[ $duration =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      error_exit "Could not extract valid duration from '$INPUT_FILE'"
+    fi
     local in_dur=${fade_params%:*}
     local out_dur=${fade_params#*:}
-    local fade_out_start; fade_out_start=$(bc -l <<<"$duration - $out_dur")
+    local fade_out_start
+    fade_out_start=$(bc -l <<<"$duration - $out_dur")
     filters+=("fade=t=in:st=0:d=${in_dur},fade=t=out:st=${fade_out_start}:d=${out_dur}")
   fi
 
