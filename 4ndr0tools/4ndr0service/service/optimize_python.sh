@@ -42,7 +42,11 @@ clean_pip_ghosts() {
     log_info "Initiating Ghost Exorcism Protocol..."
 
     local py_version="${1:-3.10.14}"
-    local site_pkgs="/home/andro/.local/share/pyenv/versions/${py_version}/lib/python${py_version#*.}/site-packages"
+    local site_pkgs
+    site_pkgs=$(python3 -c "
+import sysconfig
+print(sysconfig.get_paths()['purelib'])
+" 2>/dev/null || echo "/home/andro/.local/share/pyenv/versions/${py_version}/lib/python${py_version%.*}/site-packages")
 
     if [[ ! -d "$site_pkgs" ]]; then
         log_warn "Site-packages not found at $site_pkgs — skipping ghost clean"
