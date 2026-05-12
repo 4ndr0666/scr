@@ -1,0 +1,556 @@
+#!/usr/bin/env bash
+# Author: 4ndr0666
+set -Eeuo pipefail
+#                   #=== 4ndr0pac === #
+# Description: Advanced Arch Linux Package Manager UI.
+# ----------------------------------------------------
+# COLORS + CONSTANTS
+RED='\e[31m'
+CYAN='\e[36m'
+BRED='\e[41m'
+INV='\e[7m'
+BOLD='\e[1m'
+RESET='\e[0m'
+AUR_Helper=""
+argument_flag=""
+argument_input=""
+
+# Detects installed AUR helper once, eliminating redundant if/elif chains.
+detect_aur_helper() {
+	if [[ -n "$AUR_Helper" ]]; then return 0; fi
+	local helpers=(yay paru pikaur aurman pakku trizen pacaur pamac)
+	for h in "${helpers[@]}"; do
+		if command -v "$h" &>/dev/null; then
+			AUR_Helper="$h"
+			return 0
+		fi
+	done
+	AUR_Helper="pacman" # Fallback to native pacman if no AUR helper exists
+}
+
+# Unified execution handler for AUR/Pacman commands
+aur_exec() {
+	local cmd=()
+	case "$AUR_Helper" in
+	paru) cmd=("$AUR_Helper" $argument_flag --sudoloop "$@" --color always) ;;
+	pamac)
+		# pamac uses different syntax for updates
+		if [[ "$1" == "-Syu" ]]; then
+			cmd=("$AUR_Helper" $argument_flag update -a)
+		else
+			cmd=("$AUR_Helper" $argument_flag "$@")
+		fi
+		;;
+	pacman) cmd=(sudo pacman $argument_flag "$@" --color always) ;;
+	*) cmd=("$AUR_Helper" $argument_flag "$@" --color always) ;;
+	esac
+	# Execute the dynamically built array
+	"${cmd[@]}"
+}
+
+# Core UI Helpers
+4ndr0pac_tty_clean() {
+	# Only clear screen if running in a raw TTY (not a graphical Wayland terminal)
+	if [[ "$(tty)" == *"tty"* ]]; then
+		clear
+	fi
+}
+
+func_diff() {
+	local file1 file2 half_width
+	file1="$(echo "$argument_input" | awk '{print $1}')"
+	file2="$(echo "$argument_input" | awk '{print $2}')"
+	half_width=$((($(tput cols) / 2) - ${#file1} + ${#file2}))
+
+	echo -n -e "${RED}${BOLD}$file1"
+	printf "%*s\n" "$half_width" "$file2"
+	tput sgr0
+	diff --side-by-side --suppress-common-lines --ignore-all-space \
+		--color=always --width="$(tput cols)" "$file1" "$file2"
+}
+
+# Update System (func_u)
+func_u() {
+	local install_successful=false
+
+	if aur_exec -Syu; then
+		install_successful=true
+	fi
+
+	# Fallback mitigation if primary update fails
+	if [[ "$install_successful" == "false" ]]; then
+		# Check system repos exclusively
+		if ! sudo pacman -Syu --color always; then
+			echo -e " ${BOLD}Updates from system repositories have failed.${RESET}"
+			echo -e " ${BRED}Do you want to try updating forcefully? [y/N] ${RESET}"
+			read -r -n 1 -e answer
+			case "${answer:-n}" in
+			y | Y | yes | Yes)
+				sudo pacman -Syu --color always --overwrite='*'
+				;;
+			*)
+				echo -e " ${BOLD}Packages have not been updated.${RESET}"
+				;;
+			esac
+		fi
+	fi
+
+	# Modular package manager updates
+	if command -v snap &>/dev/null; then
+		echo " updating snap packages ..."
+		sudo snap refresh
+		echo ""
+	fi
+
+	if command -v flatpak &>/dev/null; then
+		echo " updating flatpak packages ..."
+		flatpak update -y
+		echo ""
+	fi
+}
+
+# Maintain System (func_m)
+func_m() {
+	# 1. Clean 4ndr0pac temp cache (Using array execution for safety)
+	if sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -print -quit | grep -q .; then
+		echo " deleting 4ndr0pac cache ..."
+		sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -exec rm -rf {} +
+		echo ""
+	fi
+
+	# 2. Extract cache directory natively
+	local cache
+	cache="$(awk -F '=' '/^CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	cache="${cache:-/var/cache/pacman/pkg/}"
+
+	# Remove partially downloaded files
+	if sudo find "$cache" -type f -iname "*.part" -print -quit | grep -q .; then
+		echo " deleting partially downloaded packages from cache ..."
+		sudo find "$cache" -type f -iname "*.part" -delete
+		echo ""
+	fi
+
+	# 3. Mirror Synchronization
+	local connection_error=true
+	echo " choosing fastest mirror (which can take a while) and updating system ..."
+
+	if command -v pacman-mirrors &>/dev/null; then
+		if sudo pacman-mirrors -f 0; then
+			sudo pacman -Syyuu --noconfirm
+			connection_error=false
+		fi
+	elif command -v reflector &>/dev/null; then
+		if sudo reflector --verbose --protocol https --age 6 --delay 6 --sort rate \
+			--connection-timeout 2 --score 30 --fastest 10 --save /etc/pacman.d/mirrorlist; then
+			sleep 3 && sudo pacman -Syyuu --noconfirm
+			connection_error=false
+		fi
+	else
+		echo -e " ${RED}Neither reflector nor pacman-mirrors found. Skipping mirror sort.${RESET}"
+	fi
+	echo ""
+
+	# 4. Flatpak Repair
+	if [[ "$connection_error" == "false" ]] && command -v flatpak &>/dev/null; then
+		echo " repairing flatpak(s) ..."
+		sudo flatpak repair
+		echo " cleaning up orphaned flatpak(s) ..."
+		flatpak uninstall --unused --delete-data -y
+		echo ""
+	fi
+
+	# 5. Orphan Removal (Array-safe pipeline)
+	echo " searching orphans ..."
+	case "$AUR_Helper" in
+	yay) yay -Yc ;;
+	pamac) pamac remove -o ;;
+	paru) paru -c ;;
+	*)
+		local orphans
+		mapfile -t orphans < <(pacman -Qqdt || true)
+		if [[ ${#orphans[@]} -gt 0 ]]; then
+			pacman -Qdt --color always
+			echo -e " ${BRED}Do you want to remove these orphaned packages? [Y/n] ${RESET}"
+			read -r -n 1 -e answer
+			case "${answer:-y}" in
+			y | Y | yes)
+				sudo pacman -Rsn "${orphans[@]}" --color always
+				;;
+			*)
+				echo -e " ${BOLD}Orphaned packages retained.${RESET}"
+				;;
+			esac
+		fi
+		;;
+	esac
+	echo ""
+
+	# 6. Pacdiff (.pacnew / .pacsave resolution)
+	echo " sudo pacdiff ..."
+	if [[ -n "${DIFFPROG:-}" ]]; then
+		sudo pacdiff
+	else
+		sudo DIFFPROG="4ndr0pac --diff" pacdiff
+	fi
+	echo ""
+
+	# 7. Systemctl Status Check
+	echo " checking systemctl ..."
+	if [[ "$(LC_ALL=C systemctl is-system-running 2>/dev/null)" != "running" ]]; then
+		echo -e " ${BRED}The following systemd service(s) have failed:${RESET}"
+		systemctl list-units --state=failed
+	fi
+	echo ""
+
+	# 8. Broken Symlink Cleanup
+	echo " checking symlink(s) ..."
+	if sudo find /usr/bin /usr/lib /etc -xtype l -print -quit | grep -q .; then
+		echo " broken symlink(s) found. Try fixing them manually:"
+		sudo find /usr/bin /usr/lib /etc -xtype l
+	else
+		echo " no broken symlinks found in /usr/bin, /usr/lib, /etc."
+	fi
+	echo ""
+}
+
+# ENTRY POINT TRIGGER
+detect_aur_helper
+
+# Install Packages (func_i)
+func_i() {
+	echo -e " ${CYAN}Fetching synchronization databases...${RESET}"
+	local pkgs=()
+
+	# Read fzf multi-selection safely into a bash array
+	# Uses pacman -Slq to quickly list all available packages across native repos
+	mapfile -t pkgs < <(pacman -Slq | sort -u | fzf \
+		--multi \
+		--reverse \
+		--prompt="[Install Native] > " \
+		--preview 'pacman -Si {} | grep -v "^$" || echo "Package not found or requires sync."' \
+		--preview-window=right:60%:wrap \
+		--bind 'ctrl-a:select-all,ctrl-d:deselect-all,ctrl-t:toggle-all')
+
+	if [[ ${#pkgs[@]} -gt 0 ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${BOLD}Installing: ${pkgs[*]}${RESET}"
+		aur_exec -S "${pkgs[@]}"
+	else
+		echo -e " ${RED}No packages selected.${RESET}"
+	fi
+	echo ""
+}
+
+# Search & Install AUR (func_a)
+func_a() {
+	echo -e " ${CYAN}Fetching AUR & Repository databases via ${AUR_Helper}...${RESET}"
+	local pkgs=()
+
+	# Leverages the specific AUR helper to list ALL packages (Native + AUR)
+	mapfile -t pkgs < <("${AUR_Helper}" -Slq 2>/dev/null | sort -u | fzf \
+		--multi \
+		--reverse \
+		--prompt="[Install AUR/Native] > " \
+		--preview "${AUR_Helper} -Si {} 2>/dev/null | grep -v '^$' || echo 'Fetching data...'" \
+		--preview-window=right:60%:wrap \
+		--bind 'ctrl-a:select-all,ctrl-d:deselect-all,ctrl-t:toggle-all')
+
+	if [[ ${#pkgs[@]} -gt 0 ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${BOLD}Installing: ${pkgs[*]}${RESET}"
+		aur_exec -S "${pkgs[@]}"
+	else
+		echo -e " ${RED}No packages selected.${RESET}"
+	fi
+	echo ""
+}
+
+# Remove Packages & Dependencies (func_r)
+func_r() {
+	echo -e " ${CYAN}Loading installed packages...${RESET}"
+	local pkgs=()
+
+	# Lists exclusively installed packages
+	mapfile -t pkgs < <(pacman -Qq | fzf \
+		--multi \
+		--reverse \
+		--prompt="[Remove] > " \
+		--preview 'pacman -Qi {}' \
+		--preview-window=right:60%:wrap \
+		--bind 'ctrl-a:select-all,ctrl-d:deselect-all,ctrl-t:toggle-all')
+
+	if [[ ${#pkgs[@]} -gt 0 ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${BRED}Removing: ${pkgs[*]}${RESET}"
+		# -Rns removes the package, its configuration files, and unneeded dependencies
+		sudo pacman -Rns "${pkgs[@]}" --color always
+	else
+		echo -e " ${RED}No packages selected.${RESET}"
+	fi
+	echo ""
+}
+
+# List Installed Packages & Versions (func_l)
+func_l() {
+	echo -e " ${CYAN}Displaying installed packages... (ESC to exit)${RESET}"
+
+	# Purely a viewer, no execution array needed.
+	# Colorizes the package name vs version for readability.
+	pacman -Q --color always | fzf \
+		--ansi \
+		--reverse \
+		--prompt="[Installed Packages] > " \
+		--preview 'pacman -Qi {1}' \
+		--preview-window=right:60%:wrap
+	echo ""
+}
+
+# View Dependency Tree (func_t & func_v)
+func_t() {
+	if ! command -v pactree &>/dev/null; then
+		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
+		return 1
+	fi
+
+	local target
+	target=$(pacman -Qq | fzf --reverse --prompt="[Dependencies OF] > " --preview 'pacman -Qi {}')
+
+	if [[ -n "$target" ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${CYAN}Dependencies required by ${BOLD}$target${RESET}:"
+		pactree -c "$target" | less -R
+	fi
+	echo ""
+}
+
+func_v() {
+	if ! command -v pactree &>/dev/null; then
+		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
+		return 1
+	fi
+
+	local target
+	target=$(pacman -Qq | fzf --reverse --prompt="[Packages depending ON] > " --preview 'pacman -Qi {}')
+
+	if [[ -n "$target" ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${CYAN}Packages that require ${BOLD}$target${RESET}:"
+		pactree -cr "$target" | less -R
+	fi
+	echo ""
+}
+
+# Rollback / Downgrade (func_d)
+func_d() {
+	if ! command -v downgrade &>/dev/null; then
+		echo -e " ${BRED}Error: 'downgrade' is not installed. Please install it from the AUR.${RESET}"
+		return 1
+	fi
+
+	local target
+	target=$(pacman -Qq | fzf --reverse --prompt="[Downgrade Package] > " --preview 'pacman -Qi {}')
+
+	if [[ -n "$target" ]]; then
+		4ndr0pac_tty_clean
+		echo -e " ${CYAN}Fetching downgrade history for ${BOLD}$target${RESET}..."
+		sudo downgrade "$target"
+	fi
+	echo ""
+}
+
+# Edit System Configurations (func_e)
+func_e() {
+	local editor="${EDITOR:-vim}"
+
+	# Modernized Hyprland/Wayland Configuration Matrix
+	# We use an associative array representation via newline-delimited strings
+	# for easy fzf ingestion. Format: "Label | /path/to/file"
+	local configs=(
+		"Hyprland Config      | $HOME/.config/hypr/hyprland.conf"
+		"Hyprland Environment | $HOME/.config/hypr/hypridle.conf"
+		"Waybar Config        | $HOME/.config/waybar/config"
+		"Waybar Styles        | $HOME/.config/waybar/style.css"
+		"Wofi Config          | $HOME/.config/wofi/config"
+		"Wofi Styles          | $HOME/.config/wofi/style.css"
+		"Mako/Dunst Config    | $HOME/.config/mako/config"
+		"Kitty Config         | $HOME/.config/kitty/kitty.conf"
+		"Neovim Init          | $HOME/.config/nvim/init.vim"
+		"Zsh Profile          | $HOME/.zshrc"
+		"Bash Profile         | $HOME/.bashrc"
+		"Pacman Config        | /etc/pacman.conf"
+		"Makepkg Config       | /etc/makepkg.conf"
+		"System Environment   | /etc/environment"
+		"Grub Config          | /etc/default/grub"
+		"Fstab                | /etc/fstab"
+	)
+
+	local selection target_path
+
+	selection=$(printf "%s\n" "${configs[@]}" | fzf \
+		--reverse \
+		--delimiter="|" \
+		--with-nth=1 \
+		--prompt="[Edit Config] > " \
+		--preview 'bat --color=always {2} 2>/dev/null || cat {2} 2>/dev/null || echo "File not found."')
+
+	if [[ -n "$selection" ]]; then
+		# Extract the path (field 2) and strip leading/trailing whitespace
+		target_path=$(echo "$selection" | awk -F'|' '{print $2}' | xargs)
+
+		# Create directory structure if the user's config file doesn't exist yet
+		if [[ ! -f "$target_path" && "$target_path" == "$HOME"* ]]; then
+			mkdir -p "$(dirname "$target_path")"
+			touch "$target_path"
+		fi
+
+		# Privilege escalation check. Only use sudo if the user does NOT have write access.
+		if [[ -w "$target_path" ]]; then
+			"$editor" "$target_path"
+		else
+			echo -e " ${CYAN}Root privileges required to edit $target_path${RESET}"
+			sudo "$editor" "$target_path"
+
+			# Post-edit hooks for root files
+			if [[ "$target_path" == "/etc/default/grub" ]]; then
+				echo -e " ${CYAN}Regenerating GRUB config...${RESET}"
+				sudo grub-mkconfig -o /boot/grub/grub.cfg
+			fi
+		fi
+
+		# Wayland live-reload hooks (Triggered silently on exit)
+		if [[ "$target_path" == *"/waybar/"* ]]; then
+			killall -SIGUSR2 waybar 2>/dev/null || true
+		fi
+		if [[ "$target_path" == *"/mako/"* ]]; then
+			makoctl reload 2>/dev/null || true
+		fi
+	fi
+}
+
+# Detailed Package Information (func_info)
+func_info() {
+	local target
+	target=$(pacman -Slq | sort -u | fzf --reverse --prompt="[Package Info] > " --preview 'pacman -Si {1}')
+
+	if [[ -n "$target" ]]; then
+		4ndr0pac_tty_clean
+		# Show local info if installed, otherwise show repo info
+		if pacman -Qq "$target" &>/dev/null; then
+			pacman -Qi "$target" | less
+		else
+			pacman -Si "$target" | less
+		fi
+	fi
+}
+
+# Search Files in Packages (func_f)
+func_f() {
+	echo -n -e " ${CYAN}Enter filename/path to search (e.g., 'libutil.so'): ${RESET}"
+	read -r search_term
+	if [[ -n "$search_term" ]]; then
+		4ndr0pac_tty_clean
+		pacman -Fy "$search_term"
+		echo ""
+		echo -e " ${BOLD}Press ENTER to return...${RESET}"
+		read -r
+	fi
+}
+
+# List Files Owned by Package (func_fo)
+func_fo() {
+	local target
+	target=$(pacman -Qq | fzf --reverse --prompt="[List Files In] > " --preview 'pacman -Qi {1}')
+
+	if [[ -n "$target" ]]; then
+		4ndr0pac_tty_clean
+		pacman -Ql "$target" | less
+	fi
+}
+
+# Help Documentation (func_help)
+func_help() {
+	4ndr0pac_tty_clean
+	cat <<EOF | less -R
+${BOLD}${CYAN}4ndr0pac - GOD MODE MANUAL${RESET}
+
+${BOLD}CORE COMMANDS:${RESET}
+  ${BOLD}1. Update${RESET}      - Full system sync (Native + AUR + Flatpak + Snap).
+  ${BOLD}2. Maintain${RESET}    - Mirror sort, cache clean, orphan removal, and pacdiff.
+  ${BOLD}3. Install${RESET}     - Search and install from official repositories.
+  ${BOLD}4. AUR${RESET}         - Search and install from the AUR (via ${AUR_Helper}).
+  ${BOLD}5. Remove${RESET}      - Recursive removal of packages and unused deps.
+  ${BOLD}6. List${RESET}        - Interactive viewer for installed packages.
+  ${BOLD}7. Deps (OF)${RESET}   - Visual tree of what a package requires.
+  ${BOLD}8. Deps (ON)${RESET}   - Visual tree of what requires a package.
+  ${BOLD}9. Edit${RESET}        - Wayland/Hyprland configuration manager.
+
+${BOLD}TIPS:${RESET}
+  - Use ${BOLD}TAB${RESET} in fzf menus to multi-select packages.
+  - ${BOLD}Ctrl-A / Ctrl-D${RESET} to select/deselect all in lists.
+  - Set ${BOLD}4ndr0pac_AUR_HELPER${RESET} env var to force a specific helper.
+EOF
+}
+
+# Main UI Menu (func_menu)
+func_menu() {
+	# Using a Here-Doc for the main UI to keep it clean and fast
+	echo -e " ${BOLD}${CYAN}─── 4ndr0pac: ARCH LINUX PACKAGE MANAGER (GOD MODE) ───${RESET}"
+	echo -e "  ${BOLD}1${RESET}) Update System        ${BOLD}6${RESET}) List Installed"
+	echo -e "  ${BOLD}2${RESET}) Maintain System      ${BOLD}7${RESET}) Dependency Tree (OF)"
+	echo -e "  ${BOLD}3${RESET}) Install (Native)     ${BOLD}8${RESET}) Dependency Tree (ON)"
+	echo -e "  ${BOLD}4${RESET}) Install (AUR)        ${BOLD}9${RESET}) Edit Configurations"
+	echo -e "  ${BOLD}5${RESET}) Remove Packages      ${BOLD}0${RESET}) Exit 4ndr0pac"
+	echo -e " ─────────────────────────────────────────────────────"
+	echo -e "  ${BOLD}I${RESET}) Package Info        ${BOLD}F${RESET}) Find File Owner"
+	echo -e "  ${BOLD}D${RESET}) Downgrade Package   ${BOLD}H${RESET}) Manual / Help"
+	echo ""
+	echo -n -e " ${BOLD}${INV} Selection: ${RESET} "
+}
+
+# Cleanup Logic
+4ndr0pac_clean() {
+	# Remove any stray temp files from fzf or 4ndr0pac
+	rm -f /tmp/4ndr0pac_* 2>/dev/null
+	4ndr0pac_tty_clean
+}
+
+# Main Loop
+main_loop() {
+	# Trap interrupts to ensure clean exit
+	trap 4ndr0pac_clean EXIT
+
+	while true; do
+		4ndr0pac_tty_clean
+		func_menu
+		read -r choice
+
+		case "$choice" in
+		1 | u | U) func_u ;;
+		2 | m | M) func_m ;;
+		3 | i | I) func_i ;;
+		4 | a | A) func_a ;;
+		5 | r | R) func_r ;;
+		6 | l | L) func_l ;;
+		7 | t | T) func_t ;;
+		8 | v | V) func_v ;;
+		9 | e | E) func_e ;;
+		i | info) func_info ;;
+		f | F) func_f ;;
+		d | D) func_d ;;
+		h | H) func_help ;;
+		0 | q | Q) exit 0 ;;
+		*)
+			echo -e " ${BRED} Invalid Option ${RESET}"
+			sleep 1
+			;;
+		esac
+
+		# Pause after actions unless it's a menu exit
+		if [[ "$choice" != "0" && "$choice" != "q" ]]; then
+			echo -n -e "${CYAN}Task Complete. Press ENTER for Menu...${RESET}"
+			read -r
+		fi
+	done
+}
+
+main_loop
