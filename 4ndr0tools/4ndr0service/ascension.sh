@@ -130,11 +130,16 @@ run_sync() {
         fi
     done
 
-    # Runtime Discovery
+    # Runtime Discovery — Fixed quoting to prevent bad substitution
     local sys_py_ver
-    sys_py_ver=$(/usr/bin/python3 -c "import sys; print(f'{sys.version_info.major}.${sys.version_info.minor}')" 2>/dev/null || echo "unknown")
+    sys_py_ver=$(/usr/bin/python3 -c "
+import sys
+print(f'{sys.version_info.major}.{sys.version_info.minor}')
+" 2>/dev/null || echo "unknown")
+
     local target_py_ver
     target_py_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE" 2>/dev/null || echo "3.10.14")
+
     log_info "Native OS Python: $sys_py_ver | Suite Target: $target_py_ver"
 
     # Ghost Link Idempotency

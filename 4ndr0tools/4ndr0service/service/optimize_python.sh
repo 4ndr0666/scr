@@ -37,6 +37,34 @@ install_pyenv() {
     load_pyenv
 }
 
+# ── GHOST EXORCISM (Integrated Pip Cleanup) ──────────────────────────────────
+clean_pip_ghosts() {
+    log_info "Initiating Ghost Exorcism Protocol..."
+
+    local py_version="${1:-3.10.14}"
+    local site_pkgs="/home/andro/.local/share/pyenv/versions/${py_version}/lib/python${py_version#*.}/site-packages"
+
+    if [[ ! -d "$site_pkgs" ]]; then
+        log_warn "Site-packages not found at $site_pkgs — skipping ghost clean"
+        return 0
+    fi
+
+    # Kill known ghost patterns
+    sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
+    sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
+    sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
+    sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
+
+    # Reclaim ownership
+    sudo chown -R andro:andro "/home/andro/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
+
+    # Pip cache + force reinstall
+    python -m pip cache purge 2>/dev/null || true
+    python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps pip setuptools wheel 2>/dev/null || true
+
+    log_success "Ghost exorcism complete for Python ${py_version}"
+}
+
 optimize_python_service() {
     log_info "Synchronizing Python Matrix..."
 
@@ -73,6 +101,9 @@ optimize_python_service() {
     pyenv install -s "$target_ver"
     pyenv global "$target_ver"
     pyenv rehash
+
+    # Integrated Ghost Exorcism (after pyenv baseline is ready)
+    clean_pip_ghosts "$target_ver"
 
     # 4. Global Hive Initialization — MUST precede tool injection (D-06 FIX).
     #    pipx resolves its python executable through the Ghost Link path;
