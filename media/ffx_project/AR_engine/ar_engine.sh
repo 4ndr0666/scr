@@ -51,6 +51,7 @@ readonly DEFAULT_OUTPUT="composite.mp4"
 # =============================================================================
 # EPHEMERAL WORK DIR — destroyed unconditionally on any exit (POSIX TRAP LAW)
 # =============================================================================
+export TMPDIR="/s4/.tmp"
 WORK_DIR=$(mktemp -d -t ffx-composite.XXXXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
 

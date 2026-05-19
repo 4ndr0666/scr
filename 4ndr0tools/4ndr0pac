@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 set -Eeuo pipefail
-#                   #=== 4ndr0pac === #
+#                   #=== 4ndr0pac ===#
 # Description: Advanced Arch Linux Package Manager UI.
 # ----------------------------------------------------
-# COLORS + CONSTANTS
+
+# --- COLORS + CONSTANTS ---
 RED='\e[31m'
 CYAN='\e[36m'
 BRED='\e[41m'
@@ -12,9 +13,11 @@ INV='\e[7m'
 BOLD='\e[1m'
 RESET='\e[0m'
 AUR_Helper=""
-argument_flag=""
+# argument_flag is an array to safely handle multi-word flags
+argument_flag=()
 argument_input=""
 
+# --- AUR HELPER DETECTION ---
 # Detects installed AUR helper once, eliminating redundant if/elif chains.
 detect_aur_helper() {
 	if [[ -n "$AUR_Helper" ]]; then return 0; fi
@@ -28,39 +31,69 @@ detect_aur_helper() {
 	AUR_Helper="pacman" # Fallback to native pacman if no AUR helper exists
 }
 
-# Unified execution handler for AUR/Pacman commands
+# --- UNIFIED AUR/PACMAN EXECUTION HANDLER ---
 aur_exec() {
 	local cmd=()
 	case "$AUR_Helper" in
-	paru) cmd=("$AUR_Helper" $argument_flag --sudoloop "$@" --color always) ;;
+	paru) cmd=("$AUR_Helper" "${argument_flag[@]}" --sudoloop "$@" --color always) ;;
 	pamac)
-		# pamac uses different syntax for updates
 		if [[ "$1" == "-Syu" ]]; then
-			cmd=("$AUR_Helper" $argument_flag update -a)
+			cmd=("$AUR_Helper" "${argument_flag[@]}" update -a)
 		else
-			cmd=("$AUR_Helper" $argument_flag "$@")
+			cmd=("$AUR_Helper" "${argument_flag[@]}" "$@")
 		fi
 		;;
-	pacman) cmd=(sudo pacman $argument_flag "$@" --color always) ;;
-	*) cmd=("$AUR_Helper" $argument_flag "$@" --color always) ;;
+	pacman) cmd=(sudo pacman "${argument_flag[@]}" "$@" --color always) ;;
+	*) cmd=("$AUR_Helper" "${argument_flag[@]}" "$@" --color always) ;;
 	esac
-	# Execute the dynamically built array
 	"${cmd[@]}"
 }
 
-# Core UI Helpers
+# --- SHARED HELPERS ---
+
+# Remove stale pacman DB lock — shared by func_m and func_fix
+_remove_db_lock() {
+	local dbpath
+	dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	dbpath="${dbpath:-/var/lib/pacman/}"
+	if [[ -f "${dbpath}db.lck" ]]; then
+		echo " removing stale pacman database lock ..."
+		sudo unlink "${dbpath}db.lck"
+		echo ""
+	fi
+}
+
+# Update Flatpak and Snap — shared by func_u and func_m
+_update_extra_package_managers() {
+	if command -v snap &>/dev/null; then
+		echo " updating snap packages ..."
+		sudo snap refresh
+		echo ""
+	fi
+
+	if command -v flatpak &>/dev/null; then
+		echo " updating flatpak packages ..."
+		flatpak update -y
+		echo ""
+	fi
+}
+
+# --- CORE UI HELPERS ---
 4ndr0pac_tty_clean() {
-	# Only clear screen if running in a raw TTY (not a graphical Wayland terminal)
+	# Only clear screen if running in a raw TTY (not a graphical terminal)
 	if [[ "$(tty)" == *"tty"* ]]; then
 		clear
 	fi
 }
 
 func_diff() {
-	local file1 file2 half_width
+	local file1 file2 half_width cols
 	file1="$(echo "$argument_input" | awk '{print $1}')"
 	file2="$(echo "$argument_input" | awk '{print $2}')"
-	half_width=$((($(tput cols) / 2) - ${#file1} + ${#file2}))
+	cols=$(tput cols)
+	half_width=$(( (cols / 2) - ${#file1} + ${#file2} ))
+	# Guard against zero or negative width
+	half_width=$(( half_width > 1 ? half_width : 1 ))
 
 	echo -n -e "${RED}${BOLD}$file1"
 	printf "%*s\n" "$half_width" "$file2"
@@ -69,7 +102,9 @@ func_diff() {
 		--color=always --width="$(tput cols)" "$file1" "$file2"
 }
 
-# Update System (func_u)
+# ==============================================================================
+# FUNC_U — Update System
+# ==============================================================================
 func_u() {
 	local install_successful=false
 
@@ -79,7 +114,6 @@ func_u() {
 
 	# Fallback mitigation if primary update fails
 	if [[ "$install_successful" == "false" ]]; then
-		# Check system repos exclusively
 		if ! sudo pacman -Syu --color always; then
 			echo -e " ${BOLD}Updates from system repositories have failed.${RESET}"
 			echo -e " ${BRED}Do you want to try updating forcefully? [y/N] ${RESET}"
@@ -96,41 +130,36 @@ func_u() {
 	fi
 
 	# Modular package manager updates
-	if command -v snap &>/dev/null; then
-		echo " updating snap packages ..."
-		sudo snap refresh
-		echo ""
-	fi
-
-	if command -v flatpak &>/dev/null; then
-		echo " updating flatpak packages ..."
-		flatpak update -y
-		echo ""
-	fi
+	_update_extra_package_managers
 }
 
-# Maintain System (func_m)
+# ==============================================================================
+# FUNC_M — Maintain System
+# ==============================================================================
 func_m() {
-	# 1. Clean 4ndr0pac temp cache (Using array execution for safety)
-	if sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -print -quit | grep -q .; then
+	# 1. Clean 4ndr0pac temp cache
+	if sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
 		echo " deleting 4ndr0pac cache ..."
 		sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -exec rm -rf {} +
 		echo ""
 	fi
 
-	# 2. Extract cache directory natively
+	# 2. Remove pacman database lock if present
+	_remove_db_lock
+
+	# 3. Extract cache directory natively
 	local cache
 	cache="$(awk -F '=' '/^CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
 	cache="${cache:-/var/cache/pacman/pkg/}"
 
 	# Remove partially downloaded files
-	if sudo find "$cache" -type f -iname "*.part" -print -quit | grep -q .; then
+	if sudo find "$cache" -type f -iname "*.part" -print -quit 2>/dev/null | grep -q .; then
 		echo " deleting partially downloaded packages from cache ..."
 		sudo find "$cache" -type f -iname "*.part" -delete
 		echo ""
 	fi
 
-	# 3. Mirror Synchronization
+	# 4. Mirror Synchronization
 	local connection_error=true
 	echo " choosing fastest mirror (which can take a while) and updating system ..."
 
@@ -146,28 +175,45 @@ func_m() {
 			connection_error=false
 		fi
 	else
-		echo -e " ${RED}Neither reflector nor pacman-mirrors found. Skipping mirror sort.${RESET}"
+		local mirror_server_list
+		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
+		if [[ -n "$mirror_server_list" ]]; then
+			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
+			mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose - || true)"
+			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
+				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
+				sudo pacman -Syyuu --noconfirm
+				connection_error=false
+			fi
+		fi
+		if [[ "$connection_error" == "true" ]]; then
+			echo -e " ${RED}No mirror tool found and curl fallback failed. Skipping mirror sort.${RESET}"
+		fi
 	fi
 	echo ""
 
-	# 4. Flatpak Repair
-	if [[ "$connection_error" == "false" ]] && command -v flatpak &>/dev/null; then
-		echo " repairing flatpak(s) ..."
-		sudo flatpak repair
-		echo " cleaning up orphaned flatpak(s) ..."
-		flatpak uninstall --unused --delete-data -y
-		echo ""
+	# 5. Flatpak Repair + Snap/Flatpak updates
+	if [[ "$connection_error" == "false" ]]; then
+		if command -v flatpak &>/dev/null; then
+			echo " repairing flatpak(s) ..."
+			sudo flatpak repair
+			echo " cleaning up orphaned flatpak(s) ..."
+			flatpak uninstall --unused --delete-data -y
+			echo ""
+		fi
+		# Also update Snap and Flatpak to stay in sync with func_u
+		_update_extra_package_managers
 	fi
 
-	# 5. Orphan Removal (Array-safe pipeline)
+	# 6. Orphan Removal (Array-safe pipeline)
 	echo " searching orphans ..."
 	case "$AUR_Helper" in
 	yay) yay -Yc ;;
 	pamac) pamac remove -o ;;
 	paru) paru -c ;;
 	*)
-		local orphans
-		mapfile -t orphans < <(pacman -Qqdt || true)
+		local orphans=()
+		mapfile -t orphans < <(pacman -Qqdt 2>/dev/null || true)
 		if [[ ${#orphans[@]} -gt 0 ]]; then
 			pacman -Qdt --color always
 			echo -e " ${BRED}Do you want to remove these orphaned packages? [Y/n] ${RESET}"
@@ -185,16 +231,48 @@ func_m() {
 	esac
 	echo ""
 
-	# 6. Pacdiff (.pacnew / .pacsave resolution)
+	# 7. Pacman package cache cleanup
+	echo " cleaning pacman package cache ..."
+	sudo paccache --verbose --remove --uninstalled --keep 1
+	echo ""
+	sudo paccache --verbose --remove --keep 3
+	echo ""
+
+	# AUR helper cache cleanup
+	case "$AUR_Helper" in
+	yay)
+		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		echo ""
+		;;
+	pikaur)
+		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		echo ""
+		;;
+	paru)
+		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		echo ""
+		;;
+	pamac)
+		echo " cleaning pamac package cache ..."
+		pamac clean --keep 2 || true
+		echo ""
+		;;
+	esac
+
+	# 8. Pacdiff (.pacnew / .pacsave resolution)
+	# NOTE: We call func_diff directly via DIFFPROG to avoid CLI re-entry issues.
 	echo " sudo pacdiff ..."
 	if [[ -n "${DIFFPROG:-}" ]]; then
 		sudo pacdiff
 	else
-		sudo DIFFPROG="4ndr0pac --diff" pacdiff
+		sudo DIFFPROG="diff --side-by-side --suppress-common-lines --color=always --width=$(tput cols)" pacdiff
 	fi
 	echo ""
 
-	# 7. Systemctl Status Check
+	# 9. Systemctl Status Check
 	echo " checking systemctl ..."
 	if [[ "$(LC_ALL=C systemctl is-system-running 2>/dev/null)" != "running" ]]; then
 		echo -e " ${BRED}The following systemd service(s) have failed:${RESET}"
@@ -202,27 +280,98 @@ func_m() {
 	fi
 	echo ""
 
-	# 8. Broken Symlink Cleanup
+	# 10. Broken Symlink Cleanup (scoped paths — not CWD)
 	echo " checking symlink(s) ..."
-	if sudo find /usr/bin /usr/lib /etc -xtype l -print -quit | grep -q .; then
+	if sudo find /usr/bin /usr/lib /etc -xtype l -print -quit 2>/dev/null | grep -q .; then
 		echo " broken symlink(s) found. Try fixing them manually:"
 		sudo find /usr/bin /usr/lib /etc -xtype l
 	else
 		echo " no broken symlinks found in /usr/bin, /usr/lib, /etc."
 	fi
 	echo ""
+
+	# 11. Local repository consistency check
+	echo " checking consistency of local repository ..."
+	if ! pacman -Dk &>/dev/null; then
+		echo -e " ${BRED}The following inconsistencies have been found in your local packages:${RESET}"
+		pacman -Dk || true
+	fi
+	echo ""
+
+	# 12. AUR orphan check (packages no longer in AUR)
+	if [[ -n "$AUR_Helper" ]] && [[ "$AUR_Helper" != "pacman" ]]; then
+		echo " checking AUR package(s) (which can take a while) ..."
+		curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
+			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null &&
+			gunzip -f "/tmp/4ndr0pac-aur/packages.gz" || true
+		if [[ -f /tmp/4ndr0pac-aur/packages ]]; then
+			local aur_orphans
+			aur_orphans="$(comm -23 <(pacman -Qqm | sort) <(sort -u /tmp/4ndr0pac-aur/packages) || true)"
+			if [[ -n "$aur_orphans" ]]; then
+				echo -e " ${BOLD}The following packages are neither in your repo nor the AUR:${RESET}"
+				echo -e " ${BRED}It is recommended to remove these packages carefully:${RESET}"
+				echo "$aur_orphans"
+				echo ""
+			fi
+		fi
+	fi
+	echo ""
+
+	# 13. Packages moved to AUR check
+	echo " checking for package(s) moved to the AUR ..."
+	local moved_pkgs
+	moved_pkgs="$(comm -23 <(pacman -Qqm | sort) <(pacman -Qqem | sort) || true)"
+	if [[ -n "$moved_pkgs" ]]; then
+		echo -e " ${BOLD}The following packages were not explicitly installed and are not in your system repo:${RESET}"
+		echo -e " ${BRED}If no important packages depend on them, consider removing them:${RESET}"
+		echo "$moved_pkgs"
+		echo ""
+	fi
+	echo ""
+
+	# 14. Journalctl vacuum
+	if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
+		echo " cleaning systemd log file(s) ..."
+		sudo journalctl --vacuum-size=100M --vacuum-time=30days
+	fi
+	echo ""
+
+	# 15. Firmware update check
+	if command -v fwupdmgr &>/dev/null; then
+		echo " checking for firmware update(s) ..."
+		fwupdmgr refresh --force || true
+		local fw_out
+		fw_out="$(LC_ALL=C fwupdmgr get-updates 2>&1 || true)"
+		if echo "$fw_out" | grep -qE 'No updatable devices|No updates available|updated successfully'; then
+			: # nothing actionable
+		else
+			echo -e " ${BRED}fwupd reports the following:${RESET}"
+			echo "$fw_out"
+			echo -e " ${BRED}Do you want to execute 'fwupdmgr update'? [y/N] ${RESET}"
+			read -r -n 1 -e answer
+			case "${answer:-n}" in
+			y | Y | yes | Yes)
+				fwupdmgr update
+				;;
+			*)
+				echo -e " ${BOLD}'fwupdmgr update' not executed.${RESET}"
+				;;
+			esac
+		fi
+		echo ""
+	fi
 }
 
-# ENTRY POINT TRIGGER
+# --- ENTRY POINT TRIGGER ---
 detect_aur_helper
 
-# Install Packages (func_i)
+# ==============================================================================
+# FUNC_I — Install Packages (Native)
+# ==============================================================================
 func_i() {
 	echo -e " ${CYAN}Fetching synchronization databases...${RESET}"
 	local pkgs=()
 
-	# Read fzf multi-selection safely into a bash array
-	# Uses pacman -Slq to quickly list all available packages across native repos
 	mapfile -t pkgs < <(pacman -Slq | sort -u | fzf \
 		--multi \
 		--reverse \
@@ -241,12 +390,13 @@ func_i() {
 	echo ""
 }
 
-# Search & Install AUR (func_a)
+# ==============================================================================
+# FUNC_A — Search & Install AUR
+# ==============================================================================
 func_a() {
 	echo -e " ${CYAN}Fetching AUR & Repository databases via ${AUR_Helper}...${RESET}"
 	local pkgs=()
 
-	# Leverages the specific AUR helper to list ALL packages (Native + AUR)
 	mapfile -t pkgs < <("${AUR_Helper}" -Slq 2>/dev/null | sort -u | fzf \
 		--multi \
 		--reverse \
@@ -265,12 +415,13 @@ func_a() {
 	echo ""
 }
 
-# Remove Packages & Dependencies (func_r)
+# ==============================================================================
+# FUNC_R — Remove Packages & Dependencies (with full recovery loop)
+# ==============================================================================
 func_r() {
 	echo -e " ${CYAN}Loading installed packages...${RESET}"
 	local pkgs=()
 
-	# Lists exclusively installed packages
 	mapfile -t pkgs < <(pacman -Qq | fzf \
 		--multi \
 		--reverse \
@@ -279,23 +430,81 @@ func_r() {
 		--preview-window=right:60%:wrap \
 		--bind 'ctrl-a:select-all,ctrl-d:deselect-all,ctrl-t:toggle-all')
 
-	if [[ ${#pkgs[@]} -gt 0 ]]; then
-		4ndr0pac_tty_clean
-		echo -e " ${BRED}Removing: ${pkgs[*]}${RESET}"
-		# -Rns removes the package, its configuration files, and unneeded dependencies
-		sudo pacman -Rns "${pkgs[@]}" --color always
-	else
+	if [[ ${#pkgs[@]} -eq 0 ]]; then
 		echo -e " ${RED}No packages selected.${RESET}"
+		echo ""
+		return 0
+	fi
+
+	4ndr0pac_tty_clean
+	echo -e " ${BRED}Removing: ${pkgs[*]}${RESET}"
+
+	# Primary removal attempt
+	if ! sudo pacman -Rns "${pkgs[@]}" --color always; then
+		echo ""
+		echo -e " ${BOLD}Package removal has failed.${RESET}"
+		echo -e " ${BOLD}Choose one of the following options:${RESET}"
+		echo ""
+		echo -e "${BOLD}    1     Try again (re-select from failed list).${RESET}"
+		echo -e "${BOLD}          Read the error message(s) above and deselect dependencies.${RESET}"
+		echo ""
+		echo -e "${BOLD}${RED}    2     Force remove without checking dependencies (-Rdd).${RESET}"
+		echo -e "${BOLD}${RED}          Attention: This can break dependencies.${RESET}"
+		echo ""
+		echo -e "${BOLD}${RED}    3     Cascade remove — also removes packages that depend on selected (-Rsnc).${RESET}"
+		echo -e "${BOLD}${RED}          Attention: This is recursive and can remove many packages.${RESET}"
+		echo ""
+		echo -e "${BOLD}   ENTER  Exit without removing any packages.${RESET}"
+		echo ""
+		read -r -n 1 -e answer
+
+		case "${answer:-q}" in
+		1)
+			# Retry loop — present failed list back in fzf for deselection
+			local pkg_backup=("${pkgs[@]}")
+			while [[ ${#pkg_backup[@]} -gt 0 ]]; do
+				local retry_pkgs=()
+				mapfile -t retry_pkgs < <(printf '%s\n' "${pkg_backup[@]}" | fzf \
+					--multi \
+					--reverse \
+					--prompt="[Retry Remove] > " \
+					--preview 'pacman -Qi {} 2>/dev/null || echo "Not installed."' \
+					--preview-window=right:60%:wrap)
+
+				if [[ ${#retry_pkgs[@]} -eq 0 ]]; then
+					break
+				fi
+
+				if ! sudo pacman -Rns "${retry_pkgs[@]}" --color always; then
+					echo ""
+					echo -e " ${BRED}Package removal failed again. Press ENTER to retry or Ctrl+C to abort.${RESET}"
+					read -r
+					pkg_backup=("${retry_pkgs[@]}")
+				else
+					pkg_backup=()
+				fi
+			done
+			;;
+		2)
+			sudo pacman -Rdd "${pkgs[@]}" --color always
+			;;
+		3)
+			sudo pacman -Rsnc "${pkgs[@]}" --color always
+			;;
+		*)
+			echo -e " ${BOLD}Removal of packages has been cancelled.${RESET}"
+			;;
+		esac
 	fi
 	echo ""
 }
 
-# List Installed Packages & Versions (func_l)
+# ==============================================================================
+# FUNC_L — List Installed Packages & Versions
+# ==============================================================================
 func_l() {
 	echo -e " ${CYAN}Displaying installed packages... (ESC to exit)${RESET}"
 
-	# Purely a viewer, no execution array needed.
-	# Colorizes the package name vs version for readability.
 	pacman -Q --color always | fzf \
 		--ansi \
 		--reverse \
@@ -305,7 +514,9 @@ func_l() {
 	echo ""
 }
 
-# View Dependency Tree (func_t & func_v)
+# ==============================================================================
+# FUNC_T — Dependency Tree (packages required BY target)
+# ==============================================================================
 func_t() {
 	if ! command -v pactree &>/dev/null; then
 		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
@@ -323,6 +534,9 @@ func_t() {
 	echo ""
 }
 
+# ==============================================================================
+# FUNC_V — Reverse Dependency Tree (packages that depend ON target)
+# ==============================================================================
 func_v() {
 	if ! command -v pactree &>/dev/null; then
 		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
@@ -340,10 +554,383 @@ func_v() {
 	echo ""
 }
 
-# Rollback / Downgrade (func_d)
+# ==============================================================================
+# FUNC_B — Roll Back System (ported from pacui, adapted to 4ndr0pac style)
+# ==============================================================================
+func_b() {
+	local cache logpath cachePACAUR=""
+	local pkgR pkgI pkgD pkgU line temp1 temp2 temp3
+	local pacui_cache_packages pacui_cache_install pacui_aur_install=""
+	local pacui_cache_downgrade pacui_cache_downgrade_counted pacui_tmp_downgrade
+	local pacui_install pacui_downgrade
+	local pacui_cache_upgrade pacui_cache_upgrade_counted pacui_tmp_upgrade
+	local pacui_upgrade
+
+	# Resolve pacman cache directory
+	cache="$(awk -F '=' '/CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	cache="${cache:-/var/cache/pacman/pkg/}"
+
+	# Resolve pacman log path
+	logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	logpath="${logpath:-/var/log/pacman.log}"
+
+	# AUR helper cache paths for pacaur
+	if [[ "$AUR_Helper" == "pacaur" ]]; then
+		cachePACAUR="${AURDEST:-$HOME/.cache/pacaur/}"
+	fi
+
+	4ndr0pac_tty_clean
+
+	# Step 1: Parse pacman.log and present fzf selector
+	pacui_cache_packages="$(tail -8000 "$logpath" |
+		grep "] installed\|removed\|upgraded\|downgraded" |
+		awk -F '[\\[\\]]' '{ print $2 " " $5 }' |
+		awk '{ $1=$1 ":"; $2="  " $2; $3="\t\033[1m" $3 " \033[0m"; print }' |
+		fzf -i --multi --exact --no-sort --select-1 --ansi \
+			--query="$argument_input" --cycle --tac --layout=reverse \
+			--bind='pgdn:half-page-down,pgup:half-page-up' \
+			--margin=1 --info=inline-right --no-separator \
+			--header="Press TAB key to (un)select. ENTER to roll back. ESC to quit." \
+			--prompt='Enter string to filter displayed list of recent Pacman changes > ' |
+		sed 's/ ([^)]*)//g' |
+		awk '{ print $(NF-1) " " $NF }' || true)"
+
+	4ndr0pac_tty_clean
+
+	[[ -z "$pacui_cache_packages" ]] && return 0
+
+	# Step 2: Roll back installed packages → remove them
+	# Build array for safe unquoted expansion
+	local pkgR_arr=()
+	mapfile -t pkgR_arr < <(echo "${pacui_cache_packages}" | awk '/installed/ {print $2}' | sort -u)
+	if [[ ${#pkgR_arr[@]} -gt 0 ]]; then
+		sudo pacman "${argument_flag[@]}" -R "${pkgR_arr[@]}" --color always
+	fi
+
+	# Step 3: Roll back removed packages → reinstall from cache
+	pacui_cache_install="$(echo "${pacui_cache_packages}" | awk '/removed/ {print $2}' || true)"
+	if [[ -n "$pacui_cache_install" ]]; then
+		if [[ "$AUR_Helper" == "pacaur" ]]; then
+			pacui_aur_install="$(
+				while IFS='' read -r line || [[ -n "$line" ]]; do
+					find "$cachePACAUR" -maxdepth 2 -mindepth 2 -type f -printf "%T+\t%p\n" |
+						grep -E '\.pkg\.tar\.(zst|xz|gz|bz2)$' | sort -rn | awk '{print $2}' |
+						grep "${line}-" | sed -n '1p'
+				done < <(echo "${pacui_cache_install}")
+			)"
+		fi
+
+		pacui_install="$(
+			while IFS='' read -r line || [[ -n "$line" ]]; do
+				find "$cache" -name "${line}-[0-9a-z.-_]*.pkg.tar.*" | sort -r | sed -n '1p'
+			done < <(echo "${pacui_cache_install}")
+		)"
+
+		local pkgI_arr=()
+		if [[ -n "$pacui_aur_install" ]]; then
+			mapfile -t pkgI_arr < <(printf "%s\n%s" "${pacui_install}" "${pacui_aur_install}" | sort -u | grep -v '^$')
+		else
+			mapfile -t pkgI_arr < <(echo "${pacui_install}" | sort -u | grep -v '^$')
+		fi
+
+		if [[ ${#pkgI_arr[@]} -gt 0 ]]; then
+			sudo pacman "${argument_flag[@]}" -U "${pkgI_arr[@]}" --color always
+		fi
+	fi
+
+	# Step 4: Roll back upgraded packages → downgrade to previous cached version
+	pacui_cache_downgrade="$(echo "${pacui_cache_packages}" | awk '/upgraded/ {print $2}' || true)"
+	if [[ -n "$pacui_cache_downgrade" ]]; then
+		pacui_tmp_downgrade="$(mktemp /tmp/4ndr0pac-tmp-downgrade.XXXXXXXX)"
+		trap 'rm -f "${pacui_tmp_downgrade}"' RETURN
+
+		pacui_cache_downgrade_counted="$(echo "${pacui_cache_downgrade}" | sort | uniq -c)"
+
+		pacui_downgrade="$(
+			while read -r line && [[ -n "$line" ]]; do
+				temp1="$(echo "$line" | awk '{print $1}')"
+				temp2="$(echo "$line" | awk '{print $2}')"
+				if [[ -n "$temp2" ]]; then
+					find "$cache" -name "${temp2}-[0-9a-z.-_]*.pkg.tar.*" | sort -r >"${pacui_tmp_downgrade}"
+					if [[ "$AUR_Helper" == "pacaur" ]]; then
+						find "$cachePACAUR" -maxdepth 2 -mindepth 2 -type f -printf "%T+\t%p\n" |
+							grep -E '\.pkg\.tar\.(zst|xz|gz|bz2)$' | sort -rn | awk '{print $2}' |
+							grep "${temp2}-" >>"${pacui_tmp_downgrade}" || true
+					fi
+					temp3="$((temp1 + 1))p"
+					grep "$(pacman -Q "$temp2" | awk '{print $2}')" -A 100 "${pacui_tmp_downgrade}" |
+						sed -n "${temp3}" || true
+				fi
+			done < <(echo "${pacui_cache_downgrade_counted}")
+		)"
+
+		rm -f "${pacui_tmp_downgrade}"
+		trap - RETURN
+
+		local pkgD_arr=()
+		mapfile -t pkgD_arr < <(echo "${pacui_downgrade}" | sort -u | grep -v '^$')
+		if [[ ${#pkgD_arr[@]} -gt 0 ]]; then
+			sudo pacman "${argument_flag[@]}" -U "${pkgD_arr[@]}" --color always
+		fi
+	fi
+
+	# Step 5: Roll back downgraded packages → upgrade to later cached version
+	pacui_cache_upgrade="$(echo "${pacui_cache_packages}" | awk '/downgraded/ {print $2}' || true)"
+	if [[ -n "$pacui_cache_upgrade" ]]; then
+		pacui_tmp_upgrade="$(mktemp /tmp/4ndr0pac-tmp-upgrade.XXXXXXXX)"
+		trap 'rm -f "${pacui_tmp_upgrade}"' RETURN
+
+		pacui_cache_upgrade_counted="$(echo "${pacui_cache_upgrade}" | sort | uniq -c)"
+
+		pacui_upgrade="$(
+			while read -r line && [[ -n "$line" ]]; do
+				temp1="$(echo "$line" | awk '{print $1}')"
+				temp2="$(echo "$line" | awk '{print $2}')"
+				if [[ -n "$temp2" ]]; then
+					find "$cache" -name "${temp2}-[0-9a-z.-_]*.pkg.tar.*" | sort -r >"${pacui_tmp_upgrade}"
+					if [[ "$AUR_Helper" == "pacaur" ]]; then
+						find "$cachePACAUR" -maxdepth 2 -mindepth 2 -type f -printf "%T+\t%p\n" |
+							grep -E '\.pkg\.tar\.(zst|xz|gz|bz2)$' | sort -rn | awk '{print $2}' |
+							grep "${temp2}-" >>"${pacui_tmp_upgrade}" || true
+					fi
+					temp3="$((temp1 + 1))p"
+					grep "$(pacman -Q "$temp2" | awk '{print $2}')" -B 100 "${pacui_tmp_upgrade}" |
+						tac | sed -n "${temp3}" || true
+				fi
+			done < <(echo "${pacui_cache_upgrade_counted}")
+		)"
+
+		rm -f "${pacui_tmp_upgrade}"
+		trap - RETURN
+
+		local pkgU_arr=()
+		mapfile -t pkgU_arr < <(echo "${pacui_upgrade}" | sort -u | grep -v '^$')
+		if [[ ${#pkgU_arr[@]} -gt 0 ]]; then
+			sudo pacman "${argument_flag[@]}" -U "${pkgU_arr[@]}" --color always
+		fi
+	fi
+}
+
+# ==============================================================================
+# FUNC_FIX — Fix Pacman Errors (ported from pacui func_f, adapted to 4ndr0pac)
+# ==============================================================================
+func_fix() {
+	# Step 1: Clear 4ndr0pac temp cache
+	if sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
+		echo " deleting 4ndr0pac cache ..."
+		sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -exec rm -rf {} +
+		echo ""
+	fi
+
+	# Step 2: Remove pacman database lock
+	_remove_db_lock
+
+	# Step 3: Fix mirrors
+	echo " fixing mirrors (which can take a while) ..."
+	if command -v pacman-mirrors &>/dev/null; then
+		sudo pacman-mirrors -f 0 && sudo pacman -Syy
+	elif command -v reflector &>/dev/null; then
+		sudo reflector --verbose --protocol https,ftps --age 5 --sort rate \
+			--save /etc/pacman.d/mirrorlist && sleep 10 && sudo pacman -Syy
+	else
+		local mirror_server_list
+		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
+		if [[ -n "$mirror_server_list" ]]; then
+			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
+			mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose - || true)"
+			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
+				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
+				sudo pacman -Syy
+			fi
+		fi
+	fi
+	echo ""
+
+	# Step 4: Connectivity check — properly quoted server URL
+	local server
+	server="$(grep "^Server =" -m 1 /etc/pacman.d/mirrorlist | awk -F '=' '{print $2}' | awk -F '$' '{print $1}' | xargs || true)"
+
+	if [[ -z "$server" ]] || ! curl --silent --fail "$server" &>/dev/null; then
+		echo ""
+		echo -e " ${BRED}Either there is something wrong with your internet connection or with your mirror: $server${RESET}"
+		echo -e " ${BRED}Please make sure both are ok and rerun Fix Pacman Errors.${RESET}"
+		echo ""
+		return 1
+	fi
+
+	# Step 5: dirmngr
+	echo ""
+	echo " sudo dirmngr </dev/null ..."
+	if ! sudo dirmngr </dev/null 2>/dev/null; then
+		echo ""
+		echo -e " ${BRED}The following dirmngr errors have occurred:${RESET}"
+		sudo dirmngr </dev/null || true
+	fi
+	echo ""
+
+	# Step 6: Clean pacman cache of non-installed packages
+	echo " cleaning pacman cache ..."
+	sudo pacman -Sc --noconfirm
+	echo ""
+
+	# Step 7: Trust pacman keyring in user GPG
+	if [[ -f "$HOME/.gnupg/gpg.conf" ]]; then
+		if ! grep -q "/etc/pacman.d/gnupg/pubring.gpg" "$HOME/.gnupg/gpg.conf" &>/dev/null; then
+			echo " trusting keys from system developers ..."
+			{
+				echo "# "
+				echo "# Automatically trust all keys in Pacman's keyring:"
+				echo "keyring /etc/pacman.d/gnupg/pubring.gpg"
+				echo ""
+			} >>"$HOME/.gnupg/gpg.conf"
+		fi
+	fi
+
+	# Step 8: Conventional update attempt
+	echo " trying to update system conventionally ..."
+	if ! sudo pacman -Syuu --noconfirm; then
+		echo ""
+		echo -e " ${BRED}Conventional update(s) failed. Please read the error message(s) above.${RESET}"
+		echo -e " ${BRED}Did the update fail because of key or keyring errors? [y/N]${RESET}"
+		read -r -n 1 -e answer
+
+		case "${answer:-n}" in
+		y | Y | yes | YES | Yes)
+			echo ""
+			echo " Lowering pacman securities (in case keyring is broken) ..."
+			echo -e " ${BRED}WARNING: Do NOT kill this script (Ctrl+C) until securities are restored.${RESET}"
+			sudo cp --preserve=all -f /etc/pacman.conf /etc/pacman.conf.backup &&
+				sudo sed -i 's/SigLevel[ ]*=[A-Za-z ]*/SigLevel = Never/' /etc/pacman.conf
+			# Restore on EXIT — note SIGKILL cannot be trapped; user is warned above
+			trap "sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf && sudo rm -f /etc/pacman.conf.backup" EXIT
+			echo ""
+
+			echo " trying to update system manually without checking keys ..."
+			if ! sudo pacman -Syu; then
+				echo ""
+				echo -e " ${BRED}Update still not successful. 4ndr0pac is unable to fix the system automatically.${RESET}"
+				echo -e " ${BRED}Read all error messages carefully and try to fix them yourself.${RESET}"
+				echo ""
+				echo " raising pacman securities back ..."
+				sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
+					sudo rm -f /etc/pacman.conf.backup
+				trap - EXIT
+				echo ""
+			else
+				echo ""
+				echo -e " ${BRED}Update succeeded despite the temporary lack of key checks.${RESET}"
+				echo -e " ${BRED}Should 4ndr0pac prevent all future key / keyring errors? [y/N]${RESET}"
+				read -r -n 1 -e answer2
+
+				case "${answer2:-n}" in
+				y | Y | yes | YES | Yes)
+					if [[ -d /etc/pacman.d/gnupg ]]; then
+						echo ""
+						echo " sudo rm -r /etc/pacman.d/gnupg ..."
+						sudo rm -r /etc/pacman.d/gnupg &>/dev/null || true
+					fi
+					echo ""
+					echo " reinstalling gnupg ..."
+					sudo pacman -Syu gnupg --noconfirm
+					echo ""
+					echo " installing all necessary keyrings ..."
+					# Array-safe keyring install
+					local keyrings=()
+					mapfile -t keyrings < <(pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)')
+					if [[ ${#keyrings[@]} -gt 0 ]]; then
+						sudo pacman -Syu "${keyrings[@]}" --noconfirm
+					fi
+					echo ""
+					echo " raising pacman securities back ..."
+					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
+						sudo rm -f /etc/pacman.conf.backup
+					trap - EXIT
+					echo ""
+					echo " initializing and populating keyring ..."
+					sudo pacman-key --init && echo "" &&
+						sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null ||
+						sudo pacman-key --populate
+					echo ""
+					echo " updating file database ..."
+					sudo pacman -Fyy
+					echo ""
+					;;
+				n | N | no | NO | No)
+					echo ""
+					echo " do not fix keyring(s) ..."
+					echo ""
+					echo " raising pacman securities back ..."
+					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
+						sudo rm -f /etc/pacman.conf.backup
+					trap - EXIT
+					echo ""
+					echo " updating file database ..."
+					sudo pacman -Fyy
+					echo ""
+					;;
+				*)
+					echo ""
+					echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
+					echo ""
+					echo " raising pacman securities back ..."
+					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
+						sudo rm -f /etc/pacman.conf.backup
+					trap - EXIT
+					echo ""
+					;;
+				esac
+			fi
+			;;
+
+		n | N | no | NO | No)
+			if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
+				echo ""
+				echo " sudo systemctl stop ntpd.service ..."
+				sudo systemctl stop ntpd.service &>/dev/null || true
+				echo ""
+				echo " installing ntp ..."
+				sudo pacman -S ntp --noconfirm
+				echo ""
+				echo " setting clock (which can take a while) ..."
+				sudo ntpd -qg && sleep 10 && sudo hwclock -w
+				echo ""
+			fi
+
+			echo " trying to update system manually again ..."
+			if ! sudo pacman -Syuu; then
+				echo ""
+				echo -e " ${BRED}Update still not successful. 4ndr0pac is unable to fix the system automatically.${RESET}"
+				echo -e " ${BRED}Read all error messages carefully and try to fix them yourself.${RESET}"
+				echo ""
+			else
+				echo ""
+				echo " updating file database ..."
+				sudo pacman -Fyy
+				echo ""
+			fi
+			;;
+
+		*)
+			echo ""
+			echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
+			;;
+		esac
+
+	else
+		echo ""
+		echo " updating file database ..."
+		sudo pacman -Fyy
+		echo ""
+	fi
+}
+
+# ==============================================================================
+# FUNC_D — Rollback / Downgrade Package
+# ==============================================================================
 func_d() {
 	if ! command -v downgrade &>/dev/null; then
 		echo -e " ${BRED}Error: 'downgrade' is not installed. Please install it from the AUR.${RESET}"
+		echo -e " ${BOLD}Alternatively, use Roll Back System (option B) for cache-based downgrades.${RESET}"
 		return 1
 	fi
 
@@ -358,83 +945,238 @@ func_d() {
 	echo ""
 }
 
-# Edit System Configurations (func_e)
+# ==============================================================================
+# FUNC_E — Edit System Configurations (full pacui config matrix + Hyprland/Wayland)
+# ==============================================================================
 func_e() {
 	local editor="${EDITOR:-vim}"
+	local configs=()
 
-	# Modernized Hyprland/Wayland Configuration Matrix
-	# We use an associative array representation via newline-delimited strings
-	# for easy fzf ingestion. Format: "Label | /path/to/file"
-	local configs=(
-		"Hyprland Config      | $HOME/.config/hypr/hyprland.conf"
-		"Hyprland Environment | $HOME/.config/hypr/hypridle.conf"
-		"Waybar Config        | $HOME/.config/waybar/config"
-		"Waybar Styles        | $HOME/.config/waybar/style.css"
-		"Wofi Config          | $HOME/.config/wofi/config"
-		"Wofi Styles          | $HOME/.config/wofi/style.css"
-		"Mako/Dunst Config    | $HOME/.config/mako/config"
-		"Kitty Config         | $HOME/.config/kitty/kitty.conf"
-		"Neovim Init          | $HOME/.config/nvim/init.vim"
-		"Zsh Profile          | $HOME/.zshrc"
-		"Bash Profile         | $HOME/.bashrc"
-		"Pacman Config        | /etc/pacman.conf"
-		"Makepkg Config       | /etc/makepkg.conf"
-		"System Environment   | /etc/environment"
-		"Grub Config          | /etc/default/grub"
-		"Fstab                | /etc/fstab"
-	)
+	# --- Wayland / Hyprland / Modern Desktop ---
+	[[ -f "$HOME/.config/hypr/hyprland.conf" ]] && configs+=("Hyprland Config          | $HOME/.config/hypr/hyprland.conf")
+	[[ -f "$HOME/.config/hypr/hypridle.conf" ]] && configs+=("Hyprland Idle            | $HOME/.config/hypr/hypridle.conf")
+	[[ -f "$HOME/.config/hypr/hyprlock.conf" ]] && configs+=("Hyprland Lock            | $HOME/.config/hypr/hyprlock.conf")
+	[[ -f "$HOME/.config/hypr/hyprpaper.conf" ]] && configs+=("Hyprland Paper           | $HOME/.config/hypr/hyprpaper.conf")
+	[[ -f "$HOME/.config/waybar/config" ]] && configs+=("Waybar Config            | $HOME/.config/waybar/config")
+	[[ -f "$HOME/.config/waybar/style.css" ]] && configs+=("Waybar Styles            | $HOME/.config/waybar/style.css")
+	[[ -f "$HOME/.config/wofi/config" ]] && configs+=("Wofi Config              | $HOME/.config/wofi/config")
+	[[ -f "$HOME/.config/wofi/style.css" ]] && configs+=("Wofi Styles              | $HOME/.config/wofi/style.css")
+	[[ -f "$HOME/.config/mako/config" ]] && configs+=("Mako Notifications       | $HOME/.config/mako/config")
+	[[ -f "$HOME/.config/dunst/dunstrc" ]] && configs+=("Dunst Notifications      | $HOME/.config/dunst/dunstrc")
+	[[ -f "$HOME/.config/weston.ini" ]] && configs+=("Weston Compositor        | $HOME/.config/weston.ini")
+
+	# --- Terminal Emulators ---
+	[[ -f "$HOME/.config/kitty/kitty.conf" ]] && configs+=("Kitty Config             | $HOME/.config/kitty/kitty.conf")
+	[[ -f "$HOME/.config/alacritty/alacritty.toml" ]] && configs+=("Alacritty Config       | $HOME/.config/alacritty/alacritty.toml")
+	[[ -f "$HOME/.config/foot/foot.ini" ]] && configs+=("Foot Terminal            | $HOME/.config/foot/foot.ini")
+
+	# --- Editors ---
+	[[ -f "$HOME/.config/nvim/init.vim" ]] && configs+=("Neovim Init (vim)        | $HOME/.config/nvim/init.vim")
+	[[ -f "$HOME/.config/nvim/init.lua" ]] && configs+=("Neovim Init (lua)        | $HOME/.config/nvim/init.lua")
+
+	# --- Shells ---
+	[[ -f "$HOME/.zshrc" ]] && configs+=("Zsh Profile              | $HOME/.zshrc")
+	[[ -f "$HOME/.bashrc" ]] && configs+=("Bash Profile             | $HOME/.bashrc")
+	[[ -f "$HOME/.config/fish/config.fish" ]] && configs+=("Fish Shell               | $HOME/.config/fish/config.fish")
+	[[ -f "$HOME/.xinitrc" ]] && configs+=("X Server Startup         | $HOME/.xinitrc")
+	[[ -f "$HOME/.Xresources" ]] && configs+=("X Client Applications    | $HOME/.Xresources")
+
+	# --- Pacman & Package Managers ---
+	[[ -f /etc/pacman.conf ]] && configs+=("Pacman Config            | /etc/pacman.conf")
+	[[ -f /etc/makepkg.conf ]] && configs+=("Makepkg Config           | /etc/makepkg.conf")
+	[[ -f /etc/pacman.d/mirrorlist ]] && configs+=("Pacman Mirrorlist        | /etc/pacman.d/mirrorlist")
+	[[ -f /etc/pacman-mirrors.conf ]] && configs+=("Pacman-Mirrors Config    | /etc/pacman-mirrors.conf")
+	[[ -f /etc/xdg/reflector/reflector.conf ]] && configs+=("Reflector Config         | /etc/xdg/reflector/reflector.conf")
+	[[ -f /etc/pamac.conf ]] && configs+=("Pamac Config             | /etc/pamac.conf")
+	[[ -f /etc/pakku.conf ]] && configs+=("Pakku Config             | /etc/pakku.conf")
+	[[ -f "$HOME/.config/yay/config.json" ]] && configs+=("Yay Config               | $HOME/.config/yay/config.json")
+	[[ -f "$HOME/.config/paru/paru.conf" ]] && configs+=("Paru Config (user)       | $HOME/.config/paru/paru.conf")
+	[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/paru/paru.conf" ]] &&
+		configs+=("Paru Config (XDG)        | ${XDG_CONFIG_HOME:-$HOME/.config}/paru/paru.conf")
+	[[ -f "$HOME/.config/pikaur.conf" ]] && configs+=("Pikaur Config            | $HOME/.config/pikaur.conf")
+	[[ -f "$HOME/.config/trizen/trizen.conf" ]] && configs+=("Trizen Config            | $HOME/.config/trizen/trizen.conf")
+	[[ -f "${XDG_CONFIG_DIRS:-/etc/xdg}/pacaur/config" ]] &&
+		configs+=("Pacaur Config            | ${XDG_CONFIG_DIRS:-/etc/xdg}/pacaur/config")
+	[[ -f "$HOME/.config/aurman/aurman_config" ]] && configs+=("Aurman Config (user)     | $HOME/.config/aurman/aurman_config")
+	[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/aurman/aurman_config" ]] &&
+		configs+=("Aurman Config (XDG)      | ${XDG_CONFIG_HOME:-$HOME/.config}/aurman/aurman_config")
+
+	# --- System Configuration ---
+	[[ -f /etc/environment ]] && configs+=("System Environment       | /etc/environment")
+	[[ -f /etc/locale.conf ]] && configs+=("Locale Config            | /etc/locale.conf")
+	[[ -f /etc/vconsole.conf ]] && configs+=("Virtual Console          | /etc/vconsole.conf")
+	[[ -f /etc/hostname ]] && configs+=("Hostname                 | /etc/hostname")
+	[[ -f /etc/hosts ]] && configs+=("Local DNS (hosts)        | /etc/hosts")
+	[[ -f /etc/resolv.conf ]] && configs+=("DNS Servers              | /etc/resolv.conf")
+	[[ -f /etc/fstab ]] && configs+=("Fstab (mount table)      | /etc/fstab")
+	[[ -f /etc/crypttab ]] && configs+=("Crypttab (encrypted fs)  | /etc/crypttab")
+	[[ -f /etc/sudoers ]] && configs+=("Sudoers                  | /etc/sudoers")
+
+	# --- Power Management ---
+	[[ -f /etc/tlp ]] && configs+=("TLP Power Management     | /etc/tlp")
+	[[ -f /etc/default/cpupower ]] && configs+=("CPU Power Management     | /etc/default/cpupower")
+	[[ -f /etc/profile.d/freetype2.sh ]] && configs+=("FreeType2 / Infinality   | /etc/profile.d/freetype2.sh")
+
+	# --- Audio ---
+	[[ -f /etc/pulse/daemon.conf ]] && configs+=("PulseAudio Daemon        | /etc/pulse/daemon.conf")
+	[[ -f /etc/pulse/default.pa ]] && configs+=("PulseAudio Modules       | /etc/pulse/default.pa")
+	[[ -f /etc/asound.conf ]] && configs+=("ALSA Config              | /etc/asound.conf")
+
+	# --- GnuPG ---
+	[[ -f "$HOME/.gnupg/gpg.conf" ]] && configs+=("GnuPG User Settings      | $HOME/.gnupg/gpg.conf")
+
+	# --- Display Managers ---
+	[[ -f /etc/sddm.conf ]] && configs+=("SDDM Display Manager     | /etc/sddm.conf")
+	[[ -f /etc/lightdm.conf ]] && configs+=("LightDM Display Manager  | /etc/lightdm.conf")
+	[[ -f /etc/gdm/custom.conf ]] && configs+=("GDM Display Manager      | /etc/gdm/custom.conf")
+	[[ -f /etc/lxdm/lxdm.conf ]] && configs+=("LXDM Display Manager     | /etc/lxdm/lxdm.conf")
+	[[ -f /etc/mdm/mdm.conf ]] && configs+=("MDM Display Manager      | /etc/mdm/mdm.conf")
+	[[ -f /etc/slim.conf ]] && configs+=("SLiM Display Manager     | /etc/slim.conf")
+	[[ -f /etc/entrance/entrance.conf ]] && configs+=("Entrance Display Manager | /etc/entrance/entrance.conf")
+	[[ -f /etc/conf.d/xdm ]] && configs+=("XDM Display Manager      | /etc/conf.d/xdm")
+
+	# --- Network ---
+	[[ -d /usr/lib/NetworkManager/conf.d ]] && configs+=("NetworkManager Conf.d    | /usr/lib/NetworkManager/conf.d/")
+	[[ -f /etc/updatedb.conf ]] && configs+=("Locate Database          | /etc/updatedb.conf")
+
+	# --- Systemd ---
+	[[ -f /etc/systemd/swap.conf ]] && configs+=("Systemd Swap             | /etc/systemd/swap.conf")
+	[[ -f /etc/systemd/homed.conf ]] && configs+=("Systemd Homed            | /etc/systemd/homed.conf")
+	[[ -f /etc/systemd/logind.conf ]] && configs+=("Systemd Logind           | /etc/systemd/logind.conf")
+	[[ -f /etc/systemd/journald.conf ]] && configs+=("Systemd Journald         | /etc/systemd/journald.conf")
+	[[ -f /etc/systemd/coredump.conf ]] && configs+=("Systemd Coredump         | /etc/systemd/coredump.conf")
+	[[ -f /etc/systemd/networkd.conf ]] && configs+=("Systemd Networkd         | /etc/systemd/networkd.conf")
+	[[ -f /etc/systemd/oomd.conf ]] && configs+=("Systemd OOM              | /etc/systemd/oomd.conf")
+	[[ -f /etc/systemd/resolved.conf ]] && configs+=("Systemd Resolved         | /etc/systemd/resolved.conf")
+	[[ -f /etc/systemd/sleep.conf ]] && configs+=("Systemd Sleep            | /etc/systemd/sleep.conf")
+	[[ -f /etc/systemd/system.conf ]] && configs+=("Systemd System           | /etc/systemd/system.conf")
+	[[ -f /etc/systemd/timesyncd.conf ]] && configs+=("Systemd Timesyncd        | /etc/systemd/timesyncd.conf")
+	[[ -f /etc/systemd/user.conf ]] && configs+=("Systemd User Units       | /etc/systemd/user.conf")
+	[[ -d /etc/systemd/user ]] && configs+=("Systemd User Units Dir   | /etc/systemd/user/")
+	[[ -d /usr/lib/systemd/system ]] && configs+=("Systemd System Units Dir | /usr/lib/systemd/system/")
+	[[ -d /usr/lib/systemd/network ]] && configs+=("Systemd Network Units    | /usr/lib/systemd/network/")
+
+	# --- Kernel & Boot ---
+	[[ -d /etc/udev/rules.d ]] && configs+=("Udev Rules               | /etc/udev/rules.d/")
+	[[ -d /usr/lib/sysctl.d ]] && configs+=("Sysctl Parameters        | /usr/lib/sysctl.d/")
+	[[ -d /etc/modules-load.d ]] && configs+=("Kernel Module Loading    | /etc/modules-load.d/")
+	[[ -f /etc/mkinitcpio.conf ]] && configs+=("Mkinitcpio (initramfs)   | /etc/mkinitcpio.conf")
+	[[ -f /etc/default/grub ]] && configs+=("GRUB Boot Loader         | /etc/default/grub")
+	[[ -f /boot/grub/custom.cfg ]] && configs+=("GRUB Custom Entries      | /boot/grub/custom.cfg")
+	[[ -f /boot/loader/loader.conf ]] && configs+=("Systemd-Boot Loader      | /boot/loader/loader.conf")
+	[[ -f /etc/sdboot-manage.conf ]] && configs+=("Systemd-Boot Manager     | /etc/sdboot-manage.conf")
+	[[ -d /boot/loader/entries ]] && configs+=("Systemd-Boot Entries     | /boot/loader/entries/")
+	[[ -f /boot/refind_linux.conf ]] && configs+=("rEFInd Boot Loader       | /boot/refind_linux.conf")
+	[[ -f /boot/EFI/refind/refind.conf ]] && configs+=("rEFInd EFI Config        | /boot/EFI/refind/refind.conf")
+	[[ -f /boot/EFI/CLOVER/config.plist ]] && configs+=("Clover Boot Loader       | /boot/EFI/CLOVER/config.plist")
+	[[ -f /boot/syslinux/syslinux.cfg ]] && configs+=("Syslinux Boot Loader     | /boot/syslinux/syslinux.cfg")
+
+	# --- Xorg (legacy) ---
+	[[ -d /etc/X11/xorg.conf.d ]] && configs+=("Xorg Config Dir          | /etc/X11/xorg.conf.d/")
+
+	if [[ ${#configs[@]} -eq 0 ]]; then
+		echo -e " ${RED}No configuration files found on this system.${RESET}"
+		return 0
+	fi
 
 	local selection target_path
-
 	selection=$(printf "%s\n" "${configs[@]}" | fzf \
 		--reverse \
 		--delimiter="|" \
 		--with-nth=1 \
 		--prompt="[Edit Config] > " \
-		--preview 'bat --color=always {2} 2>/dev/null || cat {2} 2>/dev/null || echo "File not found."')
+		--preview 'bat --color=always {2} 2>/dev/null || cat {2} 2>/dev/null || ls {2} 2>/dev/null || echo "File/directory not found."')
 
-	if [[ -n "$selection" ]]; then
-		# Extract the path (field 2) and strip leading/trailing whitespace
-		target_path=$(echo "$selection" | awk -F'|' '{print $2}' | xargs)
+	[[ -z "$selection" ]] && return 0
 
-		# Create directory structure if the user's config file doesn't exist yet
-		if [[ ! -f "$target_path" && "$target_path" == "$HOME"* ]]; then
-			mkdir -p "$(dirname "$target_path")"
-			touch "$target_path"
-		fi
+	# Extract path (field 2), strip leading/trailing whitespace
+	target_path=$(echo "$selection" | awk -F'|' '{print $2}' | xargs)
 
-		# Privilege escalation check. Only use sudo if the user does NOT have write access.
-		if [[ -w "$target_path" ]]; then
-			"$editor" "$target_path"
-		else
-			echo -e " ${CYAN}Root privileges required to edit $target_path${RESET}"
-			sudo "$editor" "$target_path"
+	# Directory selection: open a secondary fzf picker for the file within the dir
+	if [[ "$target_path" == */ ]]; then
+		local selected_file
+		selected_file=$(find "$target_path" -maxdepth 1 -xtype f | sort | fzf \
+			--reverse \
+			--prompt="[Select File in $(basename "$target_path")] > " \
+			--preview 'bat --color=always {} 2>/dev/null || cat {} 2>/dev/null || echo "Read permission denied."')
+		[[ -z "$selected_file" ]] && return 0
+		target_path="$selected_file"
+	fi
 
-			# Post-edit hooks for root files
-			if [[ "$target_path" == "/etc/default/grub" ]]; then
-				echo -e " ${CYAN}Regenerating GRUB config...${RESET}"
-				sudo grub-mkconfig -o /boot/grub/grub.cfg
-			fi
-		fi
+	# Create file/parent directory if it does not yet exist (home paths only)
+	if [[ ! -f "$target_path" && "$target_path" == "$HOME"* ]]; then
+		mkdir -p "$(dirname "$target_path")"
+		touch "$target_path"
+	fi
 
-		# Wayland live-reload hooks (Triggered silently on exit)
-		if [[ "$target_path" == *"/waybar/"* ]]; then
-			killall -SIGUSR2 waybar 2>/dev/null || true
-		fi
-		if [[ "$target_path" == *"/mako/"* ]]; then
-			makoctl reload 2>/dev/null || true
-		fi
+	# --- Open editor with appropriate privilege level ---
+	if [[ "$target_path" == "/etc/sudoers" ]]; then
+		# sudoers must always use visudo
+		sudo SUDO_EDITOR="${SUDO_EDITOR:-$editor}" visudo
+	elif [[ -w "$target_path" ]]; then
+		"$editor" "$target_path"
+	else
+		echo -e " ${CYAN}Root privileges required to edit $target_path${RESET}"
+		sudo "$editor" "$target_path"
+	fi
+
+	# --- Post-edit hooks ---
+	case "$target_path" in
+	/etc/default/grub | /boot/grub/custom.cfg)
+		echo -e " ${CYAN}Regenerating GRUB config...${RESET}"
+		sudo grub-mkconfig -o /boot/grub/grub.cfg
+		;;
+	/etc/mkinitcpio.conf)
+		echo -e " ${BRED}Do you want to regenerate the initramfs and update grub.cfg? [y/N]${RESET}"
+		read -r -n 1 -e answer
+		case "${answer:-n}" in
+		y | Y | yes | YES | Yes)
+			sudo mkinitcpio -P && sudo grub-mkconfig -o /boot/grub/grub.cfg
+			;;
+		*)
+			echo -e " ${BOLD}Changes in /etc/mkinitcpio.conf require manual initramfs regeneration.${RESET}"
+			;;
+		esac
+		;;
+	/etc/pacman.conf | /etc/pacman.d/mirrorlist)
+		sudo pacman "${argument_flag[@]}" -Syyu
+		;;
+	/etc/pacman-mirrors.conf)
+		sudo pacman-mirrors -f 0 && sudo pacman "${argument_flag[@]}" -Syyu
+		;;
+	/etc/pamac.conf)
+		pamac "${argument_flag[@]}" update --force-refresh || true
+		;;
+	/etc/fstab | /etc/crypttab)
+		sudo mount -a || true
+		;;
+	/boot/loader/*)
+		sudo bootctl list || true
+		;;
+	esac
+
+	# --- Wayland live-reload hooks ---
+	if [[ "$target_path" == *"/waybar/"* ]]; then
+		killall -SIGUSR2 waybar 2>/dev/null || true
+	fi
+	if [[ "$target_path" == *"/mako/"* ]]; then
+		makoctl reload 2>/dev/null || true
+	fi
+	if [[ "$target_path" == *"/hypr/"* ]]; then
+		: # Hyprland reloads on file change via inotify; no explicit signal needed
 	fi
 }
 
-# Detailed Package Information (func_info)
+# ==============================================================================
+# FUNC_INFO — Detailed Package Information
+# ==============================================================================
 func_info() {
 	local target
-	target=$(pacman -Slq | sort -u | fzf --reverse --prompt="[Package Info] > " --preview 'pacman -Si {1}')
+	target=$(pacman -Slq | sort -u | fzf --reverse --prompt="[Package Info] > " \
+		--preview 'pacman -Si {1}')
 
 	if [[ -n "$target" ]]; then
 		4ndr0pac_tty_clean
-		# Show local info if installed, otherwise show repo info
 		if pacman -Qq "$target" &>/dev/null; then
 			pacman -Qi "$target" | less
 		else
@@ -443,7 +1185,9 @@ func_info() {
 	fi
 }
 
-# Search Files in Packages (func_f)
+# ==============================================================================
+# FUNC_F — Search Files in Packages (find which package owns a file)
+# ==============================================================================
 func_f() {
 	echo -n -e " ${CYAN}Enter filename/path to search (e.g., 'libutil.so'): ${RESET}"
 	read -r search_term
@@ -456,10 +1200,13 @@ func_f() {
 	fi
 }
 
-# List Files Owned by Package (func_fo)
+# ==============================================================================
+# FUNC_FO — List Files Owned by Package
+# ==============================================================================
 func_fo() {
 	local target
-	target=$(pacman -Qq | fzf --reverse --prompt="[List Files In] > " --preview 'pacman -Qi {1}')
+	target=$(pacman -Qq | fzf --reverse --prompt="[List Files In] > " \
+		--preview 'pacman -Qi {1}')
 
 	if [[ -n "$target" ]]; then
 		4ndr0pac_tty_clean
@@ -467,56 +1214,195 @@ func_fo() {
 	fi
 }
 
-# Help Documentation (func_help)
+# ==============================================================================
+# FUNC_LS — List Packages by Size
+# ==============================================================================
+func_ls() {
+	if ! command -v expac &>/dev/null; then
+		echo -e " ${BRED}Error: 'expac' is not installed. Please install 'expac'.${RESET}"
+		return 1
+	fi
+	4ndr0pac_tty_clean
+	expac -H M -Q '%12m - \e[1m%n\e[0m' | sort -n -r | fzf \
+		-i --multi --exact --no-sort --ansi --layout=reverse \
+		--bind='pgdn:half-page-down,pgup:half-page-up' \
+		--margin=1 --info=inline-right --no-separator \
+		--preview-window='right,60%,wrap' \
+		--header="Navigate with PageUp/PageDown. ESC to quit." \
+		--prompt='Enter string to filter list > ' \
+		--preview 'pacman -Qi {4} --color always'
+}
+
+# ==============================================================================
+# FUNC_UA — Force Update AUR (--devel --needed)
+# ==============================================================================
+func_ua() {
+	if [[ "$AUR_Helper" == "pacman" ]]; then
+		echo -e " ${BRED}No AUR helper has been found. Please install yay, paru, or another AUR helper.${RESET}"
+		return 1
+	fi
+
+	case "$AUR_Helper" in
+	yay) yay "${argument_flag[@]}" -Syu --devel --needed ;;
+	pikaur) pikaur "${argument_flag[@]}" -Syu --devel --needed ;;
+	aurman) aurman "${argument_flag[@]}" -Syu --devel --needed ;;
+	pakku) pakku "${argument_flag[@]}" -Syu --needed ;;
+	trizen) trizen "${argument_flag[@]}" -Syu --devel --needed ;;
+	paru) paru "${argument_flag[@]}" -Syu --devel --needed --color always ;;
+	pacaur) pacaur "${argument_flag[@]}" -Syua --devel --needed --color always ;;
+	pamac) pamac "${argument_flag[@]}" update -a --devel ;;
+	*)
+		echo -e " ${BRED}AUR helper '$AUR_Helper' does not support --devel. Falling back to standard update.${RESET}"
+		aur_exec -Syu
+		;;
+	esac
+}
+
+# ==============================================================================
+# FUNC_LA — List Installed from AUR
+# ==============================================================================
+func_la() {
+	4ndr0pac_tty_clean
+	echo -e " ${CYAN}Listing packages installed from AUR or manually...${RESET}"
+
+	pacman -Qqm | fzf \
+		-i --multi --exact --no-sort --layout=reverse \
+		--bind='pgdn:half-page-down,pgup:half-page-up' \
+		--margin=1 --info=inline-right --no-separator \
+		--preview-window='right,60%,wrap' \
+		--header="List of manually installed packages. ESC to quit." \
+		--prompt='Enter string to filter list > ' \
+		--preview 'pacman -Qi {} --color always'
+}
+
+# ==============================================================================
+# FUNC_HELP — Help Documentation
+# ==============================================================================
 func_help() {
 	4ndr0pac_tty_clean
 	cat <<EOF | less -R
 ${BOLD}${CYAN}4ndr0pac - GOD MODE MANUAL${RESET}
 
 ${BOLD}CORE COMMANDS:${RESET}
-  ${BOLD}1. Update${RESET}      - Full system sync (Native + AUR + Flatpak + Snap).
-  ${BOLD}2. Maintain${RESET}    - Mirror sort, cache clean, orphan removal, and pacdiff.
-  ${BOLD}3. Install${RESET}     - Search and install from official repositories.
-  ${BOLD}4. AUR${RESET}         - Search and install from the AUR (via ${AUR_Helper}).
-  ${BOLD}5. Remove${RESET}      - Recursive removal of packages and unused deps.
-  ${BOLD}6. List${RESET}        - Interactive viewer for installed packages.
-  ${BOLD}7. Deps (OF)${RESET}   - Visual tree of what a package requires.
-  ${BOLD}8. Deps (ON)${RESET}   - Visual tree of what requires a package.
-  ${BOLD}9. Edit${RESET}        - Wayland/Hyprland configuration manager.
+  ${BOLD}1. Update${RESET}        - Full system sync (Native + AUR + Flatpak + Snap).
+  ${BOLD}2. Maintain${RESET}      - Mirror sort, cache clean, orphan removal, consistency, pacdiff.
+  ${BOLD}3. Install${RESET}       - Search and install from official repositories.
+  ${BOLD}4. AUR${RESET}           - Search and install from the AUR (via ${AUR_Helper}).
+  ${BOLD}5. Remove${RESET}        - Recursive removal with retry/force/cascade recovery.
+  ${BOLD}6. List${RESET}          - Interactive viewer for installed packages.
+  ${BOLD}7. Deps (OF)${RESET}     - Visual tree of what a package requires.
+  ${BOLD}8. Deps (ON)${RESET}     - Visual tree of what requires a package.
+  ${BOLD}9. Edit${RESET}          - Full system + Wayland/Hyprland configuration manager.
+  ${BOLD}B. Roll Back${RESET}     - Reverse installs/upgrades/removals from pacman.log.
+  ${BOLD}Z. Fix Errors${RESET}    - Repair mirrors, DB lock, keyring, GPG, and update failures.
+  ${BOLD}X. By Size${RESET}       - List installed packages sorted by installation size.
+  ${BOLD}W. Force AUR${RESET}     - Force rebuild of all AUR packages including devel (--devel).
+  ${BOLD}N. List AUR${RESET}      - Show all manually installed and AUR packages.
+
+${BOLD}EXTRAS:${RESET}
+  ${BOLD}I${RESET}) Package Info   - Detailed info for any repo or installed package.
+  ${BOLD}F${RESET}) Find File      - Search which package owns a file.
+  ${BOLD}O${RESET}) Files In Pkg   - List all files installed by a package.
+  ${BOLD}D${RESET}) Downgrade      - Downgrade a package via 'downgrade' tool.
+  ${BOLD}H${RESET}) Help           - This manual.
 
 ${BOLD}TIPS:${RESET}
   - Use ${BOLD}TAB${RESET} in fzf menus to multi-select packages.
   - ${BOLD}Ctrl-A / Ctrl-D${RESET} to select/deselect all in lists.
-  - Set ${BOLD}4ndr0pac_AUR_HELPER${RESET} env var to force a specific helper.
+  - Set ${BOLD}PACUI_AUR_HELPER${RESET} env var to force a specific AUR helper.
+  - ${BOLD}Roll Back${RESET} requires packages to be present in your pacman cache.
+  - ${BOLD}Fix Errors${RESET} is destructive when keyring repair is chosen — read all prompts carefully.
+  - ${BOLD}WARNING${RESET}: Do not kill the script (Ctrl+C) during Fix Errors keyring repair.
 EOF
 }
 
-# Main UI Menu (func_menu)
+# ==============================================================================
+# FUNC_MENU — Main UI Menu
+# ==============================================================================
 func_menu() {
-	# Using a Here-Doc for the main UI to keep it clean and fast
 	echo -e " ${BOLD}${CYAN}─── 4ndr0pac: ARCH LINUX PACKAGE MANAGER (GOD MODE) ───${RESET}"
 	echo -e "  ${BOLD}1${RESET}) Update System        ${BOLD}6${RESET}) List Installed"
 	echo -e "  ${BOLD}2${RESET}) Maintain System      ${BOLD}7${RESET}) Dependency Tree (OF)"
 	echo -e "  ${BOLD}3${RESET}) Install (Native)     ${BOLD}8${RESET}) Dependency Tree (ON)"
 	echo -e "  ${BOLD}4${RESET}) Install (AUR)        ${BOLD}9${RESET}) Edit Configurations"
 	echo -e "  ${BOLD}5${RESET}) Remove Packages      ${BOLD}0${RESET}) Exit 4ndr0pac"
-	echo -e " ─────────────────────────────────────────────────────"
-	echo -e "  ${BOLD}I${RESET}) Package Info        ${BOLD}F${RESET}) Find File Owner"
-	echo -e "  ${BOLD}D${RESET}) Downgrade Package   ${BOLD}H${RESET}) Manual / Help"
+	echo -e " ─────────────────────────────────────────────────────────────"
+	echo -e "  ${BOLD}B${RESET}) Roll Back System     ${BOLD}Z${RESET}) Fix Pacman Errors"
+	echo -e "  ${BOLD}X${RESET}) Packages by Size     ${BOLD}W${RESET}) Force Update AUR"
+	echo -e "  ${BOLD}N${RESET}) List AUR Installed   ${BOLD}D${RESET}) Downgrade Package"
+	echo -e " ─────────────────────────────────────────────────────────────"
+	echo -e "  ${BOLD}I${RESET}) Package Info         ${BOLD}F${RESET}) Find File Owner"
+	echo -e "  ${BOLD}O${RESET}) Files in Package     ${BOLD}H${RESET}) Manual / Help"
 	echo ""
 	echo -n -e " ${BOLD}${INV} Selection: ${RESET} "
 }
 
-# Cleanup Logic
+# ==============================================================================
+# CLEANUP
+# ==============================================================================
 4ndr0pac_clean() {
-	# Remove any stray temp files from fzf or 4ndr0pac
-	rm -f /tmp/4ndr0pac_* 2>/dev/null
+	rm -f /tmp/4ndr0pac_* 2>/dev/null || true
 	4ndr0pac_tty_clean
 }
 
-# Main Loop
+# ==============================================================================
+# CLI ARGUMENT DISPATCH
+# Enables headless/non-UI invocation: 4ndr0pac u, 4ndr0pac 2, 4ndr0pac --diff f1 f2
+# Also fixes the pacdiff DIFFPROG self-reference by providing func_diff via CLI.
+# ==============================================================================
+if [[ $# -gt 0 ]]; then
+	key="${1,,}"
+	# Strip leading dashes
+	key="${key##-}"
+	key="${key##-}"
+	shift
+
+	# Collect remaining args as argument_input for fzf pre-seeding and --diff
+	argument_input="${*:-}"
+
+	case "$key" in
+	1 | u | update | update-system) func_u ;;
+	2 | m | maintain | maintain-system) func_m ;;
+	3 | i | install | install-packages) func_i ;;
+	4 | a | aur | install-aur) func_a ;;
+	5 | r | remove | remove-packages) func_r ;;
+	6 | l | list | list-installed) func_l ;;
+	7 | t | tree | dep-tree) func_t ;;
+	8 | rtree | rev-tree) func_v ;;
+	9 | e | edit | edit-config) func_e ;;
+	b | back | rollback | roll-back) func_b ;;
+	z | fix | fix-errors) func_fix ;;
+	x | ls | listsize | list-by-size) func_ls ;;
+	w | ua | force-aur | force-update-aur) func_ua ;;
+	n | la | list-aur | list-installed-from-aur) func_la ;;
+	d | down | downgrade) func_d ;;
+	info) func_info ;;
+	f | find | find-file) func_f ;;
+	o | fo | files-in-pkg) func_fo ;;
+	h | help) func_help ;;
+	# Direct diff invocation — used by pacdiff DIFFPROG and manual calls
+	diff)
+		argument_input="$argument_input"
+		func_diff
+		;;
+	flag=*)
+		# Store flag in array for safe expansion, re-invoke without the flag arg
+		argument_flag=("${key#*=}")
+		exec "$0" "$@"
+		;;
+	*)
+		echo -e " ${BRED}Unknown option: $key. Press ENTER to start 4ndr0pac UI or Ctrl+C to abort.${RESET}"
+		read -r
+		;;
+	esac
+	exit $?
+fi
+
+# ==============================================================================
+# MAIN LOOP — Interactive UI
+# ==============================================================================
 main_loop() {
-	# Trap interrupts to ensure clean exit
+	# Iron finally block: guarantee cleanup on any exit, signal, or error
 	trap 4ndr0pac_clean EXIT
 
 	while true; do
@@ -532,11 +1418,17 @@ main_loop() {
 		5 | r | R) func_r ;;
 		6 | l | L) func_l ;;
 		7 | t | T) func_t ;;
-		8 | v | V) func_v ;;
+		8) func_v ;;
 		9 | e | E) func_e ;;
-		i | info) func_info ;;
-		f | F) func_f ;;
+		b | B) func_b ;;
+		z | Z) func_fix ;;
+		x | X) func_ls ;;
+		w | W) func_ua ;;
+		n | N) func_la ;;
 		d | D) func_d ;;
+		p | P) func_info ;;
+		f | F) func_f ;;
+		o | O) func_fo ;;
 		h | H) func_help ;;
 		0 | q | Q) exit 0 ;;
 		*)
@@ -545,8 +1437,7 @@ main_loop() {
 			;;
 		esac
 
-		# Pause after actions unless it's a menu exit
-		if [[ "$choice" != "0" && "$choice" != "q" ]]; then
+		if [[ "$choice" != "0" && "$choice" != "q" && "$choice" != "Q" ]]; then
 			echo -n -e "${CYAN}Task Complete. Press ENTER for Menu...${RESET}"
 			read -r
 		fi
