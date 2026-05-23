@@ -1,0 +1,41 @@
+[Desktop Entry]
+Version=1.0
+Name=Thorium Browser
+GenericName=Web Browser
+# Gnome and KDE 3 uses Comment.
+Comment=Access the Internet
+Exec=/usr/bin/thorium-browser --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+StartupWMClass=thorium
+Keywords=browser
+StartupNotify=true
+Terminal=false
+X-MultipleArgs=True
+Icon=thorium-browser
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=application/pdf;application/rdf+xml;application/rss+xml;application/xhtml+xml;application/xhtml_xml;application/xml;image/gif;image/jpeg;image/png;image/webp;text/html;text/xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/ftp;
+Actions=new-window;new-private-window;temp-profile;content-shell;safe-mode;dark-mode;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=/usr/bin/thorium-browser --new-window --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+
+[Desktop Action new-private-window]
+Name=New Incognito Window
+Exec=/usr/bin/thorium-browser --incognito --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+
+[Desktop Action temp-profile]
+Name=Open New Window with a temporary profile
+Exec=/usr/bin/thorium-browser --temp-profile --user-data-dir=/tmp/ephemeral-profile --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+
+[Desktop Action content-shell]
+Name=Open Thorium Shell
+Exec=/usr/bin/thorium-shell --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+
+[Desktop Action safe-mode]
+Name=Open in Safe Mode
+Exec=/usr/bin/thorium-browser --no-experiments --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U
+
+[Desktop Action dark-mode]
+Name=Open in Dark Mode
+Exec=/usr/bin/thorium-browser --force-dark-mode --allowlisted-extension-id=khgmaagajnamgehoopgmmbeoggboffeb --allowlisted-extension-id=fngmhnnpilhplaeedifhccceomclgfbg --allowlisted-extension-id=pboglnnmnkkbdgflckmjhakpdejmnpli --allowlisted-extension-id=momhpkepmajdopjgahiglmboldkepibg --allowlisted-extension-id=cgbcahbpdhpcegmbfconppldiemgcoii --allowlisted-extension-id=ammoloihpcbognfddfjcljgembpibcmb --silent-debugger-extension-api --ozone-platform=wayland --process-per-site --disk-cache-dir=/dev/shm/thorium-cache --force-dark-mode --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-video-decode --disable-accelerated-2d-canvas --no-pings --disable-breakpad --disable-crash-reporter --force-webrtc-ip-handling-policy=default_public_interface_only  --enable-features=WaylandWindowDecorations,WebUIDarkMode --disable-features=Crashpad-For-Testing,Crashpad-Forwarding,WebBluetooth,WebUsb,WebSerial,WebNfc,Third-Party-Keyboard-Workaround,Usb-Keyboard-Detect,Virtual-Keyboard %U

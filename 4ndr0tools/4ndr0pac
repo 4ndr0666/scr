@@ -967,7 +967,7 @@ func_e() {
 
 	# --- Terminal Emulators ---
 	[[ -f "$HOME/.config/kitty/kitty.conf" ]] && configs+=("Kitty Config             | $HOME/.config/kitty/kitty.conf")
-	[[ -f "$HOME/.config/alacritty/alacritty.toml" ]] && configs+=("Alacritty Config       | $HOME/.config/alacritty/alacritty.toml")
+	[[ -f "$HOME/.config/alacritty/alacritty.toml" ]] && configs+=("Alacritty Config         | $HOME/.config/alacritty/alacritty.toml")
 	[[ -f "$HOME/.config/foot/foot.ini" ]] && configs+=("Foot Terminal            | $HOME/.config/foot/foot.ini")
 
 	# --- Editors ---
