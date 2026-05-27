@@ -1,32 +1,55 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2154,SC2034
+# shellcheck disable=SC2034
 #
 # n_m3u8dl_orchestrator.sh
-# Ψ-4ndr0666 High-Performance Stream Extraction Matrix (v3.0.0)
+# Ψ-4ndr0666 High-Performance Stream Extraction Matrix (v3.1.0)
 #
-# COHESION & SUPERSET REPORT:
-# - Fused CLI argument parsing and Interactive Menu fallback.
-# - Implemented XDG Base Directory standard for configuration storage.
-# - Replaced dangerous string command execution with strict Bash Arrays.
-# - Dynamic dependency probing for N_m3u8DL-RE and ffmpeg.
-# - Preserved advanced live-stream and VOD merging flags.
+# AUDIT CHANGELOG (v3.0.0 → v3.1.0):
+#   CRITICAL D1  - BIN_M3U8 hardcoded default removed; check_dependencies is
+#                  now the sole authority on BIN_M3U8 assignment.
+#   CRITICAL D2  - CONFIG_DIR undefined variable; derived from CONFIG_FILE.
+#   CRITICAL D3  - check_dependencies and load_config uncommented at boot.
+#   CRITICAL D9  - --skip-merge and --del-after-done corrected to boolean
+#                  switch pattern (consistent with --auto-select).
+#   CRITICAL D10 - shift 2 guarded with [[ $# -ge 2 ]] to prevent unbound
+#                  variable abort under set -u.
+#   HIGH     D4  - execute_extraction return 1 replaced with explicit exit-
+#                  code capture; callers no longer rely on implicit propagation.
+#   HIGH     D13 - Boot sequence guarantees check_dependencies + load_config
+#                  execute before any extraction path (CLI or interactive).
+#   MEDIUM   D5  - Preset URLs stored separately from display labels;
+#                  awk dependency eliminated.
+#   MEDIUM   D7  - TMP_DIR default changed to XDG_CACHE_HOME-derived path
+#                  with PID-scoped subdirectory for isolation.
+#   MEDIUM   D6  - THREAD_COUNT and RETRY_COUNT validated as positive integers
+#                  before acceptance.
+#   LOW      D8  - SAVE_DIR write-permission verification added post-mkdir.
+#   LOW      D11 - SC2154 suppression removed; D1 fix makes it unnecessary.
+#   LOW      D15 - configure_advanced wrapped in while loop for UX parity.
 
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
 # Global State & XDG Configuration
 # -----------------------------------------------------------------------------
+# D2 FIX: CONFIG_DIR derived from CONFIG_FILE to eliminate undefined variable.
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/m3u8/m3u8.conf"
+CONFIG_DIR="${CONFIG_FILE%/*}"
 
 # Core Defaults
 THREAD_COUNT=8
 RETRY_COUNT=5
-TMP_DIR="/s4/tmp/"
+# D7 FIX: TMP_DIR scoped under XDG_CACHE_HOME with PID isolation.
+# /s4/tmp/ was a system-specific hardcode with no portability guarantee.
+TMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
 SAVE_DIR="$PWD"
 SAVE_NAME=""
 PROXY_URL=""
 
-# Boolean Toggles (Stored as True/False strings for N_m3u8DL-RE compatibility)
+# Boolean Toggles
+# D9 NOTE: --skip-merge and --del-after-done are boolean SWITCHES in
+# N_m3u8DL-RE — they take no argument. Stored as True/False here for
+# conditional emission only, matching the pattern of --auto-select.
 AUTO_SELECT="True"
 SKIP_MERGE="False"
 DEL_AFTER_DONE="True"
@@ -37,6 +60,11 @@ LIVE_PERFORM_AS_VOD="False"
 # Execution Target
 TARGET_URL=""
 
+# D1 FIX: BIN_M3U8 intentionally unset here. check_dependencies is the
+# sole authority. The hardcoded fallback "n-m3u8dl-re" (note: wrong separator)
+# that appeared after check_dependencies in v3.0.0 has been removed entirely.
+BIN_M3U8=""
+
 # -----------------------------------------------------------------------------
 # Theming & Formatting
 # -----------------------------------------------------------------------------
@@ -46,10 +74,10 @@ C_CYAN='\033[1;36m'
 C_YELLOW='\033[1;33m'
 C_RESET='\033[0m'
 
-print_info() { echo -e "${C_CYAN}[Ψ] $1${C_RESET}"; }
+print_info()    { echo -e "${C_CYAN}[Ψ] $1${C_RESET}"; }
 print_success() { echo -e "${C_GREEN}[+] $1${C_RESET}"; }
 print_warning() { echo -e "${C_YELLOW}[*] $1${C_RESET}"; }
-print_error() { echo -e "${C_RED}[!] $1${C_RESET}"; }
+print_error()   { echo -e "${C_RED}[!] $1${C_RESET}"; }
 
 # -----------------------------------------------------------------------------
 # Dependency Management
@@ -57,7 +85,8 @@ print_error() { echo -e "${C_RED}[!] $1${C_RESET}"; }
 check_dependencies() {
 	local missing=()
 
-	# Check for the primary downloader (handle common casing variations)
+	# D1 FIX: This function is the single point of BIN_M3U8 assignment.
+	# No global assignment outside this function.
 	if command -v N_m3u8DL-RE >/dev/null 2>&1; then
 		BIN_M3U8="N_m3u8DL-RE"
 	elif command -v n_m3u8dl-re >/dev/null 2>&1; then
@@ -77,23 +106,44 @@ check_dependencies() {
 	fi
 }
 
-BIN_M3U8="n-m3u8dl-re"
+# -----------------------------------------------------------------------------
+# Input Validation Helpers
+# -----------------------------------------------------------------------------
+# D6 FIX: Reusable guard for numeric user inputs.
+validate_positive_integer() {
+	local val="$1"
+	local name="$2"
+	if ! [[ "$val" =~ ^[1-9][0-9]*$ ]]; then
+		print_error "$name must be a positive integer. Got: '$val'"
+		return 1
+	fi
+}
+
+# D8 FIX: Verify directory is writable after creation.
+ensure_writable_dir() {
+	local dir="$1"
+	mkdir -p "$dir" || { print_error "Cannot create directory: $dir"; return 1; }
+	if [[ ! -w "$dir" ]]; then
+		print_error "Directory not writable: $dir"
+		return 1
+	fi
+}
+
 # -----------------------------------------------------------------------------
 # Configuration Matrix
 # -----------------------------------------------------------------------------
 load_config() {
 	if [[ -f "$CONFIG_FILE" ]]; then
-		# Safely source config ignoring shell injection
 		while IFS='=' read -r key val; do
-			# Strip quotes
+			# Strip surrounding quotes from value.
 			val="${val%\"}"
 			val="${val#\"}"
 			case "$key" in
 			THREAD_COUNT) THREAD_COUNT="$val" ;;
-			RETRY_COUNT) RETRY_COUNT="$val" ;;
-			SAVE_DIR) SAVE_DIR="$val" ;;
-			TMP_DIR) TMP_DIR="$val" ;;
-			PROXY_URL) PROXY_URL="$val" ;;
+			RETRY_COUNT)  RETRY_COUNT="$val"  ;;
+			SAVE_DIR)     SAVE_DIR="$val"      ;;
+			TMP_DIR)      TMP_DIR="$val"       ;;
+			PROXY_URL)    PROXY_URL="$val"     ;;
 			esac
 		done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE")
 		print_success "Configuration loaded from $CONFIG_FILE"
@@ -101,7 +151,8 @@ load_config() {
 }
 
 save_config() {
-	mkdir -p "$CONFIG_DIR"
+	# D2 FIX: CONFIG_DIR is now correctly defined at the top of the script.
+	ensure_writable_dir "$CONFIG_DIR" || return 1
 	cat <<EOF >"$CONFIG_FILE"
 # Ψ-4ndr0666 N_m3u8DL-RE Orchestrator Configuration
 THREAD_COUNT="$THREAD_COUNT"
@@ -117,8 +168,16 @@ EOF
 # Execution Engine (Array-Based)
 # -----------------------------------------------------------------------------
 execute_extraction() {
+	# D4 FIX: Return explicitly named; callers check the return value.
+	# execute_extraction never relies on implicit set -e propagation from
+	# a nested if/else — the extractor's exit code is captured cleanly.
 	if [[ -z "$TARGET_URL" ]]; then
 		print_error "Extraction matrix requires a valid TARGET_URL."
+		return 1
+	fi
+
+	if [[ -z "$BIN_M3U8" ]]; then
+		print_error "BIN_M3U8 is unset. Run check_dependencies first."
 		return 1
 	fi
 
@@ -126,18 +185,29 @@ execute_extraction() {
 	print_info "Target: $TARGET_URL"
 	print_info "Threads: $THREAD_COUNT | Retries: $RETRY_COUNT"
 
-	mkdir -p "$SAVE_DIR"
-	mkdir -p "$TMP_DIR"
+	# D8 FIX: Validate writability before passing dirs to the extractor.
+	ensure_writable_dir "$SAVE_DIR" || return 1
+	ensure_writable_dir "$TMP_DIR"  || return 1
 
-	# Construct the command array safely
+	# Construct the command array safely.
 	local cmd=("$BIN_M3U8" "$TARGET_URL")
 
-	cmd+=(--thread-count "$THREAD_COUNT")
-	cmd+=(--download-retry-count "$RETRY_COUNT")
-	cmd+=(--tmp-dir "$TMP_DIR")
-	cmd+=(--save-dir "$SAVE_DIR")
-	cmd+=(--skip-merge "$SKIP_MERGE")
-	cmd+=(--del-after-done "$DEL_AFTER_DONE")
+	cmd+=(--thread-count          "$THREAD_COUNT")
+	cmd+=(--download-retry-count  "$RETRY_COUNT")
+	cmd+=(--tmp-dir               "$TMP_DIR")
+	cmd+=(--save-dir              "$SAVE_DIR")
+
+	# D9 FIX: --skip-merge and --del-after-done are boolean switches in
+	# N_m3u8DL-RE — they accept NO argument. Emitting "--skip-merge False"
+	# passes the string "False" as the next positional argument, corrupting
+	# the command line. Use the same conditional pattern as --auto-select.
+	if [[ "$SKIP_MERGE" == "True" ]]; then
+		cmd+=(--skip-merge)
+	fi
+
+	if [[ "$DEL_AFTER_DONE" == "True" ]]; then
+		cmd+=(--del-after-done)
+	fi
 
 	if [[ "$AUTO_SELECT" == "True" ]]; then
 		cmd+=(--auto-select)
@@ -163,12 +233,19 @@ execute_extraction() {
 		cmd+=(--live-perform-as-vod)
 	fi
 
-	# Execute
 	print_info "Executing: ${cmd[*]}"
-	if "${cmd[@]}"; then
+
+	# D4 FIX: Capture exit code explicitly. The if construct suppresses
+	# set -e inside the condition, so the else branch is reachable on failure.
+	local exit_code
+	"${cmd[@]}"
+	exit_code=$?
+
+	if [[ "$exit_code" -eq 0 ]]; then
 		print_success "Extraction Complete. Payload secured in $SAVE_DIR"
 	else
-		print_error "Extraction Failed. Check logs and stream validity."
+		print_error "Extraction Failed (exit $exit_code). Check logs and stream validity."
+		return "$exit_code"
 	fi
 }
 
@@ -176,59 +253,83 @@ execute_extraction() {
 # Interactive Interfaces
 # -----------------------------------------------------------------------------
 configure_advanced() {
-	echo -e "\n${C_CYAN}--- Advanced Configuration Matrix ---${C_RESET}"
-	echo "1. Set Thread Count (Current: $THREAD_COUNT)"
-	echo "2. Set Retry Count (Current: $RETRY_COUNT)"
-	echo "3. Toggle Segment Merge (Skip: $SKIP_MERGE)"
-	echo "4. Set Output Directory (Current: $SAVE_DIR)"
-	echo "5. Return to Main Menu"
+	# D15 FIX: Wrapped in while loop for UX parity with interactive_menu.
+	# Single-shot in v3.0.0 meant every change bounced the user back to main.
+	while true; do
+		echo -e "\n${C_CYAN}--- Advanced Configuration Matrix ---${C_RESET}"
+		echo "1. Set Thread Count (Current: $THREAD_COUNT)"
+		echo "2. Set Retry Count (Current: $RETRY_COUNT)"
+		echo "3. Toggle Segment Merge (Skip: $SKIP_MERGE)"
+		echo "4. Set Output Directory (Current: $SAVE_DIR)"
+		echo "5. Return to Main Menu"
+		echo -n "> "
+		read -r adv_opt
 
-	echo -n "> "
-	read -r adv_opt
-
-	case "$adv_opt" in
-	1)
-		echo -n "Enter Thread Count: "
-		read -r THREAD_COUNT
-		;;
-	2)
-		echo -n "Enter Retry Count: "
-		read -r RETRY_COUNT
-		;;
-	3)
-		if [[ "$SKIP_MERGE" == "False" ]]; then
-			SKIP_MERGE="True"
-		else
-			SKIP_MERGE="False"
-		fi
-		print_success "Skip Merge toggled to: $SKIP_MERGE"
-		;;
-	4)
-		echo -n "Enter Absolute Path for Output: "
-		read -r SAVE_DIR
-		mkdir -p "$SAVE_DIR"
-		;;
-	5)
-		return
-		;;
-	*)
-		print_warning "Invalid input."
-		;;
-	esac
+		case "$adv_opt" in
+		1)
+			echo -n "Enter Thread Count: "
+			read -r input
+			# D6 FIX: Validate before accepting.
+			if validate_positive_integer "$input" "Thread Count"; then
+				THREAD_COUNT="$input"
+				print_success "Thread Count set to $THREAD_COUNT"
+			fi
+			;;
+		2)
+			echo -n "Enter Retry Count: "
+			read -r input
+			# D6 FIX: Validate before accepting.
+			if validate_positive_integer "$input" "Retry Count"; then
+				RETRY_COUNT="$input"
+				print_success "Retry Count set to $RETRY_COUNT"
+			fi
+			;;
+		3)
+			if [[ "$SKIP_MERGE" == "False" ]]; then
+				SKIP_MERGE="True"
+			else
+				SKIP_MERGE="False"
+			fi
+			print_success "Skip Merge toggled to: $SKIP_MERGE"
+			;;
+		4)
+			echo -n "Enter Absolute Path for Output: "
+			read -r input
+			if [[ -n "$input" ]]; then
+				# D8 FIX: Validate writability before accepting.
+				if ensure_writable_dir "$input"; then
+					SAVE_DIR="$input"
+					print_success "Output directory set to $SAVE_DIR"
+				fi
+			else
+				print_warning "Path cannot be empty."
+			fi
+			;;
+		5)
+			return 0
+			;;
+		*)
+			print_warning "Invalid input."
+			;;
+		esac
+	done
 }
 
 interactive_menu() {
-	# Preset Dictionary
-	declare -A presets
-	presets=(
-		["1"]="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8 (Test Stream 1)"
-		["2"]="https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8 (Test Stream 2)"
-	)
+	# D5 FIX: URLs and display labels stored separately.
+	# awk '{print $1}' on a combined string is fragile and introduces an
+	# unnecessary dependency on awk for a pure-Bash operation.
+	declare -A preset_urls
+	declare -A preset_labels
+	preset_urls["1"]="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+	preset_urls["2"]="https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8"
+	preset_labels["1"]="Test Stream 1 (mux.dev HLS)"
+	preset_labels["2"]="Test Stream 2 (Akamai HLS Live)"
 
 	while true; do
 		echo -e "\n${C_CYAN}==== Ψ-4NDR0666 STREAM EXTRACTOR ====${C_RESET}"
-		echo "1. Execute Preset 1: ${presets[1]}"
-		echo "2. Execute Preset 2: ${presets[2]}"
+		echo "1. Execute Preset 1: ${preset_labels[1]}"
+		echo "2. Execute Preset 2: ${preset_labels[2]}"
 		echo "3. Input Custom Target URL"
 		echo "4. Access Advanced Configuration"
 		echo "5. Save Current State to Config"
@@ -238,18 +339,18 @@ interactive_menu() {
 		read -r choice
 		case "$choice" in
 		1)
-			TARGET_URL="$(echo "${presets[1]}" | awk '{print $1}')"
-			execute_extraction
+			TARGET_URL="${preset_urls[1]}"
+			execute_extraction || true
 			;;
 		2)
-			TARGET_URL="$(echo "${presets[2]}" | awk '{print $1}')"
-			execute_extraction
+			TARGET_URL="${preset_urls[2]}"
+			execute_extraction || true
 			;;
 		3)
 			echo -n "Enter M3U8/MPD URL: "
 			read -r TARGET_URL
 			if [[ -n "$TARGET_URL" ]]; then
-				execute_extraction
+				execute_extraction || true
 			else
 				print_warning "URL cannot be empty."
 			fi
@@ -297,18 +398,41 @@ parse_arguments() {
 			exit 0
 			;;
 		-t | --threads)
+			# D10 FIX: Guard shift 2 against insufficient remaining arguments.
+			if [[ "$#" -lt 2 ]]; then
+				print_error "--threads requires a numeric argument."
+				exit 1
+			fi
+			# D6 FIX: Validate numeric input in CLI path too.
+			validate_positive_integer "$2" "Thread Count" || exit 1
 			THREAD_COUNT="$2"
 			shift 2
 			;;
 		-r | --retries)
+			# D10 FIX: Guard shift 2.
+			if [[ "$#" -lt 2 ]]; then
+				print_error "--retries requires a numeric argument."
+				exit 1
+			fi
+			validate_positive_integer "$2" "Retry Count" || exit 1
 			RETRY_COUNT="$2"
 			shift 2
 			;;
 		-d | --save-dir)
+			# D10 FIX: Guard shift 2.
+			if [[ "$#" -lt 2 ]]; then
+				print_error "--save-dir requires a path argument."
+				exit 1
+			fi
 			SAVE_DIR="$2"
 			shift 2
 			;;
 		-o | --output)
+			# D10 FIX: Guard shift 2.
+			if [[ "$#" -lt 2 ]]; then
+				print_error "--output requires a name argument."
+				exit 1
+			fi
 			SAVE_NAME="$2"
 			shift 2
 			;;
@@ -322,7 +446,7 @@ parse_arguments() {
 			exit 1
 			;;
 		*)
-			# Treat any positional argument as the URL
+			# Treat any positional argument as the URL.
 			TARGET_URL="$1"
 			shift
 			;;
@@ -333,8 +457,12 @@ parse_arguments() {
 # -----------------------------------------------------------------------------
 # Boot Sequence
 # -----------------------------------------------------------------------------
-#check_dependencies
-#load_config
+# D3 FIX: check_dependencies and load_config are unconditionally executed.
+# Both were commented out in v3.0.0, disabling the entire safety net:
+# - check_dependencies sets BIN_M3U8 (required by execute_extraction).
+# - load_config applies any user-persisted overrides before execution.
+check_dependencies
+load_config
 
 if [[ $# -gt 0 ]]; then
 	parse_arguments "$@"
@@ -345,6 +473,5 @@ if [[ $# -gt 0 ]]; then
 		exit 1
 	fi
 else
-	# No arguments provided, drop into the matrix
 	interactive_menu
 fi

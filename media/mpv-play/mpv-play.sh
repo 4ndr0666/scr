@@ -40,29 +40,37 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-PLAYLIST=""
+# Playlist is written to a PID-namespaced tmp file and passed to mpv as
+# --playlist=FILE. This is more robust than --playlist=- (stdin herestring):
+# - mpv can seek, re-read, and shuffle a file; it cannot rewind stdin.
+# - The file survives exec; stdin does not (though we no longer use exec — see §6).
+# - Concurrent invocations are safe: each gets its own PID-namespaced file.
+# The EXIT/INT/TERM trap guarantees cleanup even on signal or early exit.
+PLAYLIST_FILE="/tmp/mpv-play-$$.txt"
+trap 'rm -f "$PLAYLIST_FILE"' EXIT INT TERM
 
 # ------------------------------------------------------------------------------
 # 4. Data Resolution
 # ------------------------------------------------------------------------------
 if [ "$SOURCE" = "recent" ]; then
-    # The GTK recently-used database is a plain XBEL (XML) file written directly
-    # by every GTK3/4 application, including Thunar. It requires no GVFS daemon,
-    # no D-Bus session, and no gio VFS mount — making it reliable when invoked
-    # as a Thunar custom action (subprocess context without a full session).
+    # The GTK recently-used database (~/.local/share/recently-used.xbel) is a
+    # plain XML file written synchronously by every GTK3/4 app including Thunar.
+    # It requires no GVFS daemon and no D-Bus session — reliable in all contexts.
     #
-    # gio list recent:// is explicitly NOT used here: it depends on the GVFS
-    # gvfsd-recent daemon being reachable via the session D-Bus socket, which
-    # is not guaranteed in custom-action subprocess contexts and fails silently.
+    # Entries appear in insertion order (oldest first). We reverse with tac so
+    # mpv plays most-recently-accessed files first when shuffle is off, and the
+    # shuf randomisation is applied across the full filtered set regardless.
     #
     # Pipeline:
-    #   xmllint --xpath   → extract all href="file:///..." attribute values
-    #   tr                → one URI per line
-    #   sed               → strip enclosing quotes, strip file:// scheme,
-    #                       URL-decode %XX percent-encoding
+    #   xmllint --xpath   → all href="file:///..." attributes as one space-delimited string
+    #   tr ' ' '\n'       → one href="..." per line
+    #   sed               → strip surrounding quotes, strip file:// scheme
+    #   python3           → percent-decode %XX sequences (spaces, #, etc.)
     #   grep              → keep only supported media extensions
-    #   head              → cap at 150 entries
-    #   shuf              → randomise
+    #   tac               → reverse to most-recent-first
+    #   head -n 150       → cap list size
+    #   shuf              → randomise playback order
+    #   tee               → write to playlist file; also captures to PLAYLIST for validation
     XBEL="${XDG_DATA_HOME:-$HOME/.local/share}/recently-used.xbel"
 
     if [ ! -f "$XBEL" ]; then
@@ -71,17 +79,22 @@ if [ "$SOURCE" = "recent" ]; then
         exit 1
     fi
 
-    PLAYLIST=$(
-        xmllint --xpath '//bookmark/@href' "$XBEL" 2>/dev/null \
+    xmllint --xpath '//bookmark/@href' "$XBEL" 2>/dev/null \
         | tr ' ' '\n' \
         | sed 's/^href="//; s/"$//' \
         | sed 's|^file://||' \
-        | python3 -c 'import sys, urllib.parse; [print(urllib.parse.unquote(l.rstrip())) for l in sys.stdin]' \
+        | python3 -c '
+import sys, urllib.parse
+for line in sys.stdin:
+    line = line.rstrip()
+    if line:
+        print(urllib.parse.unquote(line))
+' \
         | grep -iE "$MEDIA_EXT" \
+        | tac \
         | head -n 150 \
         | shuf \
-        || true
-    )
+        > "$PLAYLIST_FILE" || true
 else
     # ------------------------------------------------------------------
     # Resolve local directory.
@@ -110,9 +123,9 @@ else
 
     if [ -n "${QUEUE_SINGLE_FILE:-}" ]; then
         # Single-file queue: bypass find entirely.
-        PLAYLIST="$QUEUE_SINGLE_FILE"
+        printf '%s\n' "$QUEUE_SINGLE_FILE" > "$PLAYLIST_FILE"
     else
-        # Directory scan: filter by requested source type.
+        # Directory scan: filter by requested source type, write to playlist file.
         if [ "$SOURCE" = "images" ]; then
             EXT_FILTER="$IMG_EXT"
         else
@@ -120,21 +133,20 @@ else
         fi
 
         # find emits ./filename; sed converts to absolute path.
-        # The separator in sed uses a control character (ASCII 001) to be safe
-        # against pipe characters, spaces, and other legal path characters.
-        PLAYLIST=$(
-            find . -maxdepth 1 -type f \
+        # The separator in sed uses ASCII SOH (001) — safe against all legal
+        # path characters including |, spaces, and backslashes.
+        find . -maxdepth 1 -type f \
             | grep -iE "$EXT_FILTER" \
             | sed "s$(printf '\001')^\\.$(printf '\001')$PWD$(printf '\001')" \
-            | shuf || true
-        )
+            | shuf \
+            > "$PLAYLIST_FILE" || true
     fi
 fi
 
 # ------------------------------------------------------------------------------
 # 5. Validation
 # ------------------------------------------------------------------------------
-if [ -z "$PLAYLIST" ]; then
+if [ ! -s "$PLAYLIST_FILE" ]; then
     echo "No matching media found." >&2
     notify-send "mpv-play" "No matching media found." 2>/dev/null || true
     exit 1
@@ -162,10 +174,9 @@ if [ "$MODE" = "queue" ]; then
     fi
 
     # Let user pick an instance. wofi exits non-zero on Escape; guard with || true.
-    SOCKET=$(echo "$AVAILABLE_SOCKETS" | wofi --dmenu -p "Queue to mpv instance:" 2>/dev/null || true)
+    SOCKET=$(printf '%s\n' "$AVAILABLE_SOCKETS" | wofi --dmenu -p "Queue to mpv instance:" 2>/dev/null || true)
 
     if [ -z "$SOCKET" ]; then
-        # User cancelled selection; exit cleanly.
         exit 0
     fi
 
@@ -181,7 +192,6 @@ if [ "$MODE" = "queue" ]; then
     FAILED=0
 
     while IFS= read -r f; do
-        # Escape double-quotes inside the path for the JSON payload.
         SAFE_F=$(printf '%s' "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')
         if printf '{ "command": ["loadfile", "%s", "append-play"] }\n' "$SAFE_F" \
                | socat - "$SOCKET_PATH" >/dev/null 2>&1; then
@@ -190,17 +200,17 @@ if [ "$MODE" = "queue" ]; then
             FAILED=$((FAILED + 1))
             echo "Warning: failed to queue '$f'" >&2
         fi
-    done <<< "$PLAYLIST"
+    done < "$PLAYLIST_FILE"
 
     notify-send "mpv-play" "Queued $QUEUED file(s) to $SOCKET${FAILED:+ ($FAILED failed)}." 2>/dev/null || true
 
 else
-    # Replace Mode (Default): hand the playlist to mpv via stdin.
-    # --shuffle is not needed here because shuf already randomised PLAYLIST above.
-    # exec replaces the shell process; mpv inherits stdin from the herestring.
-    exec mpv \
+    # Replace mode: launch mpv with the playlist file.
+    # Not exec: the shell must survive to let the EXIT trap clean up the tmp file.
+    # mpv's exit code is propagated explicitly.
+    mpv \
         --profile=playdir \
         --image-display-duration="$DURATION" \
-        --playlist=- \
-        <<< "$PLAYLIST"
+        --playlist="$PLAYLIST_FILE"
+    exit $?
 fi

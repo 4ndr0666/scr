@@ -1,0 +1,47 @@
+# Maintainer: 4ndr0666 <your_email@domain.com>
+# AUDIT CHANGELOG:
+#   I1-D9 FIX - source and sha256sums updated: test_ytdlc.sh renamed to 'configure'
+#               to match the actual filename in the corpus.
+#   I1-D1 FIX - depends array uses correct Arch package names:
+#               aria2 (not aria2c), wl-clipboard (not wl-copy/wl-paste).
+#               jq removed from depends (not used by any installed artifact).
+#               zsh added (runtime requirement for ytdl.zsh functions).
+
+pkgname=ytdlc-protocol
+pkgver=2.2.0
+pkgrel=1
+pkgdesc="ytdl:// protocol handler — yt-dlp + aria2 + dmenu + cookie-aware Zsh functions"
+arch=('any')
+url="https://github.com/4ndr0666/ytdlc-protocol"
+license=('MIT')
+depends=(
+    'yt-dlp'
+    'aria2'
+    'dmenu'
+    'fzf'
+    'wl-clipboard'
+    'xclip'
+    'zathura'
+    'nsxiv'
+    'curl'
+    'zsh'
+    'python'
+)
+optdepends=(
+    'mpv: media playback via dmenuhandler'
+    'swaybg: wallpaper setting via dmenuhandler setbg action'
+    'lynx: terminal browser action in dmenuhandler'
+)
+source=(
+    'ytdlc_protocol_installer.sh'
+    'configure'
+)
+sha256sums=(
+    'SKIP'
+    'SKIP'
+)
+
+package() {
+    install -Dm755 "$srcdir/ytdlc_protocol_installer.sh" "$pkgdir/usr/bin/ytdlc-install"
+    install -Dm755 "$srcdir/configure"                   "$pkgdir/usr/bin/ytdlc-test"
+}
