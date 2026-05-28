@@ -227,20 +227,20 @@ exit_ip() {
 }
 
 # --- Step 1: Disable Split Tunnel so curl routes through the VPN tunnel ---
-sudo "$VPNCTL" set splittunnel false 2>/dev/null || true
-sleep 1
+#sudo "$VPNCTL" set splittunnel false 2>/dev/null || true
+#sleep 1
 
 # --- Step 2: Snapshot pre-cycle exit IP ---
 OLD_IP=$(exit_ip)
 if ! [[ "$OLD_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   # Restore split tunnel before aborting
-  sudo "$VPNCTL" set splittunnel true 2>/dev/null || true
+#  sudo "$VPNCTL" set splittunnel true 2>/dev/null || true
   exit 1
 fi
 
 # --- Step 3: Drop Network Lock and confirm ---
-sudo "$VPNCTL" set networklock false 2>/dev/null || true
-sleep 2
+#sudo "$VPNCTL" set networklock false 2>/dev/null || true
+#sleep 2
 LOCK_ELAPSED=0
 while [ $LOCK_ELAPSED -lt 10 ]; do
   LOCK_STATE=$(sudo "$VPNCTL" get networklock 2>/dev/null || echo "unknown")
@@ -276,7 +276,7 @@ done
 sudo "$VPNCTL" connect
 
 # --- Step 7: Restore Network Lock ---
-sudo "$VPNCTL" set networklock true 2>/dev/null || true
+#sudo "$VPNCTL" set networklock true 2>/dev/null || true
 
 # --- Step 8: Poll exit IP until it differs from OLD_IP ---
 # Split Tunnel is still off so curl routes through the tunnel.
@@ -294,7 +294,7 @@ while [ $ELAPSED -lt 60 ]; do
 done
 
 # --- Step 9: Restore Split Tunnel unconditionally ---
-sudo "$VPNCTL" set splittunnel true 2>/dev/null || true
+#sudo "$VPNCTL" set splittunnel false 2>/dev/null || true
 
 # --- Step 10: Honest exit code ---
 if [ -n "$NEW_IP" ]; then
