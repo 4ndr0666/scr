@@ -1,4 +1,3 @@
-# .github/workflows/shellcheck.yml
 name: "Trigger: Push action"
 
 on:
