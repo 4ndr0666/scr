@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions: read-all
 
@@ -11,7 +15,35 @@ jobs:
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Get changed shell files
+        id: changed-sh-files
+        uses: tj-actions/changed-files@v45
+        with:
+          # Explicitly omitting Zsh files since ShellCheck does not support Zsh syntax
+          files: |
+            **/*.sh
+            **/*.bash
+            **/*.ksh
+            **/.bashrc
+            **/.bash_profile
+            **/.bash_aliases
+            **/.bash_logout
+
+      - name: Run ShellCheck on changed files
+        if: steps.changed-sh-files.outputs.any_changed == 'true'
+        env:
+          CHANGED_FILES: ${{ steps.changed-sh-files.outputs.all_changed_files }}
+        run: |
+          # xargs -r prevents the command from executing if no files match
+          # -x allows shellcheck to follow source directives defined in .shellcheckrc
+          echo "$CHANGED_FILES" | xargs -r shellcheck -x
