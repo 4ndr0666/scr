@@ -1,7 +1,11 @@
+<<<<<<< Updated upstream
+# .github/workflows/shellcheck.yml
+=======
 <<<<<<< HEAD
 =======
 # .github/workflows/shellcheck.yml
 >>>>>>> 1fe8eb0 (updated workflow files. added ar visualization html file to git ignore. updated jd_reconnect.sh)
+>>>>>>> Stashed changes
 name: "Trigger: Push action"
 
 on:
