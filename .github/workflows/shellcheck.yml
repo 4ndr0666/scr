@@ -1,10 +1,11 @@
+name: "Trigger: Push action"
+
 on:
   push:
     branches:
       - master
 
-name: "Trigger: Push action"
-permissions: {}
+permissions: read-all
 
 jobs:
   shellcheck:
