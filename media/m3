@@ -42,7 +42,7 @@ RETRY_COUNT=5
 # D7 FIX: TMP_DIR scoped under XDG_CACHE_HOME with PID isolation.
 # /s4/tmp/ was a system-specific hardcode with no portability guarantee.
 TMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
-SAVE_DIR="$PWD"
+SAVE_DIR="$/s1/streamdir"
 SAVE_NAME=""
 PROXY_URL=""
 
@@ -63,7 +63,7 @@ TARGET_URL=""
 # D1 FIX: BIN_M3U8 intentionally unset here. check_dependencies is the
 # sole authority. The hardcoded fallback "n-m3u8dl-re" (note: wrong separator)
 # that appeared after check_dependencies in v3.0.0 has been removed entirely.
-BIN_M3U8=""
+BIN_M3U8="/usr/bin/n-m3u8dl-re"
 
 # -----------------------------------------------------------------------------
 # Theming & Formatting
@@ -461,7 +461,7 @@ parse_arguments() {
 # Both were commented out in v3.0.0, disabling the entire safety net:
 # - check_dependencies sets BIN_M3U8 (required by execute_extraction).
 # - load_config applies any user-persisted overrides before execution.
-check_dependencies
+#check_dependencies
 load_config
 
 if [[ $# -gt 0 ]]; then
