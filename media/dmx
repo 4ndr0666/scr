@@ -132,7 +132,7 @@ def auto_install_dependencies(config: Dict[str, str]):
         )
         return
 
-    dependencies = ["ffmpeg", "mediainfo", "fzf", "vapoursynth", "python-pip"]
+    dependencies = ["ffmpeg", "mediainfo", "fzf", "python-pip"]
 
     for pkg in dependencies:
         if shutil.which(pkg) is None:
@@ -286,19 +286,6 @@ def check_dependencies(config: Dict[str, str]):
             "An error occurred while checking FFmpeg encoders. Check the logs for more details."
         )
         sys.exit(1)
-
-    # Check if VapourSynth module is available
-    try:
-        import vapoursynth as vs
-
-        logging.info("VapourSynth module is available.")
-    except ImportError:
-        print_warning(
-            "VapourSynth module is not installed. Please install it and try again."
-        )
-        sys.exit(1)
-
-    logging.info("All dependencies are satisfied.")
 
 
 def load_config() -> Dict[str, str]:
@@ -963,8 +950,7 @@ class VideoProcessor:
 
             if smooth_motion and self.svp_plugins and self.ffms2_plugin:
                 target_fps = video.frame_rate * (1 / speed_factor)
-                script_content = textwrap.dedent(
-                    f"""
+                script_content = textwrap.dedent(f"""
                 import vapoursynth as vs
                 core = vs.core
                 core.std.LoadPlugin(r"{self.svp_plugins['svpflow1']}")
@@ -978,8 +964,7 @@ class VideoProcessor:
                 vectors = core.svp2.Analyse(super_clip, clip, analyse_params=analyse_params)
                 smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, smoothfps_params, src=clip, fps={target_fps})
                 smooth_clip.set_output()
-                """
-                )
+                """)
                 self.apply_vapoursynth_script(
                     video, str(output_file_final), script_content
                 )
@@ -1505,8 +1490,7 @@ class VideoProcessor:
             except ValueError:
                 print_warning("Invalid FPS value.")
                 return
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{self.svp_plugins['svpflow1']}")
@@ -1520,12 +1504,10 @@ class VideoProcessor:
             vectors = core.svp2.Analyse(super_clip, clip, analyse_params=analyse_params)
             smooth_clip = core.svp2.SmoothFps(clip, super_clip, vectors, smoothfps_params, src=clip, fps={target_fps})
             smooth_clip.set_output()
-            """
-            )
+            """)
             required_plugins.extend(list(self.svp_plugins.values()))
         elif transformation == "Inverse Telecine (IVTC)":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{ffms2_plugin}")
@@ -1533,33 +1515,27 @@ class VideoProcessor:
             ivtc = core.vivtc.VFM(clip)
             ivtc = core.vivtc.VDecimate(ivtc)
             ivtc.set_output()
-            """
-            )
+            """)
         elif transformation == "Deflicker":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{ffms2_plugin}")
             clip = core.ffms2.Source(r"{video.filepath}")
             deflicker = core.std.Deflicker(clip, mode=1)
             deflicker.set_output()
-            """
-            )
+            """)
         elif transformation == "Dedot":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{ffms2_plugin}")
             clip = core.ffms2.Source(r"{video.filepath}")
             dedot = core.nnedi3.Dedot(clip)
             dedot.set_output()
-            """
-            )
+            """)
         elif transformation == "Dehalo":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libdehalo_alpha.so')  # Ensure dehalo plugin is available
@@ -1567,32 +1543,26 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             dehalo = core.dehalo.Alpha(clip)
             dehalo.set_output()
-            """
-            )
+            """)
         elif transformation == "Grain Generation":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             clip = core.ffms2.Source(r"{video.filepath}")
             grain = core.grain.Add(clip, strength=10)
             grain.set_output()
-            """
-            )
+            """)
         elif transformation == "Remove Grain":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{ffms2_plugin}")
             clip = core.ffms2.Source(r"{video.filepath}")
             remove_grain = core.rgvs.RemoveGrain(clip, mode=17)
             remove_grain.set_output()
-            """
-            )
+            """)
         elif transformation == "Debanding":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libf3kdb.so')  # Ensure f3kdb plugin is available
@@ -1600,11 +1570,9 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             deband = core.f3kdb.Deband(clip, y=64, cb=64, cr=64, grainy=64, grainc=64)
             deband.set_output()
-            """
-            )
+            """)
         elif transformation == "Sharpening & Edge Enhancement":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libawarpsharp2.so')  # Ensure AWarpSharp2 plugin is available
@@ -1612,8 +1580,7 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             sharpen = core.warp.AWarpSharp2(clip, depth=2)
             sharpen.set_output()
-            """
-            )
+            """)
         elif transformation == "Color Correction":
             brightness = (
                 input("Enter brightness adjustment (default 0.0): ").strip() or "0.0"
@@ -1631,8 +1598,7 @@ class VideoProcessor:
             except ValueError:
                 print_warning("Invalid input values. Using default settings.")
                 brightness, contrast, saturation = 0.0, 1.0, 1.0
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libadjust.so')  # Ensure adjust plugin is available
@@ -1640,11 +1606,9 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             color_correct = core.std.Tweak(clip, bright={brightness}, cont={contrast}, sat={saturation})
             color_correct.set_output()
-            """
-            )
+            """)
         elif transformation == "Super Resolution":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libnnedi3.so')  # Ensure nnedi3 plugin is available
@@ -1652,11 +1616,9 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             super_res = core.nnedi3.nnedi3(clip, field=3)
             super_res.set_output()
-            """
-            )
+            """)
         elif transformation == "Deshake":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libdeshake.so')  # Ensure deshake plugin is available
@@ -1664,11 +1626,9 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             deshaked = core.deshake.Deshake(clip, threshold=2.0)
             deshaked.set_output()
-            """
-            )
+            """)
         elif transformation == "Edge Detection":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libedge_detect.so')  # Ensure edge_detect plugin is available
@@ -1676,8 +1636,7 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             edges = core.edge_detect.EdgeDetect(clip)
             edges.set_output()
-            """
-            )
+            """)
         elif transformation == "Zooming":
             print("Note: Currently, zooming parameters must be entered manually.")
             x = input("Enter x coordinate for cropping (default 0): ").strip() or "0"
@@ -1692,8 +1651,7 @@ class VideoProcessor:
             except ValueError:
                 print_warning("Invalid cropping parameters.")
                 return
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin(r"{ffms2_plugin}")
@@ -1701,11 +1659,9 @@ class VideoProcessor:
             cropped = core.std.CropAbs(clip, width={width}, height={height}, left={x}, top={y})
             zoomed = core.resize.Bicubic(cropped, width=clip.width, height=clip.height)
             zoomed.set_output()
-            """
-            )
+            """)
         elif transformation == "Stabilization":
-            script_content = textwrap.dedent(
-                f"""
+            script_content = textwrap.dedent(f"""
             import vapoursynth as vs
             core = vs.core
             core.std.LoadPlugin('libstabilize.so')  # Ensure stabilize plugin is available
@@ -1713,8 +1669,7 @@ class VideoProcessor:
             clip = core.ffms2.Source(r"{video.filepath}")
             stabilized = core.stabilize.Stabilize(clip)
             stabilized.set_output()
-            """
-            )
+            """)
 
         # Verify all required plugins are available
         missing_plugins = [

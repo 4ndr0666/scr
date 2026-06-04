@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2207
+# shellcheck disable=SC2207,SC2034,SC2155,SC2317
 # Author: 4ndr0666
-# FFX v5.0.0 — Final Superset
+# FFX v8.0.0 — Final Superset
 # Lossless, failure-resilient FFmpeg orchestration CLI.
-# Knowledge base: ffmpeg_deep-research.pdf, ffmpeg_encoding_and_editing.md,
-#                 Filter-chains.md (canonical references for all filter/encode decisions).
+# Install path: /opt/ffx
+# Approved feature manifest: A(v5) + B(beta/v6) + selective C(v7) superset.
 # Forward progress only. Regression = hard failure.
 set -euo pipefail
+IFS=$'\n\t'
 
 # =============================================================================
 # XDG & SESSION DIRECTORIES
@@ -39,24 +40,26 @@ else
     CYAN="" GREEN="" BOLD="" RED="" YELLOW="" RESET=""
 fi
 
-say()         { printf '%b[OK] %s%b\n'    "${GREEN}${BOLD}" "$1" "${RESET}";      }
-warn()        { printf '%b[!!] %s%b\n'    "${YELLOW}"        "$1" "${RESET}" >&2; }
-die()         { printf '%b[XX] Error: %s%b\n' "${RED}"       "$1" "${RESET}" >&2; exit 1; }
+say()         { printf '%b[OK] %s%b\n'       "${GREEN}${BOLD}" "$1" "${RESET}";      }
+warn()        { printf '%b[!!] %s%b\n'       "${YELLOW}"        "$1" "${RESET}" >&2; }
+die()         { printf '%b[XX] Error: %s%b\n' "${RED}"          "$1" "${RESET}" >&2; exit 1; }
 verbose_log() { [[ "${VERBOSE_MODE:-false}" == true ]] && printf '[INFO] %s\n' "$1" >&2 || true; }
+debug_log()   { [[ "${FFX_DEBUG:-0}"        == "1"  ]] && printf '[DEBUG] %s\n' "$1" >&2 || true; }
 
 # =============================================================================
 # CLEANUP & TRAP
 # =============================================================================
 cleanup_all() { [[ -d "${FFX_RUN_DIR:-}" ]] && rm -rf -- "$FFX_RUN_DIR"; }
-trap 'cleanup_all' EXIT INT TERM
+trap 'cleanup_all' EXIT INT TERM HUP
 
 mktemp_ffx() { mktemp -p "$FFX_RUN_DIR" --suffix="${1:-.tmp}"; }
 
 # =============================================================================
 # CANVAS CONSTANTS  (16:9 master — per user spec)
 # =============================================================================
-CANVAS_W=1920
-CANVAS_H=1080
+readonly CANVAS_W=1920
+readonly CANVAS_H=1080
+readonly IMAGE_DURATION=5
 
 # =============================================================================
 # DEFAULTS & CONFIGURATION
@@ -65,26 +68,29 @@ default_config() {
     ADVANCED_MODE=false
     VERBOSE_MODE=false
     DRY_RUN=false
+    BULK_MODE=false
     REMOVE_AUDIO=false
     COMPOSITE_MODE=false
     MAX_1080=false
     INTERPOLATE=false
+    GLOBAL_OUTPUT_FILE=""
+    LAYOUT_MODE="fixed"
 
     OUTPUT_DIR="$(pwd)"
     SPECIFIC_FPS=""
     PTS_FACTOR=""
+    BATCH_SIZE=0
 
     FFX_TIMEOUT="${FFX_TIMEOUT:-300}"
 
-    # Encoding defaults — ref: ffmpeg_deep-research.pdf §H.264 Encoding Practices
-    # CRF 18 = "visually lossless"; preset medium balances speed vs compression.
     ADV_CONTAINER="mp4"
     ADV_RES="${CANVAS_W}x${CANVAS_H}"
     ADV_FPS="60"
     ADV_CODEC="libx264"
-    ADV_PIX_FMT="yuv420p"   # H.264 requires yuv420p for broad compatibility
+    ADV_PIX_FMT="yuv420p"
     ADV_CRF="18"
     ADV_BR="10M"
+    ADV_PRESET="medium"
     ADV_MULTIPASS="false"
     ADV_QUALITY_MODE="crf"
 }
@@ -92,7 +98,7 @@ default_config
 REMAINING_ARGS=()
 
 # =============================================================================
-# PERSISTENT CONFIG  (only ADV_ keys — no eval/source risks)
+# PERSISTENT CONFIG
 # =============================================================================
 save_defaults() {
     mkdir -p "$FFX_CONFIG_DIR"
@@ -104,8 +110,10 @@ save_defaults() {
         "ADV_PIX_FMT=$ADV_PIX_FMT"          \
         "ADV_CRF=$ADV_CRF"                   \
         "ADV_BR=$ADV_BR"                     \
+        "ADV_PRESET=$ADV_PRESET"             \
         "ADV_MULTIPASS=$ADV_MULTIPASS"       \
         "ADV_QUALITY_MODE=$ADV_QUALITY_MODE" \
+        "LAYOUT_MODE=$LAYOUT_MODE"           \
         > "$FFX_DEFAULTS"
 }
 
@@ -113,33 +121,31 @@ load_defaults() {
     [[ -f "$FFX_DEFAULTS" ]] || return 0
     local key value
     while IFS='=' read -r key value || [[ -n "$key" ]]; do
-        [[ "$key" =~ ^ADV_[A-Z_]+$ && -n "$value" ]] && printf -v "$key" '%s' "$value"
+        [[ "$key" =~ ^(ADV_[A-Z_]+|LAYOUT_MODE)$ && -n "$value" ]] && printf -v "$key" '%s' "$value"
     done < "$FFX_DEFAULTS"
 }
 
 # =============================================================================
-# DEPENDENCY MANAGEMENT  (auto-install on common package managers)
+# DEPENDENCY MANAGEMENT
 # =============================================================================
 command_exists() { command -v "$1" >/dev/null 2>&1; }
+is_nonneg_int()  { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
 
 _try_install() {
-    # Attempt to install a package on whichever manager is present.
     local pkg="$1"
-    if command_exists pacman;   then sudo pacman -S --noconfirm --needed "$pkg" 2>/dev/null && return 0; fi
-    if command_exists apt-get;  then sudo apt-get install -y "$pkg" 2>/dev/null && return 0; fi
-    if command_exists dnf;      then sudo dnf install -y "$pkg" 2>/dev/null && return 0; fi
-    if command_exists zypper;   then sudo zypper install -y "$pkg" 2>/dev/null && return 0; fi
-    if command_exists brew;     then brew install "$pkg" 2>/dev/null && return 0; fi
+    if command_exists pacman;  then sudo pacman -S --noconfirm --needed "$pkg" 2>/dev/null && return 0; fi
+    if command_exists apt-get; then sudo apt-get install -y "$pkg" 2>/dev/null && return 0; fi
+    if command_exists dnf;     then sudo dnf install -y "$pkg" 2>/dev/null && return 0; fi
+    if command_exists zypper;  then sudo zypper install -y "$pkg" 2>/dev/null && return 0; fi
+    if command_exists brew;    then brew install "$pkg" 2>/dev/null && return 0; fi
     return 1
 }
 
 check_deps() {
-    # Required: ffmpeg (includes ffprobe), bc, awk.
-    # fzf is optional (interactive selectors fall back gracefully when absent).
-    local dep pkg missing_hard="" missing_soft=""
+    local dep pkg missing_hard=""
     declare -A dep_pkg=(
-        [ffmpeg]="ffmpeg"   [ffprobe]="ffmpeg"
-        [bc]="bc"           [awk]="gawk"
+        [ffmpeg]="ffmpeg"  [ffprobe]="ffmpeg"
+        [bc]="bc"          [awk]="gawk"
     )
     for dep in ffmpeg ffprobe bc awk; do
         if ! command_exists "$dep"; then
@@ -165,7 +171,6 @@ absolute_path() {
         || ( cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$1")" )
 }
 
-# bytes_to_human — pure awk, no bc dependency
 bytes_to_human() {
     awk -v b="${1:-0}" 'BEGIN{
         split("B KiB MiB GiB",u); i=1
@@ -192,22 +197,70 @@ fzf_pick() {
     printf '%s\n' "${sel[@]}"
 }
 
+apply_bulk_glob() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 -type f \( \
+        -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \
+        -o -iname '*.avi' -o -iname '*.webm' -o -iname '*.gif' \
+        -o -iname '*.ts'  -o -iname '*.m4v' \) -print
+}
+
+detect_max_res() {
+    local max_w=0 max_h=0
+    for _f; do
+        local w=0 h=0
+        read -r w h < <(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height \
+            -of default=nw=1:nk=1 "$_f" 2>/dev/null | xargs) || true
+        [[ "$w" =~ ^[0-9]+$ ]] || w=0
+        [[ "$h" =~ ^[0-9]+$ ]] || h=0
+        (( w > max_w )) && max_w=$w
+        (( h > max_h )) && max_h=$h
+    done
+    printf '%d %d\n' "$max_w" "$max_h"
+}
+
+shuffle_files() {
+    local -n _sf="$1"
+    if command_exists shuf; then
+        mapfile -t _sf < <(printf '%s\n' "${_sf[@]}" | shuf)
+    else
+        local i j tmp n="${#_sf[@]}"
+        for (( i=n-1; i>0; i-- )); do
+            j=$(( RANDOM % (i+1) ))
+            tmp="${_sf[$i]}"; _sf[$i]="${_sf[$j]}"; _sf[$j]="$tmp"
+        done
+    fi
+}
+
+is_image() {
+    local ext="${1##*.}"
+    case "${ext,,}" in
+        jpg|jpeg|png|bmp|gif|webp|tif|tiff) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+has_audio() {
+    ffprobe -v error -select_streams a -show_entries stream=index \
+        -of csv=p=0 "$1" 2>/dev/null | grep -q .
+}
+
 # =============================================================================
-# AUDIO OPTIONS  (one element per line — use: mapfile -t aopts < <(get_audio_opts_array))
+# AUDIO OPTIONS
 # =============================================================================
 get_audio_opts_array() {
     if [[ "$REMOVE_AUDIO" == true ]]; then
         printf '%s\n' "-an"
     else
-        # Stream copy when possible; callers that use filter_complex for audio
-        # (composite_pair_lossless amerge path) must add their own -c:a aac instead.
         printf '%s\n' "-c:a" "copy"
     fi
 }
 
 # =============================================================================
 # FFMPEG RUNNER
-# Ref: ffmpeg_deep-research.pdf §Error handling — capture stderr, check exit code.
+# CONTRACT: returns 0 on success, 1 on failure.
+# Every call site MUST check return value and call die() or handle explicitly.
 # =============================================================================
 run_ffmpeg() {
     if [[ "$DRY_RUN" == true ]]; then
@@ -248,24 +301,29 @@ run_ffmpeg() {
 
 # =============================================================================
 # PROBE HELPERS
-# CRITICAL: every read from a process substitution is guarded with || true so
-# that set -e does NOT kill the script when ffprobe returns empty output.
-# (This was the primary crash site in prior revisions.)
 # =============================================================================
-
-# probe_wh FILE — prints "W H"; callers must declare local w=0 h=0 before reading.
 probe_wh() {
-    ffprobe -v error -select_streams v:0 \
-        -show_entries stream=width,height \
-        -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
+    local _w=0 _h=0
+    read -r _w _h < <(
+        ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height \
+            -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
+    ) || true
+    [[ "$_w" =~ ^[0-9]+$ ]] || _w=$CANVAS_W
+    [[ "$_h" =~ ^[0-9]+$ && "$_h" -gt 0 ]] || _h=$CANVAS_H
+    printf '%d %d' "$_w" "$_h"
 }
 
-# check_container_first FILE — returns the primary format wrapper (e.g., mp4, webm)
+probe_duration() {
+    ffprobe -v error -show_entries format=duration \
+        -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null || echo "60"
+}
+
 check_container_first() {
-	ffprobe -v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null | awk -F, '{print $1}'
+    ffprobe -v error -show_entries format=format_name \
+        -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null | awk -F, '{print $1}'
 }
 
-# get_fps FILE — decimal fps string; falls back to ADV_FPS.
 get_fps() {
     local f="$1" s=""
     s="$(ffprobe -v quiet -select_streams v:0 \
@@ -286,12 +344,12 @@ get_fps() {
 
 is_interlaced() {
     local o
-    o="$(ffprobe -v error -select_streams v:0 -show_entries stream=field_order \
+    o="$(ffprobe -v error -select_streams v:0 \
+        -show_entries stream=field_order \
         -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null || echo progressive)"
-    case "$o" in tt|bb|tb|bt) return 0 ;; *) return 1 ;; esac
+    case "$o" in tt|bb|tb|bt|bt_tb|bt_bt|tb_tb|tb_bt) return 0 ;; *) return 1 ;; esac
 }
 
-# Ref: ffmpeg_encoding_and_editing.md — deinterlace FIRST in filter chain order.
 get_deinterlace_filter() { is_interlaced "$1" && echo "yadif=deint=interlaced" || echo "null"; }
 
 # =============================================================================
@@ -308,9 +366,9 @@ moov_fallback() {
     verbose_log "moov_fallback: re-encoding '$(basename "$in")'"
     local -a enc
     if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
-        enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "medium")
+        enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET")
     else
-        enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "medium")
+        enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
     fi
     run_ffmpeg -y -i "$in" "${enc[@]}" "${aopts[@]}" -movflags +faststart "$out" \
         || die "moov_fallback failed for '$(basename "$in")'"
@@ -318,7 +376,6 @@ moov_fallback() {
 
 # =============================================================================
 # DTS CORRECTION
-# check_dts_for_file uses awk — no bc dependency (ref: ffmpeg_encoding_and_editing.md)
 # =============================================================================
 check_dts_for_file() {
     ffprobe -v error -select_streams v \
@@ -343,6 +400,7 @@ fix_dts() {
 
 ensure_dts_correct() {
     local file="$1"
+    is_image "$file" && { printf '%s' "$file"; return 0; }
     [[ -f "$file" ]] || die "ensure_dts_correct: '$file' not found."
     if ! check_dts_for_file "$file"; then
         verbose_log "DTS issues detected in '$(basename "$file")'. Fixing..."
@@ -372,148 +430,82 @@ auto_clean() {
 }
 
 # =============================================================================
+# SELF-AUDIT ENGINE
 # =============================================================================
-# EXTENDED UTILITIES — Superset additions
-# =============================================================================
-debug_log()   { [[ "${FFX_DEBUG:-0}" == "1" ]] && printf '[DEBUG] %s\n' "$1" >&2 || true; }
-is_nonneg_int() { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
-
-# apply_bulk_glob DIR — find all supported video files in DIR (maxdepth 1).
-apply_bulk_glob() {
-	local dir="$1"
-	find "$dir" -maxdepth 1 -type f \( \
-		-iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \
-		-o -iname '*.avi' -o -iname '*.webm' -o -iname '*.gif' \
-		-o -iname '*.ts'  -o -iname '*.m4v' \) -print
-}
-
-# detect_max_res FILE [FILE ...] — print "MAX_W MAX_H" across all inputs.
-detect_max_res() {
-	local max_w=0 max_h=0
-	for _f; do
-		local w=0 h=0
-		read -r w h < <(ffprobe -v error -select_streams v:0 \
-			-show_entries stream=width,height \
-			-of default=nw=1:nk=1 "$_f" 2>/dev/null | xargs) || true
-		[[ "$w" =~ ^[0-9]+$ ]] || w=0
-		[[ "$h" =~ ^[0-9]+$ ]] || h=0
-		((w > max_w)) && max_w=$w
-		((h > max_h)) && max_h=$h
-	done
-	printf '%d %d\n' "$max_w" "$max_h"
-}
-
-# =============================================================================
-# SELF-AUDIT ENGINE  (Snapshot Refactoring Protocol)
-# =============================================================================
-FFX_VERSION="${FFX_VERSION:-5.1.0}"
+FFX_VERSION="${FFX_VERSION:-8.0.0}"
 FFX_SEGMENT_LINES="${FFX_SEGMENT_LINES:-500}"
 FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
 
 hash_file() { sha256sum "$1" | awk '{print $1}'; }
 
 generate_manifest() {
-	local src="$1" ts overall tmpdir
-	command_exists sha256sum || die "sha256sum required for manifest generation."
-	command_exists split    || die "split required for manifest generation."
-	ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-	overall="$(hash_file "$src")"
-	tmpdir="$(mktemp -d -p "$FFX_RUN_DIR" ffx_manifest.XXXXXX)"
-	split -l "$FFX_SEGMENT_LINES" "$src" "$tmpdir/seg_"
-	printf '{\n'
-	printf '  "version": "%s",\n'        "$FFX_VERSION"
-	printf '  "timestamp": "%s",\n'      "$ts"
-	printf '  "overall_sha256": "%s",\n' "$overall"
-	printf '  "segments": {\n'
-	local first=true idx=0
-	for seg in "$tmpdir"/seg_*; do
-		local h; h="$(hash_file "$seg")"
-		[[ "$first" == true ]] || printf ',\n'
-		first=false
-		printf '    "%d": "%s"' "$idx" "$h"
-		idx=$(( idx + 1 ))
-	done
-	printf '\n  }\n}\n'
-	rm -rf "$tmpdir"
+    local src="$1" ts overall tmpdir
+    command_exists sha256sum || die "sha256sum required for manifest generation."
+    command_exists split    || die "split required for manifest generation."
+    ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    overall="$(hash_file "$src")"
+    tmpdir="$(mktemp -d -p "$FFX_RUN_DIR" ffx_manifest.XXXXXX)"
+    split -l "$FFX_SEGMENT_LINES" "$src" "$tmpdir/seg_"
+    printf '{\n'
+    printf '  "version": "%s",\n'        "$FFX_VERSION"
+    printf '  "timestamp": "%s",\n'      "$ts"
+    printf '  "overall_sha256": "%s",\n' "$overall"
+    printf '  "segments": {\n'
+    local first=true idx=0
+    for seg in "$tmpdir"/seg_*; do
+        local h; h="$(hash_file "$seg")"
+        [[ "$first" == true ]] || printf ',\n'
+        first=false
+        printf '    "%d": "%s"' "$idx" "$h"
+        idx=$(( idx + 1 ))
+    done
+    printf '\n  }\n}\n'
+    rm -rf "$tmpdir"
 }
 
 save_manifest() {
-	mkdir -p "$FFX_MANIFEST_DIR"
-	local out="$FFX_MANIFEST_DIR/${FFX_VERSION}.json"
-	generate_manifest "${BASH_SOURCE[0]}" > "$out"
-	say "Manifest saved: $out"
+    mkdir -p "$FFX_MANIFEST_DIR"
+    local out="$FFX_MANIFEST_DIR/${FFX_VERSION}.json"
+    generate_manifest "${BASH_SOURCE[0]}" > "$out"
+    say "Manifest saved: $out"
 }
 
 verify_superset() {
-	local canon="$FFX_MANIFEST_DIR/${FFX_VERSION}.json"
-	[[ -f "$canon" ]] || { verbose_log "No manifest found; skipping verify."; return 0; }
-	local tmp; tmp="$(mktemp -p "$FFX_RUN_DIR" ffx_verify.XXXXXX)"
-	generate_manifest "${BASH_SOURCE[0]}" > "$tmp"
-	local old new
-	old="$(awk -F'"' '/overall_sha256/{print $4}' "$canon")"
-	new="$(awk -F'"' '/overall_sha256/{print $4}' "$tmp")"
-	[[ "$old" == "$new" ]] || die "INTEGRITY FAILURE: overall hash regressed. Run 'ffx manifest save' to re-baseline."
-	if command_exists jq; then
-		local keys; keys="$(jq -r '.segments | keys[]' "$canon" 2>/dev/null || true)"
-		for k in $keys; do
-			local o n
-			o="$(jq -r ".segments[\"$k\"]" "$canon")"
-			n="$(jq -r ".segments[\"$k\"]" "$tmp" 2>/dev/null || true)"
-			[[ -n "$n" ]] || die "INTEGRITY FAILURE: segment $k missing."
-			[[ "$o" == "$n" ]] || die "INTEGRITY FAILURE: segment $k regressed."
-		done
-	fi
-	rm -f "$tmp"
-	say "Integrity verified: ${FFX_VERSION}"
+    local canon="$FFX_MANIFEST_DIR/${FFX_VERSION}.json"
+    [[ -f "$canon" ]] || { verbose_log "No manifest found; skipping verify."; return 0; }
+    local tmp; tmp="$(mktemp -p "$FFX_RUN_DIR" ffx_verify.XXXXXX)"
+    generate_manifest "${BASH_SOURCE[0]}" > "$tmp"
+    local old new
+    old="$(awk -F'"' '/overall_sha256/{print $4}' "$canon")"
+    new="$(awk -F'"' '/overall_sha256/{print $4}' "$tmp")"
+    [[ "$old" == "$new" ]] || die "INTEGRITY FAILURE: overall hash regressed. Run 'ffx manifest save' to re-baseline."
+    if command_exists jq; then
+        local keys; keys="$(jq -r '.segments | keys[]' "$canon" 2>/dev/null || true)"
+        for k in $keys; do
+            local o n
+            o="$(jq -r ".segments[\"$k\"]" "$canon")"
+            n="$(jq -r ".segments[\"$k\"]" "$tmp" 2>/dev/null || true)"
+            [[ -n "$n" ]] || die "INTEGRITY FAILURE: segment $k missing."
+            [[ "$o" == "$n" ]] || die "INTEGRITY FAILURE: segment $k regressed."
+        done
+    fi
+    rm -f "$tmp"
+    say "Integrity verified: ${FFX_VERSION}"
 }
 
 cmd_manifest() {
-	local action="${1:-show}"
-	mkdir -p "$FFX_MANIFEST_DIR"
-	case "$action" in
-		save)   save_manifest ;;
-		verify) verify_superset ;;
-		show)   generate_manifest "${BASH_SOURCE[0]}" ;;
-		*)      die "manifest: unknown action '$action'. Use: save | verify | show" ;;
-	esac
+    local action="${1:-show}"
+    mkdir -p "$FFX_MANIFEST_DIR"
+    case "$action" in
+        save)   save_manifest ;;
+        verify) verify_superset ;;
+        show)   generate_manifest "${BASH_SOURCE[0]}" ;;
+        *)      die "manifest: unknown action '$action'. Use: save | verify | show" ;;
+    esac
 }
 
 # =============================================================================
-# CMD: CLEANMETA  (metadata strip with lossless-copy primary + reencode fallback)
-# Unlike cmd_clean (copy-only), cleanmeta falls back to full reencode if
-# stream-copy fails (e.g. broken container, non-keyframe at cut point).
-# =============================================================================
-cmd_cleanmeta() {
-	advanced_prompt
-	local input="${1:-}" output="${2:-}"
-	[[ -z "$input" ]] && die "cleanmeta requires an input file."
-	[[ -f "$input" ]] || die "File not found: $input"
-	local bare; bare="$(basename "${input%.*}")"
-	[[ -z "$output" ]] && output="$(get_default_filename "$bare" "cleaned" "$ADV_CONTAINER")"
-
-	local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-
-	# Primary: lossless stream-copy + metadata strip
-	if run_ffmpeg -y -i "$input" -map_metadata -1 -c:v copy "${aopts[@]}" \
-			-movflags +faststart "$output"; then
-		say "Metadata cleaned (stream-copy): $output"
-		return
-	fi
-
-	# Fallback: full reencode
-	verbose_log "Stream-copy metadata strip failed; reencoding."
-	local -a enc
-	[[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
-		&& enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "medium") \
-		|| enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "medium")
-	run_ffmpeg -y -i "$input" -map_metadata -1 \
-		"${enc[@]}" "${aopts[@]}" -movflags +faststart "$output" \
-		|| die "cleanmeta: both stream-copy and reencode failed."
-	say "Metadata cleaned (reencoded): $output"
-}
-
-# ADVANCED INTERACTIVE PROMPT  (validated; persisted to XDG config)
-# Ref: ffmpeg_deep-research.pdf §H.264 Encoding Practices for valid param ranges.
+# ADVANCED INTERACTIVE PROMPT
 # =============================================================================
 advanced_prompt() {
     [[ "$ADVANCED_MODE" != true ]] && return 0
@@ -542,6 +534,17 @@ advanced_prompt() {
     read -r -p "Pixel format [yuv420p/yuv422p] (${ADV_PIX_FMT}): " inp
     [[ -n "$inp" ]] && ADV_PIX_FMT="$inp"
 
+    read -r -p "Encoder preset [ultrafast/fast/medium/slow] (${ADV_PRESET}): " inp
+    [[ -n "$inp" ]] && ADV_PRESET="$inp"
+
+    read -r -p "Layout mode [fixed/random] (${LAYOUT_MODE}): " inp
+    if [[ -n "$inp" ]]; then
+        case "${inp,,}" in
+            fixed|random) LAYOUT_MODE="${inp,,}" ;;
+            *) warn "Invalid layout mode; keeping ${LAYOUT_MODE}." ;;
+        esac
+    fi
+
     read -r -p "Quality mode [crf/qp0] (${ADV_QUALITY_MODE}): " inp
     if [[ -n "$inp" ]]; then
         case "${inp,,}" in
@@ -552,7 +555,6 @@ advanced_prompt() {
     fi
 
     if [[ "$ADV_QUALITY_MODE" == "crf" ]]; then
-        # Research doc: CRF 18-28 is the recommended range; 18 = near-lossless.
         read -r -p "CRF 0-51 — 18=near-lossless, 23=default (${ADV_CRF}): " inp
         if [[ -n "$inp" ]]; then
             [[ "$inp" =~ ^[0-9]+$ ]] && (( inp >= 0 && inp <= 51 )) \
@@ -566,54 +568,29 @@ advanced_prompt() {
         read -r -p "Multi-pass? (y/N): " inp
         [[ "${inp,,}" =~ ^y ]] && ADV_MULTIPASS="true" || ADV_MULTIPASS="false"
     else
-        # qp0 = lossless; CRF/bitrate/multipass are irrelevant.
         ADV_CRF="18"; ADV_BR="10M"; ADV_MULTIPASS="false"
         say "Lossless mode (qp=0): CRF/bitrate/multipass ignored."
     fi
 
     save_defaults
-    printf '%b[config]%b container=%s res=%s fps=%s codec=%s pix=%s quality=%s crf=%s\n' \
+    printf '%b[config]%b container=%s res=%s fps=%s codec=%s pix=%s preset=%s layout=%s quality=%s crf=%s\n' \
         "${CYAN}" "${RESET}" \
         "$ADV_CONTAINER" "$ADV_RES" "$ADV_FPS" \
-        "$ADV_CODEC" "$ADV_PIX_FMT" "$ADV_QUALITY_MODE" "$ADV_CRF"
+        "$ADV_CODEC" "$ADV_PIX_FMT" "$ADV_PRESET" \
+        "$LAYOUT_MODE" "$ADV_QUALITY_MODE" "$ADV_CRF"
 }
 
 # =============================================================================
-# COMPOSITE ENGINE  v3
-#
-# Design rationale (ref: ffmpeg_encoding_and_editing.md §Filter Chains,
-#                       ffmpeg_deep-research.pdf §Constructing Efficient Filter Chains):
-#   * All scaling inline in filter_complex — zero pre-processing passes, O(1) forks.
-#   * Scale order: scale -> pad -> setsar=1 (SAR normalisation prevents hstack
-#     dimension mismatch errors on videos with non-1:1 SAR).
-#   * lanczos flag for downscaling quality (research doc recommendation).
-#   * -pix_fmt yuv420p enforced — required for H.264 broad compatibility.
-#   * -movflags +faststart on all MP4 outputs (moov atom at start for streaming).
-#
-# Canonical composite goals (per user spec):
-#   * Canvas always 1920x1080 (16:9)
-#   * <=4 inputs per frame; >4 -> auto-split _part1.mp4, _part2.mp4, ...
-#   * Non-16:9 inputs -> letterbox/pillarbox (scale-fit + black pad), setsar=1
-#   * Audio -> first input only (-map 0:a?, optional so silent inputs don't fail)
-#   * Layouts:
-#       1 = fullscreen   (1920x1080)
-#       2 = hstack       (960x1080 each)
-#       3 = 1 top + 2 bottom (1920x540 top; 960x540 bottom x2)
-#       4 = 2x2 grid     (960x540 each)
+# MODULE 1A: FIXED COMPOSITE ENGINE  (v5 deterministic layout)
+# Canvas: 1920x1080. Layouts: 1=fullscreen, 2=lossless hstack,
+# 3=1top+2bot, 4=2x2 grid. >4 inputs auto-batched by caller.
 # =============================================================================
-
-# _cell_vf CW CH
-# Emits the inline scale+pad+setsar filter string for one composite cell.
-# Uses lanczos for downscaling quality (ref: Filter-chains.md §High-Quality Scaling).
 _cell_vf() {
     local cw="$1" ch="$2"
     printf 'scale=%d:%d:flags=lanczos:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1' \
         "$cw" "$ch" "$cw" "$ch"
 }
 
-# build_composite OUTPUT FILE [FILE ...]
-# Assembles 1-4 inputs onto a CANVAS_WxCANVAS_H (1920x1080) canvas.
-# Single FFmpeg invocation; all scaling inline in filter_complex.
 build_composite() {
     local output="$1"; shift
     local -a files=("$@")
@@ -623,8 +600,7 @@ build_composite() {
     (( n <= 4  )) || die "build_composite: max 4 inputs per frame (got ${n})."
     verbose_log "build_composite: ${n} input(s) -> $(basename "$output")"
 
-    # Precomputed cell dimensions for each canonical layout
-    local cw1=$CANVAS_W           ch1=$CANVAS_H
+    local cw1=$CANVAS_W          ch1=$CANVAS_H
     local cw2=$(( CANVAS_W / 2 )) ch2=$CANVAS_H
     local cw3t=$CANVAS_W          ch3t=$(( CANVAS_H / 2 ))
     local cw3b=$(( CANVAS_W / 2 )) ch3b=$(( CANVAS_H / 2 ))
@@ -635,24 +611,31 @@ build_composite() {
 
     local fc
     case "$n" in
-    1) fc="[0:v]$(_cell_vf "$cw1" "$ch1")[v]" ;;
-    2) fc="[0:v]$(_cell_vf "$cw2" "$ch2")[s0];[1:v]$(_cell_vf "$cw2" "$ch2")[s1];[s0][s1]hstack=inputs=2[v]" ;;
+    1)
+        local cs; cs="$(composite_pair_lossless "${files[0]}" "${files[0]}")" \
+            && { mv "$cs" "$output"; verbose_log "build_composite: single via lossless passthrough."; return; }
+        fc="[0:v]$(_cell_vf "$cw1" "$ch1")[v]"
+        ;;
+    2)
+        composite_pair_lossless "${files[0]}" "${files[1]}" > /dev/null
+        local cp_out; cp_out="$(composite_pair_lossless "${files[0]}" "${files[1]}")"
+        mv "$cp_out" "$output"
+        verbose_log "build_composite: 2-input via composite_pair_lossless."
+        return
+        ;;
     3) fc="[0:v]$(_cell_vf "$cw3t" "$ch3t")[s0];[1:v]$(_cell_vf "$cw3b" "$ch3b")[s1];[2:v]$(_cell_vf "$cw3b" "$ch3b")[s2];[s1][s2]hstack=inputs=2[bot];[s0][bot]vstack=inputs=2[v]" ;;
     4) fc="[0:v]$(_cell_vf "$cw4" "$ch4")[s0];[1:v]$(_cell_vf "$cw4" "$ch4")[s1];[2:v]$(_cell_vf "$cw4" "$ch4")[s2];[3:v]$(_cell_vf "$cw4" "$ch4")[s3];[s0][s1]hstack=inputs=2[top];[s2][s3]hstack=inputs=2[bot];[top][bot]vstack=inputs=2[v]" ;;
     esac
 
-    # Quality-mode-aware encoding; never pass empty -crf (ref: research doc pitfalls)
     local -a enc
     if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
-        enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "medium")
+        enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET")
     else
-        enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "medium")
+        enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
     fi
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
 
-    # Audio from first input directly — NOT filtered, so -c:a copy is valid here.
-    # -map 0:a? is optional (? suffix) so silent inputs don't fail.
     run_ffmpeg -y \
         "${ff_in[@]}" \
         -filter_complex "$fc" \
@@ -669,21 +652,10 @@ build_composite() {
     verbose_log "build_composite: complete -> $(basename "$output")"
 }
 
-# composite_pair_lossless FILE1 FILE2
-# Used by merge -C for non-widescreen pairs.
-# Architecture mirrors the proven original ffx implementation exactly, with two
-# safety additions:
-#   1. read calls protected with || true (CRITICAL: prevents set -e crash when
-#      ffprobe returns empty output for any file — this was the primary crash site).
-#   2. local w=0 h=0 declarations ensure arithmetic never operates on empty strings.
-# Audio: after amerge filter the stream cannot be stream-copied; FFmpeg auto-
-# selects AAC for MP4, which is correct.
 composite_pair_lossless() {
     local file1="$1" file2="$2"
     local out; out="$(mktemp_ffx .mp4)"
 
-    # SAFE READ: declare with defaults, guard read with || true.
-    # Prevents set -e exit when ffprobe returns empty (e.g., no video stream).
     local w1=0 h1=0 w2=0 h2=0
     read -r w1 h1 < <(ffprobe -v error -select_streams v:0 \
         -show_entries stream=width,height \
@@ -692,7 +664,6 @@ composite_pair_lossless() {
         -show_entries stream=width,height \
         -of default=nw=1:nk=1 "$file2" 2>/dev/null | xargs) || true
 
-    # Ensure numeric values; fall back to 1080 if probe failed.
     h1="${h1:-0}"; h2="${h2:-0}"
     [[ "$h1" =~ ^[0-9]+$ ]] || h1=0
     [[ "$h2" =~ ^[0-9]+$ ]] || h2=0
@@ -700,7 +671,6 @@ composite_pair_lossless() {
     (( mh > 0 )) || mh=$CANVAS_H
     verbose_log "composite_pair_lossless: canvas height=${mh}"
 
-    # Inline scale to same height + setsar=1 prevents hstack SAR mismatch.
     local fc
     fc="[0:v]scale=-2:${mh}:flags=lanczos,setsar=1[v0];"
     fc+="[1:v]scale=-2:${mh}:flags=lanczos,setsar=1[v1];"
@@ -721,60 +691,525 @@ composite_pair_lossless() {
     fi
 
     if (( audio_streams > 0 )); then
-        # amerge produces a filtered audio stream; cannot be stream-copied.
-        # FFmpeg will auto-encode to AAC for MP4 output (correct behaviour).
         fc+=";${audio_fc}amerge=inputs=${audio_streams}[aout]"
         args+=("-filter_complex" "$fc" "-map" "[vout]" "-map" "[aout]" "-ac" "2")
     else
         args+=("-filter_complex" "$fc" "-map" "[vout]" "-an")
     fi
 
-    args+=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "medium" "$out")
+    args+=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET" "$out")
     run_ffmpeg "${args[@]}" || die "composite_pair_lossless: ffmpeg failed."
     printf '%s' "$out"
 }
 
 # =============================================================================
-# CMD: COMPOSITE  (standalone; auto-batches >4 inputs into numbered part files)
+# MODULE 1B: RANDOM COMPOSITE ENGINE  (AR fitness layout selection)
+# =============================================================================
+cell_vf() {
+    local cw="$1" ch="$2" fps="${SPECIFIC_FPS:-$ADV_FPS}"
+    printf 'fps=%s,setpts=PTS-STARTPTS,scale=%d:%d:flags=lanczos:force_original_aspect_ratio=decrease,pad=%d:%d:-1:-1:color=black,setsar=1' \
+        "$fps" "$cw" "$ch" "$cw" "$ch"
+}
+
+ar_score() {
+    awk -v vw="$1" -v vh="$2" -v cw="$3" -v ch="$4" '
+        BEGIN {
+            if (vh<=0||ch<=0) { print 0; exit }
+            r = (vw/vh) / (cw/ch)
+            if (r<1) r=1/r
+            printf "%d", int(100/r)
+        }'
+}
+
+readonly _AWK_SORT_BY_AR='
+    { idx[NR]=$1; ar[NR]=$2/$3; n=NR }
+    END {
+        for (i=2;i<=n;i++) {
+            ki=idx[i]; ka=ar[i]; j=i-1
+            while(j>=1&&ar[j]>ka){idx[j+1]=idx[j];ar[j+1]=ar[j];j--}
+            idx[j+1]=ki; ar[j+1]=ka
+        }
+        for(k=1;k<=n;k++) printf "%d ",idx[k]
+    }'
+
+declare -a L_IDS=() L_SLOTS=() L_FC=()
+
+L_IDS+=("fullscreen");   L_SLOTS+=("1920:1080");
+L_FC+=('[0:v]CELL0[v]')
+
+L_IDS+=("hstack");       L_SLOTS+=("960:1080 960:1080");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[s0][s1]hstack=inputs=2[v]')
+L_IDS+=("vstack");       L_SLOTS+=("1920:540 1920:540");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[s0][s1]vstack=inputs=2[v]')
+
+L_IDS+=("top1_bot2");    L_SLOTS+=("1920:540 960:540 960:540");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s1][s2]hstack=inputs=2[bot];[s0][bot]vstack=inputs=2[v]')
+L_IDS+=("top2_bot1");    L_SLOTS+=("960:540 960:540 1920:540");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s0][s1]hstack=inputs=2[top];[top][s2]vstack=inputs=2[v]')
+L_IDS+=("left1_right2"); L_SLOTS+=("960:1080 960:540 960:540");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s1][s2]vstack=inputs=2[right];[s0][right]hstack=inputs=2[v]')
+L_IDS+=("left2_right1"); L_SLOTS+=("960:540 960:540 960:1080");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[s0][s1]vstack=inputs=2[left];[left][s2]hstack=inputs=2[v]')
+
+L_IDS+=("grid2x2");      L_SLOTS+=("960:540 960:540 960:540 960:540");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[3:v]CELL3[s3];[s0][s1]hstack=inputs=2[top];[s2][s3]hstack=inputs=2[bot];[top][bot]vstack=inputs=2[v]')
+L_IDS+=("row4");         L_SLOTS+=("480:1080 480:1080 480:1080 480:1080");
+L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[3:v]CELL3[s3];[s0][s1][s2][s3]hstack=inputs=4[v]')
+
+_LAST_SCORE=0
+_eval_layout() {
+    local cidx="$1"
+    local -n _ev_files="$2"
+    local -n _ev_whs="$3"
+    local -a slots=( ${L_SLOTS[$cidx]} )
+
+    local f_awk_in="" fi
+    for fi in "${!_ev_whs[@]}"; do f_awk_in+="${fi} ${_ev_whs[$fi]}"$'\n'; done
+    local f_order; f_order=$(printf '%s' "$f_awk_in" | awk "$_AWK_SORT_BY_AR") || true
+
+    local s_awk_in="" si sw sh
+    for si in "${!slots[@]}"; do
+        IFS=':' read -r sw sh <<< "${slots[$si]}"
+        s_awk_in+="${si} ${sw} ${sh}"$'\n'
+    done
+    local s_order; s_order=$(printf '%s' "$s_awk_in" | awk "$_AWK_SORT_BY_AR") || true
+
+    local -a fi_arr=( $f_order )
+    local -a si_arr=( $s_order )
+    local -a assignment=()
+    local total_score=0 fw fh k
+    for k in "${!fi_arr[@]}"; do
+        fi="${fi_arr[$k]}"
+        si="${si_arr[$k]}"
+        assignment[$si]=$fi
+        read -r fw fh <<< "${_ev_whs[$fi]}"
+        IFS=':' read -r sw sh <<< "${slots[$si]}"
+        local sc; sc=$(ar_score "$fw" "$fh" "$sw" "$sh")
+        (( total_score += sc )) || true
+    done
+
+    _LAST_SCORE=$total_score
+    local order_file="$FFX_RUN_DIR/order_${cidx}"; : > "$order_file"
+    local n="${#_ev_files[@]}"
+    for si in $(seq 0 $(( n-1 ))); do
+        printf '%s\n' "${_ev_files[${assignment[$si]}]}" >> "$order_file"
+    done
+}
+
+_BEST_LAYOUT_IDX=0
+declare -a _BEST_FILE_ORDER=()
+
+select_layout() {
+    local -a _sl_files=("$@")
+    local n="${#_sl_files[@]}"
+    local -a _sl_whs=()
+    for f in "${_sl_files[@]}"; do _sl_whs+=("$(probe_wh "$f")"); done
+
+    local -a cands=() i
+    for i in "${!L_IDS[@]}"; do
+        local slots=( ${L_SLOTS[$i]} )
+        (( ${#slots[@]} == n )) && cands+=("$i")
+    done
+
+    local best_score=-1 cidx
+    local -a top_cands=()
+    for cidx in "${cands[@]}"; do
+        _eval_layout "$cidx" _sl_files _sl_whs
+        if (( _LAST_SCORE > best_score )); then
+            best_score=$_LAST_SCORE; top_cands=("$cidx")
+        elif (( _LAST_SCORE == best_score )); then
+            top_cands+=("$cidx")
+        fi
+    done
+
+    local pick=$(( RANDOM % ${#top_cands[@]} ))
+    _BEST_LAYOUT_IDX="${top_cands[$pick]}"
+
+    local last_cand="${cands[-1]}"
+    [[ "$_BEST_LAYOUT_IDX" != "$last_cand" ]] && _eval_layout "$_BEST_LAYOUT_IDX" _sl_files _sl_whs
+
+    _BEST_FILE_ORDER=()
+    while IFS= read -r line; do _BEST_FILE_ORDER+=("$line"); done < "$FFX_RUN_DIR/order_${_BEST_LAYOUT_IDX}"
+}
+
+build_fc() {
+    local cidx="$1"; shift
+    local -a files=("$@")
+    local fc="${L_FC[$cidx]}"
+    local -a slots=( ${L_SLOTS[$cidx]} )
+    local i sw sh cvf
+    for i in "${!files[@]}"; do
+        IFS=':' read -r sw sh <<< "${slots[$i]}"
+        cvf="$(cell_vf "$sw" "$sh")"
+        fc="${fc//CELL${i}/$cvf}"
+    done
+    printf '%s' "$fc"
+}
+
+composite_batch() {
+    local batch_num="$1"; shift
+    local -a files=("$@")
+    local n="${#files[@]}"
+    local part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$batch_num").mp4"
+
+    select_layout "${files[@]}"
+    local cidx="$_BEST_LAYOUT_IDX"
+    local -a ordered=("${_BEST_FILE_ORDER[@]}")
+
+    verbose_log "Batch ${batch_num}: layout=${L_IDS[$cidx]} inputs=${n}"
+
+    local dur_mode=$(( RANDOM % 2 ))
+    local -a ff_inputs=() dur_flags=()
+
+    if (( dur_mode == 0 )); then
+        verbose_log "duration: trim-to-shortest"
+        for f in "${ordered[@]}"; do ff_inputs+=(-i "$f"); done
+        dur_flags=(-shortest)
+    else
+        verbose_log "duration: loop-to-longest"
+        local max_dur="0" d
+        for f in "${ordered[@]}"; do
+            d="$(probe_duration "$f")"
+            max_dur="$(awk -v a="$max_dur" -v b="$d" 'BEGIN{printf "%.6f",(a+0>b+0)?a:b}')"
+        done
+        for f in "${ordered[@]}"; do ff_inputs+=(-stream_loop -1 -i "$f"); done
+        dur_flags=(-t "$max_dur")
+    fi
+
+    local fc; fc="$(build_fc "$cidx" "${ordered[@]}")"
+
+    if [[ "$REMOVE_AUDIO" == false ]]; then
+        local a_in=""
+        for (( i=0; i<n; i++ )); do a_in+="[${i}:a]"; done
+        fc+=";${a_in}amix=inputs=${n}:duration=longest[aout]"
+    fi
+
+    local -a enc
+    if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
+        enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET")
+    else
+        enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
+    fi
+
+    local a_map="0:a?"
+    local -a audio_args=()
+    if [[ "$REMOVE_AUDIO" == false ]]; then
+        a_map="[aout]"
+        audio_args=("-map" "[aout]" "-c:a" "aac" "-b:a" "192k" "-ac" "2")
+    fi
+
+    local fps="${SPECIFIC_FPS:-$ADV_FPS}"
+    run_ffmpeg -y \
+        "${ff_inputs[@]}" \
+        -filter_complex "$fc" \
+        -map "[v]" \
+        "${audio_args[@]}" \
+        "${enc[@]}" \
+        -pix_fmt "$ADV_PIX_FMT" \
+        -r "$fps" \
+        -max_muxing_queue_size 1024 \
+        -movflags +faststart \
+        "${dur_flags[@]}" \
+        "$part_file" || die "composite_batch: ffmpeg failed."
+
+    printf '%s' "$part_file"
+}
+
+# =============================================================================
+# CMD: COMPOSITE
 # =============================================================================
 cmd_composite() {
     advanced_prompt
     local output_base="composite"
+    local output="${GLOBAL_OUTPUT_FILE:-}"
     local -a input_files=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -o|--output) output_base="${2%.*}"; shift 2 ;;
-            *) input_files+=("$1"); shift ;;
+            -o|--output)       output_base="${2%.*}"; output="$2"; shift 2 ;;
+            -B|--batch-size)   BATCH_SIZE="$2"; shift 2 ;;
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)      VERBOSE_MODE=true; shift ;;
+            -*)                warn "composite: ignoring unknown option '$1'"; shift ;;
+            *)                 input_files+=("$1"); shift ;;
         esac
     done
-    (( ${#input_files[@]} == 0 )) && mapfile -t input_files < <(fzf_pick)
 
-    local f
+    (( ${#input_files[@]} == 0 )) && mapfile -t input_files < <(fzf_pick)
     for f in "${input_files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
 
     local -a corrected=()
     for f in "${input_files[@]}"; do corrected+=("$(ensure_dts_correct "$f")"); done
 
-    local total="${#corrected[@]}" start=0 batch_num=1
-    while (( start < total )); do
-        local end=$(( start + 4 ))
-        (( end > total )) && end=$total
-        local -a batch=("${corrected[@]:$start:$(( end - start ))}")
+    if [[ "$LAYOUT_MODE" == "random" ]]; then
+        shuffle_files corrected
+    fi
 
-        local out_file
-        if (( total <= 4 )); then
-            out_file="$(get_default_filename "$output_base" "composite" "$ADV_CONTAINER")"
+    local total="${#corrected[@]}" idx=0 bnum=1
+    local -a PART_FILES=()
+
+    while (( idx < total )); do
+        local remaining=$(( total - idx ))
+        local max_n=$(( remaining < 4 ? remaining : 4 ))
+        local n
+
+        if [[ "$LAYOUT_MODE" == "random" ]]; then
+            if (( BATCH_SIZE > 0 && BATCH_SIZE <= 4 )); then
+                n=$(( remaining < BATCH_SIZE ? remaining : BATCH_SIZE ))
+            else
+                n=$(( (RANDOM % max_n) + 1 ))
+            fi
         else
-            out_file="$(get_default_filename "${output_base}_part${batch_num}" "composite" "$ADV_CONTAINER")"
+            if (( BATCH_SIZE > 0 && BATCH_SIZE <= 4 )); then
+                n=$(( remaining < BATCH_SIZE ? remaining : BATCH_SIZE ))
+            else
+                n=$(( max_n ))
+            fi
         fi
 
-        build_composite "$out_file" "${batch[@]}"
-        auto_clean "$out_file"
-        say "Composite ${batch_num} -> $out_file"
-        (( start     += 4 )) || true
-        (( batch_num++    )) || true
+        local -a batch=()
+        for (( j=0; j<n; j++, idx++ )); do batch+=("${corrected[$idx]}"); done
+
+        if [[ "$LAYOUT_MODE" == "random" ]]; then
+            PART_FILES+=("$(composite_batch "$bnum" "${batch[@]}")")
+        else
+            local part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$bnum").mp4"
+            build_composite "$part_file" "${batch[@]}"
+            PART_FILES+=("$part_file")
+        fi
+        (( bnum++ )) || true
     done
+
+    [[ -z "$output" ]] && output="$(get_default_filename "$output_base" "composite" "$ADV_CONTAINER")"
+
+    if (( ${#PART_FILES[@]} == 1 )); then
+        mv "${PART_FILES[0]}" "$output"
+    else
+        local cl="$FFX_RUN_DIR/concat.txt"
+        : > "$cl"
+        for pf in "${PART_FILES[@]}"; do printf "file '%s'\n" "$pf" >> "$cl"; done
+        run_ffmpeg -y -f concat -safe 0 -i "$cl" -c copy -movflags +faststart "$output" \
+            || die "composite concat failed."
+    fi
+
+    auto_clean "$output"
+    say "Matrix Composited: $output"
+}
+
+# =============================================================================
+# CMD: MERGE
+# =============================================================================
+cmd_merge() {
+    advanced_prompt
+    local -a files=()
+    local output="${GLOBAL_OUTPUT_FILE:-}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -o|--output)       output="$2"; shift 2 ;;
+            -C|--composite)    COMPOSITE_MODE=true; shift ;;
+            -s|--fps|-f)       SPECIFIC_FPS="$2"; shift 2 ;;
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)      VERBOSE_MODE=true; shift ;;
+            -*)                warn "merge: ignoring unknown option '$1'"; shift ;;
+            *)                 files+=("$1"); shift ;;
+        esac
+    done
+
+    if [[ "$COMPOSITE_MODE" == true ]]; then
+        cmd_composite "${files[@]}" ${output:+-o "$output"}
+        return 0
+    fi
+
+    if (( ${#files[@]} < 1 )); then
+        if [[ "$BULK_MODE" == true ]]; then
+            mapfile -t files < <(apply_bulk_glob "${OUTPUT_DIR:-$(pwd)}")
+            (( ${#files[@]} >= 1 )) || die "merge --bulk: no video files found in '${OUTPUT_DIR:-$(pwd)}'."
+        else
+            mapfile -t files < <(fzf_pick)
+        fi
+    fi
+    (( ${#files[@]} >= 1 )) || die "'merge' requires at least 1 file."
+    [[ -z "$output" ]] && output="$(get_default_filename "output" "merged" "$ADV_CONTAINER")"
+
+    local f
+    for f in "${files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
+
+    # ── PROBE PHASE ──────────────────────────────────────────────────────────
+    local -a v_codec=() v_res=() v_fps=() v_pix=() a_codec=() has_audio_arr=()
+    local -a dts_ok=() moov_ok=()
+
+    for f in "${files[@]}"; do
+        if is_image "$f"; then
+            v_codec+=("image"); v_res+=("0x0"); v_fps+=("0/1"); v_pix+=("unknown")
+            a_codec+=(""); has_audio_arr+=(false)
+            dts_ok+=(true); moov_ok+=(true)
+            continue
+        fi
+        local vc="" vres="" vfps="" vpix=""
+        read -r vc vres vfps vpix < <(
+            ffprobe -v error -select_streams v:0 \
+                -show_entries stream=codec_name,width,height,avg_frame_rate,pix_fmt \
+                -of default=nw=1:nk=1 "$f" 2>/dev/null | xargs
+        ) || true
+        v_codec+=("${vc:-unknown}")
+        v_res+=("${vres:-0x0}")
+        v_fps+=("${vfps:-0/1}")
+        v_pix+=("${vpix:-unknown}")
+
+        local ac=""
+        ac="$(ffprobe -v error -select_streams a:0 \
+            -show_entries stream=codec_name -of default=nw=1:nk=1 "$f" 2>/dev/null || true)"
+        a_codec+=("${ac:-}")
+        has_audio "$f" && has_audio_arr+=(true) || has_audio_arr+=(false)
+
+        check_dts_for_file "$f" && dts_ok+=(true) || dts_ok+=(false)
+        check_moov_atom "$f"    && moov_ok+=(true) || moov_ok+=(false)
+    done
+
+    # ── UNIFORMITY CHECK ─────────────────────────────────────────────────────
+    local target_vc="${v_codec[0]}"
+    local target_res="${v_res[0]}"
+    local target_fps="${v_fps[0]}"
+    local target_pix="${v_pix[0]}"
+
+    local max_w=0 max_h=0 i
+    for (( i=0; i<${#files[@]}; i++ )); do
+        local ww hh
+        read -r ww hh <<< "${v_res[$i]//x/ }" 2>/dev/null || true
+        [[ "$ww" =~ ^[0-9]+$ ]] || ww=0
+        [[ "$hh" =~ ^[0-9]+$ ]] || hh=0
+        (( ww > max_w )) && max_w=$ww
+        (( hh > max_h )) && max_h=$hh
+    done
+    (( max_w > 0 )) || max_w=$CANVAS_W
+    (( max_h > 0 )) || max_h=$CANVAS_H
+    (( max_w % 2 != 0 )) && (( max_w++ )) || true
+    (( max_h % 2 != 0 )) && (( max_h++ )) || true
+
+    local uniform=true
+    for (( i=0; i<${#files[@]}; i++ )); do
+        [[ "${v_codec[$i]}" != "image" ]] || { uniform=false; break; }
+        [[ "${has_audio_arr[$i]}" == "true" ]] || { uniform=false; break; }
+        [[ "${v_codec[$i]}" != "$target_vc" ]] && { uniform=false; break; }
+        [[ "${v_res[$i]}"   != "$target_res" ]] && { uniform=false; break; }
+        [[ "${v_fps[$i]}"   != "$target_fps" ]] && { uniform=false; break; }
+        [[ "${v_pix[$i]}"   != "$target_pix" ]] && { uniform=false; break; }
+        [[ "${dts_ok[$i]}"  != "true" ]]         && { uniform=false; break; }
+        [[ "${moov_ok[$i]}" != "true" ]]         && { uniform=false; break; }
+    done
+
+    # ── FAST PATH ─────────────────────────────────────────────────────────────
+    if [[ "$uniform" == true && "$REMOVE_AUDIO" != true ]]; then
+        verbose_log "merge: fast path — all ${#files[@]} inputs conformant; skipping re-encode."
+        local concat_list; concat_list="$(mktemp_ffx .txt)"
+        for f in "${files[@]}"; do
+            printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
+        done
+        run_ffmpeg -y -avoid_negative_ts make_zero \
+            -f concat -safe 0 -i "$concat_list" -c copy "$output" \
+            || die "merge: fast-path concat failed -> $output"
+        auto_clean "$output"
+        say "Merged [fast]: $output"
+        return
+    fi
+
+    verbose_log "merge: normalise path — target ${max_w}x${max_h} @ ${ADV_FPS}fps (uniform=${uniform})"
+
+    # ── NORMALISE PATH ────────────────────────────────────────────────────────
+    local -a preprocessed=()
+    local tf="${SPECIFIC_FPS:-$ADV_FPS}"
+
+    for (( i=0; i<${#files[@]}; i++ )); do
+        f="${files[$i]}"
+        local tmp; tmp="$(mktemp_ffx .mp4)"
+
+        if is_image "$f"; then
+            verbose_log "merge: normalizing image $f"
+            local scale_vf="scale=${max_w}:${max_h}:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1,fps=${tf},format=${ADV_PIX_FMT}"
+            run_ffmpeg -y -loop 1 -t "$IMAGE_DURATION" -i "$f" \
+                -f lavfi -i anullsrc \
+                -vf "$scale_vf" \
+                -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset ultrafast \
+                -c:a aac -shortest "$tmp" \
+                || die "merge: image normalization failed: $f"
+            preprocessed+=("$tmp")
+            continue
+        fi
+
+        local needs_encode=false
+        [[ "${dts_ok[$i]}"  != "true" ]]       && needs_encode=true
+        [[ "${moov_ok[$i]}" != "true" ]]       && needs_encode=true
+        [[ "${v_codec[$i]}" != "$ADV_CODEC" ]] && needs_encode=true
+        [[ "${v_pix[$i]}"   != "$ADV_PIX_FMT" ]] && needs_encode=true
+
+        local ww hh
+        read -r ww hh <<< "${v_res[$i]//x/ }" 2>/dev/null || true
+        [[ "$ww" =~ ^[0-9]+$ ]] || ww=0
+        [[ "$hh" =~ ^[0-9]+$ ]] || hh=0
+        (( ww != max_w || hh != max_h )) && needs_encode=true
+
+        [[ "${has_audio_arr[$i]}" == "false" ]] && needs_encode=true
+
+        if [[ "$REMOVE_AUDIO" != true ]]; then
+            [[ "${a_codec[$i]}" != "aac" ]] && needs_encode=true
+        fi
+
+        if [[ "$needs_encode" == false ]]; then
+            verbose_log "merge: input $(basename "$f") conformant — stream copy."
+            run_ffmpeg -y -i "$f" -c copy -movflags +faststart "$tmp" \
+                || die "merge: stream-copy failed for '$(basename "$f")'"
+        else
+            verbose_log "merge: input $(basename "$f") non-conformant — re-encoding."
+            local scale_vf="scale=${max_w}:${max_h}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1"
+            local deint; deint="$(get_deinterlace_filter "$f")"
+            local full_vf
+            [[ "$deint" != "null" ]] && full_vf="${deint},${scale_vf}" || full_vf="$scale_vf"
+
+            local -a enc
+            [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
+                && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "ultrafast") \
+                || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "ultrafast")
+
+            local -a acmd=()
+            if [[ "${has_audio_arr[$i]}" == "false" ]]; then
+                acmd=("-f" "lavfi" "-i" "anullsrc" "-c:a" "aac" "-shortest")
+            elif [[ "$REMOVE_AUDIO" == true ]]; then
+                acmd=("-an")
+            else
+                acmd=("-map" "0:a?" "-c:a" "aac" "-b:a" "128k" "-ac" "2")
+            fi
+
+            local -a movflags=("-movflags" "+faststart")
+            [[ "$(check_container_first "$f")" == "webm" ]] && movflags=()
+
+            run_ffmpeg -y -fflags +genpts -i "$f" \
+                -vf "$full_vf" -r "$tf" \
+                "${enc[@]}" \
+                -pix_fmt "$ADV_PIX_FMT" \
+                -map "0:v:0" \
+                "${acmd[@]}" \
+                "${movflags[@]}" \
+                "$tmp" \
+                || die "merge: re-encode failed for '$(basename "$f")'"
+        fi
+
+        check_moov_atom "$tmp" || moov_fallback "$f" "$tmp"
+        check_moov_atom "$tmp" || die "merge: moov atom missing: $(basename "$f")"
+        preprocessed+=("$tmp")
+    done
+
+    # ── CONCAT ───────────────────────────────────────────────────────────────
+    local concat_list; concat_list="$(mktemp_ffx .txt)"
+    for f in "${preprocessed[@]}"; do
+        printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
+    done
+    run_ffmpeg -y -avoid_negative_ts make_zero \
+        -f concat -safe 0 -i "$concat_list" -c copy "$output" \
+        || die "merge: concat failed -> $output"
+
+    auto_clean "$output"
+    say "Merged: $output"
 }
 
 # =============================================================================
@@ -782,7 +1217,14 @@ cmd_composite() {
 # =============================================================================
 cmd_probe() {
     advanced_prompt
-    local input="${1:-}"
+    local input=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -*) warn "probe: ignoring unknown option '$1'"; shift ;;
+            *)  input="$1"; shift ;;
+        esac
+    done
+
     if [[ -z "$input" ]]; then
         local -a _s; mapfile -t _s < <(fzf_pick); input="${_s[0]}"
     fi
@@ -807,7 +1249,7 @@ cmd_probe() {
     printf '%bDuration:%b   %ss\n'      "${CYAN}" "${RESET}" "$dur"
 
     if [[ "$res" =~ ^([0-9]+)x([0-9]+)$ ]]; then
-        local w="${BASH_REMATCH[1]}" h="${BASH_REMATCH[2]}"
+        local h="${BASH_REMATCH[2]}"
         if (( h > 1080 )); then
             local ans
             read -r -p "Resolution ($res) exceeds 1080p. Process now? (y/N): " ans
@@ -818,17 +1260,32 @@ cmd_probe() {
 
 # =============================================================================
 # CMD: PROCESS
-# Ref: ffmpeg_encoding_and_editing.md — filter order: deinterlace -> scale -> output.
-#      lanczos flag for quality downscaling (Filter-chains.md §1).
 # =============================================================================
 cmd_process() {
     advanced_prompt
-    local input="${1:-}" output="${2:-}"
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}" forced_fps=""
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -P|--max-1080)      MAX_1080=true; shift ;;
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -f|--fps)           forced_fps="$2"; shift 2 ;;
+            -*)                 warn "process: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
     [[ -z "$input" ]] && die "'process' requires an input file."
     [[ -s "$input" ]] || die "Input zero-length or missing: $input"
 
     local bare; bare="$(basename "${input%.*}")"
     [[ -z "$output" ]] && output="$(get_default_filename "$bare" "processed" "$ADV_CONTAINER")"
+    [[ -n "$forced_fps" ]] && ADV_FPS="$forced_fps"
     [[ -n "$SPECIFIC_FPS" ]] && ADV_FPS="$SPECIFIC_FPS"
 
     local fixed; fixed="$(ensure_dts_correct "$input")" || die "DTS fix failed: $input"
@@ -841,29 +1298,26 @@ cmd_process() {
     fi
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-    # Filter order per research doc: deinterlace FIRST, then scale LAST.
     local deint; deint="$(get_deinterlace_filter "$fixed")"
-    # lanczos for quality scaling (ref: Filter-chains.md §1, ffmpeg_encoding_and_editing.md §Filter Chains)
-    local scale_f="scale=${ADV_RES}:flags=lanczos:force_original_aspect_ratio=decrease"
-    local vf; [[ "$deint" != "null" ]] && vf="${deint},${scale_f}" || vf="$scale_f"
+    local scale_f="scale=${ADV_RES}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${ADV_RES}:-1:-1:color=black,setsar=1"
+    local full_vf; [[ "$deint" != "null" ]] && full_vf="${deint},${scale_f}" || full_vf="$scale_f"
 
     if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
-        run_ffmpeg -y -i "$fixed" -vf "$vf" -r "$ADV_FPS" \
-            -c:v "$ADV_CODEC" -qp 0 -preset medium \
+        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+            -c:v "$ADV_CODEC" -qp 0 -preset "$ADV_PRESET" \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
             || die "process (qp0) failed."
     elif [[ "$ADV_MULTIPASS" == "true" ]]; then
-        # Two-pass: never mix CRF and -b:v (ref: research doc pitfall)
-        run_ffmpeg -y -i "$fixed" -vf "$vf" -r "$ADV_FPS" \
-            -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 1 -an \
+        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+            -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset "$ADV_PRESET" -pass 1 -an \
             -f mp4 /dev/null || die "process: pass 1 failed."
-        run_ffmpeg -y -i "$fixed" -vf "$vf" -r "$ADV_FPS" \
-            -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset medium -pass 2 \
+        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+            -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset "$ADV_PRESET" -pass 2 \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
             || die "process: pass 2 failed."
     else
-        run_ffmpeg -y -i "$fixed" -vf "$vf" -r "$ADV_FPS" \
-            -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset medium \
+        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+            -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset "$ADV_PRESET" \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
             || die "process (CRF) failed."
     fi
@@ -875,285 +1329,25 @@ cmd_process() {
 }
 
 # =============================================================================
-# =============================================================================
-# =============================================================================
-# =============================================================================
-# CMD: MERGE
-#
-# Architecture (ref: ffmpeg_encoding_and_editing.md §Transcoding, §Concatenating Streams;
-#               ffmpeg_deep-research.pdf §Constructing Efficient Filter Chains):
-#
-# TWO-PATH DESIGN — O(1) forks for the common case, O(N) only when required:
-#
-#   PROBE PHASE (ffprobe only, zero re-encodes):
-#     Collect codec, resolution, fps, pix_fmt, audio codec for every input.
-#     Check DTS monotonicity and moov atom validity.
-#
-#   FAST PATH — all inputs already conformant:
-#     Identical codec/res/fps/pix_fmt/audio AND valid DTS AND valid moov.
-#     -> Skip all re-encoding. ONE concat ffmpeg call. Approaches O(1).
-#     This is the common case: same-camera footage, already H.264/AAC.
-#
-#   NORMALISE PATH — at least one input diverges:
-#     Only non-conformant inputs are re-encoded to the target profile.
-#     Conformant inputs stream-copy through the preprocess step (-c copy).
-#     -> Reduces unnecessary re-encodes from N to (number of outliers).
-#
-#   COMPOSITE MODE (-C): applied after normalisation; groups non-widescreen
-#     pairs via composite_pair_lossless before the final concat.
-#
-#   CONCAT: always uses -avoid_negative_ts make_zero + -c copy.
-#     Ref: ffmpeg_encoding_and_editing.md §Concatenating Streams.
-# =============================================================================
-cmd_merge() {
-	advanced_prompt
-	local -a files=()
-	local output=""
-
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		-o | --output)
-			output="$2"
-			shift 2
-			;;
-		*)
-			files+=("$1")
-			shift
-			;;
-		esac
-	done
-	((${#files[@]} < 1)) && mapfile -t files < <(fzf_pick)
-	((${#files[@]} >= 1)) || die "'merge' requires at least 1 file."
-	[[ -z "$output" ]] && output="$(get_default_filename "output" "merged" "$ADV_CONTAINER")"
-
-	local f
-
-	# ── Step 1: validate inputs exist (EAFP — die on first miss) ───────────
-	for f in "${files[@]}"; do
-		[[ -f "$f" ]] || die "File not found: $f"
-	done
-
-	# ── Step 2: PROBE PHASE — collect stream profiles via ffprobe only ──────
-	local -a v_codec=() v_res=() v_fps=() v_pix=() a_codec=() has_audio=()
-	local -a dts_ok=() moov_ok=()
-
-	for f in "${files[@]}"; do
-		local vc="" vres="" vfps="" vpix=""
-		read -r vc vres vfps vpix < <(
-			ffprobe -v error -select_streams v:0 \
-				-show_entries stream=codec_name,width,height,avg_frame_rate,pix_fmt \
-				-of default=nw=1:nk=1 "$f" 2>/dev/null | xargs
-		) || true
-		v_codec+=("${vc:-unknown}")
-		v_res+=("${vres:-0x0}")
-		v_fps+=("${vfps:-0/1}")
-		v_pix+=("${vpix:-unknown}")
-
-		local ac=""
-		ac="$(ffprobe -v error -select_streams a:0 \
-			-show_entries stream=codec_name -of default=nw=1:nk=1 "$f" 2>/dev/null || true)"
-		a_codec+=("${ac:-}")
-		[[ -n "$ac" ]] && has_audio+=(true) || has_audio+=(false)
-
-		check_dts_for_file "$f" && dts_ok+=(true) || dts_ok+=(false)
-		check_moov_atom "$f" && moov_ok+=(true) || moov_ok+=(false)
-	done
-
-	# ── Step 3: Uniformity decision ─────────────────────────────────────────
-	local target_vc="${v_codec[0]}"
-	local target_res="${v_res[0]}"
-	local target_fps="${v_fps[0]}"
-	local target_pix="${v_pix[0]}"
-
-	local max_w=0 max_h=0
-	local i
-	for ((i = 0; i < ${#files[@]}; i++)); do
-		local ww hh
-		read -r ww hh <<<"${v_res[$i]//x/ }" 2>/dev/null || true
-		[[ "$ww" =~ ^[0-9]+$ ]] || ww=0
-		[[ "$hh" =~ ^[0-9]+$ ]] || hh=0
-		((ww > max_w)) && max_w=$ww
-		((hh > max_h)) && max_h=$hh
-	done
-	((max_w > 0)) || max_w=$CANVAS_W
-	((max_h > 0)) || max_h=$CANVAS_H
-	((max_w % 2 != 0)) && ((max_w++)) || true
-	((max_h % 2 != 0)) && ((max_h++)) || true
-
-	local uniform=true
-	for ((i = 0; i < ${#files[@]}; i++)); do
-		[[ "${v_codec[$i]}" != "$target_vc" ]] && {
-			uniform=false
-			break
-		}
-		[[ "${v_res[$i]}" != "$target_res" ]] && {
-			uniform=false
-			break
-		}
-		[[ "${v_fps[$i]}" != "$target_fps" ]] && {
-			uniform=false
-			break
-		}
-		[[ "${v_pix[$i]}" != "$target_pix" ]] && {
-			uniform=false
-			break
-		}
-		[[ "${dts_ok[$i]}" != "true" ]] && {
-			uniform=false
-			break
-		}
-		[[ "${moov_ok[$i]}" != "true" ]] && {
-			uniform=false
-			break
-		}
-	done
-
-	# ── Step 4: FAST PATH ───────────────────────────────────────────────────
-	if [[ "$uniform" == true && "$COMPOSITE_MODE" != true ]]; then
-		verbose_log "merge: fast path — all ${#files[@]} inputs conformant; skipping re-encode."
-		local concat_list
-		concat_list="$(mktemp_ffx .txt)"
-		for f in "${files[@]}"; do
-			printf "file '%s'\n" "$(absolute_path "$f")" >>"$concat_list"
-		done
-		run_ffmpeg -y -avoid_negative_ts make_zero \
-			-f concat -safe 0 -i "$concat_list" -c copy "$output" ||
-			die "merge: fast-path concat failed -> $output"
-		auto_clean "$output"
-		say "Merged [fast]: $output"
-		return
-	fi
-
-	verbose_log "merge: normalise path — target ${max_w}x${max_h} @ ${ADV_FPS}fps (uniform=${uniform})"
-
-	# ── Step 5: NORMALISE PATH ──────────────────────────────────────────────
-	local -a preprocessed=()
-	for ((i = 0; i < ${#files[@]}; i++)); do
-		f="${files[$i]}"
-		local needs_encode=false
-
-		[[ "${dts_ok[$i]}" != "true" ]] && needs_encode=true
-		[[ "${moov_ok[$i]}" != "true" ]] && needs_encode=true
-		[[ "${v_codec[$i]}" != "$ADV_CODEC" ]] && needs_encode=true
-		[[ "${v_pix[$i]}" != "$ADV_PIX_FMT" ]] && needs_encode=true
-
-		local ww hh
-		read -r ww hh <<<"${v_res[$i]//x/ }" 2>/dev/null || true
-		[[ "$ww" =~ ^[0-9]+$ ]] || ww=0
-		[[ "$hh" =~ ^[0-9]+$ ]] || hh=0
-		((ww != max_w || hh != max_h)) && needs_encode=true
-
-		if [[ "$REMOVE_AUDIO" != true ]]; then
-			[[ "${a_codec[$i]}" != "aac" ]] && needs_encode=true
-		fi
-
-		local tmp
-		tmp="$(mktemp_ffx .mp4)"
-
-		if [[ "$needs_encode" == false ]]; then
-			verbose_log "merge: input $(basename "$f") conformant — stream copy."
-			run_ffmpeg -y -i "$f" -c copy -movflags +faststart "$tmp" ||
-				die "merge: stream-copy failed for '$(basename "$f")'"
-		else
-			verbose_log "merge: input $(basename "$f") non-conformant — re-encoding."
-			local scale_vf
-			scale_vf="scale=${max_w}:${max_h}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
-			local deint
-			deint="$(get_deinterlace_filter "$f")"
-			local full_vf
-			[[ "$deint" != "null" ]] && full_vf="${deint},${scale_vf}" || full_vf="$scale_vf"
-
-			local -a enc
-			[[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] &&
-				enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "ultrafast") ||
-				enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "ultrafast")
-
-			local -a acmd=()
-			if [[ "$REMOVE_AUDIO" == true ]]; then
-				acmd=("-an")
-			else
-				acmd=("-map" "0:a?" "-c:a" "aac" "-b:a" "128k" "-ac" "2")
-			fi
-
-			local movflags=("-movflags" "+faststart")
-			local cfmt
-			cfmt="$(check_container_first "$f")"
-			[[ "$cfmt" == "webm" ]] && movflags=()
-
-			run_ffmpeg -y -fflags +genpts -i "$f" \
-				-vf "$full_vf" -r "$ADV_FPS" \
-				"${enc[@]}" \
-				-pix_fmt "$ADV_PIX_FMT" \
-				-map "0:v:0" \
-				"${acmd[@]}" \
-				"${movflags[@]}" \
-				"$tmp" ||
-				die "merge: re-encode failed for '$(basename "$f")'"
-		fi
-
-		check_moov_atom "$tmp" || moov_fallback "$f" "$tmp"
-		check_moov_atom "$tmp" || die "merge: moov atom missing: $(basename "$f")"
-		preprocessed+=("$tmp")
-	done
-
-	# ── Step 6: optional composite grouping (COMPOSITE_MODE) ─────────────────
-	local -a segs=()
-	if [[ "$COMPOSITE_MODE" == true ]]; then
-		verbose_log "merge: composite mode — grouping by aspect ratio."
-		local -a widescreen_files=() other_files=()
-		for f in "${preprocessed[@]}"; do
-			local w=0 h=0
-			read -r w h < <(ffprobe -v error -select_streams v:0 \
-				-show_entries stream=width,height \
-				-of default=nw=1:nk=1 "$f" 2>/dev/null | xargs) || true
-			[[ "$w" =~ ^[0-9]+$ ]] || w=0
-			[[ "$h" =~ ^[0-9]+$ ]] || h=0
-			if ((h == 0)); then
-				other_files+=("$f")
-				continue
-			fi
-			local is_wide
-			is_wide="$(awk -v w="$w" -v h="$h" 'BEGIN{ print (w/h >= 1.77) ? "true" : "false" }')"
-			[[ "$is_wide" == "true" ]] && widescreen_files+=("$f") || other_files+=("$f")
-		done
-		((${#widescreen_files[@]} > 0)) && segs+=("${widescreen_files[@]}")
-		local j=0
-		while ((j < ${#other_files[@]})); do
-			if ((j + 1 < ${#other_files[@]})); then
-				verbose_log "merge: compositing pair $(basename "${other_files[$j]}") + $(basename "${other_files[$((j + 1))]}")"
-				local cs
-				cs="$(composite_pair_lossless "${other_files[$j]}" "${other_files[$((j + 1))]}")"
-				segs+=("$cs")
-				((j += 2))
-			else
-				segs+=("${other_files[$j]}")
-				((j++)) || true
-			fi
-		done
-	else
-		segs=("${preprocessed[@]}")
-	fi
-
-	# ── Step 7: concat — -avoid_negative_ts make_zero prevents DTS gaps ──────
-	local concat_list
-	concat_list="$(mktemp_ffx .txt)"
-	for f in "${segs[@]}"; do
-		printf "file '%s'\n" "$(absolute_path "$f")" >>"$concat_list"
-	done
-	run_ffmpeg -y -avoid_negative_ts make_zero \
-		-f concat -safe 0 -i "$concat_list" -c copy "$output" ||
-		die "merge: concat failed -> $output"
-
-	auto_clean "$output"
-	say "Merged: $output"
-}
-
 # CMD: LOOPERANG
-# Single-pass reverse via -vf reverse -af areverse — O(1) forks, no frame extraction.
 # =============================================================================
 cmd_looperang() {
     advanced_prompt
-    local input="${1:-}" output="${2:-}"
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}"
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "looperang: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
     [[ -z "$input" ]] && die "looperang requires an input file."
     [[ -f "$input" ]] || die "File not found: $input"
 
@@ -1184,12 +1378,30 @@ cmd_looperang() {
 
 # =============================================================================
 # CMD: SLOWMO
-# Builds atempo chain so each stage stays within [0.5, 2.0] — FFmpeg constraint.
 # =============================================================================
 cmd_slowmo() {
     advanced_prompt
-    local input="${1:-}" output="${2:-}" factor="${3:-2}"
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}" factor=""
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -i|--interpolate)   INTERPOLATE=true; shift ;;
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -p|--pts)           factor="$2"; shift 2 ;;
+            -f|--fps)           SPECIFIC_FPS="$2"; shift 2 ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "slowmo: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
+    [[ -z "$factor" ]] && factor="${args[2]:-2}"
     [[ -n "$PTS_FACTOR" ]] && factor="$PTS_FACTOR"
+
     [[ -z "$input" ]] && die "slowmo requires an input file."
     [[ -f "$input" ]] || die "File not found: $input"
 
@@ -1220,7 +1432,7 @@ cmd_slowmo() {
     ffa+=("-r" "$fps" "-c:v" "$ADV_CODEC")
     [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
         && ffa+=("-qp" "0") || ffa+=("-crf" "${ADV_CRF:-18}")
-    ffa+=("-preset" "medium" "-pix_fmt" "$ADV_PIX_FMT" "$output")
+    ffa+=("-preset" "$ADV_PRESET" "-pix_fmt" "$ADV_PIX_FMT" "$output")
 
     run_ffmpeg "${ffa[@]}" || die "slowmo failed."
     check_moov_atom "$output" || moov_fallback "$input" "$output"
@@ -1232,11 +1444,28 @@ cmd_slowmo() {
 # CMD: FIX
 # =============================================================================
 cmd_fix() {
-    local input="${1:-}" output="${2:-}"
+    advanced_prompt
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}"
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "fix: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
     [[ -z "$input" ]] && die "fix requires an input file."
     [[ -f "$input" ]] || die "File not found: $input"
+
     local bare; bare="$(basename "${input%.*}")"
     [[ -z "$output" ]] && output="$(get_default_filename "$bare" "fixed" "$ADV_CONTAINER")"
+
     local fixed; fixed="$(ensure_dts_correct "$input")" || die "fix: DTS correction failed."
     if [[ "$fixed" != "$input" ]]; then
         mv "$fixed" "$output"; say "Fixed (DTS corrected): $output"
@@ -1246,16 +1475,32 @@ cmd_fix() {
 }
 
 # =============================================================================
-# CMD: CLEAN  (strip all metadata)
+# CMD: CLEAN  (stream-copy only — fast path)
 # =============================================================================
 cmd_clean() {
-    local input="${1:-}" output="${2:-}"
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}"
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "clean: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
+
     if [[ -z "$input" ]]; then
         local -a _s; mapfile -t _s < <(fzf_pick); input="${_s[0]}"
     fi
     [[ -f "$input" ]] || die "File not found: $input"
     local bare; bare="$(basename "${input%.*}")"
     [[ -z "$output" ]] && output="$(get_default_filename "$bare" "cleaned" "$ADV_CONTAINER")"
+
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
     run_ffmpeg -y -i "$input" -map_metadata -1 -c copy "${aopts[@]}" "$output" \
         || die "clean: metadata strip failed."
@@ -1263,10 +1508,71 @@ cmd_clean() {
 }
 
 # =============================================================================
-# CMD: CLIP  (interactive timestamp-based trim; from ffxbeta)
+# CMD: CLEANMETA  (stream-copy + reencode fallback)
+# =============================================================================
+cmd_cleanmeta() {
+    advanced_prompt
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}"
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "cleanmeta: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
+    [[ -z "$input" ]] && die "cleanmeta requires an input file."
+    [[ -f "$input" ]] || die "File not found: $input"
+
+    local bare; bare="$(basename "${input%.*}")"
+    [[ -z "$output" ]] && output="$(get_default_filename "$bare" "cleaned" "$ADV_CONTAINER")"
+
+    local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
+
+    if run_ffmpeg -y -i "$input" -map_metadata -1 -c:v copy "${aopts[@]}" \
+            -movflags +faststart "$output"; then
+        say "Metadata cleaned (stream-copy): $output"
+        return
+    fi
+
+    verbose_log "Stream-copy metadata strip failed; reencoding."
+    local -a enc
+    [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
+        && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET") \
+        || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
+
+    run_ffmpeg -y -i "$input" -map_metadata -1 \
+        "${enc[@]}" "${aopts[@]}" -movflags +faststart "$output" \
+        || die "cleanmeta: both stream-copy and reencode failed."
+    say "Metadata cleaned (reencoded): $output"
+}
+
+# =============================================================================
+# CMD: CLIP
 # =============================================================================
 cmd_clip() {
-    local input="${1:-}" output="${2:-}"
+    local input="" output="${GLOBAL_OUTPUT_FILE:-}"
+    local -a args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -*)                 warn "clip: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
+        esac
+    done
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-}"
+
     if [[ -z "$input" ]]; then
         local -a _s; mapfile -t _s < <(fzf_pick); input="${_s[0]}"
     fi
@@ -1291,28 +1597,27 @@ cmd_clip() {
 }
 
 # =============================================================================
-# CMD: FILTER  (apply canonical filter presets from research documents)
-# Presets derived directly from:
-#   Filter-chains.md — §1 High-Quality Scaling, §5 Color Correction,
-#                      §Dimly Lit Video with Overblown Red Hue
-#   ffmpeg_encoding_and_editing.md — §Constructing Efficient Filter Chains
+# CMD: FILTER
 # =============================================================================
 cmd_filter() {
     advanced_prompt
-    local input="${1:-}" output="${2:-}" preset="${3:-enhance}" custom_filter=""
+    local input="" output="" preset="enhance" custom_filter=""
+    local -a args=()
 
-    # Parse flags: --preset PRESET, --filter "custom filter string"
-    local -a rest=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --preset|-P) preset="$2"; shift 2 ;;
-            --filter|-F) custom_filter="$2"; shift 2 ;;
-            *) rest+=("$1"); shift ;;
+            --preset|-P)        preset="$2"; shift 2 ;;
+            --filter|-F)        custom_filter="$2"; shift 2 ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -*)                 warn "filter: ignoring unknown option '$1'"; shift ;;
+            *)                  args+=("$1"); shift ;;
         esac
     done
-    # Positional fallback after flag parsing
-    [[ -z "$input"  && ${#rest[@]} -ge 1 ]] && input="${rest[0]}"
-    [[ -z "$output" && ${#rest[@]} -ge 2 ]] && output="${rest[1]}"
+
+    input="${args[0]:-}"
+    [[ -z "$output" ]] && output="${args[1]:-${GLOBAL_OUTPUT_FILE:-}}"
 
     if [[ -z "$input" ]]; then
         local -a _s; mapfile -t _s < <(fzf_pick); input="${_s[0]}"
@@ -1321,51 +1626,19 @@ cmd_filter() {
     local bare; bare="$(basename "${input%.*}")"
     [[ -z "$output" ]] && output="$(get_default_filename "$bare" "filtered" "$ADV_CONTAINER")"
 
-    # ── Preset library (canonical sources noted inline) ──
     local vfilter
     if [[ -n "$custom_filter" ]]; then
         vfilter="$custom_filter"
     else
         case "$preset" in
-        enhance)
-            # General enhancement — brightness+contrast+saturation boost
-            # Ref: Filter-chains.md §Color Correction
-            vfilter="eq=brightness=0.1:contrast=1.2:saturation=1.2"
-            ;;
-        skintone)
-            # Dim video with red-hue skin tones
-            # Ref: Filter-chains.md §Dimly Lit Video with Overblown Red Hue
-            vfilter="eq=brightness=0.15:contrast=1.3:saturation=0.9,colorbalance=rs=-0.1:gs=0.05:bs=0.05"
-            ;;
-        denoise)
-            # hqdn3d spatial+temporal denoising
-            # Ref: Filter-chains.md §2 Denoising; ffmpeg_encoding_and_editing.md §Filter Chains
-            vfilter="hqdn3d=2:1:2:3"
-            ;;
-        cross_process)
-            # Film cross-processing look (high contrast, colour shifts)
-            # Ref: Filter-chains.md §5 Color Correction §Curves Filter
-            vfilter="curves=preset=cross_process"
-            ;;
-        hdr2sdr)
-            # HDR to SDR tone-mapping via Hable operator + BT.709
-            # Ref: Filter-chains.md §3 HDR to SDR Conversion
-            # Note: requires FFmpeg built with libzimg (zscale filter).
-            vfilter="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
-            ;;
-        smooth)
-            # Frame-blending smoothness for slow-motion footage
-            # Ref: Filter-chains.md §4 Frame Blending for Smoothness
-            vfilter="minterpolate=fps=60,tblend=all_mode=average,framestep=2"
-            ;;
-        whitecal)
-            # White balance correction — reduce warm cast
-            # Ref: Filter-chains.md §6 White Balance Correction
-            vfilter="colorbalance=rs=-0.05:gs=0.05:bs=0.10"
-            ;;
-        *)
-            die "Unknown filter preset: '$preset'. Valid: enhance skintone denoise cross_process hdr2sdr smooth whitecal"
-            ;;
+        enhance)       vfilter="eq=brightness=0.1:contrast=1.2:saturation=1.2" ;;
+        skintone)      vfilter="eq=brightness=0.15:contrast=1.3:saturation=0.9,colorbalance=rs=-0.1:gs=0.05:bs=0.05" ;;
+        denoise)       vfilter="hqdn3d=2:1:2:3" ;;
+        cross_process) vfilter="curves=preset=cross_process" ;;
+        hdr2sdr)       vfilter="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable,zscale=t=bt709:m=bt709:r=tv,format=yuv420p" ;;
+        smooth)        vfilter="minterpolate=fps=60,tblend=all_mode=average,framestep=2" ;;
+        whitecal)      vfilter="colorbalance=rs=-0.05:gs=0.05:bs=0.10" ;;
+        *)             die "Unknown filter preset: '$preset'. Valid: enhance skintone denoise cross_process hdr2sdr smooth whitecal" ;;
         esac
     fi
 
@@ -1373,15 +1646,14 @@ cmd_filter() {
 
     local fixed; fixed="$(ensure_dts_correct "$input")" || die "DTS fix failed: $input"
     local deint; deint="$(get_deinterlace_filter "$fixed")"
-    # Filter order per research doc: deinterlace -> correction filters -> scale (last)
     local full_vf
     [[ "$deint" != "null" ]] && full_vf="${deint},${vfilter}" || full_vf="$vfilter"
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
     local -a enc
     [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
-        && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "medium") \
-        || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "medium")
+        && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET") \
+        || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
 
     run_ffmpeg -y -i "$fixed" \
         -vf "$full_vf" \
@@ -1412,39 +1684,43 @@ cmd_cache_clean() {
 # HELP
 # =============================================================================
 display_usage() {
-    printf '%b# === FFX v5.0.0 ===%b\n\n' "${CYAN}${BOLD}" "${RESET}"
+    printf '%b# === FFX v8.0.0 ===%b\n\n' "${CYAN}${BOLD}" "${RESET}"
     cat <<'HELPEOF'
 Usage: ffx [global options] <command> [arguments]
 
 Global Options:
-  -A, --advanced          Interactive encoding prompt (persisted to XDG config).
-  -v, --verbose           Verbose FFmpeg output + live log.
-  --dry-run               Print FFmpeg commands without executing.
-  -an, --remove-audio     Strip all audio from output.
-  -C, --composite         Composite mode for 'merge'.
-  -P, --max-1080          Clamp output height to 1080p for 'process'.
-  -i, --interpolate       Motion interpolation for 'slowmo'.
-  -o, --output-dir <dir>  Output directory (default: cwd).
-  -f, --fps <val>         Force output FPS.
-  -p, --pts <val>         PTS slow-motion factor (e.g. 2 = half speed).
-  --timeout <sec>         FFmpeg timeout in seconds (0 = no limit; default 300).
-  --container <ext>       Output container override (mp4/mkv/mov).
-  -h, --help              This message.
+  -A, --advanced             Interactive encoding prompt (persisted to XDG config).
+  -v, --verbose              Verbose FFmpeg output + live log.
+  --dry-run                  Print FFmpeg commands without executing.
+  -b, --bulk                 Auto-glob all video files in output directory (merge).
+  -an, --remove-audio        Strip all audio from output.
+  -C, --composite            Composite mode for 'merge' (delegates to composite cmd).
+  -P, --max-1080             Clamp output height to 1080p for 'process'.
+  -i, --interpolate          Motion interpolation for 'slowmo'.
+  -o, --output-dir <dir>     Output directory / file path (default: cwd).
+  -f, --fps <val>            Force output FPS.
+  -p, --pts <val>            PTS slow-motion factor (e.g. 2 = half speed).
+  --timeout <sec>            FFmpeg timeout in seconds (0 = no limit; default 300).
+  --container <ext>          Output container override (mp4/mkv/mov).
+  --resolution <WxH>         Override output resolution (e.g. 1920x1080).
+  --codec <encoder>          Override video encoder (e.g. libx265).
+  --layout-mode <mode>       Composite layout: fixed (default) or random.
+  -h, --help                 This message.
 
 Commands:
   probe      [<input>]                    File info. fzf selector if omitted.
   process    <input> [output]             Re-encode/scale; auto-deinterlace; lanczos.
-  merge      [files...] [-o <out>]        Concat. -C composites non-widescreen pairs.
-  composite  [files...] [-o <base>]       16:9 composite (<=4/frame; auto-parts).
+  merge      [files...] [-o <out>]        Concat. -C composites; -b globs directory.
+  composite  [files...] [-o <base>]       Layout composite (fixed or random mode).
   looperang  <input> [output]             Forward+reverse palindrome.
   slowmo     <input> [output] [factor]    Slow motion. -i enables interpolation.
-  filter     <input> [output] [--preset P | --filter FILTER]
-                                          Apply colour/enhancement filter preset.
+  filter     <input> [output]             Apply colour/enhancement filter preset.
   fix        <input> [output]             Repair DTS/timestamp issues.
-  clean      <input> [output]             Strip all metadata.
+  clean      <input> [output]             Strip metadata (stream-copy + reencode fallback).
+  clean-fast <input> [output]             Strip metadata (stream-copy only).
   clip       <input> [output]             Interactive trim by start/end time.
   cache-clean                             Remove FFX cache files.
-  cleanmeta  <input> [output]             Strip metadata; reencode fallback.
+  cleanmeta  <input> [output]             Alias for clean.
   manifest   [save|verify|show]           Self-audit SHA-256 manifest.
   help                                    This message.
 
@@ -1457,13 +1733,17 @@ Filter Presets (cmd filter --preset NAME):
   smooth       Frame-blending smoothness (minterpolate).
   whitecal     White balance: reduce warm/red cast.
 
-Composite Layouts (always 1920x1080 canvas):
-  1 file  -> fullscreen
-  2 files -> side-by-side hstack    (960x1080 each)
-  3 files -> 1 top + 2 bottom       (1920x540 top; 960x540 bottom x2)
-  4 files -> 2x2 grid               (960x540 each)
-  >4      -> auto-split: _part1.mp4, _part2.mp4, ...
-  merge -C: AR>=1.77 plays solo; portrait/square paired side-by-side.
+Composite Layouts:
+  fixed mode  (default):
+    1 file  -> fullscreen (1920x1080)
+    2 files -> lossless hstack via composite_pair_lossless
+    3 files -> 1 top + 2 bottom
+    4 files -> 2x2 grid
+    >4      -> auto-batched
+  random mode (--layout-mode random):
+    AR fitness engine selects optimal layout from 8 candidates.
+    Layouts: fullscreen, hstack, vstack, top1_bot2, top2_bot1,
+             left1_right2, left2_right1, grid2x2, row4.
 
 Config:  ~/.config/ffx/defaults
 Log:     ~/.local/share/ffx/ffx.log
@@ -1481,13 +1761,14 @@ parse_global_options() {
         -A|--advanced)      ADVANCED_MODE=true;  shift ;;
         -v|--verbose)       VERBOSE_MODE=true;   shift ;;
         --dry-run)          DRY_RUN=true;         shift ;;
+        -b|--bulk)          BULK_MODE=true;       shift ;;
         -an|--remove-audio) REMOVE_AUDIO=true;   shift ;;
         -C|--composite)     COMPOSITE_MODE=true; shift ;;
         -P|--max-1080)      MAX_1080=true;        shift ;;
         -i|--interpolate)   INTERPOLATE=true;    shift ;;
-        -o|--output-dir)
+        -o|--output-dir|--output)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
-            OUTPUT_DIR="$2"; shift 2 ;;
+            OUTPUT_DIR="$2"; GLOBAL_OUTPUT_FILE="$2"; shift 2 ;;
         -f|--fps)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--fps requires a numeric value."
@@ -1503,6 +1784,19 @@ parse_global_options() {
         --container)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             ADV_CONTAINER="$2"; shift 2 ;;
+        --resolution)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            [[ "$2" =~ ^[0-9]+x[0-9]+$ ]] || die "--resolution requires WxH format (e.g. 1920x1080)."
+            ADV_RES="$2"; shift 2 ;;
+        --codec)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            ADV_CODEC="$2"; shift 2 ;;
+        --layout-mode)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            case "${2,,}" in
+                fixed|random) LAYOUT_MODE="${2,,}"; shift 2 ;;
+                *) die "--layout-mode requires 'fixed' or 'random'." ;;
+            esac ;;
         -h|--help|help) display_usage ;;
         --) shift; REMAINING_ARGS+=("$@"); break ;;
         -*) die "Unknown option: '$1'. Run 'ffx help'." ;;
@@ -1525,7 +1819,8 @@ main_dispatch() {
         slowmo)      cmd_slowmo      "$@" ;;
         filter)      cmd_filter      "$@" ;;
         fix)         cmd_fix         "$@" ;;
-        clean)       cmd_clean       "$@" ;;
+        clean)       cmd_cleanmeta   "$@" ;;
+        clean-fast)  cmd_clean       "$@" ;;
         cleanmeta)   cmd_cleanmeta   "$@" ;;
         manifest)    cmd_manifest    "$@" ;;
         clip)        cmd_clip        "$@" ;;

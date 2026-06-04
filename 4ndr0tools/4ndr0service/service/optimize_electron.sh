@@ -14,17 +14,30 @@ source "${PKG_PATH:-.}/common.sh"
 # Aligned with ENVariables.conf wayland;wayland-egl priority
 export ELECTRON_CACHE="${XDG_CACHE_HOME}/electron"
 export ELECTRON_OZONE_PLATFORM_HINT="wayland-egl"
+export NVM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvm"
+
+_load_nvm_context() {
+    if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+        # shellcheck disable=SC1091
+        source "$NVM_DIR/nvm.sh"
+        return 0
+    fi
+    return 1
+}
 
 optimize_electron_service() {
     log_info "Synchronizing Electron Matrix..."
-
+    
     # 1. Dependency Validation (Hive Logic)
     # Ensure NVM/Node is active so we don't install into root-owned /opt
     if ! command -v npm &>/dev/null; then
-        log_error "NPM not found. Hive Node.js must be optimized first."
-        return 1
+        log_info "NPM not in immediate PATH. Attempting to load Hive context..."
+        if ! _load_nvm_context || ! command -v npm &>/dev/null; then
+            log_error "NPM not found. Hive Node.js must be optimized first."
+            return 1
+        fi
     fi
-
+    
     # 2. Tool Extraction & Global Deployment
     # We use global installs to keep binaries in the user-owned NVM/Hive sector
     local tools_json
