@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+from prompt_toolkit import prompt
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import HTML
+
+# --- THEME TOKENS: ELECTRIC-GLASSMORPHISM ---
+# 24-bit ANSI True-Color Escapes for Standard Output
+ANSI_CYAN = "\033[38;2;21;255;255m"
+# \033[38;2;0;229;255m
+ANSI_CYAN_MUTED = "\033[38;2;21;125;125m"
+ANSI_TEXT_PRIMARY = "\033[38;2;234;234;234m"
+ANSI_TEXT_SECONDARY = "\033[38;2;158;158;158m"
+ANSI_RED = "\033[38;2;255;77;77m"
+BOLD = "\033[1m"
+NC = "\033[0m"
+
+# prompt_toolkit Style Engine
+style = Style.from_dict(
+    {
+        "prompt": "fg:#15FFFF bold",
+        "separator": "fg:#151515",
+        "completion-menu": "bg:#101827 fg:#15FFFF",
+        "completion-menu.completion": "bg:#101827 fg:#157d7d",
+        "completion-menu.completion.current": "bg:#070B14 fg:#15FFFF bold",
+    }
+)
+
+# Command Mapping (Frontend Name -> Backend Bash Flag)
+MENU_MAP = {
+    "Analyze": "u",  # Example mapping, adjust to your bash flags
+    "Update System": "u",
+    "Maintain System": "m",
+    "Install (Native)": "i",
+    "Install (AUR)": "a",
+    "Remove Packages": "r",
+    "List Installed": "l",
+    "Dependency Tree (OF)": "t",
+    "Dependency Tree (ON)": "v",
+    "Edit Configurations": "e",
+    "Roll Back System": "b",
+    "Fix Pacman Errors": "z",
+    "Packages by Size": "x",
+    "Force Update AUR": "w",
+    "List AUR Installed": "n",
+    "Downgrade Package": "d",
+    "Package Info": "p",
+    "Find File Owner": "f",
+    "Files in Package": "o",
+    "CachyOS Repo/Kernel": "c",
+    "Chaotic AUR": "g",
+    "System Cleanup": "k",
+    "Topgrade": "topgrade",
+    "Remove Desktop": "y",
+    "Manual / Help": "h",
+    "Quit": "q",
+}
+
+
+def print_header():
+    """Renders the rigid, monospaced glass topology header."""
+    os.system("clear" if os.name == "posix" else "cls")
+    print(
+        f"\n{ANSI_CYAN}┌────────────────────────────────────────────────────────────┐{NC}"
+    )
+    print(
+        f"{ANSI_CYAN}│{NC} {BOLD}{ANSI_TEXT_PRIMARY}   ⦑ {ANSI_CYAN}Ψ{NC} ⦒ 4NDR0PAC: ADVANCED ARCH LINUX PACKAGE MANAGER {NC}    {ANSI_CYAN}│{NC}"
+    )
+    print(
+        f"{ANSI_CYAN}├────────────────────────────────────────────────────────────┤{NC}"
+    )
+    print(
+        f"{ANSI_CYAN}│{NC} {ANSI_TEXT_SECONDARY}            v1.5.0 Copyright © 2026 4ndr0{ANSI_CYAN}666{NC}               {ANSI_CYAN}│{NC}"
+    )
+    print(
+        f"{ANSI_CYAN}└────────────────────────────────────────────────────────────┘{NC}\n"
+    )
+
+
+def main():
+    completer = WordCompleter(list(MENU_MAP.keys()), ignore_case=True)
+    bash_script_path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "4ndr0pac.sh"
+    )
+
+    if not os.path.exists(bash_script_path):
+        print(f"{ANSI_RED}Fatal: Backend script '{bash_script_path}' not found.{NC}")
+        sys.exit(1)
+
+    while True:
+        print_header()
+        try:
+            choice = prompt(
+                HTML("<prompt>█▓░SYSTEM_ONLINE</prompt><separator> > </separator>"),
+                completer=completer,
+                style=style,
+            ).strip()
+
+            # Resolve input to flag
+            selected_cmd = next(
+                (cmd for key, cmd in MENU_MAP.items() if choice.lower() == key.lower()),
+                None,
+            )
+
+            if not selected_cmd:
+                if choice.lower() in ["q", "quit", "exit"]:
+                    break
+                print(
+                    f"{ANSI_RED}Unrecognized directive. Press Tab to view the topology menu.{NC}"
+                )
+                input("Press ENTER to continue...")
+                continue
+
+            if selected_cmd == "q":
+                print(f"{ANSI_CYAN}Terminating session...{NC}")
+                break
+
+            print(f"\n{ANSI_CYAN}Executing directive: {choice}...{NC}\n")
+
+            # Subprocess handoff to the Bash backend
+            subprocess.run(["bash", bash_script_path, selected_cmd])
+
+            input(
+                f"\n{ANSI_CYAN}Task Complete. Press ENTER to return to the Grid...{NC}"
+            )
+
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{ANSI_CYAN}Session aborted.{NC}")
+            break
+
+
+if __name__ == "__main__":
+    main()
