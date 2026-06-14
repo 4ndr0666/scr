@@ -83,7 +83,7 @@ def print_header():
 def main():
     completer = WordCompleter(list(MENU_MAP.keys()), ignore_case=True)
     bash_script_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "4ndr0pac.sh"
+        os.path.dirname(os.path.realpath(__file__)), "compare.sh"
     )
 
     if not os.path.exists(bash_script_path):
