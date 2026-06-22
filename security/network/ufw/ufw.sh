@@ -27,6 +27,7 @@ fi
 declare -i SILENT=0 DRY_RUN=0 VPN_FLAG=0 JD_FLAG=0 BACKUP_FLAG=0 STATUS_FLAG=0 RESOLV_BACKUP_CREATED=0 DISCONNECT_FLAG=0
 declare -i SWAPPINESS_VAL=60
 declare -i UFW_SUPPORTS_COMMENT=1
+declare -i CLEANUP_RAN=0
 
 # Separate declaration and assignment for Shellcheck SC2155 compliance.
 SCRIPT_NAME=""
@@ -50,10 +51,19 @@ declare -g VPN_IFACES="" # Space-separated string of VPN interfaces
 # --- Core Functions ---
 
 # Comprehensive cleanup trap to restore DNS on exit/error.
+# Reentrancy-guarded (Finding 5): a second signal arriving while cleanup is
+# already running (e.g. a second Ctrl-C) must not re-enter this function and
+# risk a half-completed restore_resolv_conf or duplicate log writes.
 cleanup() {
 	local status=$?
+	if [[ "$CLEANUP_RAN" -eq 1 ]]; then
+		exit "$status"
+	fi
+	CLEANUP_RAN=1
+	trap - EXIT ERR INT TERM HUP
+
 	if [[ "$RESOLV_BACKUP_CREATED" -eq 1 && "$DISCONNECT_FLAG" -eq 0 ]]; then
-		restore_resolv_conf
+		restore_resolv_conf || true
 	fi
 	if [[ "$status" -ne 0 ]]; then
 		log ERROR "Exited abnormally (status $status)"
@@ -209,7 +219,7 @@ parse_args() {
 # Check for required and optional command-line tools.
 check_dependencies() {
 	log INFO "Checking dependencies"
-	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'ipcalc' 'sysctl' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
+	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'sysctl' 'timeout' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
 	local -a opt=('lsattr' 'chattr' 'expressvpn' 'resolvectl')
 	local -a miss=()
 	for c in "${req[@]}"; do
@@ -303,17 +313,91 @@ detect_vpn_interfaces() {
 	return 0
 }
 
-# Parse nameservers from resolv.conf.
+# Compute the network address for a given IPv4 CIDR string, e.g. "192.168.1.42/24" -> "192.168.1.0/24".
+# Pure-bash implementation: avoids a hard dependency on the external `ipcalc` tool,
+# which is not part of a default Arch Linux install and has incompatible AUR variants.
+cidr_to_network() {
+	local cidr="$1"
+	local ip="${cidr%/*}"
+	local prefix="${cidr#*/}"
+	if [[ ! "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ ! "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 0 || prefix > 32)); then
+		log WARN "cidr_to_network: invalid CIDR input '$cidr'"
+		return 1
+	fi
+	local -a octets
+	IFS='.' read -r -a octets <<<"$ip"
+	local ip_int=$(((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]))
+	local mask_int=0
+	if ((prefix > 0)); then
+		mask_int=$(((0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF))
+	fi
+	local net_int=$((ip_int & mask_int))
+	printf '%d.%d.%d.%d/%d\n' \
+		$(((net_int >> 24) & 0xFF)) $(((net_int >> 16) & 0xFF)) \
+		$(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
+	return 0
+}
+
+# Parse nameservers that traffic should actually be allowed to reach.
+#
+# On a default Arch Linux install using NetworkManager + systemd-resolved
+# (Arch's recommended/common stack), /etc/resolv.conf is normally a symlink to
+# systemd-resolved's stub resolver (127.0.0.53 or 127.0.0.54), NOT the real
+# upstream DNS servers ExpressVPN configured. Trusting /etc/resolv.conf
+# verbatim in that case allowlists the stub loopback address instead of the
+# real VPN DNS servers, which silently defeats the DNS-leak-blocking rule this
+# function exists to support. This function therefore prefers `resolvectl`
+# (when present and resolv.conf points at the stub) to recover the real
+# per-interface upstream servers, falling back to a literal resolv.conf parse
+# for systems without systemd-resolved.
 parse_dns_servers() {
-	log INFO "Parsing DNS servers from $RESOLV_FILE"
+	log INFO "Parsing DNS servers for VPN allowlist"
 	VPN_DNS_SERVERS=()
+
+	local using_stub=0
+	if [[ -L "$RESOLV_FILE" ]]; then
+		local link_target
+		link_target=$(readlink -f "$RESOLV_FILE" 2>/dev/null || true)
+		if [[ "$link_target" == *"systemd/resolve"* ]]; then
+			using_stub=1
+		fi
+	elif [[ -f "$RESOLV_FILE" ]] && grep -qE '^nameserver[[:space:]]+127\.0\.0\.5[34]$' "$RESOLV_FILE" 2>/dev/null; then
+		using_stub=1
+	fi
+
+	if [[ "$using_stub" -eq 1 ]] && command -v resolvectl >/dev/null 2>&1; then
+		log INFO "$RESOLV_FILE points at the systemd-resolved stub; querying resolvectl for real upstream DNS."
+		local iface_list="$VPN_IFACES"
+		if [[ -z "$iface_list" ]]; then
+			# No VPN interface known yet; query global upstream servers instead.
+			mapfile -t VPN_DNS_SERVERS < <(resolvectl dns 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+		else
+			local iface
+			for iface in $iface_list; do
+				while IFS= read -r ip; do
+					[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
+				done < <(resolvectl dns "$iface" 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+			done
+		fi
+		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+			log WARN "resolvectl returned no upstream DNS servers for VPN interface(s); falling back to $RESOLV_FILE."
+		else
+			log OK "Parsed real upstream DNS servers via resolvectl: ${VPN_DNS_SERVERS[*]}"
+			return 0
+		fi
+	fi
+
 	if [[ -f "$RESOLV_FILE" ]]; then
 		mapfile -t VPN_DNS_SERVERS < <(grep -E "^nameserver[[:space:]]" "$RESOLV_FILE" | awk '{print $2}' || true)
 		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
 			log WARN "No nameservers found in $RESOLV_FILE"
 			return 1
 		else
-			log OK "Parsed DNS servers: ${VPN_DNS_SERVERS[*]}"
+			if [[ "$using_stub" -eq 1 ]]; then
+				log WARN "Using stub-resolver address(es) from $RESOLV_FILE (${VPN_DNS_SERVERS[*]}); DNS allowlist may not reflect real VPN DNS servers."
+			else
+				log OK "Parsed DNS servers: ${VPN_DNS_SERVERS[*]}"
+			fi
 			return 0
 		fi
 	else
@@ -353,8 +437,34 @@ backup_file() {
 }
 
 # Backup resolv.conf before modification.
+# Symlink-aware (Finding 4): on systemd-resolved systems /etc/resolv.conf is
+# normally a symlink to the stub resolver. Blindly `cp`-ing over it would
+# replace the symlink with a plain file, which can desync from
+# systemd-resolved's own state until the service is restarted. We record
+# whether it was a symlink and, if so, back up the link target path itself
+# rather than a copy of the (often loopback-stub) file contents.
 backup_resolv_conf() {
-	if [[ -f "$RESOLV_FILE" && ! -f "$RESOLV_BACKUP" ]]; then
+	if [[ -f "$RESOLV_BACKUP" || -L "$RESOLV_BACKUP" ]]; then
+		log INFO "VPN DNS backup already exists at $RESOLV_BACKUP"
+		RESOLV_BACKUP_CREATED=1
+		return 0
+	fi
+	if [[ -L "$RESOLV_FILE" ]]; then
+		local link_target
+		link_target=$(readlink "$RESOLV_FILE")
+		log INFO "$RESOLV_FILE is a symlink to $link_target; recording link instead of copying stub contents."
+		if [[ "$DRY_RUN" -eq 0 ]]; then
+			printf 'SYMLINK:%s\n' "$link_target" >"$RESOLV_BACKUP" || {
+				log ERROR "Failed to record symlink target for $RESOLV_FILE"
+				return 1
+			}
+		else
+			log NOTE "Dry-run: Would record symlink target $link_target for $RESOLV_FILE"
+		fi
+		log OK "Recorded symlink target for $RESOLV_FILE"
+		RESOLV_BACKUP_CREATED=1
+		return 0
+	elif [[ -f "$RESOLV_FILE" ]]; then
 		log INFO "Attempting to backup $RESOLV_FILE to $RESOLV_BACKUP"
 		if run_cmd_dry cp "$RESOLV_FILE" "$RESOLV_BACKUP"; then
 			log OK "Backed up $RESOLV_FILE to $RESOLV_BACKUP"
@@ -364,10 +474,6 @@ backup_resolv_conf() {
 			log ERROR "Failed to backup $RESOLV_FILE"
 			return 1
 		fi
-	elif [[ -f "$RESOLV_BACKUP" ]]; then
-		log INFO "VPN DNS backup already exists at $RESOLV_BACKUP"
-		RESOLV_BACKUP_CREATED=1
-		return 0
 	else
 		log WARN "$RESOLV_FILE not found, cannot backup."
 		return 1
@@ -375,53 +481,101 @@ backup_resolv_conf() {
 }
 
 # Restore resolv.conf from backup.
+# Symlink-aware counterpart to backup_resolv_conf (Finding 4): if the backup
+# recorded a symlink target, restore the symlink itself rather than writing a
+# plain file over what systemd-resolved expects to manage.
 restore_resolv_conf() {
-	if [[ -f "$RESOLV_BACKUP" ]]; then
-		log INFO "Attempting to restore $RESOLV_FILE from $RESOLV_BACKUP"
-		remove_immutable "$RESOLV_FILE"
+	if [[ ! -f "$RESOLV_BACKUP" && ! -L "$RESOLV_BACKUP" ]]; then
+		log INFO "No VPN DNS backup found at $RESOLV_BACKUP to restore."
+		return 1
+	fi
+
+	log INFO "Attempting to restore $RESOLV_FILE from $RESOLV_BACKUP"
+	remove_immutable "$RESOLV_FILE"
+
+	local first_line=""
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		first_line=$(head -n 1 "$RESOLV_BACKUP" 2>/dev/null || true)
+	fi
+
+	if [[ "$first_line" == SYMLINK:* ]]; then
+		local link_target="${first_line#SYMLINK:}"
+		if run_cmd_dry ln -sf "$link_target" "$RESOLV_FILE"; then
+			log OK "Restored $RESOLV_FILE as symlink to $link_target"
+			run_cmd_dry rm -f "$RESOLV_BACKUP" || log WARN "Failed to remove old backup $RESOLV_BACKUP"
+			RESOLV_BACKUP_CREATED=0
+			return 0
+		else
+			log ERROR "Failed to restore $RESOLV_FILE symlink from backup"
+			return 1
+		fi
+	elif [[ "$DRY_RUN" -eq 1 ]]; then
+		log NOTE "Dry-run: Would restore $RESOLV_FILE from $RESOLV_BACKUP"
+		return 0
+	else
 		if run_cmd_dry cp "$RESOLV_BACKUP" "$RESOLV_FILE"; then
 			log OK "Restored $RESOLV_FILE from backup"
-			run_cmd_dry rm "$RESOLV_BACKUP" || log WARN "Failed to remove old backup $RESOLV_BACKUP"
+			run_cmd_dry rm -f "$RESOLV_BACKUP" || log WARN "Failed to remove old backup $RESOLV_BACKUP"
 			RESOLV_BACKUP_CREATED=0
 			return 0
 		else
 			log ERROR "Failed to restore $RESOLV_FILE from backup"
 			return 1
 		fi
-	else
-		log INFO "No VPN DNS backup found at $RESOLV_BACKUP to restore."
-		return 1
 	fi
 }
 
 # --- VPN Management ---
 
 # Connect to ExpressVPN.
-expressvpn_connect() {
+# Bounded with a hard timeout (§4.2): the expressvpn CLI can stall on network
+# negotiation or, if the app is unactivated, wait on input that will never arrive
+# in a non-interactive script context. A hang here must not be able to hang the
+# whole orchestrator indefinitely.
+expressvpnctl_connect() {
 	log CAT "Connecting ExpressVPN"
-	if ! command -v expressvpn >/dev/null 2>&1; then
+	if ! command -v expressvpnctl >/dev/null 2>&1; then
 		log ERROR "expressvpn command not found. Cannot connect."
 		return 1
 	fi
-	run_cmd_dry expressvpn connect || {
-		log ERROR "ExpressVPN connect command failed."
+	if ! run_cmd_dry timeout 45 expressvpnctl connect; then
+		log ERROR "ExpressVPN connect command failed or timed out after 45s."
 		return 1
-	}
+	fi
 	log OK "ExpressVPN connect command executed."
-	return 0
+
+	if [[ "$DRY_RUN" -eq 1 ]]; then
+		return 0
+	fi
+
+	# Verify the daemon actually reports a connected state; a zero exit code
+	# from `connect` does not guarantee the tunnel is up (e.g. it can race
+	# with negotiation, or silently no-op if already mid-handshake).
+	local tries=0 max_tries=10
+	while ((tries < max_tries)); do
+		if expressvpnctl status 2>/dev/null | grep -qi 'connected'; then
+			log OK "ExpressVPN reports Connected."
+			return 0
+		fi
+		tries=$((tries + 1))
+		sleep 1
+	done
+	log ERROR "ExpressVPN did not report Connected within ${max_tries}s of issuing connect."
+	return 1
 }
 
 # Disconnect from ExpressVPN.
-expressvpn_disconnect() {
+# Also bounded with a hard timeout (§4.2) for the same reason as expressvpn_connect.
+expressvpnctl_disconnect() {
 	log CAT "Disconnecting ExpressVPN"
-	if ! command -v expressvpn >/dev/null 2>&1; then
-		log ERROR "expressvpn command not found. Cannot disconnect."
+	if ! command -v expressvpnctl >/dev/null 2>&1; then
+		log ERROR "expressvpnctl command not found. Cannot disconnect."
 		return 1
 	fi
-	run_cmd_dry expressvpn disconnect || {
-		log ERROR "ExpressVPN disconnect command failed."
+	if ! run_cmd_dry timeout 30 expressvpnctl disconnect; then
+		log ERROR "ExpressVPN disconnect command failed or timed out after 30s."
 		return 1
-	}
+	fi
 	log OK "ExpressVPN disconnect command executed."
 	return 0
 }
@@ -618,7 +772,7 @@ configure_ufw() {
 		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+' | head -n 1)
 		if [[ -n "$primary_ip_cidr" ]]; then
 			local local_subnet
-			local_subnet=$(ipcalc -n "$primary_ip_cidr" | awk '/Network/ {print $2}')
+			local_subnet=$(cidr_to_network "$primary_ip_cidr" || true)
 			if [[ -n "$local_subnet" ]]; then
 				apply_ufw_rule "allow in on $PRIMARY_IF from $local_subnet to any comment 'Allow LAN IN'"
 				apply_ufw_rule "allow out on $PRIMARY_IF to $local_subnet from any comment 'Allow LAN OUT'"
@@ -662,7 +816,7 @@ configure_ufw() {
 # Tear down VPN and reset firewall to a standard state.
 tear_down() {
 	log CAT "Tearing down VPN configuration and resetting firewall"
-	expressvpn_disconnect || log WARN "Failed to disconnect from VPN. Please check manually."
+	expressvpnctl_disconnect || log WARN "Failed to disconnect from VPN. Please check manually."
 	restore_resolv_conf || log WARN "Failed to restore resolv.conf. DNS may require manual correction."
 	log INFO "Resetting UFW rules to default"
 	run_cmd_dry ufw --force reset || {
@@ -682,8 +836,8 @@ tear_down() {
 show_status() {
 	log CAT "Status overview"
 	run_status_cmd "UFW Status" ufw status verbose
-	if command -v expressvpn >/dev/null 2>&1; then
-		run_status_cmd "ExpressVPN Status" expressvpn status
+	if command -v expressvpnctl >/dev/null 2>&1; then
+		run_status_cmd "ExpressVPN Status" expressvpnctl status
 	else
 		log NOTE "expressvpn command not found."
 	fi
@@ -749,13 +903,24 @@ main() {
 
 	if ((VPN_FLAG)); then
 		backup_resolv_conf || log WARN "resolv.conf backup failed, VPN DNS rules may not be applied correctly on restore."
-		expressvpn_connect || log ERROR "ExpressVPN connection failed. The kill switch will block all outbound traffic."
+		local vpn_connect_failed=0
+		if ! expressvpnctl_connect; then
+			vpn_connect_failed=1
+			log ERROR "ExpressVPN connection failed or could not be verified."
+			log WARN "Proceeding fail-closed: UFW will deny outbound by default because the kill switch is active and no VPN interface is confirmed up. This is intentional, not a misconfiguration."
+		fi
 		# CRITICAL: Mitigate race condition by allowing the interface to come up.
 		log INFO "Pausing for 3 seconds to allow VPN interface to stabilize..."
 		if [[ "$DRY_RUN" -eq 0 ]]; then
 			sleep 3
 		fi
-		detect_vpn_interfaces || log INFO "No VPN interfaces detected after connection attempt."
+		if ! detect_vpn_interfaces; then
+			if ((vpn_connect_failed)); then
+				log INFO "No VPN interfaces detected, consistent with the failed connection above."
+			else
+				log WARN "ExpressVPN reported connected, but no tun/ppp interface was detected. Kill switch will block outbound traffic."
+			fi
+		fi
 		parse_dns_servers || log WARN "Failed to parse DNS servers after connection attempt."
 	fi
 
