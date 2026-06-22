@@ -2,7 +2,25 @@
 # shellcheck disable=SC2034
 #
 # n_m3u8dl_orchestrator.sh
-# Ψ-4ndr0666 High-Performance Stream Extraction Matrix (v3.1.0)
+# Ψ-4ndr0666 High-Performance Stream Extraction Matrix (v3.1.1)
+#
+# AUDIT CHANGELOG (v3.1.0 → v3.1.1):
+#   CRITICAL D16 - SAVE_DIR contained a stray '$' before the leading slash:
+#                  SAVE_DIR="$/s1/streamdir". Bash does not treat a bare '$'
+#                  followed by '/' as an expansion — there is no valid
+#                  identifier, '{', '(', or special parameter after it — so
+#                  the '$' is passed through LITERALLY as the first character
+#                  of the string. The resulting value was the literal text
+#                  "$/s1/streamdir", a RELATIVE path beginning with a folder
+#                  named "$". Every mkdir -p "$SAVE_DIR" call (via
+#                  ensure_writable_dir) therefore created "./$/s1/streamdir"
+#                  relative to wherever the script was invoked from — this is
+#                  the root cause of the mystery "$" directory. Corrected to
+#                  an absolute, unambiguous default: "$HOME/streamdir". Also
+#                  restored check_dependencies in the boot sequence, which
+#                  this revision had reverted to commented-out (reintroducing
+#                  D3/D13), and reverted BIN_M3U8's hardcoded absolute path
+#                  back to empty so check_dependencies remains sole authority.
 #
 # AUDIT CHANGELOG (v3.0.0 → v3.1.0):
 #   CRITICAL D1  - BIN_M3U8 hardcoded default removed; check_dependencies is
@@ -42,7 +60,12 @@ RETRY_COUNT=5
 # D7 FIX: TMP_DIR scoped under XDG_CACHE_HOME with PID isolation.
 # /s4/tmp/ was a system-specific hardcode with no portability guarantee.
 TMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
-SAVE_DIR="$/s1/streamdir"
+# D16 FIX: Stray '$' before the leading slash made this a literal relative
+# path "$/s1/streamdir" — bash does not expand a bare '$' with no identifier
+# following it, so it passed through as a literal character. mkdir -p then
+# created a directory literally named "$" in the CWD. Corrected to an
+# absolute, unambiguous default under $HOME.
+SAVE_DIR="$HOME/streamdir"
 SAVE_NAME=""
 PROXY_URL=""
 
@@ -61,9 +84,13 @@ LIVE_PERFORM_AS_VOD="False"
 TARGET_URL=""
 
 # D1 FIX: BIN_M3U8 intentionally unset here. check_dependencies is the
-# sole authority. The hardcoded fallback "n-m3u8dl-re" (note: wrong separator)
-# that appeared after check_dependencies in v3.0.0 has been removed entirely.
-BIN_M3U8="/usr/bin/n-m3u8dl-re"
+# sole assignment authority and will populate this once the binary is found.
+# D16 FIX: this revision had reintroduced a hardcoded absolute path here
+# ("/usr/bin/n-m3u8dl-re"), which silently bypasses check_dependencies'
+# detection if that exact path doesn't exist on the user's system (e.g.
+# installed elsewhere, or named with the canonical "N_m3u8DL-RE" casing).
+# Reverted to empty string.
+BIN_M3U8=""
 
 # -----------------------------------------------------------------------------
 # Theming & Formatting
@@ -458,10 +485,10 @@ parse_arguments() {
 # Boot Sequence
 # -----------------------------------------------------------------------------
 # D3 FIX: check_dependencies and load_config are unconditionally executed.
-# Both were commented out in v3.0.0, disabling the entire safety net:
-# - check_dependencies sets BIN_M3U8 (required by execute_extraction).
-# - load_config applies any user-persisted overrides before execution.
-#check_dependencies
+# D16 FIX: check_dependencies had regressed back to commented-out in the
+# source provided for this audit, silently disabling dependency detection
+# and leaving BIN_M3U8 to whatever stale value preceded it.
+check_dependencies
 load_config
 
 if [[ $# -gt 0 ]]; then
