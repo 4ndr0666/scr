@@ -24,6 +24,33 @@ remove_npmrc_prefix_conflict() {
             log_success ".npmrc sanitized for NVM compatibility."
         fi
     fi
+
+    # D-25 FIX: nvm independently refuses to operate if certain environment
+    # variables are set, regardless of ~/.npmrc content — this is a distinct
+    # conflict source the original check never covered. nvm itself checks for
+    # PREFIX, NPM_CONFIG_PREFIX (and its lowercase npm_config_prefix form),
+    # and NPM_CONFIG_GLOBALCONFIG, and its own suggested fix is always a plain
+    # unset. None of these are ever set by this suite (confirmed: no exports
+    # of these names anywhere in 4ndr0service) — they come from the user's own
+    # shell profile (e.g. a static "Zero-Artifact / Static Path Authority"
+    # .zprofile export, per this suite's own convention in optimize_python.sh
+    # and optimize_ruby.sh). Unsetting them here only affects this process and
+    # its children (nvm.sh, npm, node), so it cannot silently break anything
+    # that relies on them elsewhere in the user's environment after this
+    # script exits.
+    local -a conflicting_vars=(PREFIX NPM_CONFIG_PREFIX npm_config_prefix NPM_CONFIG_GLOBALCONFIG)
+    local var unset_any=false
+    for var in "${conflicting_vars[@]}"; do
+        if [[ -n "${!var:-}" ]]; then
+            log_warn "Detected $var=\"${!var}\" in the environment — nvm refuses to run with this set. Unsetting for this session..."
+            unset "$var"
+            unset_any=true
+        fi
+    done
+    if [[ "$unset_any" == "true" ]]; then
+        log_success "Environment sanitized for NVM compatibility."
+        log_warn "This was re-exported by your shell profile (e.g. ~/.zprofile or ~/.zshrc). Remove that export there to stop it from coming back on your next login."
+    fi
 }
 
 optimize_nvm_service() {

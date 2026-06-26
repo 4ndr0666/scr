@@ -220,7 +220,7 @@ parse_args() {
 check_dependencies() {
 	log INFO "Checking dependencies"
 	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'sysctl' 'timeout' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
-	local -a opt=('lsattr' 'chattr' 'expressvpn' 'resolvectl')
+	local -a opt=('lsattr' 'chattr' 'expressvpnctl' 'resolvectl')
 	local -a miss=()
 	for c in "${req[@]}"; do
 		command -v "$c" >/dev/null 2>&1 || miss+=("$c")

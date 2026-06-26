@@ -67,7 +67,14 @@ check_auditd_rules() {
     fi
     log_info "Checking auditd rules..."
     local -a keywords
-    mapfile -t keywords < <(jq -r '.audit_keywords[]' "$CONFIG_FILE")
+    # D-22 FIX: this was the only jq array-extraction call in the suite
+    # without the (.key // [])[] null-coalescing fallback used everywhere
+    # else CONFIG_FILE arrays are read. A missing audit_keywords key made jq
+    # error internally; mapfile silently absorbed that (process-substitution
+    # failures do not trip set -e here), leaving keywords empty anyway — but
+    # only by accident of that specific plumbing, not by explicit design.
+    # Matching the established convention removes that hidden dependency.
+    mapfile -t keywords < <(jq -r '(.audit_keywords // [])[]' "$CONFIG_FILE")
     for key in "${keywords[@]}"; do
         if ! sudo auditctl -l | grep -qw "$key"; then
             log_warn "Missing audit rule for $key"

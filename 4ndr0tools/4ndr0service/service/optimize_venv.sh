@@ -83,7 +83,14 @@ optimize_venv_service() {
     if [[ ${#pkgs[@]} -gt 0 ]]; then
         log_info "Ensuring Isolated Tool Sync..."
         for p in "${pkgs[@]}"; do
-            if ! (pipx list 2>/dev/null || true) | grep -q "$p"; then
+            # D-23 FIX: was `pipx list | grep -q "$p"` — an unanchored substring
+            # match against pipx's human-readable list output, which can false-
+            # positive against unrelated package names or version-string noise.
+            # `pipx list --short` emits one exact "<package> <version>" line
+            # per installed tool; matching the package-name field with -x is
+            # an exact lookup, mirroring how optimize_node.sh uses npm directly
+            # rather than scraping free text.
+            if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$p"; then
                 log_info "Deploying: $p"
                 pipx install "$p" || log_warn "Deployment failed: $p"
             fi

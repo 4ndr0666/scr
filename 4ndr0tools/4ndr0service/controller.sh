@@ -80,8 +80,17 @@ run_all_services() {
         source_all_services
     fi
 
+    # D-21 FIX: optimize_nvm_service matches the ^optimize_.*_service$ discovery
+    # pattern below (it's defined in service/optimize_nvm.sh, which the
+    # optimize_*.sh glob in source_all_services() includes), but it is NOT an
+    # independently dispatchable service — it is Node's internal prerequisite,
+    # called directly by optimize_node_service() every time Node runs. Neither
+    # view/cli.sh nor view/dialog.sh exposes "NVM" as its own menu item, which
+    # confirms that design intent. Without this exclusion, a full sequential
+    # run executed NVM sync twice per pass: once here as a "discovered"
+    # top-level service, and again moments later inside optimize_node_service.
     local -a services
-    mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$')
+    mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$' | grep -v '^optimize_nvm_service$')
 
     for svc in "${services[@]}"; do
         "$svc" || log_warn "$svc failed."

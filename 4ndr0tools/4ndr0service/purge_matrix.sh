@@ -51,8 +51,11 @@ run_purge() {
     log_purge "INITIATING RECURSIVE SYSTEM AUTOCLEAN..."
 
     # 1. Hive Artifact Liquidation
-    # INTEGRATION: The --site-packages and .venv garbage-dir removal was also
-    # in optimize_venv.sh (section 5 scrub) and ascension.sh run_sync().
+    # INTEGRATION: The --site-packages and .venv garbage-dir removal is also
+    # in ascension.sh::run_sync(). (D-24 FIX: this comment previously also
+    # claimed optimize_venv.sh duplicated this logic — verified false during
+    # audit; optimize_venv.sh's own scrub step only targets GPUCache, "Code
+    # Cache", and the pip cache, never --site-packages/.venv.)
     # Kept here for standalone --force invocations; idempotent with the suite.
     log_info "Sterilizing virtualenv hive..."
     for garbage in "--site-packages" ".venv"; do
@@ -118,8 +121,10 @@ run_purge() {
     fi
 
     # 4. Deep Cache Liquidation
-    # INTEGRATION: __pycache__ removal also runs in optimize_venv.sh scrub.
-    # Kept here for completeness on standalone --force invocations.
+    # D-24 FIX: this previously claimed "__pycache__ removal also runs in
+    # optimize_venv.sh scrub" — verified false during audit. No other file in
+    # the suite purges __pycache__; this is its sole removal point. Kept here
+    # for completeness on standalone --force invocations.
     log_info "Liquidating __pycache__ artifacts..."
     find "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" \
         -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

@@ -48,6 +48,20 @@ run() {
 # Akasha Directive 3: The Iron FINALLY block.
 # If the installer exits non-zero after filesystem mutations have begun,
 # remove the partially-installed tree and symlink to leave the host pristine.
+#
+# D-18 FIX: Rollback must NEVER delete $SOURCE_DIR. When a user runs this
+# installer from inside an already-installed tree (e.g. `cd /opt/4ndr0service
+# && git pull && sudo ./install.sh`), SOURCE_DIR == INSTALL_LOCATION. The
+# "same directory, skip sync" branch still armed _ROLLBACK_NEEDED=true, and
+# several later steps are NOT failure-guarded (the jq/pacman dependency gate,
+# the systemd installer invocation, the symlink `ln -s`). Any one of those
+# failing under set -e fired this trap and ran `sudo rm -rf` on the user's own
+# source checkout — a directory that was never created by this run and that
+# this run has no right to destroy. The D-10 safe-prefix check does not catch
+# this because $SOURCE_DIR legitimately lives under /opt or /home and passes
+# that check fine; D-10 defends against a different threat (TOCTOU symlink
+# redirection to an unrelated system path), not against self-destruction.
+# This guard is independent of, and sits in front of, the D-10 check below.
 _rollback() {
     local exit_code=$?
     [[ "$DRY_RUN" == "true" ]] && return 0
@@ -55,6 +69,13 @@ _rollback() {
         log_error "Install aborted (exit $exit_code). Rolling back..."
         [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && sudo rm -f "$SYMLINK_PATH" 2>/dev/null || true
         if [[ -n "$_INSTALL_LOCATION" && -d "$_INSTALL_LOCATION" ]]; then
+            # D-18 FIX: Never remove the directory we were sourced/run from.
+            if [[ "$_INSTALL_LOCATION" == "$SOURCE_DIR" ]]; then
+                log_warn "Rollback REFUSED: install location equals source directory ($SOURCE_DIR)."
+                log_warn "Nothing was created by this run at that path, so nothing will be removed."
+                trap - EXIT
+                exit "$exit_code"
+            fi
             # D-10 FIX: Constrain rollback rm -rf to known-safe path prefixes.
             # Prevents a TOCTOU symlink attack from redirecting the removal to
             # an arbitrary path (e.g., /etc, /usr) between normalize_path()
@@ -236,14 +257,23 @@ run sudo find "$INSTALL_LOCATION" -type f -name "*.sh" -exec chmod +x {} +
 log_step "Establishing invocation symlink: $SYMLINK_PATH → $INSTALL_LOCATION/main.sh"
 [[ -d "$BIN_DIR" ]] || run sudo mkdir -p "$BIN_DIR"
 [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && run sudo rm -f "$SYMLINK_PATH"
-run sudo ln -s "$INSTALL_LOCATION/main.sh" "$SYMLINK_PATH"
+# D-18 FIX: This was unguarded. A failure here (e.g. a stale symlink the
+# preceding rm -f silently couldn't remove) propagated under set -e straight
+# into the rollback trap. Failing to (re)create the convenience symlink is
+# recoverable — log it and continue rather than aborting the whole install.
+run sudo ln -s "$INSTALL_LOCATION/main.sh" "$SYMLINK_PATH" \
+    || log_warn "Failed to create symlink $SYMLINK_PATH — invoke via $INSTALL_LOCATION/main.sh directly."
 
 # ── DEPENDENCY GATE ───────────────────────────────────────────────────────────
 log_step "Verifying runtime dependencies..."
 if ! command -v jq &>/dev/null; then
     log_warn "jq not found — required for JSON config parsing."
     if command -v pacman &>/dev/null; then
-        run sudo pacman -S --noconfirm --needed jq
+        # D-18 FIX: This was unguarded. pacman can legitimately fail (no
+        # network, db lock held, mirror unavailable) and that failure must
+        # not abort an otherwise-successful install of the suite itself.
+        run sudo pacman -S --noconfirm --needed jq \
+            || log_warn "Automatic jq install failed — install it manually before using the suite."
     else
         log_error "Install jq manually before using the suite."
     fi
@@ -263,10 +293,17 @@ if [[ "$SKIP_SYSTEMD" == "false" ]]; then
             if [[ "$DRY_RUN" == "false" ]]; then
                 # Run as the current (non-root) user; install.sh may be run with sudo
                 # but systemd --user must run as the actual user.
+                # D-18 FIX: This was unguarded. A failure inside the systemd
+                # installer (e.g. common.sh's mutex lock-wait timing out) must
+                # not abort the whole install — the suite itself is already
+                # correctly deployed by this point; only the maintenance timer
+                # activation is at stake, and that is independently retryable.
                 if [[ "${SUDO_USER:-}" != "" ]]; then
-                    sudo -u "$SUDO_USER" bash "$_systemd_installer"
+                    sudo -u "$SUDO_USER" bash "$_systemd_installer" \
+                        || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
                 else
-                    bash "$_systemd_installer"
+                    bash "$_systemd_installer" \
+                        || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
                 fi
             else
                 log_dry "Would run: bash $_systemd_installer"

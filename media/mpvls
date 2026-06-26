@@ -17,7 +17,7 @@ if [ $# -ge 1 ]; then
 elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR/mpvSockets" ]; then
     SOCKET_DIR="$XDG_RUNTIME_DIR/mpvSockets"
 else
-    SOCKET_DIR=${MPV_SOCKET_DIR:-/tmp/mpvSockets}
+    SOCKET_DIR="${SOCKET_DIR:-/tmp/}"
 fi
 
 # 2) Validate socket directory

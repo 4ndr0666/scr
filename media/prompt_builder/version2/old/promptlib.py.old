@@ -1,0 +1,44 @@
+# promptlib.py
+# INTEGRATED PARAMETER REGISTRY v4.3.0 — PROMPT TOOLKIT + 4ndr0PAC SH
+
+PARAMETERS = {
+    "identity": {
+        "Structural-fidelity": {"desc": "Geometry preservation", "layman": "Keep original shape", "vals": "0.1 to 1.0", "preset": "0.85"},
+        "Anatomical-anchor": {"desc": "Reference point", "layman": "Fix body parts in place", "vals": "x,y,z coordinate", "preset": "0,0,0"},
+        "Features-fixed": {"desc": "Deformation protection", "layman": "Prevent face/object warping", "vals": "on/off", "preset": "on"},
+        "Identity-static": {"desc": "Drift prevention", "layman": "Keep the character looking the same", "vals": "high/medium/low", "preset": "high"},
+        "Pigmentation-map-locked": {"desc": "Texture consistency", "layman": "Keep skin/surface colors exact", "vals": "hex code or reference", "preset": "#FF69B4"},
+        "Structural-non-deviation": {"desc": "Proportion enforcement", "layman": "Don't change scale", "vals": "0.0 to 1.0", "preset": "1.0"}
+    },
+    "lighting_physics": {
+        "Fresnel-reflection-coefficient": {"desc": "Angular reflectivity", "layman": "Control light reflection at edges", "vals": "0.0 (dull) to 1.0 (mirror)", "preset": "0.3"},
+        "Specular-highlight-lobe": {"desc": "Reflection spread", "layman": "Size of shiny spots", "vals": "0.1 (sharp) to 10.0 (blurred)", "preset": "2.0"},
+        "Lambertian-diffuse-reflectance": {"desc": "Matte scattering", "layman": "How matte the surface is", "vals": "0.0 to 1.0", "preset": "0.6"},
+        "Anisotropic-specular-reflection": {"desc": "Fibrous reflection", "layman": "Directional shine (like silk)", "vals": "rotation degree", "preset": "45"},
+        "Mean-free-path-scattering": {"desc": "SSS depth", "layman": "How deep light goes into skin", "vals": "0mm to 50mm", "preset": "25"},
+        "Photon-transmission-ratio": {"desc": "Transparency intensity", "layman": "How much light passes through", "vals": "0% to 100%", "preset": "40"},
+        "Through-fabric-diffuse-bounce": {"desc": "Light transmission", "layman": "Light scattering through cloth", "vals": "on/off", "preset": "on"},
+        "Rim-light-scattering-pass": {"desc": "Edge translucency", "layman": "Backlight glow on edges", "vals": "intensity 0 to 10", "preset": "8"}
+    },
+    "fabric_denier": {
+        "Micro-fiber-drape-physics": {"desc": "Thin material behavior", "layman": "Natural cloth movement", "vals": "weight in g/m2", "preset": "12"},
+        "Low-tensile-structural-deformity": {"desc": "Deformation logic", "layman": "How easily it stretches", "vals": "elasticity 0.0 to 1.0", "preset": "0.7"},
+        "Gravity-weighted-folds": {"desc": "Natural settling", "layman": "How fabric hangs", "vals": "fold intensity", "preset": "3"},
+        "Sub-micron-weave-density": {"desc": "Fiber fidelity", "layman": "Tightness of the weave", "vals": "high/medium/low", "preset": "high"}
+    },
+    "composition": {
+        "Isometric-spatial-grid": {"desc": "Axis alignment", "layman": "Isometric grid layout", "vals": "on/off", "preset": "on"},
+        "Orthographic-projection": {"desc": "Parallel ray logic", "layman": "Flat perspective", "vals": "on/off", "preset": "off"},
+        "Foreground-depth-layer": {"desc": "Depth priority", "layman": "Near-field rendering", "vals": "0.0 to 1.0", "preset": "0.9"},
+        "Spatial-density-uniform": {"desc": "Distribution balance", "layman": "Balanced object placement", "vals": "high/low", "preset": "high"}
+    },
+    "typography": {
+        "Vector-precision-glyph": {"desc": "Vector pathing", "layman": "Sharp text edges", "vals": "on/off", "preset": "on"},
+        "Typographic-clarity": {"desc": "Edge rendering", "layman": "High legibility", "vals": "1 to 10", "preset": "9"},
+        "Baseline-aligned": {"desc": "Stabilization", "layman": "Align text horizontally", "vals": "on/off", "preset": "on"}
+    },
+    "constraints": {
+        "Non-stylized-skin": {"desc": "Texture restriction", "layman": "Natural skin texture", "vals": "on/off", "preset": "on"},
+        "No-structural-changes": {"desc": "Geometry lock", "layman": "Lock original proportions", "vals": "on/off", "preset": "on"}
+    }
+}

@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import os
+import sys
+from prompt_toolkit import prompt
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.styles import Style
+
+# EXHAUSTIVE MODERATION BACKOFF MAP
+MODERATION_BACKOFF_MAP = {
+    "translucency": "opacity-gradient-index",
+    "subsurface": "volumetric-depth-scattering",
+    "dermal": "internal-structural-layer",
+    "anatomical": "structural-topology-anchor",
+    "skin": "epidermal-plane-mesh",
+    "flesh": "organic-material-density",
+    "sheer": "low-denier-permeability",
+    "lingerie": "base-layer-technical-fabric"
+}
+
+# UI STYLING
+style = Style.from_dict({'header': '#00ffcc bold', 'question': '#ffffff bold', 'hint': '#888888', 'success': '#00ff00 bold'})
+
+def sanitize_tokens(prompt_string):
+    """Parses output strings for hot-swap keyword replacement."""
+    modified = False
+    for sensitive, fallback in MODERATION_BACKOFF_MAP.items():
+        if sensitive in prompt_string.lower():
+            prompt_string = prompt_string.replace(sensitive, fallback)
+            modified = True
+    return prompt_string, modified
+
+def get_input(question_text, hints, placeholder=""):
+    print(HTML(f"<question>▶ {question_text}</question>"))
+    print(HTML(f"<hint>  Tokens: {hints}</hint>"))
+    return prompt("  👉 ", default=placeholder).strip()
+
+def main():
+    print(HTML('<header>        4NDR0666OS - PROMPT ARCHITECT v4.0.0        </header>'))
+    
+    # LAYER 1: CONTEXT
+    intent = get_input("Global Objective:", "Macro-render, Editorial-static, Technical-diagram")
+    geometry = get_input("Spatial Geometry:", "Isometric-grid, Orthographic, Foreground-depth-layer", "Foreground-depth-layer")
+    
+    # LAYER 2: IDENTITY
+    identity = "[REF_IMG: ingredient] " + get_input("Anatomical Topology:", "Structural-fidelity, Anatomical-anchor, Features-fixed, Identity-static")
+    
+    # LAYER 3: PHYSICS
+    surface = get_input("Surface Physics:", "Fresnel-reflection, Specular-lobe, Lambertian-diffuse, Anisotropic-specular")
+    physics = get_input("Subsurface/Denier Logic:", "Mean-free-path-scattering, Photon-transmission-ratio, Micro-fiber-drape-physics, Rim-light-scattering")
+    
+    # LAYER 4: TYPOGRAPHY
+    typography = get_input("Typography:", "Vector-precision-glyph, Typographic-clarity, Baseline-aligned")
+    constraints = get_input("Negative Constraints:", "Non-stylized-skin, No-interpolation, No-structural-changes", "No-structural-changes")
+
+    # COMPILATION
+    compiled = [
+        f"[OBJECTIVE]: {intent}",
+        f"[COMPOSITION]: {geometry}",
+        f"[IDENTITY_LOCK]: {identity}",
+        f"[LIGHTING_PHYSICS]: {surface}, {physics}",
+        f"[TYPOGRAPHY]: {typography}",
+        f"[CONSTRAINT]: {constraints}"
+    ]
+    
+    raw = "\n".join(compiled)
+    final, triggered = sanitize_tokens(raw)
+    
+    if triggered: print("[!] System: Moderation fallback engaged.")
+    print(f"\n{final}")
+
+if __name__ == "__main__":
+    main()

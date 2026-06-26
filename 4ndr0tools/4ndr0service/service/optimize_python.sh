@@ -15,7 +15,20 @@ IFS=$'\n\t'
 # shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
-VENV_BASE="${XDG_DATA_HOME:-$HOME/.local/share}/virtualenv"
+# D-20 FIX: This re-derived the same path common.sh already exports as
+# VENV_HOME (and which optimize_venv.sh re-exports identically). Three
+# independent definitions of "where is the virtualenv hive" is a drift
+# surface — using the shared VENV_HOME directly removes that surface.
+VENV_BASE="$VENV_HOME"
+
+# D-19 FIX: clean_pip_ghosts() below previously hardcoded /home/andro and
+# andro:andro for its fallback path and ownership-reclaim step, silently
+# defeating itself on any host where the real user is not literally "andro"
+# (the chown target never existed, so the reclaim step was a permanent no-op,
+# masked by `2>/dev/null || true`). Mirrors the same discovery pattern already
+# established in ascension.sh.
+REAL_USER="${SUDO_USER:-$USER}"
+USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
 load_pyenv() {
     if [[ -d "$PYENV_ROOT" ]]; then
@@ -46,7 +59,7 @@ clean_pip_ghosts() {
     site_pkgs=$(python3 -c "
 import sysconfig
 print(sysconfig.get_paths()['purelib'])
-" 2>/dev/null || echo "/home/andro/.local/share/pyenv/versions/${py_version}/lib/python${py_version%.*}/site-packages")
+" 2>/dev/null || echo "${USER_HOME}/.local/share/pyenv/versions/${py_version}/lib/python${py_version%.*}/site-packages")
 
     if [[ ! -d "$site_pkgs" ]]; then
         log_warn "Site-packages not found at $site_pkgs — skipping ghost clean"
@@ -60,7 +73,7 @@ print(sysconfig.get_paths()['purelib'])
     sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
 
     # Reclaim ownership
-    sudo chown -R andro:andro "/home/andro/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
+    sudo chown -R "${REAL_USER}:${REAL_USER}" "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
 
     # Pip cache + force reinstall
     python -m pip cache purge 2>/dev/null || true
@@ -140,7 +153,11 @@ optimize_python_service() {
         if [[ ${#py_tools[@]} -gt 0 ]]; then
             for tool in "${py_tools[@]}"; do
                 [[ -z "$tool" ]] && continue
-                if ! pipx list 2>/dev/null | grep -q "$tool"; then
+                # D-23 FIX: was `pipx list | grep -q "$tool"` — see optimize_venv.sh
+                # for the full rationale. Exact-match against the package-name
+                # field of `pipx list --short` instead of substring-matching
+                # pipx's free-text listing.
+                if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$tool"; then
                     log_info "Deploying tool to Hive sector: $tool"
                     pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
                 else
