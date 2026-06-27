@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2207,SC2034,SC2155,SC2317
 # Author: 4ndr0666
-# FFX v8.0.0 — Final Superset
-# Lossless, failure-resilient FFmpeg orchestration CLI.
-# Install path: /opt/ffx
-# Approved feature manifest: A(v5) + B(beta/v6) + selective C(v7) superset.
-# Forward progress only. Regression = hard failure.
+# v8.1.0
 set -euo pipefail
 IFS=$'\n\t'
+#                        === FFX === #
+#
+# shellcheck disable=SC2207,SC2034,SC2155,SC2317
+# Descripttion: Ffmpeg cli wrapper
+# Install path: /opt/ffx
+# Approved feature manifest: A(v5) + B(beta/v6) + selective C(v7) superset.
+# v8.1.0: fixes the single-static-timeout-kills-the-whole-batch defect in 
+# run_ffmpeg, adds checkpointed/resumable batch concat for merge and
+# composite, and makes die() able to scrub a partially-written destination file.
 
 # =============================================================================
 # XDG & SESSION DIRECTORIES
@@ -24,7 +28,15 @@ FFX_DEFAULTS="$FFX_CONFIG_DIR/defaults"
 FFX_RUN_DIR="$(mktemp -d -p "${XDG_RUNTIME_DIR}" "ffx.XXXXXXXX")"
 LOG_FILE="$FFX_LOG_DIR/ffx.log"
 
-mkdir -p "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR"
+# FFX_CHECKPOINT_DIR persists ACROSS runs (unlike FFX_RUN_DIR, which is wiped on
+# exit). This is what makes large batch jobs resumable: a failed run leaves its
+# per-input checkpoint manifest here, and the next invocation against the same
+# inputs+settings skips everything already completed. Cache-dir scoped so
+# `ffx cache-clean` is also the resumability reset switch — one command, one
+# mental model, no separate "resume state" the user has to learn about.
+FFX_CHECKPOINT_DIR="$FFX_CACHE_DIR/checkpoints"
+
+mkdir -p "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR"
 
 # =============================================================================
 # COLORS & LOGGING
@@ -42,9 +54,29 @@ fi
 
 say()         { printf '%b[OK] %s%b\n'       "${GREEN}${BOLD}" "$1" "${RESET}";      }
 warn()        { printf '%b[!!] %s%b\n'       "${YELLOW}"        "$1" "${RESET}" >&2; }
-die()         { printf '%b[XX] Error: %s%b\n' "${RED}"          "$1" "${RESET}" >&2; exit 1; }
 verbose_log() { [[ "${VERBOSE_MODE:-false}" == true ]] && printf '[INFO] %s\n' "$1" >&2 || true; }
 debug_log()   { [[ "${FFX_DEBUG:-0}"        == "1"  ]] && printf '[DEBUG] %s\n' "$1" >&2 || true; }
+
+# die(): CHANGED unit (Golden-Unit §3 — superset, not a behavior break).
+# Old contract: print red error to stderr, exit 1. Callers relied entirely on
+# the EXIT trap (cleanup_all) to remove $FFX_RUN_DIR; nothing ever scrubbed a
+# partially-written FINAL output path (e.g. a destination file mid-mv when a
+# later pipeline stage in the same batch died).
+# New contract: same message + exit behavior, PLUS an optional second argument
+# naming a destination-path file to unlink before exiting, so a half-written
+# user-visible output never survives a hard failure under its real filename.
+# This satisfies Architectural Gate 4.4 (every allocated resource — including
+# a not-yet-complete destination file — gets unconditional cleanup), not just
+# resources inside the ephemeral run directory.
+die() {
+    local msg="$1" partial_output="${2:-}"
+    printf '%b[XX] Error: %s%b\n' "${RED}" "$msg" "${RESET}" >&2
+    if [[ -n "$partial_output" && -e "$partial_output" ]]; then
+        rm -f -- "$partial_output" 2>/dev/null || true
+        warn "Removed incomplete output: $partial_output"
+    fi
+    exit 1
+}
 
 # =============================================================================
 # CLEANUP & TRAP
@@ -81,7 +113,24 @@ default_config() {
     PTS_FACTOR=""
     BATCH_SIZE=0
 
+    # FFX_TIMEOUT is now explicitly documented as the PER-OPERATION budget for
+    # a single ffmpeg invocation acting on ONE input file (process/filter/slowmo/
+    # looperang/etc). It is no longer applied unscaled to operations whose cost
+    # scales with input count (bulk merge/composite concat) — see
+    # compute_batch_timeout() and FFX_TIMEOUT_PER_FILE below.
     FFX_TIMEOUT="${FFX_TIMEOUT:-300}"
+
+    # FFX_TIMEOUT_PER_FILE: per-input budget used to SCALE the timeout for any
+    # operation whose total ffmpeg work grows with the number of files being
+    # concatenated/composited. A 50-file merge gets 50x this value as its ceiling
+    # instead of inheriting the single-file FFX_TIMEOUT and guaranteeing failure.
+    FFX_TIMEOUT_PER_FILE="${FFX_TIMEOUT_PER_FILE:-60}"
+
+    # FFX_RETRY: number of automatic retries on a transient (non-timeout) ffmpeg
+    # failure before run_ffmpeg gives up and returns 1. EAFP: attempt the real
+    # operation, and on failure, retry the operation itself rather than trying to
+    # pre-validate every condition that could have caused it.
+    FFX_RETRY="${FFX_RETRY:-1}"
 
     ADV_CONTAINER="mp4"
     ADV_RES="${CANVAS_W}x${CANVAS_H}"
@@ -258,47 +307,127 @@ get_audio_opts_array() {
 }
 
 # =============================================================================
+# BATCH TIMEOUT SCALING (NEW unit — extracted to make the fix testable and
+# reusable across cmd_merge / cmd_composite rather than inlining the arithmetic
+# at every call site)
+# =============================================================================
+# compute_batch_timeout <file_count>
+# Returns a timeout ceiling for an operation whose cost scales with file_count
+# (concat assembly, multi-file composite passes). Uses FFX_TIMEOUT_PER_FILE as
+# the per-unit budget, with FFX_TIMEOUT itself as a floor so a 1-2 file batch
+# never gets LESS time than a normal single-file operation would.
+# This is what makes "many files -> timeout kills everything" structurally
+# impossible to regress to: the budget is derived from input size, not a
+# constant guessed for the common case.
+compute_batch_timeout() {
+    local count="${1:-1}"
+    (( count < 1 )) && count=1
+    local scaled=$(( count * FFX_TIMEOUT_PER_FILE ))
+    if (( scaled < FFX_TIMEOUT )); then
+        printf '%d' "$FFX_TIMEOUT"
+    else
+        printf '%d' "$scaled"
+    fi
+}
+
+# =============================================================================
 # FFMPEG RUNNER
 # CONTRACT: returns 0 on success, 1 on failure.
 # Every call site MUST check return value and call die() or handle explicitly.
+#
+# run_ffmpeg(): CHANGED unit (Golden-Unit §3 — superset of prior contract).
+#
+# OLD DIGEST: Runs ffmpeg under a single static FFX_TIMEOUT applied identically
+# to every invocation regardless of how much work that invocation represents.
+# On timeout(1)'s exit 124, logs a warning and returns 1 with no retry and no
+# cleanup of whatever partial file ffmpeg had been writing — and because
+# `timeout` defaults to SIGTERM, ffmpeg often finalizes a truncated-but-valid
+# moov atom on the way out, so the truncated file can silently PASS a later
+# check_moov_atom() integrity check.
+#
+# NEW DIGEST: Same call signature and same 0/1 return contract (no caller
+# changes required), plus:
+#   1. Accepts an optional leading `--ffx-timeout N` pair to override
+#      FFX_TIMEOUT for just this call (used by batch operations via
+#      compute_batch_timeout, so a 50-file concat is not bound by the
+#      single-file default).
+#   2. Accepts an optional leading `--ffx-output PATH` pair naming the file
+#      ffmpeg is writing to. On timeout or final failure, that path is
+#      unlinked — closing the "truncated file silently looks valid" gap.
+#   3. Retries up to FFX_RETRY times on non-timeout failures (EAFP: attempt
+#      the operation, catch the failure, retry the operation — never a
+#      pre-flight check trying to predict it). Timeouts (124) are NOT
+#      retried automatically at this layer, since retrying the exact same
+#      budget against the exact same oversized job would just time out again;
+#      the fix for that case is sizing the budget correctly via
+#      compute_batch_timeout, not blind retry.
+#
+# Architectural Gate 4.2 (hard timeout on every external execution): PASS —
+#   strengthened; timeout is now sized to the operation instead of constant.
+# Architectural Gate 4.6 (EAFP over defensive LBYL): PASS — retries the actual
+#   operation on failure rather than adding pre-checks that try to predict it.
 # =============================================================================
 run_ffmpeg() {
+    local override_timeout="" output_path=""
+    while [[ "${1:-}" == --ffx-* ]]; do
+        case "$1" in
+            --ffx-timeout) override_timeout="$2"; shift 2 ;;
+            --ffx-output)  output_path="$2";      shift 2 ;;
+            *) break ;;
+        esac
+    done
+
     if [[ "$DRY_RUN" == true ]]; then
         printf '[DRY-RUN] ffmpeg'; printf ' %q' "$@"; printf '\n'
         return 0
     fi
 
+    local effective_timeout="${override_timeout:-$FFX_TIMEOUT}"
     local -a base=("ffmpeg" "-hide_banner")
-    local ec=0 use_to=false
-    command_exists timeout && [[ "${FFX_TIMEOUT:-0}" -gt 0 ]] && use_to=true
+    local ec=0 use_to=false attempt=0 max_attempts=$(( FFX_RETRY + 1 ))
+    command_exists timeout && [[ "${effective_timeout:-0}" -gt 0 ]] && use_to=true
 
-    if [[ "$VERBOSE_MODE" == true ]]; then
-        base+=("-v" "info")
-        if [[ "$use_to" == true ]]; then
-            timeout "$FFX_TIMEOUT" "${base[@]}" "$@" 2>&1 | tee -a "$LOG_FILE"; ec=${PIPESTATUS[0]}
-        else
-            "${base[@]}" "$@" 2>&1 | tee -a "$LOG_FILE"; ec=${PIPESTATUS[0]}
-        fi
-    else
-        base+=("-v" "error")
-        : > "$LOG_FILE"
-        if [[ "$use_to" == true ]]; then
-            timeout "$FFX_TIMEOUT" "${base[@]}" "$@" >> "$LOG_FILE" 2>&1; ec=$?
-        else
-            "${base[@]}" "$@" >> "$LOG_FILE" 2>&1; ec=$?
-        fi
-    fi
+    while (( attempt < max_attempts )); do
+        (( attempt++ )) || true
 
-    if (( ec == 124 )); then
-        warn "FFmpeg timed out after ${FFX_TIMEOUT}s. Use --timeout to extend."
-        tail -n 20 "$LOG_FILE" >&2 || true; return 1
-    elif (( ec != 0 )); then
-        warn "FFmpeg failed (exit ${ec}). Log: $LOG_FILE"
-        tail -n 20 "$LOG_FILE" >&2 || true; return 1
-    fi
-    return 0
+        if [[ "$VERBOSE_MODE" == true ]]; then
+            base=("ffmpeg" "-hide_banner" "-v" "info")
+            if [[ "$use_to" == true ]]; then
+                timeout "$effective_timeout" "${base[@]}" "$@" 2>&1 | tee -a "$LOG_FILE"; ec=${PIPESTATUS[0]}
+            else
+                "${base[@]}" "$@" 2>&1 | tee -a "$LOG_FILE"; ec=${PIPESTATUS[0]}
+            fi
+        else
+            base=("ffmpeg" "-hide_banner" "-v" "error")
+            : > "$LOG_FILE"
+            if [[ "$use_to" == true ]]; then
+                timeout "$effective_timeout" "${base[@]}" "$@" >> "$LOG_FILE" 2>&1; ec=$?
+            else
+                "${base[@]}" "$@" >> "$LOG_FILE" 2>&1; ec=$?
+            fi
+        fi
+
+        if (( ec == 0 )); then
+            return 0
+        elif (( ec == 124 )); then
+            warn "FFmpeg timed out after ${effective_timeout}s. Use --timeout/--timeout-per-file to extend."
+            tail -n 20 "$LOG_FILE" >&2 || true
+            [[ -n "$output_path" && -e "$output_path" ]] && rm -f -- "$output_path" 2>/dev/null || true
+            return 1
+        else
+            if (( attempt < max_attempts )); then
+                verbose_log "FFmpeg failed (exit ${ec}); retrying (attempt ${attempt}/${max_attempts})..."
+                [[ -n "$output_path" && -e "$output_path" ]] && rm -f -- "$output_path" 2>/dev/null || true
+                continue
+            fi
+            warn "FFmpeg failed (exit ${ec}) after ${attempt} attempt(s). Log: $LOG_FILE"
+            tail -n 20 "$LOG_FILE" >&2 || true
+            [[ -n "$output_path" && -e "$output_path" ]] && rm -f -- "$output_path" 2>/dev/null || true
+            return 1
+        fi
+    done
+    return 1
 }
-
 # =============================================================================
 # PROBE HELPERS
 # =============================================================================
@@ -354,6 +483,17 @@ get_deinterlace_filter() { is_interlaced "$1" && echo "yadif=deint=interlaced" |
 
 # =============================================================================
 # MOOV ATOM
+#
+# NOTE (audit finding, not a regression — flagged per protocol but not silently
+# "fixed" without naming it explicitly): check_moov_atom() only confirms ffprobe
+# can read a duration field; it does NOT confirm the file's actual duration
+# matches what was expected. Combined with the old run_ffmpeg's SIGTERM-on-
+# timeout behavior, a truncated file could finalize a valid-but-short moov atom
+# and pass this check. run_ffmpeg's new --ffx-output cleanup closes the path
+# that produced those truncated files in the first place, which is the correct
+# fix point — re-deriving expected-vs-actual duration here would duplicate that
+# fix at the wrong layer and add LBYL surface area for marginal benefit. Left
+# unchanged; documenting the reasoning so it isn't re-litigated as an oversight.
 # =============================================================================
 check_moov_atom() {
     ffprobe -v error -show_entries format=duration \
@@ -370,7 +510,7 @@ moov_fallback() {
     else
         enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
     fi
-    run_ffmpeg -y -i "$in" "${enc[@]}" "${aopts[@]}" -movflags +faststart "$out" \
+    run_ffmpeg --ffx-output "$out" -y -i "$in" "${enc[@]}" "${aopts[@]}" -movflags +faststart "$out" \
         || die "moov_fallback failed for '$(basename "$in")'"
 }
 
@@ -388,10 +528,10 @@ fix_dts() {
     local file="$1" tmpf
     tmpf="$(mktemp_ffx .mp4)"
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-    if ! run_ffmpeg -y -fflags +genpts -i "$file" \
+    if ! run_ffmpeg --ffx-output "$tmpf" -y -fflags +genpts -i "$file" \
             -c:v copy "${aopts[@]}" -movflags +faststart "$tmpf"; then
         verbose_log "DTS remux failed; lossless re-encode for '$(basename "$file")'"
-        run_ffmpeg -y -fflags +genpts -i "$file" \
+        run_ffmpeg --ffx-output "$tmpf" -y -fflags +genpts -i "$file" \
             -c:v "$ADV_CODEC" -qp 0 -preset ultrafast \
             "${aopts[@]}" "$tmpf" || return 1
     fi
@@ -420,7 +560,7 @@ auto_clean() {
     local file="$1"
     [[ -z "$file" || ! -f "$file" ]] && return 0
     local tmpf; tmpf="$(mktemp_ffx .mp4)"
-    if run_ffmpeg -y -i "$file" -map_metadata -1 -c copy "$tmpf"; then
+    if run_ffmpeg --ffx-output "$tmpf" -y -i "$file" -map_metadata -1 -c copy "$tmpf"; then
         mv "$tmpf" "$file"
         verbose_log "Metadata stripped: '$(basename "$file")'"
     else
@@ -430,9 +570,112 @@ auto_clean() {
 }
 
 # =============================================================================
+# BATCH CHECKPOINT MANIFEST (NEW unit — orchestrator class)
+#
+# This is the mechanism that makes large merge/composite jobs resumable instead
+# of all-or-nothing. It is intentionally a flat, dumb key/value store on disk —
+# not a database, not JSON requiring jq for the hot path — because the only
+# operations needed are "has this exact input+settings combination already
+# produced a temp file that's still valid" and "record that it now has."
+#
+# Architectural Gate 4.3 (base+patch, not copy-and-accumulate): satisfied by
+# construction — the checkpoint never copies prior state; it only ever points
+# at the ALREADY-EXISTING successful temp output for an input, and the only
+# "reset" operation is checkpoint_clear(), which returns to a known-pristine
+# baseline (no checkpoint at all) rather than trying to partially undo one.
+# =============================================================================
+
+# checkpoint_key(): derives a stable, collision-resistant identifier for one
+# (input file + relevant encode settings) pair, so a checkpoint from a PRIOR
+# run with different settings is correctly treated as stale and never
+# silently reused across incompatible settings. Accepts an optional explicit
+# target-geometry override (used by cmd_merge, whose actual per-file encode
+# target is the batch-computed max_w x max_h, NOT the ADV_RES default) so the
+# key reflects what was actually encoded rather than an unrelated config value.
+checkpoint_key() {
+    local input="$1" geometry_override="${2:-$ADV_RES}"
+    local sig="${input}|${ADV_CODEC}|${ADV_PIX_FMT}|${geometry_override}|${ADV_FPS}|${ADV_CRF}|${ADV_QUALITY_MODE}|${REMOVE_AUDIO}"
+    sha256sum <<< "$sig" | awk '{print $1}'
+}
+
+# checkpoint_job_dir(): one checkpoint directory per logical batch job, keyed
+# off the full sorted input list + output target, so two unrelated merge jobs
+# never collide or resume into each other's state.
+checkpoint_job_dir() {
+    local job_sig="$1"
+    local job_hash; job_hash="$(sha256sum <<< "$job_sig" | awk '{print $1}')"
+    printf '%s/%s' "$FFX_CHECKPOINT_DIR" "$job_hash"
+}
+
+# checkpoint_get(): prints the path to a previously-completed temp output for
+# this input under current settings, if one still exists on disk and is
+# non-empty. Empty stdout + return 1 means "no usable checkpoint" — callers
+# treat that as "process this input fresh," never as an error. Optional
+# third argument overrides the geometry component of the key (see
+# checkpoint_key) for callers whose actual per-file encode target isn't
+# ADV_RES.
+checkpoint_get() {
+    local job_dir="$1" input="$2" geometry_override="${3:-}"
+    local key; key="$(checkpoint_key "$input" "$geometry_override")"
+    local marker="$job_dir/$key"
+    [[ -f "$marker" ]] || return 1
+    local recorded_path; recorded_path="$(<"$marker")"
+    [[ -s "$recorded_path" ]] || return 1
+    printf '%s' "$recorded_path"
+}
+
+# checkpoint_store_artifact(): copies a just-produced temp file OUT of
+# $FFX_RUN_DIR (which is wiped by the EXIT trap on every invocation, success
+# or failure alike) and INTO the job's checkpoint directory (which persists
+# across invocations by design). Returns the new persistent path on stdout.
+#
+# This exists because checkpoint_set() recording a path is only useful if
+# that path still resolves on the NEXT invocation; pointing a persistent
+# manifest entry at ephemeral $FFX_RUN_DIR storage would record correctly
+# but resume into a dangling reference every time — the manifest would claim
+# a batch is done while the file it points to is already gone. Call this
+# BEFORE checkpoint_set() for every artifact that needs to survive a
+# resumed run. Optional fourth argument is the same geometry override as
+# checkpoint_get/checkpoint_set.
+checkpoint_store_artifact() {
+    local job_dir="$1" input="$2" transient_path="$3" geometry_override="${4:-}"
+    mkdir -p "$job_dir"
+    local key; key="$(checkpoint_key "$input" "$geometry_override")"
+    local persistent_path="$job_dir/${key}.artifact.mp4"
+    cp -- "$transient_path" "$persistent_path"
+    printf '%s' "$persistent_path"
+}
+
+# checkpoint_set(): records that `input`, under current settings, has a
+# completed, valid output at `produced_path`. produced_path must already
+# exist and be non-empty, and MUST be a path that survives this process
+# exiting (i.e. the output of checkpoint_store_artifact, never a raw
+# $FFX_RUN_DIR path) — this function only records, it never validates
+# beyond existence, keeping validation logic (moov checks etc) where it
+# already lives rather than duplicating it here. Optional fourth argument
+# is the same geometry override as checkpoint_get/checkpoint_store_artifact —
+# it MUST match what was passed to those for the same input, or the marker
+# written here will never be found by a later checkpoint_get lookup.
+checkpoint_set() {
+    local job_dir="$1" input="$2" produced_path="$3" geometry_override="${4:-}"
+    mkdir -p "$job_dir"
+    local key; key="$(checkpoint_key "$input" "$geometry_override")"
+    printf '%s' "$produced_path" > "$job_dir/$key"
+}
+
+# checkpoint_clear(): the only "reset" operation — removes the entire job's
+# checkpoint directory. This is base+patch in the other direction: instead of
+# trying to undo individual recorded steps, it returns the job to the known-
+# pristine state of "no checkpoint exists," which is always a safe, well-
+# defined baseline to resume (i.e. restart) from.
+checkpoint_clear() {
+    local job_dir="$1"
+    rm -rf -- "$job_dir" 2>/dev/null || true
+}
+# =============================================================================
 # SELF-AUDIT ENGINE
 # =============================================================================
-FFX_VERSION="${FFX_VERSION:-8.0.0}"
+FFX_VERSION="${FFX_VERSION:-8.1.0}"
 FFX_SEGMENT_LINES="${FFX_SEGMENT_LINES:-500}"
 FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
 
@@ -579,7 +822,6 @@ advanced_prompt() {
         "$ADV_CODEC" "$ADV_PIX_FMT" "$ADV_PRESET" \
         "$LAYOUT_MODE" "$ADV_QUALITY_MODE" "$ADV_CRF"
 }
-
 # =============================================================================
 # MODULE 1A: FIXED COMPOSITE ENGINE  (v5 deterministic layout)
 # Canvas: 1920x1080. Layouts: 1=fullscreen, 2=lossless hstack,
@@ -636,7 +878,7 @@ build_composite() {
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
 
-    run_ffmpeg -y \
+    run_ffmpeg --ffx-output "$output" -y \
         "${ff_in[@]}" \
         -filter_complex "$fc" \
         -map "[v]" -map "0:a?" \
@@ -645,7 +887,7 @@ build_composite() {
         -pix_fmt "$ADV_PIX_FMT" \
         -movflags +faststart \
         "$output" \
-        || die "build_composite(${n}): ffmpeg failed."
+        || die "build_composite(${n}): ffmpeg failed." "$output"
 
     check_moov_atom "$output" || moov_fallback "${files[0]}" "$output"
     check_moov_atom "$output" || die "build_composite: moov atom missing in '$(basename "$output")'"
@@ -698,7 +940,7 @@ composite_pair_lossless() {
     fi
 
     args+=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET" "$out")
-    run_ffmpeg "${args[@]}" || die "composite_pair_lossless: ffmpeg failed."
+    run_ffmpeg --ffx-output "$out" "${args[@]}" || die "composite_pair_lossless: ffmpeg failed." "$out"
     printf '%s' "$out"
 }
 
@@ -757,11 +999,33 @@ L_IDS+=("row4");         L_SLOTS+=("480:1080 480:1080 480:1080 480:1080");
 L_FC+=('[0:v]CELL0[s0];[1:v]CELL1[s1];[2:v]CELL2[s2];[3:v]CELL3[s3];[s0][s1][s2][s3]hstack=inputs=4[v]')
 
 _LAST_SCORE=0
+# _eval_layout(): CHANGED unit (Golden-Unit §3 — bug fix, pre-existing,
+# disclosed per protocol; out of original audit scope but found via
+# regression testing of the units this audit DID touch).
+#
+# OLD DIGEST: Builds `slots`, `fi_arr`, `si_arr` via unquoted-expansion word
+# splitting — `( ${L_SLOTS[$cidx]} )`, `( $f_order )`, `( $s_order )` — which
+# requires the shell's IFS to include a space. This script sets
+# `IFS=$'\n\t'` globally at the top of the file (intentional hardening
+# against accidental splitting elsewhere), which silently removes space from
+# IFS. The practical effect: every one of these three array constructions
+# collapses its space-delimited source string into a SINGLE array element
+# instead of N elements, so `${#slots[@]}` is always 1 regardless of how many
+# slots a layout actually has. This breaks _eval_layout for every layout
+# except those whose L_SLOTS entry happens to have exactly one slot.
+#
+# NEW DIGEST: Same inputs, same scoring algorithm, same outputs (order file,
+# _LAST_SCORE) — only the array-construction mechanism changes, from
+# IFS-dependent unquoted expansion to explicit `IFS=' ' read -r -a`, which
+# splits on space regardless of the shell's ambient IFS setting. Superset:
+# every case that worked before (single-slot layouts) still works
+# identically; every case that was silently broken before (multi-slot
+# layouts) now works correctly.
 _eval_layout() {
     local cidx="$1"
     local -n _ev_files="$2"
     local -n _ev_whs="$3"
-    local -a slots=( ${L_SLOTS[$cidx]} )
+    local -a slots; IFS=' ' read -r -a slots <<< "${L_SLOTS[$cidx]}"
 
     local f_awk_in="" fi
     for fi in "${!_ev_whs[@]}"; do f_awk_in+="${fi} ${_ev_whs[$fi]}"$'\n'; done
@@ -774,8 +1038,8 @@ _eval_layout() {
     done
     local s_order; s_order=$(printf '%s' "$s_awk_in" | awk "$_AWK_SORT_BY_AR") || true
 
-    local -a fi_arr=( $f_order )
-    local -a si_arr=( $s_order )
+    local -a fi_arr; IFS=' ' read -r -a fi_arr <<< "$f_order"
+    local -a si_arr; IFS=' ' read -r -a si_arr <<< "$s_order"
     local -a assignment=()
     local total_score=0 fw fh k
     for k in "${!fi_arr[@]}"; do
@@ -799,6 +1063,20 @@ _eval_layout() {
 _BEST_LAYOUT_IDX=0
 declare -a _BEST_FILE_ORDER=()
 
+# select_layout(): CHANGED unit (Golden-Unit §3 — same bug class and same
+# fix pattern as _eval_layout above). OLD DIGEST: built `slots` via the same
+# IFS-broken unquoted expansion, so `${#slots[@]}` was always 1, meaning
+# `cands` (layouts whose slot count equals the input file count) was empty
+# for every n > 1 — the only n for which this branch ever populated `cands`
+# was n=1 (fullscreen has exactly one slot, and a 1-element unquoted
+# expansion accidentally has length 1 even when split incorrectly). This is
+# exactly the failure observed empirically: `top_cands` ends up empty,
+# `RANDOM % ${#top_cands[@]}` divides by zero, and the command crashes for
+# every multi-file random-layout composite batch. NEW DIGEST: same
+# candidate-selection and scoring logic, `slots` built via explicit
+# `IFS=' ' read -r -a` so its element count is correct regardless of ambient
+# IFS. Superset: n=1 still works identically; n=2,3,4 now work instead of
+# crashing.
 select_layout() {
     local -a _sl_files=("$@")
     local n="${#_sl_files[@]}"
@@ -807,9 +1085,11 @@ select_layout() {
 
     local -a cands=() i
     for i in "${!L_IDS[@]}"; do
-        local slots=( ${L_SLOTS[$i]} )
+        local slots; IFS=' ' read -r -a slots <<< "${L_SLOTS[$i]}"
         (( ${#slots[@]} == n )) && cands+=("$i")
     done
+
+    (( ${#cands[@]} > 0 )) || die "select_layout: no layout supports ${n} input(s). Supported counts: 1-4."
 
     local best_score=-1 cidx
     local -a top_cands=()
@@ -832,11 +1112,19 @@ select_layout() {
     while IFS= read -r line; do _BEST_FILE_ORDER+=("$line"); done < "$FFX_RUN_DIR/order_${_BEST_LAYOUT_IDX}"
 }
 
+# build_fc(): CHANGED unit (Golden-Unit §3 — same bug class and fix pattern).
+# OLD DIGEST: built `slots` via the same IFS-broken unquoted expansion;
+# for any layout with more than one slot, `${slots[$i]}` for i>=1 would be
+# unset/empty, producing a malformed or incomplete filter_complex string.
+# Combined with select_layout never reaching this function for n>1 (it died
+# first), this was unreachable-but-still-broken dead code along the same
+# fault line. NEW DIGEST: same filter-complex template substitution, `slots`
+# built via explicit `IFS=' ' read -r -a`. Superset.
 build_fc() {
     local cidx="$1"; shift
     local -a files=("$@")
     local fc="${L_FC[$cidx]}"
-    local -a slots=( ${L_SLOTS[$cidx]} )
+    local -a slots; IFS=' ' read -r -a slots <<< "${L_SLOTS[$cidx]}"
     local i sw sh cvf
     for i in "${!files[@]}"; do
         IFS=':' read -r sw sh <<< "${slots[$i]}"
@@ -846,6 +1134,12 @@ build_fc() {
     printf '%s' "$fc"
 }
 
+# composite_batch(): UNCHANGED logic; run_ffmpeg call site updated to pass
+# --ffx-output (so a timeout/failure mid-batch-encode cleans up its own part
+# file) and --ffx-timeout via compute_batch_timeout scaled to this batch's
+# input count (n is always <=4 here by construction, so this mostly keeps
+# parity with the single-file default, but stays correct if MAX batch size
+# is ever raised).
 composite_batch() {
     local batch_num="$1"; shift
     local -a files=("$@")
@@ -899,7 +1193,8 @@ composite_batch() {
     fi
 
     local fps="${SPECIFIC_FPS:-$ADV_FPS}"
-    run_ffmpeg -y \
+    local batch_to; batch_to="$(compute_batch_timeout "$n")"
+    run_ffmpeg --ffx-timeout "$batch_to" --ffx-output "$part_file" -y \
         "${ff_inputs[@]}" \
         -filter_complex "$fc" \
         -map "[v]" \
@@ -910,28 +1205,58 @@ composite_batch() {
         -max_muxing_queue_size 1024 \
         -movflags +faststart \
         "${dur_flags[@]}" \
-        "$part_file" || die "composite_batch: ffmpeg failed."
+        "$part_file" || die "composite_batch: ffmpeg failed." "$part_file"
 
     printf '%s' "$part_file"
 }
-
 # =============================================================================
 # CMD: COMPOSITE
+#
+# cmd_composite(): CHANGED unit (Golden-Unit §3 — superset of prior contract).
+#
+# OLD DIGEST: Splits corrected inputs into batches of up to 4, calls
+# build_composite/composite_batch for each, collecting PART_FILES; on ANY
+# batch's ffmpeg failure, die() exits the whole process, discarding every
+# already-produced part file via the EXIT trap (cleanup_all wipes
+# $FFX_RUN_DIR). Re-running after such a failure reprocesses every batch from
+# scratch, including the ones that already succeeded. The final assembly step
+# (single ffmpeg concat over all parts when >1 batch) ran under the same flat
+# FFX_TIMEOUT as every other call, with no scaling for total batch count.
+#
+# NEW DIGEST: Same batching, same layout selection, same output contract.
+# Adds: (1) each batch's output is checkpointed via checkpoint_set() keyed to
+# its exact input file list + current encode settings, so a re-run of the
+# same composite job skips any batch whose checkpoint still points at a valid
+# part file and only (re)processes the batches that actually failed or were
+# never reached; (2) the final concat step's timeout is computed via
+# compute_batch_timeout() scaled to total batch count instead of inheriting
+# the single-file default; (3) on a hard failure mid-job, the checkpoint job
+# directory is left intact (not cleared) specifically so the next invocation
+# can resume — checkpoint_clear() is only ever called after a fully successful
+# run, per Architectural Gate 4.3 (known-pristine baseline is "no checkpoint,"
+# never a partially-undone one).
+#
+# Superset: every input that produced a valid part file under the old logic
+# still does under the new logic; nothing that previously succeeded can now
+# fail, and the failure path is strictly better (resumable instead of total
+# loss).
 # =============================================================================
 cmd_composite() {
     advanced_prompt
     local output_base="composite"
     local output="${GLOBAL_OUTPUT_FILE:-}"
     local -a input_files=()
+    local no_resume=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -o|--output)       output_base="${2%.*}"; output="$2"; shift 2 ;;
-            -B|--batch-size)   BATCH_SIZE="$2"; shift 2 ;;
+            -o|--output)        output_base="${2%.*}"; output="$2"; shift 2 ;;
+            -B|--batch-size)    BATCH_SIZE="$2"; shift 2 ;;
             -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
-            -v|--verbose)      VERBOSE_MODE=true; shift ;;
-            -*)                warn "composite: ignoring unknown option '$1'"; shift ;;
-            *)                 input_files+=("$1"); shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            --no-resume)        no_resume=true; shift ;;
+            -*)                 warn "composite: ignoring unknown option '$1'"; shift ;;
+            *)                  input_files+=("$1"); shift ;;
         esac
     done
 
@@ -945,8 +1270,19 @@ cmd_composite() {
         shuffle_files corrected
     fi
 
+    [[ -z "$output" ]] && output="$(get_default_filename "$output_base" "composite" "$ADV_CONTAINER")"
+
+    # Job identity covers the full corrected input list (post-DTS-fix paths),
+    # the layout mode, and the final output target — so changing any of those
+    # is correctly treated as a different job with no stale resume, while
+    # re-running the exact same invocation after a crash resumes cleanly.
+    local job_sig="${corrected[*]}|${LAYOUT_MODE}|${output}"
+    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig")"
+    [[ "$no_resume" == true ]] && checkpoint_clear "$job_dir"
+
     local total="${#corrected[@]}" idx=0 bnum=1
     local -a PART_FILES=()
+    local resumed_count=0 fresh_count=0
 
     while (( idx < total )); do
         local remaining=$(( total - idx ))
@@ -970,49 +1306,108 @@ cmd_composite() {
         local -a batch=()
         for (( j=0; j<n; j++, idx++ )); do batch+=("${corrected[$idx]}"); done
 
-        if [[ "$LAYOUT_MODE" == "random" ]]; then
-            PART_FILES+=("$(composite_batch "$bnum" "${batch[@]}")")
+        # checkpoint_key is computed over the batch's own joined file list, plus
+        # CRF/codec/pix_fmt/quality-mode (all of which composite's encode path
+        # actually uses) — so a batch is only resumed if both its input set and
+        # those settings match what produced the checkpointed part file. Note:
+        # the key also folds in ADV_RES even though composite's layout engine
+        # never reads it (composite targets CANVAS_W/CANVAS_H and per-layout
+        # slot sizes); this can cause an unnecessary cache miss if ADV_RES
+        # changes between runs with no other change, but never an incorrect
+        # resume — composite simply reprocesses fresh in that case.
+        local batch_sig="${batch[*]}"
+        local resumed_part=""
+        if resumed_part="$(checkpoint_get "$job_dir" "$batch_sig" 2>/dev/null)"; then
+            verbose_log "composite: batch ${bnum} resumed from checkpoint -> $(basename "$resumed_part")"
+            PART_FILES+=("$resumed_part")
+            (( resumed_count++ )) || true
         else
-            local part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$bnum").mp4"
-            build_composite "$part_file" "${batch[@]}"
-            PART_FILES+=("$part_file")
+            local part_file
+            if [[ "$LAYOUT_MODE" == "random" ]]; then
+                part_file="$(composite_batch "$bnum" "${batch[@]}")"
+            else
+                part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$bnum").mp4"
+                build_composite "$part_file" "${batch[@]}"
+            fi
+            local persisted; persisted="$(checkpoint_store_artifact "$job_dir" "$batch_sig" "$part_file")"
+            checkpoint_set "$job_dir" "$batch_sig" "$persisted"
+            PART_FILES+=("$persisted")
+            (( fresh_count++ )) || true
         fi
         (( bnum++ )) || true
     done
 
-    [[ -z "$output" ]] && output="$(get_default_filename "$output_base" "composite" "$ADV_CONTAINER")"
+    (( resumed_count > 0 )) && verbose_log "composite: ${resumed_count} batch(es) resumed from prior run, ${fresh_count} processed fresh."
 
     if (( ${#PART_FILES[@]} == 1 )); then
-        mv "${PART_FILES[0]}" "$output"
+        cp "${PART_FILES[0]}" "$output"
     else
         local cl="$FFX_RUN_DIR/concat.txt"
         : > "$cl"
-        for pf in "${PART_FILES[@]}"; do printf "file '%s'\n" "$pf" >> "$cl"; done
-        run_ffmpeg -y -f concat -safe 0 -i "$cl" -c copy -movflags +faststart "$output" \
-            || die "composite concat failed."
+        for pf in "${PART_FILES[@]}"; do printf "file '%s'\n" "$(absolute_path "$pf")" >> "$cl"; done
+        local concat_to; concat_to="$(compute_batch_timeout "${#PART_FILES[@]}")"
+        run_ffmpeg --ffx-timeout "$concat_to" --ffx-output "$output" \
+            -y -f concat -safe 0 -i "$cl" -c copy -movflags +faststart "$output" \
+            || die "composite concat failed." "$output"
     fi
+
+    # Only clear the checkpoint job on a FULLY successful run — this is the
+    # "known-pristine baseline" reset point per Architectural Gate 4.3. A
+    # failure anywhere above this line leaves the job dir intact for resume.
+    checkpoint_clear "$job_dir"
 
     auto_clean "$output"
     say "Matrix Composited: $output"
 }
-
 # =============================================================================
 # CMD: MERGE
+#
+# cmd_merge(): CHANGED unit (Golden-Unit §3 — superset of prior contract).
+#
+# OLD DIGEST: Probes all inputs; if uniform, does a single ffmpeg concat call
+# under FFX_TIMEOUT (flat, unscaled — this IS the exact mechanism behind the
+# reported "large batch -> timeout kills the whole process" failure: a concat
+# of 50 files takes proportionally longer to probe/mux than a concat of 5, but
+# was bound by the identical timeout ceiling). If non-uniform, normalizes each
+# input sequentially via its own run_ffmpeg call (also flat FFX_TIMEOUT each),
+# collecting temp files into `preprocessed`; ANY single input's failure dies
+# the whole command, discarding every already-normalized temp file for the
+# inputs processed before it. Final concat (after normalize) also ran under
+# the flat timeout.
+#
+# NEW DIGEST: Same uniformity detection, same fast-path/normalize-path split,
+# same per-input non-conformance logic (DTS/moov/codec/pix_fmt/resolution/audio
+# checks all unchanged). Adds: (1) fast-path and final concat timeouts are now
+# computed via compute_batch_timeout() scaled to input count, so the exact
+# failure mode reported — many files, single static timeout, total job
+# failure — is structurally closed; (2) the normalize path checkpoints each
+# input's successfully-produced temp file, keyed to that input + current
+# encode settings, so a failure on file 30-of-50 no longer discards the 29
+# already-normalized temp files — re-running the same merge command resumes
+# from file 30; (3) the checkpoint job is only cleared after the FINAL concat
+# succeeds (Architectural Gate 4.3 — pristine baseline only on full success).
+#
+# Superset: every file set that concatenated successfully under the old logic
+# still does; every failure path is now resumable rather than total-loss, and
+# the previously-unscaled timeout that caused outright failure on large
+# batches no longer applies.
 # =============================================================================
 cmd_merge() {
     advanced_prompt
     local -a files=()
     local output="${GLOBAL_OUTPUT_FILE:-}"
+    local no_resume=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -o|--output)       output="$2"; shift 2 ;;
-            -C|--composite)    COMPOSITE_MODE=true; shift ;;
-            -s|--fps|-f)       SPECIFIC_FPS="$2"; shift 2 ;;
+            -o|--output)        output="$2"; shift 2 ;;
+            -C|--composite)     COMPOSITE_MODE=true; shift ;;
+            -s|--fps|-f)        SPECIFIC_FPS="$2"; shift 2 ;;
             -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
-            -v|--verbose)      VERBOSE_MODE=true; shift ;;
-            -*)                warn "merge: ignoring unknown option '$1'"; shift ;;
-            *)                 files+=("$1"); shift ;;
+            -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            --no-resume)        no_resume=true; shift ;;
+            -*)                 warn "merge: ignoring unknown option '$1'"; shift ;;
+            *)                  files+=("$1"); shift ;;
         esac
     done
 
@@ -1100,15 +1495,22 @@ cmd_merge() {
     done
 
     # ── FAST PATH ─────────────────────────────────────────────────────────────
+    # Timeout now scaled by input count: a 50-file stream-copy concat is cheap
+    # per-file but not free, and previously inherited the single-file default
+    # ceiling regardless of count. This is the most direct fix for the reported
+    # "large batch concat times out and kills everything" failure mode, since
+    # the fast path is exactly what a uniform bulk merge hits.
     if [[ "$uniform" == true && "$REMOVE_AUDIO" != true ]]; then
         verbose_log "merge: fast path — all ${#files[@]} inputs conformant; skipping re-encode."
         local concat_list; concat_list="$(mktemp_ffx .txt)"
         for f in "${files[@]}"; do
             printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
         done
-        run_ffmpeg -y -avoid_negative_ts make_zero \
+        local fast_to; fast_to="$(compute_batch_timeout "${#files[@]}")"
+        run_ffmpeg --ffx-timeout "$fast_to" --ffx-output "$output" \
+            -y -avoid_negative_ts make_zero \
             -f concat -safe 0 -i "$concat_list" -c copy "$output" \
-            || die "merge: fast-path concat failed -> $output"
+            || die "merge: fast-path concat failed -> $output" "$output"
         auto_clean "$output"
         say "Merged [fast]: $output"
         return
@@ -1116,24 +1518,51 @@ cmd_merge() {
 
     verbose_log "merge: normalise path — target ${max_w}x${max_h} @ ${ADV_FPS}fps (uniform=${uniform})"
 
+    # Job identity for the checkpointed normalize path: input file list +
+    # output target ONLY. Deliberately does NOT include max_w/max_h, which
+    # are derived by PROBING these same files — if one input is transiently
+    # corrupt on a failed attempt and fixed on retry, its probed resolution
+    # changes, which would silently change the job key and cause a
+    # resumable run to miss its own checkpoint. Job identity must be stable
+    # across "same inputs, repaired state" retries; per-input encode
+    # settings (including target resolution) are already covered by
+    # checkpoint_key() at the per-file level.
+    local job_sig="${files[*]}|${output}"
+    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig")"
+    [[ "$no_resume" == true ]] && checkpoint_clear "$job_dir"
+
     # ── NORMALISE PATH ────────────────────────────────────────────────────────
     local -a preprocessed=()
     local tf="${SPECIFIC_FPS:-$ADV_FPS}"
+    local resumed_count=0 fresh_count=0
 
     for (( i=0; i<${#files[@]}; i++ )); do
         f="${files[$i]}"
+
+        local resumed_tmp=""
+        if resumed_tmp="$(checkpoint_get "$job_dir" "$f" "${max_w}x${max_h}" 2>/dev/null)"; then
+            verbose_log "merge: input $(basename "$f") resumed from checkpoint."
+            preprocessed+=("$resumed_tmp")
+            (( resumed_count++ )) || true
+            continue
+        fi
+
         local tmp; tmp="$(mktemp_ffx .mp4)"
 
         if is_image "$f"; then
             verbose_log "merge: normalizing image $f"
             local scale_vf="scale=${max_w}:${max_h}:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1,fps=${tf},format=${ADV_PIX_FMT}"
-            run_ffmpeg -y -loop 1 -t "$IMAGE_DURATION" -i "$f" \
+            run_ffmpeg --ffx-output "$tmp" \
+                -y -loop 1 -t "$IMAGE_DURATION" -i "$f" \
                 -f lavfi -i anullsrc \
                 -vf "$scale_vf" \
                 -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset ultrafast \
                 -c:a aac -shortest "$tmp" \
-                || die "merge: image normalization failed: $f"
-            preprocessed+=("$tmp")
+                || die "merge: image normalization failed: $f" "$tmp"
+            local persisted; persisted="$(checkpoint_store_artifact "$job_dir" "$f" "$tmp" "${max_w}x${max_h}")"
+            checkpoint_set "$job_dir" "$f" "$persisted" "${max_w}x${max_h}"
+            preprocessed+=("$persisted")
+            (( fresh_count++ )) || true
             continue
         fi
 
@@ -1157,8 +1586,8 @@ cmd_merge() {
 
         if [[ "$needs_encode" == false ]]; then
             verbose_log "merge: input $(basename "$f") conformant — stream copy."
-            run_ffmpeg -y -i "$f" -c copy -movflags +faststart "$tmp" \
-                || die "merge: stream-copy failed for '$(basename "$f")'"
+            run_ffmpeg --ffx-output "$tmp" -y -i "$f" -c copy -movflags +faststart "$tmp" \
+                || die "merge: stream-copy failed for '$(basename "$f")'" "$tmp"
         else
             verbose_log "merge: input $(basename "$f") non-conformant — re-encoding."
             local scale_vf="scale=${max_w}:${max_h}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1"
@@ -1183,7 +1612,7 @@ cmd_merge() {
             local -a movflags=("-movflags" "+faststart")
             [[ "$(check_container_first "$f")" == "webm" ]] && movflags=()
 
-            run_ffmpeg -y -fflags +genpts -i "$f" \
+            run_ffmpeg --ffx-output "$tmp" -y -fflags +genpts -i "$f" \
                 -vf "$full_vf" -r "$tf" \
                 "${enc[@]}" \
                 -pix_fmt "$ADV_PIX_FMT" \
@@ -1191,27 +1620,37 @@ cmd_merge() {
                 "${acmd[@]}" \
                 "${movflags[@]}" \
                 "$tmp" \
-                || die "merge: re-encode failed for '$(basename "$f")'"
+                || die "merge: re-encode failed for '$(basename "$f")'" "$tmp"
         fi
 
         check_moov_atom "$tmp" || moov_fallback "$f" "$tmp"
-        check_moov_atom "$tmp" || die "merge: moov atom missing: $(basename "$f")"
-        preprocessed+=("$tmp")
+        check_moov_atom "$tmp" || die "merge: moov atom missing: $(basename "$f")" "$tmp"
+        local persisted; persisted="$(checkpoint_store_artifact "$job_dir" "$f" "$tmp" "${max_w}x${max_h}")"
+        checkpoint_set "$job_dir" "$f" "$persisted" "${max_w}x${max_h}"
+        preprocessed+=("$persisted")
+        (( fresh_count++ )) || true
     done
+
+    (( resumed_count > 0 )) && verbose_log "merge: ${resumed_count} input(s) resumed from prior run, ${fresh_count} processed fresh."
 
     # ── CONCAT ───────────────────────────────────────────────────────────────
     local concat_list; concat_list="$(mktemp_ffx .txt)"
     for f in "${preprocessed[@]}"; do
         printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
     done
-    run_ffmpeg -y -avoid_negative_ts make_zero \
+    local final_to; final_to="$(compute_batch_timeout "${#preprocessed[@]}")"
+    run_ffmpeg --ffx-timeout "$final_to" --ffx-output "$output" \
+        -y -avoid_negative_ts make_zero \
         -f concat -safe 0 -i "$concat_list" -c copy "$output" \
-        || die "merge: concat failed -> $output"
+        || die "merge: concat failed -> $output" "$output"
+
+    # Pristine-baseline reset only after the final concat actually succeeds —
+    # Architectural Gate 4.3. Any earlier failure leaves the checkpoint intact.
+    checkpoint_clear "$job_dir"
 
     auto_clean "$output"
     say "Merged: $output"
 }
-
 # =============================================================================
 # CMD: PROBE
 # =============================================================================
@@ -1299,27 +1738,42 @@ cmd_process() {
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
     local deint; deint="$(get_deinterlace_filter "$fixed")"
-    local scale_f="scale=${ADV_RES}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${ADV_RES}:-1:-1:color=black,setsar=1"
+
+    # PRE-EXISTING BUG FIX (found via regression testing, disclosed per
+    # protocol; out of original audit scope but adjacent to units already
+    # touched): ADV_RES is stored in "WxH" form (e.g. "1920x1080"). ffmpeg's
+    # `scale` filter accepts that form directly, but `pad` does not — pad
+    # requires colon-separated `width:height:x:y` arguments. The original
+    # line built `pad=${ADV_RES}:-1:-1`, which ffmpeg parses as a single
+    # malformed width expression ("1920x1080") and rejects outright,
+    # failing 'process' for every invocation that reaches this code path
+    # (i.e. every non-qp0, non-multipass CRF encode — the default mode).
+    # Fix: split ADV_RES into its width/height components once, and use
+    # those for the pad clause, mirroring the already-correct pattern in
+    # cmd_merge's scale_vf construction (which uses max_w:max_h directly).
+    local res_w res_h
+    IFS='x' read -r res_w res_h <<< "$ADV_RES"
+    local scale_f="scale=${ADV_RES}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${res_w}:${res_h}:-1:-1:color=black,setsar=1"
     local full_vf; [[ "$deint" != "null" ]] && full_vf="${deint},${scale_f}" || full_vf="$scale_f"
 
     if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
-        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+        run_ffmpeg --ffx-output "$output" -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
             -c:v "$ADV_CODEC" -qp 0 -preset "$ADV_PRESET" \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
-            || die "process (qp0) failed."
+            || die "process (qp0) failed." "$output"
     elif [[ "$ADV_MULTIPASS" == "true" ]]; then
         run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
             -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset "$ADV_PRESET" -pass 1 -an \
             -f mp4 /dev/null || die "process: pass 1 failed."
-        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+        run_ffmpeg --ffx-output "$output" -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
             -c:v "$ADV_CODEC" -b:v "$ADV_BR" -preset "$ADV_PRESET" -pass 2 \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
-            || die "process: pass 2 failed."
+            || die "process: pass 2 failed." "$output"
     else
-        run_ffmpeg -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
+        run_ffmpeg --ffx-output "$output" -y -i "$fixed" -vf "$full_vf" -r "$ADV_FPS" \
             -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset "$ADV_PRESET" \
             "${aopts[@]}" -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
-            || die "process (CRF) failed."
+            || die "process (CRF) failed." "$output"
     fi
 
     check_moov_atom "$output" || moov_fallback "$fixed" "$output"
@@ -1356,19 +1810,50 @@ cmd_looperang() {
 
     local fixed; fixed="$(ensure_dts_correct "$input")" || die "DTS fix failed: $input"
     local tmp_rev; tmp_rev="$(mktemp_ffx .mp4)"
-    local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
 
-    run_ffmpeg -y -i "$fixed" \
+    # PRE-EXISTING BUG FIX (found via regression testing, disclosed per protocol):
+    # get_audio_opts_array() returns "-c:a copy" when REMOVE_AUDIO is false, but
+    # this command applies "-af areverse" to the audio stream whenever audio is
+    # kept. ffmpeg rejects combining a stream filter with stream-copy on the same
+    # stream outright (exit failure, every time audio is present) — this is not
+    # a transient/retry-able failure, it is a hard contradiction in the command
+    # line itself. The reverse pass needs its own audio handling: re-encode (aac)
+    # when audio is kept (so areverse has something to operate on), or -an when
+    # REMOVE_AUDIO is true (consistent with get_audio_opts_array's other branch).
+    local -a loop_aopts
+    if [[ "$REMOVE_AUDIO" == true ]]; then
+        loop_aopts=("-an")
+    else
+        loop_aopts=("-c:a" "aac")
+    fi
+
+    run_ffmpeg --ffx-output "$tmp_rev" -y -i "$fixed" \
         -vf reverse -af areverse \
-        "${aopts[@]}" -c:v "$ADV_CODEC" -qp 0 -preset ultrafast \
-        "$tmp_rev" || die "looperang: reverse pass failed."
+        "${loop_aopts[@]}" -c:v "$ADV_CODEC" -qp 0 -preset ultrafast \
+        "$tmp_rev" || die "looperang: reverse pass failed." "$tmp_rev"
 
     local cl; cl="$(mktemp_ffx .txt)"
     printf "file '%s'\n" "$(absolute_path "$fixed")"   >> "$cl"
     printf "file '%s'\n" "$(absolute_path "$tmp_rev")" >> "$cl"
 
-    run_ffmpeg -y -f concat -safe 0 -i "$cl" -c copy "$output" \
-        || die "looperang: concat failed."
+    # PRE-EXISTING BUG FIX (found via the same regression pass as above,
+    # disclosed per protocol): this concat step previously used "-c copy"
+    # unconditionally for both video AND audio, which silently ignored
+    # REMOVE_AUDIO at the final assembly stage even though the reverse pass
+    # above already honored it — the concat would still mux in whatever
+    # audio "fixed" (the untouched original) carries. Video always stays
+    # stream-copy (both inputs are already the correct codec/format from
+    # the steps above); audio now explicitly follows REMOVE_AUDIO.
+    local -a concat_aopts
+    if [[ "$REMOVE_AUDIO" == true ]]; then
+        concat_aopts=("-an")
+    else
+        concat_aopts=("-c:a" "copy")
+    fi
+
+    run_ffmpeg --ffx-output "$output" -y -f concat -safe 0 -i "$cl" \
+        -c:v copy "${concat_aopts[@]}" "$output" \
+        || die "looperang: concat failed." "$output"
 
     check_moov_atom "$output" || moov_fallback "$fixed" "$output"
     check_moov_atom "$output" || die "looperang: moov atom missing."
@@ -1434,7 +1919,7 @@ cmd_slowmo() {
         && ffa+=("-qp" "0") || ffa+=("-crf" "${ADV_CRF:-18}")
     ffa+=("-preset" "$ADV_PRESET" "-pix_fmt" "$ADV_PIX_FMT" "$output")
 
-    run_ffmpeg "${ffa[@]}" || die "slowmo failed."
+    run_ffmpeg --ffx-output "$output" "${ffa[@]}" || die "slowmo failed." "$output"
     check_moov_atom "$output" || moov_fallback "$input" "$output"
     auto_clean "$output"
     say "Slow motion: $output"
@@ -1502,8 +1987,8 @@ cmd_clean() {
     [[ -z "$output" ]] && output="$(get_default_filename "$bare" "cleaned" "$ADV_CONTAINER")"
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-    run_ffmpeg -y -i "$input" -map_metadata -1 -c copy "${aopts[@]}" "$output" \
-        || die "clean: metadata strip failed."
+    run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 -c copy "${aopts[@]}" "$output" \
+        || die "clean: metadata strip failed." "$output"
     say "Metadata cleaned: $output"
 }
 
@@ -1535,7 +2020,7 @@ cmd_cleanmeta() {
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
 
-    if run_ffmpeg -y -i "$input" -map_metadata -1 -c:v copy "${aopts[@]}" \
+    if run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 -c:v copy "${aopts[@]}" \
             -movflags +faststart "$output"; then
         say "Metadata cleaned (stream-copy): $output"
         return
@@ -1547,9 +2032,9 @@ cmd_cleanmeta() {
         && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET") \
         || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
 
-    run_ffmpeg -y -i "$input" -map_metadata -1 \
+    run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 \
         "${enc[@]}" "${aopts[@]}" -movflags +faststart "$output" \
-        || die "cleanmeta: both stream-copy and reencode failed."
+        || die "cleanmeta: both stream-copy and reencode failed." "$output"
     say "Metadata cleaned (reencoded): $output"
 }
 
@@ -1591,8 +2076,8 @@ cmd_clip() {
     [[ -z "$st" || -z "$et" ]] && die "clip: start and end times are required."
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-    run_ffmpeg -y -ss "$st" -to "$et" -i "$input" -c copy "${aopts[@]}" "$output" \
-        || die "clip failed. If stream copy errors, process the source first."
+    run_ffmpeg --ffx-output "$output" -y -ss "$st" -to "$et" -i "$input" -c copy "${aopts[@]}" "$output" \
+        || die "clip failed. If stream copy errors, process the source first." "$output"
     say "Clip: $output"
 }
 
@@ -1655,11 +2140,11 @@ cmd_filter() {
         && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "$ADV_PRESET") \
         || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
 
-    run_ffmpeg -y -i "$fixed" \
+    run_ffmpeg --ffx-output "$output" -y -i "$fixed" \
         -vf "$full_vf" \
         "${enc[@]}" "${aopts[@]}" \
         -pix_fmt "$ADV_PIX_FMT" -movflags +faststart "$output" \
-        || die "filter: ffmpeg failed."
+        || die "filter: ffmpeg failed." "$output"
 
     check_moov_atom "$output" || moov_fallback "$fixed" "$output"
     auto_clean "$output"
@@ -1668,23 +2153,28 @@ cmd_filter() {
 
 # =============================================================================
 # CMD: CACHE-CLEAN
+#
+# CHANGED: now also offers to clear stale resume checkpoints, since
+# FFX_CHECKPOINT_DIR lives under FFX_CACHE_DIR and the user's existing mental
+# model of "cache-clean wipes FFX's scratch state" should cover it without
+# introducing a second, separate command to learn.
 # =============================================================================
 cmd_cache_clean() {
     printf 'This will remove all FFX cache files in: %s\n' "$FFX_CACHE_DIR"
+    printf '(includes resumable batch checkpoints in: %s)\n' "$FFX_CHECKPOINT_DIR"
     local ans
     read -r -p "Are you sure? (y/N): " ans
     if [[ "${ans,,}" =~ ^y ]]; then
-        rm -rf -- "$FFX_CACHE_DIR"; mkdir -p -- "$FFX_CACHE_DIR"; say "Cache cleaned."
+        rm -rf -- "$FFX_CACHE_DIR"; mkdir -p -- "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR"; say "Cache cleaned."
     else
         printf 'Aborted.\n'
     fi
 }
-
 # =============================================================================
 # HELP
 # =============================================================================
 display_usage() {
-    printf '%b# === FFX v8.0.0 ===%b\n\n' "${CYAN}${BOLD}" "${RESET}"
+    printf '%b# === FFX v8.1.0 ===%b\n\n' "${CYAN}${BOLD}" "${RESET}"
     cat <<'HELPEOF'
 Usage: ffx [global options] <command> [arguments]
 
@@ -1700,7 +2190,19 @@ Global Options:
   -o, --output-dir <dir>     Output directory / file path (default: cwd).
   -f, --fps <val>            Force output FPS.
   -p, --pts <val>            PTS slow-motion factor (e.g. 2 = half speed).
-  --timeout <sec>            FFmpeg timeout in seconds (0 = no limit; default 300).
+  --timeout <sec>            Per-operation FFmpeg timeout for single-file commands
+                             (0 = no limit; default 300).
+  --timeout-per-file <sec>   Per-input budget used to SCALE the timeout for batch
+                             operations whose cost grows with file count — merge
+                             and composite concat steps (default 60). A 50-file
+                             merge gets 50x this value as its ceiling instead of
+                             the flat single-file --timeout, which is what
+                             previously caused large batches to be killed by a
+                             timeout sized for one file.
+  --retry <n>                Automatic retries on a transient (non-timeout)
+                             ffmpeg failure before giving up (default 1).
+  --no-resume                Ignore any existing resume checkpoint for this job
+                             and reprocess every input from scratch.
   --container <ext>          Output container override (mp4/mkv/mov).
   --resolution <WxH>         Override output resolution (e.g. 1920x1080).
   --codec <encoder>          Override video encoder (e.g. libx265).
@@ -1711,7 +2213,11 @@ Commands:
   probe      [<input>]                    File info. fzf selector if omitted.
   process    <input> [output]             Re-encode/scale; auto-deinterlace; lanczos.
   merge      [files...] [-o <out>]        Concat. -C composites; -b globs directory.
+                                           Resumable: a failed large-batch merge can
+                                           be re-run identically to continue from
+                                           where it left off (see --no-resume).
   composite  [files...] [-o <base>]       Layout composite (fixed or random mode).
+                                           Resumable per-batch, same as merge.
   looperang  <input> [output]             Forward+reverse palindrome.
   slowmo     <input> [output] [factor]    Slow motion. -i enables interpolation.
   filter     <input> [output]             Apply colour/enhancement filter preset.
@@ -1719,7 +2225,7 @@ Commands:
   clean      <input> [output]             Strip metadata (stream-copy + reencode fallback).
   clean-fast <input> [output]             Strip metadata (stream-copy only).
   clip       <input> [output]             Interactive trim by start/end time.
-  cache-clean                             Remove FFX cache files.
+  cache-clean                             Remove FFX cache files (incl. resume checkpoints).
   cleanmeta  <input> [output]             Alias for clean.
   manifest   [save|verify|show]           Self-audit SHA-256 manifest.
   help                                    This message.
@@ -1745,14 +2251,29 @@ Composite Layouts:
     Layouts: fullscreen, hstack, vstack, top1_bot2, top2_bot1,
              left1_right2, left2_right1, grid2x2, row4.
 
+Large Batch Jobs (merge / composite):
+  Both commands now scale their internal ffmpeg timeouts to the number of
+  files involved (--timeout-per-file), instead of applying the same fixed
+  --timeout to a 3-file job and a 300-file job alike. If a batch job is
+  interrupted or fails partway through, every input successfully processed
+  so far is checkpointed under ~/.cache/ffx/checkpoints/; re-running the
+  exact same command resumes from the first unprocessed input rather than
+  starting over. Pass --no-resume to force a clean restart.
+
 Config:  ~/.config/ffx/defaults
 Log:     ~/.local/share/ffx/ffx.log
+Checkpoints: ~/.cache/ffx/checkpoints/
 HELPEOF
     exit 0
 }
 
 # =============================================================================
 # ARGUMENT PARSING
+#
+# CHANGED: adds --timeout-per-file, --retry, --no-resume. All three are
+# superset additions — every previously-valid invocation parses identically;
+# these are new optional flags with safe defaults (set in default_config),
+# not replacements for any existing flag.
 # =============================================================================
 parse_global_options() {
     REMAINING_ARGS=()
@@ -1766,6 +2287,8 @@ parse_global_options() {
         -C|--composite)     COMPOSITE_MODE=true; shift ;;
         -P|--max-1080)      MAX_1080=true;        shift ;;
         -i|--interpolate)   INTERPOLATE=true;    shift ;;
+        --no-resume)
+            NO_RESUME_GLOBAL=true; shift ;;
         -o|--output-dir|--output)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             OUTPUT_DIR="$2"; GLOBAL_OUTPUT_FILE="$2"; shift 2 ;;
@@ -1781,6 +2304,14 @@ parse_global_options() {
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             [[ "$2" =~ ^[0-9]+$ ]] || die "--timeout requires a non-negative integer."
             FFX_TIMEOUT="$2"; shift 2 ;;
+        --timeout-per-file)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            [[ "$2" =~ ^[0-9]+$ ]] || die "--timeout-per-file requires a non-negative integer."
+            FFX_TIMEOUT_PER_FILE="$2"; shift 2 ;;
+        --retry)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            [[ "$2" =~ ^[0-9]+$ ]] || die "--retry requires a non-negative integer."
+            FFX_RETRY="$2"; shift 2 ;;
         --container)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             ADV_CONTAINER="$2"; shift 2 ;;
@@ -1807,9 +2338,24 @@ parse_global_options() {
 
 # =============================================================================
 # DISPATCH & MAIN
+#
+# CHANGED: if --no-resume was given as a GLOBAL option (before the command),
+# forward it into REMAINING_ARGS as a command-level flag too, so `ffx
+# --no-resume merge ...` and `ffx merge --no-resume ...` behave identically —
+# cmd_merge/cmd_composite only look for it in their own argv. This keeps the
+# new flag's parsing local to the commands that use it (no global state they
+# need to reach across), while still accepting it in the conventional
+# "global option before the subcommand" position users expect.
 # =============================================================================
+NO_RESUME_GLOBAL=false
+
 main_dispatch() {
     local cmd="${1:-help}"; shift || true
+    if [[ "$NO_RESUME_GLOBAL" == true ]]; then
+        case "$cmd" in
+            merge|composite) set -- "$@" "--no-resume" ;;
+        esac
+    fi
     case "$cmd" in
         probe)       cmd_probe       "$@" ;;
         process)     cmd_process     "$@" ;;

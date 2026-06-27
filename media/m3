@@ -65,7 +65,7 @@ TMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
 # following it, so it passed through as a literal character. mkdir -p then
 # created a directory literally named "$" in the CWD. Corrected to an
 # absolute, unambiguous default under $HOME.
-SAVE_DIR="$HOME/streamdir"
+SAVE_DIR="YOUR_DOWNLOADED_MEDIA_IS_HERE/"
 SAVE_NAME=""
 PROXY_URL=""
 
@@ -101,10 +101,10 @@ C_CYAN='\033[1;36m'
 C_YELLOW='\033[1;33m'
 C_RESET='\033[0m'
 
-print_info()    { echo -e "${C_CYAN}[Ψ] $1${C_RESET}"; }
+print_info() { echo -e "${C_CYAN}[Ψ] $1${C_RESET}"; }
 print_success() { echo -e "${C_GREEN}[+] $1${C_RESET}"; }
 print_warning() { echo -e "${C_YELLOW}[*] $1${C_RESET}"; }
-print_error()   { echo -e "${C_RED}[!] $1${C_RESET}"; }
+print_error() { echo -e "${C_RED}[!] $1${C_RESET}"; }
 
 # -----------------------------------------------------------------------------
 # Dependency Management
@@ -114,12 +114,16 @@ check_dependencies() {
 
 	# D1 FIX: This function is the single point of BIN_M3U8 assignment.
 	# No global assignment outside this function.
-	if command -v N_m3u8DL-RE >/dev/null 2>&1; then
-		BIN_M3U8="N_m3u8DL-RE"
-	elif command -v n_m3u8dl-re >/dev/null 2>&1; then
-		BIN_M3U8="n_m3u8dl-re"
+	if command -v N-m3u8DL-RE >/dev/null 2>&1; then
+		BIN_M3U8="n-m3u8dl-re"
+	elif command -v n-m3u8dl-re >/dev/null 2>&1; then
+		BIN_M3U8="n-m3u8dl-re"
+	elif command -v N-m3u8dl-RE-git >/dev/null 2>&1; then
+		BIN_M3U8="n-m3u8dl-re"
+	elif command -v n-m3u8dl-re-git >/dev/null 2>&1; then
+		BIN_M3U8="n-m3u8dl-re"
 	else
-		missing+=("N_m3u8DL-RE")
+		missing+=("n-m3u8dl-re")
 	fi
 
 	if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -149,7 +153,10 @@ validate_positive_integer() {
 # D8 FIX: Verify directory is writable after creation.
 ensure_writable_dir() {
 	local dir="$1"
-	mkdir -p "$dir" || { print_error "Cannot create directory: $dir"; return 1; }
+	mkdir -p "$dir" || {
+		print_error "Cannot create directory: $dir"
+		return 1
+	}
 	if [[ ! -w "$dir" ]]; then
 		print_error "Directory not writable: $dir"
 		return 1
@@ -167,10 +174,10 @@ load_config() {
 			val="${val#\"}"
 			case "$key" in
 			THREAD_COUNT) THREAD_COUNT="$val" ;;
-			RETRY_COUNT)  RETRY_COUNT="$val"  ;;
-			SAVE_DIR)     SAVE_DIR="$val"      ;;
-			TMP_DIR)      TMP_DIR="$val"       ;;
-			PROXY_URL)    PROXY_URL="$val"     ;;
+			RETRY_COUNT) RETRY_COUNT="$val" ;;
+			SAVE_DIR) SAVE_DIR="$val" ;;
+			TMP_DIR) TMP_DIR="$val" ;;
+			PROXY_URL) PROXY_URL="$val" ;;
 			esac
 		done < <(grep -E '^[A-Z_]+=' "$CONFIG_FILE")
 		print_success "Configuration loaded from $CONFIG_FILE"
@@ -214,15 +221,15 @@ execute_extraction() {
 
 	# D8 FIX: Validate writability before passing dirs to the extractor.
 	ensure_writable_dir "$SAVE_DIR" || return 1
-	ensure_writable_dir "$TMP_DIR"  || return 1
+	ensure_writable_dir "$TMP_DIR" || return 1
 
 	# Construct the command array safely.
 	local cmd=("$BIN_M3U8" "$TARGET_URL")
 
-	cmd+=(--thread-count          "$THREAD_COUNT")
-	cmd+=(--download-retry-count  "$RETRY_COUNT")
-	cmd+=(--tmp-dir               "$TMP_DIR")
-	cmd+=(--save-dir              "$SAVE_DIR")
+	cmd+=(--thread-count "$THREAD_COUNT")
+	cmd+=(--download-retry-count "$RETRY_COUNT")
+	cmd+=(--tmp-dir "$TMP_DIR")
+	cmd+=(--save-dir "$SAVE_DIR")
 
 	# D9 FIX: --skip-merge and --del-after-done are boolean switches in
 	# N_m3u8DL-RE — they accept NO argument. Emitting "--skip-merge False"

@@ -1,62 +1,224 @@
 #!/usr/bin/env bash
-
 # --- // PCUTS.SH // ========
-#File: /usr/local/bin/pcuts
-#Author: 4ndr0666    
-#Edited: 3-21-24
+# File: /usr/local/bin/pcuts
+# Author: 4ndr0666
+# Edited: 6-26-26
+#
+# Quick-reference cheat sheet for pacman + companion tools (pacreport,
+# paccheck, expac, lsof, fzf). Prints categorized command listings; never
+# executes pacman itself, except when the user explicitly selects a command
+# in --browse mode and that command is copied/printed (still not run).
+# Pure presentation — no host mutation, no network, no subprocess beyond
+# `tput cols` (delegated to colors.sh) and, only in --browse mode, `fzf`
+# and an optional clipboard tool.
+#
+# Architecture: every printable command lives exactly once, in
+# PCUTS_TABLE (see below). Both the categorized plain-text view (sync,
+# search, query, files, remove) and the --browse fzf view render from
+# that one table — there is no second copy of the command text to drift
+# out of sync.
+#
+# Unified from two divergent prior revisions:
+#   - combined short-flags (-srqfx) and the REMOVE category restored (was
+#     dropped in the long-flag revision)
+#   - long-flag aliases (--sync/--remote/--query/--files/--remove) added
+#   - per-category print-once guards restored on every category function
+#   - heading() is now always called with its required two positional args
+#     (color, text) — a prior revision called heading() with one argument,
+#     which silently no-ops into a usage error against the real colors.sh
+#     and only "worked" by accident against a bundled one-arg fallback.
+#
+# Revision 2 (this pass):
+#   - sync/search/query/files/remove now render from PCUTS_TABLE instead of
+#     hardcoded echo calls, eliminating the duplicate-data-in-two-places
+#     risk that --browse would otherwise introduce.
+#   - -Qu gets a one-line caveat: it only reflects reality after a -Sy.
+#   - SEARCH LOCAL PACKAGES and SEARCH FILES now use higher-contrast
+#     heading colors (cyan, magenta) in place of olive/lavender, which were
+#     hard to read against common dark terminal themes.
+#   - New -b/--browse flag: an interactive fzf-backed picker over every
+#     command in the table, fuzzy-searchable across all categories at
+#     once. Selecting a line prints the raw command and copies it to the
+#     clipboard if a clipboard tool is available. Falls back to a clear
+#     error (not silent failure) if fzf is not installed.
+
+set -uo pipefail
+IFS=$'\n\t'
 
 # --- // CONSTANTS_AND_COLORS:
-BASEPATH=$(dirname "$0")
-if [ -f "${BASEPATH}/colors.sh" ]; then
+BASEPATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" &>/dev/null && pwd -P)"
+
+if [[ -f "${BASEPATH}/colors.sh" ]]; then
+    # shellcheck source=./colors.sh
     . "${BASEPATH}/colors.sh"
 else
+    # Minimal fallback matching colors.sh's real two-arg contract:
+    # heading <color> "Heading Text". The color argument is accepted but
+    # ignored here since the fallback has no palette — this keeps call
+    # sites identical whether or not colors.sh is present.
     heading() {
+        if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+            echo 'Usage: heading <color> "Heading Text"'
+            return 1
+        fi
         echo " ----------------------------------------------------------------------"
         echo "  $2"
         echo " ----------------------------------------------------------------------"
         echo
     }
+    grn='\033[0;32m'
+    yel='\033[0;33m'
+    red='\033[0;31m'
+    cyn='\033[0;36m'
+    mag='\033[0;35m'
+    r='\033[0m'
 fi
 
-# These ensure we only show each category of commands once
+# Print-once guards — each category prints exactly once per invocation even
+# if reached through multiple flags or the no-args "show everything" path.
 _sync=false
 _search=false
 _query=false
 _files=false
 _remove=false
 
-# Capture the argument string
-args=$@
+#-----------------------------------------------------------------------------------
+# --- // COMMAND_TABLE:
+#
+# Single source of truth. Each row is "category\tcommand\tdescription".
+# category is one of: sync search query files remove — matching the
+# dispatch letters s/r/q/f/x respectively. A tab-delimited flat array (not
+# a multi-dim structure bash doesn't have) keeps this readable, greppable,
+# and trivially convertible into either render path below.
+#
+# NOTE: command text here is the literal, uncolored pacman invocation —
+# coloring is applied at render time per display mode, not baked in, so
+# the --browse path can emit plain text to the clipboard instead of a
+# string full of ANSI escape codes.
+
+PCUTS_TABLE=(
+    $'sync\tpacman -U /path/package.pkg.tar.xz\tInstall a local package'
+    $'sync\tpacman -S --needed - < pkglist.txt\tInstall from a list'
+    $'sync\tpacman -S package-name\tInstall a package'
+    $'sync\tpacman -Syu\tUpdate all installed packages and sync and refresh database'
+    $'sync\tpacman -Sy\tSync and refresh the pacman database'
+    $'sync\tpacman -Syy\tSync and FORCE refresh the pacman database. Be careful!'
+    $'sync\tpacman -Syyu\tForce refresh database and update all packages'
+    $'sync\tpacman -Sw package-name\tDownload a package but do not install it'
+    $'sync\tpacman -Sc\tClear the package cache of uninstalled/old packages'
+    $'sync\tpacman -Scc\tClear ALL caches (run this periodically)'
+    $'search\tpacman -Ql keyword\tSearch package databases that contain a keyword'
+    $'search\tpacman -Ss \'^keyword\'\tSearch for package name that begins with a keyword'
+    $'search\tpacman -Si package-name\tShow detailed information about a package'
+    $'search\tpacman -Sl repo-name\tList all packages in a repository'
+    $'query\tpacman -Qs\tShow all installed packages'
+    $'query\tpacman -Qs keyword\tSearch for installed packages that contain a keyword'
+    $'query\tpacman -Qi package-name\tShow detailed information about an installed package'
+    $'query\tpacman -Ql package-name\tShow all files installed by a package'
+    $'query\tpacman -Qu\tList packages out of date as of the last -Sy (run -Sy first or this is stale)'
+    $'query\tpacman -Qdt\tList orphaned packages (shorthand)'
+    $'query\tpacman -Qm\tList all foreign (AUR) packages and include version info'
+    $'query\tpacman -Qmq\tList all foreign (AUR) packages - name only'
+    $'query\tpacman -Qqe > pkglist.txt\tCreate a file with all installed packages including AUR'
+    $'query\tpacman -Qq | grep -Ee \'-(bzr|cvs|darcs|git|hg|svn)$\'\tList all dev packages'
+    $'query\tpacman -Qq | fzf --preview \'pacman -Qil {}\' --layout=reverse --bind \'enter:execute(pacman -Qil {} | less)\'\tBrowse all in GUI'
+    $'files\tpacman -Fs keyword\tSearch for package filenames that contain a keyword'
+    $'files\tpacman -Q | grep -i keyword\tSearch for installed packages by keyword'
+    $'files\tpacman -Fl package-name\tShow all files installed by a remote package'
+    $'files\tpacman -Fo /path/filename\tShow which remote package a file belongs to'
+    $'files\tpacman -Qo /path/filename\tShow which installed package owns a file'
+    $'files\tpacman -Q\tShow all packages installed'
+    $'files\tpaccheck --md5sum --quiet\tShow all changed files from packages'
+    $'files\tlsof +c 0 | grep -w DEL | awk \'1 { print $1 ": " $NF }\' | sort -u\tShow apps using old libraries'
+    $'files\texpac --timefmt=\'%Y-%m-%d %T\' \'%l\\t%n\' | sort | tail -n 20\tShow last 20 installed packages'
+    $'remove\tpacreport --unowned-files\tIdentify files not owned by any package'
+    $'remove\tpacman -R package-name\tRemove pkg leaving all dependencies'
+    $'remove\tpacman -Rs package-name\tRemove pkg and dependencies not needed elsewhere'
+    $'remove\tpacman -Rc package-name\tRemove pkg and its config'
+    $'remove\tpacman -Rsc package-name\tRemove pkg, its dependencies and config'
+    $'remove\tpacman -Rns package-name\tRemove pkg, dependencies, and config (non-save)'
+    $'remove\tpacman -Qtdq | pacman -Rns -\tRemove orphans'
+    $'remove\tpacman -Qqd | pacman -Rsu --print -\tDetect more unneeded packages'
+    $'remove\tpacman -D --asdeps $(pacman -Qqe)\tMark everything as a dependency (keep only essential explicit)'
+    $'remove\tpacman -D --asexplicit package-name\tMark a package as explicitly installed'
+)
+
+# Maps each category to the heading color used for its plain-text banner.
+# SEARCH LOCAL PACKAGES and SEARCH FILES moved from olive/lavender to
+# cyan/magenta — both legibility refinements against common dark terminal
+# backgrounds; the underlying palette in colors.sh is unchanged.
+_category_color() {
+    case "$1" in
+        sync)   echo "purple" ;;
+        search) echo "grn"    ;;
+        query)  echo "cyn"    ;;
+        files)  echo "mag"    ;;
+        remove) echo "red"    ;;
+    esac
+}
+
+_category_title() {
+    case "$1" in
+        sync)   echo "SYNC COMMANDS"            ;;
+        search) echo "SEARCH REMOTE PACKAGES"   ;;
+        query)  echo "SEARCH LOCAL PACKAGES"    ;;
+        files)  echo "SEARCH FILES"             ;;
+        remove) echo "REMOVE"                   ;;
+    esac
+}
+
+# Renders every PCUTS_TABLE row matching $1 (a category name) as a colored
+# "command  # description" line, in table order, with the comment column
+# aligned to the widest command in that category. This replaces the
+# original's hand-counted \t / \t\t tab sequences (which only lined up at
+# one specific terminal tab-stop width and had already drifted out of
+# alignment in the REMOVE category) with alignment computed from the
+# actual string length, so it stays correct regardless of tab-stop width
+# or future additions to the table.
+_print_category() {
+    local category="$1"
+    local row cat cmd desc maxlen=0
+    local -a cmds=() descs=()
+
+    for row in "${PCUTS_TABLE[@]}"; do
+        IFS=$'\t' read -r cat cmd desc <<<"$row"
+        [[ "$cat" == "$category" ]] || continue
+        cmds+=("$cmd")
+        descs+=("$desc")
+        (( ${#cmd} > maxlen )) && maxlen=${#cmd}
+    done
+
+    local idx pad pad_str
+    for idx in "${!cmds[@]}"; do
+        pad=$(( maxlen - ${#cmds[$idx]} + 2 ))
+        printf -v pad_str '%*s' "$pad" ''
+        echo -e "${grn}${cmds[$idx]}${r}${pad_str}# ${descs[$idx]}"
+    done
+}
 
 #-----------------------------------------------------------------------------------
 
-help(){
+help() {
+    heading grn "HELP"
 
-    heading green "HELP" 
-    
-    echo -e "${grn}pcheat${r}\t\t  # Show all commands"
-    echo -e "${grn}pcheat${r}${yel} -s${r}\t  # Sync commands"
-    echo -e "${grn}pcheat${r}${yel} -r${r}\t  # Remote search commands"
-    echo -e "${grn}pcheat${r}${yel} -q${r}\t  # Local query commands"
-    echo -e "${grn}pcheat${r}${yel} -f${r}\t  # File commands"
-    echo -e "${grn}pcheat${r}${yel} -x${r}\t  # Remove commands"
-    echo -e "${grn}pcheat${r}${yel} -srqfx${r}\t  # Arguments can be combined"
+    echo -e "${grn}pcuts${r}\t\t  # Show all commands"
+    echo -e "${grn}pcuts${r}${yel} -s${r}, ${yel}--sync${r}\t  # Sync commands"
+    echo -e "${grn}pcuts${r}${yel} -r${r}, ${yel}--remote${r}\t  # Remote search commands"
+    echo -e "${grn}pcuts${r}${yel} -q${r}, ${yel}--query${r}\t  # Local query commands"
+    echo -e "${grn}pcuts${r}${yel} -f${r}, ${yel}--files${r}\t  # File commands"
+    echo -e "${grn}pcuts${r}${yel} -x${r}, ${yel}--remove${r}\t  # Remove commands"
+    echo -e "${grn}pcuts${r}${yel} -srqfx${r}\t  # Short flags can be combined"
+    echo -e "${grn}pcuts${r}${yel} -b${r}, ${yel}--browse${r}\t  # Interactive fuzzy-search picker (requires fzf)"
+    echo -e "${grn}pcuts${r}${yel} -h${r}, ${yel}--help${r}\t  # Display this help menu"
     echo
-    exit 1
 }
 
 #-----------------------------------------------------------------------------------
 
 search() {
-
-    if [ $_search == false ]; then
-    
-        heading green "SEARCH REMOTE PACKAGES"
-
-        echo -e "${grn}pacman${r}${yel} -Ql${r} ${cyn}keyword${r}\t  # Search package databases that contain a keyword"
-        echo -e "${grn}pacman${r}${yel} -Ss${r} ${yel}'^${r}${cyn}keyword${r}${yel}'${r}\t  # Search for package name that begins with a keyword"
-        echo -e "${grn}pacman${r}${yel} -Si${r} ${cyn}package-name${r}\t  # Show detailed information about a package"
-
+    if [[ $_search == false ]]; then
+        heading "$(_category_color search)" "$(_category_title search)"
+        _print_category search
         _search=true
     fi
 }
@@ -64,48 +226,19 @@ search() {
 #-----------------------------------------------------------------------------------
 
 query() {
-
-    if [ $_query == false ]; then
-
-        heading olive "SEARCH LOCAL PACKAGES"
-        
-        echo -e "${grn}pacman${r}${yel} -Qs${r}\t\t  # Show all installed packages"
-        echo -e "${grn}pacman${r}${yel} -Qs${r} ${cyn}keyword${r}\t  # Search for installed packages that contain a keyword"
-        echo -e "${grn}pacman${r}${yel} -Qi${r} ${cyn}package-name${r}\t  # Show detailed information about an installed package"
-        echo -e "${grn}pacman${r}${yel} -Ql${r} ${cyn}package-name${r}\t  # Show all files installed by a package"
-        echo -e "${grn}pacman${r}${yel} -Qu${r}\t\t  # List all packages that are out of date"
-        echo -e "${grn}pacman${r}${yel} -Qm${r}\t\t  # List all foreign (AUR) packages and include version info"
-        echo -e "${grn}pacman${r}${yel} -Qmq${r}\t\t  # List all foreign (AUR) packages - name only"
-        echo -e "${grn}pacman${r}${yel} -Qqe ${yel}>${r}${r} ${cyn}pkglist.txt${r}\t  # Create a file with all installed pckages including AUR"
-        echo -e "${grn}pacman${r}${yel} -Qq | grep -Ee '-(bzr|cvs|darcs|git|hg|svn)$'${r}\t  # List all dev packages"
-        echo -e "${grn}pacman${r}${yel} -Qq | fzf --preview 'pacman -Qil {}' --layout=reverse --bind 'enter:execute(pacman -Qil {} | less)' ${r}\t  # Browse all in GUI"
-
-
-
-
+    if [[ $_query == false ]]; then
+        heading "$(_category_color query)" "$(_category_title query)"
+        _print_category query
         _query=true
-    fi                
+    fi
 }
 
 #-----------------------------------------------------------------------------------
 
 files() {
-
-    if [ $_files == false ]; then
-
-        heading blue "SEARCH FILES"
-
-        echo -e "${grn}pacman${r}${yel} -Fs${r} ${cyn}keyword${r}\t                    # Search for package filenames that contain a keyword"
-        echo -e "${grn}pacman${r}${yel} -Q | grep -i${r} ${cyn}keyword${r}\t            # Search for installed packages by keyword"
-        echo -e "${grn}pacman${r}${yel} -Fl${r} ${cyn}package-name${r}\t                    # Show all files installed by a remote package"
-        echo -e "${grn}pacman${r}${yel} -Fo${r} ${cyn}/path/filename${r}\t            # Show which remote package a file belongs to"
-        echo -e "${grn}pacman${r}${yel} -Q${r}\t                            # Show all packages installed"
-        echo -e "${grn}paccheck${r}${yel} --md5sum --quiet${r} ${r}\t            # Show all changed files from packages"
-        echo -e "${grn}lsof${r}${yel} +c 0 | grep -w DEL | awk '1 { print $1 ": " $NF }' | sort -u ${r} ${cyn}${r}\t  # Show apps using old libraries"
-        echo -e "${grn}expac${r}${yel} --timefmt='%Y-%m-%d %T' '%l\t%n' | sort | tail -n 20${r}\t  # Show last 20 installed packages"
-        
-
-
+    if [[ $_files == false ]]; then
+        heading "$(_category_color files)" "$(_category_title files)"
+        _print_category files
         _files=true
     fi
 }
@@ -113,83 +246,159 @@ files() {
 #-----------------------------------------------------------------------------------
 
 sync() {
-
-    if [ $_sync == false ]; then
-    
-        heading purple "SYNC COMMANDS"
-
-        echo -e "${grn}pacman${r}${yel} -U${r} ${cyn}/path/package.pkg.tar.xz${r}\t  # Install a local package"
-        echo -e "${grn}pacman${r}${yel} -S --needed - < ${cyn}pkglist.txt${r}\t  # Install from a list"
-        echo -e "${grn}pacman${r}${yel} -S${r} ${cyn}package-name${r}\t  # Install a package"
-        echo -e "${grn}pacman${r}${yel} -Syu${r}\t\t  # Update all installed packages and sync and refresh database"
-        echo -e "${grn}pacman${r}${yel} -Sy${r}\t\t  # Sync and refresh the pacman database"
-        echo -e "${grn}pacman${r}${yel} -Syy${r}\t\t  # Sync and FORCE refresh the pacman database. Be careful!"
-        echo -e "${grn}pacman${r}${yel} -Sw${r} ${cyn}package-name${r}\t  # Download a package but do not install it"
-        echo -e "${grn}pacman${r}${yel} -Scc${r}\t\t  # Clear caches (run this periodically)"
-
+    if [[ $_sync == false ]]; then
+        heading "$(_category_color sync)" "$(_category_title sync)"
+        _print_category sync
         _sync=true
     fi
 }
 
 #-----------------------------------------------------------------------------------
+
 remove() {
-
-    if [ $_remove == false ]; then
-
-        heading red "REMOVE"
-
-        echo -e "${grn}pacreport${r}${yel} --unowned-files${r}   ${cyn}${r}\t     # Identify files not owned by any package"
-        echo -e "${grn}pacman${r}${yel} -R${r}   ${cyn}package-name${r}\t     # Remove pkg leaving all dependencies" 
-        echo -e "${grn}pacman${r}${yel} -Rs${r}  ${cyn}package-name${r}\t     # Remove pkg and dependencies not needed elsewhere" 
-        echo -e "${grn}pacman${r}${yel} -Rc${r}  ${cyn}package-name${r}\t     # Remove pkg and its config"
-        echo -e "${grn}pacman${r}${yel} -Rsc${r} ${cyn}package-name${r}\t     # Remove pkg, its dependencies and config"
-        echo -e "${grn}pacman${r}${yel} -Qtdq | pacman -Rns -${r} ${cyn}${r}\t     # Remove orphans"
-        echo -e "${grn}pacman${r}${yel} -Qqd | pacman -Rsu --print - ${r} ${cyn}${r}\t  # Detect more unneeded packages"
-        echo -e "${grn}pacman${r}${yel} -D --asdeps $ (pacman -Qqe)${r}\t  # Remove everything but essential packages"
-        echo -e "${grn}pacman${r}${yel} -D --asexplicit${r} ${cyn}package-name${r}\t  # Mark as explicitly installed"
-
+    if [[ $_remove == false ]]; then
+        heading "$(_category_color remove)" "$(_category_title remove)"
+        _print_category remove
         _remove=true
     fi
 }
-clear
 
-# No arguments, we show all
-if [ -z "$args" ]; then
-    sync
-    search
-    query
-    files
-    remove
-    echo
-    exit 1
-fi
+#-----------------------------------------------------------------------------------
+# --- // BROWSE (fzf interactive picker):
+#
+# Commits fully to fzf as the single interactive loop — bash only builds
+# the input list and handles the one selected line afterward. No bash
+# `select`/`read`-driven menu exists alongside this; that would be a
+# chimera (two interaction paradigms for the same job). If fzf is absent,
+# this fails loudly with a one-line message rather than silently doing
+# nothing — the person asked for an interactive picker, and a quiet no-op
+# would look like the program hung or ignored the flag.
 
-args=${args,,}    # lowercase
-args=${args// /}  # remove spaces
-args=${args//-/}  # remove dashes
+browse() {
+    if ! command -v fzf &>/dev/null; then
+        echo -e "${red:-}pcuts --browse requires fzf, which is not installed.${r:-}" >&2
+        echo "Install it (e.g. 'pacman -S fzf') or use a category flag instead (pcuts -h)." >&2
+        return 1
+    fi
 
-# Help menu
-if [[ $args =~ [h] ]] ; then
+    local row cat cmd desc title selected key
+    local -a lines=()
+
+    for row in "${PCUTS_TABLE[@]}"; do
+        IFS=$'\t' read -r cat cmd desc <<<"$row"
+        title="$(_category_title "$cat")"
+        # Display line: "[TITLE] command  -- description". fzf fuzzy-matches
+        # across the whole line, so searching "orphan" or "remove" or
+        # "-Syu" all work regardless of category.
+        lines+=("[$title] $cmd  -- $desc")
+    done
+
+    # --expect=esc lets us tell "user cancelled" apart from "user selected
+    # nothing because the list was somehow empty" — both print nothing to
+    # stdout from fzf, but only the former is an ordinary, successful exit.
+    selected="$(printf '%s\n' "${lines[@]}" | fzf \
+        --ansi \
+        --height=80% \
+        --layout=reverse \
+        --header='pcuts: fuzzy-search every pacman command — Enter to select, Esc to cancel' \
+        --prompt='pcuts> ' \
+        --expect=esc)"
+
+    key="${selected%%$'\n'*}"
+    selected="${selected#*$'\n'}"
+
+    if [[ "$key" == "esc" || -z "$selected" ]]; then
+        # User cancelled — this is a normal, successful exit, not an error.
+        return 0
+    fi
+
+    # Strip the "[TITLE] " prefix and the trailing "  -- description" back
+    # off, leaving only the raw command — this is what actually gets handed
+    # to the user, never the decorated display line.
+    cmd="${selected#\[*\] }"
+    cmd="${cmd%  -- *}"
+
+    echo -e "${grn}${cmd}${r}"
+
+    if command -v wl-copy &>/dev/null; then
+        printf '%s' "$cmd" | wl-copy
+        echo -e "${yel}(copied to clipboard via wl-copy)${r}" >&2
+    elif command -v xclip &>/dev/null; then
+        printf '%s' "$cmd" | xclip -selection clipboard
+        echo -e "${yel}(copied to clipboard via xclip)${r}" >&2
+    fi
+}
+
+#-----------------------------------------------------------------------------------
+# --- // ARGUMENT_PARSING:
+#
+# Single paradigm: every argument (short, combined-short, or long) is
+# normalized into a set of category letters {s,r,q,f,x}, then dispatched
+# once through one case loop. -b/--browse is the one exception — it is
+# mutually exclusive with the print categories (an interactive picker and
+# a "dump everything" mode don't compose), so it short-circuits before
+# category accumulation begins, exactly like -h/--help already does.
+
+show_help_and_exit() {
     help
+    exit "${1:-1}"
+}
+
+# Accumulates recognized category letters from all arguments into one string,
+# e.g. "srq", so -s -r --query and -srq all converge on the same dispatch path.
+_categories=""
+
+if [[ $# -eq 0 ]]; then
+    _categories="srqfx"
+else
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help)
+                show_help_and_exit 0
+                ;;
+            -b|--browse)
+                browse
+                exit $?
+                ;;
+            --sync)   _categories+="s" ;;
+            --remote) _categories+="r" ;;
+            --query)  _categories+="q" ;;
+            --files)  _categories+="f" ;;
+            --remove) _categories+="x" ;;
+            --*)
+                echo -e "${red:-}Unknown option: $arg${r:-}"
+                show_help_and_exit 1
+                ;;
+            -*)
+                # Short form: strip the leading dash, validate the remainder
+                # is composed only of recognized category letters, allowing
+                # combined flags like -srqfx.
+                flag="${arg#-}"
+                flag="${flag,,}"
+                if [[ -z "$flag" || "$flag" =~ [^srqfx] ]]; then
+                    echo -e "${red:-}Unknown option: $arg${r:-}"
+                    show_help_and_exit 1
+                fi
+                _categories+="$flag"
+                ;;
+            *)
+                echo -e "${red:-}Unknown option: $arg${r:-}"
+                show_help_and_exit 1
+                ;;
+        esac
+    done
 fi
 
-# Invalid arguments trigger help
-if [[ $args =~ [^srqfx] ]]; then
-    help
-fi
+clear 2>/dev/null || true
 
-# Explode the characters into an array
-args=$(echo $args | grep -o .)
-
-# Show specific request
-for arg in ${args[@]}; do
-    case "$arg" in
-        s)  sync    ;;
-        r)  search  ;;
-        q)  query   ;;
-        f)  files   ;;
-        x)  remove  ;;
-        *)  help    ;;
+for (( i=0; i<${#_categories}; i++ )); do
+    case "${_categories:$i:1}" in
+        s) sync   ;;
+        r) search ;;
+        q) query  ;;
+        f) files  ;;
+        x) remove ;;
     esac
 done
+
 echo

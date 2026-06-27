@@ -166,10 +166,15 @@ heading() {
 
     if [ -z "$1" ] || [ -z "$2" ]; then
         echo 'Usage: heading <color> "Heading Text"'
-        exit 1
+        return 1
     fi
 
-    if [ -z "$3" ]; then
+    # FIX: "${3:-}" instead of "$3" — referencing an unset positional param
+    # directly is a hard error under `set -u` in any caller that sources this
+    # file with nounset enabled (the third "weight" argument is optional by
+    # design, so its absence must not be fatal).
+    local weight
+    if [ -z "${3:-}" ]; then
         weight=""
     else
         weight=$bold
@@ -179,19 +184,33 @@ heading() {
     local color="${color,,}"  # lowercase
     local hding="${2}"        # capture heading
     local hdlen=${#hding}     # heading length
-    local twidt=$(tput cols)  # terminal width
+
+    # FIX: tput cols can fail or return empty when there is no controlling
+    # terminal (cron, CI, piped-with-redirected-stdin contexts). A bare
+    # `$(tput cols)` left `twidt` empty in that case, which then broke the
+    # arithmetic and the `-gt`/`-ne` integer tests below ("integer expression
+    # expected"). Fall back to 80 columns when tput is unavailable or fails.
+    local twidt
+    twidt=$(tput cols 2>/dev/null) || twidt=80
+    [[ "$twidt" =~ ^[0-9]+$ ]] || twidt=80
 
     # Set the minimum width to match length of the heading
-    if [ ! $twidt -gt $hdlen ]; then
+    if [ ! "$twidt" -gt "$hdlen" ]; then
         twidt=$hdlen
     fi
 
-    # Calculate the padding necessary on either side of the heading
-    l=$(( twidt - hdlen )) 
+    # FIX: l/d were bare globals. A caller whose own scope (or a nested call
+    # chain) used the same single-letter names for an unrelated loop/counter
+    # would have that state silently overwritten by every heading() call —
+    # exactly the class of bug that made colors.sh:heading's own padding loop
+    # clobber pcuts's category-dispatch loop counter when both used a bare `i`.
+    local l d
+    l=$(( twidt - hdlen ))
     d=$(( l / 2 ))
 
     local padding=""
-    for i in $(seq 1 ${d}); do 
+    local _heading_pad_i
+    for (( _heading_pad_i=0; _heading_pad_i<d; _heading_pad_i++ )); do
         padding+=" "
     done
 
@@ -201,13 +220,13 @@ heading() {
     local padextra=""
     local padlenth=${#padding}
     local totlenth=$(( padlenth * 2 + hdlen ))
-    if [ $twidt -ne $totlenth ]; then
+    if [ "$twidt" -ne "$totlenth" ]; then
         padextra=" ";
     fi
 
     # Random color generator
     if [ "$color" == 'rnd' ] || [ "$color" == "rand" ] || [ "$color" == "random" ]; then
-        colors=(   
+        local colors=(
                     "gry" 
                     "chr"
                     "red"
