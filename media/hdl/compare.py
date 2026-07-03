@@ -1,4 +1,5 @@
-#!/usr/bin/python3
+```python
+#!/usr/bin/env python3
 # ==============================================================================
 # HDL PROMPT BUILDER  (hdl_prompt_builder.py)
 # Interactive schema constructor — all completion options sourced from promptlib
@@ -44,7 +45,7 @@ CLI_STYLE = Style.from_dict(
 STATIC_MEM_LOCK = {
     "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
     "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
-    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers. Enforce expression=visceral reaction to an unpleasant taste, opening mouth revealing tongue slathered in a semi-translucent, milky viscous gel--tongue rolls, winces)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers)",
     "STRUCTURAL_NON_DEVIATION": "HIGH",
     "STRUCTURAL_FIDELITY": "HIGH",
     "UNALTERABLE": [
@@ -54,35 +55,35 @@ STATIC_MEM_LOCK = {
         "RAW_JAWLINE_ANGLE",
         "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
         "EXACT_BODY_PROPORTIONS",
-        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
+        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
     ],
     "!INHIBIT": [
         "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
         "FACIAL_BALANCING",
         "POSE_MODIFICATIONS",
-        "BRAZZIER_SUPPORT",
         "CAMERA_ANGLE_MODIFICATIONS",
         "SYMMETRY_MODIFICATIONS",
-        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
-    ],
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+    ]
 }
 
 STATIC_FINALIZE = {
     "REQUIREMENT_CHECKS": {
-        "FOCUS_LOCK": "maximum micro-contrast focus locked onto cloth weave and skin grain",
+        "FOCUS_LOCK": "environmental_context_priority",
         "GLOBAL_NEGATIVE_BIAS": [
+            "VIGNETTE_FILTER",
+            "HDR_TONE_MAPPING",
             "BEAUTY_FILTER",
-            "AIRBRUSHED_SKIN",
-            "PERFECT_FACIAL_SYMMETRY",
-            "DIGITAL_3D_RENDER",
             "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
             "WATERMARK_OR_CREDIT_OVERLAY",
             "HAPPY_EXPRESSIONS",
-            "IDENTITY_SHIFTING",
             "HAIR_CLEANUP_FLYAWAY",
+            "CLEAN_MINIMALIST_ARCHITECTURE",
+            "POSE_MODIFICATIONS",
             "OPAQUE_FABRIC_PROCESSING",
             "BODY_PROPORTION_ALTERATION",
-        ],
+            "VSCO_LUT"
+        ]
     }
 }
 
@@ -108,7 +109,7 @@ def _prompt(
     completer = WordCompleter(completions, ignore_case=True, sentence=True)
     default_hint = f"  ↩ {default}" if default else ""
     hint_str = f"  [{hint}]" if hint else ""
-    text = f"  {label}{hint_str}  [Press TAB | Or Type]{default_hint}\n  ❯ "
+    text = f"  {label}{hint_str}  [TAB|free-text]{default_hint}\n  ❯ "
     try:
         result = pt_prompt(
             text,
@@ -598,19 +599,19 @@ def build_text_recon() -> dict:
         "TEXT_STRING_LITERAL": _prompt(
             "TEXT_STRING_LITERAL",
             lib.TEXT_STRING_COMPLETIONS,
-            default="no_text",
+            default="see_you_soon_ellipsis",
             hint="key or type your own literal string",
         ),
         "FONTTYPE_AESTHETIC": _prompt(
             "FONTTYPE_AESTHETIC",
             lib.TEXT_FONT_COMPLETIONS,
-            default="none",
+            default="lipstick_finger_scrawl_red",
             hint="font key or free description",
         ),
         "LAYER_PLACEMENT": _prompt(
             "LAYER_PLACEMENT",
             lib.TEXT_PLACE_COMPLETIONS,
-            default="none",
+            default="mirror_glass_plane_sharp",
             hint="placement key or free description",
         ),
     }
@@ -777,7 +778,7 @@ def _write_and_print(schema: dict, output_path: str) -> None:
 
     print()
     print("═" * 72)
-    print(f"  ✓ HDL prompt: {output_path}")
+    print(f"  ✓  HDL schema written → {output_path}")
     print("═" * 72)
     print()
     print(json_str)
@@ -790,19 +791,19 @@ def _write_and_print(schema: dict, output_path: str) -> None:
 
 def _mode_menu() -> str:
     print()
-    print("                      4NDR0TOOLS // HDL PROMPT")
-    print("=" * 72)
-    print("" * 72)
-    print("  [i]  Interactive Mode — Review and select every individual parameter")
-    print("  [r]  Random Mode      — Prints complete prompt using random values")
-    print("  [h]  Hybrid Mode      — Presents random values for interactive review")
-    print("-" * 72)
-    print("" * 72)
-    print("         [TAB] pre-set options.        [Type] manual input.")
-    print("         [ENTER] ↩ default option.     [Ctrl-C] quit.")
-    print("-" * 72)
+    print("═" * 72)
+    print("  HDL PROMPT BUILDER")
+    print("─" * 72)
+    print("  i  interactive  — walk every field with TAB-completion + free input")
+    print("  r  random       — generate a complete schema instantly, no prompts")
+    print("  h  hybrid       — random seed, then review / override field by field")
+    print("─" * 72)
+    print("  TAB completes library keys at every prompt.")
+    print("  Type anything not in the list → accepted verbatim as manual input.")
+    print("  Ctrl-C exits at any point.")
+    print("═" * 72)
     mode = _prompt(
-        "Selection:", ["Interactive", "Random", "Hybrid"], default="Interactive"
+        "Select mode", ["interactive", "random", "hybrid"], default="interactive"
     )
     return mode.strip().lower()[:1]  # 'i', 'r', or 'h'
 
@@ -859,13 +860,15 @@ def main() -> None:
         n = int(n_str) if n_str.isdigit() else None
         seed_schema = generate_random(n_panels=n)
         schema = run_hybrid(seed_schema)
-        _write_and_print(schema, "hdl_prompt.json")
+        _write_and_print(schema, "hdl_output.json")
 
     else:
         # ── INTERACTIVE (default) ─────────────────────────────────────────────
         schema = run_interactive()
-        _write_and_print(schema, "hdl_prompt.json")
+        _write_and_print(schema, "hdl_output.json")
 
 
 if __name__ == "__main__":
     main()
+
+```

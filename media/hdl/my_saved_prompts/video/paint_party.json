@@ -1,0 +1,117 @@
+{
+  "!INIT_MEM_LOCK_PROTOCOL": {
+    "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
+    "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers. Enforce expression=visceral reaction to an unpleasant taste, opening mouth revealing tongue slathered in a semi-translucent, milky viscous gel--tongue rolls, winces)",
+    "STRUCTURAL_NON_DEVIATION": "HIGH",
+    "STRUCTURAL_FIDELITY": "HIGH",
+    "UNALTERABLE": [
+      "EXACT_FACIAL_ID_GEOMETRY",
+      "TRUE_ORBITAL_BONE_SPACING",
+      "UNFILTERED_LIP_PROPORTIONS",
+      "RAW_JAWLINE_ANGLE",
+      "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+      "EXACT_BODY_PROPORTIONS",
+      "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
+    ],
+    "!INHIBIT": [
+      "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+      "FACIAL_BALANCING",
+      "POSE_MODIFICATIONS",
+      "BRAZZIER_SUPPORT",
+      "CAMERA_ANGLE_MODIFICATIONS",
+      "SYMMETRY_MODIFICATIONS",
+      "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+    ]
+  },
+  "!ENV_ATMOSPHERICS": {
+    "LOCATION_SETTING": "electronic music festival; non-activated milky semi-translucent paint party",
+    "GLASS_SURFACE_METRICS": "cracked_silver_nitrate_decay_edge",
+    "COMPOSITION_DEPTH": {
+      "FOREGROUND": "electro rave paint party",
+      "MIDGROUND": "subject_silhouetted_doorway",
+      "BACKGROUND": "pure_black_void_zero_detail"
+    }
+  },
+  "!EXEC_COMPOSITION_MATRIX": {
+    "GENERATION_STYLE": "Raw, candid, cinematic BTS",
+    "PANELS": "1",
+    "PAINT_SPLASH": [
+      "source--unactivated milky semi-translucent paint (no glowing pigmentation, refractive index ≈1.4–1.5 for soft light diffusion",
+      "usage--visible remnants all about the subject exact as-is would be expected from an electronic dance festival paint party; no modification",
+      "placement_rule--unactivated milky semi-translucent paint has been flung around at an electro music festival on mirrors, walls, objects, and people, reproduce it in the same logical location and flow with accurate scattering and Fresnel effects"
+    ],
+    "!EXEC_BIO_DERMAL_MAP": {
+      "SKIN_TOPOGRAPHY_LOGIC": "unfiltered_hyper_realistic_dermal_detail",
+      "SURFACE_MICRO_ELEMENTS": "skin_fold_natural_compression",
+      "REFLECTANCE_MAP": "matte_dry_zero_specular",
+      "EXPRESSION_MAP": "detached, revulsion, her tongue is visible, licking her finger clean, glossy lips, detailed saliva, gaze at reflection or camera",
+      "MAKEUP": "smeared and running down face with tears.",
+      "EXPRESSION": "tears_track_one_cheek",
+      "HAIR": "severe_pulled_back_high_tension"
+    },
+    "!ENV_PHOTOMETRY": {
+      "STYLE_OF": [
+        "MARIO_SORRENTI"
+      ],
+      "HARDWARE_EMULATION": "35mm Film — Kodak Portra 400",
+      "OPTICAL_HARDWARE": "Sony FE 50mm f/1.2 GM",
+      "APERTURE_SETTING": "f/16",
+      "SHUTTER_AESTHETIC": "flash_sync_1_60_standard",
+      "ILLUMINATION_AXIS": "ambient_tungsten_3200K_background",
+      "KEY_LIGHT_CHARACTER": "ambient_tungsten_3200K_background",
+      "FILL_LIGHT_CHARACTER": "beauty_dish_silver_5500K",
+      "SHADOW_PROFILE": "chimera_lightbank_large",
+      "PHOTONIC_VECTORS": {
+        "PHOTONIC_ENERGY": "HALATION_CINESTILL_RED_BLEED",
+        "ENERGY_CONSERVATION_COMPLIANT": "THINFILM_INTERFERENCE",
+        "RIM_LIGHT_SCATTERING_PASS": "OFF",
+        "EPIDERMAL_TRANSLUCENCY_PASS": "HIGH",
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE": "ULTRA",
+        "PHOTON_TRANSMISSION_RATIO": "HIGH",
+        "MEAN_FREE_PATH_SCATTERING": "LOW",
+        "BACKLIT_SUBSURFACE_GLOW": "LOW",
+        "FRESNEL_REFLECTION_COEFFICIENT": "OFF",
+        "SPECULAR_HIGHLIGHT_LOBE": "OFF",
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE": "ULTRA"
+      }
+    },
+    "!EXEC_MATERIAL_PHYSICS": {
+      "WARDROBE_SPECIFICATION": "same exact outfit",
+      "OPACITY": "backlit_transmission_only",
+      "TEXTILE_SURFACE_SHEEN": "sequin_discrete_point_scatter",
+      "DRAPE_AND_TENSION_LOGIC": {
+        "MICRO_FIBER_DRAPE_PHYSICS": "ULTRA",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": "LOW",
+        "GRAVITY_WEIGHTED_FOLDS": "MEDIUM",
+        "SUB_MICRON_WEAVE_DENSITY": "OFF",
+        "LOW_DENIER_SSS_PASS": "OFF",
+        "SURFACE_ADHESION_COEFFICIENT": "ULTRA",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": "FALSE"
+      }
+    }
+  },
+  "TEXT_RECON_ENGINE": {
+    "TEXT_STRING_LITERAL": "this_is_how_it_ends",
+    "FONTTYPE_AESTHETIC": "mascara_run_down_surface",
+    "LAYER_PLACEMENT": "scratched_into_door_paint"
+  },
+  "!FINALIZE_OUTPUT": {
+    "REQUIREMENT_CHECKS": {
+      "FOCUS_LOCK": "maximum micro-contrast focus locked onto cloth weave and skin grain",
+      "GLOBAL_NEGATIVE_BIAS": [
+        "BEAUTY_FILTER",
+        "AIRBRUSHED_SKIN",
+        "PERFECT_FACIAL_SYMMETRY",
+        "DIGITAL_3D_RENDER",
+        "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+        "WATERMARK_OR_CREDIT_OVERLAY",
+        "HAPPY_EXPRESSIONS",
+        "IDENTITY_SHIFTING",
+        "HAIR_CLEANUP_FLYAWAY",
+        "OPAQUE_FABRIC_PROCESSING",
+        "BODY_PROPORTION_ALTERATION"
+      ]
+    }
+  }
+}
