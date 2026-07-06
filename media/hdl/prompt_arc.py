@@ -1,23 +1,34 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # ==============================================================================
-# HDL PROMPT BUILDER  (hdl_prompt_builder.py)
-# Interactive schema constructor — all completion options sourced from promptlib
+# HDL PROMPT BUILDER  (prompt_arc.py)
+# Interactive / Random / Hybrid / Stock / TUI schema constructor.
+# All completion options sourced from promptlib.py.
 #
-# MODES
-#   interactive   Walk every parameter field with TAB-completion + free-text input
-#   random        Randomly sample every field from promptlib manifests; no prompts
-#   hybrid        Randomly seed each field, then let user review / override live
+# MODES (CLI — no --tui flag)
+#   i  interactive  Walk every field with TAB-completion + free-text input
+#   r  random       Instantly generate a complete schema; no prompts
+#   h  hybrid       Random seed, then field-by-field review / override
+#   s  stock        Block-level bypass: choose per-section to customise or accept defaults
 #
 # MANUAL INPUT
 #   At every prompt you may type anything not in the completion list and press
 #   ENTER — the value is accepted verbatim.  The completer is advisory only.
+#
+# TUI (--tui flag)
+#   Full-screen 3-pane prompt_toolkit Application with live JSON preview.
+#   The TUI and CLI share generate_random() and HDLTUIState but run in
+#   completely separate event-loop paths — no chimera mixing.
 # ==============================================================================
 
+import copy
 import json
-import subprocess
 import random
+import subprocess
 import sys
 from typing import Any
+
+# ── TUI imports are deferred to avoid loading layout objects in CLI mode ──────
+# They are imported inside HDLTUIApplication.__init__ only when --tui is passed.
 
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import WordCompleter
@@ -39,54 +50,6 @@ CLI_STYLE = Style.from_dict(
 )
 
 # ==============================================================================
-# STATIC CONFIGURATION BLOCKS
-# ==============================================================================
-STATIC_MEM_LOCK = {
-    "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
-    "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
-    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers. Enforce expression=visceral reaction to an unpleasant taste, opening mouth revealing tongue slathered in a semi-translucent, milky viscous gel--tongue rolls, winces)",
-    "STRUCTURAL_NON_DEVIATION": "HIGH",
-    "STRUCTURAL_FIDELITY": "HIGH",
-    "UNALTERABLE": [
-        "EXACT_FACIAL_ID_GEOMETRY",
-        "TRUE_ORBITAL_BONE_SPACING",
-        "UNFILTERED_LIP_PROPORTIONS",
-        "RAW_JAWLINE_ANGLE",
-        "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
-        "EXACT_BODY_PROPORTIONS",
-        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
-    ],
-    "!INHIBIT": [
-        "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
-        "FACIAL_BALANCING",
-        "POSE_MODIFICATIONS",
-        "BRAZZIER_SUPPORT",
-        "CAMERA_ANGLE_MODIFICATIONS",
-        "SYMMETRY_MODIFICATIONS",
-        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
-    ],
-}
-
-STATIC_FINALIZE = {
-    "REQUIREMENT_CHECKS": {
-        "FOCUS_LOCK": "maximum micro-contrast focus locked onto cloth weave and skin grain",
-        "GLOBAL_NEGATIVE_BIAS": [
-            "BEAUTY_FILTER",
-            "AIRBRUSHED_SKIN",
-            "PERFECT_FACIAL_SYMMETRY",
-            "DIGITAL_3D_RENDER",
-            "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
-            "WATERMARK_OR_CREDIT_OVERLAY",
-            "HAPPY_EXPRESSIONS",
-            "IDENTITY_SHIFTING",
-            "HAIR_CLEANUP_FLYAWAY",
-            "OPAQUE_FABRIC_PROCESSING",
-            "BODY_PROPORTION_ALTERATION",
-        ],
-    }
-}
-
-# ==============================================================================
 # PRIMITIVE PROMPT HELPERS
 # ==============================================================================
 
@@ -96,15 +59,19 @@ def _prompt(
     completions: list[str],
     default: str = "",
     hint: str = "",
+    skip: bool = False,
 ) -> str:
     """
-    Single-value prompt with TAB word completion AND free-text manual input.
+    Single-value prompt with TAB completion AND free-text manual input.
 
-    - TAB shows library completions (advisory).
-    - Typing any text not in the list and pressing ENTER is accepted verbatim.
-    - ENTER with an empty buffer accepts `default`.
-    - The optional `hint` string is appended after the label for context.
+    skip=True: bypass the prompt entirely and return `default` immediately.
+    TAB shows library completions (advisory only).
+    Any typed text not in the list is accepted verbatim.
+    ENTER with empty buffer accepts `default`.
     """
+    if skip:
+        return default
+
     completer = WordCompleter(completions, ignore_case=True, sentence=True)
     default_hint = f"  ↩ {default}" if default else ""
     hint_str = f"  [{hint}]" if hint else ""
@@ -127,10 +94,11 @@ def _prompt_list(
     completions: list[str],
     defaults: list[str] | None = None,
     hint: str = "",
+    skip: bool = False,
 ) -> list[str]:
     """
-    Multi-value prompt — comma-separated.
-    Each token may be a library key OR any free-text string.
+    Multi-value prompt — comma-separated.  Each token may be a library key
+    OR any free-text string.  skip=True returns defaults immediately.
     """
     default_str = ", ".join(defaults or [])
     raw = _prompt(
@@ -138,6 +106,7 @@ def _prompt_list(
         completions,
         default=default_str,
         hint=f"comma-separated{'; ' + hint if hint else ''}",
+        skip=skip,
     )
     return [v.strip() for v in raw.split(",") if v.strip()]
 
@@ -153,6 +122,16 @@ def _subheader(title: str) -> None:
     print(f"\n    ┄ {title} ┄")
 
 
+def _ask_yes(question: str) -> bool:
+    """Single yes/no question; ENTER or 'n' → False, 'y' → True."""
+    try:
+        raw = pt_prompt(f"  {question} [y/N] ❯ ", style=CLI_STYLE).strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print("\n[Aborted]")
+        sys.exit(0)
+    return raw == "y"
+
+
 # ==============================================================================
 # RANDOM GENERATION — samples every field independently from promptlib
 # ==============================================================================
@@ -164,54 +143,59 @@ def _r(pool: list[str]) -> str:
 
 
 def _r_list(pool: list[str], k_min: int = 1, k_max: int = 4) -> list[str]:
-    """Pick a random subset (without replacement) from a completion list."""
     k = random.randint(k_min, min(k_max, len(pool)))
     return random.sample(pool, k)
 
 
-def generate_random(n_panels: int | None = None) -> dict:
+def generate_random(n_panels: int | None = None, seed: int | None = None) -> dict:
     """
     Build a complete HDL schema by randomly sampling every field from promptlib.
-    Returns the same nested dict structure as the interactive builder.
-    """
-    # ── MEM LOCK (STATIC OVERRIDE) ────────────────────────────────────────────
-    mem_lock = STATIC_MEM_LOCK
+    STATIC_MEM_LOCK and STATIC_FINALIZE are injected verbatim — never randomised.
+    seed: optional integer for reproducible output.
 
-    # ── ENV ATMOSPHERICS ──────────────────────────────────────────────────────
-    env_atmospherics = {
-        "LOCATION_SETTING": _r(lib.LOCATION_COMPLETIONS),
-        "GLASS_SURFACE_METRICS": _r(lib.GLASS_COMPLETIONS),
-        "COMPOSITION_DEPTH": {
-            "FOREGROUND": _r(list(lib.DOF_MANIFEST["foreground"].keys())),
-            "MIDGROUND": _r(list(lib.DOF_MANIFEST["midground"].keys())),
-            "BACKGROUND": _r(list(lib.DOF_MANIFEST["background"].keys())),
-        },
-    }
+    Schema nesting follows the required HDL spec: ALL execution blocks
+    (!EXEC_COMPOSITION_MATRIX, !EXEC_BIO_DERMAL_MAP, !ENV_PHOTOMETRY,
+    !EXEC_MATERIAL_PHYSICS, TEXT_RECON_ENGINE, !FINALIZE_OUTPUT) are nested
+    INSIDE !ENV_ATMOSPHERICS, not at the top level.
+    """
+    if seed is not None:
+        random.seed(seed)
 
     # ── PANELS ────────────────────────────────────────────────────────────────
     if n_panels is None:
         n_panels = random.randint(1, 9)
 
+    # Panel values: ECU/macro panels get list descriptors; others get a pose key.
+    # This mirrors the required schema where some panels carry multi-element lists.
+    _macro_views = {
+        "FRONT EXTREME CLOSE-UP (ECU/XCU)",
+        "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)",
+        "FRONT EXTREME CLOSE-UP MACRO (ECUM/XCUM)",
+        "INSERT MACRO DETAIL (IMD)",
+        "EXTREME MACRO DETAIL (XMD)",
+        "HAND DETAIL MACRO (HDM)",
+    }
+    _list_views = {
+        "SIDE CLOSE-UP (SCU)",
+        "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)",
+    }
+
     matrix: dict[str, Any] = {"PANELS": str(n_panels)}
     used_views: set[str] = set()
     for _ in range(n_panels):
-        # Prefer unique view labels per panel; fall back to full pool if exhausted
         remaining = [v for v in lib.VIEW_COMPLETIONS if v not in used_views]
         view = _r(remaining if remaining else lib.VIEW_COMPLETIONS)
         used_views.add(view)
-        matrix[view] = _r(lib.POSE_COMPLETIONS)
+        if view in _macro_views:
+            matrix[view] = _r_list(lib.POSE_COMPLETIONS, 2, 4)
+        elif view in _list_views:
+            matrix[view] = _r_list(lib.POSE_COMPLETIONS, 2, 3)
+        else:
+            matrix[view] = _r(lib.POSE_COMPLETIONS)
 
     # ── BIO DERMAL MAP ────────────────────────────────────────────────────────
-    topo_pool = [
-        "unfiltered_hyper_realistic_dermal_detail",
-        "high_magnification_sebaceous_follicles",
-        "wet_skin_condensation_texture",
-        "dry_aged_deep_crease_mapping",
-        "sun_damaged_hyperpigmentation",
-        "young_unretouched_fine_pore_mapping",
-    ]
     bio_dermal = {
-        "SKIN_TOPOGRAPHY_LOGIC": _r(topo_pool),
+        "SKIN_TOPOGRAPHY_LOGIC": _r(lib.TOPO_COMPLETIONS),
         "SURFACE_MICRO_ELEMENTS": _r(list(lib.SKIN_MANIFEST["surface_micro"].keys())),
         "REFLECTANCE_MAP": _r(list(lib.SKIN_MANIFEST["reflectance"].keys())),
         "EXPRESSION": _r(list(lib.SKIN_MANIFEST["expressions"].keys())),
@@ -219,29 +203,24 @@ def generate_random(n_panels: int | None = None) -> dict:
     }
 
     # ── ENV PHOTOMETRY ────────────────────────────────────────────────────────
-    shutter_pool = [
-        "flash_sync_1_60_standard",
-        "flash_sync_1_125_standard",
-        "flash_sync_1_250_hss",
-        "flash_sync_1_500_hss_full_kill",
-        "long_exposure_bulb_ambient_bleed",
-    ]
     photometry = {
         "STYLE_OF": _r_list(lib.STYLE_COMPLETIONS, 1, 3),
         "HARDWARE_EMULATION": _r(lib.CAMERA_COMPLETIONS),
         "OPTICAL_HARDWARE": _r(lib.LENS_COMPLETIONS),
+        "COLOR_SCIENCE_PROFILE": _r(lib.COLOR_COMPLETIONS),
+        "OPTICAL_ABERRATIONS": _r(lib.OPTICS_COMPLETIONS),
         "APERTURE_SETTING": _r(lib.APERTURE_COMPLETIONS),
-        "SHUTTER_AESTHETIC": _r(shutter_pool),
+        "SHUTTER_AESTHETIC": _r(lib.SHUTTER_COMPLETIONS),
         "ILLUMINATION_AXIS": _r(lib.LIGHTING_COMPLETIONS),
         "KEY_LIGHT_CHARACTER": _r(lib.LIGHTING_COMPLETIONS),
         "FILL_LIGHT_CHARACTER": _r(lib.LIGHTING_COMPLETIONS),
         "SHADOW_PROFILE": _r(lib.LIGHTING_COMPLETIONS),
         "PHOTONIC_VECTORS": {
             "PHOTONIC_ENERGY": _r(lib.ENERGY_COMPLETIONS),
-            "ENERGY_CONSERVATION_COMPLIANT": _r(lib.ENERGY_COMPLETIONS),
-            "RIM_LIGHT_SCATTERING_PASS": _r(lib.LEVEL_COMPLETIONS),
-            "EPIDERMAL_TRANSLUCENCY_PASS": _r(lib.LEVEL_COMPLETIONS),
-            "THROUGH_FABRIC_DIFFUSE_BOUNCE": _r(lib.LEVEL_COMPLETIONS),
+            "ENERGY_CONSERVATION_COMPLIANT": "TRANSPARENCY-FOCUSED",
+            "RIM_LIGHT_SCATTERING_PASS": _r(["TRUE", "FALSE"]),
+            "EPIDERMAL_TRANSLUCENCY_PASS": _r(["TRUE", "FALSE"]),
+            "THROUGH_FABRIC_DIFFUSE_BOUNCE": _r(["TRUE", "FALSE"]),
             "PHOTON_TRANSMISSION_RATIO": _r(lib.LEVEL_COMPLETIONS),
             "MEAN_FREE_PATH_SCATTERING": _r(lib.LEVEL_COMPLETIONS),
             "BACKLIT_SUBSURFACE_GLOW": _r(lib.LEVEL_COMPLETIONS),
@@ -252,18 +231,17 @@ def generate_random(n_panels: int | None = None) -> dict:
     }
 
     # ── MATERIAL PHYSICS ──────────────────────────────────────────────────────
-    drape_opts = lib.LEVEL_COMPLETIONS
     material = {
         "WARDROBE_SPECIFICATION": _r(lib.WARDROBE_COMPLETIONS),
         "OPACITY": _r(lib.OPACITY_COMPLETIONS),
         "TEXTILE_SURFACE_SHEEN": _r(lib.SHEEN_COMPLETIONS),
         "DRAPE_AND_TENSION_LOGIC": {
-            "MICRO_FIBER_DRAPE_PHYSICS": _r(drape_opts),
-            "LOW_TENSILE_STRUCTURAL_DEFORMITY": _r(drape_opts),
-            "GRAVITY_WEIGHTED_FOLDS": _r(drape_opts),
-            "SUB_MICRON_WEAVE_DENSITY": _r(drape_opts),
+            "MICRO_FIBER_DRAPE_PHYSICS": _r(lib.LEVEL_COMPLETIONS),
+            "LOW_TENSILE_STRUCTURAL_DEFORMITY": _r(lib.LEVEL_COMPLETIONS),
+            "GRAVITY_WEIGHTED_FOLDS": _r(lib.LEVEL_COMPLETIONS),
+            "SUB_MICRON_WEAVE_DENSITY": _r(lib.LEVEL_COMPLETIONS),
             "LOW_DENIER_SSS_PASS": _r(["ON", "OFF"]),
-            "SURFACE_ADHESION_COEFFICIENT": _r(drape_opts),
+            "SURFACE_ADHESION_COEFFICIENT": _r(lib.LEVEL_COMPLETIONS),
             "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": _r(lib.BOOL_COMPLETIONS),
         },
     }
@@ -275,20 +253,27 @@ def generate_random(n_panels: int | None = None) -> dict:
         "LAYER_PLACEMENT": _r(lib.TEXT_PLACE_COMPLETIONS),
     }
 
-    # ── FINALIZE (STATIC OVERRIDE) ────────────────────────────────────────────
-    finalize = STATIC_FINALIZE
-
-    # ── ASSEMBLE ──────────────────────────────────────────────────────────────
-    matrix["!EXEC_BIO_DERMAL_MAP"] = bio_dermal
-    matrix["!ENV_PHOTOMETRY"] = photometry
-    matrix["!EXEC_MATERIAL_PHYSICS"] = material
+    # ── ASSEMBLE — all execution blocks nest inside !ENV_ATMOSPHERICS ─────────
+    env_atmospherics = {
+        "LOCATION_SETTING": _r(lib.LOCATION_COMPLETIONS),
+        "GLASS_SURFACE_METRICS": _r(lib.GLASS_COMPLETIONS),
+        "COMPOSITION_DEPTH": {
+            "FOREGROUND": _r(list(lib.DOF_MANIFEST["foreground"].keys())),
+            "MIDGROUND": _r(list(lib.DOF_MANIFEST["midground"].keys())),
+            # BACKGROUND is a list per required schema
+            "BACKGROUND": _r_list(list(lib.DOF_MANIFEST["background"].keys()), 2, 5),
+        },
+        "!EXEC_COMPOSITION_MATRIX": matrix,
+        "!EXEC_BIO_DERMAL_MAP": bio_dermal,
+        "!ENV_PHOTOMETRY": photometry,
+        "!EXEC_MATERIAL_PHYSICS": material,
+        "TEXT_RECON_ENGINE": text_recon,
+        "!FINALIZE_OUTPUT": copy.deepcopy(lib.STATIC_FINALIZE),
+    }
 
     return {
-        "!INIT_MEM_LOCK_PROTOCOL": mem_lock,
+        "!INIT_MEM_LOCK_PROTOCOL": copy.deepcopy(lib.STATIC_MEM_LOCK),
         "!ENV_ATMOSPHERICS": env_atmospherics,
-        "!EXEC_COMPOSITION_MATRIX": matrix,
-        "TEXT_RECON_ENGINE": text_recon,
-        "!FINALIZE_OUTPUT": finalize,
     }
 
 
@@ -297,67 +282,165 @@ def generate_random(n_panels: int | None = None) -> dict:
 # ==============================================================================
 
 
-def build_mem_lock() -> dict:
-    _header("MEM LOCK PROTOCOL (STATIC COMPLIANCE ENFORCED)")
-    return STATIC_MEM_LOCK
-
-
-def build_env_atmospherics() -> dict:
-    _header("ENV ATMOSPHERICS")
+def build_env_atmospherics(skip: bool = False) -> dict:
+    if not skip:
+        _header("ENV ATMOSPHERICS")
     return {
         "LOCATION_SETTING": _prompt(
             "LOCATION_SETTING",
             lib.LOCATION_COMPLETIONS,
-            default="create a sequence of cinematic stills that tells a short story of the same woman",
+            default="ALL_PROVIDED_INGREDIENTS_ARE_REQUIRED_TO_CREATE_SEVERAL_CINEMATIC_STILLS_ALIGNED_WITH_THE_NUMBER_OF_SELECETED_PANELS--CONTINUITY; TELL_A_SHORT_STORY",
             hint="library key or free description",
+            skip=skip,
         ),
         "GLASS_SURFACE_METRICS": _prompt(
             "GLASS_SURFACE_METRICS",
             lib.GLASS_COMPLETIONS,
-            default="dust particles catching direct light illumination",
+            default="DUST_PARTICLES_CATCHING_DIRECT_LIGHT_ILLUMINATION",
             hint="library key or free description",
+            skip=skip,
+        ),
+        "PARTICULATE_SCATTERING": _prompt(
+            "PARTICULATE_SCATTERING",
+            lib.METEOROLOGY_COMPLETIONS,
+            default="MIE_SCATTERING_DENSE_FOG",
+            hint="meteorology key or free description",
+            skip=skip,
+        ),
+        "WIND_VECTOR_FORCE": _prompt(
+            "WIND_VECTOR_FORCE",
+            lib.METEOROLOGY_COMPLETIONS,
+            default="WIND_VELOCITY_HIGH_TURBULENT",
+            hint="meteorology key or free description",
+            skip=skip,
         ),
         "COMPOSITION_DEPTH": {
             "FOREGROUND": _prompt(
                 "FOREGROUND",
                 list(lib.DOF_MANIFEST["foreground"].keys()),
-                default="shallow depth of field to create a film like dramatic style",
+                default="SHALLOW_DEPTH_OF_FIELD_TO_CREATE_A_FILM_LIKE_DRAMATIC_STYLE",
                 hint="DOF/foreground",
+                skip=skip,
             ),
             "MIDGROUND": _prompt(
                 "MIDGROUND",
                 list(lib.DOF_MANIFEST["midground"].keys()),
-                default="she is posing for the camera",
+                default="SHE_IS_POSING_FOR_THE_CAMERA",
                 hint="subject action",
+                skip=skip,
             ),
-            "BACKGROUND": _prompt(
+            # BACKGROUND is a list per required schema spec
+            "BACKGROUND": _prompt_list(
                 "BACKGROUND",
                 list(lib.DOF_MANIFEST["background"].keys()),
-                default="spolight lit, clean mirrored walls, floor and ceiling showing high reflection",
-                hint="environment",
+                defaults=[
+                    "STUDIO",
+                    "SINGLE_LIGHT_SOURCE",
+                    "POWERFUL_SPOTLIGHT",
+                    "TOTAL_DARKNESS",
+                    "MIRRORED_WALLS_AND_TILES",
+                    "HIGH_REFLECTANCE",
+                ],
+                hint="comma-separated environment tokens",
+                skip=skip,
             ),
         },
     }
 
 
-def build_panel(index: int) -> dict:
-    _subheader(f"Panel {index}")
+_MACRO_VIEWS = {
+    "INSERT MACRO DETAIL (IMD)",
+    "EXTREME MACRO DETAIL (XMD)",
+    "HAND DETAIL MACRO (HDM)",
+}
+_LIST_VIEWS = {
+    "SIDE CLOSE-UP (SCU)",
+    "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)",
+    "FRONT MEDIUM CLOSE-UP (MCU)",
+    "BIRDS EYE (BE)",
+    "FRONT EXTREME CLOSE-UP (ECU/XCU)",
+    "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)",
+}
+
+
+def build_panel(index: int, skip: bool = False) -> dict:
+    """
+    Build one panel entry.  Macro and angled views produce list values matching
+    the required schema spec; all other views produce a single string value.
+    """
+    if not skip:
+        _subheader(f"Panel {index}")
+
     angle = _prompt(
         f"Panel {index} — camera angle / view label",
         lib.VIEW_COMPLETIONS,
-        default="MEDIUM CLOSE-UP (MCU)",
+        default="FRONT_MEDIUM_CLOSE-UP_(MCU)",
         hint="view",
+        skip=skip,
     )
-    kinetic = _prompt(
-        f"Panel {index} — kinetic / pose",
-        lib.POSE_COMPLETIONS,
-        default="supine_flat",
-        hint="pose",
-    )
-    return {angle: kinetic}
+
+    if angle in _MACRO_VIEWS or angle in _LIST_VIEWS:
+        # Collect comma-separated descriptors for multi-element panels
+        value = _prompt_list(
+            f"Panel {index} — descriptors",
+            lib.POSE_COMPLETIONS,
+            defaults=[
+                "LITHOTOMY_POSITION",
+                "AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
+                "FULL_LENGTH_OF_RIB_CAGE, FINE_DETAILS, FABRIC_WEAVE, RAZOR_SHARP_FOCUS_ON_TEXTURED_SKIN",
+                "~45°_ROTATED_CLOCKWISE, CHEST_LEVEL, SLIGHTLY_TILTED_DOWNWARD",
+                "~45°_ROTATED_CLOCKWISE_AND_SLIGHTLY_TILTED_DOWNWARD_FROM_8FT",
+                "FULL_LENGTH_OF_RIB_CAGE, FABRIC_WEAVE, RAZOR-SHARP_FOCUS_ON_GLISTENING_SWEATBEADS_AND_TEXTURED_SKIN, SHALLOW_DEPTH_OF_FIELD, 100mm_MACRO_LENS_AT_f/2.8",
+            ],
+            hint="comma-separated detail tokens or pose keys",
+            skip=skip,
+        )
+    else:
+        value = _prompt(
+            f"Panel {index} — kinetic / pose",
+            lib.POSE_COMPLETIONS,
+            default="supine_flat",
+            hint="pose",
+            skip=skip,
+        )
+
+    return {angle: value}
 
 
-def build_composition_matrix() -> dict:
+def build_composition_matrix(skip: bool = False) -> dict:
+    """
+    If skip=True, return the canonical 6-panel default layout per required schema.
+    Panel values mirror the spec: macro/angled views carry lists of descriptors.
+    """
+    if skip:
+        return {
+            "LAYOUT_PRESET": "LAYOUT: SIX_PANEL_COMPOSITE",
+            "PANELS": "6",
+            "FRONT MEDIUM CLOSE-UP (MCU)": "LITHOTOMY_POSITION",
+            "BIRDS EYE (BE)": "AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
+            "FRONT EXTREME CLOSE-UP (ECU/XCU)": [
+                "FULL_LENGTH_OF_RIB_CAGE",
+                "FINE_DETAILS",
+                "FABRIC_WEAVE",
+                "RAZOR_SHARP_FOCUS_ON_TEXTURED_SKIN",
+            ],
+            "SIDE CLOSE-UP (SCU)": [
+                "~45°_ROTATED_CLOCKWISE",
+                "CHEST_LEVEL",
+                "SLIGHTLY_TILTED_DOWNWARD",
+            ],
+            "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": [
+                "~45°_ROTATED_CLOCKWISE_AND_SLIGHTLY_TILTED_DOWNWARD_FROM_8FT",
+            ],
+            "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)": [
+                "FULL_LENGTH_OF_RIB_CAGE",
+                "FABRIC_WEAVE",
+                "RAZOR-SHARP_FOCUS_ON_GLISTENING_SWEATBEADS_AND_TEXTURED_SKIN",
+                "SHALLOW_DEPTH_OF_FIELD",
+                "100mm_MACRO_LENS_AT_f/2.8",
+            ],
+        }
+
     _header("COMPOSITION MATRIX")
 
     layout_choice = _prompt(
@@ -372,20 +455,20 @@ def build_composition_matrix() -> dict:
             if layout_choice in _cat:
                 preset = _cat[layout_choice]
                 break
-        n_panels = int(preset.get("PANELS", "4"))
-        matrix: dict = {"LAYOUT_PRESET": layout_choice, "PANELS": str(n_panels)}
+        n_panels = int(preset.get("PANELS", "6"))
+        matrix = {"LAYOUT_PRESET": layout_choice, "PANELS": str(n_panels)}
     else:
         n_str = _prompt(
             "Number of panels",
             lib.PANEL_COUNT_COMPLETIONS,
-            default="4",
+            default="6",
             hint="1–9 or type a number",
         )
         try:
             n_panels = int(n_str)
         except ValueError:
-            print(f"  [!] '{n_str}' is not a valid integer — defaulting to 4")
-            n_panels = 4
+            print(f"  [!] '{n_str}' is not a valid integer — defaulting to 6")
+            n_panels = 6
         matrix = {"PANELS": str(n_panels)}
 
     for i in range(1, n_panels + 1):
@@ -394,59 +477,51 @@ def build_composition_matrix() -> dict:
     return matrix
 
 
-def build_bio_dermal_map() -> dict:
-    _header("BIO DERMAL MAP")
-    topo_pool = [
-        "unfiltered_hyper_realistic_dermal_detail",
-        "high_magnification_sebaceous_follicles",
-        "wet_skin_condensation_texture",
-        "dry_aged_deep_crease_mapping",
-        "sun_damaged_hyperpigmentation",
-        "young_unretouched_fine_pore_mapping",
-    ]
+def build_bio_dermal_map(skip: bool = False) -> dict:
+    if not skip:
+        _header("BIO DERMAL MAP")
     return {
         "SKIN_TOPOGRAPHY_LOGIC": _prompt(
             "SKIN_TOPOGRAPHY_LOGIC",
-            topo_pool,
-            default="unfiltered human skin texture showing hyper realistic details",
+            lib.TOPO_COMPLETIONS,
+            default="UNFILTERED_HUMAN_SKIN_TEXTURE_SHOWING_HYPER_REALISTIC_DETAILS",
             hint="topology or free description",
+            skip=skip,
         ),
         "SURFACE_MICRO_ELEMENTS": _prompt(
             "SURFACE_MICRO_ELEMENTS",
             list(lib.SKIN_MANIFEST["surface_micro"].keys()),
-            default="true visible dermal pores, fine goosebumps on arms, micro sweat beads catching specular highlights, natural skin folds, raw un-airbrused complexion",
+            default="TRUE_VISIBLE_DERMAL_PORES,_FINE_GOOSEBUMPS_ON_ARMS,_MICRO_SWEATBEADS_CATCHING_SPECULAR_HIGHLIGHTS,_NATURAL_SKIN_FOLDS,_RAW_UN-AIRBRUSED_COMPLEXION",
             hint="micro elements",
+            skip=skip,
         ),
         "REFLECTANCE_MAP": _prompt(
             "REFLECTANCE_MAP",
             list(lib.SKIN_MANIFEST["reflectance"].keys()),
-            default="high specular glisten on damp skin tissue interacting directly with the harsh flash rays",
+            default="HIGH_SPECULAR_GLISTEN_ON_DAMP_SKIN_TISSUE_INTERACTING_DIRECTLY_WITH_THE_HARSH_FLASH_RAYS",
             hint="reflectance",
+            skip=skip,
         ),
         "EXPRESSION": _prompt(
             "EXPRESSION",
             list(lib.SKIN_MANIFEST["expressions"].keys()),
-            default="cool, detached, neutral expression; jaw slightly relaxed, lips subtly parted, gaze fixed steadily on camera lens",
+            default="COOL,_DETACHED,_NEUTRAL_EXPRESSION;_JAW_SLIGHTLY_RELAXED,_LIPS_SUBTLY_PARTED,_GAZE_FIXED_STEADILY_ON_CAMERA_LENS",
             hint="expression",
+            skip=skip,
         ),
         "HAIR": _prompt(
             "HAIR",
             list(lib.SKIN_MANIFEST["hair"].keys()),
-            default="messy, loose uncombed updo with stray hair strands falling naturally across cheeks and neck",
+            default="MESSY,_LOOSE_AND_DISHEVELED_WITH_STRAY_HAIR_STRANDS_FALLING_NATURALLY_ACROSS_CHEEKS_AND_NECK",
             hint="hair state",
+            skip=skip,
         ),
     }
 
 
-def build_env_photometry() -> dict:
-    _header("ENV PHOTOMETRY")
-    shutter_pool = [
-        "flash_sync_1_60_standard",
-        "flash_sync_1_125_standard",
-        "flash_sync_1_250_hss",
-        "flash_sync_1_500_hss_full_kill",
-        "long_exposure_bulb_ambient_bleed",
-    ]
+def build_env_photometry(skip: bool = False) -> dict:
+    if not skip:
+        _header("ENV PHOTOMETRY")
 
     def _level(label: str, default: str = "MEDIUM") -> str:
         return _prompt(
@@ -454,73 +529,99 @@ def build_env_photometry() -> dict:
             lib.LEVEL_COMPLETIONS,
             default=default,
             hint="HIGH/MEDIUM/LOW/ULTRA/OFF or free text",
+            skip=skip,
         )
 
     return {
         "STYLE_OF": _prompt_list(
             "STYLE_OF",
             lib.STYLE_COMPLETIONS,
-            defaults=["ELLEN_VON_UNWERTH + PETRA_COLLINS + CASS_BIRD"],
+            defaults=["DAVID_LACHAPELLE"],
             hint="photographer style(s)",
+            skip=skip,
         ),
         "HARDWARE_EMULATION": _prompt(
             "HARDWARE_EMULATION",
             lib.CAMERA_COMPLETIONS,
-            default="Full-frame DSLR sensor camera",
+            default="FULL-FRAME_DSLR_SENSOR_CAMERA",
             hint="camera body or free description",
+            skip=skip,
         ),
         "OPTICAL_HARDWARE": _prompt(
             "OPTICAL_HARDWARE",
             lib.LENS_COMPLETIONS,
-            default="Canon EOS 5D Mark IV and a Canon EF 100mm",
+            default="CANON_EOS_5D_MARK_IV_AND_A_CANON_EF_100MM",
             hint="lens or free description",
+            skip=skip,
+        ),
+        "COLOR_SCIENCE_PROFILE": _prompt(
+            "COLOR_SCIENCE_PROFILE",
+            lib.COLOR_COMPLETIONS,
+            default="ARRI_LogC4_AWG4",
+            hint="cinema profile",
+            skip=skip,
+        ),
+        "OPTICAL_ABERRATIONS": _prompt(
+            "OPTICAL_ABERRATIONS",
+            lib.OPTICS_COMPLETIONS,
+            default="ANAMORPHIC_2X_SQUEEZE_BLUE_STREAK",
+            hint="lens flaws",
+            skip=skip,
         ),
         "APERTURE_SETTING": _prompt(
             "APERTURE_SETTING",
             lib.APERTURE_COMPLETIONS,
-            default="f/2.8L (Ensuring deep technical sharpness across both the foreground and the midground subject details",
+            default="f/2.8L (ENSURING_DEEP_TECHNICAL_SHARPNESS_ACROSS_BOTH_THE_FOREGROUND_AND_THE_MIDGROUND_SUBJECT_DETAILS)",
             hint="f-stop or free text",
+            skip=skip,
         ),
         "SHUTTER_AESTHETIC": _prompt(
             "SHUTTER_AESTHETIC",
-            shutter_pool,
+            lib.SHUTTER_COMPLETIONS,
             default="Macro IS USM",
             hint="sync mode or free description",
+            skip=skip,
         ),
         "ILLUMINATION_AXIS": _prompt(
             "ILLUMINATION_AXIS",
             lib.LIGHTING_COMPLETIONS,
-            default="single source, hard on-camera pop-up flash aligned parallel to the lens axis",
+            default="SINGLE_SOURCE,_HARD_ON-CAMERA_POP-UP_FLASH_ALIGNED_PARALLEL_TO_THE_LENS_AXIS",
             hint="light source or free description",
+            skip=skip,
         ),
         "KEY_LIGHT_CHARACTER": _prompt(
             "KEY_LIGHT_CHARACTER",
             lib.LIGHTING_COMPLETIONS,
-            default="intense direct 5500K camera flash luminosity (forcing central overexposure blowout, stark white specular highlights on reflective surfaces, and aggressive inverse-square falloff",
+            default="INTENSE_DIRECT_5500K_CAMERA_FLASH_LUMINOSITY_(FORCING_CENTRAL_OVEREXPOSURE_BLOWOUT,_STARK_WHITE_SPECULAR_HIGHLIGHTS_ON_REFLECTIVE_SURFACES,_AND_AGGRESSIVE_INVERSE-SQUARE_FALLOFF",
             hint="key light",
+            skip=skip,
         ),
         "FILL_LIGHT_CHARACTER": _prompt(
             "FILL_LIGHT_CHARACTER",
             lib.LIGHTING_COMPLETIONS,
-            default="dim ambient tungsten glow, 3200K color temperature (ratio: 0.04, restricted to the deep background recesses)",
+            default="DIM_AMBIENT_TUNGSTEN_GLOW,_3200K_COLOR_TEMPERATURE_(RATIO: 0.04,_RESTRICTED_TO_THE_DEEP_BACKGROUND_RECESSES)",
             hint="fill light",
+            skip=skip,
         ),
         "SHADOW_PROFILE": _prompt(
             "SHADOW_PROFILE",
             lib.LIGHTING_COMPLETIONS,
-            default="razor-sharp, jet-black drop shadows directly behind physical subject contours with zero penumbra blending",
+            default="RAZOR-SHARP,_JET-BLACK_DROP_SHADOWS_DIRECTLY_BEHIND_PHYSICAL_SUBJECT_CONTOURS_WITH_ZERO_PENUMBRA_BLENDING",
             hint="shadow character",
+            skip=skip,
         ),
         "PHOTONIC_VECTORS": {
             "PHOTONIC_ENERGY": _prompt(
                 "PHOTONIC_ENERGY",
                 lib.ENERGY_COMPLETIONS,
-                default="SUBSURFACE_SCATTERING",
+                default="MICROFACET_DISTRIBUTION",
+                skip=skip,
             ),
             "ENERGY_CONSERVATION_COMPLIANT": _prompt(
                 "ENERGY_CONSERVATION_COMPLIANT",
                 lib.ENERGY_COMPLETIONS,
-                default="TRANSPARENCY-FOCUSED",
+                default="TRANSPARENCY_FOCUSED",
+                skip=skip,
             ),
             "RIM_LIGHT_SCATTERING_PASS": _level("RIM_LIGHT_SCATTERING_PASS", "TRUE"),
             "EPIDERMAL_TRANSLUCENCY_PASS": _level(
@@ -543,82 +644,140 @@ def build_env_photometry() -> dict:
     }
 
 
-def build_material_physics() -> dict:
-    _header("MATERIAL PHYSICS")
+def build_material_physics(skip: bool = False) -> dict:
+    if not skip:
+        _header("MATERIAL PHYSICS")
     drape_opts = lib.LEVEL_COMPLETIONS
     sss_opts = ["ON", "OFF"] + lib.LEVEL_COMPLETIONS
     return {
         "WARDROBE_SPECIFICATION": _prompt(
             "WARDROBE_SPECIFICATION",
             lib.WARDROBE_COMPLETIONS,
-            default="realistic single-layer materials, low dennier, white vintage silk slip dress with raw lace border trim along the neck",
+            default="REALISTIC_SINGLE-LAYER_MATERIALS,_LOW-DENNIER,_WHITE_VINTAGE_SLIK_SLIP_DRESS_WITH_RAW_LACE_BORDER_TRIM_ALONG_THE_NEXT",
             hint="wardrobe key or free description",
+            skip=skip,
         ),
         "OPACITY": _prompt(
             "OPACITY",
             lib.OPACITY_COMPLETIONS,
-            default="fabric transparency scales dynamically with tension; material shifts from opaque color to a semi-translucent alpha layer where stretched tight across physical peaks, revealing the muted skin tones underneath",
+            default="FABRIC_TRANSPARENCY_SCALES_DYNAMICALLY_WITH_TENSION;_MATERIAL_SHIFTS_FROM_OPAQUE_WHITE_TO_A_SEMI-TRANSLUCENT_APLHA_LAYER_WHERE_STRETCHED_TIGHT_ACROSS_PHYSICAL_PEAKS,_REVEALING_THE_MUTED_SKIN_TONES_UNDERNEATH",
+            skip=skip,
         ),
         "TEXTILE_SURFACE_SHEEN": _prompt(
             "TEXTILE_SURFACE_SHEEN",
             lib.SHEEN_COMPLETIONS,
-            default="anisotropic silk reflection mapping direct flash glare along tight fabric folds and fine micro-wrinkles",
+            default="ANSIOTROPIC_SILK_REFLECTION_MAPPING_DIRECT_FLASH_GLARE_ALONG_TIGHT_FABRIC_FOLDS_AND_FINE_MICRO-WRINKLES",
+            skip=skip,
         ),
         "DRAPE_AND_TENSION_LOGIC": {
             "MICRO_FIBER_DRAPE_PHYSICS": _prompt(
-                "MICRO_FIBER_DRAPE_PHYSICS", drape_opts, default="HIGH"
+                "MICRO_FIBER_DRAPE_PHYSICS", drape_opts, default="HIGH", skip=skip
             ),
             "LOW_TENSILE_STRUCTURAL_DEFORMITY": _prompt(
-                "LOW_TENSILE_STRUCTURAL_DEFORMITY", drape_opts, default="MEDIUM"
+                "LOW_TENSILE_STRUCTURAL_DEFORMITY",
+                drape_opts,
+                default="MEDIUM",
+                skip=skip,
             ),
             "GRAVITY_WEIGHTED_FOLDS": _prompt(
-                "GRAVITY_WEIGHTED_FOLDS", drape_opts, default="LOW"
+                "GRAVITY_WEIGHTED_FOLDS", drape_opts, default="LOW", skip=skip
             ),
             "SUB_MICRON_WEAVE_DENSITY": _prompt(
-                "SUB_MICRON_WEAVE_DENSITY", drape_opts, default="LOW"
+                "SUB_MICRON_WEAVE_DENSITY", drape_opts, default="LOW", skip=skip
             ),
             "LOW_DENIER_SSS_PASS": _prompt(
-                "LOW_DENIER_SSS_PASS", sss_opts, default="ON"
+                "LOW_DENIER_SSS_PASS", sss_opts, default="ON", skip=skip
             ),
             "SURFACE_ADHESION_COEFFICIENT": _prompt(
-                "SURFACE_ADHESION_COEFFICIENT", drape_opts, default="HIGH"
+                "SURFACE_ADHESION_COEFFICIENT", drape_opts, default="HIGH", skip=skip
             ),
             "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": _prompt(
                 "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE",
                 lib.BOOL_COMPLETIONS,
                 default="TRUE",
+                skip=skip,
             ),
         },
     }
 
 
-def build_text_recon() -> dict:
-    _header("TEXT RECON ENGINE")
+def build_text_recon(skip: bool = False) -> dict:
+    if not skip:
+        _header("TEXT RECON ENGINE")
     return {
         "TEXT_STRING_LITERAL": _prompt(
             "TEXT_STRING_LITERAL",
             lib.TEXT_STRING_COMPLETIONS,
-            default="no_text",
+            default="NO_TEXT",
             hint="key or type your own literal string",
+            skip=skip,
         ),
         "FONTTYPE_AESTHETIC": _prompt(
             "FONTTYPE_AESTHETIC",
             lib.TEXT_FONT_COMPLETIONS,
-            default="none",
+            default="NO_TEXT",
             hint="font key or free description",
+            skip=skip,
         ),
         "LAYER_PLACEMENT": _prompt(
             "LAYER_PLACEMENT",
             lib.TEXT_PLACE_COMPLETIONS,
-            default="none",
+            default="NO_TEXT",
             hint="placement key or free description",
+            skip=skip,
         ),
     }
 
 
-def build_finalize() -> dict:
-    _header("FINALIZE OUTPUT (STATIC COMPLIANCE ENFORCED)")
-    return STATIC_FINALIZE
+# ==============================================================================
+# FULL INTERACTIVE BUILD
+# ==============================================================================
+
+
+def run_interactive() -> dict:
+    atmo = build_env_atmospherics(skip=False)
+    atmo["!EXEC_COMPOSITION_MATRIX"] = build_composition_matrix(skip=False)
+    atmo["!EXEC_BIO_DERMAL_MAP"] = build_bio_dermal_map(skip=False)
+    atmo["!ENV_PHOTOMETRY"] = build_env_photometry(skip=False)
+    atmo["!EXEC_MATERIAL_PHYSICS"] = build_material_physics(skip=False)
+    atmo["TEXT_RECON_ENGINE"] = build_text_recon(skip=False)
+    atmo["!FINALIZE_OUTPUT"] = copy.deepcopy(lib.STATIC_FINALIZE)
+
+    return {
+        "!INIT_MEM_LOCK_PROTOCOL": copy.deepcopy(lib.STATIC_MEM_LOCK),
+        "!ENV_ATMOSPHERICS": atmo,
+    }
+
+
+# ==============================================================================
+# STOCK MODE — block-level bypass, one yes/no per section
+# ==============================================================================
+
+
+def run_stock() -> dict:
+    _header(
+        "STOCK MODE — press ENTER or 'n' to accept block defaults, 'y' to customise"
+    )
+
+    def _block(name: str, builder, **kwargs) -> Any:
+        if _ask_yes(f"Customise {name}?"):
+            return builder(skip=False, **kwargs)
+        return builder(skip=True, **kwargs)
+
+    atmo = _block("ENV ATMOSPHERICS", build_env_atmospherics)
+    atmo["!EXEC_COMPOSITION_MATRIX"] = _block(
+        "COMPOSITION MATRIX", build_composition_matrix
+    )
+    atmo["!EXEC_BIO_DERMAL_MAP"] = _block("BIO DERMAL MAP", build_bio_dermal_map)
+    atmo["!ENV_PHOTOMETRY"] = _block("ENV PHOTOMETRY", build_env_photometry)
+    atmo["!EXEC_MATERIAL_PHYSICS"] = _block("MATERIAL PHYSICS", build_material_physics)
+    atmo["TEXT_RECON_ENGINE"] = _block("TEXT RECON ENGINE", build_text_recon)
+    atmo["!FINALIZE_OUTPUT"] = copy.deepcopy(lib.STATIC_FINALIZE)
+
+    return {
+        "!INIT_MEM_LOCK_PROTOCOL": copy.deepcopy(lib.STATIC_MEM_LOCK),
+        "!ENV_ATMOSPHERICS": atmo,
+    }
 
 
 # ==============================================================================
@@ -626,59 +785,8 @@ def build_finalize() -> dict:
 # ==============================================================================
 
 
-def _review_field(key: str, current_value: Any, completions: list[str]) -> Any:
-    """
-    Show the randomly-generated value and ask whether to keep or replace it.
-    Returns either the original value or whatever the user types.
-    """
-    is_list = isinstance(current_value, list)
-    display = ", ".join(current_value) if is_list else str(current_value)
-    print(f"\n  ┤ {key}")
-    print(f"    random → {display}")
-    raw = _prompt(
-        "  Keep (ENTER) or type replacement",
-        completions,
-        default="",
-        hint="ENTER = keep random value",
-    )
-    if not raw:
-        return current_value
-    if is_list:
-        return [v.strip() for v in raw.split(",") if v.strip()]
-    return raw
-
-
-def run_hybrid(schema: dict) -> dict:
-    """
-    Walk through the randomly-generated schema and offer field-level overrides.
-    Only leaf string/list values are reviewable; nested dicts recurse.
-    """
-    _header("HYBRID REVIEW — override any field or press ENTER to keep random value")
-
-    def _walk(node: Any, path: str = "") -> Any:
-        # Silently skip review for static blocks
-        if "!INIT_MEM_LOCK_PROTOCOL" in path or "!FINALIZE_OUTPUT" in path:
-            return node
-
-        if isinstance(node, dict):
-            return {k: _walk(v, f"{path}.{k}") for k, v in node.items()}
-        if isinstance(node, list):
-            # Infer best completion pool from path segment keywords
-            pool = _pool_for_path(path)
-            return _review_field(path.lstrip("."), node, pool)
-        if isinstance(node, str):
-            pool = _pool_for_path(path)
-            return _review_field(path.lstrip("."), node, pool)
-        return node
-
-    return _walk(schema)
-
-
 def _pool_for_path(path: str) -> list[str]:
-    """
-    Map a dotted field path to the most relevant completion list.
-    Falls back to an empty list (free-text only) for unknown paths.
-    """
+    """Map a dotted field path to the most relevant completion list."""
     p = path.lower()
     if "style_of" in p:
         return lib.STYLE_COMPLETIONS
@@ -688,11 +796,10 @@ def _pool_for_path(path: str) -> list[str]:
         return lib.LENS_COMPLETIONS
     if "aperture" in p:
         return lib.APERTURE_COMPLETIONS
-    if (
-        "illumination" in p
-        or "key_light" in p
-        or "fill_light" in p
-        or "shadow_profile" in p
+    if "shutter" in p:
+        return lib.SHUTTER_COMPLETIONS
+    if any(
+        k in p for k in ("illumination", "key_light", "fill_light", "shadow_profile")
     ):
         return lib.LIGHTING_COMPLETIONS
     if "photonic_energy" in p or "energy_conservation" in p:
@@ -711,6 +818,8 @@ def _pool_for_path(path: str) -> list[str]:
         return list(lib.SKIN_MANIFEST["reflectance"].keys())
     if "surface_micro" in p:
         return list(lib.SKIN_MANIFEST["surface_micro"].keys())
+    if "skin_topography" in p:
+        return lib.TOPO_COMPLETIONS
     if "location" in p:
         return lib.LOCATION_COMPLETIONS
     if "glass" in p:
@@ -739,7 +848,12 @@ def _pool_for_path(path: str) -> list[str]:
         return lib.LOCK_COMPLETIONS
     if "fidelity" in p or "non_deviation" in p:
         return lib.FIDELITY_COMPLETIONS
-    # Photonic scalar flags
+    if "color_science" in p:
+        return lib.COLOR_COMPLETIONS
+    if "optics" in p or "aberration" in p:
+        return lib.OPTICS_COMPLETIONS
+    if "meteorology" in p or "weather" in p or "wind" in p:
+        return lib.METEOROLOGY_COMPLETIONS
     if any(
         k in p
         for k in (
@@ -758,29 +872,343 @@ def _pool_for_path(path: str) -> list[str]:
     return []
 
 
+def _review_field(key: str, current_value: Any, completions: list[str]) -> Any:
+    """Show randomly-generated value; allow override or keep with ENTER."""
+    is_list = isinstance(current_value, list)
+    display = ", ".join(current_value) if is_list else str(current_value)
+    print(f"\n  ┤ {key}")
+    print(f"    random → {display}")
+    raw = _prompt(
+        "  Keep (ENTER) or type replacement",
+        completions,
+        default="",
+        hint="ENTER = keep random value",
+    )
+    if not raw:
+        return current_value
+    if is_list:
+        return [v.strip() for v in raw.split(",") if v.strip()]
+    return raw
+
+
+def run_hybrid(schema: dict) -> dict:
+    """
+    Walk every leaf in the randomly-generated schema; offer field-level override.
+    Static blocks (!INIT_MEM_LOCK_PROTOCOL and !FINALIZE_OUTPUT — which now lives
+    inside !ENV_ATMOSPHERICS) pass through unchanged with no review offered.
+    """
+    _header("HYBRID REVIEW — override any field or press ENTER to keep random value")
+
+    # Keys that must never be reviewed regardless of nesting depth
+    _static_keys = {"!INIT_MEM_LOCK_PROTOCOL", "!FINALIZE_OUTPUT"}
+
+    def _walk(node: Any, path: str = "", key: str = "") -> Any:
+        if key in _static_keys:
+            return node
+        if isinstance(node, dict):
+            return {k: _walk(v, f"{path}.{k}", k) for k, v in node.items()}
+        if isinstance(node, (list, str)):
+            pool = _pool_for_path(path)
+            return _review_field(path.lstrip("."), node, pool)
+        return node
+
+    result = {}
+    for top_key, top_val in schema.items():
+        result[top_key] = _walk(top_val, top_key, top_key)
+    return result
+
+
+# ==============================================================================
+# TUI STATE OBJECT
+# ==============================================================================
+
+
+class HDLTUIState:
+    """Single source of truth for the live JSON payload in TUI mode."""
+
+    def __init__(self, seed: int | None = None) -> None:
+        self._schema: dict = generate_random(seed=seed)
+
+    def randomise(self, seed: int | None = None) -> None:
+        self._schema = generate_random(seed=seed)
+
+    def update_val(self, path: list[str], new_value: Any) -> None:
+        """Apply a mutation at an arbitrary nested path."""
+        node = self._schema
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = new_value
+
+    def to_json(self) -> str:
+        return json.dumps(self._schema, indent=2, ensure_ascii=False)
+
+    @property
+    def schema(self) -> dict:
+        return self._schema
+
+
+# ==============================================================================
+# TUI APPLICATION — only instantiated when --tui is passed
+# ==============================================================================
+
+
+class HDLTUIApplication:
+    """
+    Full-screen 3-pane TUI. Imports heavy prompt_toolkit layout objects here,
+    inside __init__, so CLI mode never pays the import cost.
+    Gate 4.5: the TUI event loop is completely separate from all CLI _prompt()
+    calls. No blocking pt_prompt calls exist inside the async render loop.
+    """
+
+    def __init__(self) -> None:
+        # ── Deferred heavy imports ─────────────────────────────────────────────
+        from prompt_toolkit.application import Application
+        from prompt_toolkit.buffer import Buffer
+        from prompt_toolkit.document import Document
+        from prompt_toolkit.key_binding import KeyBindings
+        from prompt_toolkit.layout.containers import (
+            HSplit,
+            VSplit,
+            Window,
+            FloatContainer,
+            Float,
+        )
+        from prompt_toolkit.layout.controls import (
+            BufferControl,
+            FormattedTextControl,
+        )
+        from prompt_toolkit.layout.dimension import D
+        from prompt_toolkit.layout.layout import Layout
+        from prompt_toolkit.lexers import PygmentsLexer
+        from prompt_toolkit.widgets import (
+            Frame,
+            RadioList,
+            TextArea,
+            Label,
+        )
+        from pygments.lexers.data import JsonLexer  # type: ignore
+
+        self._state = HDLTUIState()
+        self._Application = Application
+        self._KeyBindings = KeyBindings
+        self._VSplit = VSplit
+        self._HSplit = HSplit
+        self._Window = Window
+        self._D = D
+        self._Layout = Layout
+        self._Frame = Frame
+        self._RadioList = RadioList
+        self._TextArea = TextArea
+        self._FormattedTextControl = FormattedTextControl
+        self._BufferControl = BufferControl
+        self._Buffer = Buffer
+        self._Document = Document
+        self._PygmentsLexer = PygmentsLexer
+        self._JsonLexer = JsonLexer
+        self._Label = Label
+        self._FloatContainer = FloatContainer
+        self._Float = Float
+        self._status_text = "[Tab] Focus  [F2] Randomise  [F5] Export  [Ctrl+Q] Quit"
+        self._app: Application | None = None
+
+    def _build_layout(self):
+        """Construct the full 3-pane layout."""
+        schema = self._state.schema
+        top_keys = list(schema.keys())
+
+        # ── Navigator (left pane) ──────────────────────────────────────────────
+        nav_values = [(k, k) for k in top_keys]
+        self._navigator = self._RadioList(values=nav_values)
+
+        # ── Live JSON output (right pane) ──────────────────────────────────────
+        self._json_area = self._TextArea(
+            text=self._state.to_json(),
+            read_only=True,
+            lexer=self._PygmentsLexer(self._JsonLexer),
+            scrollbar=True,
+            line_numbers=False,
+            style="bg:#1e1e2e fg:#cdd6f4",
+        )
+
+        # ── Editor pane (centre) — dynamically rebuilt on navigator change ─────
+        # We hold a mutable list so the DynamicContainer closure sees updates.
+        self._editor_fields: list = []
+        self._editor_container = self._HSplit(self._editor_fields)
+
+        self._rebuild_editor(top_keys[0] if top_keys else "")
+
+        # ── Status bar ────────────────────────────────────────────────────────
+        self._status_bar = self._Window(
+            content=self._FormattedTextControl(lambda: self._status_text),
+            height=1,
+            style="reverse",
+        )
+
+        body = self._VSplit(
+            [
+                self._Frame(
+                    self._navigator, title="Navigator", width=self._D(weight=30)
+                ),
+                self._Frame(
+                    self._editor_container, title="Editor", width=self._D(weight=40)
+                ),
+                self._Frame(
+                    self._json_area, title="Live JSON", width=self._D(weight=30)
+                ),
+            ]
+        )
+
+        return self._Layout(self._HSplit([body, self._status_bar]))
+
+    def _rebuild_editor(self, category_key: str) -> None:
+        """
+        Recursively walk category dict and produce TextArea widgets for leaves.
+        Static sub-keys (!INIT_MEM_LOCK_PROTOCOL, !FINALIZE_OUTPUT) are rendered
+        read-only — their TextAreas have no on_text_changed hooks.
+        """
+        self._editor_fields.clear()
+        schema = self._state.schema
+        if category_key not in schema:
+            return
+
+        def _walk(node: Any, path: list[str]) -> None:
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    self._editor_fields.append(self._Label(f" {k}"))
+                    _walk(v, path + [k])
+            elif isinstance(node, list):
+                text_val = ", ".join(node)
+                pool = _pool_for_path(".".join(path))
+                ta = self._TextArea(
+                    text=text_val,
+                    completer=WordCompleter(pool, ignore_case=True),
+                    height=2,
+                    multiline=False,
+                    style="bg:#313244 fg:#cdd6f4",
+                )
+                captured_path = list(path)
+
+                def _on_change(buf, _path=captured_path) -> None:
+                    vals = [v.strip() for v in buf.text.split(",") if v.strip()]
+                    self._state.update_val(_path, vals)
+                    self._json_area.text = self._state.to_json()
+
+                ta.buffer.on_text_changed += _on_change
+                self._editor_fields.append(ta)
+            elif isinstance(node, str):
+                pool = _pool_for_path(".".join(path))
+                ta = self._TextArea(
+                    text=node,
+                    completer=WordCompleter(pool, ignore_case=True),
+                    height=2,
+                    multiline=False,
+                    style="bg:#313244 fg:#cdd6f4",
+                )
+                captured_path = list(path)
+
+                def _on_change_str(buf, _path=captured_path) -> None:
+                    self._state.update_val(_path, buf.text)
+                    self._json_area.text = self._state.to_json()
+
+                ta.buffer.on_text_changed += _on_change_str
+                self._editor_fields.append(ta)
+
+        _walk(schema[category_key], [category_key])
+
+        if self._app is not None:
+            try:
+                self._app.invalidate()
+            except Exception:
+                pass
+
+    def _build_keybindings(self):
+        kb = self._KeyBindings()
+
+        @kb.add("c-q")
+        def _exit(event):
+            event.app.exit()
+
+        @kb.add("tab")
+        def _tab(event):
+            event.app.layout.focus_next()
+
+        @kb.add("f2")
+        def _randomise(event):
+            self._state.randomise()
+            top_keys = list(self._state.schema.keys())
+            self._rebuild_editor(top_keys[0] if top_keys else "")
+            self._json_area.text = self._state.to_json()
+            event.app.invalidate()
+
+        @kb.add("f5")
+        def _export(event):
+            try:
+                output_path = "hdl_output.json"
+                with open(output_path, "w", encoding="utf-8") as fh:
+                    fh.write(self._state.to_json())
+                _clipboard_copy(self._state.to_json())
+                self._status_text = f"[F5] Exported → {output_path}  [Ctrl+Q] Quit"
+            except Exception as exc:
+                self._status_text = f"[F5] Export FAILED: {exc}  [Ctrl+Q] Quit"
+            event.app.invalidate()
+
+        return kb
+
+    def run(self) -> None:
+        layout = self._build_layout()
+        kb = self._build_keybindings()
+        self._app = self._Application(
+            layout=layout,
+            key_bindings=kb,
+            full_screen=True,
+            mouse_support=True,
+            style=CLI_STYLE,
+        )
+        self._app.run()
+
+
+# ==============================================================================
+# CLIPBOARD HELPER — EAFP, hard timeout, zombie reap (Gate 4.2, 4.4, 4.6)
+# ==============================================================================
+
+
+def _clipboard_copy(text: str) -> None:
+    """Attempt wl-copy then xclip; silently skip if neither available."""
+    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"]):
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                process.communicate(input=text.encode(), timeout=2.0)
+                return  # Success — stop trying
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()  # Reap zombie
+        except FileNotFoundError:
+            pass  # Binary not found — try next
+    print("  [clipboard] No clipboard utility found (wl-copy / xclip); skipping.")
+
+
 # ==============================================================================
 # OUTPUT HELPERS
 # ==============================================================================
 
 
-def _write_and_print(schema: dict, output_path: str) -> None:
-    json_str = json.dumps(schema, indent=2, ensure_ascii=False)
-
+def _write_and_print(schema: dict, output_path: str = "hdl_prompt.json") -> None:
+    payload = json.dumps(schema, indent=2, ensure_ascii=False)
     with open(output_path, "w", encoding="utf-8") as fh:
-        fh.write(json_str)
-
-    try:
-        process = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=json_str)
-    except FileNotFoundError:
-        print("Error: 'wl-copy' not found. Please install it.")
-
+        fh.write(payload)
+    _clipboard_copy(payload)
     print()
     print("═" * 72)
     print(f"  ✓ HDL prompt: {output_path}")
     print("═" * 72)
     print()
-    print(json_str)
+    print(payload)
 
 
 # ==============================================================================
@@ -793,38 +1221,23 @@ def _mode_menu() -> str:
     print("                      4NDR0TOOLS // HDL PROMPT")
     print("=" * 72)
     print("" * 72)
-    print("  [i]  Interactive Mode — Review and select every individual parameter")
-    print("  [r]  Random Mode      — Prints complete prompt using random values")
-    print("  [h]  Hybrid Mode      — Presents random values for interactive review")
-    print("-" * 72)
+    print("  [i]  Interactive Mode — Review every parameter")
+    print(
+        "  [r]  Random Mode      — Prints complete prompt instantly with random values"
+    )
+    print("  [h]  Hybrid Mode      — Random seed, interactive review / override")
+    print("  [s]  Stock Mode       — Accept whole defaults or customise sections")
+    print("─" * 72)
     print("" * 72)
     print("         [TAB] pre-set options.        [Type] manual input.")
     print("         [ENTER] ↩ default option.     [Ctrl-C] quit.")
     print("-" * 72)
     mode = _prompt(
-        "Selection:", ["Interactive", "Random", "Hybrid"], default="Interactive"
+        "Selection:",
+        ["Interactive", "Random", "Hybrid", "Stock"],
+        default="interactive",
     )
-    return mode.strip().lower()[:1]  # 'i', 'r', or 'h'
-
-
-# ==============================================================================
-# INTERACTIVE FULL BUILD
-# ==============================================================================
-
-
-def run_interactive() -> dict:
-    composition = build_composition_matrix()
-    composition["!EXEC_BIO_DERMAL_MAP"] = build_bio_dermal_map()
-    composition["!ENV_PHOTOMETRY"] = build_env_photometry()
-    composition["!EXEC_MATERIAL_PHYSICS"] = build_material_physics()
-
-    return {
-        "!INIT_MEM_LOCK_PROTOCOL": build_mem_lock(),
-        "!ENV_ATMOSPHERICS": build_env_atmospherics(),
-        "!EXEC_COMPOSITION_MATRIX": composition,
-        "TEXT_RECON_ENGINE": build_text_recon(),
-        "!FINALIZE_OUTPUT": build_finalize(),
-    }
+    return mode.strip().lower()[:1]  # 'i', 'r', 'h', or 's'
 
 
 # ==============================================================================
@@ -833,6 +1246,11 @@ def run_interactive() -> dict:
 
 
 def main() -> None:
+    # ── Bifurcate at --tui before any CLI logic runs ───────────────────────────
+    if "--tui" in sys.argv:
+        HDLTUIApplication().run()
+        return
+
     mode = _mode_menu()
 
     if mode == "r":
@@ -844,9 +1262,16 @@ def main() -> None:
             default="",
             hint="optional — leave blank for random",
         )
+        seed_str = _prompt(
+            "Seed  (ENTER for non-deterministic)",
+            [],
+            default="",
+            hint="integer seed for reproducibility",
+        )
         n = int(n_str) if n_str.isdigit() else None
-        schema = generate_random(n_panels=n)
-        _write_and_print(schema, "hdl_output.json")
+        seed = int(seed_str) if seed_str.isdigit() else None
+        schema = generate_random(n_panels=n, seed=seed)
+        _write_and_print(schema, "hdl_prompt-random.json")
 
     elif mode == "h":
         # ── HYBRID ────────────────────────────────────────────────────────────
@@ -856,15 +1281,27 @@ def main() -> None:
             default="",
             hint="optional",
         )
+        seed_str = _prompt(
+            "Seed  (ENTER for non-deterministic)",
+            [],
+            default="",
+            hint="integer seed for reproducibility",
+        )
         n = int(n_str) if n_str.isdigit() else None
-        seed_schema = generate_random(n_panels=n)
+        seed = int(seed_str) if seed_str.isdigit() else None
+        seed_schema = generate_random(n_panels=n, seed=seed)
         schema = run_hybrid(seed_schema)
-        _write_and_print(schema, "hdl_prompt.json")
+        _write_and_print(schema, "hdl_prompt-hybrid.json")
+
+    elif mode == "s":
+        # ── STOCK ─────────────────────────────────────────────────────────────
+        schema = run_stock()
+        _write_and_print(schema, "hdl_prompt-stock.json")
 
     else:
         # ── INTERACTIVE (default) ─────────────────────────────────────────────
         schema = run_interactive()
-        _write_and_print(schema, "hdl_prompt.json")
+        _write_and_print(schema, "hdl_interactive.json")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,111 @@
+{
+  "!INIT_MEM_LOCK_PROTOCOL": {
+    "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
+    "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers. Enforce expression=visceral reaction to an unpleasant taste, opening mouth revealing tongue slathered in a semi-translucent, milky viscous gel--tongue rolls, winces)",
+    "STRUCTURAL_NON_DEVIATION": "HIGH",
+    "STRUCTURAL_FIDELITY": "HIGH",
+    "UNALTERABLE": [
+      "EXACT_FACIAL_ID_GEOMETRY",
+      "TRUE_ORBITAL_BONE_SPACING",
+      "UNFILTERED_LIP_PROPORTIONS",
+      "RAW_JAWLINE_ANGLE",
+      "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+      "EXACT_BODY_PROPORTIONS",
+      "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
+    ],
+    "!INHIBIT": [
+      "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+      "FACIAL_BALANCING",
+      "POSE_MODIFICATIONS",
+      "BRAZZIER_SUPPORT",
+      "CAMERA_ANGLE_MODIFICATIONS",
+      "SYMMETRY_MODIFICATIONS",
+      "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+    ]
+  },
+  "!ENV_ATMOSPHERICS": {
+    "LOCATION_SETTING": "high_fashion_boutique_mirror_array",
+    "GLASS_SURFACE_METRICS": "dust particles catching direct light illumination",
+    "COMPOSITION_DEPTH": {
+      "FOREGROUND": "shallow depth of field to create a film like dramatic style",
+      "MIDGROUND": "she is posing for the camera",
+      "BACKGROUND": "spolight lit, clean mirrored walls, floor and ceiling showing high reflection"
+    }
+  },
+  "!EXEC_COMPOSITION_MATRIX": {
+    "LAYOUT_PRESET": "LAYOUT: FOUR_PANEL_CINEMATIC",
+    "PANELS": "4",
+    "MEDIUM CLOSE-UP (MCU)": "supine_flat",
+    "!EXEC_BIO_DERMAL_MAP": {
+      "SKIN_TOPOGRAPHY_LOGIC": "unfiltered human skin texture showing hyper realistic details",
+      "SURFACE_MICRO_ELEMENTS": "true visible dermal pores, fine goosebumps on arms, micro sweat beads catching specular highlights, natural skin folds, raw un-airbrused complexion",
+      "REFLECTANCE_MAP": "high specular glisten on damp skin tissue interacting directly with the harsh flash rays",
+      "EXPRESSION": "cool, detached, neutral expression; jaw slightly relaxed, lips subtly parted, gaze fixed steadily on camera lens",
+      "HAIR": "messy, loose uncombed updo with stray hair strands falling naturally across cheeks and neck"
+    },
+    "!ENV_PHOTOMETRY": {
+      "STYLE_OF": [
+        "DAVID_LACHAPELLE"
+      ],
+      "HARDWARE_EMULATION": "Leica M10-R",
+      "OPTICAL_HARDWARE": "Zeiss Milvus 135mm f/2",
+      "APERTURE_SETTING": "f/2.8",
+      "SHUTTER_AESTHETIC": "long_exposure_bulb_ambient_bleed",
+      "ILLUMINATION_AXIS": "beauty_dish_silver_5500K",
+      "KEY_LIGHT_CHARACTER": "parabolic_reflector_deep_5600K",
+      "FILL_LIGHT_CHARACTER": "kino_flo_4bank_5600K",
+      "SHADOW_PROFILE": "razor-sharp, jet-black drop shadows directly behind physical subject contours with zero penumbra blending",
+      "PHOTONIC_VECTORS": {
+        "PHOTONIC_ENERGY": "MICROFACET_DISTRIBUTION",
+        "ENERGY_CONSERVATION_COMPLIANT": "TRANSPARENCY-FOCUSED",
+        "RIM_LIGHT_SCATTERING_PASS": "TRUE",
+        "EPIDERMAL_TRANSLUCENCY_PASS": "TRUE",
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE": "TRUE",
+        "PHOTON_TRANSMISSION_RATIO": "HIGH",
+        "MEAN_FREE_PATH_SCATTERING": "MEDIUM",
+        "BACKLIT_SUBSURFACE_GLOW": "MEDIUM",
+        "FRESNEL_REFLECTION_COEFFICIENT": "LOW",
+        "SPECULAR_HIGHLIGHT_LOBE": "LOW",
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE": "LOW"
+      }
+    },
+    "!EXEC_MATERIAL_PHYSICS": {
+      "WARDROBE_SPECIFICATION": "iris_van_herpen_3d_printed_mesh",
+      "OPACITY": "gradient_tension_mapping",
+      "TEXTILE_SURFACE_SHEEN": "anisotropic silk reflection mapping direct flash glare along tight fabric folds and fine micro-wrinkles",
+      "DRAPE_AND_TENSION_LOGIC": {
+        "MICRO_FIBER_DRAPE_PHYSICS": "HIGH",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": "MEDIUM",
+        "GRAVITY_WEIGHTED_FOLDS": "LOW",
+        "SUB_MICRON_WEAVE_DENSITY": "LOW",
+        "LOW_DENIER_SSS_PASS": "ON",
+        "SURFACE_ADHESION_COEFFICIENT": "HIGH",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": "TRUE"
+      }
+    }
+  },
+  "TEXT_RECON_ENGINE": {
+    "TEXT_STRING_LITERAL": "no_text_none",
+    "FONTTYPE_AESTHETIC": "no_text_none",
+    "LAYER_PLACEMENT": "no_text_placement_none"
+  },
+  "!FINALIZE_OUTPUT": {
+    "REQUIREMENT_CHECKS": {
+      "FOCUS_LOCK": "maximum micro-contrast focus locked onto cloth weave and skin grain",
+      "GLOBAL_NEGATIVE_BIAS": [
+        "BEAUTY_FILTER",
+        "AIRBRUSHED_SKIN",
+        "PERFECT_FACIAL_SYMMETRY",
+        "DIGITAL_3D_RENDER",
+        "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+        "WATERMARK_OR_CREDIT_OVERLAY",
+        "HAPPY_EXPRESSIONS",
+        "IDENTITY_SHIFTING",
+        "HAIR_CLEANUP_FLYAWAY",
+        "OPAQUE_FABRIC_PROCESSING",
+        "BODY_PROPORTION_ALTERATION"
+      ]
+    }
+  }
+}

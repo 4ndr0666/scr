@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 # ==============================================================================
 # HDL PROMPT BUILDER  (hdl_prompt_builder.py)
 # Interactive schema constructor — all completion options sourced from promptlib
@@ -39,6 +39,54 @@ CLI_STYLE = Style.from_dict(
 )
 
 # ==============================================================================
+# STATIC CONFIGURATION BLOCKS
+# ==============================================================================
+STATIC_MEM_LOCK = {
+    "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
+    "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers. Enforce expression=visceral reaction to an unpleasant taste, opening mouth revealing tongue slathered in a semi-translucent, milky viscous gel--tongue rolls, winces)",
+    "STRUCTURAL_NON_DEVIATION": "HIGH",
+    "STRUCTURAL_FIDELITY": "HIGH",
+    "UNALTERABLE": [
+        "EXACT_FACIAL_ID_GEOMETRY",
+        "TRUE_ORBITAL_BONE_SPACING",
+        "UNFILTERED_LIP_PROPORTIONS",
+        "RAW_JAWLINE_ANGLE",
+        "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+        "EXACT_BODY_PROPORTIONS",
+        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
+    ],
+    "!INHIBIT": [
+        "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+        "FACIAL_BALANCING",
+        "POSE_MODIFICATIONS",
+        "BRAZZIER_SUPPORT",
+        "CAMERA_ANGLE_MODIFICATIONS",
+        "SYMMETRY_MODIFICATIONS",
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
+    ],
+}
+
+STATIC_FINALIZE = {
+    "REQUIREMENT_CHECKS": {
+        "FOCUS_LOCK": "maximum micro-contrast focus locked onto cloth weave and skin grain",
+        "GLOBAL_NEGATIVE_BIAS": [
+            "BEAUTY_FILTER",
+            "AIRBRUSHED_SKIN",
+            "PERFECT_FACIAL_SYMMETRY",
+            "DIGITAL_3D_RENDER",
+            "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+            "WATERMARK_OR_CREDIT_OVERLAY",
+            "HAPPY_EXPRESSIONS",
+            "IDENTITY_SHIFTING",
+            "HAIR_CLEANUP_FLYAWAY",
+            "OPAQUE_FABRIC_PROCESSING",
+            "BODY_PROPORTION_ALTERATION",
+        ],
+    }
+}
+
+# ==============================================================================
 # PRIMITIVE PROMPT HELPERS
 # ==============================================================================
 
@@ -60,7 +108,7 @@ def _prompt(
     completer = WordCompleter(completions, ignore_case=True, sentence=True)
     default_hint = f"  ↩ {default}" if default else ""
     hint_str = f"  [{hint}]" if hint else ""
-    text = f"  {label}{hint_str}  [TAB|free-text]{default_hint}\n  ❯ "
+    text = f"  {label}{hint_str}  [Press TAB | Or Type]{default_hint}\n  ❯ "
     try:
         result = pt_prompt(
             text,
@@ -126,18 +174,8 @@ def generate_random(n_panels: int | None = None) -> dict:
     Build a complete HDL schema by randomly sampling every field from promptlib.
     Returns the same nested dict structure as the interactive builder.
     """
-    # ── MEM LOCK ──────────────────────────────────────────────────────────────
-    mem_lock = {
-        "SYSTEM_REFERENCE_INPUT": _r(
-            ["INGREDIENT", "SAME_WOMAN"]
-        ),
-        "BIOMETRIC_LOCK": "TRUE",
-        "IDENTITY_DRIFT_CONTROL": _r_list(lib.LOCK_COMPLETIONS),
-        "STRUCTURAL_NON_DEVIATION": "HIGH",
-        "STRUCTURAL_FIDELITY": "HIGH",
-        "UNALTERABLE": _r_list(lib.UNALTERABLE_COMPLETIONS, 4, 8),
-        "!INHIBIT": _r_list(lib.INHIBIT_COMPLETIONS,     3, 7),
-    }
+    # ── MEM LOCK (STATIC OVERRIDE) ────────────────────────────────────────────
+    mem_lock = STATIC_MEM_LOCK
 
     # ── ENV ATMOSPHERICS ──────────────────────────────────────────────────────
     env_atmospherics = {
@@ -237,13 +275,8 @@ def generate_random(n_panels: int | None = None) -> dict:
         "LAYER_PLACEMENT": _r(lib.TEXT_PLACE_COMPLETIONS),
     }
 
-    # ── FINALIZE ──────────────────────────────────────────────────────────────
-    finalize = {
-        "REQUIREMENT_CHECKS": {
-            "FOCUS_LOCK": _r(lib.FOCUS_COMPLETIONS),
-            "GLOBAL_NEGATIVE_BIAS": _r_list(lib.NEG_BIAS_COMPLETIONS, 5, 12),
-        }
-    }
+    # ── FINALIZE (STATIC OVERRIDE) ────────────────────────────────────────────
+    finalize = STATIC_FINALIZE
 
     # ── ASSEMBLE ──────────────────────────────────────────────────────────────
     matrix["!EXEC_BIO_DERMAL_MAP"] = bio_dermal
@@ -265,51 +298,8 @@ def generate_random(n_panels: int | None = None) -> dict:
 
 
 def build_mem_lock() -> dict:
-    _header("MEM LOCK PROTOCOL")
-    return {
-        "SYSTEM_REFERENCE_INPUT": _prompt(
-            "SYSTEM_REFERENCE_INPUT",
-            ["INGREDIENT", "SAME_WOMAN"],
-            default="INGREDIENT",
-        ),
-        "BIOMETRIC_LOCK": _prompt(
-            "BIOMETRIC_LOCK", lib.BOOL_COMPLETIONS, default="TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)"
-        ),
-        "IDENTITY_DRIFT_CONTROL": _prompt(
-  "IDENTITY_DRIFT_CONTROL", lib.LOCK_COMPLETIONS, default="MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers.)",
-        ),
-        "STRUCTURAL_NON_DEVIATION": _prompt(
-            "STRUCTURAL_NON_DEVIATION", lib.FIDELITY_COMPLETIONS, default="HIGH"
-        ),
-        "STRUCTURAL_FIDELITY": _prompt(
-            "STRUCTURAL_FIDELITY", lib.FIDELITY_COMPLETIONS, default="HIGH"
-        ),
-        "UNALTERABLE": _prompt_list(
-            "UNALTERABLE",
-            lib.UNALTERABLE_COMPLETIONS,
-            defaults=[
-                "EXACT_FACIAL_ID_GEOMETRY",
-                "TRUE_ORBITAL_BONE_SPACING",
-                "UNFILTERED_LIP_PROPORTIONS",
-                "RAW_JAWLINE_ANGLE",
-                "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
-                "EXACT_BODY_PROPORTIONS",
-                "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
-            ],
-        ),
-        "!INHIBIT": _prompt_list(
-            "INHIBIT",
-            lib.INHIBIT_COMPLETIONS,
-            defaults=[
-                "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
-                "FACIAL_BALANCING",
-                "POSE_MODIFICATIONS",
-                "CAMERA_ANGLE_MODIFICATIONS",
-                "SYMMETRY_MODIFICATIONS",
-                "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
-            ],
-        ),
-    }
+    _header("MEM LOCK PROTOCOL (STATIC COMPLIANCE ENFORCED)")
+    return STATIC_MEM_LOCK
 
 
 def build_env_atmospherics() -> dict:
@@ -608,54 +598,27 @@ def build_text_recon() -> dict:
         "TEXT_STRING_LITERAL": _prompt(
             "TEXT_STRING_LITERAL",
             lib.TEXT_STRING_COMPLETIONS,
-            default="see_you_soon_ellipsis",
+            default="no_text",
             hint="key or type your own literal string",
         ),
         "FONTTYPE_AESTHETIC": _prompt(
             "FONTTYPE_AESTHETIC",
             lib.TEXT_FONT_COMPLETIONS,
-            default="lipstick_finger_scrawl_red",
+            default="none",
             hint="font key or free description",
         ),
         "LAYER_PLACEMENT": _prompt(
             "LAYER_PLACEMENT",
             lib.TEXT_PLACE_COMPLETIONS,
-            default="mirror_glass_plane_sharp",
+            default="none",
             hint="placement key or free description",
         ),
     }
 
 
 def build_finalize() -> dict:
-    _header("FINALIZE OUTPUT")
-    return {
-        "REQUIREMENT_CHECKS": {
-            "FOCUS_LOCK": _prompt(
-                "FOCUS_LOCK",
-                lib.FOCUS_COMPLETIONS,
-                default="maximum micro-contrast focus locked onto cloth weave and skin grain",
-                hint="focus priority or free description",
-            ),
-            "GLOBAL_NEGATIVE_BIAS": _prompt_list(
-                "GLOBAL_NEGATIVE_BIAS",
-                lib.NEG_BIAS_COMPLETIONS,
-                defaults=[
-                    "STUDIO_SOFTBOX_LIGHTING",
-                    "BEAUTY_FILTER",
-                    "AIRBRUSHED_SKIN",
-                    "PERFECT_FACIAL_SYMMETRY",
-                    "DIGITAL_3D_RENDER",
-                    "OPAQUE_FABRIC_PROCESSING",
-                    "CLEAN_MINIMALIST_ARCHITECTURE",
-                    "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
-                    "HAPPY_EXPRESSIONS",
-                    "IDENTITY_SHIFTING",
-                    "DAYLIGHT",
-                ],
-                hint="bias tokens or free strings",
-            ),
-        }
-    }
+    _header("FINALIZE OUTPUT (STATIC COMPLIANCE ENFORCED)")
+    return STATIC_FINALIZE
 
 
 # ==============================================================================
@@ -693,6 +656,10 @@ def run_hybrid(schema: dict) -> dict:
     _header("HYBRID REVIEW — override any field or press ENTER to keep random value")
 
     def _walk(node: Any, path: str = "") -> Any:
+        # Silently skip review for static blocks
+        if "!INIT_MEM_LOCK_PROTOCOL" in path or "!FINALIZE_OUTPUT" in path:
+            return node
+
         if isinstance(node, dict):
             return {k: _walk(v, f"{path}.{k}") for k, v in node.items()}
         if isinstance(node, list):
@@ -810,7 +777,7 @@ def _write_and_print(schema: dict, output_path: str) -> None:
 
     print()
     print("═" * 72)
-    print(f"  ✓  HDL schema written → {output_path}")
+    print(f"  ✓ HDL prompt: {output_path}")
     print("═" * 72)
     print()
     print(json_str)
@@ -823,19 +790,19 @@ def _write_and_print(schema: dict, output_path: str) -> None:
 
 def _mode_menu() -> str:
     print()
-    print("═" * 72)
-    print("  HDL PROMPT BUILDER")
-    print("─" * 72)
-    print("  i  interactive  — walk every field with TAB-completion + free input")
-    print("  r  random       — generate a complete schema instantly, no prompts")
-    print("  h  hybrid       — random seed, then review / override field by field")
-    print("─" * 72)
-    print("  TAB completes library keys at every prompt.")
-    print("  Type anything not in the list → accepted verbatim as manual input.")
-    print("  Ctrl-C exits at any point.")
-    print("═" * 72)
+    print("                      4NDR0TOOLS // HDL PROMPT")
+    print("=" * 72)
+    print("" * 72)
+    print("  [i]  Interactive Mode — Review and select every individual parameter")
+    print("  [r]  Random Mode      — Prints complete prompt using random values")
+    print("  [h]  Hybrid Mode      — Presents random values for interactive review")
+    print("-" * 72)
+    print("" * 72)
+    print("         [TAB] pre-set options.        [Type] manual input.")
+    print("         [ENTER] ↩ default option.     [Ctrl-C] quit.")
+    print("-" * 72)
     mode = _prompt(
-        "Select mode", ["interactive", "random", "hybrid"], default="interactive"
+        "Selection:", ["Interactive", "Random", "Hybrid"], default="Interactive"
     )
     return mode.strip().lower()[:1]  # 'i', 'r', or 'h'
 
@@ -892,12 +859,12 @@ def main() -> None:
         n = int(n_str) if n_str.isdigit() else None
         seed_schema = generate_random(n_panels=n)
         schema = run_hybrid(seed_schema)
-        _write_and_print(schema, "hdl_output.json")
+        _write_and_print(schema, "hdl_prompt.json")
 
     else:
         # ── INTERACTIVE (default) ─────────────────────────────────────────────
         schema = run_interactive()
-        _write_and_print(schema, "hdl_output.json")
+        _write_and_print(schema, "hdl_prompt.json")
 
 
 if __name__ == "__main__":

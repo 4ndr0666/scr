@@ -30,16 +30,6 @@ KINEMATIC_MANIFEST = {
         "axial_rotation_left":          "0.0,0.0,-0.3",
         "axial_rotation_right":         "0.0,0.0,0.3",
         "lithotomy_position":           "0.0,-0.7,-0.4",
-        "obstetric_position":           "0.0,-0.7,-0.4",
-        "supine_position_leg_stirrups": "0.0,-0.7,-0.4",
-        "dorsal_lithotomy_position":    "0.0,-0.7,-0.4",
-        "fowlers_position":             "0.0,-0.7,-0.4",
-        "knee-chest_position":          "0.0,-0.7,-0.4",
-        "sims_position":                "0.0,-0.7,-0.4",
-        "frog-leg_position":            "0.0,-0.7,-0.4",
-        "perineal_position":            "0.0,-0.7,-0.4",
-        "dorsal_recumbent_position":    "0.0,-0.7,-0.4",
-        "jackkkife_position":           "0.0,-0.7,-0.4",
         "trendelenburg_position":       "0.0,-1.0,-0.3",
         "reverse_trendelenburg":        "0.0,-1.0,0.3",
     },
@@ -194,11 +184,6 @@ KINEMATIC_MANIFEST = {
         "drinking_glass_tipped_back":       "0.0,0.3,-0.2",
     },
     "intimate_and_expressive": {
-        "energetic_rhythmic_upper_body_dance": "0.0,0.4,0.1",
-        "intimate_rhythmic_upper_body_movement": "0.0,0.4,0.1",
-        "energetic_rhyhmic_upper_body_sway": "0.0,0.4,0.1",
-        "gentle_upper_body_sway":           "0.0,0.4,0.1",
-        "liberated_rhythmic_upper_body_dance": "0.0,0.4,0.1",
         "arms_wrapped_self_embrace":        "0.0,0.3,0.1",
         "hand_over_mouth_suppressed":       "0.2,0.5,0.0",
         "head_in_hands_grief":              "0.0,-0.2,0.2",
@@ -229,33 +214,17 @@ KINEMATIC_MANIFEST = {
 # ==============================================================================
 LAYOUT_MANIFEST = {
     "single_panel": {
-        "LAYOUT: SINGLE_FRAME": {
-            "PANELS": "1",
-            "VIEWS": {"PRIMARY": ""},
-        },
+        "LAYOUT: SINGLE_FRAME": {"PANELS": "1", "VIEWS": {"PRIMARY": ""}},
     },
     "dual_panel": {
-        "LAYOUT: DIPTYCH_HORIZONTAL": {
-            "PANELS": "2",
-            "VIEWS": {"LEFT": "", "RIGHT": ""},
-        },
-        "LAYOUT: DIPTYCH_VERTICAL": {
-            "PANELS": "2",
-            "VIEWS": {"TOP": "", "BOTTOM": ""},
-        },
-        "LAYOUT: BEFORE_AFTER": {
-            "PANELS": "2",
-            "VIEWS": {"BEFORE": "", "AFTER": ""},
-        },
+        "LAYOUT: DIPTYCH_HORIZONTAL": {"PANELS": "2", "VIEWS": {"LEFT": "", "RIGHT": ""}},
+        "LAYOUT: DIPTYCH_VERTICAL":   {"PANELS": "2", "VIEWS": {"TOP": "", "BOTTOM": ""}},
+        "LAYOUT: BEFORE_AFTER":       {"PANELS": "2", "VIEWS": {"BEFORE": "", "AFTER": ""}},
     },
     "triple_panel": {
         "LAYOUT: TRIPTYCH": {
             "PANELS": "3",
-            "VIEWS": {
-                "FRONT FACING": "",
-                "THREE QUARTER SIDE VIEW": "",
-                "BACK VIEW": "",
-            },
+            "VIEWS": {"FRONT FACING": "", "THREE QUARTER SIDE VIEW": "", "BACK VIEW": ""},
         },
         "LAYOUT: TRIPTYCH_NARRATIVE": {
             "PANELS": "3",
@@ -265,54 +234,35 @@ LAYOUT_MANIFEST = {
     "quad_panel": {
         "LAYOUT: FOUR_PANEL_CINEMATIC": {
             "PANELS": "4",
-            "VIEWS": {
-                "ESTABLISHING WIDE": "",
-                "MEDIUM CLOSE-UP": "",
-                "EXTREME CLOSE-UP": "",
-                "REACTION SHOT": "",
-            },
+            "VIEWS": {"ESTABLISHING WIDE": "", "MEDIUM CLOSE-UP": "", "EXTREME CLOSE-UP": "", "REACTION SHOT": ""},
         },
         "LAYOUT: FOUR_PANEL_2x2": {
             "PANELS": "4",
-            "VIEWS": {
-                "TOP_LEFT": "", "TOP_RIGHT": "",
-                "BOTTOM_LEFT": "", "BOTTOM_RIGHT": "",
-            },
+            "VIEWS": {"TOP_LEFT": "", "TOP_RIGHT": "", "BOTTOM_LEFT": "", "BOTTOM_RIGHT": ""},
         },
     },
     "six_panel": {
         "LAYOUT: SIX_PANEL_COMPOSITE": {
             "PANELS": "6",
             "VIEWS": {
-                "FRONT MEDIUM CLOSE-UP (MCU)": "",
-                "BIRDS EYE (BE)": "",
-                "FRONT EXTREME CLOSE-UP (ECU/XCU)": "",
-                "SIDE CLOSE-UP (SCU)": "",
-                "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "",
-                "FRONT FISH EYE (FE)": "",
+                "FRONT MEDIUM CLOSE-UP (MCU)": "", "BIRDS EYE (BE)": "",
+                "FRONT EXTREME CLOSE-UP (ECU/XCU)": "", "SIDE CLOSE-UP (SCU)": "",
+                "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "", "FRONT FISH EYE (FE)": "",
             },
         },
         "LAYOUT: SIX_PANEL_2x3": {
             "PANELS": "6",
-            "VIEWS": {
-                "R1_C1": "", "R1_C2": "", "R1_C3": "",
-                "R2_C1": "", "R2_C2": "", "R2_C3": "",
-            },
+            "VIEWS": {"R1_C1": "", "R1_C2": "", "R1_C3": "", "R2_C1": "", "R2_C2": "", "R2_C3": ""},
         },
     },
     "nine_panel": {
         "LAYOUT: NINE_PANEL_COMPOSITE": {
             "PANELS": "9",
             "VIEWS": {
-                "FRONT MEDIUM CLOSE-UP (MCU)": "",
-                "BIRDS EYE (BE)": "",
-                "FRONT EXTREME CLOSE-UP (ECU/XCU)": "",
-                "SIDE CLOSE-UP (SCU)": "",
-                "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "",
-                "FRONT FISH EYE (FE)": "",
-                "REAR MEDIUM SHOT (RMS)": "",
-                "OVERHEAD MACRO (OHM)": "",
-                "DUTCH ANGLE WORM EYE (DAWE)": "",
+                "FRONT MEDIUM CLOSE-UP (MCU)": "", "BIRDS EYE (BE)": "",
+                "FRONT EXTREME CLOSE-UP (ECU/XCU)": "", "SIDE CLOSE-UP (SCU)": "",
+                "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "", "FRONT FISH EYE (FE)": "",
+                "REAR MEDIUM SHOT (RMS)": "", "OVERHEAD MACRO (OHM)": "", "DUTCH ANGLE WORM EYE (DAWE)": "",
             },
         },
         "LAYOUT: NINE_PANEL_3x3": {
@@ -369,32 +319,43 @@ VIEWS_MANIFEST = {
 }
 
 # ==============================================================================
-# PHOTOGRAPHY STYLE MANIFEST
+# PHOTOGRAPHY STYLE MANIFEST  (44 entries)
 # ==============================================================================
 STYLING_MANIFEST = {
-    "HELMUT_NEWTON":                                    "Dominant upskirt, standing doggy view, heel worship, power straddle, controlled exposure",
-    "STEVEN_KLEIN":                                     "Dark bondage tease, fetich sex implication, intense riding poses",
-    "GUY_BOURDIN":                                      "Artisic upskirt, fetish narrative sex scenes, provactive floor poses",
-    "ELLEN_VON_UNWERTH":                                "Boobs, natural bounce & cleavage, ass in casual movement, full playful figure",
+    "HELMUT_NEWTON":                                    "Hard, confrontational, power-charged fashion — clinical flash",
+    "STEVEN_KLEIN":                                     "Dark editorial surrealism — high contrast, theatrical",
+    "GUY_BOURDIN":                                      "Hyper-saturated colour, fetishistic tension, graphic composition",
+    "ELLEN_VON_UNWERTH":                                "Playful erotic energy, warm film grain, intimate candid",
     "PETRA_COLLINS":                                    "Dreamy pastel lo-fi, analog grain, teenage melancholy",
     "CASS_BIRD":                                        "Raw candid queer intimacy, natural light, grainy street",
     "ELLEN_VON_UNWERTH_AND_PETRA_COLLINS_AND_CASS_BIRD": "Combined: flash intimacy + pastel dreaming + raw candid",
-    "ROXANNE_LOWIT":                                    "Boobs & ass in backstage chaos, real curves caught mid-change",
-    "MARIO_SORRENTI":                                   "Pose-creampie intimacy, slow sensual sex close-ups, breathy oral tease, natural light nudes",
-    "DAVID_LACHAPELLE":                                 "Exaggerated boobs & ass in pop excess, full thatrical body",
-    "TIM_WALKER":                                       "Whimsical upskirt in fantasy settings, perverse fairy-tale exposure, gentle teasing sex",
-    "NADIA_LEE_COHEN":                                  "Surreal cumshot moments, Lynchian erotic roleplay, stylized oral scenes",
-    "DEBORAH_TURBEVILLE_AND_YELENA_YEMCHUK":            "Subtle downblouse in mist, dreamy post-sex glow, slow undressing",
-    "CORINNE_DAY":                                      "Raw candid upskirt/downblouse, heroic-chic spontaneous sex, real orgasm faces",
+    "ROXANNE_LOWIT":                                    "Backstage energy, unguarded moments, shallow flash DOF",
+    "MARIO_SORRENTI":                                   "Intimate skincare aesthetic, natural skin, soft shadow",
+    "DAVID_LACHAPELLE":                                 "Hyper-real pop surrealism, neon saturation, staged excess",
+    "TIM_WALKER":                                       "Fantasy narrative, rich colour, theatrical sets, dreamy",
+    "NADIA_LEE_COHEN":                                  "Retro-kitsch Americana, high-key pastel, deadpan irony",
+    "DEBORAH_TURBEVILLE":                               "Haunting desolation, soft blur, faded feminine decay",
+    "YELENA_YEMCHUK":                                   "Eastern European art-film noir, clinical cool, isolation",
+    "DEBORAH_TURBEVILLE_AND_YELENA_YEMCHUK":            "Combined: decay aesthetics + clinical art-film isolation",
+    "CORINNE_DAY":                                      "Heroin chic raw realism, underexposed snap, unglamourised",
     "NAN_GOLDIN":                                       "Diaristic flash, raw LGBTQ+ intimacy, grain and love",
     "LARRY_CLARK":                                      "Transgressive youth realism, handheld dirty flash",
     "DAIDO_MORIYAMA":                                   "High-contrast B&W, Tokyo street grain, bleached shadows",
-    "HORST_P_HORST_AND_RICHARD_AVEDON":                 "Sculptural ass & legs, dramatic boobs in motion",
-    "PETER_LINDBERGH_AND_LEE_MILLER":                   "Supermodel-era candid nudity, liberated sex energy",
-    "MARIO_TESTINO_AND_BRUCE_WEBER":                    "Glossy wet t-shirt, outdoor downblouse, athletic sex tease",
-    "ANNIE_LEIBOVITZ_AND_TYLER_MITCHELL_AND_CAMPBELL_ADDY": "Narrative sensual exposure, joyful body-positive creampie/glow moments",
-    "HERB_RITTS":                                       "Athletic ass & body scuptural sex poses--best for images",
-    "EMMA_SUMMERTON":                                   "Strength/softness tension in boobs & ass--video friendly",
+    "HORST_P_HORST":                                    "1930s modernist elegance, dramatic shadow sculpture",
+    "RICHARD_AVEDON":                                   "Clean white backdrop, psychological portrait tension",
+    "HORST_P_HORST_AND_RICHARD_AVEDON":                 "Combined: shadow sculpture + psychological clean tension",
+    "PETER_LINDBERGH":                                  "B&W naturalism, windswept, minimal retouching philosophy",
+    "LEE_MILLER":                                       "Surrealist Dada feminine gaze, wartime documentary",
+    "PETER_LINDBERGH_AND_LEE_MILLER":                   "Combined: B&W naturalism + surrealist feminine gaze",
+    "MARIO_TESTINO":                                    "Glossy celebrity warmth, sun-drenched high fashion",
+    "BRUCE_WEBER":                                      "Golden homoerotic American athleticism, warm soft light",
+    "MARIO_TESTINO_AND_BRUCE_WEBER":                    "Combined: glossy celebrity warmth + athletic golden glow",
+    "ANNIE_LEIBOVITZ":                                  "Epic conceptual portraiture, rich colour, high production",
+    "TYLER_MITCHELL":                                   "Afrofuturist pastoral, soft natural warm tones",
+    "CAMPBELL_ADDY":                                    "Celebration of Black identity, saturated warm editorial",
+    "ANNIE_LEIBOVITZ_AND_TYLER_MITCHELL_AND_CAMPBELL_ADDY": "Combined: epic concept + pastoral warmth + identity celebration",
+    "HERB_RITTS":                                       "Sculptural B&W bodies, Californian minimalism, clean curves",
+    "EMMA_SUMMERTON":                                   "Cinematic narrative fashion, surreal storytelling, rich tone",
     "RYAN_MCGINLEY":                                    "Euphoric youth freedom, sunlit nudity, spontaneous motion",
     "JUERGEN_TELLER":                                   "Anti-fashion rawness, unflattering angles, lo-fi snapshot",
     "TERRY_RICHARDSON":                                 "Hard on-axis flash, snapshot aesthetic, hyper-saturated",
@@ -405,52 +366,12 @@ STYLING_MANIFEST = {
     "SOLVE_SUNDSBO":                                    "Technical digital surrealism, scanner aesthetics, extreme",
     "INEZ_AND_VINOODH":                                 "High-gloss digital perfection, stark beauty, sharp shadows",
     "CRAIG_MCDEAN":                                     "Cool B&W minimalism, graphic lines, technical precision",
-    "FRANCESCA_WOODMAN":                                "Long-exposure blur, female body in space, ghostly erasure",
-    "CINDY_SHERMAN":                                    "Performative self-portraiture, filmic identity construction",
-    "DIANE_ARBUS":                                      "Marginalised subjects, deadpan flash, social confrontation",
-    "LISETTE_MODEL":                                    "Raw humanist street, unguarded moments, strong shadow",
-    "RALPH_GIBSON":                                     "Graphic B&W abstraction, geometric body fragments, shadow",
-    "JEANLOUP_SIEFF":                                   "Elegiac B&W, wide-angle body distortion, moody interior",
-    "SARAH_MOON":                                       "Painterly soft focus, muted pastel, haunted feminine",
-    "BETTINA_RHEIMS":                                   "Unflinching female gaze, clinical flash, raw intimacy",
-    "ANDERS_PETERSEN":                                  "Gritty grain, high contrast, noir bar-life realism",
-    "NOBUYOSHI_ARAKI":                                  "Japanese erotic documentary, rope bondage aesthetic, flash",
-    "MASAHISA_FUKASE":                                  "Obsessive serial portraiture, grain, alienation, darkness",
-    "DOROTHEA_LANGE":                                   "Depression-era documentary weight, environmental truth",
-    "GORDON_PARKS":                                     "Dignified social realism, rich tonal depth, strong light",
-    "KWAME_BRATHWAITE":                                 "Black is Beautiful movement, warm grain, cultural pride",
-    "DEANA_LAWSON":                                     "Intimate Black portraiture, domestic space, divine staging",
-    "ZANELE_MUHOLI":                                    "Black queer documentary portraiture, direct gaze, power",
-    "HARLEY_WEIR":                                      "Skin-close editorial, raw texture, intimate colour palette",
-    "COCO_CAPITAN":                                     "Hand-written text on image, youth melancholy, warm analogue",
-    "JAMIE_HAWKESWORTH":                                "Passport-photo deadpan, raw flash, ordinary extraordinary",
-    "JACK_DAVISON":                                     "Experimental B&W, abstract body, shadow play, conceptual",
-    "BRIANNA_CAPOZZI":                                  "Erotic feminine surrealism, saturated colour, body fetish",
-    "COLLIER_SCHORR":                                   "Gender-fluid portraiture, German art-film influence, cool",
-    "WOLFGANG_TILLMANS":                                "Casual intimacy, queer life, incidental composition, grain",
-    "BORIS_MIKHAILOV":                                  "Soviet-era colour flash, unflinching poverty, raw body",
-    "MARTIN_PARR":                                      "Hyper-saturated ring-flash, British social satire, close",
-    "ALEC_SOTH":                                        "Large-format colour stillness, American loneliness, quiet",
-    "GREGORY_CREWDSON":                                 "Cinematic suburban uncanny, Hollywood production lighting",
-    "PHILIP_LORCA_DICORCIA":                            "Staged spontaneous flash street, cinematic isolation",
-    "NADAV_KANDER":                                     "Environmental portrait, de-centred subject, sparse light",
-    "ERWIN_OLAF":                                       "Dutch theatrical staging, saturated melancholy, surreal",
-    "VIVIANE_SASSEN":                                   "African colour abstraction, shadow play, graphic body",
-    "MERT_AND_MARCUS":                                  "Hyper-glossy high-fashion perfection, digital precision",
-    "LUIGI_AND_IANGO":                                  "Sculptural body abstraction, mineral colour, skin texture",
-    "CHRIS_VON_WANGENHEIM":                             "Violent surrealist fashion, danger aesthetic, bold graphic",
-    "HIRO":                                             "Japanese minimalist precision, graphic colour, object beauty",
-    "IRVING_PENN":                                      "Platinum-print studio gravity, neutral backdrop, shadow",
-    "RICHARD_AVEDON_STREET":                            "White backdrop removed, raw street subject confrontation",
 }
 
 # ==============================================================================
 # LIGHTING PHYSICS MANIFEST
 # ==============================================================================
 LIGHTING_PHYSICS_MANIFEST = {
-    # ── Personal Collection ──────────────────────────────────────────────────────
-    "dramatic_studio_lighting_camera_left":     "Single-source spotlight directly overhead shining down. Photonic interaction treated as pure optical variable governed by incidence angle (grazing angles produce heightened contour emphasis) and source power (linear-to-exponential increase in modeling intensity and light resistence)",
-    # ── Key Light Sources ──────────────────────────────────────────────────────
     "on_camera_popup_flash_5500K":              "Hard on-axis flash, inverse-square falloff, harsh catch-lights",
     "off_camera_strobe_45_left_5600K":          "45° camera-left hard strobe, sharp single shadow",
     "off_camera_strobe_45_right_5600K":         "45° camera-right hard strobe, mirrored shadow",
@@ -469,7 +390,6 @@ LIGHTING_PHYSICS_MANIFEST = {
     "candle_practical_1800K":                   "Extreme warm point source, 1600K, hard short falloff",
     "neon_tube_practical_variable":             "Coloured ambient wash, hum artefact, retro-industrial",
     "fluorescent_overhead_bank_4000K":          "Flat overhead fill, green-shift potential, commercial",
-    # ── Ambient / Fill ─────────────────────────────────────────────────────────
     "window_natural_daylight_5600K":            "Soft directional side fill, rolling gradient shadow",
     "window_overcast_diffused_6500K":           "Flat cool fill, near-zero contrast, even skin tone",
     "skylight_open_shade_7000K":                "Cool blue fill from open sky, subtle specular",
@@ -479,7 +399,6 @@ LIGHTING_PHYSICS_MANIFEST = {
     "practical_lamp_3000K_background":          "Background warm practical, 0.1 ratio ambient bleed",
     "ambient_tungsten_3200K_background":        "Dim warm background glow, ratio 0.04",
     "ambient_moonlight_4100K":                  "Cool blue-grey ambient, very low intensity",
-    # ── Modifier Flags ─────────────────────────────────────────────────────────
     "grid_10_degree":                           "Tight grid on key — zero spill, spot control",
     "grid_30_degree":                           "Medium grid — moderate spill control",
     "gel_CTO_full_warm_3200K":                  "Full CTO warm gel over daylight source",
@@ -491,20 +410,17 @@ LIGHTING_PHYSICS_MANIFEST = {
     "barn_doors_four_way":                      "Rectangular spill control on key source",
     "diffusion_silk_heavy":                     "Heavy diffusion over strobe — very soft",
     "diffusion_frost_light":                    "Light frost — minor softening, retains punch",
-    # ── Shadow Profile ─────────────────────────────────────────────────────────
     "shadow_razor_hard_zero_penumbra":          "Jet-black drop shadows, zero feather, contact print hard",
     "shadow_moderate_10pct_feather":            "Slight edge softness, still defined",
     "shadow_soft_graduated_30pct":              "Gradual transition, 30% penumbra blend zone",
     "shadow_no_shadow_high_key":                "No visible shadow — flat even illumination",
     "shadow_double_crosslit_artifact":          "Two shadow directions from cross-lit sources",
     "shadow_long_oblique_directional":          "Long stretched shadow — subject at oblique angle to key",
-    # ── Flash Sync & Shutter ───────────────────────────────────────────────────
     "flash_sync_1_60_standard":                 "Standard flash sync, slight ambient bleed at slow end",
     "flash_sync_1_125_standard":                "Clean standard sync, minimal ambient",
     "flash_sync_1_250_hss":                     "High-speed sync, daylight killing capability",
     "flash_sync_1_500_hss_full_kill":           "Maximum daylight suppression, pure flash look",
     "long_exposure_bulb_ambient_bleed":         "Bulb exposure + flash pop — motion blur background",
-    # ── Practicals & Specialty Sources ────────────────────────────────────────
     "practical_tv_screen_cool_flicker":         "Blue-white TV glow, 5000–6500K flicker, low intensity",
     "practical_lighter_flame_very_close":       "Extreme warm point source, 1600K, hard short falloff",
     "practical_phone_screen_uplight":           "Cold uplight from screen, 6000K, ghostly underlighting",
@@ -516,7 +432,6 @@ LIGHTING_PHYSICS_MANIFEST = {
     "sodium_vapour_street_590nm":               "Monochromatic warm orange, desaturates colour, flat CRI",
     "mercury_vapour_cool_405nm":                "Cold blue-purple industrial, skin appears grey-green",
     "laser_pointer_grid_overlay":               "Coherent 532nm green or 650nm red point scatter",
-    # ── Cine / HMI / Fresnel Variants ─────────────────────────────────────────
     "hmi_par_5600K_hard_parallel":              "Hard parallel HMI PAR — simulates direct sun beam",
     "hmi_fresnel_5600K_spot_mode":              "Focusable fresnel spot, hard centre, soft edge",
     "arri_skypanel_s60_full_colour":            "RGB+W LED soft panel, full colour mixing, even field",
@@ -524,12 +439,10 @@ LIGHTING_PHYSICS_MANIFEST = {
     "kino_flo_4bank_5600K":                     "Fluorescent soft bank, low contrast, fashion fill",
     "chimera_lightbank_large":                  "Large softbox equivalent over strobe, very soft",
     "litepanels_astra_bicolor":                 "LED panel, variable 3200–5600K, low heat, soft field",
-    # ── Cinematic Lighting Arrays ──────────────────────────────────────────────
     "leko_source_four_spot_5600K":              "Ellipsoidal spotlight, sharp iris-cut beam, theatrical",
     "astera_titan_tube_RGB_practical":          "RGBWW pixel tube, full colour, remote DMX, practical",
     "skypanel_s60_overhead_softbox":            "ARRI SkyPanel overhead, full-field soft top light",
     "18k_hmi_through_window_silk":              "18K HMI bounced through diffusion silk — sun simulation",
-    # ── Colour Grading Proxies ────────────────────────────────────────────────
     "teal_orange_hollywood_grade":              "Complementary teal shadow / orange skin grade",
     "monochrome_silver_gelatin_grade":          "Desaturated B&W with silver halide grain emulation",
     "cross_process_e6_in_c41":                  "Slide film cross-processed — cyan shadows, yellow skin",
@@ -543,14 +456,12 @@ LIGHTING_PHYSICS_MANIFEST = {
 # PHOTONIC ENERGY MANIFEST
 # ==============================================================================
 PHOTONIC_ENERGY_MANIFEST = {
-    # ── Distribution Models ────────────────────────────────────────────────────
     "MICROFACET_DISTRIBUTION":              "GGX/Trowbridge-Reitz — physically based rough surface model",
     "LAMBERTIAN_DIFFUSE":                   "Perfectly diffuse matte surface — equal scattering all directions",
     "OREN_NAYAR_ROUGH_DIFFUSE":             "Rough diffuse — accounts for retroreflection on textured surfaces",
     "COOK_TORRANCE_SPECULAR":               "Classic physically-based specular model — energy conserving",
     "ASHIKHMIN_SHIRLEY_ANISOTROPIC":        "Anisotropic highlight elongation along surface tangent",
     "GGX_ANISOTROPIC_FABRIC":              "GGX with anisotropic tangent — silk, satin weave",
-    # ── Scattering / Transmission ──────────────────────────────────────────────
     "SUBSURFACE_SCATTERING":               "Light penetrates surface — skin, wax, translucent tissue",
     "SCATTER_THROUGH_WEAVE":               "Photon passes through low-denier fabric weave gaps",
     "DIRECT_ANGULAR_PENETRATION_V8":       "High-angle direct penetration — sheer fabric flash-through",
@@ -559,7 +470,6 @@ PHOTONIC_ENERGY_MANIFEST = {
     "RAY_MARCHING_VOLUMETRIC":             "Volume rendering — smoke, fog, god-rays, atmosphere",
     "SINGLE_SCATTER_VOLUMETRIC":           "Single-event light scatter in participating media",
     "MULTIPLE_SCATTER_VOLUMETRIC":         "Deep volume scatter — optically thick media",
-    # ── Photon Behaviour Flags ─────────────────────────────────────────────────
     "RIM_LIGHT_SCATTERING_PASS":           "Backlit rim scatter — glowing edge separation on skin",
     "BACKLIT_SUBSURFACE_GLOW":             "Transmitted glow through thin tissue when backlit",
     "MEAN_FREE_PATH_MEDIUM":               "Average photon travel before scatter event — skin ~2–4mm",
@@ -569,7 +479,6 @@ PHOTONIC_ENERGY_MANIFEST = {
     "ISOTROPIC_DIFFUSION":                 "Equal scatter probability in all directions",
     "ENERGY_CONSERVATION_COMPLIANT":       "Total output energy ≤ input — no phantom emission",
     "TRANSPARENCY_FOCUSED":               "Priority on transmission and scatter over reflection",
-    # ── Reflectance Coefficients ───────────────────────────────────────────────
     "FRESNEL_HIGH":                        "Strong angle-dependent reflectance — wet surfaces, glass",
     "FRESNEL_MEDIUM":                      "Moderate Fresnel — typical skin at grazing angle",
     "FRESNEL_LOW":                         "Weak Fresnel — dry matte skin, cloth",
@@ -577,7 +486,6 @@ PHOTONIC_ENERGY_MANIFEST = {
     "SPECULAR_LOBE_BROAD_LOW":             "Wide soft specular — rough, dry, matte",
     "LAMBERTIAN_REFLECTANCE_HIGH":         "High diffuse albedo — bright white or pale skin",
     "LAMBERTIAN_REFLECTANCE_LOW":          "Low diffuse albedo — dark skin, dark fabric",
-    # ── Advanced PBR Extensions ────────────────────────────────────────────────
     "WARD_DUER_ANISOTROPIC":               "Anisotropic highlight elongation along surface tangent",
     "BLINN_PHONG_SPECULAR":                "Classic non-PBR specular lobe — legacy render feel",
     "THINFILM_INTERFERENCE":               "Soap-bubble iridescence — nanometre thin film diffraction",
@@ -602,7 +510,6 @@ PHOTONIC_ENERGY_MANIFEST = {
 # HARDWARE MANIFEST — CAMERA BODIES
 # ==============================================================================
 CAMERA_BODY_MANIFEST = {
-    # ── Full Frame DSLR ────────────────────────────────────────────────────────
     "Canon EOS 5D Mark IV":         "36×24mm CMOS, 30.4MP, DIGIC 7, Dual Pixel AF",
     "Canon EOS 5D Mark III":        "36×24mm CMOS, 22.3MP, DIGIC 5+, classic film-era output",
     "Canon EOS R5":                 "45MP BSI CMOS, IBIS, 8K RAW, Dual Pixel CMOS AF II",
@@ -611,23 +518,16 @@ CAMERA_BODY_MANIFEST = {
     "Nikon D800":                   "36.3MP FX, legendary landscape/studio resolution",
     "Nikon Z7 II":                  "45.7MP BSI, IBIS, Z-mount mirrorless, dual card",
     "Sony A7R V":                   "61MP BSI Exmor R, AI-AF, 5-axis IBIS, compact FF",
-    "Sony A7R lV":                  "And a Sony FE 50mm f/1.2 GM",
     "Sony A7 III":                  "24.2MP BSI, dual native ISO, versatile hybrid",
     "Sony A1":                      "50MP, 30fps, 8K video, global shutter option",
-    # --- Personal Collection ──────────────────────────────────────────────────────────
-    "Canon EOS 5D MARK IV":         "And A Canon EF 100mm f/2.8L Macro IS USM",
-    "Nikon D850 with":              "A Nikkor 60mm f/2.8G Micro",
-    "Phase One IQ4 150MP With":     "A Schneider Kreuznach 120mm f/4 Macro",
     "Hasselblad X2D 100C":          "100MP BSI, 5-axis IBIS, no AA filter, natural colour",
     "Phase One IQ4 150MP":          "150MP CMOS back, 16-bit RAW, trichromatic option",
     "Fujifilm GFX 100S":            "102MP BSI CMOS, IBIS, compact MF, superb film sims",
     "Fujifilm GFX 50R":             "51.4MP MF, rangefinder body, rich tonal gradation",
     "Pentax 645Z":                  "51.4MP CMOS, weather-sealed, DSLR-style MF, tilting",
-    # ── Leica & Rangefinder ────────────────────────────────────────────────────
     "Leica M11":                    "60MP BSI, frameless base plate, timeless rangefinder",
     "Leica M10-R":                  "40MP, optical rangefinder, no EVF, pure analogue feel",
     "Leica SL2-S":                  "24.6MP, contrast AF, rugged L-mount, cinema hybrid",
-    # ── Film — 35mm ───────────────────────────────────────────────────────────
     "35mm Film — Kodak Portra 400": "Natural skin tones, fine grain, wide latitude",
     "35mm Film — Kodak Portra 800": "Pushed warmth, visible grain, low-light latitude",
     "35mm Film — Kodak Ektar 100":  "Hyper-saturated, fine grain, vibrant primaries",
@@ -638,16 +538,13 @@ CAMERA_BODY_MANIFEST = {
     "35mm Film — Kodak Tri-X 400 (B&W)": "Iconic B&W, rich grain, high contrast heritage",
     "35mm Film — Cinestill 800T":   "Tungsten-balanced, halation glow, cinema in 35mm",
     "35mm Film — Lomography Color 100": "Toy-camera cross-process, saturated, lo-fi",
-    # ── Film — Medium Format ───────────────────────────────────────────────────
     "120mm Film — Kodak Portra 400 MF": "MF Portra, enormous tonal range, fine grain at 6×7",
     "120mm Film — Ilford FP4 125 (B&W)": "Fine grain B&W, long tonal scale, architectural",
     "120mm Film — Fujifilm FP-100C (Instant)": "Peel-apart instant, warm tones, unique surface",
-    # ── Instant ───────────────────────────────────────────────────────────────
     "Polaroid 600 Series":          "Square format instant, soft vignette, slow emulsion",
     "Polaroid SX-70":               "Folding SLR instant, legendary soft focus rendering",
     "Impossible Project I-1":       "Modern Polaroid, controlled colour, ring flash built-in",
-    # ── Additional Digital Bodies ──────────────────────────────────────────────
-    "Canon EOS R3":                 "24.1MP BSI stacked CMOS, 30fps, eye-control AF, speed/quality",
+    "Canon EOS R3":                 "24.1MP BSI stacked CMOS, 30fps, eye-control AF",
     "Nikon Z9":                     "45.7MP stacked CMOS, no mechanical shutter, 20fps RAW",
     "Nikon Z8":                     "45.7MP stacked, compact Z9, blackout-free, full-frame speed",
     "Fujifilm X-T5":                "40.2MP APS-C BSI, compact, film simulation legacy, X-Trans",
@@ -656,15 +553,10 @@ CAMERA_BODY_MANIFEST = {
     "Sigma fp L":                   "61MP BSI FF, world's smallest FF, minimalist, cinema RAW",
     "Pentax K-1 Mark II":           "36.2MP AA-filterless, pixel shift, weather-sealed DSLR",
     "OM System OM-1 Mark II":       "20MP stacked MFT, 120fps, computational photography",
-    # ── Cine Cameras (stills emulation) ───────────────────────────────────────
-    "ARRI Alexa LF":                "With A Panavision C Series Anamorphic 50mm T2.3",
-    "ARRI Alexa Mini LF":           "With A Cooke S7/i 40mm T2.0",
     "ARRI ALEXA 35 (cinema)":       "4.6K ALEV 4 sensor, legendary skin tone rendering, cinema",
-    "RED Ranger Monstro":           "With A Panavision T-Series Anamorphic 35mm T2.3",
     "RED MONSTRO 8K VV":            "8K full frame, REDCODE RAW, clinical highlight roll-off",
     "Blackmagic Pocket Cinema 6K":  "6K Super 35, BRAW, anamorphic option, indie cinema look",
     "Sony VENICE 2 (cinema)":       "8.6K FF, dual base ISO, built-in ND, cinema glass",
-    # ── Additional Film Bodies ─────────────────────────────────────────────────
     "35mm Film — Agfa Vista 200":   "Warm skin saturation, slight yellow bias, consumer quality",
     "35mm Film — Kodak Gold 200":   "Classic holiday colour, warm, fine grain, nostalgic",
     "35mm Film — Rollei Infrared 400": "Near-infrared sensitivity, dark skies, white foliage",
@@ -674,11 +566,9 @@ CAMERA_BODY_MANIFEST = {
     "4x5 Film — Kodak Portra 160 LF": "Large format Portra, enormous tonal separation, surgical",
     "4x5 Film — Ilford FP4 125 LF": "Large format B&W, virtually grainless, architectural",
     "Disposable Camera — Kodak FunSaver": "Lo-fi flash snapshot, hypersaturated, retro social",
-    # ── Digital Cinema Systems ─────────────────────────────────────────────────
     "ARRI Alexa 35":                "4.6K ALEV 4, 17 stops dynamic range, supreme skin tone",
     "RED V-Raptor 8K VV":           "8K Vista Vision, 280fps at 4K, modular, REDCODE RAW",
     "Sony Venice 2 8K":             "8.6K full frame, dual ISO 800/3200, built-in ND, cinema",
-    "Sony Venice":                  "With A Hawk V-Lite 55mm Anamorphic T2.2",
     "Panavision Millennium DXL2":   "8K LF Panavision sensor, Panavised glass mount, cinema",
 }
 
@@ -686,12 +576,6 @@ CAMERA_BODY_MANIFEST = {
 # HARDWARE MANIFEST — LENSES
 # ==============================================================================
 LENS_MANIFEST = {
-    # --- Personal Collection -------------------------------------------------
-    "100mm":                        "Prime lens f8",
-    "25mm":                         "Prime lens f/1.2",
-    "25MM":                         "Prime lens f/0.4",
-    "12mm to 17mm":                 "Wide-angle lens f/8 to f/16 (Deep Depth Of Field)",
-    # ── Canon EF / RF ──────────────────────────────────────────────────────────
     "Canon EF 100mm f/2.8L Macro IS USM":   "1:1 macro, IS, L-series, clinically sharp close-up",
     "Canon EF 85mm f/1.2L II USM":          "Legendary subject isolation, creamy bokeh, fast AF",
     "Canon EF 85mm f/1.4L IS USM":          "Sharp wide open, IS, modern 85mm portrait king",
@@ -700,65 +584,52 @@ LENS_MANIFEST = {
     "Canon EF 24-70mm f/2.8L II USM":       "Workhorse zoom, constant f/2.8, sharp throughout",
     "Canon EF 70-200mm f/2.8L IS III USM":  "Reach + bokeh, press/sport/portrait compression",
     "Canon RF 85mm f/1.2L USM DS":          "Dual Sensing ND coating, reduced bokeh fringing",
-    # ── Nikon F / Z ───────────────────────────────────────────────────────────
     "Nikon AF-S 85mm f/1.4G":              "3D pop bokeh, world-class portrait rendering",
     "Nikon AF-S 105mm f/1.4E ED":          "Exceptional resolution + subject separation at f/1.4",
     "Nikon AF-S 58mm f/1.4G":             "Micro-contrast perfection, spherical 3D rendering",
     "Nikon AF-S Micro 105mm f/2.8G VR":   "Macro + portrait, VR stabilised, exceptional sharpness",
     "Nikon Z 85mm f/1.2 S":               "Best-in-class Z-mount portrait, near-perfect rendering",
-    # ── Sony FE ───────────────────────────────────────────────────────────────
     "Sony FE 85mm f/1.4 GM":              "G Master sharpness, 11-blade circular bokeh",
     "Sony FE 135mm f/1.8 GM":             "Stunning compression, bokeh smoothness, razor sharp",
     "Sony FE 50mm f/1.2 GM":             "Perfect 50mm — sharp, small, beautiful rendering",
     "Sony FE 90mm f/2.8 Macro G OSS":    "1:1 macro, OSS stabilised, clinical sharpness",
-    # ── Sigma Art ─────────────────────────────────────────────────────────────
     "Sigma 85mm f/1.4 DG DN Art":         "Third-party portrait king, exceptional value, sharp",
     "Sigma 35mm f/1.4 DG HSM Art":        "Wide portrait, superb sharpness wide open",
     "Sigma 105mm f/2.8 DG DN Macro Art":  "Macro + portrait dual-use, exceptional optical quality",
     "Sigma 50mm f/1.4 DG HSM Art":        "Technical masterpiece 50mm, heavy but superb",
-    # ── Zeiss ─────────────────────────────────────────────────────────────────
     "Zeiss Otus 85mm f/1.4":              "Near-perfect optical resolution, clinical Zeiss rendering",
     "Zeiss Otus 55mm f/1.4":              "Scientifically sharp 50mm, manual focus masterpiece",
     "Zeiss Milvus 135mm f/2":             "Dramatic compression, Zeiss micro-contrast, manual",
     "Zeiss Loxia 50mm f/2":               "Compact FE portrait, clinical Zeiss quality compact",
-    # ── Voigtländer / Manual ──────────────────────────────────────────────────
     "Voigtländer 40mm f/1.2 Nokton":      "Compact fast lens, smooth rendering, unique character",
     "Voigtländer 75mm f/1.5 Nokton II":   "Leica M portrait, smooth transitional bokeh",
     "Leica Summilux 50mm f/1.4 ASPH":     "Legendary Leica character, precise micro-contrast",
     "Leica APO-Summicron 75mm f/2 ASPH":  "Near-perfect optical correction, unmatched clarity",
-    # ── Vintage / Character Lenses ────────────────────────────────────────────
     "Helios 44-2 58mm f/2 (Swirly Bokeh)": "Soviet swirly bokeh, character imperfection, cult lens",
     "Meyer-Optik Trioplan 100mm f/2.8 (Soap Bubble Bokeh)": "Soap bubble OOF circles, dreamy rendering",
     "Petzval 85mm f/2.2 Art Lens":        "Swirly field, sharp centre, 19th century optical character",
     "Nikkor 105mm f/2.5 AI (Vintage)":    "Classic portrait rendering, warm, smooth, legendary",
-    # ── Tilt-Shift / Speciality ───────────────────────────────────────────────
     "Canon TS-E 90mm f/2.8L Macro":       "Tilt-shift perspective correction + selective focus plane",
     "Canon TS-E 135mm f/4L Macro":        "Long tilt-shift, architectural + beauty macro",
     "Laowa 100mm f/2.8 2X Ultra Macro":   "2:1 macro magnification, manual, hyper detail",
-    # ── Additional Canon RF ────────────────────────────────────────────────────
     "Canon RF 50mm f/1.2L USM":           "Reference-class 50mm, L-mount, clinical + bokeh balance",
     "Canon RF 35mm f/1.4L VCM":           "Wide portrait, L-series, video-optimised breathing control",
     "Canon RF 135mm f/1.8L IS USM":       "Telephoto portrait king, IS, razor sharpness, compression",
-    # ── Additional Nikon Z ─────────────────────────────────────────────────────
     "Nikon Z 50mm f/1.2 S":              "Reference 50mm, Z-mount, outstanding at all apertures",
     "Nikon Z 135mm f/1.8 S Plena":       "Purpose-built portrait, circular bokeh priority, superb",
     "Nikon Z 58mm f/0.95 S Noct":        "f/0.95 manual, extreme subject isolation, reference build",
-    # ── Additional Sony FE ─────────────────────────────────────────────────────
     "Sony FE 24mm f/1.4 GM":             "Wide environmental portrait, sharp corner-to-corner",
     "Sony FE 100mm f/2.8 STF GM OSS":    "Apodisation filter, smoothest bokeh transition, portrait",
     "Sony FE 200-600mm f/5.6-6.3 G OSS": "Reach for environmental compression from distance",
-    # ── Fujinon GF (Medium Format) ─────────────────────────────────────────────
     "Fujinon GF 110mm f/2 WR":           "MF portrait, 87mm equiv, wide open rendering exceptional",
     "Fujinon GF 80mm f/1.7 WR":          "MF 63mm equiv, fastest GF prime, natural MF isolation",
     "Fujinon GF 45-100mm f/4 WR":        "MF zoom, surgical sharpness, weather sealed, studio",
-    # ── Cine Lenses ────────────────────────────────────────────────────────────
     "ARRI Signature Prime 65mm T1.8":    "Cinema prime, anamorphic-adjacent rendering, warm bokeh",
     "Cooke S7/i 75mm T2.0":             "Cooke look — organic warmth, oval bokeh, skin flattery",
     "Leica Thalia 100mm T2.6":           "Large format cinema, extreme organic rendering, no LCA",
     "Zeiss Supreme Prime 85mm T1.5":     "Modern cinema prime, clinically sharp, bold contrast",
     "Atlas Orion 65mm T2 Anamorphic":    "1.5× squeeze, horizontal flare, oval bokeh, cinematic",
     "SLR Magic Anamorphot 1.33x":        "Budget anamorphic adapter, distinctive oval bokeh + streak",
-    # ── Ultra-Wide & Specialty ─────────────────────────────────────────────────
     "Laowa 15mm f/4.5 Zero-D":           "Zero distortion ultrawide, near-zero barrel, architecture",
     "Venus Optics Laowa 25mm f/2.8 2.5-5x Ultra Macro": "5x magnification, insect-scale detail",
     "Mitakon Speedmaster 50mm f/0.95":   "f/0.95 full frame, dream-like wide open, heavy character",
@@ -788,8 +659,6 @@ APERTURE_MANIFEST = {
 # WARDROBE MANIFEST
 # ==============================================================================
 WARDROBE_MANIFEST = {
-    # ── White / Light ──────────────────────────────────────────────────────────
-    "very_loose_white_tank_top":                    "Candid moment, very_low_plunging_neckline",
     "white_vintage_silk_slip_dress_lace_trim":      "Low denier, bias-cut, raw lace neck border, semi-transparent when wet",
     "white_cotton_tank_top_worn":                   "Worn, faded, semi-transparent when body-warmed or wet",
     "white_sheer_nylon_bodysuit":                   "Full coverage sheer, visible skin tones at all tensions",
@@ -798,73 +667,43 @@ WARDROBE_MANIFEST = {
     "ivory_satin_chemise_bias_cut":                 "Floor length, ivory, clings to hip with gravity",
     "white_mesh_crop_top":                          "Open weave, full skin visibility, no opacity",
     "cream_knit_sweater_oversized":                 "Heavy texture, opaque, off-shoulder slip potential",
-    # ── Personal / Colors ──────────────────────────────────────────────────────────
-    "change_the_color_to_beige":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_brownish":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_drab":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_khaki":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_biscuit":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_bronze":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_brown":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_buff":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_cream":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_ecru":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_gold":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_natural":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_olive":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_suntan":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_umber":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_leather-colored":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_olive-brown":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_tawny":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_yellowish":                    "Keeping the same exact outfit just another color",
-    # ── Black / Dark ───────────────────────────────────────────────────────────
     "black_sheer_organza_blouse_open":              "Fully unbuttoned, ultra-sheer black, dark transparency",
     "black_bodycon_bandage_dress":                  "High tension, zero drape, contouring fabric physics",
     "black_velvet_slip_dress":                      "Anisotropic velvet sheen, opaque deep black",
     "black_leather_jacket_open":                    "Over nothing, heavy drape, specular highlight on grain",
     "black_fishnet_bodysuit":                       "Open lattice, full skin visibility, patterned transparency",
     "dark_denim_jacket_open_distressed":            "Distressed, raw hem, worn texture, heavy drape",
-    # ── Neutral / Raw ─────────────────────────────────────────────────────────
     "raw_linen_shift_unstructured":                 "Natural beige, looser weave, environmental drape",
     "oversized_vintage_t_shirt_distressed":         "Distressed, off-shoulder, screen-printed faded graphic",
     "grey_cotton_jersey_bodysuit":                  "Low denier jersey, full coverage but form-fitted",
     "nude_seamless_bodysuit":                       "Flesh-tone illusion of nudity, technical fabric mapping",
-    # ── Speciality Physics ────────────────────────────────────────────────────
     "wet_white_cotton_fully_saturated":             "White cotton soaked through — near-complete transparency",
     "wet_silk_fully_saturated_adhesion":            "Silk plastered to skin, adhesion coefficient HIGH",
     "bare_skin_no_wardrobe":                        "No fabric — full skin physics, no textile render",
-    # ── Sheer / Lace ──────────────────────────────────────────────────────────
-    "low-denier-silk":                              "High transluceny-index",
     "black_lace_bodysuit_floral_pattern":           "Floral lace, patterned transparency, black on skin",
     "white_lace_garter_belt_stockings":             "Vintage lingerie, garter elastic, sheer nylon legs",
     "ivory_lace_slip_high_low_hem":                 "Vintage slip, ivory, lace trim, asymmetric hem fall",
     "red_lace_bralette_no_underwire":               "Unstructured lace, red, visible bra-line detail",
     "sheer_black_lace_overlay_dress":               "Lace layer over nude lining — dual material physics",
-    # ── Structured / Tailored ─────────────────────────────────────────────────
     "white_button_down_untucked_half_open":         "Dress shirt, half-unbuttoned, untucked, sleeves rolled",
     "black_turtleneck_fine_knit_fitted":            "Fine gauge merino, high neck, zero gap, body map",
     "trench_coat_beige_belted_open":                "Open belted trench, heavy drape, lapel shadow geometry",
     "blazer_oversized_pinstripe_nothing_under":     "Pinstripe blazer, open, worn over bare skin only",
     "latex_black_full_body_catsuit":                "High-gloss rubber, zero drape, skin-map reflection",
     "patent_leather_corset_waist_cinch":            "Rigid structure, waist compression, specular patent finish",
-    # ── Minimal / Undergarment ────────────────────────────────────────────────
     "cotton_brief_underwear_simple":                "Unadorned cotton brief, matte, domestic intimacy",
     "satin_slip_shorts_high_cut":                   "Satin tap shorts, bias cut, hip-level shimmer",
     "sports_bra_compression_athletic":              "Supplex lycra, flat chest compression, activewear",
     "bandeau_tube_strapless_jersey":                "Jersey tube, strapless, minimal structure, simple",
     "nude_adhesive_nipple_covers":                  "Silicone covers only, near-nude physics, minimal",
-    # ── Layered / Deconstructed ───────────────────────────────────────────────
     "torn_fishnet_layered_over_bodysuit":           "Ripped fishnet on top of opaque base, punk layering",
     "wet_oversized_shirt_dress_transparent":        "Long shirt dress, soaked, full transparency gradient",
     "vintage_slip_dress_under_sheer_blazer":        "Two-layer transparency — slip under gauze blazer",
     "deconstructed_dress_safety_pin_seams":         "Raw edges, safety-pin closure, punk construction",
     "wrapped_single_bedsheet_toga":                 "Draped cotton sheet, Roman fold, floor length",
-    # ── High-Fashion / Structural ─────────────────────────────────────────────
     "mugler_archival_structured_corset":            "Archival Mugler silhouette, rigid boning, waist extreme",
     "iris_van_herpen_3d_printed_mesh":              "3D-printed parametric mesh, rigid-organic structure",
     "heavy_pvc_vinyl_trench_coat":                  "Opaque PVC, high-gloss broad specular, heavy drape",
-    # ── Utilitarian / Techwear ────────────────────────────────────────────────
     "gore_tex_hardshell_tactical_jacket":           "Waterproof membrane, matte, technical construction",
     "kevlar_weave_ballistic_vest":                  "Aramid weave, flat matte, structural panel rigidity",
     "vacuum_sealed_latex_catsuit":                  "Vacuum-formed second skin, zero air gap, mirror gloss",
@@ -1028,7 +867,6 @@ LOCATION_MANIFEST = {
 # GLASS SURFACE MANIFEST
 # ==============================================================================
 GLASS_SURFACE_MANIFEST = {
-    "reflective sleek":                             "Black floot tile with wax sheen",
     "condensation_calcium_grease_dust":             "Irregular droplets, calcium spots, grease smudges, flash-lit dust",
     "heavy_steam_occluded_centre":                  "Dense steam condensation blocking central surface",
     "cracked_silver_nitrate_decay_edge":            "Fracture lines, mirror decay at perimeter",
@@ -1070,8 +908,6 @@ DOF_MANIFEST = {
         "swirly_helios_field_curvature":            "Helios field curvature — sharp centre, swirl at edge",
     },
     "midground": {
-        "subject_seated_posture_straight":          "Full rear facing, hands resting on hip, head facing away from camera",
-        "subject_seated,_posture_straight":          "Full forward facing, hands resting on hip, head facing the camera",
         "subject_behind_waterfall_stones":          "Subject hiding in waterfall behind stones",
         "subject_vanity_back_to_mirror":            "Subject at vanity, back to mirror, three-quarter",
         "subject_standing_quarter_turn_away":       "Three-quarter turn, back partially to lens",
@@ -1089,7 +925,6 @@ DOF_MANIFEST = {
         "subject_sleeping_fetal_floor":             "Fetal position on floor — vulnerable, unconscious air",
     },
     "background": {
-        "full-length mirrors":                      "Pristine, covering walls, adding depth",
         "ceramic_tiles_deep_shadow_grout":          "Dark ceramic, high-contrast grout lines, minimal ambient",
         "pure_black_void_zero_detail":              "Total black, zero ambient environment",
         "exposed_concrete_brutalist_raking":        "Rough concrete, hard light angle, shadow geometry",
@@ -1352,13 +1187,12 @@ METEOROLOGY_MANIFEST = {
 }
 
 # ==============================================================================
-# STATIC SCHEMA BLOCKS — never randomised, never prompted
-# These are injected verbatim by generate_random() and build_mem_lock()
+# STATIC SCHEMA BLOCKS — injected verbatim; never randomised or prompted
 # ==============================================================================
 STATIC_MEM_LOCK = {
     "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
-    "BIOMETRIC_LOCK": "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANITOMALOGICAL_TOPOPGRAPHY_PERFECTLY)",
-    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS._ENFORE=VISCERAL_REACTION_TO_AN_UNPLEASANT_TASTE,_OPENING_MOUTH_REVEALING_TONGUE_SLATHERED_IN_SEMI_TRANSLUCENT,_MILKY_VISCOUS_GEL--TONGUE_ROLLS;_WINCES)",
+    "BIOMETRIC_LOCK": "TRUE (Replicating every pixel of the anitomalogical topgraphy perfectly)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (Inhibit automatic AI skin-smoothing filters, eliminate facial balancing or symmetry modifications, bypass default commercial touch-up layers.)",
     "STRUCTURAL_NON_DEVIATION": "HIGH",
     "STRUCTURAL_FIDELITY": "HIGH",
     "UNALTERABLE": [
@@ -1374,7 +1208,6 @@ STATIC_MEM_LOCK = {
         "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
         "FACIAL_BALANCING",
         "POSE_MODIFICATIONS",
-        "BRAZZIER_SUPPORT",
         "CAMERA_ANGLE_MODIFICATIONS",
         "SYMMETRY_MODIFICATIONS",
         "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
@@ -1383,19 +1216,20 @@ STATIC_MEM_LOCK = {
 
 STATIC_FINALIZE = {
     "REQUIREMENT_CHECKS": {
-        "FOCUS_LOCK": "MAXIMUM_MICRO-CONTRAST_FOCUS_LOCKED_ONTO_CLOTH_WEAVE_AND_SKIN_GRAIN",
+        "FOCUS_LOCK": "environmental_context_priority",
         "GLOBAL_NEGATIVE_BIAS": [
+            "VIGNETTE_FILTER",
+            "HDR_TONE_MAPPING",
             "BEAUTY_FILTER",
-            "AIRBRUSHED_SKIN",
-            "PERFECT_FACIAL_SYMMETRY",
-            "DIGITAL_3D_RENDER",
             "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
             "WATERMARK_OR_CREDIT_OVERLAY",
             "HAPPY_EXPRESSIONS",
-            "IDENTITY_SHIFTING",
             "HAIR_CLEANUP_FLYAWAY",
-            "OPAQUE_FABRIC",
+            "CLEAN_MINIMALIST_ARCHITECTURE",
+            "POSE_MODIFICATIONS",
+            "OPAQUE_FABRIC_PROCESSING",
             "BODY_PROPORTION_ALTERATION",
+            "VSCO_LUT",
         ],
     }
 }
@@ -1404,121 +1238,105 @@ STATIC_FINALIZE = {
 # FLATTENED INDICES FOR O(1) LOOKUPS AND WORD COMPLETER INJECTION
 # ==============================================================================
 
-# Kinematic
 FLAT_POSE_INDEX: dict[str, str] = {}
 for _cat in KINEMATIC_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_POSE_INDEX[_k] = _v
 
-# Layout
 FLAT_LAYOUT_INDEX: dict[str, str] = {}
 for _cat in LAYOUT_MANIFEST.values():
     for _layout_name, _layout_data in _cat.items():
         FLAT_LAYOUT_INDEX[_layout_name] = str(_layout_data)
 
-# Lighting
 FLAT_LIGHTING_INDEX: dict[str, str] = {}
 for _k, _v in LIGHTING_PHYSICS_MANIFEST.items():
     FLAT_LIGHTING_INDEX[_k] = _v
 
-# Style
 FLAT_STYLE_INDEX: dict[str, str] = {}
 for _k, _v in STYLING_MANIFEST.items():
     FLAT_STYLE_INDEX[_k] = _v
 
-# Photonic energy
 FLAT_ENERGY_INDEX: dict[str, str] = {}
 for _k, _v in PHOTONIC_ENERGY_MANIFEST.items():
     FLAT_ENERGY_INDEX[_k] = _v
 
-# Views
 FLAT_VIEW_INDEX: dict[str, str] = {}
 for _k, _v in VIEWS_MANIFEST.items():
     FLAT_VIEW_INDEX[_k] = _v
 
-# Camera bodies
 FLAT_CAMERA_INDEX: dict[str, str] = {}
 for _k, _v in CAMERA_BODY_MANIFEST.items():
     FLAT_CAMERA_INDEX[_k] = _v
 
-# Lenses
 FLAT_LENS_INDEX: dict[str, str] = {}
 for _k, _v in LENS_MANIFEST.items():
     FLAT_LENS_INDEX[_k] = _v
 
-# Apertures
 FLAT_APERTURE_INDEX: dict[str, str] = {}
 for _k, _v in APERTURE_MANIFEST.items():
     FLAT_APERTURE_INDEX[_k] = _v
 
-# Wardrobe
 FLAT_WARDROBE_INDEX: dict[str, str] = {}
 for _k, _v in WARDROBE_MANIFEST.items():
     FLAT_WARDROBE_INDEX[_k] = _v
 
-# Skin — all sub-dicts flattened
 FLAT_SKIN_INDEX: dict[str, str] = {}
 for _cat in SKIN_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_SKIN_INDEX[_k] = _v
 
-# Location
 FLAT_LOCATION_INDEX: dict[str, str] = {}
 for _cat in LOCATION_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_LOCATION_INDEX[_k] = _v
 
-# Glass
 FLAT_GLASS_INDEX: dict[str, str] = {}
 for _k, _v in GLASS_SURFACE_MANIFEST.items():
     FLAT_GLASS_INDEX[_k] = _v
 
-# DOF — all sub-dicts flattened
 FLAT_DOF_INDEX: dict[str, str] = {}
 for _cat in DOF_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_DOF_INDEX[_k] = _v
 
-# Text
 FLAT_TEXT_STRINGS_INDEX: dict[str, str] = {}
 for _k, _v in TEXT_MANIFEST["strings"].items():
     FLAT_TEXT_STRINGS_INDEX[_k] = _v
+
 FLAT_TEXT_FONT_INDEX: dict[str, str] = {}
 for _k, _v in TEXT_MANIFEST["font_aesthetics"].items():
     FLAT_TEXT_FONT_INDEX[_k] = _v
+
 FLAT_TEXT_PLACEMENT_INDEX: dict[str, str] = {}
 for _k, _v in TEXT_MANIFEST["placement"].items():
     FLAT_TEXT_PLACEMENT_INDEX[_k] = _v
 
-# Material
 FLAT_OPACITY_INDEX: dict[str, str] = {}
 for _k, _v in MATERIAL_MANIFEST["opacity"].items():
     FLAT_OPACITY_INDEX[_k] = _v
+
 FLAT_SHEEN_INDEX: dict[str, str] = {}
 for _k, _v in MATERIAL_MANIFEST["textile_sheen"].items():
     FLAT_SHEEN_INDEX[_k] = _v
 
-# Finalize
 FLAT_FOCUS_INDEX: dict[str, str] = {}
 for _k, _v in FINALIZE_MANIFEST["focus_lock"].items():
     FLAT_FOCUS_INDEX[_k] = _v
+
 FLAT_NEG_BIAS_INDEX: dict[str, str] = {}
 for _k, _v in FINALIZE_MANIFEST["negative_bias"].items():
     FLAT_NEG_BIAS_INDEX[_k] = _v
 
-# Color science — nested two levels
 FLAT_COLOR_SCIENCE_INDEX: dict[str, str] = {}
 for _cat in COLOR_SCIENCE_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_COLOR_SCIENCE_INDEX[_k] = _v
 
-# Optics — nested two levels
 FLAT_OPTICS_INDEX: dict[str, str] = {}
 for _cat in OPTICAL_ABERRATION_MANIFEST.values():
     for _k, _v in _cat.items():
         FLAT_OPTICS_INDEX[_k] = _v
 
-# Meteorology — nested two levels
 FLAT_METEOROLOGY_INDEX: dict[str, str] = {}
 for _cat in METEOROLOGY_MANIFEST.values():
     for _k, _v in _cat.items():
@@ -1552,7 +1370,6 @@ COLOR_COMPLETIONS       = list(FLAT_COLOR_SCIENCE_INDEX.keys())
 OPTICS_COMPLETIONS      = list(FLAT_OPTICS_INDEX.keys())
 METEOROLOGY_COMPLETIONS = list(FLAT_METEOROLOGY_INDEX.keys())
 
-# Shared small sets reused across many prompts
 BOOL_COMPLETIONS        = ["TRUE", "FALSE"]
 LEVEL_COMPLETIONS       = ["HIGH", "MEDIUM", "LOW", "ULTRA", "OFF"]
 FIDELITY_COMPLETIONS    = ["HIGH", "MEDIUM", "LOW", "ULTRA", "EXTREME"]
@@ -1560,49 +1377,33 @@ LOCK_COMPLETIONS        = ["MAXIMUM_LOCK", "HIGH_LOCK", "MEDIUM_LOCK", "LOW_LOCK
 PANEL_COUNT_COMPLETIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
 UNALTERABLE_COMPLETIONS = [
-    "EXACT_FACIAL_ID_GEOMETRY",
-    "TRUE_ORBITAL_BONE_SPACING",
-    "UNFILTERED_LIP_PROPORTIONS",
-    "RAW_JAWLINE_ANGLE",
-    "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
-    "EXACT_BODY_PROPORTIONS",
-    "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
-    "NATURAL_SKIN_TONE_UNSHIFTED",
-    "ORIGINAL_SCAR_TATTOO_MARK_GEOMETRY",
-    "AUTHENTIC_NASOLABIAL_DEPTH",
-
+    "EXACT_FACIAL_ID_GEOMETRY", "TRUE_ORBITAL_BONE_SPACING",
+    "UNFILTERED_LIP_PROPORTIONS", "RAW_JAWLINE_ANGLE",
+    "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS", "EXACT_BODY_PROPORTIONS",
+    "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION", "NATURAL_EAR_GEOMETRY",
+    "AUTHENTIC_NASAL_BRIDGE_ANGLE", "UNMODIFIED_BROW_RIDGE_DEPTH",
+    "NATURAL_SKIN_TONE_UNSHIFTED", "ORIGINAL_SCAR_TATTOO_MARK_GEOMETRY",
+    "AUTHENTIC_NASOLABIAL_DEPTH", "TRUE_PHILTRUM_PROPORTION",
+    "UNALTERED_CLAVICLE_STRUCTURE", "AUTHENTIC_KNUCKLE_AND_HAND_GEOMETRY",
+    "RAW_UNDER_EYE_TISSUE_DEPTH", "ORIGINAL_HAIRLINE_POSITION",
+    "UNMODIFIED_NOSTRIL_GEOMETRY", "EXACT_IRIS_COLOUR_UNSHIFTED",
 ]
 
 INHIBIT_COMPLETIONS = [
-    "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
-    "FACIAL_BALANCING",
-    "POSE_MODIFICATIONS",
-
-    "SYMMETRY_MODIFICATIONS",
-    "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
-    "AI_BEAUTIFICATION",
-    "FREQUENCY_SEPARATION_RETOUCHING",
-    "DODGE_AND_BURN_DIGITAL",
-    "LUT_GRADE_OVERLAYS",
-
-    "NOISE_REDUCTION_SMOOTHING",
-    "HAIR_FLYAWAY_REMOVAL",
-    "BODY_PROPORTION_LIQUIFY",
-
-    "SCAR_OR_TATTOO_REMOVAL",
-    "SKIN_TONE_NORMALISATION",
-
-    "EYE_SIZE_ENLARGEMENT",
-    "JAW_SLIMMING",
-    "NOSE_NARROWING",
-    "BROW_LIFTING",
-    "LIP_AUGMENTATION_FILTER", 
-
-    "CONTENT_AWARE_FILL",
-    "AI_UPSCALING_ARTEFACT",
+    "AUTOMATIC_SKIN-SMOOTHING_FILTERS", "FACIAL_BALANCING",
+    "POSE_MODIFICATIONS", "CAMERA_ANGLE_MODIFICATIONS",
+    "SYMMETRY_MODIFICATIONS", "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
+    "AI_BEAUTIFICATION", "FREQUENCY_SEPARATION_RETOUCHING",
+    "DODGE_AND_BURN_DIGITAL", "LUT_GRADE_OVERLAYS",
+    "BACKGROUND_REPLACEMENT", "NOISE_REDUCTION_SMOOTHING",
+    "HAIR_FLYAWAY_REMOVAL", "BODY_PROPORTION_LIQUIFY",
+    "TEETH_WHITENING", "IRIS_BRIGHTENING", "SCAR_OR_TATTOO_REMOVAL",
+    "SKIN_TONE_NORMALISATION", "EXPRESSION_AUGMENTATION",
+    "EYE_SIZE_ENLARGEMENT", "JAW_SLIMMING", "NOSE_NARROWING",
+    "BROW_LIFTING", "LIP_AUGMENTATION_FILTER", "BODY_HAIR_REMOVAL",
+    "WATERMARK_INJECTION", "CONTENT_AWARE_FILL", "AI_UPSCALING_ARTEFACT",
 ]
 
-# Skin topology — standalone completion list
 TOPO_COMPLETIONS = [
     "unfiltered_hyper_realistic_dermal_detail",
     "high_magnification_sebaceous_follicles",
@@ -1620,7 +1421,6 @@ TOPO_COMPLETIONS = [
     "mature_skin_deep_structural_fold",
 ]
 
-# Shutter / sync — standalone completion list
 SHUTTER_COMPLETIONS = [
     "flash_sync_1_60_standard", "flash_sync_1_125_standard",
     "flash_sync_1_250_hss", "flash_sync_1_500_hss_full_kill",
