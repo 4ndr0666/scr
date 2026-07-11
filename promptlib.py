@@ -840,24 +840,24 @@ WARDROBE_MANIFEST = {
     "cream_knit_sweater_oversized":                 "Heavy texture, opaque, off-shoulder slip potential",
     # ── Personal / Colors ──────────────────────────────────────────────────────────
     "change_the_color_to_beige":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_brownish":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_drab":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_brownish":                 "Keeping the same exact outfit just another color",
+    "change_the_color_to_drab":                     "Keeping the same exact outfit just another color",
     "change_the_color_to_khaki":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_biscuit":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_bronze":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_biscuit":                  "Keeping the same exact outfit just another color",
+    "change_the_color_to_bronze":                   "Keeping the same exact outfit just another color",
     "change_the_color_to_brown":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_buff":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_buff":                     "Keeping the same exact outfit just another color",
     "change_the_color_to_cream":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_ecru":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_gold":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_natural":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_ecru":                     "Keeping the same exact outfit just another color",
+    "change_the_color_to_gold":                     "Keeping the same exact outfit just another color",
+    "change_the_color_to_natural":                  "Keeping the same exact outfit just another color",
     "change_the_color_to_olive":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_suntan":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_suntan":                   "Keeping the same exact outfit just another color",
     "change_the_color_to_umber":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_leather-colored":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_olive-brown":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_leather-colored":          "Keeping the same exact outfit just another color",
+    "change_the_color_to_olive-brown":              "Keeping the same exact outfit just another color",
     "change_the_color_to_tawny":                    "Keeping the same exact outfit just another color",
-    "change_the_color_to_yellowish":                    "Keeping the same exact outfit just another color",
+    "change_the_color_to_yellowish":                "Keeping the same exact outfit just another color",
     # ── Black / Dark ───────────────────────────────────────────────────────────
     "black_sheer_organza_blouse_open":              "Fully unbuttoned, ultra-sheer black, dark transparency",
     "black_bodycon_bandage_dress":                  "High tension, zero drape, contouring fabric physics",
@@ -1275,6 +1275,69 @@ MATERIAL_MANIFEST = {
 }
 
 # ==============================================================================
+# FINALIZE / QUALITY MANIFEST (RESTORED UNIT)
+# ==============================================================================
+FINALIZE_MANIFEST = {
+    "focus_lock": {
+        "micro_contrast_cloth_skin_text":   "Max micro-contrast on cloth weave, skin grain, text",
+        "eyes_single_point_af_priority":    "Eye AF priority — single point, subject eyes only",
+        "full_scene_deep_f8_hyperfocal":    "f/8 deep focus — environment and subject sharp",
+        "fabric_texture_skin_soft":         "Fabric texture plane priority — skin slightly soft",
+        "selective_midground_only":         "Only midground subject sharp — fore and back soft",
+        "macro_skin_pore_razor":            "Razor-sharp macro — individual pore and follicle detail",
+        "lips_and_teeth_priority":          "Lip texture and tooth surface as primary focus plane",
+        "hands_and_fingers_priority":       "Hands in focus — knuckle texture, nail, vein detail",
+        "hair_strand_individual_priority":  "Individual hair strand sharpness at max magnification",
+        "background_soft_subject_sharp":    "Classic portrait — max separation, subject only sharp",
+        "environmental_context_priority":   "Background readable and sharp, subject moderately soft",
+        "water_droplet_surface_priority":   "Droplets on skin/glass as focus plane, subject behind",
+        "tattoo_linework_surface_priority": "Tattoo ink edge as focus surface — skin texture secondary",
+        "razor_sharp_sweatbeads_texture":   "razor-sharp focus on glistening sweatbeads and textured skin, depth showing how light wraps around body contours",
+    },
+    "negative_bias": {
+        "STUDIO_SOFTBOX_LIGHTING":          "Reject flat beauty softbox — want harsh flash only",
+        "BEAUTY_FILTER":                    "Reject any digital beauty overlay",
+        "AIRBRUSHED_SKIN":                  "Reject frequency-separation or digital retouching",
+        "PERFECT_FACIAL_SYMMETRY":          "Reject AI symmetry correction",
+        "DIGITAL_3D_RENDER":                "Reject CGI or rendered output",
+        "OPAQUE_FABRIC_PROCESSING":         "Reject solid fabric — require physics-based transparency",
+        "CLEAN_MINIMALIST_ARCHITECTURE":    "Reject styled interior — want raw industrial",
+        "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK": "Reject commercial neutral look",
+        "HAPPY_EXPRESSIONS":                "Reject positive expression — want detached or neutral",
+        "IDENTITY_SHIFTING":                "Reject any facial modification from reference",
+        "DAYLIGHT":                         "Reject natural daylight — want flash-dominated",
+        "INSTAGRAM_GRADE":                  "Reject any social media colour grade",
+        "VSCO_LUT":                         "Reject VSCO preset colour influence",
+        "HDR_TONE_MAPPING":                 "Reject HDR or tone-mapping artefacts",
+        "LENS_FLARE_OVERLAY":               "Reject added lens flare — flash hard, no haze",
+        "VIGNETTE_FILTER":                  "Reject post-production vignette overlay",
+        "SYMMETRY_MODIFICATIONS":           "Reject pose or body symmetry corrections",
+        "POSE_MODIFICATIONS":               "Reject AI pose alteration from input reference",
+        "CAMERA_ANGLE_MODIFICATIONS":       "Reject auto camera angle adjustment",
+        "COLOUR_GRADING_WARMTH":            "Reject warm colour grade — preserve flash neutrality",
+        "NOISE_REDUCTION":                  "Reject noise reduction — preserve grain structure",
+        "SHARPENING_OVERLAY":               "Reject unsharp mask or radius sharpening — use native",
+        "BACKGROUND_REPLACEMENT":           "Reject AI background swap — keep captured environment",
+        "HAIR_CLEANUP_FLYAWAY":             "Reject hair retouching — all stray strands must remain",
+        "BODY_PROPORTION_ALTERATION":       "Reject any liquify or warp of body proportions",
+        "TATTOO_REMOVAL_OR_ADDITION":       "Reject any tattoo modification from reference",
+        "EYE_ENHANCEMENT_BRIGHTENING":      "Reject iris brightening or catchlight injection",
+        "SMILE_INJECTION":                  "Reject any AI smile or expression augmentation",
+        "DEPTH_OF_FIELD_SIMULATION":        "Reject AI lens blur — use only optical DOF data",
+        "WATERMARK_OR_CREDIT_OVERLAY":      "Reject any platform watermark in output",
+        "CONTENT_AWARE_OBJECT_REMOVAL":     "Reject environment cleanup — keep all scene elements",
+        "FACE_SWAPPING":                    "no face swapping",
+        "FACE_AVERAGING":                   "no face averaging",
+        "IDENTITY_DRIFT":                   "no identity drift",
+        "BODY_DRIFT":                       "no body drift",
+        "BODY_AVERAGING":                   "no body averaging",
+        "CLEAN_MINIMALIST_SPACES":          "no clean minimalist spaces",
+        "PERFECT_POSTURE":                  "no perfect posture",
+        "LED_AESTHETICS":                   "no LED aesthetics",
+    },
+}
+
+# ==============================================================================
 # COLOR SCIENCE MANIFEST
 # ==============================================================================
 COLOR_SCIENCE_MANIFEST = {
@@ -1460,7 +1523,7 @@ FLAT_COLOR_SCIENCE_INDEX = _flatten(COLOR_SCIENCE_MANIFEST, 2)
 FLAT_OPTICS_INDEX        = _flatten(OPTICAL_ABERRATION_MANIFEST, 2)
 FLAT_METEOROLOGY_INDEX   = _flatten(METEOROLOGY_MANIFEST, 2)
 
-# Ray Tracing
+# Ray Tracing (Split scopes to prevent cross-pollination)
 FLAT_RAY_SOURCE_INDEX    = _flatten({"ls": RAY_TRACING_MANIFEST["light_sources"]}, 2)
 FLAT_RAY_COORD_INDEX     = _flatten({"co": RAY_TRACING_MANIFEST["coordinates"]}, 2)
 FLAT_RAY_ANGLE_INDEX     = _flatten({"ba": RAY_TRACING_MANIFEST["beam_angles"]}, 2)
@@ -1495,6 +1558,8 @@ NEG_BIAS_COMPLETIONS    = list(FLAT_NEG_BIAS_INDEX.keys())
 COLOR_COMPLETIONS       = list(FLAT_COLOR_SCIENCE_INDEX.keys())
 OPTICS_COMPLETIONS      = list(FLAT_OPTICS_INDEX.keys())
 METEOROLOGY_COMPLETIONS = list(FLAT_METEOROLOGY_INDEX.keys())
+
+# Split Ray Tracing Scopes
 RAY_SOURCE_COMPLETIONS    = list(FLAT_RAY_SOURCE_INDEX.keys())
 RAY_COORD_COMPLETIONS     = list(FLAT_RAY_COORD_INDEX.keys())
 RAY_ANGLE_COMPLETIONS     = list(FLAT_RAY_ANGLE_INDEX.keys())
@@ -1600,6 +1665,3 @@ SHUTTER_COMPLETIONS = [
     "flash_sync_1_8000_leaf_shutter", "rear_curtain_sync_motion_trail",
     "multi_flash_stroboscopic_freeze",
 ]
-
-
-
