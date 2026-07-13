@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀 | HDL PHOTOMETRY VECTOR ENGINE V6</title>
+    <style>
+        :root {
+            --cyan:   #00ffcc;
+            --magenta:#ff0055;
+            --amber:  #ffaa00;
+            --violet: #aa55ff;
+            --glass-bg:        rgba(9, 9, 14, 0.72);
+            --glass-border:    rgba(0, 255, 204, 0.22);
+            --glass-highlight: rgba(0, 255, 204, 0.45);
+            --text-main: #e2e8f0;
+            --text-dim:  #7a8fa8;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0; overflow: hidden;
+            background: radial-gradient(circle at 40% 50%, #0d0d12 0%, #020203 100%);
+            color: var(--text-main);
+            font-family: 'Courier New', Courier, monospace;
+            display: flex; height: 100vh;
+            user-select: none;
+        }
+        #viewport { flex-grow: 1; position: relative; cursor: crosshair; }
+
+        /* ── PANEL ─────────────────────────────────────────────────── */
+        .glass-panel {
+            position: absolute; right: 16px; top: 16px; bottom: 16px;
+            width: 500px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid var(--glass-highlight);
+            border-left: 1px solid var(--glass-highlight);
+            box-shadow: 0 12px 48px rgba(0,0,0,0.95), inset 0 0 24px rgba(0,255,204,0.04);
+            border-radius: 14px;
+            display: flex; flex-direction: column;
+            padding: 16px 16px 12px;
+            z-index: 10;
+            overflow: hidden;
+        }
+        .panel-scroll {
+            overflow-y: auto; overflow-x: hidden;
+            flex-grow: 1;
+            padding-right: 4px;
+        }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+        /* ── TYPOGRAPHY ────────────────────────────────────────────── */
+        .glyph-header {
+            font-size: 13px; text-align: center; margin-bottom: 10px;
+            font-weight: bold; color: var(--cyan); letter-spacing: 2px;
+            text-shadow: 0 0 14px rgba(0,255,204,0.5);
+        }
+        h3 {
+            margin: 10px 0 8px; text-transform: uppercase; font-size: 10px;
+            letter-spacing: 1.5px; color: var(--cyan);
+            border-bottom: 1px solid var(--glass-border); padding-bottom: 5px;
+            text-shadow: 0 0 8px rgba(0,255,204,0.25);
+        }
+        h3.amber  { color: var(--amber);  border-color: rgba(255,170,0,0.3);
+                    text-shadow: 0 0 8px rgba(255,170,0,0.3); }
+        h3.violet { color: var(--violet); border-color: rgba(170,85,255,0.3);
+                    text-shadow: 0 0 8px rgba(170,85,255,0.3); }
+
+        /* ── INSTRUCTIONS ──────────────────────────────────────────── */
+        .instructions {
+            font-size: 9px; color: var(--magenta); margin-bottom: 10px;
+            line-height: 1.6; background: rgba(255,0,85,0.04);
+            padding: 8px 10px; border: 1px solid rgba(255,0,85,0.25);
+            border-radius: 6px; text-shadow: 0 0 6px rgba(255,0,85,0.3);
+        }
+
+        /* ── CONTROLS ──────────────────────────────────────────────── */
+        .control-group { margin-bottom: 8px; }
+        .control-group label {
+            display: flex; justify-content: space-between;
+            font-size: 9px; margin-bottom: 3px; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .control-group label .val { font-weight: bold; }
+        .val-cyan   { color: var(--cyan)   !important; }
+        .val-amber  { color: var(--amber)  !important; }
+        .val-violet { color: var(--violet) !important; }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 3px; cursor: pointer; background: rgba(255,255,255,0.08);
+            border-radius: 2px;
+        }
+        input[type=range].cyan-track::-webkit-slider-thumb {
+            height: 11px; width: 11px; border-radius: 50%; background: var(--cyan);
+            cursor: pointer; -webkit-appearance: none; margin-top: -4px;
+            box-shadow: 0 0 7px var(--cyan);
+        }
+        input[type=range].amber-track::-webkit-slider-thumb {
+            height: 11px; width: 11px; border-radius: 50%; background: var(--amber);
+            cursor: pointer; -webkit-appearance: none; margin-top: -4px;
+            box-shadow: 0 0 7px var(--amber);
+        }
+        input[type=range].violet-track::-webkit-slider-thumb {
+            height: 11px; width: 11px; border-radius: 50%; background: var(--violet);
+            cursor: pointer; -webkit-appearance: none; margin-top: -4px;
+            box-shadow: 0 0 7px var(--violet);
+        }
+
+        .row2 { display: flex; gap: 10px; }
+        .row2 .control-group { flex: 1; }
+        .row3 { display: flex; gap: 8px; }
+        .row3 .control-group { flex: 1; }
+
+        /* ── BUTTONS ───────────────────────────────────────────────── */
+        .grid-btn { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; margin-bottom: 8px; }
+        button {
+            background: rgba(0,255,204,0.05); color: var(--cyan);
+            border: 1px solid var(--glass-border); padding: 5px 4px;
+            cursor: pointer; text-transform: uppercase; font-size: 8px;
+            border-radius: 4px; transition: all 0.15s ease; letter-spacing: 0.5px;
+            font-family: inherit;
+        }
+        button:hover { background: var(--cyan); color: #000; box-shadow: 0 0 12px rgba(0,255,204,0.5); }
+        .btn-amber  { border-color: rgba(255,170,0,0.4); color: var(--amber); }
+        .btn-amber:hover  { background: var(--amber); color: #000; box-shadow: 0 0 12px rgba(255,170,0,0.5); }
+        .btn-violet { border-color: rgba(170,85,255,0.4); color: var(--violet); }
+        .btn-violet:hover { background: var(--violet); color: #000; box-shadow: 0 0 12px rgba(170,85,255,0.5); }
+        .btn-magenta { border-color: rgba(255,0,85,0.4); color: var(--magenta); width:100%; margin-bottom:6px;}
+        .btn-magenta:hover { background: var(--magenta); color: #fff; }
+
+        /* ── LIGHT TOGGLE ──────────────────────────────────────────── */
+        .light-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .light-header h3 { margin: 0; border: none; padding: 0; }
+        .toggle-btn {
+            font-size: 8px; padding: 3px 8px; border-radius: 10px;
+        }
+        .section-collapse { overflow: hidden; transition: max-height 0.3s ease; }
+
+        /* ── CT SWATCH ─────────────────────────────────────────────── */
+        .ct-swatch {
+            display: inline-block; width: 10px; height: 10px;
+            border-radius: 50%; vertical-align: middle; margin-left: 4px;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: background 0.2s;
+        }
+
+        /* ── OUTPUT ────────────────────────────────────────────────── */
+        .output-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 6px; margin-bottom: 4px;
+            border-bottom: 1px solid var(--glass-border); padding-bottom: 5px;
+        }
+        .output-header h3 { border: none; margin: 0; padding: 0; }
+        #json-output {
+            background: rgba(0,0,0,0.65); color: var(--text-main);
+            padding: 10px; border: 1px solid var(--glass-border); border-radius: 6px;
+            font-size: 9px; white-space: pre-wrap; word-wrap: break-word;
+            max-height: 260px; overflow-y: auto; margin-top: 0;
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.9);
+            flex-shrink: 0;
+        }
+
+        /* ── HIT READOUT ───────────────────────────────────────────── */
+        .hit-readout {
+            font-size: 9px; color: var(--text-dim);
+            background: rgba(0,255,204,0.03);
+            border: 1px solid rgba(0,255,204,0.1);
+            border-radius: 5px; padding: 7px 10px; margin-bottom: 8px;
+            line-height: 1.7;
+        }
+        .hit-readout span { color: var(--cyan); }
+        .hit-readout .zone { color: var(--amber); font-weight: bold; }
+
+        /* ── CROSSHAIR OVERLAY ─────────────────────────────────────── */
+        #crosshair {
+            position: absolute; pointer-events: none;
+            width: 20px; height: 20px;
+            border: 1px solid rgba(0,255,204,0.7);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            box-shadow: 0 0 6px rgba(0,255,204,0.4);
+        }
+        #crosshair::before, #crosshair::after {
+            content: ''; position: absolute;
+            background: rgba(0,255,204,0.7);
+        }
+        #crosshair::before { width: 1px; height: 8px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+        #crosshair::after  { width: 8px; height: 1px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+    </style>
+    <script type="importmap">
+    { "imports": {
+        "three":          "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/":  "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }}
+    </script>
+</head>
+<body>
+<div id="viewport">
+    <div id="crosshair"></div>
+</div>
+
+<div class="glass-panel" id="sidebar">
+    <div class="glyph-header">💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀 | PHOTOMETRY VECTOR ENGINE V6</div>
+
+    <div class="panel-scroll">
+
+        <div class="instructions">
+            <strong>[TARGETING PROTOCOL]</strong><br>
+            • <b>LEFT CLICK+DRAG</b> — Paint key light via surface reflection raycasting<br>
+            • <b>ALT+LEFT CLICK+DRAG</b> — Paint fill light independently<br>
+            • <b>RIGHT CLICK+DRAG</b> — Orbit camera 360°
+        </div>
+
+        <!-- HIT READOUT -->
+        <div class="hit-readout" id="hit-readout">
+            Awaiting surface contact… <br>
+            Zone: <span class="zone" id="hr-zone">—</span> &nbsp;
+            Hit: <span id="hr-hit">—</span><br>
+            Normal: <span id="hr-normal">—</span><br>
+            Reflect: <span id="hr-reflect">—</span>
+        </div>
+
+        <!-- VIEWPORT CAMERA -->
+        <h3>VIEWPORT CAMERA</h3>
+        <div class="row2">
+            <div class="control-group">
+                <label><span>Cam Yaw</span> <span class="val val-cyan" id="val-cam-yaw">0°</span></label>
+                <input class="cyan-track" type="range" id="slider-cam-yaw" min="-180" max="180" step="1" value="0">
+            </div>
+            <div class="control-group">
+                <label><span>Cam Pitch</span> <span class="val val-cyan" id="val-cam-pitch">10°</span></label>
+                <input class="cyan-track" type="range" id="slider-cam-pitch" min="-89" max="89" step="1" value="10">
+            </div>
+        </div>
+
+        <!-- PRESETS -->
+        <h3>STUDIO GAMUT PRESETS</h3>
+        <div class="grid-btn">
+            <button onclick="setPreset('key',0,4,30)">Front Flash</button>
+            <button onclick="setPreset('key',20,18,20)">Rembrandt R</button>
+            <button onclick="setPreset('key',-20,18,20)">Rembrandt L</button>
+            <button onclick="setPreset('key',0,28,10)">Butterfly</button>
+            <button onclick="setPreset('key',28,5,0)">Side Split</button>
+            <button onclick="setPreset('key',0,-12,12)">Under-Kicker</button>
+            <button onclick="setPreset('key',-22,22,-14)">Hair Light L</button>
+            <button onclick="setPreset('key',22,22,-14)">Hair Light R</button>
+            <button onclick="setPreset('key',0,32,0)">Top Down</button>
+        </div>
+        <button class="btn-magenta" onclick="resetAll()">↺ SYSTEM RESET</button>
+
+        <!-- KEY LIGHT -->
+        <div class="light-header">
+            <h3 class="amber">KEY LIGHT — ORIGIN VECTORS</h3>
+            <button class="toggle-btn btn-amber" onclick="toggleSection('key-section',this)">HIDE</button>
+        </div>
+        <div class="section-collapse" id="key-section" style="max-height:500px">
+            <div class="row3">
+                <div class="control-group">
+                    <label><span>X Axis</span> <span class="val val-amber" id="val-kx">0.0</span></label>
+                    <input class="amber-track" type="range" id="slider-kx" min="-50" max="50" step="0.5" value="0">
+                </div>
+                <div class="control-group">
+                    <label><span>Y Axis</span> <span class="val val-amber" id="val-ky">15.0</span></label>
+                    <input class="amber-track" type="range" id="slider-ky" min="-50" max="50" step="0.5" value="15">
+                </div>
+                <div class="control-group">
+                    <label><span>Z Axis</span> <span class="val val-amber" id="val-kz">30.0</span></label>
+                    <input class="amber-track" type="range" id="slider-kz" min="-50" max="50" step="0.5" value="30">
+                </div>
+            </div>
+            <div class="row2">
+                <div class="control-group">
+                    <label><span>Azimuth</span> <span class="val val-amber" id="val-kazi">0°</span></label>
+                    <input class="amber-track" type="range" id="slider-kazi" min="-180" max="180" step="1" value="0">
+                </div>
+                <div class="control-group">
+                    <label><span>Elevation</span> <span class="val val-amber" id="val-kelev">27°</span></label>
+                    <input class="amber-track" type="range" id="slider-kelev" min="-89" max="89" step="1" value="27">
+                </div>
+                <div class="control-group">
+                    <label><span>Radius</span> <span class="val val-amber" id="val-kdist">34</span></label>
+                    <input class="amber-track" type="range" id="slider-kdist" min="5" max="80" step="1" value="34">
+                </div>
+            </div>
+            <div class="row2">
+                <div class="control-group">
+                    <label><span>Beam Cone</span> <span class="val val-amber" id="val-kangle">35°</span></label>
+                    <input class="amber-track" type="range" id="slider-kangle" min="3" max="90" step="1" value="35">
+                </div>
+                <div class="control-group">
+                    <label><span>Penumbra</span> <span class="val val-amber" id="val-kpen">30%</span></label>
+                    <input class="amber-track" type="range" id="slider-kpen" min="0" max="100" step="1" value="30">
+                </div>
+                <div class="control-group">
+                    <label><span>Intensity</span> <span class="val val-amber" id="val-kint">100%</span></label>
+                    <input class="amber-track" type="range" id="slider-kint" min="0" max="200" step="5" value="100">
+                </div>
+            </div>
+            <div class="control-group">
+                <label>
+                    <span>Color Temp (K) <span class="ct-swatch" id="key-swatch"></span></span>
+                    <span class="val val-amber" id="val-kct">5500K</span>
+                </label>
+                <input class="amber-track" type="range" id="slider-kct" min="1800" max="10000" step="100" value="5500">
+            </div>
+        </div>
+
+        <!-- FILL LIGHT -->
+        <div class="light-header">
+            <h3 class="violet">FILL LIGHT — ORIGIN VECTORS</h3>
+            <button class="toggle-btn btn-violet" onclick="toggleSection('fill-section',this)">HIDE</button>
+        </div>
+        <div class="section-collapse" id="fill-section" style="max-height:500px">
+            <div class="row3">
+                <div class="control-group">
+                    <label><span>X Axis</span> <span class="val val-violet" id="val-fx">-20.0</span></label>
+                    <input class="violet-track" type="range" id="slider-fx" min="-50" max="50" step="0.5" value="-20">
+                </div>
+                <div class="control-group">
+                    <label><span>Y Axis</span> <span class="val val-violet" id="val-fy">6.0</span></label>
+                    <input class="violet-track" type="range" id="slider-fy" min="-50" max="50" step="0.5" value="6">
+                </div>
+                <div class="control-group">
+                    <label><span>Z Axis</span> <span class="val val-violet" id="val-fz">15.0</span></label>
+                    <input class="violet-track" type="range" id="slider-fz" min="-50" max="50" step="0.5" value="15">
+                </div>
+            </div>
+            <div class="row2">
+                <div class="control-group">
+                    <label><span>Azimuth</span> <span class="val val-violet" id="val-fazi">-53°</span></label>
+                    <input class="violet-track" type="range" id="slider-fazi" min="-180" max="180" step="1" value="-53">
+                </div>
+                <div class="control-group">
+                    <label><span>Elevation</span> <span class="val val-violet" id="val-felev">11°</span></label>
+                    <input class="violet-track" type="range" id="slider-felev" min="-89" max="89" step="1" value="11">
+                </div>
+                <div class="control-group">
+                    <label><span>Radius</span> <span class="val val-violet" id="val-fdist">26</span></label>
+                    <input class="violet-track" type="range" id="slider-fdist" min="5" max="80" step="1" value="26">
+                </div>
+            </div>
+            <div class="row2">
+                <div class="control-group">
+                    <label><span>Beam Cone</span> <span class="val val-violet" id="val-fangle">50°</span></label>
+                    <input class="violet-track" type="range" id="slider-fangle" min="3" max="90" step="1" value="50">
+                </div>
+                <div class="control-group">
+                    <label><span>Penumbra</span> <span class="val val-violet" id="val-fpen">60%</span></label>
+                    <input class="violet-track" type="range" id="slider-fpen" min="0" max="100" step="1" value="60">
+                </div>
+                <div class="control-group">
+                    <label><span>Intensity</span> <span class="val val-violet" id="val-fint">25%</span></label>
+                    <input class="violet-track" type="range" id="slider-fint" min="0" max="200" step="5" value="25">
+                </div>
+            </div>
+            <div class="control-group">
+                <label>
+                    <span>Color Temp (K) <span class="ct-swatch" id="fill-swatch"></span></span>
+                    <span class="val val-violet" id="val-fct">3200K</span>
+                </label>
+                <input class="violet-track" type="range" id="slider-fct" min="1800" max="10000" step="100" value="3200">
+            </div>
+        </div>
+
+        <!-- QUANTIZATION OUTPUT -->
+        <div class="output-header">
+            <h3>QUANTIZATION MATRIX — HDL EXPORT</h3>
+            <button class="btn-copy btn-amber" id="copy-btn" onclick="copyHDL()" style="font-size:9px;padding:4px 10px;">COPY HDL</button>
+        </div>
+        <pre id="json-output"></pre>
+
+    </div><!-- end panel-scroll -->
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ────────────────────────────────────────────────────────────────────────────
+// SCENE INIT
+// ────────────────────────────────────────────────────────────────────────────
+const container = document.getElementById('viewport');
+const scene     = new THREE.Scene();
+scene.fog       = new THREE.FogExp2(0x020203, 0.008);
+
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.shadowMap.enabled  = true;
+renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure= 0.9;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, -1, 0);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+
+// ────────────────────────────────────────────────────────────────────────────
+// CAMERA SPHERICAL CONTROL  (bug-fix: no double-add of controls.target)
+// ────────────────────────────────────────────────────────────────────────────
+const sCamYaw   = document.getElementById('slider-cam-yaw');
+const sCamPitch = document.getElementById('slider-cam-pitch');
+const camSph    = new THREE.Spherical(55, Math.PI / 2, 0);
+
+function updateCameraFromSliders() {
+    const yaw   = parseFloat(sCamYaw.value)   * THREE.MathUtils.DEG2RAD;
+    const pitch = parseFloat(sCamPitch.value) * THREE.MathUtils.DEG2RAD;
+    camSph.theta = yaw;
+    camSph.phi   = Math.max(0.001, Math.min(Math.PI - 0.001, Math.PI / 2 - pitch));
+    // Correct: set position from spherical relative to target, don't add again
+    camera.position.setFromSpherical(camSph).add(controls.target);
+    camera.lookAt(controls.target);
+    document.getElementById('val-cam-yaw').innerText   = sCamYaw.value   + '°';
+    document.getElementById('val-cam-pitch').innerText = sCamPitch.value + '°';
+}
+
+controls.addEventListener('change', () => {
+    const v = camera.position.clone().sub(controls.target);
+    camSph.setFromVector3(v);
+    sCamYaw.value   = (camSph.theta * THREE.MathUtils.RAD2DEG).toFixed(0);
+    sCamPitch.value = ((Math.PI / 2 - camSph.phi) * THREE.MathUtils.RAD2DEG).toFixed(0);
+    document.getElementById('val-cam-yaw').innerText   = sCamYaw.value   + '°';
+    document.getElementById('val-cam-pitch').innerText = sCamPitch.value + '°';
+});
+sCamYaw.addEventListener('input',   updateCameraFromSliders);
+sCamPitch.addEventListener('input', updateCameraFromSliders);
+updateCameraFromSliders();
+
+// ────────────────────────────────────────────────────────────────────────────
+// SUBJECT MESH — anatomical proxy with named zones for targeting readout
+// ────────────────────────────────────────────────────────────────────────────
+const subjectGroup = new THREE.Group();
+const mat = new THREE.MeshStandardMaterial({ color: 0x1e1e24, roughness: 0.4, metalness: 0.1 });
+
+const zoneMap = new Map(); // mesh → zone label
+
+function zone(mesh, name) { zoneMap.set(mesh, name); return mesh; }
+
+function addMesh(geo, pos, rot) {
+    const m = new THREE.Mesh(geo, mat);
+    if (pos) m.position.set(...pos);
+    if (rot) { m.rotation.x = rot[0] || 0; m.rotation.y = rot[1] || 0; m.rotation.z = rot[2] || 0; }
+    m.castShadow = true; m.receiveShadow = true;
+    subjectGroup.add(m); return m;
+}
+
+// Head / neck
+zone(addMesh(new THREE.SphereGeometry(2.5, 32, 32), [0,10,0]),        'HEAD');
+const nose = new THREE.Mesh(new THREE.ConeGeometry(0.4,1.2,16), mat);
+nose.rotation.x = Math.PI/2; nose.position.set(0,9.7,2.6);
+nose.castShadow = true; nose.receiveShadow = true; subjectGroup.add(nose);
+zone(nose, 'NOSE');
+zone(addMesh(new THREE.CylinderGeometry(1.2,1.4,2,32), [0,8,0]),      'NECK');
+// Torso
+const ut = addMesh(new THREE.CylinderGeometry(4.5,3.8,6,32), [0,4,0]);
+ut.scale.set(1,1,0.55); zone(ut, 'UPPER_TORSO');
+const lt = addMesh(new THREE.CylinderGeometry(3.8,4.2,3,32), [0,-0.5,0]);
+lt.scale.set(0.9,1,0.6); zone(lt, 'LOWER_TORSO');
+// Shoulders / arms
+[-1,1].forEach(side => {
+    const sx = side * 5.2, ax = side * 5.8, sign = side;
+    zone(addMesh(new THREE.SphereGeometry(1.8,32,32), [sx,6,0]),       'SHOULDER');
+    const ua = addMesh(new THREE.CylinderGeometry(1.3,1.1,5,16), [ax,3.5,0]);
+    ua.rotation.z = sign*0.15; zone(ua, 'UPPER_ARM');
+    zone(addMesh(new THREE.SphereGeometry(1.1,16,16), [sign*6.2,1,0]), 'ELBOW');
+    const la = addMesh(new THREE.CylinderGeometry(1.1,0.8,5,16), [sign*6.5,-1.5,0]);
+    la.rotation.z = sign*0.1; zone(la, 'FOREARM');
+    zone(addMesh(new THREE.BoxGeometry(1.5,2.2,1), [sign*6.7,-4.8,0]),'HAND');
+});
+// Hips / legs
+[-1,1].forEach(side => {
+    const lx = side * 2.2;
+    zone(addMesh(new THREE.SphereGeometry(1.8,32,32), [lx,-2,0]),      'HIP');
+    zone(addMesh(new THREE.CylinderGeometry(1.8,1.4,6,16), [lx,-5,0]),'THIGH');
+    zone(addMesh(new THREE.SphereGeometry(1.4,16,16), [lx,-8,0]),      'KNEE');
+    zone(addMesh(new THREE.CylinderGeometry(1.4,1.0,6,16), [lx,-11,0]),'CALF');
+    zone(addMesh(new THREE.SphereGeometry(1,16,16), [lx,-14,0]),        'ANKLE');
+    zone(addMesh(new THREE.BoxGeometry(2.2,1.2,3.5), [lx,-14.6,1]),    'FOOT');
+});
+subjectGroup.children.forEach(c => { c.castShadow = true; c.receiveShadow = true; });
+scene.add(subjectGroup);
+
+// Floor grid
+const grid = new THREE.GridHelper(60, 60, 0x00ffcc, 0x111115);
+grid.material.opacity = 0.12; grid.material.transparent = true;
+grid.position.y = -15.2; scene.add(grid);
+
+// ────────────────────────────────────────────────────────────────────────────
+// LIGHTS
+// ────────────────────────────────────────────────────────────────────────────
+function makeSpot(color, intensity, pos, targetPos) {
+    const sl = new THREE.SpotLight(color, intensity);
+    sl.position.set(...pos);
+    sl.angle    = THREE.MathUtils.degToRad(35);
+    sl.penumbra = 0.3;
+    sl.decay    = 2;
+    sl.castShadow = true;
+    sl.shadow.mapSize.width = sl.shadow.mapSize.height = 2048;
+    sl.target.position.set(...targetPos);
+    scene.add(sl); scene.add(sl.target);
+    return sl;
+}
+
+const keyLight  = makeSpot(0xfff0d0, 2500, [0,15,30],   [0,4,0]);
+const fillLight = makeSpot(0xc0aaff,  200, [-20,6,15],  [0,4,0]);
+const keyHelper  = new THREE.SpotLightHelper(keyLight,  0xffaa00);
+const fillHelper = new THREE.SpotLightHelper(fillLight, 0xaa55ff);
+scene.add(keyHelper); scene.add(fillHelper);
+scene.add(new THREE.AmbientLight(0xffffff, 0.05));
+
+// ────────────────────────────────────────────────────────────────────────────
+// RAY VISUALISERS — line from light origin to target + normal arrow
+// ────────────────────────────────────────────────────────────────────────────
+function makeRayLine(color) {
+    const geo  = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const mat2 = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.6 });
+    const line = new THREE.Line(geo, mat2);
+    scene.add(line); return line;
+}
+function makeArrow(color) {
+    const arr = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(), 4, color, 1.2, 0.6);
+    scene.add(arr); return arr;
+}
+
+const keyRay      = makeRayLine(0xffaa00);
+const fillRay     = makeRayLine(0xaa55ff);
+const normalArrow = makeArrow(0x00ffcc);
+const reflectArrow= makeArrow(0xff0055);
+normalArrow.visible  = false;
+reflectArrow.visible = false;
+
+function updateRayLines() {
+    const kp = [keyLight.position,   keyLight.target.position];
+    const fp = [fillLight.position, fillLight.target.position];
+    keyRay.geometry.setFromPoints(kp);
+    fillRay.geometry.setFromPoints(fp);
+    keyRay.geometry.attributes.position.needsUpdate  = true;
+    fillRay.geometry.attributes.position.needsUpdate = true;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// COLOR TEMPERATURE → THREE.Color
+// ────────────────────────────────────────────────────────────────────────────
+function kelvinToRGB(K) {
+    // Tanner Helland algorithm
+    K = Math.max(1000, Math.min(40000, K)) / 100;
+    let r, g, b;
+    r = K <= 66 ? 255 : 329.698727446 * Math.pow(K - 60, -0.1332047592);
+    if (K <= 66) g = 99.4708025861 * Math.log(K) - 161.1195681661;
+    else         g = 288.1221695283 * Math.pow(K - 60, -0.0755148492);
+    b = K >= 66 ? 255 : (K <= 19 ? 0 : 138.5177312231 * Math.log(K - 10) - 305.0447927307);
+    return new THREE.Color(
+        Math.max(0, Math.min(255, r)) / 255,
+        Math.max(0, Math.min(255, g)) / 255,
+        Math.max(0, Math.min(255, b)) / 255
+    );
+}
+function ctToHex(K) {
+    const c = kelvinToRGB(K);
+    return '#' + c.getHexString();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SLIDER ELEMENT REFS
+// ────────────────────────────────────────────────────────────────────────────
+const S = id => document.getElementById(id);
+const ids = {
+    kx:'slider-kx', ky:'slider-ky', kz:'slider-kz',
+    kazi:'slider-kazi', kelev:'slider-kelev', kdist:'slider-kdist',
+    kangle:'slider-kangle', kpen:'slider-kpen', kint:'slider-kint', kct:'slider-kct',
+    fx:'slider-fx', fy:'slider-fy', fz:'slider-fz',
+    fazi:'slider-fazi', felev:'slider-felev', fdist:'slider-fdist',
+    fangle:'slider-fangle', fpen:'slider-fpen', fint:'slider-fint', fct:'slider-fct',
+};
+const sliders = {};
+for (const [k,v] of Object.entries(ids)) sliders[k] = S(v);
+
+// Last raycaster hit data (for HDL export)
+let lastHit = null;
+
+// ────────────────────────────────────────────────────────────────────────────
+// FULL SPHERICAL ↔ CARTESIAN  (bug-fix: elevation fully drives Y)
+// ────────────────────────────────────────────────────────────────────────────
+function sphericalToXYZ(r, aziDeg, elevDeg, target) {
+    const azi  = aziDeg  * THREE.MathUtils.DEG2RAD;
+    const elev = elevDeg * THREE.MathUtils.DEG2RAD;
+    return {
+        x: target.x + r * Math.cos(elev) * Math.sin(azi),
+        y: target.y + r * Math.sin(elev),
+        z: target.z + r * Math.cos(elev) * Math.cos(azi),
+    };
+}
+
+function xyzToSpherical(pos, target) {
+    const dx = pos.x - target.x, dy = pos.y - target.y, dz = pos.z - target.z;
+    const r    = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    const azi  = Math.atan2(dx, dz) * THREE.MathUtils.RAD2DEG;
+    const elev = Math.asin(Math.max(-1, Math.min(1, dy / (r || 1)))) * THREE.MathUtils.RAD2DEG;
+    return { r, azi, elev };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SYNC FUNCTIONS
+// ────────────────────────────────────────────────────────────────────────────
+function syncCartesianToSpherical(prefix, light) {
+    const sph = xyzToSpherical(light.position, light.target.position);
+    sliders[prefix+'azi'].value  = sph.azi.toFixed(1);
+    sliders[prefix+'elev'].value = sph.elev.toFixed(1);
+    sliders[prefix+'dist'].value = sph.r.toFixed(1);
+}
+
+function applyCartesian(prefix, light) {
+    light.position.set(
+        parseFloat(sliders[prefix+'x'].value),
+        parseFloat(sliders[prefix+'y'].value),
+        parseFloat(sliders[prefix+'z'].value)
+    );
+    syncCartesianToSpherical(prefix, light);
+    updateUI();
+}
+
+function applySpherical(prefix, light) {
+    const r    = parseFloat(sliders[prefix+'dist'].value);
+    const azi  = parseFloat(sliders[prefix+'azi'].value);
+    const elev = parseFloat(sliders[prefix+'elev'].value);
+    const { x, y, z } = sphericalToXYZ(r, azi, elev, light.target.position);
+    light.position.set(x, y, z);
+    sliders[prefix+'x'].value = x.toFixed(2);
+    sliders[prefix+'y'].value = y.toFixed(2);
+    sliders[prefix+'z'].value = z.toFixed(2);
+    updateUI();
+}
+
+function syncLightParams(prefix, light) {
+    light.angle    = THREE.MathUtils.degToRad(parseFloat(sliders[prefix+'angle'].value));
+    light.penumbra = parseFloat(sliders[prefix+'pen'].value) / 100;
+    light.intensity= parseFloat(sliders[prefix+'int'].value) * 25;
+    const ct = parseFloat(sliders[prefix+'ct'].value);
+    light.color.copy(kelvinToRGB(ct));
+}
+
+function syncAllSlidersFromLight(prefix, light) {
+    sliders[prefix+'x'].value = light.position.x.toFixed(2);
+    sliders[prefix+'y'].value = light.position.y.toFixed(2);
+    sliders[prefix+'z'].value = light.position.z.toFixed(2);
+    syncCartesianToSpherical(prefix, light);
+    updateUI();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// EVENT WIRING
+// ────────────────────────────────────────────────────────────────────────────
+['kx','ky','kz'].forEach(k => sliders[k].addEventListener('input', () => applyCartesian('k', keyLight)));
+['kazi','kelev','kdist'].forEach(k => sliders[k].addEventListener('input', () => applySpherical('k', keyLight)));
+['kangle','kpen','kint','kct'].forEach(k => sliders[k].addEventListener('input', () => { syncLightParams('k', keyLight); updateUI(); }));
+
+['fx','fy','fz'].forEach(k => sliders[k].addEventListener('input', () => applyCartesian('f', fillLight)));
+['fazi','felev','fdist'].forEach(k => sliders[k].addEventListener('input', () => applySpherical('f', fillLight)));
+['fangle','fpen','fint','fct'].forEach(k => sliders[k].addEventListener('input', () => { syncLightParams('f', fillLight); updateUI(); }));
+
+// ────────────────────────────────────────────────────────────────────────────
+// RAYCASTING / LIGHTPAINT
+// ────────────────────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const crosshair = document.getElementById('crosshair');
+let isPainting = false, paintTarget = 'key';  // or 'fill'
+
+function paintLight(event) {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left)  / container.clientWidth)  * 2 - 1;
+    mouse.y = -((event.clientY - rect.top)  / container.clientHeight) * 2 + 1;
+
+    crosshair.style.left = (event.clientX - rect.left)  + 'px';
+    crosshair.style.top  = (event.clientY - rect.top)   + 'px';
+    crosshair.style.display = 'block';
+
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(subjectGroup.children);
+    if (!hits.length) return;
+
+    const hit    = hits[0];
+    const hitPt  = hit.point.clone();
+    const zoneName = zoneMap.get(hit.object) || 'BODY';
+
+    // Correct incident vector: from camera TOWARD surface
+    const incident = new THREE.Vector3().subVectors(hitPt, camera.position).normalize();
+    // World-space normal
+    const normalMat = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+    const hitNorm   = hit.face.normal.clone().applyMatrix3(normalMat).normalize();
+    // Physically correct reflection: reflect incident about normal
+    const reflVec   = incident.clone().reflect(hitNorm).normalize();
+
+    const light  = paintTarget === 'key' ? keyLight : fillLight;
+    const prefix = paintTarget === 'key' ? 'k'      : 'f';
+    const radius = parseFloat(sliders[prefix+'dist'].value);
+
+    // Place light along reflection vector
+    const lightPos = hitPt.clone().addScaledVector(reflVec, radius);
+    light.position.copy(lightPos);
+    light.target.position.copy(hitPt);
+    light.target.updateMatrixWorld();
+
+    // Store for export
+    lastHit = {
+        zone:    zoneName,
+        hitPt:   hitPt.clone(),
+        normal:  hitNorm.clone(),
+        reflect: reflVec.clone(),
+        dist:    radius,
+    };
+
+    // Visualise normal and reflection
+    normalArrow.position.copy(hitPt);
+    normalArrow.setDirection(hitNorm);
+    normalArrow.visible = true;
+
+    reflectArrow.position.copy(hitPt);
+    reflectArrow.setDirection(reflVec);
+    reflectArrow.visible = true;
+
+    // Update hit readout panel
+    S('hr-zone').innerText    = zoneName;
+    S('hr-hit').innerText     = `${hitPt.x.toFixed(2)}, ${hitPt.y.toFixed(2)}, ${hitPt.z.toFixed(2)}`;
+    S('hr-normal').innerText  = `${hitNorm.x.toFixed(3)}, ${hitNorm.y.toFixed(3)}, ${hitNorm.z.toFixed(3)}`;
+    S('hr-reflect').innerText = `${reflVec.x.toFixed(3)}, ${reflVec.y.toFixed(3)}, ${reflVec.z.toFixed(3)}`;
+
+    syncAllSlidersFromLight(prefix, light);
+}
+
+container.addEventListener('pointerdown', e => {
+    if (e.button === 0) {
+        isPainting  = true;
+        paintTarget = e.altKey ? 'fill' : 'key';
+        paintLight(e);
+    }
+});
+container.addEventListener('pointermove', e => { if (isPainting) paintLight(e); });
+window.addEventListener('pointerup',   () => { isPainting = false; crosshair.style.display = 'none'; });
+container.addEventListener('mouseleave',() => { crosshair.style.display = 'none'; });
+
+// ────────────────────────────────────────────────────────────────────────────
+// PRESETS
+// ────────────────────────────────────────────────────────────────────────────
+window.setPreset = function(prefix, x, y, z) {
+    const light = prefix === 'key' ? keyLight : fillLight;
+    light.position.set(x, y, z);
+    light.target.position.set(0, 4, 0);
+    light.target.updateMatrixWorld();
+    syncAllSlidersFromLight(prefix === 'key' ? 'k' : 'f', light);
+};
+
+window.resetAll = function() {
+    keyLight.position.set(0,15,30);  keyLight.target.position.set(0,4,0);
+    fillLight.position.set(-20,6,15); fillLight.target.position.set(0,4,0);
+    [keyLight, fillLight].forEach(l => l.target.updateMatrixWorld());
+
+    sliders.kangle.value = 35; sliders.kpen.value = 30;
+    sliders.kint.value   = 100; sliders.kct.value = 5500;
+    sliders.fangle.value = 50; sliders.fpen.value = 60;
+    sliders.fint.value   = 25; sliders.fct.value  = 3200;
+    sCamYaw.value = 0; sCamPitch.value = 10;
+
+    lastHit = null;
+    normalArrow.visible  = false;
+    reflectArrow.visible = false;
+    S('hr-zone').innerText   = '—';
+    S('hr-hit').innerText    = '—';
+    S('hr-normal').innerText = '—';
+    S('hr-reflect').innerText= '—';
+
+    syncLightParams('k', keyLight);
+    syncLightParams('f', fillLight);
+    syncAllSlidersFromLight('k', keyLight);
+    syncAllSlidersFromLight('f', fillLight);
+    updateCameraFromSliders();
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// SECTION TOGGLE
+// ────────────────────────────────────────────────────────────────────────────
+window.toggleSection = function(id, btn) {
+    const el = S(id);
+    const open = el.style.maxHeight !== '0px';
+    el.style.maxHeight = open ? '0px' : '500px';
+    btn.innerText = open ? 'SHOW' : 'HIDE';
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// CLIPBOARD
+// ────────────────────────────────────────────────────────────────────────────
+window.copyHDL = function() {
+    const text = S('json-output').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = S('copy-btn');
+        btn.innerText = '✓ COPIED';
+        btn.style.background = 'var(--amber)';
+        btn.style.color = '#000';
+        setTimeout(() => {
+            btn.innerText = 'COPY HDL';
+            btn.style.background = '';
+            btn.style.color = '';
+        }, 1600);
+    }).catch(e => console.error('Clipboard error:', e));
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// UPDATE UI — labels + CT swatches + HDL JSON output
+// ────────────────────────────────────────────────────────────────────────────
+function v(id)   { return S(id); }
+function fv(sid) { return parseFloat(sliders[sid].value); }
+
+function updateUI() {
+    // Key light labels
+    v('val-kx').innerText    = fv('kx').toFixed(1);
+    v('val-ky').innerText    = fv('ky').toFixed(1);
+    v('val-kz').innerText    = fv('kz').toFixed(1);
+    v('val-kazi').innerText  = fv('kazi').toFixed(0)  + '°';
+    v('val-kelev').innerText = fv('kelev').toFixed(0) + '°';
+    v('val-kdist').innerText = fv('kdist').toFixed(0);
+    v('val-kangle').innerText= fv('kangle').toFixed(0)+ '°';
+    v('val-kpen').innerText  = fv('kpen').toFixed(0)  + '%';
+    v('val-kint').innerText  = fv('kint').toFixed(0)  + '%';
+    const kct = fv('kct');
+    v('val-kct').innerText   = kct + 'K';
+    S('key-swatch').style.background = ctToHex(kct);
+
+    // Fill light labels
+    v('val-fx').innerText    = fv('fx').toFixed(1);
+    v('val-fy').innerText    = fv('fy').toFixed(1);
+    v('val-fz').innerText    = fv('fz').toFixed(1);
+    v('val-fazi').innerText  = fv('fazi').toFixed(0)  + '°';
+    v('val-felev').innerText = fv('felev').toFixed(0) + '°';
+    v('val-fdist').innerText = fv('fdist').toFixed(0);
+    v('val-fangle').innerText= fv('fangle').toFixed(0)+ '°';
+    v('val-fpen').innerText  = fv('fpen').toFixed(0)  + '%';
+    v('val-fint').innerText  = fv('fint').toFixed(0)  + '%';
+    const fct = fv('fct');
+    v('val-fct').innerText   = fct + 'K';
+    S('fill-swatch').style.background = ctToHex(fct);
+
+    // Light helpers
+    keyHelper.update();
+    fillHelper.update();
+
+    // Ray lines
+    updateRayLines();
+
+    // Build HDL schema for nano_banana
+    const kPos  = keyLight.position;
+    const kTgt  = keyLight.target.position;
+    const kDir  = new THREE.Vector3().subVectors(kTgt, kPos).normalize();
+    const fPos  = fillLight.position;
+    const fTgt  = fillLight.target.position;
+    const fDir  = new THREE.Vector3().subVectors(fTgt, fPos).normalize();
+
+    function vec3(v) { return `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`; }
+    function f2(n)   { return parseFloat(n).toFixed(2); }
+
+    const schema = {
+        "!ENV_RAY_TRACING_PHOTOMETRY": {
+            "SCHEMA_VERSION": "V6",
+            "COORDINATE_SPACE": "THREE_JS_RIGHT_HAND_Y_UP",
+            "TARGET_ANCHOR": vec3(new THREE.Vector3(0,4,0)),
+
+            "LIGHT_SOURCE_KEY": {
+                "TYPE":             "CONICAL_SPOTLIGHT",
+                "COLOR_TEMPERATURE_K": fv('kct'),
+                "ORIGIN_XYZ":       vec3(kPos),
+                "TARGET_XYZ":       vec3(kTgt),
+                "DIRECTION_VECTOR": vec3(kDir),
+                "AZIMUTH_DEG":      f2(fv('kazi')),
+                "ELEVATION_DEG":    f2(fv('kelev')),
+                "RADIUS_UNITS":     f2(fv('kdist')),
+                "BEAM_CONE_DEG":    f2(fv('kangle')),
+                "PENUMBRA_PCT":     f2(fv('kpen')),
+                "INTENSITY_PCT":    f2(fv('kint')),
+                "FALLOFF_MODEL":    "PHYSICAL_INVERSE_SQUARE_DECAY_2",
+            },
+
+            "LIGHT_SOURCE_FILL": {
+                "TYPE":             "CONICAL_SPOTLIGHT",
+                "COLOR_TEMPERATURE_K": fv('fct'),
+                "ORIGIN_XYZ":       vec3(fPos),
+                "TARGET_XYZ":       vec3(fTgt),
+                "DIRECTION_VECTOR": vec3(fDir),
+                "AZIMUTH_DEG":      f2(fv('fazi')),
+                "ELEVATION_DEG":    f2(fv('felev')),
+                "RADIUS_UNITS":     f2(fv('fdist')),
+                "BEAM_CONE_DEG":    f2(fv('fangle')),
+                "PENUMBRA_PCT":     f2(fv('fpen')),
+                "INTENSITY_PCT":    f2(fv('fint')),
+                "FALLOFF_MODEL":    "PHYSICAL_INVERSE_SQUARE_DECAY_2",
+            },
+
+            "SURFACE_INTERACTION": lastHit ? {
+                "ZONE_ID":             lastHit.zone,
+                "HIT_POINT_XYZ":       vec3(lastHit.hitPt),
+                "SURFACE_NORMAL_XYZ":  vec3(lastHit.normal),
+                "REFLECTION_VECTOR_XYZ": vec3(lastHit.reflect),
+                "LIGHT_DISTANCE_UNITS": f2(lastHit.dist),
+                "INCIDENCE_ANGLE_DEG":  f2(
+                    THREE.MathUtils.RAD2DEG *
+                    Math.acos(Math.max(-1, Math.min(1,
+                        lastHit.normal.dot(
+                            new THREE.Vector3().subVectors(kPos, lastHit.hitPt).normalize()
+                        )
+                    )))
+                ),
+            } : "AWAITING_SURFACE_CONTACT",
+
+            "PHOTONIC_VECTORS": {
+                "ENERGY_CONSERVATION_COMPLIANT": "TRUE",
+                "RIM_LIGHT_SCATTERING_PASS":     "TRUE",
+                "EPIDERMAL_TRANSLUCENCY_PASS":   "TRUE",
+                "THROUGH_FABRIC_DIFFUSE_BOUNCE": "TRUE",
+                "FALLOFF_PROFILE":               "AGGRESSIVE_INVERSE_SQUARE",
+                "BOUNCE_LIGHT_LOGIC":            "INFINITE_RECURSIVE_REFLECTION",
+            }
+        }
+    };
+
+    S('json-output').innerText = JSON.stringify(schema, null, 2);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// RENDER LOOP
+// ────────────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// Boot
+syncLightParams('k', keyLight);
+syncLightParams('f', fillLight);
+syncAllSlidersFromLight('k', keyLight);
+syncAllSlidersFromLight('f', fillLight);
+animate();
+</script>
+</body>
+</html>

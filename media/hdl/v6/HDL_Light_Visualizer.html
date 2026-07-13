@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀 | 3LECTRIC GLASS LIGHTPAINT V5</title>
+    <style>
+        :root {
+            --cyan: #00ffcc;
+            --magenta: #ff0055;
+            --glass-bg: rgba(9, 9, 14, 0.65);
+            --glass-border: rgba(0, 255, 204, 0.25);
+            --glass-highlight: rgba(0, 255, 204, 0.5);
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #111116 0%, #020203 100%);
+            color: var(--text-main);
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            height: 100vh;
+            user-select: none;
+        }
+
+        #viewport {
+            flex-grow: 1;
+            position: relative;
+            cursor: crosshair;
+        }
+
+        .glass-panel {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            bottom: 20px;
+            width: 480px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid var(--glass-highlight);
+            border-left: 1px solid var(--glass-highlight);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9), inset 0 0 20px rgba(0, 255, 204, 0.05);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        h2, h3 {
+            margin-top: 0;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 8px;
+            font-size: 13px;
+            color: var(--cyan);
+            letter-spacing: 1px;
+            text-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+        }
+        
+        h3 { margin-top: 10px; margin-bottom: 12px; }
+
+        .glyph-header {
+            font-size: 16px;
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: var(--cyan);
+        }
+
+        .instructions {
+            font-size: 10px;
+            color: var(--magenta);
+            margin-bottom: 15px;
+            line-height: 1.5;
+            background: rgba(255, 0, 85, 0.05);
+            padding: 10px;
+            border: 1px solid rgba(255, 0, 85, 0.3);
+            border-radius: 6px;
+            text-shadow: 0 0 8px rgba(255, 0, 85, 0.4);
+        }
+
+        .control-group { margin-bottom: 10px; }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            margin-bottom: 4px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+        .control-group span:last-child { color: var(--cyan); font-weight: bold; }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 3px; cursor: pointer; background: rgba(255,255,255,0.1); border-radius: 2px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 12px; width: 12px; border-radius: 50%; background: var(--cyan);
+            cursor: pointer; -webkit-appearance: none; margin-top: -4.5px; box-shadow: 0 0 8px var(--cyan);
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: rgba(0, 255, 204, 0.05); color: var(--cyan);
+            border: 1px solid var(--glass-border); padding: 6px;
+            cursor: pointer; text-transform: uppercase; font-size: 9px;
+            border-radius: 4px; transition: all 0.2s ease; letter-spacing: 0.5px;
+        }
+        button:hover { background: var(--cyan); color: #000; box-shadow: 0 0 15px rgba(0, 255, 204, 0.6); }
+        .btn-reset { border-color: var(--magenta); color: var(--magenta); }
+        .btn-reset:hover { background: var(--magenta); box-shadow: 0 0 15px rgba(255, 0, 85, 0.6); }
+
+        .slider-row { display: flex; gap: 12px; }
+        .slider-row .control-group { flex: 1; }
+
+        /* Output & Copy Area */
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 5px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 5px;
+        }
+        .output-header h3 {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin: 0;
+        }
+        .btn-copy {
+            background: rgba(0, 255, 204, 0.1);
+            font-size: 10px;
+            padding: 4px 8px;
+        }
+
+        #json-output {
+            background: rgba(0, 0, 0, 0.6); color: var(--text-main);
+            padding: 10px; border: 1px solid var(--glass-border); border-radius: 6px;
+            font-size: 10px; white-space: pre-wrap; word-wrap: break-word;
+            flex-grow: 1; overflow-y: auto; margin-top: 0;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="viewport"></div>
+
+    <div class="glass-panel" id="sidebar">
+        <div class="glyph-header">💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀</div>
+        
+        <div class="instructions">
+            <strong>[+] TARGETING PROTOCOL:</strong> <br>
+            • <b>LEFT CLICK + DRAG:</b> Paint the light reflection vector on the subject.<br>
+            • <b>RIGHT CLICK + DRAG:</b> Orbit the camera 360° (or use UI knobs).
+        </div>
+
+        <h3>VIEWPORT CAMERA</h3>
+        <div class="slider-row">
+            <div class="control-group">
+                <label><span>Cam Yaw (Orbit)</span> <span id="val-cam-yaw">0°</span></label>
+                <input type="range" id="slider-cam-yaw" min="-180" max="180" step="1" value="0">
+            </div>
+            <div class="control-group">
+                <label><span>Cam Pitch (Tilt)</span> <span id="val-cam-pitch">10°</span></label>
+                <input type="range" id="slider-cam-pitch" min="-89" max="89" step="1" value="10">
+            </div>
+        </div>
+
+        <h3>STUDIO GAMUT PRESETS</h3>
+        <div class="grid-container">
+            <button onclick="setPreset(0, 4, 30)">Front Flash</button>
+            <button onclick="setPreset(20, 15, 20)">Rembrandt (R)</button>
+            <button onclick="setPreset(-20, 15, 20)">Rembrandt (L)</button>
+            <button onclick="setPreset(0, 25, 15)">Butterfly</button>
+            <button onclick="setPreset(25, 5, 0)">Side Split</button>
+            <button onclick="setPreset(0, -15, 10)">Under-Kicker</button>
+            <button onclick="setPreset(-20, 20, -15)">Hair Light (L)</button>
+            <button onclick="setPreset(20, 20, -15)">Hair Light (R)</button>
+            <button onclick="setPreset(0, 30, 0)">Top Down</button>
+        </div>
+        <button class="btn-reset" onclick="resetAll()" style="width:100%; margin-bottom: 5px;">SYSTEM RESET</button>
+
+        <h3>PHOTOMETRY VECTORS</h3>
+        <div class="slider-row">
+            <div class="control-group">
+                <label><span>X-Axis</span> <span id="val-x">0.0</span></label>
+                <input type="range" id="slider-x" min="-50" max="50" step="0.5" value="0">
+            </div>
+            <div class="control-group">
+                <label><span>Y-Axis</span> <span id="val-y">15.0</span></label>
+                <input type="range" id="slider-y" min="-50" max="50" step="0.5" value="15">
+            </div>
+            <div class="control-group">
+                <label><span>Z-Axis</span> <span id="val-z">30.0</span></label>
+                <input type="range" id="slider-z" min="-50" max="50" step="0.5" value="30">
+            </div>
+        </div>
+
+        <div class="slider-row">
+            <div class="control-group">
+                <label><span>Azimuth</span> <span id="val-azi">0°</span></label>
+                <input type="range" id="slider-azi" min="-180" max="180" step="1" value="0">
+            </div>
+            <div class="control-group">
+                <label><span>Radius</span> <span id="val-dist">30</span></label>
+                <input type="range" id="slider-dist" min="5" max="80" step="1" value="30">
+            </div>
+        </div>
+
+        <h3>LUMI-CURVE OPTICS</h3>
+        <div class="slider-row">
+            <div class="control-group">
+                <label><span>Beam Dispersion</span> <span id="val-angle">35°</span></label>
+                <input type="range" id="slider-angle" min="5" max="90" step="1" value="35">
+            </div>
+            <div class="control-group">
+                <label><span>Luminous Yield</span> <span id="val-intensity">100%</span></label>
+                <input type="range" id="slider-intensity" min="10" max="200" step="5" value="100">
+            </div>
+        </div>
+
+        <div class="output-header">
+            <h3>QUANTIZATION MATRIX</h3>
+            <button class="btn-copy" id="copy-btn" onclick="copyHDL()">💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀</button>
+        </div>
+        <pre id="json-output"></pre>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- SCENE INITIALIZATION ---
+        const container = document.getElementById('viewport');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, -2, 0);
+        
+        // HARD-MAP MOUSE CONTROLS: Right-Click for Camera, Left-Click unmapped for Raycaster
+        controls.mouseButtons = {
+            LEFT: null,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE
+        };
+
+        // --- CAMERA SPHERICAL LOGIC ---
+        const sCamYaw = document.getElementById('slider-cam-yaw');
+        const sCamPitch = document.getElementById('slider-cam-pitch');
+        const camSpherical = new THREE.Spherical(55, Math.PI / 2, 0);
+
+        function updateCameraFromSliders() {
+            const yaw = parseFloat(sCamYaw.value) * THREE.MathUtils.DEG2RAD;
+            const pitch = parseFloat(sCamPitch.value) * THREE.MathUtils.DEG2RAD;
+            
+            camSpherical.theta = yaw;
+            camSpherical.phi = Math.PI / 2 - pitch;
+            // Prevent gimbal lock
+            camSpherical.phi = Math.max(0.001, Math.min(Math.PI - 0.001, camSpherical.phi));
+            
+            camera.position.setFromSpherical(camSpherical);
+            camera.position.add(controls.target);
+            camera.lookAt(controls.target);
+            
+            document.getElementById('val-cam-yaw').innerText = sCamYaw.value + '°';
+            document.getElementById('val-cam-pitch').innerText = sCamPitch.value + '°';
+        }
+
+        // Sync UI if user orbits via mouse
+        controls.addEventListener('change', () => {
+            camSpherical.setFromVector3(camera.position.clone().sub(controls.target));
+            sCamYaw.value = (camSpherical.theta * THREE.MathUtils.RAD2DEG).toFixed(0);
+            sCamPitch.value = ((Math.PI / 2 - camSpherical.phi) * THREE.MathUtils.RAD2DEG).toFixed(0);
+            document.getElementById('val-cam-yaw').innerText = sCamYaw.value + '°';
+            document.getElementById('val-cam-pitch').innerText = sCamPitch.value + '°';
+        });
+
+        sCamYaw.addEventListener('input', updateCameraFromSliders);
+        sCamPitch.addEventListener('input', updateCameraFromSliders);
+        
+        // Init Camera
+        updateCameraFromSliders();
+
+        // --- FULL ANATOMICAL PROXY GENERATION ---
+        const subjectGroup = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({ color: 0x1f1f24, roughness: 0.35, metalness: 0.15 });
+
+        function createMesh(geo, y, castShadow = true) {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = y;
+            mesh.castShadow = castShadow;
+            mesh.receiveShadow = true;
+            subjectGroup.add(mesh);
+            return mesh;
+        }
+
+        createMesh(new THREE.SphereGeometry(2.5, 32, 32), 10);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.2, 16), mat);
+        nose.rotation.x = Math.PI / 2; nose.position.set(0, 9.7, 2.6);
+        nose.castShadow = true; nose.receiveShadow = true; subjectGroup.add(nose);
+        
+        createMesh(new THREE.CylinderGeometry(1.2, 1.4, 2, 32), 8);
+        const upperTorso = createMesh(new THREE.CylinderGeometry(4.5, 3.8, 6, 32), 4);
+        upperTorso.scale.set(1, 1, 0.55);
+        const lowerTorso = createMesh(new THREE.CylinderGeometry(3.8, 4.2, 3, 32), -0.5);
+        lowerTorso.scale.set(0.9, 1, 0.6);
+
+        const armX = 5.8;
+        const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(1.8, 32, 32), mat); shoulderL.position.set(-5.2, 6, 0); subjectGroup.add(shoulderL);
+        const shoulderR = shoulderL.clone(); shoulderR.position.set(5.2, 6, 0); subjectGroup.add(shoulderR);
+        const uArmL = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.1, 5, 16), mat); uArmL.position.set(-armX, 3.5, 0); uArmL.rotation.z = -0.15; subjectGroup.add(uArmL);
+        const uArmR = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.1, 5, 16), mat); uArmR.position.set(armX, 3.5, 0); uArmR.rotation.z = 0.15; subjectGroup.add(uArmR);
+        const elbowL = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 16), mat); elbowL.position.set(-6.2, 1, 0); subjectGroup.add(elbowL);
+        const elbowR = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 16), mat); elbowR.position.set(6.2, 1, 0); subjectGroup.add(elbowR);
+        const lArmL = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.8, 5, 16), mat); lArmL.position.set(-6.5, -1.5, 0); lArmL.rotation.z = -0.1; subjectGroup.add(lArmL);
+        const lArmR = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.8, 5, 16), mat); lArmR.position.set(6.5, -1.5, 0); lArmR.rotation.z = 0.1; subjectGroup.add(lArmR);
+        const handL = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1), mat); handL.position.set(-6.7, -4.8, 0); subjectGroup.add(handL);
+        const handR = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1), mat); handR.position.set(6.7, -4.8, 0); subjectGroup.add(handR);
+
+        const legX = 2.2;
+        const hipL = new THREE.Mesh(new THREE.SphereGeometry(1.8, 32, 32), mat); hipL.position.set(-legX, -2, 0); subjectGroup.add(hipL);
+        const hipR = hipL.clone(); hipR.position.set(legX, -2, 0); subjectGroup.add(hipR);
+        const thighL = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.4, 6, 16), mat); thighL.position.set(-legX, -5, 0); subjectGroup.add(thighL);
+        const thighR = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.4, 6, 16), mat); thighR.position.set(legX, -5, 0); subjectGroup.add(thighR);
+        const kneeL = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 16), mat); kneeL.position.set(-legX, -8, 0); subjectGroup.add(kneeL);
+        const kneeR = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 16), mat); kneeR.position.set(legX, -8, 0); subjectGroup.add(kneeR);
+        const calfL = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.0, 6, 16), mat); calfL.position.set(-legX, -11, 0); subjectGroup.add(calfL);
+        const calfR = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.0, 6, 16), mat); calfR.position.set(legX, -11, 0); subjectGroup.add(calfR);
+        const ankleL = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat); ankleL.position.set(-legX, -14, 0); subjectGroup.add(ankleL);
+        const ankleR = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat); ankleR.position.set(legX, -14, 0); subjectGroup.add(ankleR);
+        const footL = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 3.5), mat); footL.position.set(-legX, -14.6, 1); subjectGroup.add(footL);
+        const footR = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 3.5), mat); footR.position.set(legX, -14.6, 1); subjectGroup.add(footR);
+
+        subjectGroup.children.forEach(c => { c.castShadow = true; c.receiveShadow = true; });
+        scene.add(subjectGroup);
+
+        const gridHelper = new THREE.GridHelper(60, 60, 0x00ffcc, 0x111115);
+        gridHelper.material.opacity = 0.15; gridHelper.material.transparent = true;
+        gridHelper.position.y = -15.2; scene.add(gridHelper);
+
+        // --- LIGHTING RIG ---
+        const spotLight = new THREE.SpotLight(0xffffff, 2500);
+        spotLight.position.set(0, 15, 30);
+        spotLight.angle = THREE.MathUtils.degToRad(35);
+        spotLight.penumbra = 0.4; spotLight.decay = 2; spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048; spotLight.shadow.mapSize.height = 2048;
+        scene.add(spotLight);
+        scene.add(spotLight.target);
+        spotLight.target.position.set(0, 4, 0);
+
+        const lightHelper = new THREE.SpotLightHelper(spotLight);
+        scene.add(lightHelper);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.08);
+        scene.add(ambientLight);
+
+        // --- UI BINDINGS ---
+        const sX = document.getElementById('slider-x');
+        const sY = document.getElementById('slider-y');
+        const sZ = document.getElementById('slider-z');
+        const sAzi = document.getElementById('slider-azi');
+        const sDist = document.getElementById('slider-dist');
+        const sAngle = document.getElementById('slider-angle');
+        const sInt = document.getElementById('slider-intensity');
+
+        let isPainting = false;
+        let currentRadius = parseFloat(sDist.value);
+
+        // --- LIGHTPAINT RAYCASTING ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function paintLight(event) {
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(subjectGroup.children);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                const hitPoint = hit.point;
+                const hitNormal = hit.face.normal.clone();
+                const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+                hitNormal.applyMatrix3(normalMatrix).normalize();
+
+                const viewVector = new THREE.Vector3().subVectors(camera.position, hitPoint).normalize();
+                const incidentVector = viewVector.clone().negate();
+                const reflectionVector = incidentVector.clone().reflect(hitNormal).normalize();
+
+                const lightPos = new THREE.Vector3().copy(hitPoint).add(reflectionVector.multiplyScalar(currentRadius));
+                
+                spotLight.position.copy(lightPos);
+                spotLight.target.position.copy(hitPoint);
+                syncSlidersToLight();
+            }
+        }
+
+        container.addEventListener('pointerdown', (e) => {
+            if(e.button === 0) { isPainting = true; paintLight(e); }
+        });
+        container.addEventListener('pointermove', (e) => {
+            if(isPainting) paintLight(e);
+        });
+        window.addEventListener('pointerup', () => { isPainting = false; });
+
+        // --- PRESETS & RESET ---
+        window.setPreset = function(x, y, z) {
+            spotLight.position.set(x, y, z);
+            spotLight.target.position.set(0, 4, 0);
+            syncSlidersToLight();
+        };
+
+        window.resetAll = function() {
+            setPreset(0, 15, 30);
+            sAngle.value = 35; sInt.value = 100;
+            sCamYaw.value = 0; sCamPitch.value = 10;
+            updateCameraFromSliders();
+            updateFromSliders();
+        };
+
+        // --- CLIPBOARD LOGIC ---
+        window.copyHDL = function() {
+            const textToCopy = document.getElementById('json-output').innerText;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const btn = document.getElementById('copy-btn');
+                btn.innerText = "COPIED TO CLIPBOARD";
+                btn.style.background = "var(--cyan)";
+                btn.style.color = "#000";
+                
+                setTimeout(() => {
+                    btn.innerText = "💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀";
+                    btn.style.background = "rgba(0, 255, 204, 0.1)";
+                    btn.style.color = "var(--cyan)";
+                }, 1500);
+            }).catch(err => {
+                console.error('Failed to copy HDL: ', err);
+            });
+        };
+
+        // --- STATE SYNCING ---
+        function syncSlidersToLight() {
+            sX.value = spotLight.position.x;
+            sY.value = spotLight.position.y;
+            sZ.value = spotLight.position.z;
+
+            const target = spotLight.target.position;
+            const dir = new THREE.Vector3().subVectors(spotLight.position, target);
+            currentRadius = dir.length();
+            sDist.value = currentRadius;
+
+            const azimuth = Math.atan2(dir.x, dir.z) * (180 / Math.PI);
+            sAzi.value = azimuth;
+
+            updateUI();
+        }
+
+        function updateFromCartesian() {
+            spotLight.position.set(parseFloat(sX.value), parseFloat(sY.value), parseFloat(sZ.value));
+            syncSlidersToLight();
+        }
+
+        function updateFromRadial() {
+            const r = parseFloat(sDist.value);
+            const aziRad = parseFloat(sAzi.value) * (Math.PI / 180);
+            const y = spotLight.position.y; 
+            const horizontalR = Math.sqrt(Math.max(0, r*r - (y - spotLight.target.position.y)**2));
+            
+            spotLight.position.x = spotLight.target.position.x + horizontalR * Math.sin(aziRad);
+            spotLight.position.z = spotLight.target.position.z + horizontalR * Math.cos(aziRad);
+            
+            syncSlidersToLight();
+        }
+
+        function updateFromSliders() {
+            spotLight.angle = THREE.MathUtils.degToRad(sAngle.value);
+            spotLight.intensity = sInt.value * 25; 
+            updateUI();
+        }
+
+        sX.addEventListener('input', updateFromCartesian);
+        sY.addEventListener('input', updateFromCartesian);
+        sZ.addEventListener('input', updateFromCartesian);
+        sAzi.addEventListener('input', updateFromRadial);
+        sDist.addEventListener('input', () => { currentRadius = sDist.value; updateFromRadial(); });
+        sAngle.addEventListener('input', updateFromSliders);
+        sInt.addEventListener('input', updateFromSliders);
+
+        function updateUI() {
+            document.getElementById('val-x').innerText = parseFloat(sX.value).toFixed(1);
+            document.getElementById('val-y').innerText = parseFloat(sY.value).toFixed(1);
+            document.getElementById('val-z').innerText = parseFloat(sZ.value).toFixed(1);
+            document.getElementById('val-azi').innerText = parseFloat(sAzi.value).toFixed(0) + '°';
+            document.getElementById('val-dist').innerText = parseFloat(sDist.value).toFixed(0);
+            document.getElementById('val-angle').innerText = sAngle.value + '°';
+            document.getElementById('val-intensity').innerText = sInt.value + '%';
+
+            lightHelper.update();
+
+            const schema = {
+                "!ENV_RAY_TRACING_PHOTOMETRY": {
+                    "LIGHT_SOURCE_01": "SINGLE_CONICAL_SPOTLIGHT",
+                    "ORIGIN_COORDINATE": `${parseFloat(sX.value).toFixed(2)},${parseFloat(sY.value).toFixed(2)},${parseFloat(sZ.value).toFixed(2)}`,
+                    "TARGET_COORDINATE": `${spotLight.target.position.x.toFixed(2)},${spotLight.target.position.y.toFixed(2)},${spotLight.target.position.z.toFixed(2)}`,
+                    "BEAM_ANGLE": `${sAngle.value}_DEGREE_FOCUS`,
+                    "LUMINOUS_INTENSITY": `${sInt.value}_PERCENT_SCALE`,
+                    "FALLOFF_PROFILE": "AGGRESSIVE_INVERSE_SQUARE",
+                    "BOUNCE_LIGHT_LOGIC": "INFINITE_RECURSIVE_REFLECTION"
+                }
+            };
+            document.getElementById('json-output').innerText = JSON.stringify(schema, null, 2);
+        }
+
+        // --- RENDER LOOP ---
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        syncSlidersToLight();
+        animate();
+    </script>
+</body>
+</html>

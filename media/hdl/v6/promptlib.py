@@ -1220,69 +1220,6 @@ TEXT_MANIFEST = {
 }
 
 # ==============================================================================
-# FINALIZE / QUALITY MANIFEST
-# ==============================================================================
-FINALIZE_MANIFEST = {
-    "focus_lock": {
-        "micro_contrast_cloth_skin_text":   "Max micro-contrast on cloth weave, skin grain, text",
-        "eyes_single_point_af_priority":    "Eye AF priority — single point, subject eyes only",
-        "full_scene_deep_f8_hyperfocal":    "f/8 deep focus — environment and subject sharp",
-        "fabric_texture_skin_soft":         "Fabric texture plane priority — skin slightly soft",
-        "selective_midground_only":         "Only midground subject sharp — fore and back soft",
-        "macro_skin_pore_razor":            "Razor-sharp macro — individual pore and follicle detail",
-        "lips_and_teeth_priority":          "Lip texture and tooth surface as primary focus plane",
-        "hands_and_fingers_priority":       "Hands in focus — knuckle texture, nail, vein detail",
-        "hair_strand_individual_priority":  "Individual hair strand sharpness at max magnification",
-        "background_soft_subject_sharp":    "Classic portrait — max separation, subject only sharp",
-        "environmental_context_priority":   "Background readable and sharp, subject moderately soft",
-        "water_droplet_surface_priority":   "Droplets on skin/glass as focus plane, subject behind",
-        "tattoo_linework_surface_priority": "Tattoo ink edge as focus surface — skin texture secondary",
-        "razor_sharp_sweatbeads_texture":   "razor-sharp focus on glistening sweatbeads and textured skin, depth showing how light wraps around body contours",
-    },
-    "negative_bias": {
-        "STUDIO_SOFTBOX_LIGHTING":          "Reject flat beauty softbox — want harsh flash only",
-        "BEAUTY_FILTER":                    "Reject any digital beauty overlay",
-        "AIRBRUSHED_SKIN":                  "Reject frequency-separation or digital retouching",
-        "PERFECT_FACIAL_SYMMETRY":          "Reject AI symmetry correction",
-        "DIGITAL_3D_RENDER":                "Reject CGI or rendered output",
-        "OPAQUE_FABRIC_PROCESSING":         "Reject solid fabric — require physics-based transparency",
-        "CLEAN_MINIMALIST_ARCHITECTURE":    "Reject styled interior — want raw industrial",
-        "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK": "Reject commercial neutral look",
-        "HAPPY_EXPRESSIONS":                "Reject positive expression — want detached or neutral",
-        "IDENTITY_SHIFTING":                "Reject any facial modification from reference",
-        "DAYLIGHT":                         "Reject natural daylight — want flash-dominated",
-        "INSTAGRAM_GRADE":                  "Reject any social media colour grade",
-        "VSCO_LUT":                         "Reject VSCO preset colour influence",
-        "HDR_TONE_MAPPING":                 "Reject HDR or tone-mapping artefacts",
-        "LENS_FLARE_OVERLAY":               "Reject added lens flare — flash hard, no haze",
-        "VIGNETTE_FILTER":                  "Reject post-production vignette overlay",
-        "SYMMETRY_MODIFICATIONS":           "Reject pose or body symmetry corrections",
-        "POSE_MODIFICATIONS":               "Reject AI pose alteration from input reference",
-        "CAMERA_ANGLE_MODIFICATIONS":       "Reject auto camera angle adjustment",
-        "COLOUR_GRADING_WARMTH":            "Reject warm colour grade — preserve flash neutrality",
-        "NOISE_REDUCTION":                  "Reject noise reduction — preserve grain structure",
-        "SHARPENING_OVERLAY":               "Reject unsharp mask or radius sharpening — use native",
-        "BACKGROUND_REPLACEMENT":           "Reject AI background swap — keep captured environment",
-        "HAIR_CLEANUP_FLYAWAY":             "Reject hair retouching — all stray strands must remain",
-        "BODY_PROPORTION_ALTERATION":       "Reject any liquify or warp of body proportions",
-        "TATTOO_REMOVAL_OR_ADDITION":       "Reject any tattoo modification from reference",
-        "EYE_ENHANCEMENT_BRIGHTENING":      "Reject iris brightening or catchlight injection",
-        "SMILE_INJECTION":                  "Reject any AI smile or expression augmentation",
-        "DEPTH_OF_FIELD_SIMULATION":        "Reject AI lens blur — use only optical DOF data",
-        "WATERMARK_OR_CREDIT_OVERLAY":      "Reject any platform watermark in output",
-        "CONTENT_AWARE_OBJECT_REMOVAL":     "Reject environment cleanup — keep all scene elements",
-        "FACE_SWAPPING":                    "no face swapping",
-        "FACE_AVERAGING":                   "no face averaging",
-        "IDENTITY_DRIFT":                   "no identity drift",
-        "BODY_DRIFT":                       "no body drift",
-        "BODY_AVERAGING":                   "no body averaging",
-        "CLEAN_MINIMALIST_SPACES":          "no clean minimalist spaces",
-        "PERFECT_POSTURE":                  "no perfect posture",
-        "LED_AESTHETICS":                   "no LED aesthetics",
-    },
-}
-
-# ==============================================================================
 # OPACITY / MATERIAL PHYSICS MANIFEST
 # ==============================================================================
 MATERIAL_MANIFEST = {
@@ -1314,7 +1251,7 @@ MATERIAL_MANIFEST = {
         "chiffon_very_low_sheen":           "Near-zero sheen, slight translucency, gossamer weight",
         "sequin_discrete_point_scatter":    "Individual sequin point reflectors — starburst scatter",
         "metallic_fabric_broad_mirror":     "Woven metallic thread — mirror + diffuse combination",
-        "tweed_rough_harris_zero_sheen":    "Raw Harris texture — no specular, dense weave",
+        "tweed_rough_harris_zero_sheen":    "Raw Harris tweed texture — no specular, dense weave",
     },
     "drape_physics": {
         "micro_fiber_drape":        {"HIGH": "Dense fibre simulation, realistic cloth fold complexity",
@@ -1334,6 +1271,46 @@ MATERIAL_MANIFEST = {
         "adhesion_coefficient":     {"HIGH": "Fabric wraps flush to skin, zero gap pockets",
                                      "MEDIUM": "Moderate adhesion, minor air pockets at joints",
                                      "LOW": "Fabric floats off body, minimal skin contact"},
+    },
+}
+
+# ==============================================================================
+# FINALIZE / QUALITY MANIFEST
+# ==============================================================================
+FINALIZE_MANIFEST = {
+    "focus_lock": {
+        "micro_contrast_cloth_skin_text":   "Max micro-contrast on cloth weave, skin grain, text",
+        "eyes_single_point_af_priority":    "Eye AF priority — single point, subject eyes only",
+        "full_scene_deep_f8_hyperfocal":    "f/8 deep focus — environment and subject sharp",
+        "fabric_texture_skin_soft":         "Fabric texture plane priority — skin slightly soft",
+        "selective_midground_only":         "Only midground subject sharp — fore and back soft",
+        "macro_skin_pore_razor":            "Razor-sharp macro — individual pore and follicle detail",
+        "lips_and_teeth_priority":          "Lip texture and tooth surface as primary focus plane",
+        "hands_and_fingers_priority":       "Hands in focus — knuckle texture, nail, vein detail",
+        "hair_strand_individual_priority":  "Individual hair strand sharpness at max magnification",
+        "background_soft_subject_sharp":    "Classic portrait — max separation, subject only sharp",
+        "environmental_context_priority":   "Background readable and sharp, subject moderately soft",
+        "water_droplet_surface_priority":   "Droplets on skin/glass as focus plane, subject behind",
+        "tattoo_linework_surface_priority": "Tattoo ink edge as focus surface — skin texture secondary",
+        "razor_sharp_sweatbeads_texture":   "razor-sharp focus on glistening sweatbeads and textured skin, depth showing how light wraps around body contours",
+    },
+    "negative_bias": {
+        "BEAUTY_FILTER":                    "Reject any digital beauty overlay",
+        "AIRBRUSHED_SKIN":                  "Reject frequency-separation or digital retouching",
+        "PERFECT_FACIAL_SYMMETRY":          "Reject AI symmetry correction",
+        "DIGITAL_3D_RENDER":                "Reject CGI or rendered output",
+        "OPAQUE_FABRIC":         "Reject solid fabric — require physics-based transparency",
+        "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK": "Reject commercial neutral look",
+        "HAPPY_EXPRESSIONS":                "Reject positive expression — want detached or neutral",
+        "IDENTITY_SHIFTING":                "Reject any facial modification from reference",
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS": "Reject AI default filters",
+        "NOISE_REDUCTION_SMOOTHING":        "Reject noise reduction — preserve grain structure",
+        "HAIR_FLYAWAY_REMOVAL":             "Reject hair retouching — all stray strands must remain",
+        "BODY_PROPORTION_LIQUIFY":       "Reject any liquify or warp of body proportions",
+        "SCAR_OR_TATTOO_REMOVAL":       "Reject any tattoo modification from reference",
+        "SKIN_TONE_NORMALISATION":        "Reject AI skin normalisation",
+        "AI_UPSCALING_ARTEFACT":      "Reject any AI artifacts",
+        "CONTENT_AWARE_FILL":     "Reject environment cleanup — keep all scene elements",
     },
 }
 
@@ -1406,63 +1383,28 @@ METEOROLOGY_MANIFEST = {
 }
 
 # ==============================================================================
-# RAY TRACING PHOTOMETRY MANIFEST
-# ==============================================================================
-RAY_TRACING_MANIFEST = {
-    "light_sources": {
-        "SINGLE_CONICAL_SPOTLIGHT":             "Hard directional cone, high contrast focused beam",
-        "OMNIDIRECTIONAL_POINT_SOURCE":         "Unbounded spherical emission from a single point",
-        "AREA_LIGHT_SOFT_PANEL":                "Rectangular emission surface, soft shadow wrap",
-        "PARALLEL_DIRECTIONAL_SUN":             "Infinite distance simulation, parallel rays",
-    },
-    "coordinates": {
-        "2.50,-4.50,16.00":                     "Default camera-left elevated origin",
-        "-0.04,5.67,2.39":                      "Default center-subject target",
-        "0.00,10.00,0.00":                      "Direct overhead zenith origin",
-    },
-    "beam_angles": {
-        "10_DEGREE_SPOT":                       "Very tight pin-spot, dramatic isolation",
-        "28_DEGREE_FOCUS":                      "Standard theatrical spot focus",
-        "45_DEGREE_FLOOD":                      "Wide flood spread",
-        "120_DEGREE_WASH":                      "Ultra-wide ambient wash",
-    },
-    "intensity": {
-        "110_PERCENT_SCALE":                    "Over-driven, intentionally clipping central highlights",
-        "100_PERCENT_SCALE":                    "Nominal maximum exposure",
-        "50_PERCENT_SCALE":                     "Mid-level fill intensity",
-    },
-    "falloff": {
-        "AGGRESSIVE_INVERSE_SQUARE":            "Physically accurate, rapid light decay",
-        "LINEAR_ATTENUATION":                   "Stylized slow decay for constant illumination",
-        "ZERO_FALLOFF_ORTHOGRAPHIC":            "No decay over distance",
-    },
-    "bounce_logic": {
-        "INFINITE_RECURSIVE_REFLECTION":        "Full path tracing, hall of mirrors effect",
-        "SINGLE_BOUNCE_GLOBAL_ILLUMINATION":    "Fast GI, one bounce environment scatter",
-        "DIRECT_ILLUMINATION_ONLY":             "No bounce, pitch black deep shadows",
-    }
-}
-
-# ==============================================================================
 # STATIC SCHEMA BLOCKS — never randomised, never prompted
+# These are injected verbatim by generate_random() and build_mem_lock()
 # ==============================================================================
 STATIC_MEM_LOCK = {
     "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
     "BIOMETRIC_LOCK": "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANITOMALOGICAL_TOPOPGRAPHY_PERFECTLY)",
-    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS.)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS._ENFORE=VISCERAL_REACTION_TO_AN_UNPLEASANT_TASTE,_OPENING_MOUTH_REVEALING_TONGUE_SLATHERED_IN_SEMI_TRANSLUCENT,_MILKY_VISCOUS_GEL--TONGUE_ROLLS;_WINCES)",
     "STRUCTURAL_NON_DEVIATION": "HIGH",
     "STRUCTURAL_FIDELITY": "HIGH",
     "UNALTERABLE": [
         "EXACT_FACIAL_ID_GEOMETRY",
         "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
         "EXACT_BODY_PROPORTIONS",
-        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
+        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
     ],
     "!INHIBIT": [
         "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
         "FACIAL_BALANCING",
-        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
-    ]
+        "BRAZZIER_SUPPORT",
+        "SYMMETRY_MODIFICATIONS",
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
+    ],
 }
 
 STATIC_FINALIZE = {
@@ -1471,16 +1413,14 @@ STATIC_FINALIZE = {
         "GLOBAL_NEGATIVE_BIAS": [
             "BEAUTY_FILTER",
             "AIRBRUSHED_SKIN",
-            "PERFECT_FACIAL_SYMMETRY",
             "DIGITAL_3D_RENDER",
             "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
-            "WATERMARK_OR_CREDIT_OVERLAY",
             "HAPPY_EXPRESSIONS",
             "IDENTITY_SHIFTING",
             "HAIR_CLEANUP_FLYAWAY",
-            "OPAQUE_FABRIC_PROCESSING",
-            "BODY_PROPORTION_ALTERATION"
-        ]
+            "OPAQUE_FABRIC",
+            "BODY_PROPORTION_ALTERATION",
+        ],
     }
 }
 
@@ -1488,48 +1428,131 @@ STATIC_FINALIZE = {
 # FLATTENED INDICES FOR O(1) LOOKUPS AND WORD COMPLETER INJECTION
 # ==============================================================================
 
-def _flatten(manifest: dict, depth: int = 1) -> dict:
-    """Recursively extracts terminal key-value pairs into a flat index."""
-    flat = {}
-    if depth == 1:
-        flat.update(manifest)
-    elif depth == 2:
-        for sub_dict in manifest.values():
-            flat.update(sub_dict)
-    return flat
+# Kinematic
+FLAT_POSE_INDEX: dict[str, str] = {}
+for _cat in KINEMATIC_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_POSE_INDEX[_k] = _v
 
-FLAT_POSE_INDEX          = _flatten(KINEMATIC_MANIFEST, 2)
-FLAT_LAYOUT_INDEX        = _flatten(LAYOUT_MANIFEST, 2)
-FLAT_LIGHTING_INDEX      = _flatten(LIGHTING_PHYSICS_MANIFEST, 1)
-FLAT_STYLE_INDEX         = _flatten(STYLING_MANIFEST, 1)
-FLAT_ENERGY_INDEX        = _flatten(PHOTONIC_ENERGY_MANIFEST, 1)
-FLAT_VIEW_INDEX          = _flatten(VIEWS_MANIFEST, 1)
-FLAT_CAMERA_INDEX        = _flatten(CAMERA_BODY_MANIFEST, 1)
-FLAT_LENS_INDEX          = _flatten(LENS_MANIFEST, 1)
-FLAT_APERTURE_INDEX      = _flatten(APERTURE_MANIFEST, 1)
-FLAT_WARDROBE_INDEX      = _flatten(WARDROBE_MANIFEST, 1)
-FLAT_SKIN_INDEX          = _flatten(SKIN_MANIFEST, 2)
-FLAT_LOCATION_INDEX      = _flatten(LOCATION_MANIFEST, 2)
-FLAT_GLASS_INDEX         = _flatten(GLASS_SURFACE_MANIFEST, 1)
-FLAT_DOF_INDEX           = _flatten(DOF_MANIFEST, 2)
-FLAT_TEXT_STRINGS_INDEX  = _flatten(TEXT_MANIFEST["strings"], 1)
-FLAT_TEXT_FONT_INDEX     = _flatten(TEXT_MANIFEST["font_aesthetics"], 1)
-FLAT_TEXT_PLACEMENT_INDEX= _flatten(TEXT_MANIFEST["placement"], 1)
-FLAT_OPACITY_INDEX       = _flatten(MATERIAL_MANIFEST["opacity"], 1)
-FLAT_SHEEN_INDEX         = _flatten(MATERIAL_MANIFEST["textile_sheen"], 1)
-FLAT_FOCUS_INDEX         = _flatten(FINALIZE_MANIFEST["focus_lock"], 1)
-FLAT_NEG_BIAS_INDEX      = _flatten(FINALIZE_MANIFEST["negative_bias"], 1)
-FLAT_COLOR_SCIENCE_INDEX = _flatten(COLOR_SCIENCE_MANIFEST, 2)
-FLAT_OPTICS_INDEX        = _flatten(OPTICAL_ABERRATION_MANIFEST, 2)
-FLAT_METEOROLOGY_INDEX   = _flatten(METEOROLOGY_MANIFEST, 2)
+# Layout
+FLAT_LAYOUT_INDEX: dict[str, str] = {}
+for _cat in LAYOUT_MANIFEST.values():
+    for _layout_name, _layout_data in _cat.items():
+        FLAT_LAYOUT_INDEX[_layout_name] = str(_layout_data)
+
+# Lighting
+FLAT_LIGHTING_INDEX: dict[str, str] = {}
+for _k, _v in LIGHTING_PHYSICS_MANIFEST.items():
+    FLAT_LIGHTING_INDEX[_k] = _v
+
+# Style
+FLAT_STYLE_INDEX: dict[str, str] = {}
+for _k, _v in STYLING_MANIFEST.items():
+    FLAT_STYLE_INDEX[_k] = _v
+
+# Photonic energy
+FLAT_ENERGY_INDEX: dict[str, str] = {}
+for _k, _v in PHOTONIC_ENERGY_MANIFEST.items():
+    FLAT_ENERGY_INDEX[_k] = _v
+
+# Views
+FLAT_VIEW_INDEX: dict[str, str] = {}
+for _k, _v in VIEWS_MANIFEST.items():
+    FLAT_VIEW_INDEX[_k] = _v
+
+# Camera bodies
+FLAT_CAMERA_INDEX: dict[str, str] = {}
+for _k, _v in CAMERA_BODY_MANIFEST.items():
+    FLAT_CAMERA_INDEX[_k] = _v
+
+# Lenses
+FLAT_LENS_INDEX: dict[str, str] = {}
+for _k, _v in LENS_MANIFEST.items():
+    FLAT_LENS_INDEX[_k] = _v
+
+# Apertures
+FLAT_APERTURE_INDEX: dict[str, str] = {}
+for _k, _v in APERTURE_MANIFEST.items():
+    FLAT_APERTURE_INDEX[_k] = _v
+
+# Wardrobe
+FLAT_WARDROBE_INDEX: dict[str, str] = {}
+for _k, _v in WARDROBE_MANIFEST.items():
+    FLAT_WARDROBE_INDEX[_k] = _v
+
+# Skin — all sub-dicts flattened
+FLAT_SKIN_INDEX: dict[str, str] = {}
+for _cat in SKIN_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_SKIN_INDEX[_k] = _v
+
+# Location
+FLAT_LOCATION_INDEX: dict[str, str] = {}
+for _cat in LOCATION_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_LOCATION_INDEX[_k] = _v
+
+# Glass
+FLAT_GLASS_INDEX: dict[str, str] = {}
+for _k, _v in GLASS_SURFACE_MANIFEST.items():
+    FLAT_GLASS_INDEX[_k] = _v
+
+# DOF — all sub-dicts flattened
+FLAT_DOF_INDEX: dict[str, str] = {}
+for _cat in DOF_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_DOF_INDEX[_k] = _v
+
+# Text
+FLAT_TEXT_STRINGS_INDEX: dict[str, str] = {}
+for _k, _v in TEXT_MANIFEST["strings"].items():
+    FLAT_TEXT_STRINGS_INDEX[_k] = _v
+FLAT_TEXT_FONT_INDEX: dict[str, str] = {}
+for _k, _v in TEXT_MANIFEST["font_aesthetics"].items():
+    FLAT_TEXT_FONT_INDEX[_k] = _v
+FLAT_TEXT_PLACEMENT_INDEX: dict[str, str] = {}
+for _k, _v in TEXT_MANIFEST["placement"].items():
+    FLAT_TEXT_PLACEMENT_INDEX[_k] = _v
+
+# Material
+FLAT_OPACITY_INDEX: dict[str, str] = {}
+for _k, _v in MATERIAL_MANIFEST["opacity"].items():
+    FLAT_OPACITY_INDEX[_k] = _v
+FLAT_SHEEN_INDEX: dict[str, str] = {}
+for _k, _v in MATERIAL_MANIFEST["textile_sheen"].items():
+    FLAT_SHEEN_INDEX[_k] = _v
+
+# Finalize
+FLAT_FOCUS_INDEX: dict[str, str] = {}
+for _k, _v in FINALIZE_MANIFEST["focus_lock"].items():
+    FLAT_FOCUS_INDEX[_k] = _v
+FLAT_NEG_BIAS_INDEX: dict[str, str] = {}
+for _k, _v in FINALIZE_MANIFEST["negative_bias"].items():
+    FLAT_NEG_BIAS_INDEX[_k] = _v
+
+# Color science — nested two levels
+FLAT_COLOR_SCIENCE_INDEX: dict[str, str] = {}
+for _cat in COLOR_SCIENCE_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_COLOR_SCIENCE_INDEX[_k] = _v
+
+# Optics — nested two levels
+FLAT_OPTICS_INDEX: dict[str, str] = {}
+for _cat in OPTICAL_ABERRATION_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_OPTICS_INDEX[_k] = _v
+
+# Meteorology — nested two levels
+FLAT_METEOROLOGY_INDEX: dict[str, str] = {}
+for _cat in METEOROLOGY_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_METEOROLOGY_INDEX[_k] = _v
 
 # Ray Tracing
-FLAT_RAY_SOURCE_INDEX    = _flatten({"ls": RAY_TRACING_MANIFEST["light_sources"]}, 2)
-FLAT_RAY_COORD_INDEX     = _flatten({"co": RAY_TRACING_MANIFEST["coordinates"]}, 2)
-FLAT_RAY_ANGLE_INDEX     = _flatten({"ba": RAY_TRACING_MANIFEST["beam_angles"]}, 2)
-FLAT_RAY_INTENSITY_INDEX = _flatten({"in": RAY_TRACING_MANIFEST["intensity"]}, 2)
-FLAT_RAY_FALLOFF_INDEX   = _flatten({"fa": RAY_TRACING_MANIFEST["falloff"]}, 2)
-FLAT_RAY_BOUNCE_INDEX    = _flatten({"bo": RAY_TRACING_MANIFEST["bounce_logic"]}, 2)
+FLAT_RAY_TRACING_INDEX: dict[str, str] = {}
+for _cat in RAY_TRACING_MANIFEST.values():
+    for _k, _v in _cat.items():
+        FLAT_RAY_TRACING_INDEX[_k] = _v
 
 # ==============================================================================
 # WORD COMPLETER LISTS — imported by prompt_arc.py
@@ -1558,12 +1581,7 @@ NEG_BIAS_COMPLETIONS    = list(FLAT_NEG_BIAS_INDEX.keys())
 COLOR_COMPLETIONS       = list(FLAT_COLOR_SCIENCE_INDEX.keys())
 OPTICS_COMPLETIONS      = list(FLAT_OPTICS_INDEX.keys())
 METEOROLOGY_COMPLETIONS = list(FLAT_METEOROLOGY_INDEX.keys())
-RAY_SOURCE_COMPLETIONS    = list(FLAT_RAY_SOURCE_INDEX.keys())
-RAY_COORD_COMPLETIONS     = list(FLAT_RAY_COORD_INDEX.keys())
-RAY_ANGLE_COMPLETIONS     = list(FLAT_RAY_ANGLE_INDEX.keys())
-RAY_INTENSITY_COMPLETIONS = list(FLAT_RAY_INTENSITY_INDEX.keys())
-RAY_FALLOFF_COMPLETIONS   = list(FLAT_RAY_FALLOFF_INDEX.keys())
-RAY_BOUNCE_COMPLETIONS    = list(FLAT_RAY_BOUNCE_INDEX.keys())
+RAY_TRACING_COMPLETIONS = list(FLAT_RAY_TRACING_INDEX.keys())
 
 # Shared small sets reused across many prompts
 BOOL_COMPLETIONS        = ["TRUE", "FALSE"]
@@ -1574,56 +1592,37 @@ PANEL_COUNT_COMPLETIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
 UNALTERABLE_COMPLETIONS = [
     "EXACT_FACIAL_ID_GEOMETRY",
-    "TRUE_ORBITAL_BONE_SPACING",
-    "UNFILTERED_LIP_PROPORTIONS",
-    "RAW_JAWLINE_ANGLE",
     "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
     "EXACT_BODY_PROPORTIONS",
     "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
     "NATURAL_SKIN_TONE_UNSHIFTED",
     "ORIGINAL_SCAR_TATTOO_MARK_GEOMETRY",
-    "AUTHENTIC_NASOLABIAL_DEPTH",
-    "TRUE_PHILTRUM_PROPORTION",
-    "UNALTERED_CLAVICLE_STRUCTURE",
-    "AUTHENTIC_KNUCKLE_AND_HAND_GEOMETRY",
-    "RAW_UNDER_EYE_TISSUE_DEPTH",
-    "ORIGINAL_HAIRLINE_POSITION",
-    "UNMODIFIED_NOSTRIL_GEOMETRY",
-    "EXACT_IRIS_COLOUR_UNSHIFTED",
-    "FACE_SWAPPING",
-    "FACE_AVERAGING",
-    "IDENTITY_DRIFT",
-    "BODY_DRIFT",
-    "BODY_AVERAGING"
+
 ]
 
 INHIBIT_COMPLETIONS = [
     "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
     "FACIAL_BALANCING",
     "POSE_MODIFICATIONS",
-    "CAMERA_ANGLE_MODIFICATIONS",
+
     "SYMMETRY_MODIFICATIONS",
     "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
     "AI_BEAUTIFICATION",
     "FREQUENCY_SEPARATION_RETOUCHING",
-    "DODGE_AND_BURN_DIGITAL",
-    "LUT_GRADE_OVERLAYS",
-    "BACKGROUND_REPLACEMENT",
+
     "NOISE_REDUCTION_SMOOTHING",
     "HAIR_FLYAWAY_REMOVAL",
     "BODY_PROPORTION_LIQUIFY",
-    "TEETH_WHITENING",
-    "IRIS_BRIGHTENING",
+
     "SCAR_OR_TATTOO_REMOVAL",
     "SKIN_TONE_NORMALISATION",
-    "EXPRESSION_AUGMENTATION",
+
     "EYE_SIZE_ENLARGEMENT",
     "JAW_SLIMMING",
     "NOSE_NARROWING",
     "BROW_LIFTING",
     "LIP_AUGMENTATION_FILTER",
-    "BODY_HAIR_REMOVAL",
-    "WATERMARK_INJECTION",
+
     "CONTENT_AWARE_FILL",
     "AI_UPSCALING_ARTEFACT",
     "FACE_SWAPPING",
@@ -1631,10 +1630,7 @@ INHIBIT_COMPLETIONS = [
     "IDENTITY_DRIFT",
     "BODY_DRIFT",
     "BODY_AVERAGING",
-    "CLEAN_MINIMALIST_SPACES",
     "PERFECT_POSTURE",
-    "DAYLIGHT",
-    "LED_AESTHETICS"
 ]
 
 # Skin topology — standalone completion list
