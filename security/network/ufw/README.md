@@ -6,27 +6,29 @@ Its core function is to establish a **system-level kill switch**, ensuring that 
 
 ---
 
+## Architectural Requirements (The Dual-Manager Symbiosis)
+
+This script is explicitly engineered for hardened environments employing aggressive MAC address rotation. It relies on a symbiotic relationship between two network managers to maintain stability under strict firewall rules:
+
+1. **NetworkManager (Dynamic Frontend):** Handles the physical interface initialization and runtime MAC address spoofing/randomization.
+2. **systemd-networkd (Persistent Backend):** Anchors the core routing tables, establishes the primary default gateway, and natively maintains complex kernel queueing disciplines across interface flaps.
+
+**CRITICAL:** Do not disable `systemd-networkd`. Because this script dynamically queries interface states and locks down default routes via UFW, stopping `systemd-networkd` will strip the default gateway from the spoofed interface, resulting in a total loss of external routing. Both managers must run concurrently.
+
+---
+
 ## Features
 
-System-Level Kill Switch:* When --vpn is active, all outbound traffic is blocked by default, with explicit rules created to only allow traffic through the VPN interface (tun0).
-
-DNS Leak Protection: Automatically backs up your original DNS settings, allows the VPN client to set its own, and then creates firewall rules that permit DNS queries only* to the VPN's DNS servers.
-
-Safe Teardown (`--disconnect`):* A dedicated function to safely disconnect the VPN, restore original DNS settings, and reset the firewall to a standard "allow-all-outbound" state.
-
-Advanced Kernel Hardening:* Applies a robust set of sysctl parameters to harden the network stack against common attacks. The configuration file is named 99-zz-ufw-hardening.conf to ensure it loads last and overrides all other system defaults.
-
-Automatic LAN Access:* Intelligently detects your primary network interface and local subnet, creating rules to allow access to local devices (e.g., SSH, SMB, router admin pages) even when the kill switch is active.
-
-Full UFW State Management:* Resets UFW to a clean slate on every run, then builds the rule set from scratch for a predictable state.
-
-Comprehensive Logging & Auditing:* All actions, commands, and errors are logged to $XDG_DATA_HOME/logs/ufw.log (typically ~/.local/share/logs/ufw.log).
-
-Pre-flight Checks:* Verifies all required dependencies (ufw, ipcalc, etc.) are present before execution.
-
-Operational Safety:* Includes flags for --dry-run to preview changes and --status to audit the current configuration without making changes.
-
-Optional JDownloader2 Rules:* Integrates specific incoming rules for JDownloader2, which are protected by the kill switch.
+* **System-Level Kill Switch:** When `--vpn` is active, all outbound traffic is blocked by default, with explicit rules created to only allow traffic through the VPN interface (e.g., `tun0`).
+* **Advanced DNS Leak Protection:** Natively detects `systemd-resolved` loopback stubs (`127.0.0.53`). Bypasses the stub by querying `resolvectl` for the true upstream VPN DNS servers, ensuring firewall rules lock DNS queries strictly to the encrypted tunnel.
+* **Dynamic LAN Subnet Calculation:** Intelligently detects your primary network interface and uses a pure-bash CIDR calculation to deduce your local subnet. Automatically creates rules allowing access to local devices (e.g., SSH, SMB) even when the kill switch is active.
+* **Dynamic QoS & Congestion Control:** Probes `/lib/modules/` at runtime to detect and apply `cake` queueing discipline and `bbr` congestion control, overriding generic kernel defaults to prevent bufferbloat.
+* **Safe Teardown (`--disconnect`):** A dedicated function to safely disconnect the VPN, restore original DNS settings (including symlink restoration for `systemd-resolved`), and reset the firewall to a standard "allow-all-outbound" state.
+* **Advanced Kernel Hardening:** Applies a robust set of sysctl parameters to harden the network stack against IP spoofing and routing manipulation. The configuration file is named `99-zz-ufw-hardening.conf` to ensure it loads last.
+* **Full UFW State Management:** Resets UFW to a clean slate on every run, then builds the rule set from scratch for a predictable state.
+* **Comprehensive Logging & Auditing:** All actions, commands, and errors are logged to `$XDG_DATA_HOME/logs/ufw.log` (typically `~/.local/share/logs/ufw.log`).
+* **Operational Safety:** Includes flags for `--dry-run` to preview changes and `--status` to audit the current configuration without making changes.
+* **Optional JDownloader2 Rules:** Integrates specific incoming rules for JDownloader2, protected by the kill switch.
 
 ---
 
@@ -34,9 +36,10 @@ Optional JDownloader2 Rules:* Integrates specific incoming rules for JDownloader
 
 Before running, ensure the following command-line utilities are installed:
 
-Required:* ufw, ip, sysctl, ipcalc (often in the ipcalc or init-system-helpers package), expressvpn (if using --vpn).
+* **Required:** `ufw`, `ip`, `sysctl`, `ss`, `awk`
+* **Optional:** `expressvpn` (if using `--vpn`), `resolvectl` (highly recommended for systemd environments), `lsattr`, `chattr` (for immutable file flags).
 
-Optional:* lsattr, chattr for immutable file flags (highly recommended).
+*(Note: `ipcalc` is no longer required as subnet bounds are calculated via native bash).*
 
 ---
 
@@ -45,7 +48,9 @@ Optional:* lsattr, chattr for immutable file flags (highly recommended).
 Install the script to a location in your **PATH** and make it executable:
 
 ```bash
-curl -fsSL https://your.repo/path/to/ufw.sh -o /usr/local/bin/ufw.sh && chmod +x /usr/local/bin/ufw.sh
+curl -fsSL [https://your.repo/path/to/ufw.sh](https://your.repo/path/to/ufw.sh) -o /usr/local/bin/ufw.sh
+chmod +x /usr/local/bin/ufw.sh
+
 ```
 
 > Note: Replace the URL with the raw file URL from your repository.
@@ -57,114 +62,130 @@ curl -fsSL https://your.repo/path/to/ufw.sh -o /usr/local/bin/ufw.sh && chmod +x
 #### Primary Workflow: Setup -> Status -> Teardown
 
 1. **Activate VPN & Kill Switch:**
-
-Connect to the VPN and apply the full hardening configuration. Use --backup on the first run.
-
-
+Connect to the VPN and apply the full hardening configuration. Use `--backup` on the first run.
+```bash
 sudo ufw.sh --vpn --backup
-    ```
 
-2.  **Verify the Configuration:**
-    Check the status of UFW, the VPN connection, and DNS settings.
-    ```bash
-    sudo ufw.sh --status
-    ```
+```
 
-3.  **Safely Disconnect and Restore:**
-    When finished, disconnect the VPN and reset the firewall to its default state.
-    ```bash
-    sudo ufw.sh --disconnect
-    ```
+
+2. **Verify the Configuration:**
+Check the status of UFW, the VPN connection, listening sockets, and DNS settings.
+```bash
+sudo ufw.sh --status
+
+```
+
+
+3. **Safely Disconnect and Restore:**
+When finished, disconnect the VPN and reset the firewall to its default state.
+```bash
+sudo ufw.sh --disconnect
+
+```
+
+
 
 ### Other Commands
 
-*   **Apply JDownloader2 rules within the VPN kill switch:**
-    ```bash
-    sudo ufw.sh --vpn --jdownloader
-    ```
+* **Apply JDownloader2 rules within the VPN kill switch:**
+```bash
+sudo ufw.sh --vpn --jdownloader
 
-*   **Preview all changes without applying them (Dry Run):**
-    ```bash
-    sudo ufw.sh --vpn --dry-run
-    ```
+```
 
-*   **Set `vm.swappiness` to a custom value (e.g., 10):**
-    ```bash
-    sudo ufw.sh --swappiness 10
-    ```
+
+* **Preview all changes without applying them (Dry Run):**
+```bash
+sudo ufw.sh --vpn --dry-run
+
+```
+
+
+* **Set `vm.swappiness` to a custom value (e.g., 10):**
+```bash
+sudo ufw.sh --swappiness 10
+
+```
+
+
 
 ---
 
 ## Options
 
 | Option | Description |
-|---|---|
+| --- | --- |
 | `--vpn` | Activates the master kill switch, connects ExpressVPN, and applies VPN-only rules. |
 | `--disconnect` | Safely disconnects the VPN, restores DNS, and resets UFW to default policies. |
 | `--jdownloader` | Adds incoming rules for JDownloader2 (intended to be used with `--vpn`). |
 | `--backup` | Creates timestamped backups of configuration files before modification. |
 | `--silent` | Suppresses all console output. Actions are still logged to the log file. |
 | `--dry-run` | Simulates all actions without making any actual changes to the system. |
-| `--status` | Displays the current status of UFW, VPN, DNS, and sysctl settings, then exits. |
+| `--status` | Displays the current status of UFW, VPN, DNS, active sockets, and sysctl settings, then exits. |
 | `--swappiness N` | Sets the `vm.swappiness` kernel parameter to the integer value `N`. |
-| `--help, -h` | Shows this help message. |
+| `--help, -h` | Shows the help message. |
 
 ---
 
 ## How It Works (The `--vpn` Process)
 
-1.  **Backup:** If `--backup` is used, original versions of `/etc/default/ufw`, `/etc/resolv.conf`, and the script's `sysctl` file are saved.
-2.  **VPN Connection:** The script initiates the ExpressVPN connection. The VPN client then modifies `/etc/resolv.conf` to point to its own DNS servers.
-3.  **DNS Parsing:** The script reads the now-modified `/etc/resolv.conf` to learn the IP addresses of the VPN's DNS servers.
-4.  **Firewall Reset:** UFW is completely reset (`ufw --force reset`).
-5.  **Default Policies:** UFW's default policies are set to **DENY** for incoming, **DENY** for routed, and **DENY** for outgoing traffic. This is the foundation of the kill switch.
-6.  **Rule Layering:** A minimal set of `allow` rules are layered on top of the deny-all policy:
-    *   Allow all outbound traffic *only* on the VPN interface (e.g., `tun0`).
-    *   Allow outbound DNS traffic (`port 53`) *only* to the VPN's DNS servers.
-    *   Allow inbound/outbound traffic on the primary interface (e.g., `enp2s0`) *only* for the local network subnet.
-    *   Allow limited incoming SSH traffic.
-7.  **Final State:** The firewall is enabled, locking all non-local and non-VPN traffic.
+1. **Backup:** If `--backup` is used, original versions of `/etc/default/ufw`, `/etc/resolv.conf`, and the script's sysctl file are saved. Symlinks are detected and preserved.
+2. **VPN Connection:** The script initiates the ExpressVPN connection with a hard timeout to prevent hanging.
+3. **DNS Parsing:** The script queries `resolvectl` (or reads `/etc/resolv.conf` as a fallback) to learn the true IP addresses of the VPN's upstream DNS servers, bypassing local stubs.
+4. **Firewall Reset:** UFW is completely reset (`ufw --force reset`).
+5. **Default Policies:** UFW's default policies are set to **DENY** for incoming, **DENY** for routed, and **DENY** for outgoing traffic. This forms the absolute kill switch.
+6. **Rule Layering:** A minimal set of explicit `allow` rules are layered on top:
+* Allow all outbound traffic *only* on the detected VPN interfaces (e.g., `tun0`).
+* Allow outbound DNS traffic (`port 53`) *only* to the parsed VPN DNS servers.
+* Calculate the local subnet from the primary interface and allow LAN inbound/outbound traffic.
+* Allow limited incoming SSH traffic.
+
+
+7. **Kernel Tuning:** Sysctl parameters are flushed to `/etc/sysctl.d/99-zz-ufw-hardening.conf`, immutable flags are set, and queueing disciplines (`cake`/`bbr`) are injected.
+8. **Final State:** The firewall is enabled, executing a strict lockdown of all non-local and non-VPN traffic.
 
 ---
 
 ## Troubleshooting
 
-*   **No Internet after `--vpn`:** This is the kill switch working correctly. If the VPN fails to connect, all traffic is blocked as intended. Run `sudo ufw.sh --disconnect` to restore connectivity.
-*   **Cannot access local devices:** Ensure the `ipcalc` dependency is installed. The script needs it to correctly identify your local subnet.
-*   **DNS Issues:** Check the log file for errors related to parsing or backing up `/etc/resolv.conf`. Run `sudo ufw.sh --disconnect` to restore the original file.
-*   **IPv6:** This script **enables** IPv6 support within UFW (`IPV6=yes`). This is a critical security feature to ensure that the kill switch properly blocks potential IPv6 leaks if your ISP and VPN provider support it.
+* **No Internet after `--vpn`:** This is the kill switch working correctly. If the VPN fails to connect or interface detection fails, all traffic is blocked as intended. Run `sudo ufw.sh --disconnect` to restore connectivity.
+* **Network drops completely on interface flap:** Ensure `systemd-networkd` is running. This script relies on `systemd-networkd` to populate the default routing tables when NetworkManager rotates the MAC address.
+* **DNS Issues / No Resolution:** Check the log file for errors related to parsing or backing up `/etc/resolv.conf`. The script handles `systemd-resolved` symlinks natively, but manual tampering can break restoration. Run `sudo ufw.sh --disconnect` to restore the original state.
+* **IPv6:** This script **enables** IPv6 support within UFW (`IPV6=yes`). This is a critical security feature to ensure that the kill switch properly captures and drops potential IPv6 leaks.
 
 ---
 
 ## Security Review Checklist
 
-*   [ ] Disable root SSH login (`PermitRootLogin no` in `sshd_config`).
-*   [ ] Use key-based SSH auth (`PasswordAuthentication no`).
-*   [ ] After running, verify LAN rules are correct with `sudo ufw.sh --status`.
-*   [ ] Confirm DNSSEC and DNSOverTLS status with `resolvectl status`.
-*   [ ] Manually inspect `/etc/resolv.conf` to ensure it points to the VPN's DNS servers.
-*   [ ] Run an external DNS leak test (e.g., dnsleaktest.com) to verify protection.
-*   [ ] Audit the script's actions in the log file: `cat ~/.local/share/logs/ufw.log`.
+* [ ] Disable root SSH login (`PermitRootLogin no` in `/etc/ssh/sshd_config`).
+* [ ] Use key-based SSH auth (`PasswordAuthentication no`).
+* [ ] After running, verify listening sockets and active rules with `sudo ufw.sh --status`.
+* [ ] Confirm DNSSEC and DNSOverTLS status with `resolvectl status`.
+* [ ] Run an external DNS leak test (e.g., dnsleaktest.com) to verify protection.
+* [ ] Audit the script's actions and execution timings in the log file: `cat ~/.local/share/logs/ufw.log`.
 
 ---
 
 ## Uninstall
 
 To completely remove the script and its configurations:
-bash
 
-1. Reset the firewall to its defaults
+```bash
+# 1. Reset the firewall to its defaults
 sudo ufw --force reset
 
-2. Remove the script binary
+# 2. Remove the script binary
 sudo rm -f /usr/local/bin/ufw.sh
 
-3. Remove the custom sysctl hardening file
+# 3. Remove the custom sysctl hardening file
+sudo chattr -i /etc/sysctl.d/99-zz-ufw-hardening.conf
 sudo rm -f /etc/sysctl.d/99-zz-ufw-hardening.conf
 
-4. Reload sysctl to unload the custom settings
+# 4. Reload sysctl to unload the custom settings
 sudo sysctl --system
 
-5. Remove the log file
-rm -f ~/.local/share/logs/ufw.lo
+# 5. Remove the log file
+rm -f ~/.local/share/logs/ufw.log
 
+```
