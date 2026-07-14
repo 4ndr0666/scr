@@ -14,7 +14,6 @@
 #
 
 set -eu
-set -o pipefail
 
 # --- Configuration Constants ---
 EMAIL="andro@theworkpc"
@@ -70,7 +69,7 @@ deploy_client_config() {
 
     if [ "$(id -u)" -ne 0 ]; then
         printf "[!] Global config requires sudo. Escalating...\n"
-        sudo "$0" _internal_global_client
+        sudo sh "$0" _internal_global_client
     else
         _internal_global_client
     fi
@@ -153,7 +152,7 @@ deploy_aur_trust() {
 # ==============================================================================
 deploy_server_config() {
     if [ "$(id -u)" -ne 0 ]; then
-        printf "[-] Server configuration requires root. Please run: sudo %s server\n" "$0"
+        printf "[-] Server configuration requires root. Please run: sudo sh %s server\n" "$0"
         exit 1
     fi
 
