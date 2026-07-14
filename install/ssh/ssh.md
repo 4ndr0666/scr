@@ -1,3 +1,313 @@
+# SSH Reference & Workflow
+
+**Scope:**
+Covers end-to-end secure SSH configuration for:
+- Local Client (`theworkpc`) ↔ Remote Host (`dietpi`)
+- Client ↔ GitHub (for key distribution)
+- Client ↔ AUR (Arch User Repository)
+
+**Architecture & Canonical Addresses:**
+- **Client:** `andro@theworkpc` (`192.168.1.219`)
+- **Host:** `dietpi@dietpi` (`192.168.2.3`)
+- **Goal:** Strict passwordless SSH using Ed25519, GitHub key distribution, deterministic client/server configs, and multiplexing.
+
+---
+
+## ⚙️ 1. Client Global Configuration (`theworkpc`)
+
+**File:** `/etc/ssh/ssh_config`
+**Purpose:** Establishes a secure, system-wide baseline for all users and background services. Enforces security-by-reduction by explicitly ignoring vendor drop-in files.
+
+```sshconfig
+# /etc/ssh/ssh_config (System-wide Client Defaults)
+# Explicitly commented out to ignore rogue or vendor-supplied overrides:
+# Include /etc/ssh/ssh_config.d/*.conf
+
+Host *
+    # --- Core Security Defaults ---
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    GSSAPIAuthentication no
+    StrictHostKeyChecking yes
+    HashKnownHosts yes
+    UpdateHostKeys yes
+
+    # --- Keep-alives (Safe globally) ---
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    RekeyLimit 1G 1h
+
+    # --- Safety defaults ---
+    ForwardAgent no
+    ForwardX11 no
+    Port 22
+
+```
+
+---
+
+## 🧩 2. Client User Configuration (`theworkpc`)
+
+**File:** `~/.ssh/config`
+**Purpose:** User-specific overrides implementing DRY principles. Applies multiplexing speed boosts and explicit identity enforcement to all outbound connections for the `andro` user.
+
+```sshconfig
+# ~/.ssh/config (User-specific Client Config)
+
+# Apply to ALL hosts connected to by this user
+Host *
+    IdentitiesOnly yes
+    IdentityFile ~/.ssh/id_ed25519
+    ControlMaster auto
+    ControlPath ~/.ssh/sockets/%r@%h-%p
+    ControlPersist 600
+
+# Specific Host Overrides
+Host dietpi
+    HostName 192.168.2.3
+    User dietpi
+    HostKeyAlgorithms ssh-ed25519
+
+Host aur.archlinux.org
+    User aur
+    HostKeyAlgorithms ssh-ed25519
+
+```
+
+**Required Setup for Multiplexing:**
+
+```bash
+mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/sockets
+
+```
+
+---
+
+## 🛡️ 3. Client Attack Surface Reduction (`theworkpc`)
+
+**Purpose:** Ensure no SSH server daemon is running on the client machine, preventing unauthorized inbound access.
+
+```bash
+sudo systemctl disable --now sshd
+sudo systemctl mask sshd
+
+```
+
+---
+
+## 🧱 4. Host Server Configuration (`dietpi`)
+
+**File:** `/etc/ssh/sshd_config` (on target PI IP)
+**Purpose:** The literal, hardened SSH daemon configuration for the Pi. Replaces default permissive settings with strict Ed25519-only public key authentication.
+
+```sshconfig
+# /etc/ssh/sshd_config (Hardened Pi Server)
+
+# --- Core Networking ---
+Port 22
+ListenAddress 0.0.0.0
+# ListenAddress :: # Uncomment if you use IPv6
+
+# --- Authentication (Strict) ---
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+
+# --- Cryptography & Host Keys ---
+HostKey /etc/ssh/ssh_host_ed25519_key
+# Explicitly disable RSA/ECDSA host keys by commenting them out if they exist
+# HostKey /etc/ssh/ssh_host_rsa_key
+# HostKey /etc/ssh/ssh_host_ecdsa_key
+
+# --- Session Management ---
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+TCPKeepAlive yes
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# --- Subsystem ---
+Subsystem sftp /usr/lib/ssh/sftp-server
+
+```
+
+**Apply Configuration:**
+
+```bash
+sudo sshd -t  # Validate syntax
+sudo systemctl restart ssh
+
+```
+
+---
+
+## 🚀 5. Quickstart & Initial Deployment (New Pi)
+
+Run on the Pi console directly to bootstrap keys from GitHub before locking down the server:
+
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+curl -s [https://github.com/4ndr0666.keys](https://github.com/4ndr0666.keys) >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+```
+
+---
+
+## ✅ 6. Verification & Mini-Audit
+
+Repeat anytime to validate the integrity of the connection and security parameters.
+
+### On the Client (`theworkpc`)
+
+```bash
+ls -ld ~/.ssh/sockets || (mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/sockets)
+ssh -G dietpi | grep -E 'control(master|path|persist)|serveralive(interval|countmax)'
+ssh-keygen -F 192.168.2.3
+ssh -o PubkeyAuthentication=no -o PasswordAuthentication=yes dietpi || echo 'OK: passwords disabled'
+
+```
+
+### On the Pi (`dietpi`)
+
+```bash
+whoami
+sudo journalctl -u ssh -n 50 --no-pager | grep -i 'Accepted publickey' || echo 'NO publickey events seen'
+ls -ld ~/.ssh; ls -l ~/.ssh/authorized_keys; head -n 2 ~/.ssh/authorized_keys
+sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pubkeyauthentication)'
+sudo ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub
+systemctl is-active ssh; systemctl is-enabled ssh
+ss -tnlp | grep ':22'
+
+```
+
+---
+
+## ⚡ 7. Multiplexing Control
+
+Reuses one authenticated TCP session for instant new shells or scp/sftp. Requires `~/.ssh/sockets` (chmod 700).
+
+```bash
+ssh -O check dietpi   # Is master running?
+ssh -O exit  dietpi   # Close master session
+
+```
+
+---
+
+## 🔑 8. Key Management
+
+**Generate a new keypair:**
+
+```bash
+ssh-keygen -t ed25519 -a 100 -C "andro@theworkpc"
+cat ~/.ssh/id_ed25519.pub
+
+```
+
+**Recover public key from a private key:**
+Extract the public key perfectly without regenerating if `id_ed25519.pub` is lost.
+
+```bash
+ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+
+```
+
+**Fix permissions (Client-side):**
+
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_ed25519
+chmod 644 ~/.ssh/id_ed25519.pub
+
+```
+
+---
+
+## 🧰 9. Troubleshooting
+
+```bash
+# Verbose debug log
+ssh -vvv dietpi
+
+# Purge corrupted host key
+ssh-keygen -R 192.168.2.3
+
+# Manually trust host key and hash it
+ssh-keyscan -t ed25519 192.168.2.3 >> ~/.ssh/known_hosts
+ssh-keygen -H -f ~/.ssh/known_hosts && rm -f ~/.ssh/known_hosts.old
+
+# Ensure key is loaded into local agent
+eval "$(ssh-agent -s)"; ssh-add ~/.ssh/id_ed25519
+
+```
+
+---
+
+## 🏗️ 10. AUR (Arch User Repository) Workflow
+
+**Purpose:** Access, clone, and manage AUR packages via SSH using the DRY `Host *` config rules.
+
+### 🔐 Setup once
+
+1. Upload your public key (`~/.ssh/id_ed25519.pub`) to your AUR profile:
+[https://aur.archlinux.org/account/USERNAME/edit](https://aur.archlinux.org/account/USERNAME/edit)
+2. Pin the AUR host key locally:
+```bash
+ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+ssh-keygen -H -f ~/.ssh/known_hosts && rm -f ~/.ssh/known_hosts.old
+
+```
+
+
+
+### 🧪 Verify AUR access
+
+```bash
+ssh -T aur@aur.archlinux.org help
+
+```
+
+Expected output includes:
+
+```text
+Commands:
+  adopt <name> ...
+  git-upload-pack
+  git-receive-pack
+
+```
+
+### 🧭 Common AUR commands
+
+| Purpose | Command | Notes |
+| --- | --- | --- |
+| List your repos | `ssh aur@aur.archlinux.org list-repos` | View all packages you maintain |
+| Clone package | `git clone ssh://aur@aur.archlinux.org/<pkgname>.git` | Pulls AUR repo locally |
+| Push update | `git push aur master` | Publishes new PKGBUILD |
+| Flag outdated | `ssh aur@aur.archlinux.org flag <pkg> "reason"` | Marks package as out-of-date |
+| Vote | `ssh aur@aur.archlinux.org vote <pkg>` | Adds your vote |
+| Disown/adopt | `ssh aur@aur.archlinux.org disown <pkg>` | Manage maintainership |
+
+### 🧾 Test automation
+
+```bash
+ssh -T aur@aur.archlinux.org help >/dev/null 2>&1 && echo "✅ AUR SSH OK" || echo "❌ AUR SSH FAIL"
+
+```
+
+---
+
+## 🪄 11. SSH Matrix Manager Script
+
+**Purpose:** Idempotent, safe, POSIX-compliant scripting solution for initial setup, maintenance, and recovery.
+**Usage:** Save as `ssh_matrix_manager.sh` and run `chmod +x ssh_matrix_manager.sh`
+
+```sh
 #!/bin/sh
 #
 # SSH Matrix Manager
@@ -285,3 +595,20 @@ main() {
 }
 
 main "$@"
+
+```
+
+---
+
+## 🧠 12. Mental Model Summary
+
+| Concept | Analogy | Key takeaway |
+| --- | --- | --- |
+| `authorized_keys` | Lock whitelist | Determines who can enter |
+| `known_hosts` | Handshake logbook | Proves who you’re talking to |
+| `ControlMaster` | Connection pool | Performance optimization |
+| `id_ed25519` | Private identity | Never leave your machine |
+| GitHub `.keys` endpoint | Cloud keyring | Canonical public source |
+| `/etc/ssh/ssh_config` | Global Rules | System-wide strict baseline |
+| `~/.ssh/config` | Personal Keychain | User-specific DRY rules |
+| AUR SSH | Command gate | No shell, just RPC commands |
