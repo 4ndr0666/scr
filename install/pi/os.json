@@ -1,0 +1,14 @@
+{
+    "name":	    "Arch2",
+    "url":          "http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch64-latest.tar.gz",
+    "version":	    "20260714",
+    "release_date": "2026-07-14",
+    "kernel":	    "?.??",
+    "description":  "An Arch Linux port with ARMv8 Cortex-A72 for RPi4",
+    "username": "root",
+    "password": "root",
+    "feature_level": 0,
+    "supported_models": [
+        "Pi 4"
+    ]    
+}
