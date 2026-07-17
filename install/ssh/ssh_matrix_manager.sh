@@ -48,34 +48,34 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # Enforces deterministic directory and file permissions on every run.
 # ==============================================================================
 enforce_keypair() {
-    printf "[*] Enforcing Ed25519 keypair integrity...\n"
+	printf "[*] Enforcing Ed25519 keypair integrity...\n"
 
-    ssh_dir="${HOME}/.ssh"
-    priv_key="${ssh_dir}/id_ed25519"
-    pub_key="${ssh_dir}/id_ed25519.pub"
+	ssh_dir="${HOME}/.ssh"
+	priv_key="${ssh_dir}/id_ed25519"
+	pub_key="${ssh_dir}/id_ed25519.pub"
 
-    mkdir -p "${ssh_dir}/sockets"
+	mkdir -p "${ssh_dir}/sockets"
 
-    # Generate fresh keypair when no private key exists.
-    if [ ! -f "$priv_key" ]; then
-        printf "[+] No private key found. Generating new Ed25519 keypair...\n"
-        ssh-keygen -t ed25519 -a 100 -C "$EMAIL" -f "$priv_key" -N ""
-    fi
+	# Generate fresh keypair when no private key exists.
+	if [ ! -f "$priv_key" ]; then
+		printf "[+] No private key found. Generating new Ed25519 keypair...\n"
+		ssh-keygen -t ed25519 -a 100 -C "$EMAIL" -f "$priv_key" -N ""
+	fi
 
-    # Recover public key from private key when only the public half is missing.
-    if [ ! -f "$pub_key" ]; then
-        printf "[!] Public key missing. Recovering from private key...\n"
-        ssh-keygen -y -f "$priv_key" > "$pub_key"
-        printf "[+] Recovery successful.\n"
-    fi
+	# Recover public key from private key when only the public half is missing.
+	if [ ! -f "$pub_key" ]; then
+		printf "[!] Public key missing. Recovering from private key...\n"
+		ssh-keygen -y -f "$priv_key" >"$pub_key"
+		printf "[+] Recovery successful.\n"
+	fi
 
-    # Enforce strict deterministic permissions.
-    chmod 700 "$ssh_dir"
-    chmod 700 "${ssh_dir}/sockets"
-    chmod 600 "$priv_key"
-    chmod 644 "$pub_key"
+	# Enforce strict deterministic permissions.
+	chmod 700 "$ssh_dir"
+	chmod 700 "${ssh_dir}/sockets"
+	chmod 600 "$priv_key"
+	chmod 644 "$pub_key"
 
-    printf "[*] Keypair validated.\n"
+	printf "[*] Keypair validated.\n"
 }
 
 # ==============================================================================
@@ -88,26 +88,26 @@ enforce_keypair() {
 # Disables and masks the local SSH server daemon to reduce local attack surface.
 # ==============================================================================
 deploy_client_config() {
-    target_ip="$1"
-    printf "[*] Deploying strict client configuration targeting %s...\n" "$target_ip"
+	target_ip="$1"
+	printf "[*] Deploying strict client configuration targeting %s...\n" "$target_ip"
 
-    # Resolve the script's absolute path before escalating so sudo can locate it.
-    SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    if [ ! -r "$SCRIPT_PATH" ]; then
-        printf "[-] Cannot resolve a readable script path for sudo reinvocation.\n"
-        printf "    Run the script from its own directory or as: sudo sh /path/to/%s\n" "$(basename "$0")"
-        exit 1
-    fi
+	# Resolve the script's absolute path before escalating so sudo can locate it.
+	SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+	if [ ! -r "$SCRIPT_PATH" ]; then
+		printf "[-] Cannot resolve a readable script path for sudo reinvocation.\n"
+		printf "    Run the script from its own directory or as: sudo sh /path/to/%s\n" "$(basename "$0")"
+		exit 1
+	fi
 
-    if [ "$(id -u)" -ne 0 ]; then
-        printf "[!] Global config requires root. Escalating...\n"
-        sudo sh "$SCRIPT_PATH" _internal_global_client
-    else
-        _internal_global_client
-    fi
+	if [ "$(id -u)" -ne 0 ]; then
+		printf "[!] Global config requires root. Escalating...\n"
+		sudo sh "$SCRIPT_PATH" _internal_global_client
+	else
+		_internal_global_client
+	fi
 
-    printf "[*] Writing user-specific SSH configuration (~/.ssh/config)...\n"
-    cat << EOF > "${HOME}/.ssh/config"
+	printf "[*] Writing user-specific SSH configuration (~/.ssh/config)...\n"
+	cat <<EOF >"${HOME}/.ssh/config"
 # ~/.ssh/config  (User-specific — managed by ssh_matrix_manager.sh)
 
 Host *
@@ -128,11 +128,11 @@ Host ${AUR_HOST}
     User aur
     HostKeyAlgorithms ssh-ed25519
 EOF
-    chmod 600 "${HOME}/.ssh/config"
+	chmod 600 "${HOME}/.ssh/config"
 
-    printf "[*] Disabling local SSH server daemon to reduce attack surface...\n"
-    sudo systemctl disable --now sshd 2>/dev/null || true
-    sudo systemctl mask sshd 2>/dev/null || true
+	printf "[*] Disabling local SSH server daemon to reduce attack surface...\n"
+	sudo systemctl disable --now sshd 2>/dev/null || true
+	sudo systemctl mask sshd 2>/dev/null || true
 }
 
 # ==============================================================================
@@ -144,8 +144,8 @@ EOF
 # negotiation to modern, audited primitives.
 # ==============================================================================
 _internal_global_client() {
-    printf "[*] Writing global system defaults (/etc/ssh/ssh_config)...\n"
-    cat << 'EOF' > /etc/ssh/ssh_config
+	printf "[*] Writing global system defaults (/etc/ssh/ssh_config)...\n"
+	cat <<'EOF' >/etc/ssh/ssh_config
 # /etc/ssh/ssh_config  (System-wide client defaults — managed by ssh_matrix_manager.sh)
 # Include /etc/ssh/ssh_config.d/*.conf
 
@@ -168,8 +168,8 @@ Host *
     MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
     KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
 EOF
-    chmod 644 /etc/ssh/ssh_config
-    printf "[+] Global client config written.\n"
+	chmod 644 /etc/ssh/ssh_config
+	printf "[+] Global client config written.\n"
 }
 
 # ==============================================================================
@@ -179,24 +179,24 @@ EOF
 # network stall cannot hang the orchestrator indefinitely.
 # ==============================================================================
 deploy_aur_trust() {
-    printf "[*] Pinning AUR host key...\n"
-    known_hosts="${HOME}/.ssh/known_hosts"
+	printf "[*] Pinning AUR host key...\n"
+	known_hosts="${HOME}/.ssh/known_hosts"
 
-    touch "$known_hosts"
+	touch "$known_hosts"
 
-    # Idempotency: skip scan if the host is already present.
-    if ! ssh-keygen -F "$AUR_HOST" -f "$known_hosts" >/dev/null 2>&1; then
-        # -T 10: hard network timeout satisfying Rule 4.2.
-        ssh-keyscan -T 10 "$AUR_HOST" >> "$known_hosts" 2>/dev/null
-        # Hash all plain-text entries and remove the unencrypted backup.
-        ssh-keygen -H -f "$known_hosts" >/dev/null 2>&1
-        rm -f "${known_hosts}.old"
-        printf "[+] AUR host key pinned and hashed.\n"
-    else
-        printf "[+] AUR host key is already pinned.\n"
-    fi
+	# Idempotency: skip scan if the host is already present.
+	if ! ssh-keygen -F "$AUR_HOST" -f "$known_hosts" >/dev/null 2>&1; then
+		# -T 10: hard network timeout satisfying Rule 4.2.
+		ssh-keyscan -T 10 "$AUR_HOST" >>"$known_hosts" 2>/dev/null
+		# Hash all plain-text entries and remove the unencrypted backup.
+		ssh-keygen -H -f "$known_hosts" >/dev/null 2>&1
+		rm -f "${known_hosts}.old"
+		printf "[+] AUR host key pinned and hashed.\n"
+	else
+		printf "[+] AUR host key is already pinned.\n"
+	fi
 
-    chmod 600 "$known_hosts"
+	chmod 600 "$known_hosts"
 }
 
 # ==============================================================================
@@ -209,41 +209,41 @@ deploy_aur_trust() {
 # and VERBOSE logging, then validates syntax and restarts the daemon.
 # ==============================================================================
 deploy_server_config() {
-    if [ "$(id -u)" -ne 0 ]; then
-        printf "[-] Server configuration requires root. Run: sudo sh %s server\n" "$0"
-        exit 1
-    fi
+	if [ "$(id -u)" -ne 0 ]; then
+		printf "[-] Server configuration requires root. Run: sudo sh %s server\n" "$0"
+		exit 1
+	fi
 
-    printf "[*] Hardening server (dietpi)...\n"
+	printf "[*] Hardening server (dietpi)...\n"
 
-    target_user="dietpi"
-    target_home="/home/${target_user}"
-    auth_keys="${target_home}/.ssh/authorized_keys"
+	target_user="dietpi"
+	target_home="/home/${target_user}"
+	auth_keys="${target_home}/.ssh/authorized_keys"
 
-    # --- 1. Fetch and install authorized keys ---
-    printf "[*] Fetching canonical public keys from GitHub...\n"
-    mkdir -p "${target_home}/.ssh"
+	# --- 1. Fetch and install authorized keys ---
+	printf "[*] Fetching canonical public keys from GitHub...\n"
+	mkdir -p "${target_home}/.ssh"
 
-    # Stage to an isolated temp file first so a partial download cannot corrupt
-    # the live authorized_keys (Rule 4.1 isolation).
-    if curl -fsSL --max-time 10 "$GITHUB_USER_URL" > "${TMP_DIR}/keys.pub"; then
-        touch "$auth_keys"
-        # Merge: existing keys are preserved alongside the fetched keys;
-        # blank lines are stripped; exact duplicates are removed.
-        awk 'NF' "$auth_keys" "${TMP_DIR}/keys.pub" | sort -u > "${TMP_DIR}/keys.new"
-        mv "${TMP_DIR}/keys.new" "$auth_keys"
-        chown -R "${target_user}:${target_user}" "${target_home}/.ssh"
-        chmod 700 "${target_home}/.ssh"
-        chmod 600 "$auth_keys"
-        printf "[+] Keys installed successfully.\n"
-    else
-        printf "[-] Failed to fetch keys from GitHub. Aborting server configuration.\n"
-        exit 1
-    fi
+	# Stage to an isolated temp file first so a partial download cannot corrupt
+	# the live authorized_keys (Rule 4.1 isolation).
+	if curl -fsSL --max-time 10 "$GITHUB_USER_URL" >"${TMP_DIR}/keys.pub"; then
+		touch "$auth_keys"
+		# Merge: existing keys are preserved alongside the fetched keys;
+		# blank lines are stripped; exact duplicates are removed.
+		awk 'NF' "$auth_keys" "${TMP_DIR}/keys.pub" | sort -u >"${TMP_DIR}/keys.new"
+		mv "${TMP_DIR}/keys.new" "$auth_keys"
+		chown -R "${target_user}:${target_user}" "${target_home}/.ssh"
+		chmod 700 "${target_home}/.ssh"
+		chmod 600 "$auth_keys"
+		printf "[+] Keys installed successfully.\n"
+	else
+		printf "[-] Failed to fetch keys from GitHub. Aborting server configuration.\n"
+		exit 1
+	fi
 
-    # --- 2. Write hardened sshd_config ---
-    printf "[*] Writing hardened /etc/ssh/sshd_config...\n"
-    cat << 'EOF' > /etc/ssh/sshd_config
+	# --- 2. Write hardened sshd_config ---
+	printf "[*] Writing hardened /etc/ssh/sshd_config...\n"
+	cat <<'EOF' >/etc/ssh/sshd_config
 # /etc/ssh/sshd_config  (Hardened server — managed by ssh_matrix_manager.sh)
 
 Port 22
@@ -277,15 +277,15 @@ PrintMotd no
 
 Subsystem sftp /usr/lib/ssh/sftp-server
 EOF
-    chmod 644 /etc/ssh/sshd_config
+	chmod 644 /etc/ssh/sshd_config
 
-    # --- 3. Validate syntax and restart ---
-    printf "[*] Validating sshd configuration syntax...\n"
-    sshd -t
+	# --- 3. Validate syntax and restart ---
+	printf "[*] Validating sshd configuration syntax...\n"
+	sshd -t
 
-    printf "[*] Restarting SSH daemon...\n"
-    systemctl restart ssh 2>/dev/null || systemctl restart sshd
-    printf "[+] Server secured.\n"
+	printf "[*] Restarting SSH daemon...\n"
+	systemctl restart ssh 2>/dev/null || systemctl restart sshd
+	printf "[+] Server secured.\n"
 }
 
 # ==============================================================================
@@ -300,39 +300,38 @@ EOF
 # the audit on inactive units.
 # ==============================================================================
 audit_system() {
-    printf "========================================\n"
-    printf " SSH SYSTEM AUDIT\n"
-    printf "========================================\n\n"
+	printf "========================================\n"
+	printf " SSH SYSTEM AUDIT\n"
+	printf "========================================\n\n"
 
-    printf '%s\n' "--- [ Local Key State ] ---"
-    ls -la "${HOME}/.ssh" 2>/dev/null || printf '%s\n' "No ~/.ssh directory found."
+	printf '%s\n' "--- [ Local Key State ] ---"
+	ls -la "${HOME}/.ssh" 2>/dev/null || printf '%s\n' "No ~/.ssh directory found."
 
-    printf '\n%s\n' "--- [ Multiplexing Sockets ] ---"
-    ls -la "${HOME}/.ssh/sockets" 2>/dev/null || printf '%s\n' "No sockets active."
+	printf '\n%s\n' "--- [ Multiplexing Sockets ] ---"
+	ls -la "${HOME}/.ssh/sockets" 2>/dev/null || printf '%s\n' "No sockets active."
 
-    printf '\n%s\n' "--- [ SSH Daemon Status ] ---"
-    # || true guards prevent set -e from aborting on inactive units.
-    systemctl is-active sshd 2>/dev/null || systemctl is-active ssh 2>/dev/null || \
-        printf '%s\n' "sshd is completely disabled/masked."
+	printf '\n%s\n' "--- [ SSH Daemon Status ] ---"
+	# || true guards prevent set -e from aborting on inactive units.
+	systemctl is-active sshd 2>/dev/null || systemctl is-active ssh 2>/dev/null ||
+		printf '%s\n' "sshd is completely disabled/masked."
 
-    printf '\n%s\n' "--- [ Listening Ports ] ---"
-    ss -tnlp 2>/dev/null | grep ':22' || printf '%s\n' "No process listening on port 22."
+	printf '\n%s\n' "--- [ Listening Ports ] ---"
+	ss -tnlp 2>/dev/null | grep ':22' || printf '%s\n' "No process listening on port 22."
 
-    printf '\n%s\n' "--- [ Authorized Key Fingerprints ] ---"
-    # Display fingerprints for the dietpi service account if this is the server,
-    # and for the current user if local authorized_keys exist.
-    for keys_path in \
-        "/home/dietpi/.ssh/authorized_keys" \
-        "${HOME}/.ssh/authorized_keys"
-    do
-        if [ -f "$keys_path" ]; then
-            printf "Keys in %s:\n" "$keys_path"
-            ssh-keygen -l -f "$keys_path" 2>/dev/null || \
-                printf "  (unable to read fingerprints)\n"
-        fi
-    done
+	printf '\n%s\n' "--- [ Authorized Key Fingerprints ] ---"
+	# Display fingerprints for the dietpi service account if this is the server,
+	# and for the current user if local authorized_keys exist.
+	for keys_path in \
+		"/home/dietpi/.ssh/authorized_keys" \
+		"${HOME}/.ssh/authorized_keys"; do
+		if [ -f "$keys_path" ]; then
+			printf "Keys in %s:\n" "$keys_path"
+			ssh-keygen -l -f "$keys_path" 2>/dev/null ||
+				printf "  (unable to read fingerprints)\n"
+		fi
+	done
 
-    printf "\n========================================\n"
+	printf "\n========================================\n"
 }
 
 # ==============================================================================
@@ -343,46 +342,46 @@ audit_system() {
 # path inside deploy_client_config; it is not intended for direct user invocation.
 # ==============================================================================
 main() {
-    cmd="${1:-}"
+	cmd="${1:-}"
 
-    case "$cmd" in
-        client)
-            target_ip="${2:-}"
-            if [ -z "$target_ip" ]; then
-                printf "Enter Target Pi IP or Hostname (e.g., 192.168.2.3): "
-                read -r target_ip
-            fi
-            if [ -z "$target_ip" ]; then
-                printf "[-] Error: Target IP or Hostname is required.\n"
-                exit 1
-            fi
+	case "$cmd" in
+	client)
+		target_ip="${2:-}"
+		if [ -z "$target_ip" ]; then
+			printf "Enter Target Pi IP or Hostname (e.g., 192.168.2.3): "
+			read -r target_ip
+		fi
+		if [ -z "$target_ip" ]; then
+			printf "[-] Error: Target IP or Hostname is required.\n"
+			exit 1
+		fi
 
-            enforce_keypair
-            deploy_client_config "$target_ip"
-            deploy_aur_trust
-            printf "\n[✔] Client workstation configured.\n"
-            ;;
-        server)
-            deploy_server_config
-            printf "\n[✔] Server host configured.\n"
-            ;;
-        recover)
-            enforce_keypair
-            printf "\n[✔] Key recovery complete.\n"
-            ;;
-        audit)
-            audit_system
-            ;;
-        _internal_global_client)
-            # Internal entry point for the root-escalated reinvocation from
-            # deploy_client_config.  Not intended for direct user invocation.
-            _internal_global_client
-            ;;
-        *)
-            printf "Usage: %s {client <IP>|server|recover|audit}\n" "$0"
-            exit 1
-            ;;
-    esac
+		enforce_keypair
+		deploy_client_config "$target_ip"
+		deploy_aur_trust
+		printf "\n[✔] Client workstation configured.\n"
+		;;
+	server)
+		deploy_server_config
+		printf "\n[✔] Server host configured.\n"
+		;;
+	recover)
+		enforce_keypair
+		printf "\n[✔] Key recovery complete.\n"
+		;;
+	audit)
+		audit_system
+		;;
+	_internal_global_client)
+		# Internal entry point for the root-escalated reinvocation from
+		# deploy_client_config.  Not intended for direct user invocation.
+		_internal_global_client
+		;;
+	*)
+		printf "Usage: %s {client <IP>|server|recover|audit}\n" "$0"
+		exit 1
+		;;
+	esac
 }
 
 main "$@"
