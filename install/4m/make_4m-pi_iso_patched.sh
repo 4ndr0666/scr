@@ -69,14 +69,18 @@ CONTAINER_RT=""
 _outer_done=0
 
 # ── Shared utilities ──────────────────────────────────────────────────────────
-log()  { printf '[*] %s\n' "$*"; }
+log() { printf '[*] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
-fatal(){ printf '[X] %s\n' "$*" >&2; exit 1; }
+fatal() {
+	printf '[X] %s\n' "$*" >&2
+	exit 1
+}
 
 # run SECONDS CMD [ARGS…] — hard wall-clock timeout on every external call
 run() {
-    local seconds="$1"; shift
-    timeout --foreground "$seconds" "$@"
+	local seconds="$1"
+	shift
+	timeout --foreground "$seconds" "$@"
 }
 
 # ── _outer_cleanup ────────────────────────────────────────────────────────────
@@ -84,12 +88,12 @@ run() {
 # Container is --rm; loop devices are managed entirely inside the container.
 # Captures $? BEFORE 'local' to avoid the bash local-rc=0 trap.
 _outer_cleanup() {
-    local rc=$?          # must be first line; 'local' itself would overwrite $?
-    set +e
-    [[ "${_outer_done}" -eq 1 ]] && exit "$rc"
-    _outer_done=1
-    [[ -n "${_INNER_SCRIPT:-}" ]] && rm -f "${_INNER_SCRIPT}"
-    exit "$rc"
+	local rc=$? # must be first line; 'local' itself would overwrite $?
+	set +e
+	[[ "${_outer_done}" -eq 1 ]] && exit "$rc"
+	_outer_done=1
+	[[ -n "${_INNER_SCRIPT:-}" ]] && rm -f "${_INNER_SCRIPT}"
+	exit "$rc"
 }
 trap _outer_cleanup EXIT INT TERM
 
@@ -97,15 +101,30 @@ trap _outer_cleanup EXIT INT TERM
 # No LBYL validation of local paths here — _mirror_git_repo handles that
 # with EAFP semantics and a clear fatal message.
 parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --local-linux)    LOCAL_LINUX="$2";    shift 2 ;;
-            --local-firmware) LOCAL_FIRMWARE="$2"; shift 2 ;;
-            --sign)           SIGN_ARTIFACTS=1;    shift   ;;
-            --jobs)           CORES="$2";          shift 2 ;;
-            --workdir)        WORKDIR="$2";        shift 2 ;;
-            --help|-h)
-                cat <<USAGE
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--local-linux)
+			LOCAL_LINUX="$2"
+			shift 2
+			;;
+		--local-firmware)
+			LOCAL_FIRMWARE="$2"
+			shift 2
+			;;
+		--sign)
+			SIGN_ARTIFACTS=1
+			shift
+			;;
+		--jobs)
+			CORES="$2"
+			shift 2
+			;;
+		--workdir)
+			WORKDIR="$2"
+			shift 2
+			;;
+		--help | -h)
+			cat <<USAGE
 Usage: ${SCRIPT_NAME} [OPTIONS]
 
   --local-linux PATH    Local linux.git bare mirror, checkout, or source directory
@@ -123,40 +142,40 @@ Outputs (in WORKDIR/output/):
   manifest.json             JSON build manifest
   manifest.json.asc         GPG signature (--sign only)
 USAGE
-                exit 0
-                ;;
-            *) fatal "Unknown option: $1" ;;
-        esac
-    done
-    # Re-derive dependent paths if --workdir was given
-    CACHEDIR="${WORKDIR}/cache"
-    OUTPUT_DIR="${WORKDIR}/output"
+			exit 0
+			;;
+		*) fatal "Unknown option: $1" ;;
+		esac
+	done
+	# Re-derive dependent paths if --workdir was given
+	CACHEDIR="${WORKDIR}/cache"
+	OUTPUT_DIR="${WORKDIR}/output"
 }
 
 # ── detect_runtime ────────────────────────────────────────────────────────────
 detect_runtime() {
-    if command -v podman >/dev/null 2>&1; then
-        CONTAINER_RT="podman"
-    elif command -v docker >/dev/null 2>&1; then
-        CONTAINER_RT="docker"
-    else
-        fatal "Neither podman nor docker found."
-    fi
-    log "Container runtime: ${CONTAINER_RT}"
+	if command -v podman >/dev/null 2>&1; then
+		CONTAINER_RT="podman"
+	elif command -v docker >/dev/null 2>&1; then
+		CONTAINER_RT="docker"
+	else
+		fatal "Neither podman nor docker found."
+	fi
+	log "Container runtime: ${CONTAINER_RT}"
 }
 
 # ── build_builder_image ───────────────────────────────────────────────────────
 # Inline Containerfile piped to stdin; build context is empty ('-').
 # Idempotent: skips if the image tag already exists.
 build_builder_image() {
-    local existing
-    existing=$("${CONTAINER_RT}" images -q "${BUILDER_TAG}" 2>/dev/null || true)
-    if [[ -n "${existing}" ]]; then
-        log "Builder image '${BUILDER_TAG}' present — skipping."
-        return
-    fi
-    log "Building isolated build environment (${BUILDER_TAG})..."
-    "${CONTAINER_RT}" build -t "${BUILDER_TAG}" - <<'CONTAINERFILE'
+	local existing
+	existing=$("${CONTAINER_RT}" images -q "${BUILDER_TAG}" 2>/dev/null || true)
+	if [[ -n "${existing}" ]]; then
+		log "Builder image '${BUILDER_TAG}' present — skipping."
+		return
+	fi
+	log "Building isolated build environment (${BUILDER_TAG})..."
+	"${CONTAINER_RT}" build -t "${BUILDER_TAG}" - <<'CONTAINERFILE'
 FROM docker.io/library/debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -174,33 +193,33 @@ CONTAINERFILE
 #   2. normal git checkouts
 #   3. unpacked source trees (last resort: snapshot into a temporary bare repo)
 _seed_from_local_source() {
-    local source="$1" target="$2"
+	local source="$1" target="$2"
 
-    if [[ -f "${source}/HEAD" && -d "${source}/objects" ]]; then
-        log "Seeding from local bare repo: ${source}"
-        run 300 git clone --mirror "${source}" "${target}"
+	if [[ -f "${source}/HEAD" && -d "${source}/objects" ]]; then
+		log "Seeding from local bare repo: ${source}"
+		run 300 git clone --mirror "${source}" "${target}"
 
-    elif [[ -d "${source}/.git" ]]; then
-        log "Seeding from local checkout: ${source}"
-        run 300 git clone --mirror "${source}" "${target}"
+	elif [[ -d "${source}/.git" ]]; then
+		log "Seeding from local checkout: ${source}"
+		run 300 git clone --mirror "${source}" "${target}"
 
-    elif [[ -d "${source}" ]]; then
-        log "Seeding from plain source directory snapshot: ${source}"
-        mkdir -p "${target}"
-        run 60 git init --bare "${target}" >/dev/null
-        run 300 git -c core.bare=false \
-            --git-dir="${target}" \
-            --work-tree="${source}" add . >/dev/null
-        run 60 git -c core.bare=false \
-            --git-dir="${target}" \
-            --work-tree="${source}" \
-            -c user.name="Builder" \
-            -c user.email="build@local" \
-            commit -m "Local source snapshot" >/dev/null
+	elif [[ -d "${source}" ]]; then
+		log "Seeding from plain source directory snapshot: ${source}"
+		mkdir -p "${target}"
+		run 60 git init --bare "${target}" >/dev/null
+		run 300 git -c core.bare=false \
+			--git-dir="${target}" \
+			--work-tree="${source}" add . >/dev/null
+		run 60 git -c core.bare=false \
+			--git-dir="${target}" \
+			--work-tree="${source}" \
+			-c user.name="Builder" \
+			-c user.email="build@local" \
+			commit -m "Local source snapshot" >/dev/null
 
-    else
-        return 1
-    fi
+	else
+		return 1
+	fi
 }
 
 # ── _mirror_git_repo ──────────────────────────────────────────────────────────
@@ -212,107 +231,110 @@ _seed_from_local_source() {
 #   5. Network failed AND LOCAL_FALLBACK provided → retry local seed.
 #   6. All exhausted → fatal.
 _mirror_git_repo() {
-    local name="$1" remote="$2" branch="$3" sha="$4" local_fallback="${5:-}"
-    local target="${CACHEDIR}/${name}.git"
-    local stamp="${CACHEDIR}/.${name}_mirror.stamp"
+	local name="$1" remote="$2" branch="$3" sha="$4" local_fallback="${5:-}"
+	local target="${CACHEDIR}/${name}.git"
+	local stamp="${CACHEDIR}/.${name}_mirror.stamp"
 
-    if [[ -f "${stamp}" ]]; then
-        log "Cache hit: ${name} mirror"
-        return
-    fi
+	if [[ -f "${stamp}" ]]; then
+		log "Cache hit: ${name} mirror"
+		return
+	fi
 
-    if [[ -d "${target}" ]]; then
-        log "Refreshing ${name} mirror..."
-        if ! run 600 git --git-dir="${target}" fetch --prune origin 2>&1; then
-            warn "Network fetch failed for ${name}; verifying cached objects."
-        fi
-    else
-        local cloned=0
+	if [[ -d "${target}" ]]; then
+		log "Refreshing ${name} mirror..."
+		if ! run 600 git --git-dir="${target}" fetch --prune origin 2>&1; then
+			warn "Network fetch failed for ${name}; verifying cached objects."
+		fi
+	else
+		local cloned=0
 
-        if [[ -n "${local_fallback}" ]]; then
-            if _seed_from_local_source "${local_fallback}" "${target}"; then
-                cloned=1
-                log "Local seed succeeded for ${name}."
-            else
-                warn "Local seed failed for ${name}; trying network."
-                rm -rf "${target}"
-            fi
-        fi
+		if [[ -n "${local_fallback}" ]]; then
+			if _seed_from_local_source "${local_fallback}" "${target}"; then
+				cloned=1
+				log "Local seed succeeded for ${name}."
+			else
+				warn "Local seed failed for ${name}; trying network."
+				rm -rf "${target}"
+			fi
+		fi
 
-        if [[ "${cloned}" -eq 0 ]]; then
-            log "Cloning ${name} mirror from network..."
-            if ! run 600 git clone --mirror "${remote}" "${target}" 2>&1; then
-                if [[ -n "${local_fallback}" ]]; then
-                    warn "Network clone failed for ${name}; retrying from local path."
-                    rm -rf "${target}"
-                    _seed_from_local_source "${local_fallback}" "${target}" \
-                        || fatal "Both network and local-fallback clone failed for ${name}."
-                    log "Local fallback clone succeeded for ${name}."
-                else
-                    if [[ -t 0 ]]; then
-                        warn "Network clone failed for '${name}' and no --local-${name} path was provided."
-                        local prompted_path=""
-                        while true; do
-                            printf '[?] Enter path to a local %s source (bare repo, checkout, or source directory), or Enter to abort: ' "${name}" >&2
-                            read -r prompted_path
-                            [[ -n "${prompted_path}" ]] || fatal "Aborted — no local path supplied for '${name}'."
-                            rm -rf "${target}"
-                            if _seed_from_local_source "${prompted_path}" "${target}"; then
-                                log "Interactively-supplied clone succeeded for '${name}'."
-                                break
-                            fi
-                            warn "'${prompted_path}' is not an accepted source format; try again."
-                        done
-                    else
-                        fatal "git clone --mirror failed for '${name}' and no --local-${name} path was provided. Accepted local formats: bare repo, checkout, or source directory."
-                    fi
-                fi
-            fi
-        fi
-    fi
+		if [[ "${cloned}" -eq 0 ]]; then
+			log "Cloning ${name} mirror from network..."
+			if ! run 600 git clone --mirror "${remote}" "${target}" 2>&1; then
+				if [[ -n "${local_fallback}" ]]; then
+					warn "Network clone failed for ${name}; retrying from local path."
+					rm -rf "${target}"
+					_seed_from_local_source "${local_fallback}" "${target}" ||
+						fatal "Both network and local-fallback clone failed for ${name}."
+					log "Local fallback clone succeeded for ${name}."
+				else
+					if [[ -t 0 ]]; then
+						warn "Network clone failed for '${name}' and no --local-${name} path was provided."
+						local prompted_path=""
+						while true; do
+							printf '[?] Enter path to a local %s source (bare repo, checkout, or source directory), or Enter to abort: ' "${name}" >&2
+							read -r prompted_path
+							[[ -n "${prompted_path}" ]] || fatal "Aborted — no local path supplied for '${name}'."
+							rm -rf "${target}"
+							if _seed_from_local_source "${prompted_path}" "${target}"; then
+								log "Interactively-supplied clone succeeded for '${name}'."
+								break
+							fi
+							warn "'${prompted_path}' is not an accepted source format; try again."
+						done
+					else
+						fatal "git clone --mirror failed for '${name}' and no --local-${name} path was provided. Accepted local formats: bare repo, checkout, or source directory."
+					fi
+				fi
+			fi
+		fi
+	fi
 
-    if [[ "${sha}" != "HEAD" ]]; then
-        run 30 git --git-dir="${target}" cat-file -e "${sha}^{commit}" \
-            || fatal "Pinned SHA ${sha} not reachable in '${name}' mirror."
-    fi
+	if [[ "${sha}" != "HEAD" ]]; then
+		run 30 git --git-dir="${target}" cat-file -e "${sha}^{commit}" ||
+			fatal "Pinned SHA ${sha} not reachable in '${name}' mirror."
+	fi
 
-    touch "${stamp}"
-    log "Mirror ready: ${name}."
+	touch "${stamp}"
+	log "Mirror ready: ${name}."
 }
 
 # ── _cache_archive ────────────────────────────────────────────────────────────
 _cache_archive() {
-    local name="$1" url="$2" expected_sha="$3"
-    local target="${CACHEDIR}/${name}"
-    local stamp="${CACHEDIR}/.${name}.stamp"
+	local name="$1" url="$2" expected_sha="$3"
+	local target="${CACHEDIR}/${name}"
+	local stamp="${CACHEDIR}/.${name}.stamp"
 
-    if [[ -f "${stamp}" ]]; then
-        log "Cache hit: ${name}"
-        return
-    fi
+	if [[ -f "${stamp}" ]]; then
+		log "Cache hit: ${name}"
+		return
+	fi
 
-    log "Downloading ${name}..."
-    run 300 wget -q --show-progress -O "${target}.tmp" "${url}" \
-        || fatal "Download failed for ${name}"
+	log "Downloading ${name}..."
+	run 300 wget -q --show-progress -O "${target}.tmp" "${url}" ||
+		fatal "Download failed for ${name}"
 
-    local actual_sha
-    actual_sha="$(sha256sum "${target}.tmp" | awk '{print $1}')"
-    [[ "${actual_sha}" == "${expected_sha}" ]] \
-        || { rm -f "${target}.tmp"; fatal "SHA-256 mismatch for ${name}. Expected: ${expected_sha}, Got: ${actual_sha}"; }
+	local actual_sha
+	actual_sha="$(sha256sum "${target}.tmp" | awk '{print $1}')"
+	[[ "${actual_sha}" == "${expected_sha}" ]] ||
+		{
+			rm -f "${target}.tmp"
+			fatal "SHA-256 mismatch for ${name}. Expected: ${expected_sha}, Got: ${actual_sha}"
+		}
 
-    mv "${target}.tmp" "${target}"
-    touch "${stamp}"
-    log "Verified ${name} (sha256: ${actual_sha})."
+	mv "${target}.tmp" "${target}"
+	touch "${stamp}"
+	log "Verified ${name} (sha256: ${actual_sha})."
 }
 
 # ── populate_source_cache ─────────────────────────────────────────────────────
 populate_source_cache() {
-    mkdir -p "${CACHEDIR}/ccache"
-    _mirror_git_repo "linux"    "${KERNEL_REPO}"   "${KERNEL_BRANCH}"   "${KERNEL_SHA}"   "${LOCAL_LINUX:-}"
-    _mirror_git_repo "firmware" "${FIRMWARE_REPO}" "${FIRMWARE_BRANCH}" "${FIRMWARE_SHA}" "${LOCAL_FIRMWARE:-}"
-    _cache_archive   "busybox-${BUSYBOX_VERSION}.tar.bz2" \
-                     "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" \
-                     "${BUSYBOX_SHA256}"
+	mkdir -p "${CACHEDIR}/ccache"
+	_mirror_git_repo "linux" "${KERNEL_REPO}" "${KERNEL_BRANCH}" "${KERNEL_SHA}" "${LOCAL_LINUX:-}"
+	_mirror_git_repo "firmware" "${FIRMWARE_REPO}" "${FIRMWARE_BRANCH}" "${FIRMWARE_SHA}" "${LOCAL_FIRMWARE:-}"
+	_cache_archive "busybox-${BUSYBOX_VERSION}.tar.bz2" \
+		"https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" \
+		"${BUSYBOX_SHA256}"
 }
 
 # ── _write_inner_script ───────────────────────────────────────────────────────
@@ -320,8 +342,8 @@ populate_source_cache() {
 # the container.  This avoids the bash -c "$(cat <<HEREDOC)" quoting chimera
 # where the outer shell expands the inner script before docker/podman sees it.
 _write_inner_script() {
-    local dest="$1"
-    cat > "${dest}" <<'INNER_EOF'
+	local dest="$1"
+	cat >"${dest}" <<'INNER_EOF'
 #!/usr/bin/env bash
 # ============================================================================
 # Inner build script — runs inside the builder container.
@@ -750,68 +772,68 @@ inner_main() {
 
 inner_main
 INNER_EOF
-    chmod +x "${dest}"
+	chmod +x "${dest}"
 }
 
 # ── run_build_in_container ────────────────────────────────────────────────────
 run_build_in_container() {
-    # Write inner script to a temp file — bind-mounted read-only into container.
-    # Avoids the bash -c "$(cat <<HEREDOC)" quoting chimera where the outer shell
-    # expands the inner script's variables before docker/podman even runs.
-    _INNER_SCRIPT="$(mktemp /tmp/4mlinux_inner_XXXXXX.sh)"
-    _write_inner_script "${_INNER_SCRIPT}"
+	# Write inner script to a temp file — bind-mounted read-only into container.
+	# Avoids the bash -c "$(cat <<HEREDOC)" quoting chimera where the outer shell
+	# expands the inner script's variables before docker/podman even runs.
+	_INNER_SCRIPT="$(mktemp /tmp/4mlinux_inner_XXXXXX.sh)"
+	_write_inner_script "${_INNER_SCRIPT}"
 
-    mkdir -p "${OUTPUT_DIR}"
+	mkdir -p "${OUTPUT_DIR}"
 
-    log "Dispatching build DAG to container..."
-    run 14400 "${CONTAINER_RT}" run --rm \
-        --cap-add SYS_ADMIN \
-        --device /dev/loop-control \
-        $(for i in $(seq 0 7); do printf -- '--device /dev/loop%d ' "$i"; done) \
-        -v "${WORKDIR}:/workspace:rw" \
-        -v "${OUTPUT_DIR}:/workspace/output:rw" \
-        -v "${_INNER_SCRIPT}:/build/inner.sh:ro" \
-        -e "CORES=${CORES}" \
-        -e "KERNEL_SHA=${KERNEL_SHA}" \
-        -e "FIRMWARE_SHA=${FIRMWARE_SHA}" \
-        -e "BUSYBOX_VERSION=${BUSYBOX_VERSION}" \
-        -e "BUSYBOX_SHA256=${BUSYBOX_SHA256}" \
-        -e "BUILD_START_EPOCH=${BUILD_START_EPOCH}" \
-        "${BUILDER_TAG}" bash /build/inner.sh
+	log "Dispatching build DAG to container..."
+	run 14400 "${CONTAINER_RT}" run --rm \
+		--cap-add SYS_ADMIN \
+		--device /dev/loop-control \
+		$(for i in $(seq 0 7); do printf -- '--device /dev/loop%d ' "$i"; done) \
+		-v "${WORKDIR}:/workspace:rw" \
+		-v "${OUTPUT_DIR}:/workspace/output:rw" \
+		-v "${_INNER_SCRIPT}:/build/inner.sh:ro" \
+		-e "CORES=${CORES}" \
+		-e "KERNEL_SHA=${KERNEL_SHA}" \
+		-e "FIRMWARE_SHA=${FIRMWARE_SHA}" \
+		-e "BUSYBOX_VERSION=${BUSYBOX_VERSION}" \
+		-e "BUSYBOX_SHA256=${BUSYBOX_SHA256}" \
+		-e "BUILD_START_EPOCH=${BUILD_START_EPOCH}" \
+		"${BUILDER_TAG}" bash /build/inner.sh
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
 main() {
-    log "Initializing 4MLinux Pi Builder..."
-    parse_args "$@"
-    detect_runtime
-    build_builder_image
-    populate_source_cache
-    run_build_in_container
+	log "Initializing 4MLinux Pi Builder..."
+	parse_args "$@"
+	detect_runtime
+	build_builder_image
+	populate_source_cache
+	run_build_in_container
 
-    # Post-build artifact verification
-    local final_img="${OUTPUT_DIR}/${IMG_NAME}"
-    local final_sum="${OUTPUT_DIR}/${IMG_NAME}.sha256"
-    local final_manifest="${OUTPUT_DIR}/manifest.json"
+	# Post-build artifact verification
+	local final_img="${OUTPUT_DIR}/${IMG_NAME}"
+	local final_sum="${OUTPUT_DIR}/${IMG_NAME}.sha256"
+	local final_manifest="${OUTPUT_DIR}/manifest.json"
 
-    [[ -f "${final_img}" && -f "${final_sum}" && -f "${final_manifest}" ]] \
-        || fatal "Build pipeline completed but expected artifacts are missing."
+	[[ -f "${final_img}" && -f "${final_sum}" && -f "${final_manifest}" ]] ||
+		fatal "Build pipeline completed but expected artifacts are missing."
 
-    # Optional GPG signing
-    if [[ "${SIGN_ARTIFACTS}" -eq 1 ]]; then
-        log "Signing artifacts..."
-        command -v gpg >/dev/null 2>&1 || fatal "--sign: gpg not found in PATH."
-        gpg --batch --yes --detach-sign --armor "${final_img}"
-        gpg --batch --yes --detach-sign --armor "${final_manifest}"
-    fi
+	# Optional GPG signing
+	if [[ "${SIGN_ARTIFACTS}" -eq 1 ]]; then
+		log "Signing artifacts..."
+		command -v gpg >/dev/null 2>&1 || fatal "--sign: gpg not found in PATH."
+		gpg --batch --yes --detach-sign --armor "${final_img}"
+		gpg --batch --yes --detach-sign --armor "${final_manifest}"
+	fi
 
-    local end_epoch duration
-    end_epoch="$(date +%s)"
-    duration=$(( end_epoch - BUILD_START_EPOCH ))
+	local end_epoch duration
+	end_epoch="$(date +%s)"
+	duration=$((end_epoch - BUILD_START_EPOCH))
 
-    log "Build duration: ${duration} seconds"
-    log "Image successfully created."
-    printf '\nImage location:\n  %s\n\n' "${final_img}"
+	log "Build duration: ${duration} seconds"
+	log "Image successfully created."
+	printf '\nImage location:\n  %s\n\n' "${final_img}"
 }
 
 main "$@"
