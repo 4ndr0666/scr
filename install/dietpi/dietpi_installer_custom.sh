@@ -22,7 +22,7 @@ umask 0022
 
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
-readonly SCRIPT_VERSION="2.1.1"
+readonly SCRIPT_VERSION="2.1.2"
 
 # ── DietPi image ──────────────────────────────────────────────────────────────
 readonly DIETPI_IMAGE_URL="https://dietpi.com/downloads/images/DietPi_RPi-ARMv8-Bookworm.img.xz"
@@ -610,7 +610,8 @@ generate_dietpi_txt() {
 	sed -i "s|^#*AUTO_SETUP_AUTOSTART_TARGET_INDEX=.*|AUTO_SETUP_AUTOSTART_TARGET_INDEX=${CFG_AUTOSTART_INDEX}|" "${txt}"
 	sed -i "s|^#*AUTO_SETUP_AUTOSTART_LOGIN_USER=.*|AUTO_SETUP_AUTOSTART_LOGIN_USER=${CFG_AUTOSTART_USER}|" "${txt}"
 	sed -i "s|^#*SURVEY_OPTED_IN=.*|SURVEY_OPTED_IN=${CFG_SURVEY_OPT}|" "${txt}"
-	sed -i "s|^#*AUTO_SETUP_CUSTOM_SCRIPT_EXEC=.*|AUTO_SETUP_CUSTOM_SCRIPT_EXEC=1|" "${txt}"
+	sed -i "s|^#*AUTO_SETUP_CUSTOM_SCRIPT_EXEC=.*|AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0|" "${txt}"
+	sed -i "s|^#*AUTO_SETUP_AUTOMATED=.*|AUTO_SETUP_AUTOMATED=1|" "${txt}"
 	sed -i "s|^#*AUTO_SETUP_NET_ETH_FORCE_SPEED=.*|AUTO_SETUP_NET_ETH_FORCE_SPEED=${CFG_NET_ETH_FORCE_SPEED}|" "${txt}"
 	sed -i "s|^#*AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=.*|AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=${CFG_BOOT_WAIT_FOR_NETWORK}|" "${txt}"
 	sed -i "s|^#*AUTO_SETUP_SWAPFILE_SIZE=.*|AUTO_SETUP_SWAPFILE_SIZE=${CFG_SWAPFILE_SIZE}|" "${txt}"
@@ -641,7 +642,7 @@ generate_wifi_txt() {
 	log "Targeting and aligning WiFi_Injector arrays..."
 
 	# Sanitize single quotes to escape strictly per baseline requirements
-	local safe_pass="${CFG_WIFI_PASS//\'/\\\\\'}"
+	local safe_pass="${CFG_WIFI_PASS//\'/\'\'\'}"
 
 	sed -i "s|^#*aWIFI_SSID\[0\]=.*|aWIFI_SSID[0]='${CFG_WIFI_SSID}'|" "${txt}"
 	sed -i "s|^#*aWIFI_KEY\[0\]=.*|aWIFI_KEY[0]='${safe_pass}'|" "${txt}"
@@ -666,7 +667,7 @@ generate_post_script() {
 #!/bin/bash
 # ============================================================================
 # DietPi post-install rice script — runs on the Pi after first-boot setup.
-# Triggered by: AUTO_SETUP_CUSTOM_SCRIPT_EXEC=1 → /boot/Automation_Custom_Script.sh
+# Triggered by: AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0 → /boot/Automation_Custom_Script.sh
 # Log: /var/tmp/dietpi/logs/dietpi-firstrun-setup.log (appended)
 # ============================================================================
 set -Eeuo pipefail
@@ -768,10 +769,10 @@ install_git_make() {
     local dir="/tmp/rice_src/\${name}"
     log "  [G] git+make \${name}  # \${desc}"
     mkdir -p "\${dir}"
-    git clone --depth 1 --single-branch -q "\${url}" "\${dir}" 2>/dev/null \
-        || { cd "\${dir}"; git pull --force origin HEAD; }
+    timeout 300 git clone --depth 1 --single-branch -q "\${url}" "\${dir}" 2>/dev/null \
+        || { cd "\${dir}"; timeout 300 git pull --force origin HEAD; }
     cd "\${dir}"
-    make -j"\$(nproc)" >/dev/null 2>&1 && make install >/dev/null 2>&1 \
+    timeout 1800 make -j"\$(nproc)" >/dev/null 2>&1 && timeout 300 make install >/dev/null 2>&1 \
         || warn "  git+make \${name} failed (non-fatal)."
     cd /tmp
 }
@@ -780,7 +781,7 @@ install_pip() {
     local pkg="\$1" desc="\$2"
     log "  [P] pip3 install \${pkg}  # \${desc}"
     command -v pip3 >/dev/null 2>&1 || G_AGI python3-pip
-    pip3 install --quiet "\${pkg}" || warn "  pip3 \${pkg} failed (non-fatal)."
+    timeout 300 pip3 install --quiet "\${pkg}" || warn "  pip3 \${pkg} failed (non-fatal)."
 }
 
 run_progs_loop() {
@@ -814,7 +815,7 @@ deploy_dotfiles() {
     local tmpdir
     tmpdir="\$(mktemp -d)"
     log "Deploying dotfiles from \${DOTFILES_REPO} (\${DOTFILES_BRANCH}) → \${home}..."
-    git clone --depth 1 --single-branch --no-tags -q \
+    timeout 300 git clone --depth 1 --single-branch --no-tags -q \
         -b "\${DOTFILES_BRANCH}" "\${DOTFILES_REPO}" "\${tmpdir}" \
         || die "Dotfiles clone failed."
     rsync -a --exclude='.git' --exclude='README*' --exclude='LICENSE*' \
@@ -879,19 +880,19 @@ build_custom_kernel() {
     local src_dir="/usr/src/linux"
     if [[ ! -d "\${src_dir}" ]]; then
         log "Cloning Raspberry Pi Linux tree..."
-        git clone --depth=1 -b rpi-6.1.y https://github.com/raspberrypi/linux.git "\${src_dir}"
+        timeout 600 git clone --depth=1 -b rpi-6.1.y https://github.com/raspberrypi/linux.git "\${src_dir}"
     fi
     
     cd "\${src_dir}"
     cp "\${cfg}" .config
     log "Configuring kernel..."
-    make olddefconfig
+    timeout 300 make olddefconfig
     
     log "Compiling kernel..."
-    make -j"\$(nproc)" Image.gz modules dtbs
+    timeout 1800 make -j"\$(nproc)" Image.gz modules dtbs
     
     log "Installing modules..."
-    make modules_install
+    timeout 600 make modules_install
     
     log "Deploying kernel to /boot..."
     cp arch/arm64/boot/Image.gz /boot/kernel8.img
