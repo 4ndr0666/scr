@@ -281,3 +281,7 @@ Dev settings
 #------------------------------------------------------------------------------------------------------
 Settings, automatically added by dietpi-update
 #------------------------------------------------------------------------------------------------------
+
+[DietPi-ARMv8_AlloGUI.img.xz](https://dietpi.com/downloads/images/DietPi_RPi-ARMv8-Bookworm_AlloGUI.img.xz)
+
+[DietPi-ARMv8-Trixie.img.xz](https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz)
