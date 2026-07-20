@@ -919,9 +919,14 @@ run_build_in_container() {
     _INNER_SCRIPT="$(mktemp /tmp/4mlinux_inner_XXXXXX.sh)"
     _write_inner_script "${_INNER_SCRIPT}"
     mkdir -p "${OUTPUT_DIR}"
+    log "Output directory: ${OUTPUT_DIR}"
 
     log "Dispatching build DAG to container (rootless, no loop devices)..."
+    log "  Build workspace : ${WORKDIR}"
+    log "  Output dir      : ${OUTPUT_DIR}"
+    log "  Container image : ${BUILDER_TAG}"
     # No --privileged, no --cap-add, no --device flags required in v5.
+    # stdout/stderr streamed directly — no log suppression — so failures are visible.
     run 14400 "${CONTAINER_RT}" run --rm \
         -v "${WORKDIR}:/workspace:rw" \
         -v "${OUTPUT_DIR}:/workspace/output:rw" \
@@ -933,6 +938,10 @@ run_build_in_container() {
         -e "BUSYBOX_SHA256=${BUSYBOX_SHA256}" \
         -e "BUILD_START_EPOCH=${BUILD_START_EPOCH}" \
         "${BUILDER_TAG}" bash /build/inner.sh
+    local container_rc=$?
+    if [[ "${container_rc}" -ne 0 ]]; then
+        fatal "Container build exited with code ${container_rc}. See log above."
+    fi
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -948,8 +957,17 @@ main() {
     local final_sum="${OUTPUT_DIR}/4mlinux_rpi4.img.sha256"
     local final_manifest="${OUTPUT_DIR}/manifest.json"
 
-    [[ -f "${final_img}" && -f "${final_sum}" && -f "${final_manifest}" ]] \
-        || fatal "Build pipeline completed but expected artifacts are missing."
+    # Show expected paths so the user knows exactly where to look.
+    log "Expected outputs:"
+    log "  Image    : ${final_img}"
+    log "  Checksum : ${final_sum}"
+    log "  Manifest : ${final_manifest}"
+    if [[ ! -f "${final_img}" ]]; then
+        fatal "Image not found: ${final_img}\nCheck container logs above for build errors."
+    fi
+    if [[ ! -f "${final_sum}" || ! -f "${final_manifest}" ]]; then
+        fatal "Checksum or manifest missing in ${OUTPUT_DIR}/\nCheck container logs above."
+    fi
 
     if [[ "${SIGN_ARTIFACTS}" -eq 1 ]]; then
         log "Signing artifacts..."

@@ -629,9 +629,13 @@ generate_dietpi_txt() {
 	local txt="${dir}/dietpi.txt"
 
 	if [[ ! -f "${txt}" ]]; then
-		log "Fetching canonical dietpi.txt for dry-run/missing file..."
-		curl -fsSL "https://raw.githubusercontent.com/MichaIng/DietPi/master/dietpi.txt" >"${txt}" || touch "${txt}"
+		log "Fetching canonical dietpi.txt template..."
+		if ! curl -fsSL "https://raw.githubusercontent.com/MichaIng/DietPi/master/dietpi.txt" >"${txt}" 2>/dev/null; then
+			rm -f "${txt}"
+			fatal "Failed to download canonical dietpi.txt. Check network connectivity."
+		fi
 	fi
+	[[ -s "${txt}" ]] || fatal "dietpi.txt is empty after download — cannot proceed."
 
 	log "Targeting and aligning Config_Knobs in dietpi.txt..."
 
@@ -689,9 +693,12 @@ generate_wifi_txt() {
 	#  PHASE1 PHASE2 CERT) are present — the DietPi parser expects them all.
 	if [[ ! -f "${txt}" ]]; then
 		log "Fetching canonical dietpi-wifi.txt template..."
-		curl -fsSL "https://raw.githubusercontent.com/MichaIng/DietPi/master/dietpi-wifi.txt" \
-			>"${txt}" 2>/dev/null || touch "${txt}"
+		if ! curl -fsSL "https://raw.githubusercontent.com/MichaIng/DietPi/master/dietpi-wifi.txt" >"${txt}" 2>/dev/null; then
+			rm -f "${txt}"
+			fatal "Failed to download canonical dietpi-wifi.txt. Check network connectivity."
+		fi
 	fi
+	[[ -s "${txt}" ]] || fatal "dietpi-wifi.txt is empty after download — cannot proceed."
 
 	log "Injecting WiFi credentials into slot 0..."
 	# Escape single-quotes per canonical comment: replace ' with '''
@@ -933,31 +940,31 @@ build_custom_kernel() {
     fi
     log "Custom kernel configuration found. Initiating native compile (this will take time)..."
     G_AGI git bc bison flex libssl-dev make libc6-dev libncurses5-dev build-essential
-
+    
     local src_dir="/usr/src/linux"
     if [[ ! -d "\${src_dir}" ]]; then
         log "Cloning Raspberry Pi Linux tree..."
         timeout 600 git clone --depth=1 -b rpi-6.1.y https://github.com/raspberrypi/linux.git "\${src_dir}"
     fi
-
+    
     cd "\${src_dir}"
     cp "\${cfg}" .config
     log "Configuring kernel..."
     timeout 300 make olddefconfig
-
+    
     log "Compiling kernel..."
     timeout 1800 make -j"\$(nproc)" Image.gz modules dtbs
-
+    
     log "Installing modules..."
     timeout 600 make modules_install
-
+    
     log "Deploying kernel to /boot..."
     cp arch/arm64/boot/Image.gz /boot/kernel8.img
     cp arch/arm64/boot/dts/broadcom/*.dtb /boot/
     mkdir -p /boot/overlays
     cp arch/arm64/boot/dts/overlays/*.dtb* /boot/overlays/
     cp arch/arm64/boot/dts/overlays/README /boot/overlays/
-
+    
     log "Kernel compilation and deployment complete."
 }
 
@@ -1025,6 +1032,13 @@ main() {
 	log "${SCRIPT_NAME} v${SCRIPT_VERSION}"
 	parse_args "$@"
 
+	# Enforce root before anything else. A non-root invocation without --dry-run
+	# cannot flash a device; failing here gives a clear actionable message instead
+	# of silently falling through to config-file-only output.
+	if [[ "${DRY_RUN}" -eq 0 && "${EUID}" -ne 0 ]]; then
+		fatal "Must run as root to flash a device.\n  Re-run : sudo ${SCRIPT_NAME} $*\n  Or use : --dry-run  (generates config files only, no flashing)"
+	fi
+
 	if [[ "${DRY_RUN}" -eq 1 ]]; then
 		info "Dry-run: generating config files only → ${WORK_DIR}/"
 		mkdir -p "${WORK_DIR}"
@@ -1041,10 +1055,9 @@ main() {
 		exit 0
 	fi
 
-	[[ "${EUID}" -eq 0 ]] || fatal "Must run as root: sudo ${SCRIPT_NAME} $*"
-
 	_wt_available || warn "whiptail not found — using plain text prompts."
 	run_wizard
+	[[ -n "${TARGET_DEVICE}" ]] || fatal "No target device selected. Pass --device /dev/sdX or run the wizard."
 	validate_config
 	check_deps
 	print_summary
