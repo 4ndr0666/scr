@@ -25,6 +25,7 @@ import json
 import random
 import subprocess
 import sys
+import asyncio
 from typing import Any
 
 # ── TUI imports are deferred to avoid loading layout objects in CLI mode ──────
@@ -55,23 +56,20 @@ CLI_STYLE = Style.from_dict(
 STATIC_MEM_LOCK = {
     "SYSTEM_REFERENCE_INPUT": "INGREDIENT",
     "BIOMETRIC_LOCK": "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANITOMALOGICAL_TOPOPGRAPHY_PERFECTLY)",
-    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS._ENFORE=VISCERAL_REACTION_TO_AN_UNPLEASANT_TASTE,_OPENING_MOUTH_REVEALING_TONGUE_SLATHERED_IN_SEMI_TRANSLUCENT,_MILKY_VISCOUS_GEL--TONGUE_ROLLS;_WINCES)",
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS.)",
     "STRUCTURAL_NON_DEVIATION": "HIGH",
     "STRUCTURAL_FIDELITY": "HIGH",
     "UNALTERABLE": [
         "EXACT_FACIAL_ID_GEOMETRY",
         "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
         "EXACT_BODY_PROPORTIONS",
-        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
+        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
     ],
     "!INHIBIT": [
         "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
         "FACIAL_BALANCING",
-        "BRAZZIER_SUPPORT",
-        "CAMERA_ANGLE_MODIFICATIONS",
-        "SYMMETRY_MODIFICATIONS",
-        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
-    ],
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+    ]
 }
 
 STATIC_FINALIZE = {
@@ -80,14 +78,16 @@ STATIC_FINALIZE = {
         "GLOBAL_NEGATIVE_BIAS": [
             "BEAUTY_FILTER",
             "AIRBRUSHED_SKIN",
+            "PERFECT_FACIAL_SYMMETRY",
             "DIGITAL_3D_RENDER",
             "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+            "WATERMARK_OR_CREDIT_OVERLAY",
             "HAPPY_EXPRESSIONS",
             "IDENTITY_SHIFTING",
             "HAIR_CLEANUP_FLYAWAY",
-            "OPAQUE_FABRIC",
-            "BODY_PROPORTION_ALTERATION",
-        ],
+            "OPAQUE_FABRIC_PROCESSING",
+            "BODY_PROPORTION_ALTERATION"
+        ]
     }
 }
 
@@ -346,14 +346,14 @@ def build_env_atmospherics(skip: bool = False) -> dict:
         "LOCATION_SETTING": _prompt(
             "LOCATION_SETTING",
             lib.LOCATION_COMPLETIONS,
-            default="ALL_PROVIDED_INGREDIENTS_ARE_REQUIRED_TO_CREATE_SEVERAL_CINEMATIC_STILLS_ALIGNED_WITH_THE_NUMBER_OF_SELECETED_PANELS--CONTINUITY; TELL_A_SHORT_STORY",
+            default="COMPACT_TILED_RESIDENTIAL_BATHROOM_WITH_VANITY_MIRROR",
             hint="library key or free description",
             skip=skip,
         ),
         "GLASS_SURFACE_METRICS": _prompt(
             "GLASS_SURFACE_METRICS",
             lib.GLASS_COMPLETIONS,
-            default="DUST_PARTICLES_CATCHING_DIRECT_LIGHT_ILLUMINATION",
+            default="PRISTINE,_HIGH_REFLECTANCE,_LIPSTICK_WRITING_MATCHING_UPLOADED_IMAGE_TEXT",
             hint="library key or free description",
             skip=skip,
         ),
@@ -382,7 +382,7 @@ def build_env_atmospherics(skip: bool = False) -> dict:
             "MIDGROUND": _prompt(
                 "MIDGROUND",
                 list(lib.DOF_MANIFEST["midground"].keys()),
-                default="SHE_IS_POSING_FOR_THE_CAMERA",
+                default="SEATED_CASUALLY_ON_BATHROOM_COUNTER,_LEANING_FORWARD_TOWARD_MIRROR,_LEGS_RELAXED_OR_CROSSED",
                 hint="subject action",
                 skip=skip,
             ),
@@ -391,12 +391,11 @@ def build_env_atmospherics(skip: bool = False) -> dict:
                 "BACKGROUND",
                 list(lib.DOF_MANIFEST["background"].keys()),
                 defaults=[
-                    "STUDIO",
-                    "SINGLE_LIGHT_SOURCE",
-                    "POWERFUL_SPOTLIGHT",
-                    "TOTAL_DARKNESS",
-                    "MIRRORED_WALLS_AND_TILES",
-                    "HIGH_REFLECTANCE",
+                    "COMPACT_TILED_RESIDENTIAL_BATHROOM_WITH_VANITY_MIRROR",
+                    "INTIMATE_LATE-NIGHT_PRIVATE_MOMENT",
+                    "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE",
+                    "HIGH_COEFFICIENT_OF_SURFACE_ADHESION_AND_INVERSE_OPACITY",
+                    "CLUTTERED_COUNTER_WITH_COSMETICS,_BRUSHES,_TOILETRIES"
                 ],
                 hint="comma-separated environment tokens",
                 skip=skip,
@@ -442,7 +441,7 @@ def build_panel(index: int, skip: bool = False) -> dict:
     # Map index to default canonical pose/descriptors
     default_poses = {
         1: "LITHOTOMY_POSITION",
-        2: "AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
+        2: "AERIAL_VIEW,_SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
         3: ["FULL_LENGTH_OF_RIB_CAGE", "FINE_DETAILS", "FABRIC_WEAVE", "RAZOR_SHARP_FOCUS_ON_TEXTURED_SKIN"],
         4: ["~45°_ROTATED_CLOCKWISE", "CHEST_LEVEL", "SLIGHTLY_TILTED_DOWNWARD"],
         5: ["~45°_ROTATED_CLOCKWISE_AND_SLIGHTLY_TILTED_DOWNWARD_FROM_8FT"],
@@ -503,7 +502,7 @@ def build_composition_matrix(skip: bool = False) -> dict:
             "LAYOUT_PRESET": "LAYOUT: SIX_PANEL_COMPOSITE",
             "PANELS": "6",
             "FRONT MEDIUM CLOSE-UP (MCU)": "LITHOTOMY_POSITION",
-            "BIRDS EYE (BE)": "AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
+            "BIRDS EYE (BE)": "AERIAL_VIEW,_SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
             "FRONT EXTREME CLOSE-UP (ECU/XCU)": [
                 "FULL_LENGTH_OF_RIB_CAGE",
                 "FINE_DETAILS",
@@ -537,10 +536,7 @@ def build_composition_matrix(skip: bool = False) -> dict:
     )
 
     if layout_choice and layout_choice in lib.FLAT_LAYOUT_INDEX:
-        for _cat in lib.LAYOUT_MANIFEST.values():
-            if layout_choice in _cat:
-                preset = _cat[layout_choice]
-                break
+        preset = lib.FLAT_LAYOUT_INDEX[layout_choice]
         n_panels = int(preset.get("PANELS", "6"))
         matrix = {"LAYOUT_PRESET": layout_choice, "PANELS": str(n_panels)}
     else:
@@ -591,14 +587,14 @@ def build_bio_dermal_map(skip: bool = False) -> dict:
         "EXPRESSION": _prompt(
             "EXPRESSION",
             list(lib.SKIN_MANIFEST["expressions"].keys()),
-            default="COOL,_DETACHED,_NEUTRAL_EXPRESSION;_JAW_SLIGHTLY_RELAXED,_LIPS_SUBTLY_PARTED,_GAZE_FIXED_STEADILY_ON_CAMERA_LENS",
+            default="DETACHED,_REVULSION,_HER_TONGUE_IS_VISIBLE,_LICKING_HER_FINGER_CLEAN,_GLOSSY_LIPS,_DETAILED_SALIVA,_GAZE_FIXED_STEADILY_ON_REFLECTION_OR_CAMERA",
             hint="expression",
             skip=skip,
         ),
         "HAIR": _prompt(
             "HAIR",
             list(lib.SKIN_MANIFEST["hair"].keys()),
-            default="MESSY,_LOOSE_AND_DISHEVELED_WITH_STRAY_HAIR_STRANDS_FALLING_NATURALLY_ACROSS_CHEEKS_AND_NECK",
+            default="PAINT_LADEN,_DISHEVELED",
             hint="hair state",
             skip=skip,
         ),
@@ -622,7 +618,7 @@ def build_env_photometry(skip: bool = False) -> dict:
         "STYLE_OF": _prompt_list(
             "STYLE_OF",
             lib.STYLE_COMPLETIONS,
-            defaults=["DAVID_LACHAPELLE"],
+            defaults=["HELMUT_NEWTON"],
             hint="photographer style(s)",
             skip=skip,
         ),
@@ -636,7 +632,7 @@ def build_env_photometry(skip: bool = False) -> dict:
         "OPTICAL_HARDWARE": _prompt(
             "OPTICAL_HARDWARE",
             lib.LENS_COMPLETIONS,
-            default="CANON_EOS_5D_MARK_IV_AND_A_CANON_EF_100MM",
+            default="Canon EOS 5D Mark IV and a Canon EF 100mm",
             hint="lens or free description",
             skip=skip,
         ),
@@ -657,7 +653,7 @@ def build_env_photometry(skip: bool = False) -> dict:
         "APERTURE_SETTING": _prompt(
             "APERTURE_SETTING",
             lib.APERTURE_COMPLETIONS,
-            default="f/2.8L (ENSURING_DEEP_TECHNICAL_SHARPNESS_ACROSS_BOTH_THE_FOREGROUND_AND_THE_MIDGROUND_SUBJECT_DETAILS)",
+            default="f/2.8L (ENSURING_DEEP_TECHNICAL_SHARPNESS_ACROSS_BOTH_THE_FOREGROUND_AND_THE_MIDGROUND_SUBJECT_DETAILS",
             hint="f-stop or free text",
             skip=skip,
         ),
@@ -700,7 +696,7 @@ def build_env_photometry(skip: bool = False) -> dict:
             "PHOTONIC_ENERGY": _prompt(
                 "PHOTONIC_ENERGY",
                 lib.ENERGY_COMPLETIONS,
-                default="MICROFACET_DISTRIBUTION",
+                default="SUBSURFACE_SCATTERING",
                 skip=skip,
             ),
             "ENERGY_CONSERVATION_COMPLIANT": _prompt(
@@ -732,15 +728,14 @@ def build_env_photometry(skip: bool = False) -> dict:
 def build_ray_tracing_photometry(skip: bool = False) -> dict:
     if not skip:
         _header("ENV RAY TRACING PHOTOMETRY")
-    opts = lib.RAY_TRACING_COMPLETIONS
     return {
-        "LIGHT_SOURCE_01": _prompt("LIGHT_SOURCE_01", opts, default="SINGLE_CONICAL_SPOTLIGHT", skip=skip),
-        "ORIGIN_COORDINATE": _prompt("ORIGIN_COORDINATE", opts, default="2.50,-4.50,16.00", skip=skip),
-        "TARGET_COORDINATE": _prompt("TARGET_COORDINATE", opts, default="-0.04,5.67,2.39", skip=skip),
-        "BEAM_ANGLE": _prompt("BEAM_ANGLE", opts, default="28_DEGREE_FOCUS", skip=skip),
-        "LUMINOUS_INTENSITY": _prompt("LUMINOUS_INTENSITY", opts, default="110_PERCENT_SCALE", skip=skip),
-        "FALLOFF_PROFILE": _prompt("FALLOFF_PROFILE", opts, default="AGGRESSIVE_INVERSE_SQUARE", skip=skip),
-        "BOUNCE_LIGHT_LOGIC": _prompt("BOUNCE_LIGHT_LOGIC", opts, default="INFINITE_RECURSIVE_REFLECTION", skip=skip)
+        "LIGHT_SOURCE_01": _prompt("LIGHT_SOURCE_01", lib.RAY_SOURCE_COMPLETIONS, default="SINGLE_CONICAL_SPOTLIGHT", skip=skip),
+        "ORIGIN_COORDINATE": _prompt("ORIGIN_COORDINATE", lib.RAY_COORD_COMPLETIONS, default="2.50,-4.50,16.00", skip=skip),
+        "TARGET_COORDINATE": _prompt("TARGET_COORDINATE", lib.RAY_COORD_COMPLETIONS, default="-0.04,5.67,2.39", skip=skip),
+        "BEAM_ANGLE": _prompt("BEAM_ANGLE", lib.RAY_ANGLE_COMPLETIONS, default="28_DEGREE_FOCUS", skip=skip),
+        "LUMINOUS_INTENSITY": _prompt("LUMINOUS_INTENSITY", lib.RAY_INTENSITY_COMPLETIONS, default="110_PERCENT_SCALE", skip=skip),
+        "FALLOFF_PROFILE": _prompt("FALLOFF_PROFILE", lib.RAY_FALLOFF_COMPLETIONS, default="AGGRESSIVE_INVERSE_SQUARE", skip=skip),
+        "BOUNCE_LIGHT_LOGIC": _prompt("BOUNCE_LIGHT_LOGIC", lib.RAY_BOUNCE_COMPLETIONS, default="INFINITE_RECURSIVE_REFLECTION", skip=skip)
     }
 
 def build_material_physics(skip: bool = False) -> dict:
@@ -759,7 +754,7 @@ def build_material_physics(skip: bool = False) -> dict:
         "OPACITY": _prompt(
             "OPACITY",
             lib.OPACITY_COMPLETIONS,
-            default="FABRIC_TRANSPARENCY_SCALES_DYNAMICALLY_WITH_TENSION;_MATERIAL_SHIFTS_FROM_OPAQUE_WHITE_TO_A_SEMI-TRANSLUCENT_APLHA_LAYER_WHERE_STRETCHED_TIGHT_ACROSS_PHYSICAL_PEAKS,_REVEALING_THE_MUTED_SKIN_TONES_UNDERNEATH",
+            default="FABRIC_TRANSPARENCY_SCALES_DYNAMICALLY_WITH_TENSION;_MATERIAL_SHIFTS_FROM_OPAQUE_WHIRE_TO_A_SEMI-TRANSLUCENT_APLHA_LAYER_WHERE_STRETCHED_TIGHT_ACROSS_PHYSICAL_PEAKS,_REVEALING_THE_MUTED_SKIN_TONES_UNDERNEATH",
             skip=skip,
         ),
         "TEXTILE_SURFACE_SHEEN": _prompt(
@@ -958,18 +953,18 @@ def _pool_for_path(path: str) -> list[str]:
         return lib.OPTICS_COMPLETIONS
     if "meteorology" in p or "weather" in p or "wind" in p:
         return lib.METEOROLOGY_COMPLETIONS
-    if any(
-        k in p
-        for k in (
-            "light_source",
-            "coordinate",
-            "beam_angle",
-            "luminous",
-            "falloff",
-            "bounce_light",
-        )
-    ):
-        return lib.RAY_TRACING_COMPLETIONS
+    if "light_source" in p:
+        return lib.RAY_SOURCE_COMPLETIONS
+    if "coordinate" in p:
+        return lib.RAY_COORD_COMPLETIONS
+    if "beam_angle" in p:
+        return lib.RAY_ANGLE_COMPLETIONS
+    if "luminous" in p or "intensity" in p:
+        return lib.RAY_INTENSITY_COMPLETIONS
+    if "falloff" in p:
+        return lib.RAY_FALLOFF_COMPLETIONS
+    if "bounce_light" in p:
+        return lib.RAY_BOUNCE_COMPLETIONS
     if any(
         k in p
         for k in (
@@ -1237,6 +1232,7 @@ class HDLTUIApplication:
                 pass
 
     def _build_keybindings(self):
+        import asyncio
         kb = self._KeyBindings()
 
         @kb.add("c-q")
@@ -1259,9 +1255,13 @@ class HDLTUIApplication:
         def _export(event):
             try:
                 output_path = "hdl_output.json"
+                payload = self._state.to_json()
                 with open(output_path, "w", encoding="utf-8") as fh:
-                    fh.write(self._state.to_json())
-                _clipboard_copy(self._state.to_json())
+                    fh.write(payload)
+                
+                # Gate 4.2 & 4.5: Non-blocking offload of I/O thread
+                asyncio.create_task(asyncio.to_thread(_clipboard_copy, payload))
+                
                 self._status_text = f"[F5] Exported → {output_path}  [Ctrl+Q] Quit"
             except Exception as exc:
                 self._status_text = f"[F5] Export FAILED: {exc}  [Ctrl+Q] Quit"
