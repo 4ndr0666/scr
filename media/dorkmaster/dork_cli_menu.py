@@ -9,6 +9,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def load_dork_patterns(json_file="dork_patterns.json"):
     """Load and merge dork patterns from canonical JSON (NSFW already embedded)."""
     patterns = []
@@ -20,6 +21,7 @@ def load_dork_patterns(json_file="dork_patterns.json"):
         raise RuntimeError("No dork patterns could be loaded.")
     return patterns
 
+
 def _copy_to_clipboard(text):
     """Copy text to system clipboard using wl-copy/xclip/pbcopy if available."""
     try:
@@ -27,24 +29,38 @@ def _copy_to_clipboard(text):
             subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
             console.print("[cyan]Dork copied to clipboard (wl-copy)[/cyan]")
         elif shutil.which("xclip"):
-            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True)
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=text.encode("utf-8"),
+                check=True,
+            )
             console.print("[cyan]Dork copied to clipboard (xclip)[/cyan]")
         elif shutil.which("pbcopy"):
             subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
             console.print("[cyan]Dork copied to clipboard (pbcopy)[/cyan]")
         else:
-            console.print("[yellow]No clipboard tool found (install wl-copy/xclip/pbcopy)[/yellow]")
+            console.print(
+                "[yellow]No clipboard tool found (install wl-copy/xclip/pbcopy)[/yellow]"
+            )
     except Exception as e:
         console.print(f"[red]Clipboard copy failed: {e}[/red]")
+
 
 def cli_dork_menu(dork_patterns, company="TARGET"):
     """Display interactive CLI menu for dork categories and patterns. Returns the chosen dork string."""
     while True:
-        console.print("\n[bold red]Ψ-4ndr0666-OS // NSFW DORK ARSENAL v∞.NSFW[/bold red]")
+        console.print(
+            "\n[bold red]Ψ-4ndr0666-OS // NSFW DORK ARSENAL v∞.NSFW[/bold red]"
+        )
         for i, category in enumerate(dork_patterns, 1):
             cat_name = category.get("category", "Unknown")
-            if any(x in cat_name.lower() for x in ["leak", "onlyfans", "mega", "telegram", "porn", "gallery"]):
-                console.print(f"[bold magenta]{i}.[/bold magenta] [bold yellow]{cat_name}[/bold yellow]")
+            if any(
+                x in cat_name.lower()
+                for x in ["leak", "onlyfans", "mega", "telegram", "porn", "gallery"]
+            ):
+                console.print(
+                    f"[bold magenta]{i}.[/bold magenta] [bold yellow]{cat_name}[/bold yellow]"
+                )
             else:
                 console.print(f"[cyan]{i}.[/cyan] {cat_name}")
         console.print("[dim]Q to Quit[/dim]")
@@ -64,7 +80,11 @@ def cli_dork_menu(dork_patterns, company="TARGET"):
             table.add_column("Name", style="bold green")
             table.add_column("Query")
             for j, pat in enumerate(category["patterns"], 1):
-                q = pat["query"].replace("{companyName}", "{company}").format(company=company)
+                q = (
+                    pat["query"]
+                    .replace("{companyName}", "{company}")
+                    .format(company=company)
+                )
                 table.add_row(str(j), pat["name"], q)
             console.print(table)
             sel2 = input("Select pattern, [B]ack, or [Q]uit: ").strip()
@@ -75,12 +95,19 @@ def cli_dork_menu(dork_patterns, company="TARGET"):
             try:
                 pidx = int(sel2) - 1
                 pattern = category["patterns"][pidx]
-                dork_query = pattern["query"].replace("{companyName}", "{company}").format(company=company)
-                console.print(f"\n[bold green]LOCKED & LOADED:[/bold green] {dork_query}")
+                dork_query = (
+                    pattern["query"]
+                    .replace("{companyName}", "{company}")
+                    .format(company=company)
+                )
+                console.print(
+                    f"\n[bold green]LOCKED & LOADED:[/bold green] {dork_query}"
+                )
                 _copy_to_clipboard(dork_query)
                 return dork_query
             except:
                 console.print("[red]Invalid selection.[/red]")
+
 
 if __name__ == "__main__":
     company = input("Enter target (default: ari_dugarte): ").strip() or "ari_dugarte"

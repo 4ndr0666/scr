@@ -54,7 +54,20 @@ install_pyenv() {
 clean_pip_ghosts() {
     log_info "Initiating Ghost Exorcism Protocol..."
 
-    local py_version="${1:-3.10.14}"
+    # Never fall back to a hardcoded version — query the live pyenv version or
+    # the running python3, so this function works regardless of which Python
+    # version the suite is configured for.
+    local py_version="${1:-}"
+    if [[ -z "$py_version" ]]; then
+        if command -v pyenv &>/dev/null; then
+            py_version=$(pyenv global 2>/dev/null | head -1)
+            [[ "$py_version" == "system" ]] && py_version=""
+        fi
+        if [[ -z "$py_version" ]]; then
+            py_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null || echo "")
+        fi
+        [[ -z "$py_version" ]] && { log_warn "Cannot determine Python version — skipping ghost clean"; return 0; }
+    fi
     local site_pkgs
     site_pkgs=$(python3 -c "
 import sysconfig
@@ -66,20 +79,34 @@ print(sysconfig.get_paths()['purelib'])
         return 0
     fi
 
-    # Kill known ghost patterns
-    sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
+    # Count ghosts before acting so the force-reinstall is gated on actual
+    # corruption rather than running unconditionally on every optimize pass.
+    local ghost_count=0
+    local pattern
+    for pattern in "~irtual*" "-irtual*" "*virtualenvondemand*" "*virtualenv-tools3*"; do
+        local n
+        n=$(find "$site_pkgs" -maxdepth 1 -name "$pattern" 2>/dev/null | wc -l)
+        ghost_count=$(( ghost_count + n ))
+    done
 
-    # Reclaim ownership
-    sudo chown -R "${REAL_USER}:${REAL_USER}" "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
+    if [[ $ghost_count -gt 0 ]]; then
+        log_warn "Found $ghost_count ghost artifact(s) — removing..."
+        sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
 
-    # Pip cache + force reinstall
-    python -m pip cache purge 2>/dev/null || true
-    python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps pip setuptools wheel 2>/dev/null || true
+        sudo chown -R "${REAL_USER}:${REAL_USER}" \
+            "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
 
-    log_success "Ghost exorcism complete for Python ${py_version}"
+        log_info "Corruption detected — purging pip cache and reinstalling build tools..."
+        python -m pip cache purge 2>/dev/null || true
+        python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps \
+            pip setuptools wheel 2>/dev/null || true
+        log_success "Ghost exorcism complete for Python ${py_version} ($ghost_count artifact(s) removed)"
+    else
+        log_success "Ghost exorcism complete for Python ${py_version} — environment is clean"
+    fi
 }
 
 optimize_python_service() {
@@ -109,15 +136,51 @@ optimize_python_service() {
     fi
 
     # 3. Version Enforcement & Baseline Alignment
-    local target_ver="3.10.14"
+    # Never fall back to a hardcoded version string — always query the live
+    # running environment so the suite stays correct when Python is upgraded.
+    local target_ver=""
     if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
-        target_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")
+        local _cfg_ver
+        _cfg_ver=$(jq -r '.python_version // ""' "$CONFIG_FILE")
+        # Reject the stale default if the live pyenv global differs — this is
+        # exactly the broken-interpreter scenario reported in the logs.
+        if [[ -n "$_cfg_ver" && "$_cfg_ver" != "3.10.14" ]]; then
+            target_ver="$_cfg_ver"
+        fi
+    fi
+    if [[ -z "$target_ver" ]] && command -v pyenv &>/dev/null; then
+        local _pv
+        _pv=$(pyenv global 2>/dev/null | head -1)
+        [[ -n "$_pv" && "$_pv" != "system" ]] && target_ver="$_pv"
+    fi
+    if [[ -z "$target_ver" ]]; then
+        target_ver=$(python3 -c \
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" \
+            2>/dev/null || echo "")
+    fi
+    if [[ -z "$target_ver" ]]; then
+        log_error "Cannot determine target Python version. Aborting Python optimization."
+        return 1
     fi
 
     log_info "Ensuring Python $target_ver via Pyenv Hive..."
     pyenv install -s "$target_ver"
     pyenv global "$target_ver"
     pyenv rehash
+
+    # Persist the detected version back to config.json so future runs skip
+    # this discovery path and don't accidentally revert to a stale value.
+    if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
+        local _stored
+        _stored=$(jq -r '.python_version // ""' "$CONFIG_FILE")
+        if [[ "$_stored" != "$target_ver" ]]; then
+            local _tmp
+            _tmp=$(mktemp)
+            jq --arg v "$target_ver" '.python_version = $v' "$CONFIG_FILE" > "$_tmp" \
+                && mv "$_tmp" "$CONFIG_FILE" \
+                && log_info "Updated config.json python_version → $target_ver"
+        fi
+    fi
 
     # Integrated Ghost Exorcism (after pyenv baseline is ready)
     clean_pip_ghosts "$target_ver"
@@ -141,6 +204,25 @@ optimize_python_service() {
             sudo pacman -S --needed --noconfirm python-pipx
         else
             log_error "Install pipx via pacman (python-pipx) before running this service."
+            return 1
+        fi
+    fi
+
+    # Pipx bad-interpreter repair: pipx stores the path to its Python
+    # interpreter at install time. If pyenv was upgraded or the configured
+    # version changed, pipx's shebang becomes a dangling path and every
+    # invocation fails with "bad interpreter: No such file or directory".
+    # Detect and repair before attempting any tool work.
+    if ! pipx --version &>/dev/null 2>&1; then
+        log_warn "pipx interpreter broken (stale pyenv path in shebang). Reinstalling..."
+        rm -f "${PIPX_BIN_DIR:-$HOME/.local/bin}/pipx" 2>/dev/null || true
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm python-pipx \
+                && log_success "pipx reinstalled via pacman." \
+                || { log_error "pacman reinstall of pipx failed — reinstall manually."; return 1; }
+        fi
+        if ! pipx --version &>/dev/null 2>&1; then
+            log_error "pipx still broken after reinstall. Skipping tool injection."
             return 1
         fi
     fi

@@ -97,7 +97,9 @@ class AkashaEnumerator:
         parsed = urlparse(target_url)
         base_target = f"{parsed.scheme}://{parsed.netloc}/"
         try:
-            print(f"{CYAN}[Ψ] Executing pre-flight request to establish session state...{RESET}")
+            print(
+                f"{CYAN}[Ψ] Executing pre-flight request to establish session state...{RESET}"
+            )
             await self.client.get(base_target)
         except httpx.RequestError as e:
             print(f"{YELLOW}[-] Pre-flight warning: {e}{RESET}")
@@ -127,7 +129,9 @@ class AkashaEnumerator:
         except httpx.RequestError:
             return None
 
-    async def _brute_worker(self, url_pattern: str, unpadded_url: str, sem: asyncio.Semaphore):
+    async def _brute_worker(
+        self, url_pattern: str, unpadded_url: str, sem: asyncio.Semaphore
+    ):
         async with sem:
             status = await self._check_status(url_pattern)
             if status == 200:
@@ -148,7 +152,9 @@ class AkashaEnumerator:
                 print(f"{RED}[!] TIMEOUT:{RESET} {url_pattern}")
 
     async def run_brute(self, base_url: str, min_val: int, max_val: int, pad: int):
-        print(f"\n{CYAN}[Ψ] Initiating Brute-Force Matrix (Range: {min_val}-{max_val}, Padding: {pad}){RESET}")
+        print(
+            f"\n{CYAN}[Ψ] Initiating Brute-Force Matrix (Range: {min_val}-{max_val}, Padding: {pad}){RESET}"
+        )
         if "{}" not in base_url:
             base_url += "{}"
 
@@ -165,13 +171,17 @@ class AkashaEnumerator:
             target_unpadded = base_url.replace("{}", num_str_unpadded)
 
             tasks.append(
-                asyncio.create_task(self._brute_worker(target_padded, target_unpadded, sem))
+                asyncio.create_task(
+                    self._brute_worker(target_padded, target_unpadded, sem)
+                )
             )
 
         await asyncio.gather(*tasks)
 
     async def run_recursive(self, target_url: str):
-        print(f"\n{CYAN}[Ψ] Initiating Recursive DOM Extraction on: {target_url}{RESET}")
+        print(
+            f"\n{CYAN}[Ψ] Initiating Recursive DOM Extraction on: {target_url}{RESET}"
+        )
         if not self.client:
             return
 
@@ -230,18 +240,24 @@ class AkashaIntegrator:
         with open(filename, "a", encoding="utf-8") as f:
             for u in sorted(new_urls):
                 f.write(f"{u}\n")
-        print(f"{GREEN}[+] Storage Complete: Appended {len(new_urls)} assets to {filename}{RESET}")
+        print(
+            f"{GREEN}[+] Storage Complete: Appended {len(new_urls)} assets to {filename}{RESET}"
+        )
 
     @staticmethod
     def delegate_gallerydl(urls: Set[str], out_dir: Path):
         if not urls:
             return
         if not shutil.which("gallery-dl"):
-            print(f"{RED}[!] CRITICAL: gallery-dl binary not found in PATH. Download skipped.{RESET}")
+            print(
+                f"{RED}[!] CRITICAL: gallery-dl binary not found in PATH. Download skipped.{RESET}"
+            )
             return
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        print(f"{CYAN}[Ψ] Delegating bulk transfer to gallery-dl (Target: {out_dir}){RESET}")
+        print(
+            f"{CYAN}[Ψ] Delegating bulk transfer to gallery-dl (Target: {out_dir}){RESET}"
+        )
 
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp:
             for u in urls:
@@ -250,11 +266,11 @@ class AkashaIntegrator:
 
         try:
             cmd = ["gallery-dl", "-i", tmp_path, "-d", str(out_dir)]
-            
+
             print(f"{MAGENTA}[*] Launching gallery-dl transfer matrix...{RESET}")
             subprocess.run(cmd, check=True)
             print(f"{GREEN}[+] Matrix Download Complete.{RESET}")
-            
+
         except subprocess.CalledProcessError as e:
             print(f"{RED}[!] gallery-dl Subsystem Failure: {e}{RESET}")
         finally:
@@ -283,7 +299,9 @@ def interactive_menu():
     print(f"\n{MAGENTA}{BOLD}==== Ψ-4NDR0666 OMNI-ENUMERATOR CONSOLE ===={RESET}")
     print(f"{CYAN}Welcome to the interactive reconnaissance matrix.{RESET}\n")
 
-    target = input(f"{BOLD}Enter Target URL (e.g., https://example.com/img_{{}}.jpg): {RESET}").strip()
+    target = input(
+        f"{BOLD}Enter Target URL (e.g., https://example.com/img_{{}}.jpg): {RESET}"
+    ).strip()
     if not target.startswith("http"):
         target = "https://" + target
 
@@ -314,7 +332,7 @@ def interactive_menu():
         "min_val": min_val,
         "max_val": max_val,
         "pad": pad,
-        "store": None, 
+        "store": None,
         "download": False,
         "browser": False,
     }
@@ -343,23 +361,62 @@ def main():
         epilog=epilog_text,
     )
 
-    parser.add_argument("-m", "--menu", action="store_true", help="Launch the interactive console menu (Overrides other flags)")
-    parser.add_argument("-u", "--url", type=str, help="Target Base URL (use {} for brute injection point)")
+    parser.add_argument(
+        "-m",
+        "--menu",
+        action="store_true",
+        help="Launch the interactive console menu (Overrides other flags)",
+    )
+    parser.add_argument(
+        "-u",
+        "--url",
+        type=str,
+        help="Target Base URL (use {} for brute injection point)",
+    )
 
     mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--brute", action="store_true", help="Enable sequential zero-padding brute force")
-    mode_group.add_argument("--scrape", action="store_true", help="Enable recursive DOM extraction")
+    mode_group.add_argument(
+        "--brute",
+        action="store_true",
+        help="Enable sequential zero-padding brute force",
+    )
+    mode_group.add_argument(
+        "--scrape", action="store_true", help="Enable recursive DOM extraction"
+    )
 
-    parser.add_argument("--min", type=int, default=1, help="Minimum sequence value (Brute mode)")
-    parser.add_argument("--max", type=int, default=100, help="Maximum sequence value (Brute mode)")
-    parser.add_argument("--pad", type=int, default=0, help="Zero-padding width (e.g., 3 for 001)")
+    parser.add_argument(
+        "--min", type=int, default=1, help="Minimum sequence value (Brute mode)"
+    )
+    parser.add_argument(
+        "--max", type=int, default=100, help="Maximum sequence value (Brute mode)"
+    )
+    parser.add_argument(
+        "--pad", type=int, default=0, help="Zero-padding width (e.g., 3 for 001)"
+    )
 
-    parser.add_argument("-H", "--header", action="append", default=[], help="Custom headers (Format: 'Key: Value')")
+    parser.add_argument(
+        "-H",
+        "--header",
+        action="append",
+        default=[],
+        help="Custom headers (Format: 'Key: Value')",
+    )
     parser.add_argument("-A", "--user-agent", help="Override default User-Agent")
 
-    parser.add_argument("--browser", action="store_true", help="Open discovered assets in browser")
-    parser.add_argument("--store", type=str, metavar="FILE", help="Save discovered assets to file (Idempotent)")
-    parser.add_argument("--download", action="store_true", help="Download assets via gallery-dl subsystem")
+    parser.add_argument(
+        "--browser", action="store_true", help="Open discovered assets in browser"
+    )
+    parser.add_argument(
+        "--store",
+        type=str,
+        metavar="FILE",
+        help="Save discovered assets to file (Idempotent)",
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download assets via gallery-dl subsystem",
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -375,7 +432,9 @@ def main():
         exec_args = interactive_menu()
     else:
         if not args.url or not (args.brute or args.scrape):
-            print(f"{RED}[!] Error: CLI execution requires --url and a mode (--brute or --scrape). Use --menu for interactive mode.{RESET}")
+            print(
+                f"{RED}[!] Error: CLI execution requires --url and a mode (--brute or --scrape). Use --menu for interactive mode.{RESET}"
+            )
             sys.exit(1)
 
         exec_args = {
@@ -391,7 +450,9 @@ def main():
         }
 
     try:
-        found_urls = asyncio.run(execute_sequence({"headers": custom_headers}, exec_args))
+        found_urls = asyncio.run(
+            execute_sequence({"headers": custom_headers}, exec_args)
+        )
 
         if found_urls:
             print(f"\n{CYAN}--- Post-Exploitation Integrations ---{RESET}")
@@ -400,22 +461,41 @@ def main():
             if exec_args.get("store"):
                 AkashaIntegrator.store_idempotent(found_urls, exec_args["store"])
             elif sys.stdin.isatty():
-                ans = input(f"{BOLD}Store {asset_count} results to file? [y/N]: {RESET}").strip().lower()
+                ans = (
+                    input(f"{BOLD}Store {asset_count} results to file? [y/N]: {RESET}")
+                    .strip()
+                    .lower()
+                )
                 if ans == "y":
-                    store_file = input(f"{BOLD}Enter filename [default: found_urls.txt]: {RESET}").strip() or "found_urls.txt"
+                    store_file = (
+                        input(
+                            f"{BOLD}Enter filename [default: found_urls.txt]: {RESET}"
+                        ).strip()
+                        or "found_urls.txt"
+                    )
                     AkashaIntegrator.store_idempotent(found_urls, store_file)
 
             if exec_args.get("download"):
                 AkashaIntegrator.delegate_gallerydl(found_urls, DOWNLOADS_DIR)
             elif sys.stdin.isatty():
-                ans = input(f"{BOLD}Download {asset_count} assets via gallery-dl? [y/N]: {RESET}").strip().lower()
+                ans = (
+                    input(
+                        f"{BOLD}Download {asset_count} assets via gallery-dl? [y/N]: {RESET}"
+                    )
+                    .strip()
+                    .lower()
+                )
                 if ans == "y":
                     AkashaIntegrator.delegate_gallerydl(found_urls, DOWNLOADS_DIR)
 
             if exec_args.get("browser"):
                 AkashaIntegrator.open_browser(found_urls)
             elif sys.stdin.isatty():
-                ans = input(f"{BOLD}Open {asset_count} assets in browser? [y/N]: {RESET}").strip().lower()
+                ans = (
+                    input(f"{BOLD}Open {asset_count} assets in browser? [y/N]: {RESET}")
+                    .strip()
+                    .lower()
+                )
                 if ans == "y":
                     AkashaIntegrator.open_browser(found_urls)
         else:

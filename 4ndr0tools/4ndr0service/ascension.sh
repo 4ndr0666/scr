@@ -70,20 +70,40 @@ clean_pip_ghosts() {
         return 0
     fi
 
-    # Kill known ghost patterns (tilde + dash variants)
-    sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
-    sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
+    # Count ghost artifacts BEFORE removing anything so we know whether actual
+    # corruption was present. The pip force-reinstall is only warranted when
+    # real ghost files existed; running it unconditionally caused a full
+    # uninstall/reinstall cycle on every sync even when "Files removed: 0"
+    # (the exact symptom reported — Bug 2 fix).
+    local ghost_count=0
+    local pattern
+    for pattern in "~irtual*" "-irtual*" "*virtualenvondemand*" "*virtualenv-tools3*"; do
+        local n
+        n=$(find "$site_pkgs" -maxdepth 1 -name "$pattern" 2>/dev/null | wc -l)
+        ghost_count=$(( ghost_count + n ))
+    done
 
-    # Reclaim ownership
-    sudo chown -R "${REAL_USER}:${REAL_USER}" "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
+    if [[ $ghost_count -gt 0 ]]; then
+        log_warn "Found $ghost_count ghost artifact(s) in $site_pkgs — removing..."
+        sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
 
-    # Pip cache + force reinstall
-    python -m pip cache purge 2>/dev/null || true
-    python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps pip setuptools wheel 2>/dev/null || true
+        # Reclaim ownership after removal
+        sudo chown -R "${REAL_USER}:${REAL_USER}" \
+            "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
 
-    log_success "Ghost exorcism complete for Python ${py_version}"
+        # Only purge pip cache and force-reinstall build tools when corruption
+        # was actually detected — this is the recovery path, not routine upkeep.
+        log_info "Corruption detected — purging pip cache and reinstalling build tools..."
+        python -m pip cache purge 2>/dev/null || true
+        python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps \
+            pip setuptools wheel 2>/dev/null || true
+        log_success "Ghost exorcism complete for Python ${py_version} ($ghost_count artifact(s) removed)"
+    else
+        log_success "Ghost exorcism complete for Python ${py_version} — environment is clean"
+    fi
 }
 
 # ── USAGE ─────────────────────────────────────────────────────────────────────
@@ -107,8 +127,24 @@ install_resilient_tool() {
 
     log_info "Injecting $pkg_name into the Hive..."
 
-    local py_exec="${PYENV_ROOT}/versions/$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE")/bin/python"
-    if [[ ! -f "$py_exec" ]]; then
+    # Discover the live pyenv version rather than trusting the config value,
+    # which may be stale (the broken-interpreter scenario we're defending against).
+    local _ver=""
+    if command -v pyenv &>/dev/null; then
+        _ver=$(pyenv global 2>/dev/null | head -1)
+        [[ "$_ver" == "system" ]] && _ver=""
+    fi
+    if [[ -z "$_ver" ]] && command -v jq &>/dev/null && [[ -f "$CONFIG_FILE" ]]; then
+        _ver=$(jq -r '.python_version // ""' "$CONFIG_FILE")
+    fi
+    if [[ -z "$_ver" ]]; then
+        _ver=$(python3 -c \
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" \
+            2>/dev/null || echo "")
+    fi
+
+    local py_exec="${PYENV_ROOT}/versions/${_ver}/bin/python"
+    if [[ -z "$_ver" || ! -f "$py_exec" ]]; then
         log_warn "Pyenv baseline not found at $py_exec. Falling back to native python3."
         py_exec="/usr/bin/python3"
     fi
@@ -147,8 +183,26 @@ import sys
 print(f'{sys.version_info.major}.{sys.version_info.minor}')
 " 2>/dev/null || echo "unknown")
 
-    local target_py_ver
-    target_py_ver=$(jq -r '.python_version // "3.10.14"' "$CONFIG_FILE" 2>/dev/null || echo "3.10.14")
+    local target_py_ver=""
+    if command -v pyenv &>/dev/null; then
+        local _pv
+        _pv=$(pyenv global 2>/dev/null | head -1)
+        [[ -n "$_pv" && "$_pv" != "system" ]] && target_py_ver="$_pv"
+    fi
+    if [[ -z "$target_py_ver" ]] && command -v jq &>/dev/null && [[ -f "$CONFIG_FILE" ]]; then
+        local _cv
+        _cv=$(jq -r '.python_version // ""' "$CONFIG_FILE" 2>/dev/null || echo "")
+        [[ -n "$_cv" && "$_cv" != "3.10.14" ]] && target_py_ver="$_cv"
+    fi
+    if [[ -z "$target_py_ver" ]]; then
+        target_py_ver=$(python3 -c \
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" \
+            2>/dev/null || echo "")
+    fi
+    if [[ -z "$target_py_ver" ]]; then
+        log_warn "Cannot determine Python version for ghost exorcism — skipping."
+        return 0
+    fi
 
     log_info "Native OS Python: $sys_py_ver | Suite Target: $target_py_ver"
 
@@ -164,7 +218,10 @@ print(f'{sys.version_info.major}.{sys.version_info.minor}')
     # Integrity Audit
     log_info "Architecture Audit:"
     if command -v eza >/dev/null 2>&1; then
-        eza -al --icons "$VENV_HOME"
+        # Bug fix: modern eza requires --icons=<value> not bare --icons.
+        # --icons=auto matches the old default: icons when stdout is a
+        # terminal, no icons when output is piped/redirected.
+        eza -al --icons=auto "$VENV_HOME"
     else
         ls -alh "$VENV_HOME"
     fi

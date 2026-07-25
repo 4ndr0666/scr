@@ -228,13 +228,25 @@ install_sys_pkg() {
 create_config_if_missing() {
     ensure_dir "$(dirname "$CONFIG_FILE")"
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        cat >"$CONFIG_FILE" <<'ENDOFCONFIG'
+        # Discover the real python version rather than hardcoding a stale value.
+        # Priority: pyenv global → system python3 → safe fallback.
+        local detected_py_ver="3.10.14"
+        if command -v pyenv &>/dev/null; then
+            local _pv
+            _pv=$(pyenv global 2>/dev/null | head -1)
+            [[ -n "$_pv" && "$_pv" != "system" ]] && detected_py_ver="$_pv"
+        fi
+        if [[ "$detected_py_ver" == "3.10.14" ]] && command -v python3 &>/dev/null; then
+            detected_py_ver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null || echo "3.10.14")
+        fi
+
+        cat >"$CONFIG_FILE" <<ENDOFCONFIG
 {
   "settings_editor": "vim",
+  "python_version": "$detected_py_ver",
   "required_env": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR", "NVM_DIR", "PSQL_HOME", "MYSQL_HOME"],
   "directory_vars": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR", "NVM_DIR", "PSQL_HOME", "MYSQL_HOME"],
   "tools": ["python3", "pipx", "pyenv", "poetry"],
-  "python_version": "3.10.14",
   "python_tools": ["black", "flake8", "mypy", "pytest", "poetry"],
   "cargo_tools": ["cargo-update", "cargo-audit"],
   "electron_tools": ["electron-builder"],
@@ -246,7 +258,7 @@ create_config_if_missing() {
   "audit_keywords": ["config_watch", "data_watch", "cache_watch"]
 }
 ENDOFCONFIG
-        log_success "Created default config at $CONFIG_FILE"
+        log_success "Created default config at $CONFIG_FILE (python_version: $detected_py_ver)"
     fi
 }
 
