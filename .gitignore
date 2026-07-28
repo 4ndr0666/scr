@@ -143,8 +143,8 @@ logs/
 
 # === Directory Specific .gitignore === #
 maintain/clean/google/dietpi/credentials.json
-media/url_tracker_generator/generated/
-media/url_tracker_generator/urls/
+4ndr0tools/4ndr0tracker/generated/
+4ndr0tools/4ndr0tracker/urls/
 ../system/diagnostics/graphics/*.txt
 media/dorkmaster/ATSCAN
 *url-tracker.html
@@ -154,4 +154,5 @@ env/
 media/rss/feeds/
 ar_engine_visualized.html
 .mypy_cache
-media/url_tracker_generator/4NDR0-TRACKER1.html
+4ndr0tools/4ndr0tracker/4NDR0-TRACKER1.html
+generated
