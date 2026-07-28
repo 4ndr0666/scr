@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-# url_tracker_generator.py — 4NDR0666OS v5.0 (Superset Absolute — Thumbnail Annihilation)
-# Full visual dematerialization + layout gap mitigation + outerHTML undo stack + glyph restored.
-# Zero regressions. Thumbnails surgically removed. Base64 Offline Fonts. CRT + Purge protocols.
-
+# by 4ndr0666
 import os
 import re
 import sys
@@ -10,23 +7,38 @@ import glob
 import subprocess
 import urllib.request
 import base64
+import datetime
 from html import unescape, escape
+
+#
+#                                   # === 4NDR0-TRACKER2 === #
+#
+# Description: Strips raw html input of clean video links; parses
+# a 3lectric 6lass themed file with buttons for clicking and tracking
+# visited links with autohide after each visit; persistent state mem.
+#
 
 
 def find_next_filename():
     files = glob.glob("4NDR0-TRACKER*.html")
     numbers = []
+    # Regex ensures we extract the number regardless of trailing timestamps
+    pattern = re.compile(r"^4NDR0-TRACKER(\d+)")
     for f in files:
         base = os.path.basename(f)
-        if base.startswith("4NDR0-TRACKER") and base.endswith(".html"):
-            try:
-                num_part = base[len("4NDR0-TRACKER") : -5]
-                if num_part.isdigit():
-                    numbers.append(int(num_part))
-            except ValueError:
-                pass
+        match = pattern.match(base)
+        if match:
+            numbers.append(int(match.group(1)))
+
     next_num = 1 if not numbers else max(numbers) + 1
-    return f"4NDR0-TRACKER{next_num}.html"
+
+    # Generate dynamic timestamp mimicking "7-28-26" and "8-24AM" format
+    # Using dashes for the time instead of colons to ensure OS filename safety
+    now = datetime.datetime.now()
+    date_str = f"{now.month}-{now.day}-{now.strftime('%y')}"
+    time_str = now.strftime("%I-%M%p").lstrip("0")
+
+    return f"4NDR0-TRACKER{next_num}_{date_str}_{time_str}.html"
 
 
 def select_file_with_fzf():
@@ -85,21 +97,23 @@ def get_urls_from_input():
 
 
 def extract_all_urls(text):
-    """Hardened extractor for the new escaped HTML format — 100/100 guaranteed."""
+    """Hardened extractor for the new escaped HTML format — VIDEO-ONLY."""
     urls = set()
     if not text:
         return []
 
-    # Stage 0: Double unescape (matches the site's new aggregation format)
+    # Stage 0: Double unescape
     text = unescape(text)
     text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
     text = text.replace("\\/", "/").replace('\\"', '"')
 
     patterns = [
+        r'(https?://[^\s"\'<>`\\]+)',
+        r'(//[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/[^\s"\'<>`\\]+)',
+        r'data:image/[^\s"\'<>`\\;]+;base64,[^\s"\'<>`\\]+',
         r'(?i)href=["\'](.*?)["\']',
         r'(?i)src=["\'](.*?)["\']',
         r'(?i)data-[a-z]+=["\'](.*?)["\']',
-        r'(https?://[^\s"\'<>`\\]+)',
         r'((?:https?://|//)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(?:e|d|f)/[a-zA-Z0-9]+[^\s<>"\'\\]*)',
     ]
 
@@ -107,22 +121,34 @@ def extract_all_urls(text):
         for match in re.findall(pat, text):
             m = match[0] if isinstance(match, tuple) else match
             m = str(m).strip().strip("\"'<>\\")
-            if not m:
+            if not m or len(m) < 8:
                 continue
 
             lower_m = m.lower()
-            if "img-place.com" in lower_m and re.search(r"0000\.jpg", lower_m):
-                continue
-            if (
-                re.search(r"\.(jpg|jpeg|png|gif|webp|svg)(?:[?#]|$)", lower_m)
-                and "bysevepoin" not in lower_m
+
+            # VIDEO-ONLY + JUNK ANNIHILATION
+            if any(
+                junk in lower_m
+                for junk in [
+                    "gravatar.com/avatar",
+                    "-----",
+                    "data:image/svg+xml",
+                    "data:image/png;base64",
+                    "wp-content/uploads",
+                    "output-onlinepngtools",
+                ]
             ):
                 continue
+            if re.search(r"\.(jpg|jpeg|png|gif|webp|svg|ico|bmp)(?:[?#]|$)", lower_m):
+                continue
 
+            # Normalize protocol
             if m.startswith("//"):
                 m = "https:" + m
-            elif "bysevepoin.com" in lower_m and not m.startswith("http"):
-                m = "https://" + m.replace("https://", "").replace("http://", "")
+            elif not m.startswith(("http://", "https://")) and (
+                "xcandid.vip" in lower_m or "bysevepoin.com" in lower_m
+            ):
+                m = "https://" + m.lstrip("/")
 
             if m.startswith(("http://", "https://")):
                 urls.add(m)
@@ -138,12 +164,25 @@ def extract_all_urls(text):
         if m and (m.startswith(("http://", "https://")) or m.startswith("//")):
             if m.startswith("//"):
                 m = "https:" + m
-            if "img-place.com" in m.lower() and "0000.jpg" in m.lower():
+            lower_m = m.lower()
+            if any(
+                junk in lower_m
+                for junk in [
+                    "gravatar.com/avatar",
+                    "-----",
+                    "data:image/svg+xml",
+                    "data:image/png;base64",
+                    "wp-content/uploads",
+                    "output-onlinepngtools",
+                ]
+            ):
+                continue
+            if re.search(r"\.(jpg|jpeg|png|gif|webp|svg|ico|bmp)(?:[?#]|$)", lower_m):
                 continue
             urls.add(m)
 
     url_list = sorted(list(urls))
-    print(f"{len(url_list)} Valid Vectors Synthesized!")
+    print(f"{len(url_list)} Valid Video Vectors Synthesized!")
     return url_list
 
 
@@ -151,24 +190,26 @@ def fetch_base64_fonts():
     """Dynamically fetches Google Fonts and embeds them as Base64 data URIs."""
     print("[Ψ] Synthesizing Base64 Offline Fonts...")
     css_url = "https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500&family=Cinzel+Decorative:wght@700&family=Orbitron:wght@700&display=swap"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     try:
         req = urllib.request.Request(css_url, headers=headers)
         with urllib.request.urlopen(req) as response:
-            css_content = response.read().decode('utf-8')
+            css_content = response.read().decode("utf-8")
 
-        # Find all woff2 URLs in the CSS
-        urls = re.findall(r'url\((https://[^)]+\.woff2)\)', css_content)
-        
+        # Find all woff2 URLs in the CSS (Corrected regex from v5.1 superset)
+        urls = re.findall(r"url\((https://[^)]+\.woff2)\)", css_content)
+
         for url in set(urls):
             req_font = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req_font) as font_response:
                 font_data = font_response.read()
-                b64_font = base64.b64encode(font_data).decode('utf-8')
+                b64_font = base64.b64encode(font_data).decode("utf-8")
                 data_uri = f"data:font/woff2;charset=utf-8;base64,{b64_font}"
                 css_content = css_content.replace(url, data_uri)
-        
+
         print("[Ψ] Base64 Font Synthesis Complete.")
         return f"<style>\n{css_content}\n</style>"
     except Exception as e:
@@ -208,7 +249,7 @@ def generate_html(urls, output_file):
             --text-primary: #e0ffff;
         }}
         body {{ background: var(--bg-dark); color: var(--text-primary); font-family: 'Roboto Mono', monospace; padding: 40px; text-align: center; margin: 0; min-height: 100vh; position: relative; }}
-        
+
         /* CRT Scanline Protocol */
         body::after {{
             content: " "; display: block; position: fixed; top: 0; left: 0; bottom: 0; right: 0;
@@ -267,7 +308,7 @@ def generate_html(urls, output_file):
         function saveVisited() {{ localStorage.setItem(STORAGE_KEY_VISITED, JSON.stringify([...visited])); }}
         function saveUndo() {{ localStorage.setItem(STORAGE_KEY_UNDO, JSON.stringify(undoStack)); }}
         function updateCounter() {{ counter.textContent = `${{visited.size}} of ${{totalCount}} visited // CTRL+Z to Restore`; }}
-        
+
         function markVisited(url) {{
             if (!visited.has(url)) {{
                 visited.add(url);
@@ -279,7 +320,7 @@ def generate_html(urls, output_file):
                     li.classList.add('vanished');
                     visibleCount--;
                     updateCounter();
-                    
+
                     // DOM Gap Mitigation Protocol
                     li.addEventListener('animationend', () => {{
                         if (li.classList.contains('vanished')) {{
@@ -294,13 +335,13 @@ def generate_html(urls, output_file):
         document.querySelectorAll('li[data-url]').forEach(li => {{
             if (visited.has(li.dataset.url)) {{
                 li.classList.add('vanished');
-                li.style.display = 'none'; 
+                li.style.display = 'none';
             }}
         }});
-        
+
         updateCounter();
         console.log('%cΨ 4NDR0-TRACKER INITIALIZED — 100/100 vectors loaded', 'color:#00f0ff; font-family:Orbitron');
-        
+
         ul.addEventListener('click', e => {{
             let a = e.target.closest('a');
             if (a) {{
@@ -320,14 +361,14 @@ def generate_html(urls, output_file):
                 tempDiv.innerHTML = lastHtml.trim();
                 const restoredLi = tempDiv.firstChild;
                 const url = restoredLi.dataset.url;
-                
+
                 visited.delete(url);
                 saveVisited();
-                
+
                 const existing = ul.querySelector(`li[data-url="${{url}}"]`);
                 if (existing) ul.replaceChild(restoredLi, existing);
                 else ul.appendChild(restoredLi);
-                
+
                 restoredLi.style.display = ''; // Re-inject to document flow
                 restoredLi.classList.remove('vanished');
                 restoredLi.classList.add('rematerializing');
@@ -335,7 +376,7 @@ def generate_html(urls, output_file):
                 updateCounter();
                 restoredLi.addEventListener('animationend', () => restoredLi.classList.remove('rematerializing'), {{once: true}});
             }}
-            
+
             // Purge Protocol
             if (e.ctrlKey && e.shiftKey && (e.key === 'x' || e.key === 'X')) {{
                 e.preventDefault();
@@ -352,7 +393,7 @@ def generate_html(urls, output_file):
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_template)
-    print(f"\nGenerated Target: {output_file} ({total_count} units locked)")
+    print(f"\nGenerated 4ndr0-Tracker: {output_file} ({total_count} units locked)")
 
 
 if __name__ == "__main__":
@@ -364,5 +405,5 @@ if __name__ == "__main__":
         output_file = find_next_filename()
         generate_html(urls, output_file)
     except KeyboardInterrupt:
-        print("\n[Ψ-Ψ-Ψ] Session terminated!")
+        print("\nSession terminated!")
         sys.exit(130)
