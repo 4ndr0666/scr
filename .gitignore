@@ -19,21 +19,21 @@ auth_tokens.json
 project.p2p
 
 # == 2. OFFENSIVE TRADECRAFT & RESEARCH ==
-compare         
-0-tests/*        
-recon_results/  
+compare
+0-tests/*
+recon_results/
 threat_reports/
-payload_stubs/  
-scans/         
-targets.txt    
+payload_stubs/
+scans/
+targets.txt
 payloads/generated_*
-.gemini/       
+.gemini/
 .ai_checkpoints/
 .prompt_history/
 matrix_cache.json
 finalize_temp/
-.burp/          
-.ZAP/           
+.burp/
+.ZAP/
 *.session
 
 # == 3. RUNTIME & LANGUAGES ==
@@ -145,21 +145,13 @@ logs/
 maintain/clean/google/dietpi/credentials.json
 media/url_tracker_generator/generated/
 media/url_tracker_generator/urls/
-../system/diagnostics/graphics/about-gpu-2026-02-03T08-16-13-214Z.txt
+../system/diagnostics/graphics/*.txt
 media/dorkmaster/ATSCAN
 *url-tracker.html
-media/dorkmaster/env
-compare
+env/
+*.compare
 *.session
-media/rss/feeds/sexycandid_creds.txt
-4NDR0-TRACKER1.html
-4NDR0-TRACKER.html
+media/rss/feeds/
 ar_engine_visualized.html
-<<<<<<< Updated upstream
 .mypy_cache
-=======
->>>>>>> Stashed changes
-generated
-ffx.compare
-hdl_prompt-stock.json
-scrapy
+media/url_tracker_generator/4NDR0-TRACKER1.html
