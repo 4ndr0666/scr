@@ -18,6 +18,19 @@ export PIPX_VENVS="${PIPX_HOME:-$XDG_DATA_HOME/pipx}/venvs"
 
 optimize_venv_service() {
     log_info "Synchronizing Hive Integrity..."
+    # In optimize_venv_service(), before python -m venv:
+    local py_ver
+    py_ver=$(python3 --version 2>&1 | awk '{print $2}')
+    if [[ "$py_ver" =~ ^3\.(1[4-9]|[2-9][0-9])\. ]] && python3 -c "import sys; sys.exit(0 if sys.version_info.releaselevel == 'final' else 1)" 2>/dev/null; then
+        : # stable release, proceed
+    elif python3 -c "import sys; sys.exit(0 if sys.version_info.releaselevel == 'final' else 1)" 2>/dev/null; then
+        : # stable, proceed
+    else
+        log_warn "Active Python $py_ver is pre-release. Falling back to latest stable pyenv version."
+        local stable
+        stable=$(pyenv versions --bare | grep -E '^3\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        [[ -n "$stable" ]] && pyenv shell "$stable" || { log_error "No stable pyenv version found."; return 1; }
+    fi
 
     # 1. Global Hive Maintenance
     if [[ ! -d "$VENV_PATH" ]]; then

@@ -1,0 +1,365 @@
+#!/usr/bin/python3
+
+import sys
+import os
+import platform
+import json
+#import plistlib
+import argparse
+
+# Globals
+Systems = {
+    'lin': 'linux',
+    'win': 'windows',
+    'mac': 'macos',
+}
+SystemFilters = {
+    'lin': 'LINUX_ONLY',
+    'win': 'WINDOWS_ONLY',
+    'mac': 'MACOS_ONLY',
+}
+ConfigOptions = {
+    'all': 'all',
+    'cmd': 'commandline',
+    'pol': 'policy',
+}
+ConfigTypes = {
+    'feat': 'Feature',
+    'flag': 'Flag',
+    'pol': 'Policy',
+}
+FlagFileFormats = {
+    'gen': 'generic',
+    'var': 'variable',
+}
+Files = {
+    'flags': 'flags/80-hardening-guide-flags.conf',
+    'linux_policy': 'policy/80-hardening-guide-policy.json',
+    'linux_recommended_policy': 'recommended-policy/81-hardening-guide-policy-recommended.json',
+    'macos_policy': 'policy/com.google.Chrome.plist',
+    'macos_recommended_policy': 'recommended-policy/com.google.Chrome.plist',
+    'windows_policy': 'policy/hardening-guide-policy.reg',
+}
+
+# Parse input file into a dictionary structure
+def ParseConfigFile(dbFile):
+    data = {}
+    with open(dbFile, 'r') as configData:
+        try:
+            data = json.load(configData)
+        except Exception as err:
+            print('ERROR: parsing JSON db failed')
+            print(err)
+    return data
+
+# Generate flags file
+def WriteFlagsFile(fileFormat, flags):
+    if not os.path.exists('flags'):
+        os.makedirs('flags')
+    with open(Files['flags'], 'w') as flagsOutput:
+        if fileFormat == FlagFileFormats['var']:
+            flagsOutput.write('CHROMIUM_FLAGS="' + '"\nCHROMIUM_FLAGS+=" '.join(flags) + '"')
+        else:
+            flagsOutput.write('\n'.join(flags))
+    return
+
+# Generate Linux policy file
+# Recommend here will determine if the policies should be separated, if true they will be
+def WriteJsonPolicy(recommend, policies, recommendedPolicies):
+    if not recommend:
+        policies.update(recommendedPolicies)
+    else:
+        if not os.path.exists('recommended-policy'):
+            os.makedirs('recommended-policy')
+        with open(Files['linux_recommended_policy'], 'w') as policyOutput:
+            recommendedPolicies = dict(sorted(recommendedPolicies.items()))
+            json.dump(recommendedPolicies, policyOutput, indent=4)
+    if not os.path.exists('policy'):
+        os.makedirs('policy')
+    with open(Files['linux_policy'], 'w') as policyOutput:
+        policies = dict(sorted(policies.items()))
+        json.dump(policies, policyOutput, indent=4)
+    return
+
+# Convert python typed inputs into
+def ConvertToRegValue(value):
+    vt = type(value)
+    if vt is int or vt is bool:
+        return "dword:%0.8X" % value
+    elif vt is str or vt is list or vt is dict:
+        return '"' + str(value).replace("'", '\\"') + '"'
+    else:
+        print('ERROR: Unknown type used for registry')
+        return '""'
+
+# Generate a reg policy file for Windows
+def WriteRegPolicy(recommend, policies, recommendedPolicies):
+    if not recommend:
+        policies.update(recommendedPolicies)
+    if not os.path.exists('policy'):
+        os.makedirs('policy')
+    with open(Files['windows_policy'], 'a') as policyOutput:
+        regPath = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome'
+        policyOutput.write('Windows Registry Editor Version 5.00\n\n')
+        if recommend:
+            recommendedPolicies = dict(sorted(recommendedPolicies.items()))
+            policyOutput.write(f'[{regPath}\\Recommended]\n')
+            for e in recommendedPolicies:
+                policyOutput.write(f'"{e}"={ConvertToRegValue(recommendedPolicies[e])}\n')
+            policyOutput.write('\n')
+        policies = dict(sorted(policies.items()))
+        policyOutput.write(f'[{regPath}]\n')
+        for e in policies:
+            policyOutput.write(f'"{e}"={ConvertToRegValue(policies[e])}\n')
+    return
+
+# Generate MacOS policy file
+def WritePlistPolicy(recommend, policies, recommendedPolicies):
+    raise NotImplementedError('MacOS policy generation not implemented')
+    ### WILL NOT HIT
+    '''
+    Should be simple with the plist library handler
+    '''
+    return
+
+# Check if a certain config has a certain tag
+def TagMatch(confEntry, tag):
+    return not tag or tag.upper() in (t.upper() for t in confEntry['Tags'])
+
+def TypeMatch(confEntry, confOption):
+    confType = confEntry['Type']
+    retDict = {
+        ConfigOptions['all']: True,
+        ConfigOptions['cmd']: confType == ConfigTypes['feat'] or confType == ConfigTypes['flag'],
+        ConfigOptions['pol']: confType == ConfigTypes['pol']
+    }
+    return retDict[confOption]
+
+# General parsing and filtering
+def ParseConfig(data, args, parser):
+    filteredData = {}
+    optionalConfigs = []
+
+    sysFiltDict = {
+        Systems['lin']: [SystemFilters['win'], SystemFilters['mac']],
+        Systems['win']: [SystemFilters['lin'], SystemFilters['mac']],
+        Systems['mac']: [SystemFilters['win'], SystemFilters['lin']]
+    }
+    systemFilter = sysFiltDict[args.system]
+
+    # Filter by tag and platform
+    for e in data:
+        if (
+            TagMatch(data[e], args.tag) and
+            not TagMatch(data[e], systemFilter[0]) and
+            not TagMatch(data[e], systemFilter[1])
+        ):
+            filteredData[e] = data[e]
+
+    # Find all potentially negated configs, figure out if they are actually negated later
+    tempFiltData = dict(filteredData)
+    for e in filteredData:
+        configEntry = filteredData[e]['Configs']
+        for c in configEntry:
+            if 'OPTIONAL' not in filteredData[e]['Tags'] and 'Negates' in configEntry[c] and TypeMatch(configEntry[c], args.type):
+                for n in configEntry[c]['Negates']:
+                    if n in tempFiltData:
+                        del tempFiltData[n]
+
+        # Store that the config is optional, only if it hasn't been removed yet
+        if 'OPTIONAL' in filteredData[e]['Tags'] and e in tempFiltData:
+            optionalConfigs.append(e)
+
+    # Update the filtered dictionary
+    filteredData = tempFiltData
+
+    # Add arguments for optional configs
+    for e in optionalConfigs:
+        if e in filteredData:
+            parser.add_argument(
+                '--' + e,
+                choices=['y', 'yes', 'n', 'no'],
+                default=False,
+                help=filteredData[e]['Description'] + f' (from configuration file: "{args.file}")'
+            )
+
+    parser.add_argument(
+        '--help', '-h',
+        action='help',
+        help='Show this help message and exit.'
+    )
+    args = parser.parse_args()
+
+    for e in optionalConfigs:
+        if e in filteredData:
+            for i in range(5):
+                choice = getattr(args, e.replace('-', '_'))
+                if choice:
+                    yn = choice.lower()
+                elif args.choice == '':
+                    print(filteredData[e]['Option'] + ' [Y/n]')
+                    yn = input().lower()
+                else:
+                    yn = args.choice.lower()
+                if yn == 'y' or yn == 'yes' or yn == '':
+                    # remove negations
+                    tempFiltData = dict(filteredData)
+                    configEntry = filteredData[e]['Configs']
+                    for c in configEntry:
+                        if 'Negates' in configEntry[c]:
+                            for n in configEntry[c]['Negates']:
+                                if n in tempFiltData:
+                                    del tempFiltData[n]
+                    filteredData = tempFiltData
+                    break
+                elif yn == 'n' or yn == 'no':
+                    del filteredData[e]
+                    break
+                else:
+                    print('WARNING: improper input, either hit enter for "yes" or choices are : ["y", "n", "yes", "no"]')
+            else:
+                del filteredData[e]
+
+    if args.choice == '' or args.choice == 'y':
+        # Find remaining negations
+        tempFiltData = dict(filteredData)
+        for e in filteredData:
+            configEntry = filteredData[e]['Configs']
+            for c in configEntry:
+                if 'OPTIONAL' in filteredData[e]['Tags'] and 'Negates' in configEntry[c] and TypeMatch(configEntry[c], args.type):
+                    for n in configEntry[c]['Negates']:
+                        if n in tempFiltData:
+                            del tempFiltData[n]
+
+        # We have a completed configuration file with all negations removed, and all choices made
+        filteredData = tempFiltData
+
+    # Generate the configuration data structures
+    flags = []
+    enableFeatures = []
+    disableFeatures = []
+    policies = {}
+    recommendedPolicies = {}
+    for e in filteredData:
+        entry = filteredData[e]
+        for c in entry['Configs']:
+            config = entry['Configs'][c]
+            confType = config['Type']
+            if confType == ConfigTypes['pol']:
+                if 'Recommendable' in config and config['Recommendable']:
+                    recommendedPolicies[c] = config['Value']
+                else:
+                    policies[c] = config['Value']
+            elif confType == ConfigTypes['feat']:
+                if config['Enable']:
+                    enableFeatures.append(c)
+                else:
+                    disableFeatures.append(c)
+            elif confType == ConfigTypes['flag']:
+                flag = '--' + c
+                if 'Arguments' in config:
+                    flag += '=' + ','.join(config['Arguments'])
+                flags.append(flag)
+
+    # Append features as flags
+    if enableFeatures:
+        flags.append('--enable-features=' + ','.join(enableFeatures))
+    if disableFeatures:
+        flags.append('--disable-features=' + ','.join(disableFeatures))
+
+    # Cleanup files
+    for f in Files:
+        if os.path.isfile(Files[f]):
+            os.remove(Files[f])
+
+    # Write to disk
+    if args.type in [ConfigOptions['cmd'], ConfigOptions['all']]:
+        WriteFlagsFile(args.format, flags)
+
+    if args.type in [ConfigOptions['pol'], ConfigOptions['all']]:
+        if args.system == Systems['lin']:
+            WriteJsonPolicy(args.recommend, policies, recommendedPolicies)
+        elif args.system == Systems['win']:
+            WriteRegPolicy(args.recommend, policies, recommendedPolicies)
+        elif args.system == Systems['mac']:
+            WritePlistPolicy(args.recommend, policies, recommendedPolicies)
+    return
+
+def main() -> int:
+    platformOS = platform.system().lower()
+    if platformOS == 'darwin':
+        platformOS = Systems['mac']
+
+    parser = argparse.ArgumentParser(
+        prog='ConfigGen',
+        description='Parse a chromium policy and flag database (Configuration.json), outputs flags to a folder `flags/`, outputs policies to a folder in reference to the platform the policy is for (e.g. `macos_policy`)',
+        add_help=False
+    )
+    parser.add_argument(
+        '--system', '-s',
+        choices=Systems.values(),
+        default=platformOS,
+        help='Target operating system (if not specified, then current platform), MacOS and Windows not supported currently.'
+    )
+    parser.add_argument(
+        '--type', '-t',
+        choices=ConfigOptions.values(),
+        default=ConfigOptions['all'],
+        help='Type of configuration for output file (if not specified then all).'
+    )
+    parser.add_argument(
+        '--format',
+        choices=FlagFileFormats.values(),
+        default=FlagFileFormats['gen'],
+        help='Output format for the flag file. Generic is just each flag separated by a new line, Variable is in the form of shell variable declarations, Chromewrapper is in the form of my chromewrapper project\'s wrapper flags file. If not specified then generic.')
+    parser.add_argument(
+        '--tag',
+        help='Filter by tag for the output config.'
+    )
+    parser.add_argument(
+        '--file', '-f',
+        default='Configuration.config',
+        help='Path to configuration file. Defaults to `Configuration.config`'
+    )
+    parser.add_argument(
+        '--choice', '-c',
+        choices=['y', 'yes', 'n', 'no', ''],
+        default='',
+        help='Set the default choice for optional input. If unspecified, then each optional will be asked.'
+    )
+    parser.add_argument(
+        '--recommend', '-r',
+        action='store_true',
+        help='Separate recommended policies from regular ones.'
+    )
+    args = parser.parse_known_args()[0]
+    
+    if args.system == Systems['win']:
+        args.format = FlagFileFormats['gen']
+
+    if args.system == Systems['mac']:
+        print(f'TODO: {args.system} support not implemented')
+        return 1
+
+    if not os.path.isfile(args.file):
+        parser.add_argument(
+            '--help', '-h',
+            action='help',
+            help=f'''Show this help message and exit.
+            Arguments for toggling optional settings defined in the configuration file are not available as "{args.file}" was not found.'''
+        )
+        args = parser.parse_known_args()[0]
+        print(f'ERROR: file "{args.file}" does not exist')
+        return 1
+
+    data = ParseConfigFile(args.file)
+    if not data:
+        print('ERROR: parsed data is empty')
+        return 1
+
+    ParseConfig(data, args, parser)
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

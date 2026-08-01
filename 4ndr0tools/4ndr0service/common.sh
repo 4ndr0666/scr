@@ -230,14 +230,18 @@ create_config_if_missing() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         # Discover the real python version rather than hardcoding a stale value.
         # Priority: pyenv global → system python3 → safe fallback.
-        local detected_py_ver="3.10.14"
+        local detected_py_ver=""
         if command -v pyenv &>/dev/null; then
             local _pv
             _pv=$(pyenv global 2>/dev/null | head -1)
             [[ -n "$_pv" && "$_pv" != "system" ]] && detected_py_ver="$_pv"
         fi
-        if [[ "$detected_py_ver" == "3.10.14" ]] && command -v python3 &>/dev/null; then
-            detected_py_ver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null || echo "3.10.14")
+        if [[ -z "$detected_py_ver" ]] && command -v python3 &>/dev/null; then
+            detected_py_ver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null || true)
+        fi
+        if [[ -z "$detected_py_ver" ]]; then
+            log_warn "create_config_if_missing: cannot detect Python version — config.json will omit python_version"
+            detected_py_ver="unknown"
         fi
 
         cat >"$CONFIG_FILE" <<ENDOFCONFIG
@@ -334,5 +338,3 @@ initialize_suite() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     initialize_suite
 fi
-# D-02 REMEDIATION PENDING MANUAL REVIEW — see audit report
-# D-02 REMEDIATION PENDING MANUAL REVIEW — see audit report

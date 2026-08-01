@@ -52,6 +52,7 @@ readonly DEFAULT_OUTPUT="composite.mp4"
 # =============================================================================
 # EPHEMERAL WORK DIR — destroyed unconditionally on any exit (POSIX TRAP LAW)
 # =============================================================================
+export TMPDIR="/sto2/.tmp"
 WORK_DIR=$(mktemp -d -t ffx-composite.XXXXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
 
@@ -452,7 +453,7 @@ total="${#ALL_FILES[@]}"
 while (( idx < total )); do
     remaining=$(( total - idx ))
     max_n=$(( remaining < 4 ? remaining : 4 ))
-    
+
     # Gap Mitigation: Honor BATCH_SIZE override if provided by operator
     if (( BATCH_SIZE > 0 && BATCH_SIZE <= 4 )); then
         n=$(( remaining < BATCH_SIZE ? remaining : BATCH_SIZE ))

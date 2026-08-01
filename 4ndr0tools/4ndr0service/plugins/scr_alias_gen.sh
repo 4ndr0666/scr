@@ -21,7 +21,7 @@ IFS=$'\n\t'
 source "${PKG_PATH:-.}/common.sh"
 
 plugin_scr_alias_gen() {
-    local scr_root='/home/git/clone/4ndr0666/scr'
+    local scr_root="${SCR_ROOT:-/home/git/clone/4ndr0666/scr}"
     local alias_file="${XDG_CACHE_HOME:-$HOME/.cache}/4ndr0service/tool_aliases.zsh"
     local dirty_flag="${XDG_CACHE_HOME:-$HOME/.cache}/.scr_dirty"
 

@@ -48,6 +48,20 @@ run() {
 # Akasha Directive 3: The Iron FINALLY block.
 # If the installer exits non-zero after filesystem mutations have begun,
 # remove the partially-installed tree and symlink to leave the host pristine.
+#
+# D-18 FIX: Rollback must NEVER delete $SOURCE_DIR. When a user runs this
+# installer from inside an already-installed tree (e.g. `cd /opt/4ndr0service
+# && git pull && sudo ./install.sh`), SOURCE_DIR == INSTALL_LOCATION. The
+# "same directory, skip sync" branch still armed _ROLLBACK_NEEDED=true, and
+# several later steps are NOT failure-guarded (the jq/pacman dependency gate,
+# the systemd installer invocation, the symlink `ln -s`). Any one of those
+# failing under set -e fired this trap and ran `sudo rm -rf` on the user's own
+# source checkout — a directory that was never created by this run and that
+# this run has no right to destroy. The D-10 safe-prefix check does not catch
+# this because $SOURCE_DIR legitimately lives under /opt or /home and passes
+# that check fine; D-10 defends against a different threat (TOCTOU symlink
+# redirection to an unrelated system path), not against self-destruction.
+# This guard is independent of, and sits in front of, the D-10 check below.
 _rollback() {
     local exit_code=$?
     [[ "$DRY_RUN" == "true" ]] && return 0
@@ -55,14 +69,17 @@ _rollback() {
         log_error "Install aborted (exit $exit_code). Rolling back..."
         [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && sudo rm -f "$SYMLINK_PATH" 2>/dev/null || true
         if [[ -n "$_INSTALL_LOCATION" && -d "$_INSTALL_LOCATION" ]]; then
-            # Never remove the directory we were sourced/run from.
+            # D-18 FIX: Never remove the directory we were sourced/run from.
             if [[ "$_INSTALL_LOCATION" == "$SOURCE_DIR" ]]; then
                 log_warn "Rollback REFUSED: install location equals source directory ($SOURCE_DIR)."
                 log_warn "Nothing was created by this run at that path, so nothing will be removed."
                 trap - EXIT
                 exit "$exit_code"
             fi
-            # Constrain rollback rm -rf to known-safe path prefixes.
+            # D-10 FIX: Constrain rollback rm -rf to known-safe path prefixes.
+            # Prevents a TOCTOU symlink attack from redirecting the removal to
+            # an arbitrary path (e.g., /etc, /usr) between normalize_path()
+            # and the rollback trap firing.
             case "$_INSTALL_LOCATION" in
                 /opt/*|/home/*|/usr/local/*|/tmp/*)
                     sudo rm -rf "$_INSTALL_LOCATION" 2>/dev/null || true
@@ -120,8 +137,9 @@ done
 if [[ "$UNINSTALL" == "true" ]]; then
     log_step "Initiating Scorch Protocol..."
     [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && run sudo rm -f "$SYMLINK_PATH"
-    [[ -d "$DEFAULT_INSTALL_LOCATION" ]]           && run sudo rm -rf "$DEFAULT_INSTALL_LOCATION"
+    [[ -d "$DEFAULT_INSTALL_LOCATION" ]]            && run sudo rm -rf "$DEFAULT_INSTALL_LOCATION"
     run sudo rm -f /tmp/4ndr0service_*.lock
+    # Disable and remove deployed systemd units if present
     local_systemd="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
     for unit in env_maintenance.service env_maintenance.timer; do
         if [[ -f "$local_systemd/$unit" ]]; then
@@ -149,6 +167,9 @@ log_step "Target:  $INSTALL_LOCATION"
 [[ "$DRY_RUN" == "true" ]] && log_info "DRY-RUN mode active — no changes will be made."
 
 # ── TREE MIGRATION (BACKWARDS COMPATIBILITY) ─────────────────────────────────
+# If an older installation exists with the test/src/ layout, migrate it before
+# rsync overwrites with the new canonical layout. This prevents stale files
+# under test/src/ from persisting alongside the new test/ flat layout.
 _migrate_old_tree() {
     local dest="$1"
     local old_src_dir="$dest/test/src"
@@ -166,18 +187,21 @@ _migrate_old_tree() {
 
         if [[ -f "$old_install" ]]; then
             run sudo rm -f "$old_install"
+            # install_env_maintenance.sh moved to systemd/ — remove the old copy
             log_info "Removed stale: test/src/install_env_maintenance.sh (now at systemd/)"
         fi
 
         if run sudo find "$old_src_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
             log_warn "test/src/ still contains files after migration; leaving in place."
         else
+            # Remove src/ dir if now empty
             run sudo rmdir "$old_src_dir" 2>/dev/null || true
             log_info "Removed empty directory: test/src/"
         fi
     fi
 
     local bats_dir="$dest/test/bats"
+    # Remove test/bats/ if empty (it was never populated)
     if [[ -d "$bats_dir" ]]; then
         if ! find "$bats_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
             run sudo rmdir "$bats_dir" 2>/dev/null || true
@@ -190,11 +214,14 @@ _migrate_old_tree() {
 if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     log_step "Synchronising source tree to $INSTALL_LOCATION..."
 
+    # Ensure parent and target directories exist
     PARENT_DIR="$(dirname "$INSTALL_LOCATION")"
     [[ -d "$PARENT_DIR" ]] || run sudo mkdir -p "$PARENT_DIR"
     [[ -d "$INSTALL_LOCATION" ]] || run sudo mkdir -p "$INSTALL_LOCATION"
 
     if [[ -d "$INSTALL_LOCATION" && "$DRY_RUN" == "false" ]]; then
+        # Migrate any legacy layout BEFORE rsync so --delete doesn't remove
+        # files that are still in the process of being moved.
         _migrate_old_tree "$INSTALL_LOCATION"
     fi
 
@@ -217,6 +244,7 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     fi
 else
     log_info "Source and target are the same directory. Skipping file sync."
+    # Still run migration if target already exists with old layout
     [[ "$DRY_RUN" == "false" ]] && _migrate_old_tree "$INSTALL_LOCATION"
     _ROLLBACK_NEEDED=true
 fi
@@ -229,6 +257,10 @@ run sudo find "$INSTALL_LOCATION" -type f -name "*.sh" -exec chmod +x {} +
 log_step "Establishing invocation symlink: $SYMLINK_PATH → $INSTALL_LOCATION/main.sh"
 [[ -d "$BIN_DIR" ]] || run sudo mkdir -p "$BIN_DIR"
 [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && run sudo rm -f "$SYMLINK_PATH"
+# D-18 FIX: This was unguarded. A failure here (e.g. a stale symlink the
+# preceding rm -f silently couldn't remove) propagated under set -e straight
+# into the rollback trap. Failing to (re)create the convenience symlink is
+# recoverable — log it and continue rather than aborting the whole install.
 run sudo ln -s "$INSTALL_LOCATION/main.sh" "$SYMLINK_PATH" \
     || log_warn "Failed to create symlink $SYMLINK_PATH — invoke via $INSTALL_LOCATION/main.sh directly."
 
@@ -237,6 +269,9 @@ log_step "Verifying runtime dependencies..."
 if ! command -v jq &>/dev/null; then
     log_warn "jq not found — required for JSON config parsing."
     if command -v pacman &>/dev/null; then
+        # D-18 FIX: This was unguarded. pacman can legitimately fail (no
+        # network, db lock held, mirror unavailable) and that failure must
+        # not abort an otherwise-successful install of the suite itself.
         run sudo pacman -S --noconfirm --needed jq \
             || log_warn "Automatic jq install failed — install it manually before using the suite."
     else
@@ -247,6 +282,8 @@ else
 fi
 
 # ── SYSTEMD DEPLOYMENT ────────────────────────────────────────────────────────
+# Deploy and activate the environment maintenance timer for the CURRENT user.
+# Skipped if --skip-systemd is passed or if systemd user session is unavailable.
 if [[ "$SKIP_SYSTEMD" == "false" ]]; then
     log_step "Deploying systemd maintenance units..."
     _systemd_installer="$INSTALL_LOCATION/systemd/install_env_maintenance.sh"
@@ -255,6 +292,13 @@ if [[ "$SKIP_SYSTEMD" == "false" ]]; then
         if systemctl --user status &>/dev/null 2>&1 || systemctl --user list-units &>/dev/null 2>&1; then
             if [[ "$DRY_RUN" == "false" ]]; then
                 if [[ "${SUDO_USER:-}" != "" ]]; then
+                    # Run as the current (non-root) user; install.sh may be run with sudo
+                    # but systemd --user must run as the actual user.
+                    # D-18 FIX: This was unguarded. A failure inside the systemd
+                    # installer (e.g. common.sh's mutex lock-wait timing out) must
+                    # not abort the whole install — the suite itself is already
+                    # correctly deployed by this point; only the maintenance timer
+                    # activation is at stake, and that is independently retryable.
                     sudo -u "$SUDO_USER" bash "$_systemd_installer" \
                         || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
                 else

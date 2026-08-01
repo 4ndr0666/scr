@@ -48,62 +48,25 @@ path_prepend "$BIN_TARGET"
 path_prepend "${PYENV_ROOT}/shims"
 path_prepend "${PYENV_ROOT}/bin"
 
-# ── GHOST EXORCISM (Idempotent Pip Cleanup) ──────────────────────────────────
+# ── GHOST EXORCISM (Delegated to canonical optimize_python.sh) ───────────────
+# SCHISM-02 / ISSUE-06 FIX: ascension.sh previously maintained its own
+# clean_pip_ghosts() using a string-interpolated site-packages path that was
+# fragile against pyenv layout changes. optimize_python.sh owns the canonical
+# implementation using sysconfig.get_paths() for runtime-accurate discovery.
+# Delegate unconditionally; never re-implement what a sibling already owns.
 clean_pip_ghosts() {
-    log_psi "Initiating Ghost Exorcism Protocol on Python ${1:-3.10.14}"
-
-    local py_version="${1:-3.10.14}"
-    # D-19 FIX: This previously hardcoded /home/andro and andro:andro, silently
-    # defeating the Dynamic User Discovery this file advertises in its own
-    # header (REAL_USER/USER_HOME, derived above) on any host where the real
-    # user is not literally named "andro". Now uses the already-discovered
-    # $USER_HOME/$REAL_USER consistently with $BIN_TARGET above.
-    # D-19 FIX (2): "${py_version#*.}" strips from the FRONT of the string,
-    # so "3.10.14" became "10.14" — the wrong pythonX.Y directory segment.
-    # "${py_version%.*}" strips the shortest match from the END instead,
-    # correctly yielding "3.10" (matches the convention already used in
-    # service/optimize_python.sh's equivalent fallback path).
-    local site_pkgs="${USER_HOME}/.local/share/pyenv/versions/${py_version}/lib/python${py_version%.*}/site-packages"
-
-    if [[ ! -d "$site_pkgs" ]]; then
-        log_warn "Site-packages not found at $site_pkgs — skipping ghost clean"
+    local _opt_py="${PKG_PATH}/service/optimize_python.sh"
+    if [[ ! -f "$_opt_py" ]]; then
+        log_warn "clean_pip_ghosts: cannot locate optimize_python.sh at $_opt_py — skipping"
         return 0
     fi
-
-    # Count ghost artifacts BEFORE removing anything so we know whether actual
-    # corruption was present. The pip force-reinstall is only warranted when
-    # real ghost files existed; running it unconditionally caused a full
-    # uninstall/reinstall cycle on every sync even when "Files removed: 0"
-    # (the exact symptom reported — Bug 2 fix).
-    local ghost_count=0
-    local pattern
-    for pattern in "~irtual*" "-irtual*" "*virtualenvondemand*" "*virtualenv-tools3*"; do
-        local n
-        n=$(find "$site_pkgs" -maxdepth 1 -name "$pattern" 2>/dev/null | wc -l)
-        ghost_count=$(( ghost_count + n ))
-    done
-
-    if [[ $ghost_count -gt 0 ]]; then
-        log_warn "Found $ghost_count ghost artifact(s) in $site_pkgs — removing..."
-        sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
-
-        # Reclaim ownership after removal
-        sudo chown -R "${REAL_USER}:${REAL_USER}" \
-            "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
-
-        # Only purge pip cache and force-reinstall build tools when corruption
-        # was actually detected — this is the recovery path, not routine upkeep.
-        log_info "Corruption detected — purging pip cache and reinstalling build tools..."
-        python -m pip cache purge 2>/dev/null || true
-        python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps \
-            pip setuptools wheel 2>/dev/null || true
-        log_success "Ghost exorcism complete for Python ${py_version} ($ghost_count artifact(s) removed)"
-    else
-        log_success "Ghost exorcism complete for Python ${py_version} — environment is clean"
-    fi
+    # Source with BASH_SOURCE[0] guard respected — optimize_python.sh's
+    # standalone bootstrap block is protected by `if [[ "${BASH_SOURCE[0]}" == "$0" ]]`
+    # so sourcing it here only loads its functions, never executes them.
+    # shellcheck source=/dev/null
+    source "$_opt_py"
+    # Now call the canonical implementation directly.
+    clean_pip_ghosts "$@"
 }
 
 # ── USAGE ─────────────────────────────────────────────────────────────────────
@@ -192,7 +155,7 @@ print(f'{sys.version_info.major}.{sys.version_info.minor}')
     if [[ -z "$target_py_ver" ]] && command -v jq &>/dev/null && [[ -f "$CONFIG_FILE" ]]; then
         local _cv
         _cv=$(jq -r '.python_version // ""' "$CONFIG_FILE" 2>/dev/null || echo "")
-        [[ -n "$_cv" && "$_cv" != "3.10.14" ]] && target_py_ver="$_cv"
+        [[ -n "$_cv" && "$_cv" != "system" ]] && target_py_ver="$_cv"
     fi
     if [[ -z "$target_py_ver" ]]; then
         target_py_ver=$(python3 -c \
