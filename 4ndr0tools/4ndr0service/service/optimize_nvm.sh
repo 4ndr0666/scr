@@ -64,14 +64,14 @@ optimize_nvm_service() {
         
         # SC2155: Capturing exit code of the API call
         local latest_nvm
-        latest_nvm=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
+        latest_nvm=$(curl -s --max-time 30 https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r '.tag_name')
         
         if [[ -z "$latest_nvm" || "$latest_nvm" == "null" ]]; then
             handle_error "$LINENO" "Failed to retrieve latest NVM version from GitHub API."
         fi
 
         log_info "Deploying NVM version: $latest_nvm"
-        curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${latest_nvm}/install.sh" | bash || handle_error "$LINENO" "NVM installation script failed."
+        curl -o- --max-time 120 "https://raw.githubusercontent.com/nvm-sh/nvm/${latest_nvm}/install.sh" | bash || handle_error "$LINENO" "NVM installation script failed."
     fi
 
     # 2. Hive Core Activation

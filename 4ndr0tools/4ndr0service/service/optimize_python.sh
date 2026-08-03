@@ -142,9 +142,9 @@ optimize_python_service() {
     if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
         local _cfg_ver
         _cfg_ver=$(jq -r '.python_version // ""' "$CONFIG_FILE")
-        # Reject the stale default if the live pyenv global differs — this is
-        # exactly the broken-interpreter scenario reported in the logs.
-        if [[ -n "$_cfg_ver" && "$_cfg_ver" != "3.10.14" ]]; then
+        # Use config value if it looks like a real version (not empty,
+        # not "system", not "unknown").
+        if [[ -n "$_cfg_ver" && "$_cfg_ver" != "system" && "$_cfg_ver" != "unknown" ]]; then
             target_ver="$_cfg_ver"
         fi
     fi

@@ -32,7 +32,7 @@ optimize_cargo_service() {
 
     # 3. Toolchain & Registry Sanitization
     log_info "Updating Toolchains & Purging Registry Index..."
-    rustup update stable || log_warn "Toolchain update failed."
+    timeout 300 rustup update stable || log_warn "Toolchain update failed."
     rustup default stable &>/dev/null || true
 
     # D-05 FIX: Original wiped the entire registry index on every run, forcing
@@ -65,14 +65,14 @@ optimize_cargo_service() {
             [[ -z "$tool" ]] && continue
             if ! cargo install --list | grep -q "^${tool} "; then
                 log_info "Deploying tool: $tool"
-                cargo install "$tool" || log_warn "Cargo failed to deploy: $tool"
+                timeout 300 cargo install "$tool" || log_warn "Cargo failed to deploy: $tool"
             else
                 if [[ "$has_updater" == "true" ]]; then
                     log_info "Checking delta for: $tool"
                     cargo install-update "$tool" || log_warn "Delta sync failed: $tool"
                 else
                     log_info "Forcing update for: $tool"
-                    cargo install "$tool" || log_warn "Force update failed: $tool"
+                    timeout 300 cargo install "$tool" || log_warn "Force update failed: $tool"
                 fi
             fi
         done

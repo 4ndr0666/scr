@@ -88,3 +88,21 @@ if systemctl --user list-unit-files env_maintenance.timer &>/dev/null; then
 else
     log_warn "env_maintenance.timer not found after deployment. Check unit files in $SYSTEMD_USER_DIR."
 fi
+
+# ── AUDITD RULE PROVISIONING ──────────────────────────────────────────────────
+# GAP-04 FIX: Provision auditd rules on every deploy so fresh installs never
+# produce audit warnings on first run. Delegates to provision_auditd_rules()
+# defined in test/final_audit.sh to keep a single authoritative implementation.
+if command -v auditctl &>/dev/null; then
+    log_info "Provisioning auditd rules..."
+    _FINAL_AUDIT="$PKG_PATH/test/final_audit.sh"
+    if [[ -f "$_FINAL_AUDIT" ]]; then
+        # Source with PKG_PATH already set; the standalone guard in final_audit.sh
+        # ([[ "${BASH_SOURCE[0]}" == "$0" ]]) prevents run_audit from executing.
+        # shellcheck source=../test/final_audit.sh
+        source "$_FINAL_AUDIT"
+        provision_auditd_rules
+    else
+        log_warn "final_audit.sh not found at $_FINAL_AUDIT — auditd rules not provisioned"
+    fi
+fi

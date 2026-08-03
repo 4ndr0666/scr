@@ -52,6 +52,25 @@ prompt_config_value() {
     read -rp "Enter value for $key [$default]: " val
     val="${val:-$default}"
 
+    # Schema guard: validate python_version against live pyenv versions
+    # so a typo cannot silently poison the config that every optimize_*
+    # service reads on the next run.
+    if [[ "$key" == "python_version" && -n "$val" ]]; then
+        if command -v pyenv &>/dev/null; then
+            local _known_versions
+            _known_versions=$(pyenv versions --bare 2>/dev/null || true)
+            if [[ -n "$_known_versions" ]] && ! echo "$_known_versions" | grep -qxF "$val"; then
+                log_warn "python_version '$val' not found in pyenv versions:"
+                pyenv versions --bare 2>/dev/null | sed 's/^/    /'
+                read -rp "Write anyway? (y/N): " _force
+                if [[ "${_force,,}" != "y" ]]; then
+                    log_info "Aborted — config.json unchanged."
+                    return 0
+                fi
+            fi
+        fi
+    fi
+
     local tmp
     tmp="$(mktemp)"
     jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"

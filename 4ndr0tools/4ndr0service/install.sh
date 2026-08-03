@@ -122,7 +122,27 @@ if [[ "$UNINSTALL" == "true" ]]; then
     [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && run sudo rm -f "$SYMLINK_PATH"
     [[ -d "$DEFAULT_INSTALL_LOCATION" ]]           && run sudo rm -rf "$DEFAULT_INSTALL_LOCATION"
     run sudo rm -f /tmp/4ndr0service_*.lock
-    local_systemd="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    # Remove auditd rules installed by the suite
+    if [[ -f /etc/audit/rules.d/4ndr0service.rules ]]; then
+        run sudo rm -f /etc/audit/rules.d/4ndr0service.rules
+        if command -v augenrules &>/dev/null; then
+            run sudo augenrules --load 2>/dev/null || true
+        elif command -v auditctl &>/dev/null; then
+            run sudo auditctl -D 2>/dev/null || true
+        fi
+        log_ok "Removed auditd rules."
+    fi
+    # Resolve the real user's XDG config home regardless of whether this
+    # run is invoked with sudo (EUID=0, HOME=/root) or directly as the
+    # user. Units are installed into the invoking user's systemd dir —
+    # not root's — so we must derive the correct home from SUDO_USER when
+    # present, and fall back to the current user otherwise.
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        _real_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    else
+        _real_home="$HOME"
+    fi
+    local_systemd="${XDG_CONFIG_HOME:-${_real_home}/.config}/systemd/user"
     for unit in env_maintenance.service env_maintenance.timer; do
         if [[ -f "$local_systemd/$unit" ]]; then
             run systemctl --user disable --now "${unit%.service}" 2>/dev/null || true
@@ -169,7 +189,9 @@ _migrate_old_tree() {
             log_info "Removed stale: test/src/install_env_maintenance.sh (now at systemd/)"
         fi
 
-        if run sudo find "$old_src_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+        local _remaining
+        _remaining=$(find "$old_src_dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l || echo "0")
+        if [[ "${_remaining:-0}" -gt 0 ]]; then
             log_warn "test/src/ still contains files after migration; leaving in place."
         else
             run sudo rmdir "$old_src_dir" 2>/dev/null || true
@@ -179,7 +201,9 @@ _migrate_old_tree() {
 
     local bats_dir="$dest/test/bats"
     if [[ -d "$bats_dir" ]]; then
-        if ! find "$bats_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+        local _bats_count
+        _bats_count=$(find "$bats_dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l || echo "0")
+        if [[ "${_bats_count:-0}" -eq 0 ]]; then
             run sudo rmdir "$bats_dir" 2>/dev/null || true
             log_info "Removed empty directory: test/bats/"
         fi
@@ -255,7 +279,12 @@ if [[ "$SKIP_SYSTEMD" == "false" ]]; then
         if systemctl --user status &>/dev/null 2>&1 || systemctl --user list-units &>/dev/null 2>&1; then
             if [[ "$DRY_RUN" == "false" ]]; then
                 if [[ "${SUDO_USER:-}" != "" ]]; then
-                    sudo -u "$SUDO_USER" bash "$_systemd_installer" \
+                    # Pass HOME explicitly so common.sh inside
+                    # install_env_maintenance.sh resolves XDG vars to the
+                    # real user's home, not root's /root.
+                    _inst_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+                    sudo -u "$SUDO_USER" HOME="$_inst_home" \
+                        bash "$_systemd_installer" \
                         || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
                 else
                     bash "$_systemd_installer" \
@@ -279,13 +308,18 @@ fi
 log_step "Running post-install verification (--report)..."
 if [[ "$DRY_RUN" == "false" ]]; then
     if [[ -n "${SUDO_USER:-}" ]]; then
-        # Run report as the invoking user so paths and env vars evaluate correctly
-        sudo -u "$SUDO_USER" "$INSTALL_LOCATION/main.sh" --report || log_warn "--report returned non-zero; review output above."
+        # Run report as the invoking user so XDG paths evaluate correctly.
+        # Explicitly pass HOME via getent so common.sh XDG defaults resolve to
+        # the real user's home, not root's /root, when sudo is not called with -i.
+        _sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+        sudo -u "$SUDO_USER" HOME="$_sudo_home" \
+            "$INSTALL_LOCATION/main.sh" --report \
+            || log_warn "--report returned non-zero; review output above."
     else
         "$INSTALL_LOCATION/main.sh" --report || log_warn "--report returned non-zero; review output above."
     fi
 else
-    log_dry "Would run: sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
+    log_dry "Would run: HOME=~${SUDO_USER:-$USER} sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
 fi
 
 # ── DONE ──────────────────────────────────────────────────────────────────────

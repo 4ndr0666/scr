@@ -8,6 +8,55 @@ IFS=$'\n\t'
 # shellcheck source=/dev/null
 source "${PKG_PATH:-.}/common.sh"
 
+# ── AUDIT HELPER ──────────────────────────────────────────────────────────────
+# Q1 FIX: Option 9 now runs run_audit() from final_audit.sh (full audit:
+# env + systemd + auditd + pacman) not bare run_verification(). Inline source.
+_run_full_audit() {
+    local _fa="$PKG_PATH/test/final_audit.sh"
+    if [[ -f "$_fa" ]]; then
+        # shellcheck source=/dev/null
+        source "$_fa"
+        run_audit
+    else
+        log_warn "final_audit.sh not found at $_fa — falling back to run_verification"
+        if declare -f run_verification >/dev/null 2>&1; then
+            run_verification
+        else
+            source "$PKG_PATH/test/verify_environment.sh"
+            run_verification
+        fi
+    fi
+}
+
+# ── ASCENSION INLINE HELPERS ──────────────────────────────────────────────────
+# ISSUE-06 FIX: source payloads inline instead of forking subprocesses.
+# Eliminates mutex re-acquisition deadlock risk on every ascension/purge call.
+_ensure_asc_loaded() {
+    if ! declare -f run_sync >/dev/null 2>&1; then
+        local _asc="$PKG_PATH/ascension.sh"
+        if [[ -f "$_asc" ]]; then
+            # shellcheck source=/dev/null
+            source "$_asc"
+        else
+            log_warn "ascension.sh not found at $_asc"
+            return 1
+        fi
+    fi
+}
+
+_ensure_purge_loaded() {
+    if ! declare -f run_purge >/dev/null 2>&1; then
+        local _purge="$PKG_PATH/purge_matrix.sh"
+        if [[ -f "$_purge" ]]; then
+            # shellcheck source=/dev/null
+            source "$_purge"
+        else
+            log_warn "purge_matrix.sh not found at $_purge"
+            return 1
+        fi
+    fi
+}
+
 main_dialog() {
     if ! command -v dialog &>/dev/null; then
         log_warn "dialog not installed. Falling back to CLI."
@@ -20,22 +69,12 @@ main_dialog() {
         return
     fi
 
-    # Shared script paths — declared once to avoid repeated path construction
-    local asc_script="$PKG_PATH/ascension.sh"
-    local purge_script="$PKG_PATH/purge_matrix.sh"
-
     while true; do
-        # FIX: list-height corrected from 16 to 15.
-        # Entries: items 1-14 + item 0 (Exit) = 15 visible rows.
-        # Previous value of 16 over-allocated and caused blank rows on terminals
-        # that did not have extra space, and clipped on smaller terminals.
-        #
-        # FIX: Renamed opaque internal terms to user-facing descriptions:
-        #   10 "Ascension Sync"   → "Sync Python Hive & Ghost Links"
-        #   11 "Inject Hive Tool" → "Install Isolated Python Tool"
-        #   12 "Purge Matrix"     → "Deep Clean: Remove Dead Artifacts"
+        # Menu height: 17 items (1-16 + 0 Exit) = 17 visible rows.
+        # Three new entries added: Remove Tool (12), List Tools (13),
+        # File Management renumbered to 14, Settings to 15, Exit stays 0.
         REPLY=$(dialog --stdout --title "4ndr0666OS | 4ndr0service" \
-            --menu "Main Menu: Operational Vectors" 25 70 15 \
+            --menu "Main Menu: Operational Vectors" 28 70 17 \
             1  "Go Optimization" \
             2  "Ruby Optimization" \
             3  "Cargo Optimization" \
@@ -47,9 +86,11 @@ main_dialog() {
             9  "Audit/Verification (Toggle Fix)" \
             10 "Sync Python Hive & Ghost Links" \
             11 "Install Isolated Python Tool" \
-            12 "Deep Clean: Remove Dead Artifacts" \
-            13 "File Management" \
-            14 "Settings" \
+            12 "Remove Isolated Python Tool" \
+            13 "List Injected Hive Tools" \
+            14 "Deep Clean: Remove Dead Artifacts" \
+            15 "File Management" \
+            16 "Settings" \
             0  "Exit") || break
 
         clear
@@ -63,53 +104,87 @@ main_dialog() {
         6)  optimize_python_service ;;
         7)  optimize_electron_service ;;
         8)  optimize_venv_service ;;
+
         9)
+            # Q1 FIX: full audit via run_audit() from final_audit.sh.
             if dialog --title "Verification Protocol" \
                       --yesno "Enable FIX_MODE? (Attempts to automatically repair detected issues)" 7 60; then
                 export FIX_MODE="true"
             else
                 export FIX_MODE="false"
             fi
-            run_verification
+            _run_full_audit
             ;;
+
         10)
-            # Enforces Ghost Links, sanitizes the virtualenv hive, and audits
-            # the Python environment layout.
-            if [[ -x "$asc_script" ]]; then
-                "$asc_script" --sync
+            # ISSUE-06 FIX: inline source — no subprocess fork, no mutex contention.
+            if _ensure_asc_loaded; then
+                run_sync
             else
-                dialog --msgbox "ascension.sh not found at $asc_script" 6 55
+                dialog --msgbox "ascension.sh not found at $PKG_PATH/ascension.sh" 6 55
             fi
             ;;
+
         11)
-            # Installs a Python package into its own isolated virtualenv and
-            # creates a Ghost Link in ~/.local/bin for PATH access.
+            # Q2 FIX: inject path.
             local inject_tool
             inject_tool=$(dialog --stdout \
                 --title "Install Isolated Python Tool" \
-                --inputbox "Package name to install into isolated Hive venv:" 8 55) || true
+                --inputbox "Package name to inject into Hive venv:" 8 55) || true
             if [[ -n "$inject_tool" ]]; then
-                if [[ -x "$asc_script" ]]; then
-                    "$asc_script" --inject "$inject_tool"
+                if _ensure_asc_loaded; then
+                    install_resilient_tool "$inject_tool"
                 else
-                    dialog --msgbox "ascension.sh not found at $asc_script" 6 55
+                    dialog --msgbox "ascension.sh not found." 6 40
                 fi
             fi
             ;;
+
         12)
-            # Removes broken symlinks, stale virtualenv dirs, rebuilds AUR
-            # packages against the current Python runtime, clears __pycache__.
-            if dialog --title "Deep Clean: Remove Dead Artifacts" \
-                      --yesno "Proceed? This removes dead symlinks, stale venv dirs, and __pycache__ trees, then rebuilds AUR orphans." 8 65; then
-                if [[ -x "$purge_script" ]]; then
-                    "$purge_script" --force
-                else
-                    dialog --msgbox "purge_matrix.sh not found at $purge_script" 6 55
+            # Q2 FIX: eject path — remove tool, venv, symlink, config entry.
+            local eject_tool
+            eject_tool=$(dialog --stdout \
+                --title "Remove Isolated Python Tool" \
+                --inputbox "Package name to eject from Hive:" 8 55) || true
+            if [[ -n "$eject_tool" ]]; then
+                if dialog --title "Confirm Eject" \
+                          --yesno "Remove '$eject_tool'? Destroys venv, Ghost Link, and config entry. Irreversible." 8 65; then
+                    if _ensure_asc_loaded; then
+                        remove_hive_tool "$eject_tool"
+                    else
+                        dialog --msgbox "ascension.sh not found." 6 40
+                    fi
                 fi
             fi
             ;;
-        13) manage_files_main ;;
-        14) modify_settings ;;
+
+        13)
+            # Q3 FIX: display current injected tool inventory.
+            if _ensure_asc_loaded; then
+                local _list_output
+                _list_output=$(list_hive_tools 2>&1)
+                dialog --title "Injected Hive Tools" \
+                       --msgbox "$_list_output" 24 65
+            else
+                dialog --msgbox "ascension.sh not found." 6 40
+            fi
+            ;;
+
+        14)
+            # Removes broken symlinks, stale venvs, rebuilds AUR orphans.
+            if dialog --title "Deep Clean: Remove Dead Artifacts" \
+                      --yesno "Proceed? Removes dead symlinks, stale venv dirs, __pycache__ trees, rebuilds AUR orphans." 8 65; then
+                if _ensure_purge_loaded; then
+                    run_purge
+                else
+                    dialog --msgbox "purge_matrix.sh not found." 6 40
+                fi
+            fi
+            ;;
+
+        15) manage_files_main ;;
+        16) modify_settings ;;
+
         0)
             log_info "Goodbye, Operator."
             exit 0

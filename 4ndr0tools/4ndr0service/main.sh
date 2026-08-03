@@ -99,7 +99,20 @@ run_core_checks() {
     fi
 
     if [[ "$FIX_MODE" == "true" || "$REPORT_MODE" == "true" ]]; then
-        run_verification
+        # GAP-07 FIX: call run_audit (final_audit.sh) instead of bare
+        # run_verification so the systemd timer path gets the full audit:
+        # check_systemd_bus, check_systemd_timer, check_auditd_rules, and
+        # check_pacman_dupes — not just the environment variable/directory/
+        # toolchain checks that run_verification covers.
+        local _final_audit="$PKG_PATH/test/final_audit.sh"
+        if [[ -f "$_final_audit" ]]; then
+            # shellcheck source=./test/final_audit.sh
+            source "$_final_audit"
+            run_audit
+        else
+            log_warn "final_audit.sh not found — falling back to run_verification only"
+            run_verification
+        fi
         # Ψ-Sync: Signal .zshrc to re-index SCR path
         touch "${XDG_CACHE_HOME}/.scr_dirty"
     else

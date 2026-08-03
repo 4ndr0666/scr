@@ -6,6 +6,9 @@ ConditionUser=!root
 
 [Service]
 Type=oneshot
+# PKG_PATH must be set so main.sh can locate common.sh and all sourced modules.
+# Without this, every "source $PKG_PATH/..." resolves to "source /..." and fails.
+Environment=PKG_PATH=/opt/4ndr0service
 # ExecStart is patched at install time by install_env_maintenance.sh
 ExecStart=/opt/4ndr0service/main.sh --fix --report
 StandardOutput=journal

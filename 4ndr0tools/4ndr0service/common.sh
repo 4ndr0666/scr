@@ -259,7 +259,8 @@ create_config_if_missing() {
   "npm_global_packages": ["npm", "yarn", "pnpm", "typescript", "eslint", "prettier"],
   "ruby_gems": ["bundler", "rake", "rubocop"],
   "venv_pipx_packages": ["black", "flake8", "mypy", "pytest"],
-  "audit_keywords": ["config_watch", "data_watch", "cache_watch"]
+  "audit_keywords": ["config_watch", "data_watch", "cache_watch"],
+  "offensive_hives": []
 }
 ENDOFCONFIG
         log_success "Created default config at $CONFIG_FILE (python_version: $detected_py_ver)"

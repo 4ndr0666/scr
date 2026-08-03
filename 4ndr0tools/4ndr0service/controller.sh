@@ -11,11 +11,8 @@ source "${PKG_PATH:-.}/common.sh"
 source "$PKG_PATH/settings_functions.sh"
 # shellcheck source=./manage_files.sh
 source "$PKG_PATH/manage_files.sh"
-# FIX: Path updated from test/src/verify_environment.sh to test/verify_environment.sh
-#      The test/src/ subdirectory was structurally redundant; verify_environment.sh
-#      now lives directly under test/ in the production tree.
-# shellcheck source=./test/verify_environment.sh
-source "$PKG_PATH/test/verify_environment.sh"
+# verify_environment.sh is sourced lazily inside main_controller() only
+# when the audit path is actually needed — not on every service-only run.
 
 PLUGINS_DIR="${PLUGINS_DIR:-"$PKG_PATH/plugins"}"
 USER_INTERFACE="${USER_INTERFACE:-cli}"
@@ -141,5 +138,11 @@ main_controller() {
     load_plugins
     source_all_services
     export_functions
+    # Lazy-load verify_environment.sh only when the audit/verification
+    # path is needed (main_controller is the interactive entry point).
+    if ! declare -f run_verification >/dev/null 2>&1; then
+        # shellcheck source=./test/verify_environment.sh
+        source "$PKG_PATH/test/verify_environment.sh"
+    fi
     source_views
 }
