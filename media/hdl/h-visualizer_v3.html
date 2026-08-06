@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀 | HDL PHOTOMETRY VECTOR ENGINE V11</title>
+    <style>
+        :root {
+            --cyan:   #00ffcc;
+            --magenta:#ff0055;
+            --amber:  #ffaa00;
+            --violet: #aa55ff;
+            --glass-bg:        rgba(10, 12, 18, 0.88);
+            --glass-border:    rgba(0, 255, 204, 0.25);
+            --glass-highlight: rgba(0, 255, 204, 0.5);
+            --text-main: #f1f5f9;
+            --text-dim:  #94a3b8;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0; overflow: hidden;
+            background: radial-gradient(circle at 50% 50%, #0f1117 0%, #030406 100%);
+            color: var(--text-main);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex; height: 100vh;
+            user-select: none;
+        }
+        #viewport { flex-grow: 1; position: relative; cursor: crosshair; }
+
+        /* ── DUAL DOCK PANELS ──────────────────────────────────────── */
+        .glass-panel {
+            position: absolute; top: 16px; bottom: 16px;
+            width: 360px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            display: flex; flex-direction: column;
+            padding: 16px;
+            z-index: 10;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,255,204,0.03);
+            overflow-y: auto;
+        }
+        .left-panel { left: 16px; }
+        .right-panel { right: 16px; }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+
+        /* ── TYPOGRAPHY ────────────────────────────────────────────── */
+        .glyph-header {
+            font-size: 13px; text-align: center; margin-bottom: 12px;
+            font-weight: 700; color: var(--cyan); letter-spacing: 1.5px;
+            font-family: monospace; text-shadow: 0 0 10px rgba(0,255,204,0.4);
+        }
+        h3 {
+            margin: 14px 0 8px; text-transform: uppercase; font-size: 11px;
+            letter-spacing: 1.2px; color: var(--cyan); font-family: monospace;
+            border-bottom: 1px solid var(--glass-border); padding-bottom: 4px;
+        }
+        h3.amber  { color: var(--amber);  border-color: rgba(255,170,0,0.3); }
+        h3.violet { color: var(--violet); border-color: rgba(170,85,255,0.3); }
+
+        /* ── LIGHTPAINT MODE BUTTONS ───────────────────────────────── */
+        .lp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+        .lp-btn {
+            background: rgba(0,255,204,0.06); color: var(--text-main);
+            border: 1px solid var(--glass-border); padding: 8px 4px;
+            cursor: pointer; font-size: 10.5px; border-radius: 6px;
+            text-align: center; font-family: monospace; font-weight: 600;
+            transition: all 0.2s;
+        }
+        .lp-btn:hover { background: rgba(0,255,204,0.2); border-color: var(--cyan); }
+        .lp-btn.active {
+            background: var(--cyan); color: #000; font-weight: 700;
+            box-shadow: 0 0 12px rgba(0,255,204,0.5);
+        }
+
+        /* ── INSTRUCTIONS CARD ─────────────────────────────────────── */
+        .instructions {
+            font-size: 11px; color: var(--text-dim); margin-bottom: 12px;
+            line-height: 1.5; background: rgba(0,0,0,0.3);
+            padding: 10px 12px; border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+        }
+        .instructions b { color: var(--cyan); }
+
+        /* ── READOUT PANEL ─────────────────────────────────────────── */
+        .hit-readout {
+            font-size: 12px; color: var(--text-dim);
+            background: rgba(0,0,0,0.5); font-family: monospace;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px; padding: 12px; margin-bottom: 12px;
+            line-height: 1.8;
+        }
+        .hit-readout span { color: var(--cyan); font-weight: 600; }
+        .hit-readout .zone { color: var(--amber); font-weight: 700; font-size: 13px; }
+        .tag-locked { color: var(--magenta) !important; font-weight: 700; }
+
+        /* ── RADIAL DIALS WITH HANDLE NOTCHES ──────────────────────── */
+        .dials-grid {
+            display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; gap: 10px;
+            margin: 8px 0 12px; padding: 10px; background: rgba(0,0,0,0.3);
+            border: 1px solid var(--glass-border); border-radius: 10px;
+        }
+        .dial-item {
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+            flex: 1; min-width: 85px;
+        }
+        .dial-label { font-size: 10px; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; font-weight: 600; }
+        .dial-value { font-size: 11px; color: var(--cyan); font-weight: 700; margin-top: 2px; font-family: monospace; }
+        .dial-value.amber { color: var(--amber); }
+        .dial-value.violet { color: var(--violet); }
+
+        .dial-svg {
+            width: 56px; height: 56px; cursor: grab; touch-action: none;
+            filter: drop-shadow(0 0 6px rgba(0,255,204,0.25));
+        }
+        .dial-svg:active { cursor: grabbing; }
+        .dial-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 5; }
+        .dial-progress {
+            fill: none; stroke: var(--cyan); stroke-width: 5;
+            stroke-dasharray: 125.6; stroke-dashoffset: 30;
+            transform: rotate(-90deg); transform-origin: 28px 28px;
+        }
+        .dial-progress.amber { stroke: var(--amber); }
+        .dial-progress.violet { stroke: var(--violet); }
+
+        /* Grab Handle Notch */
+        .dial-notch {
+            fill: #000; stroke: var(--cyan); stroke-width: 2.5;
+            cursor: pointer; transition: transform 0.05s ease;
+            filter: drop-shadow(0 0 4px var(--cyan));
+        }
+        .dial-notch.amber { stroke: var(--amber); filter: drop-shadow(0 0 4px var(--amber)); }
+        .dial-notch.violet { stroke: var(--violet); filter: drop-shadow(0 0 4px var(--violet)); }
+
+        /* ── BUTTONS & PRESETS ─────────────────────────────────────── */
+        .grid-btn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+        button.preset-btn {
+            background: rgba(0,255,204,0.05); color: var(--text-main);
+            border: 1px solid var(--glass-border); padding: 8px 4px;
+            cursor: pointer; font-size: 10px; font-weight: 600;
+            border-radius: 6px; transition: all 0.15s ease; text-transform: uppercase;
+        }
+        button.preset-btn:hover { background: var(--cyan); color: #000; box-shadow: 0 0 10px rgba(0,255,204,0.4); }
+        
+        .btn-action {
+            background: rgba(255,170,0,0.12); color: var(--amber);
+            border: 1px solid rgba(255,170,0,0.4); padding: 10px;
+            cursor: pointer; font-size: 11px; font-weight: 700;
+            border-radius: 8px; text-transform: uppercase; margin-top: 6px;
+            width: 100%; transition: all 0.2s; font-family: monospace;
+        }
+        .btn-action:hover { background: var(--amber); color: #000; box-shadow: 0 0 14px rgba(255,170,0,0.5); }
+
+        .btn-reset {
+            background: rgba(255,0,85,0.1); color: var(--magenta);
+            border: 1px solid rgba(255,0,85,0.35); padding: 9px;
+            cursor: pointer; font-size: 10.5px; font-weight: 700; border-radius: 8px;
+            text-transform: uppercase; width: 100%; margin-top: 10px; font-family: monospace;
+        }
+        .btn-reset:hover { background: var(--magenta); color: #fff; box-shadow: 0 0 12px rgba(255,0,85,0.5); }
+
+        /* ── OUTPUT EXPORT ─────────────────────────────────────────── */
+        #json-output {
+            background: rgba(0,0,0,0.65); color: var(--cyan);
+            padding: 12px; border: 1px solid var(--glass-border); border-radius: 8px;
+            font-size: 10px; font-family: monospace; white-space: pre-wrap; word-wrap: break-word;
+            flex-grow: 1; overflow-y: auto; margin: 0; min-height: 180px;
+            box-shadow: inset 0 0 14px rgba(0,0,0,0.9);
+        }
+
+        #crosshair {
+            position: absolute; pointer-events: none; width: 18px; height: 18px;
+            border: 2px solid var(--cyan); border-radius: 50%;
+            transform: translate(-50%, -50%); display: none; z-index: 100;
+        }
+        
+        #hud-overlay {
+            position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(10, 12, 18, 0.75); border: 1px solid var(--glass-border);
+            padding: 6px 16px; border-radius: 20px; font-size: 11px; font-family: monospace;
+            color: var(--cyan); pointer-events: none; backdrop-filter: blur(10px);
+        }
+    </style>
+    <script type="importmap">
+    { "imports": {
+        "three":          "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/":  "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }}
+    </script>
+</head>
+<body>
+<div id="viewport">
+    <div id="crosshair"></div>
+    <div id="hud-overlay">LIGHTPAINT: <span id="hud-mode" style="color:var(--amber);">REFLECTION [D]</span></div>
+</div>
+
+<!-- LEFT DOCK PANEL: LIGHTPAINT, PRESETS & KEY LIGHT CONTROLS -->
+<div class="glass-panel left-panel">
+    <div class="glyph-header">⚡ LIGHTPAINT ENGINE V11</div>
+
+    <!-- LIGHTPAINT MODE SELECTORS -->
+    <h3>LIGHTPAINT MODE (HOTKEYS)</h3>
+    <div class="lp-grid">
+        <button class="lp-btn active" id="lp-refl" onclick="setLPMode('reflection')">Reflect [D]</button>
+        <button class="lp-btn" id="lp-illum" onclick="setLPMode('illumination')">Illum [F]</button>
+        <button class="lp-btn" id="lp-rim" onclick="setLPMode('rim')">Rim [G]</button>
+        <button class="lp-btn" id="lp-shade" onclick="setLPMode('shade')">Shade [H]</button>
+        <button class="lp-btn" id="lp-shadow" onclick="setLPMode('shadow')">Shadow [J]</button>
+    </div>
+
+    <!-- STUDIO GAMUT PRESETS -->
+    <h3>STUDIO GAMUT PRESETS</h3>
+    <div class="grid-btn">
+        <button class="preset-btn" onclick="setPreset(0,4,30)">Front Flash</button>
+        <button class="preset-btn" onclick="setPreset(20,18,20)">Rembrandt R</button>
+        <button class="preset-btn" onclick="setPreset(-20,18,20)">Rembrandt L</button>
+        <button class="preset-btn" onclick="setPreset(0,28,10)">Butterfly</button>
+        <button class="preset-btn" onclick="setPreset(28,5,0)">Side Split</button>
+        <button class="preset-btn" onclick="setPreset(0,-12,12)">Under-Kicker</button>
+        <button class="preset-btn" onclick="setPreset(-22,22,-14)">Hair Light L</button>
+        <button class="preset-btn" onclick="setPreset(22,22,-14)">Hair Light R</button>
+        <button class="preset-btn" onclick="setPreset(0,32,0)">Top Down</button>
+    </div>
+
+    <!-- KEY LIGHT DIALS -->
+    <h3 class="amber">FLASHLIGHT / KEY CONTROLS</h3>
+    <div class="dials-grid">
+        <!-- Beam Cone Angle Dial -->
+        <div class="dial-item">
+            <svg class="dial-svg" id="dial-beam" viewBox="0 0 56 56">
+                <circle class="dial-bg" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-progress amber" id="dial-beam-prog" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-notch amber" id="dial-beam-notch" cx="28" cy="8" r="4.5"></circle>
+            </svg>
+            <div class="dial-label">BEAM CONE</div>
+            <div class="dial-value amber" id="dial-beam-val">35°</div>
+        </div>
+
+        <!-- Brightness Dial -->
+        <div class="dial-item">
+            <svg class="dial-svg" id="dial-kint" viewBox="0 0 56 56">
+                <circle class="dial-bg" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-progress amber" id="dial-kint-prog" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-notch amber" id="dial-kint-notch" cx="28" cy="8" r="4.5"></circle>
+            </svg>
+            <div class="dial-label">BRIGHTNESS</div>
+            <div class="dial-value amber" id="dial-kint-val">100%</div>
+        </div>
+
+        <!-- Smart Dolly Distance Dial -->
+        <div class="dial-item">
+            <svg class="dial-svg" id="dial-kdist" viewBox="0 0 56 56">
+                <circle class="dial-bg" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-progress amber" id="dial-kdist-prog" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-notch amber" id="dial-kdist-notch" cx="28" cy="8" r="4.5"></circle>
+            </svg>
+            <div class="dial-label">SMART DOLLY</div>
+            <div class="dial-value amber" id="dial-kdist-val">34</div>
+        </div>
+    </div>
+
+    <button class="btn-reset" onclick="resetAll()">↺ RESET SCENE & HUMANOID</button>
+</div>
+
+<!-- RIGHT DOCK PANEL: READOUTS, OPTICS & HDL EXPORT -->
+<div class="glass-panel right-panel">
+    <div class="glyph-header">💀Ψ•-⦑4NDR0666OS⦒-•Ψ💀</div>
+
+    <div class="instructions">
+        • <b>LEFT CLICK + DRAG</b> — Paint light across surface<br>
+        • <b>HOLD CTRL + DRAG</b> — Lock hit target & orbit light<br>
+        • <b>RIGHT CLICK + DRAG</b> — Orbit camera 360°
+    </div>
+
+    <!-- VECTOR SURFACE HIT READOUT -->
+    <h3>SURFACE VECTOR CONTACT</h3>
+    <div class="hit-readout">
+        Zone Target: &nbsp;<span class="zone" id="hr-zone">AWAITING CONTACT</span> <span id="hr-mode-tag"></span><br>
+        Hit Coord XYZ: <span id="hr-hit">—</span><br>
+        Surface Normal:<span id="hr-normal">—</span><br>
+        Light Vector: &nbsp;<span id="hr-reflect">—</span>
+    </div>
+
+    <!-- OPTICS / CAMERA DIALS -->
+    <h3>VIEWPORT CAMERA DIALS</h3>
+    <div class="dials-grid">
+        <div class="dial-item">
+            <svg class="dial-svg" id="dial-yaw" viewBox="0 0 56 56">
+                <circle class="dial-bg" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-progress" id="dial-yaw-prog" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-notch" id="dial-yaw-notch" cx="28" cy="8" r="4.5"></circle>
+            </svg>
+            <div class="dial-label">CAM YAW</div>
+            <div class="dial-value" id="dial-yaw-val">0°</div>
+        </div>
+
+        <div class="dial-item">
+            <svg class="dial-svg" id="dial-pitch" viewBox="0 0 56 56">
+                <circle class="dial-bg" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-progress" id="dial-pitch-prog" cx="28" cy="28" r="20"></circle>
+                <circle class="dial-notch" id="dial-pitch-notch" cx="28" cy="8" r="4.5"></circle>
+            </svg>
+            <div class="dial-label">CAM PITCH</div>
+            <div class="dial-value" id="dial-pitch-val">10°</div>
+        </div>
+    </div>
+
+    <!-- HDL EXPORT MATRIX -->
+    <h3>HDL QUANTIZATION MATRIX</h3>
+    <pre id="json-output"></pre>
+    <button class="btn-action" id="copy-btn-main" onclick="copyHDL()">📋 COPY HDL VECTOR MATRIX</button>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── SCENE & RENDERER SETUP ──────────────────────────────────────────────────
+const container = document.getElementById('viewport');
+const scene     = new THREE.Scene();
+scene.fog       = new THREE.FogExp2(0x020203, 0.008);
+
+const camera   = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 0, 0);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+
+camera.position.set(0, 5, 55);
+
+// ── HUMANOID MODEL ──────────────────────────────────────────────────────────
+const subjectGroup = new THREE.Group();
+const mat = new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.4, metalness: 0.1 });
+const zoneMap = new Map();
+
+function zone(mesh, name) { zoneMap.set(mesh, name); return mesh; }
+
+function addPart(geo, pos) {
+    const m = new THREE.Mesh(geo, mat.clone());
+    if (pos) m.position.set(...pos);
+    m.castShadow = true; m.receiveShadow = true;
+    subjectGroup.add(m); return m;
+}
+
+// Proportional Human Proxy
+zone(addPart(new THREE.CapsuleGeometry(2.0, 1.2, 16, 32), [0, 11.5, 0]), 'HEAD');
+const nose = addPart(new THREE.ConeGeometry(0.4, 1.0, 16), [0, 11.2, 2.2]);
+nose.rotation.x = Math.PI/2; zone(nose, 'NOSE');
+zone(addPart(new THREE.CapsuleGeometry(1.0, 0.8, 16, 16), [0, 9.5, 0]), 'NECK');
+
+const chest = addPart(new THREE.CapsuleGeometry(3.2, 3.0, 16, 32), [0, 6.5, 0]);
+chest.scale.set(1.1, 1, 0.7); zone(chest, 'CHEST');
+
+const waist = addPart(new THREE.CapsuleGeometry(2.8, 2.0, 16, 32), [0, 2.5, 0]);
+waist.scale.set(1.0, 1, 0.7); zone(waist, 'WAIST');
+
+[-1,1].forEach(s => {
+    zone(addPart(new THREE.CapsuleGeometry(1.0, 3.2, 16, 16), [s*4.5, 5.5, 0]), 'ARM');
+    zone(addPart(new THREE.CapsuleGeometry(0.8, 3.2, 16, 16), [s*5.0, 1.2, 0]), 'FOREARM');
+    zone(addPart(new THREE.CapsuleGeometry(1.4, 4.2, 16, 16), [s*1.8, -1.5, 0]), 'THIGH');
+    zone(addPart(new THREE.CapsuleGeometry(1.1, 4.2, 16, 16), [s*1.8, -7.5, 0]), 'CALF');
+});
+
+scene.add(subjectGroup);
+
+// Grid
+const grid = new THREE.GridHelper(60, 60, 0x00ffcc, 0x111115);
+grid.material.opacity = 0.15; grid.material.transparent = true;
+grid.position.y = -11.5; scene.add(grid);
+
+// ── LIGHTS ──────────────────────────────────────────────────────────────────
+const keyLight = new THREE.SpotLight(0xfff0d0, 2500);
+keyLight.position.set(0, 15, 30);
+keyLight.angle = THREE.MathUtils.degToRad(35);
+keyLight.castShadow = true;
+scene.add(keyLight); scene.add(keyLight.target);
+
+const fillLight = new THREE.SpotLight(0xc0aaff, 500);
+fillLight.position.set(-20, 6, 15);
+scene.add(fillLight); scene.add(fillLight.target);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+
+const keyHelper = new THREE.SpotLightHelper(keyLight, 0xffaa00);
+scene.add(keyHelper);
+
+// Vector Visualizers
+const rayLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.7 })
+);
+scene.add(rayLine);
+
+const normalArrow = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(), 4, 0x00ffcc, 1, 0.5);
+normalArrow.visible = false; scene.add(normalArrow);
+
+// ── LIGHTPAINT ENGINE & RAYCASTING ──────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const crosshair = document.getElementById('crosshair');
+let isPainting = false;
+let lastHitData = null;
+let currentLPMode = 'reflection'; // reflection, illumination, rim, shade, shadow
+
+window.setLPMode = function(mode) {
+    currentLPMode = mode;
+    document.querySelectorAll('.lp-btn').forEach(b => b.classList.remove('active'));
+    const btnMap = { reflection: 'lp-refl', illumination: 'lp-illum', rim: 'lp-rim', shade: 'lp-shade', shadow: 'lp-shadow' };
+    if (btnMap[mode]) document.getElementById(btnMap[mode]).classList.add('active');
+    document.getElementById('hud-mode').innerText = `${mode.toUpperCase()} [${mode[0].toUpperCase()}]`;
+};
+
+window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === 'd') setLPMode('reflection');
+    else if (k === 'f') setLPMode('illumination');
+    else if (k === 'g') setLPMode('rim');
+    else if (k === 'h') setLPMode('shade');
+    else if (k === 'j') setLPMode('shadow');
+});
+
+function paintLight(e) {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+    crosshair.style.left = (e.clientX - rect.left) + 'px';
+    crosshair.style.top  = (e.clientY - rect.top) + 'px';
+    crosshair.style.display = 'block';
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // CTRL TARGET LOCK ORBIT MODE
+    if (e.ctrlKey && lastHitData) {
+        const sphereRadius = dialStates.kdist.val;
+        const targetSphere = new THREE.Sphere(lastHitData.hitPt, sphereRadius);
+        const lightPos = new THREE.Vector3();
+
+        if (!raycaster.ray.intersectSphere(targetSphere, lightPos)) {
+            const closestPt = new THREE.Vector3();
+            raycaster.ray.closestPointToPoint(lastHitData.hitPt, closestPt);
+            lightPos.subVectors(closestPt, lastHitData.hitPt).normalize().multiplyScalar(sphereRadius).add(lastHitData.hitPt);
+        }
+
+        keyLight.position.copy(lightPos);
+        keyLight.target.position.copy(lastHitData.hitPt);
+        keyLight.target.updateMatrixWorld();
+
+        const kDir = new THREE.Vector3().subVectors(keyLight.target.position, keyLight.position).normalize();
+        const reflVec = kDir.clone().negate().reflect(lastHitData.normal).normalize();
+        lastHitData.reflect = reflVec;
+
+        document.getElementById('hr-mode-tag').className = 'tag-locked';
+        document.getElementById('hr-mode-tag').innerText = '[CTRL LOCKED]';
+        document.getElementById('hr-reflect').innerText = `${reflVec.x.toFixed(3)}, ${reflVec.y.toFixed(3)}, ${reflVec.z.toFixed(3)}`;
+
+        updateUI();
+        return;
+    }
+
+    const hits = raycaster.intersectObjects(subjectGroup.children);
+    if (!hits.length) return;
+
+    const hit = hits[0];
+    const hitPt = hit.point.clone();
+    const zoneName = zoneMap.get(hit.object) || 'BODY';
+
+    const incident = new THREE.Vector3().subVectors(hitPt, camera.position).normalize();
+    const normalMat = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+    const hitNorm = hit.face.normal.clone().applyMatrix3(normalMat).normalize();
+    
+    let lightDir = new THREE.Vector3();
+
+    // ASSIMILATED LIGHTPAINT METHODS (HDR LIGHT STUDIO)
+    if (currentLPMode === 'reflection') {
+        lightDir = incident.clone().reflect(hitNorm).normalize();
+    } else if (currentLPMode === 'illumination') {
+        lightDir = hitNorm.clone();
+    } else if (currentLPMode === 'shade') {
+        lightDir = hitNorm.clone().negate();
+    } else if (currentLPMode === 'rim') {
+        lightDir = incident.clone().negate();
+    } else if (currentLPMode === 'shadow') {
+        lightDir = incident.clone().reflect(hitNorm).negate().normalize();
+    }
+
+    const radius = dialStates.kdist.val;
+    const lightPos = hitPt.clone().addScaledVector(lightDir, radius);
+    
+    keyLight.position.copy(lightPos);
+    keyLight.target.position.copy(hitPt);
+    keyLight.target.updateMatrixWorld();
+
+    lastHitData = { zone: zoneName, hitPt, normal: hitNorm, reflect: lightDir };
+
+    normalArrow.position.copy(hitPt);
+    normalArrow.setDirection(hitNorm);
+    normalArrow.visible = true;
+
+    document.getElementById('hr-mode-tag').innerText = '';
+    document.getElementById('hr-zone').innerText = zoneName;
+    document.getElementById('hr-hit').innerText = `${hitPt.x.toFixed(2)}, ${hitPt.y.toFixed(2)}, ${hitPt.z.toFixed(2)}`;
+    document.getElementById('hr-normal').innerText = `${hitNorm.x.toFixed(3)}, ${hitNorm.y.toFixed(3)}, ${hitNorm.z.toFixed(3)}`;
+    document.getElementById('hr-reflect').innerText = `${lightDir.x.toFixed(3)}, ${lightDir.y.toFixed(3)}, ${lightDir.z.toFixed(3)}`;
+
+    updateUI();
+}
+
+container.addEventListener('pointerdown', e => { if (e.button === 0) { isPainting = true; paintLight(e); } });
+container.addEventListener('pointermove', e => { if (isPainting) paintLight(e); });
+window.addEventListener('pointerup', () => { isPainting = false; crosshair.style.display = 'none'; });
+
+// ── RADIAL DIAL MANAGEMENT WITH TACTILE GRAB NOTCHES ────────────────────────
+const dialStates = {
+    beam:  { min: 5, max: 90, val: 35, unit: '°' },
+    yaw:   { min: -180, max: 180, val: 0, unit: '°' },
+    pitch: { min: -89, max: 89, val: 10, unit: '°' },
+    kint:  { min: 0, max: 200, val: 100, unit: '%' },
+    kdist: { min: 5, max: 80, val: 34, unit: '' }
+};
+
+function setupDial(id, key, onChange) {
+    const dialEl = document.getElementById(id);
+    if (!dialEl) return;
+    let isDragging = false;
+
+    function handlePointerAngle(e) {
+        const rect = dialEl.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = e.clientX - cx;
+        const dy = e.clientY - cy;
+
+        // Angle from center
+        let angleDeg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+        if (angleDeg < -180) angleDeg += 360;
+        if (angleDeg > 180) angleDeg -= 360;
+
+        // Map -135deg -> +135deg to 0.0 -> 1.0
+        let pct = (angleDeg + 135) / 270;
+        pct = Math.max(0, Math.min(1, pct));
+
+        const s = dialStates[key];
+        const newVal = Math.round(s.min + pct * (s.max - s.min));
+
+        s.val = newVal;
+        updateDialVisual(key);
+        onChange(newVal);
+    }
+
+    dialEl.addEventListener('pointerdown', e => {
+        isDragging = true;
+        dialEl.setPointerCapture(e.pointerId);
+        handlePointerAngle(e);
+    });
+
+    dialEl.addEventListener('pointermove', e => {
+        if (isDragging) handlePointerAngle(e);
+    });
+
+    dialEl.addEventListener('pointerup', e => {
+        isDragging = false;
+        dialEl.releasePointerCapture(e.pointerId);
+    });
+}
+
+function updateDialVisual(key) {
+    const s = dialStates[key];
+    const pct = (s.val - s.min) / (s.max - s.min);
+    
+    // Stroke dash offset calculation
+    const circumference = 125.6; 
+    const offset = circumference * (1 - pct * 0.75);
+    const progEl = document.getElementById(`dial-${key}-prog`);
+    if (progEl) progEl.style.strokeDashoffset = offset;
+
+    // Grab Handle Notch Coordinate Placement
+    const angleRad = (-135 + pct * 270) * (Math.PI / 180);
+    const center = 28, radius = 20;
+    const notchX = center + radius * Math.sin(angleRad);
+    const notchY = center - radius * Math.cos(angleRad);
+
+    const notchEl = document.getElementById(`dial-${key}-notch`);
+    if (notchEl) {
+        notchEl.setAttribute('cx', notchX.toFixed(2));
+        notchEl.setAttribute('cy', notchY.toFixed(2));
+    }
+
+    const valEl = document.getElementById(`dial-${key}-val`);
+    if (valEl) valEl.innerText = `${s.val}${s.unit}`;
+}
+
+// Bind Optics & Light Dials
+setupDial('dial-beam', 'beam', v => { keyLight.angle = THREE.MathUtils.degToRad(v); updateUI(); });
+setupDial('dial-kint', 'kint', v => { keyLight.intensity = v * 25; updateUI(); });
+setupDial('dial-kdist', 'kdist', v => {
+    if (lastHitData) {
+        const dir = new THREE.Vector3().subVectors(keyLight.position, keyLight.target.position).normalize();
+        keyLight.position.copy(keyLight.target.position).addScaledVector(dir, v);
+    }
+    updateUI();
+});
+
+const camSph = new THREE.Spherical(55, Math.PI / 2.2, 0);
+function syncCameraFromDials() {
+    const yaw = dialStates.yaw.val * THREE.MathUtils.DEG2RAD;
+    const pitch = dialStates.pitch.val * THREE.MathUtils.DEG2RAD;
+    camSph.theta = yaw;
+    camSph.phi = Math.max(0.001, Math.min(Math.PI - 0.001, Math.PI / 2 - pitch));
+    camera.position.setFromSpherical(camSph).add(controls.target);
+    camera.lookAt(controls.target);
+}
+
+setupDial('dial-yaw', 'yaw', () => syncCameraFromDials());
+setupDial('dial-pitch', 'pitch', () => syncCameraFromDials());
+
+controls.addEventListener('change', () => {
+    const v = camera.position.clone().sub(controls.target);
+    camSph.setFromVector3(v);
+    dialStates.yaw.val = Math.round(camSph.theta * THREE.MathUtils.RAD2DEG);
+    dialStates.pitch.val = Math.round((Math.PI / 2 - camSph.phi) * THREE.MathUtils.RAD2DEG);
+    updateDialVisual('yaw');
+    updateDialVisual('pitch');
+});
+
+// ── FULL RESET SCENE & HUMANOID ──────────────────────────────────────────────
+window.resetAll = function() {
+    subjectGroup.position.set(0, 0, 0);
+    subjectGroup.rotation.set(0, 0, 0);
+
+    controls.target.set(0, 0, 0);
+    camera.position.set(0, 5, 55);
+    controls.update();
+
+    keyLight.position.set(0, 15, 30);
+    keyLight.target.position.set(0, 4, 0);
+    keyLight.angle = THREE.MathUtils.degToRad(35);
+    keyLight.intensity = 2500;
+
+    fillLight.position.set(-20, 6, 15);
+    fillLight.intensity = 500;
+
+    dialStates.beam.val = 35; dialStates.yaw.val = 0; dialStates.pitch.val = 10;
+    dialStates.kint.val = 100; dialStates.kdist.val = 34;
+
+    Object.keys(dialStates).forEach(updateDialVisual);
+
+    normalArrow.visible = false;
+    document.getElementById('hr-zone').innerText = 'AWAITING CONTACT';
+    document.getElementById('hr-mode-tag').innerText = '';
+    document.getElementById('hr-hit').innerText = '—';
+    document.getElementById('hr-normal').innerText = '—';
+    document.getElementById('hr-reflect').innerText = '—';
+    lastHitData = null;
+
+    updateUI();
+};
+
+window.setPreset = function(x, y, z) {
+    keyLight.position.set(x, y, z);
+    keyLight.target.position.set(0, 4, 0);
+    keyLight.target.updateMatrixWorld();
+    updateUI();
+};
+
+window.copyHDL = function() {
+    const text = document.getElementById('json-output').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn-main');
+        btn.innerText = '✓ COPIED TO CLIPBOARD';
+        setTimeout(() => btn.innerText = '📋 COPY HDL VECTOR MATRIX', 1500);
+    });
+};
+
+function updateUI() {
+    keyHelper.update();
+    rayLine.geometry.setFromPoints([keyLight.position, keyLight.target.position]);
+
+    const vec3 = v => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+    const kDir = new THREE.Vector3().subVectors(keyLight.target.position, keyLight.position).normalize();
+
+    const hdl = {
+        "!ENV_RAY_TRACING_PHOTOMETRY": {
+            "SCHEMA_VERSION": "V11_DUAL_DOCK",
+            "LIGHTPAINT_MODE": currentLPMode.toUpperCase(),
+            "HUMANOID_TRANSFORM": {
+                "POSITION_XYZ": vec3(subjectGroup.position),
+                "ROTATION_XYZ": vec3(subjectGroup.rotation)
+            },
+            "KEY_LIGHT": {
+                "ORIGIN_XYZ": vec3(keyLight.position),
+                "TARGET_XYZ": vec3(keyLight.target.position),
+                "DIRECTION_VECTOR": vec3(kDir),
+                "BEAM_ANGLE_DEG": (keyLight.angle * THREE.MathUtils.RAD2DEG).toFixed(2),
+                "BRIGHTNESS_PCT": dialStates.kint.val,
+                "SMART_DOLLY_DIST": dialStates.kdist.val
+            },
+            "SURFACE_INTERACTION": lastHitData ? {
+                "ZONE_ID": lastHitData.zone,
+                "HIT_POINT_XYZ": vec3(lastHitData.hitPt),
+                "SURFACE_NORMAL_XYZ": vec3(lastHitData.normal),
+                "REFLECTION_VECTOR_XYZ": vec3(lastHitData.reflect)
+            } : "AWAITING_SURFACE_CONTACT"
+        }
+    };
+
+    document.getElementById('json-output').innerText = JSON.stringify(hdl, null, 2);
+}
+
+// ── RENDER LOOP ─────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+resetAll();
+animate();
+</script>
+</body>
+</html>
