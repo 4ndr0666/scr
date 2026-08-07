@@ -250,7 +250,7 @@ create_config_if_missing() {
   "python_version": "$detected_py_ver",
   "required_env": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR", "NVM_DIR", "PSQL_HOME", "MYSQL_HOME"],
   "directory_vars": ["PYENV_ROOT", "PIPX_HOME", "PIPX_BIN_DIR", "NVM_DIR", "PSQL_HOME", "MYSQL_HOME"],
-  "tools": ["python3", "pipx", "pyenv", "poetry"],
+  "tools": ["python", "pipx", "pyenv", "poetry"],
   "python_tools": ["black", "flake8", "mypy", "pytest", "poetry"],
   "cargo_tools": ["cargo-update", "cargo-audit"],
   "electron_tools": ["electron-builder"],
