@@ -50,6 +50,8 @@ __pycache__/
 .hypothesis/
 *.egg-info/
 *.egg
+*.ruff_cache/
+*.mypy_cache/
 
 ## Node / JS / Web
 node_modules/
@@ -153,7 +155,6 @@ env/
 *.session
 media/rss/feeds/
 ar_engine_visualized.html
-.mypy_cache
 4ndr0tools/4ndr0tracker/4NDR0-TRACKER1.html
 generated
 compare.sh
