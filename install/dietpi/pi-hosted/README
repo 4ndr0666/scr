@@ -1,0 +1,1001 @@
+# DietPi Hosted Homelab: Step-by-Step Fully Automated Setup Guide
+
+This guide details how to build a highly optimized, fully automated, and headless Raspberry Pi homelab server running **DietPi**, **Docker**, **Portainer**, and **Homer Dashboard** [125, 163, 172]. 
+
+Rather than executing commands manually on a terminal, we will leverage **DietPi's built-in automation engine** (`dietpi.txt` and `dietpi-wifi.txt`) and custom first-boot scripting (`Automation_Custom_Script.sh`) to achieve a **zero-touch, completely headless deployment** [638, 640, 641, 642].
+
+---
+
+## 📖 Table of Contents
+1. [Prerequisites & Architecture Optimization](#1-prerequisites--architecture-optimization)
+2. [Phase 1: Pre-Boot Headless Automation Configuration (Complete Spec)](#phase-1-pre-boot-headless-automation-configuration-complete-spec)
+   * [Step 1: Flash the Storage Device](#step-1-flash-the-storage-device)
+   * [Step 2: Verbatim Specification of Unattended Automation (dietpi.txt)](#step-2-verbatim-specification-of-unattended-automation-dietpitxt)
+   * [Step 3: Verbatim Headless Wi-Fi Specification (dietpi-wifi.txt)](#step-3-verbatim-headless-wi-fi-specification-dietpi-wifitxt)
+   * [Step 4: Verbatim Low-Level Hardware Map (config.txt)](#step-4-verbatim-low-level-hardware-map-configtxt)
+   * [Step 5: Verbatim Core Kernel Boot Arguments (cmdline.txt)](#step-5-verbatim-core-kernel-boot-arguments-cmdlinetxt)
+   * [Step 6: Hardware-Kernel Verification & Optimization Map (config-6.18.34+rpt-rpi-v8.txt)](#step-6-hardware-kernel-verification--optimization-map-config-61834rptrpiv8txt)
+3. [Phase 2: Custom Post-Setup Automation Script](#phase-2-custom-post-setup-automation-script)
+4. [Phase 3: First Boot & Zero-Touch Deployment](#phase-3-first-boot--zero-touch-deployment)
+5. [Phase 4: Portainer Administration & Architecture Templates](#phase-4-portainer-administration--architecture-templates)
+6. [Phase 5: Deploying Core Applications (JDownloader 2 & File Browser)](#phase-5-deploying-core-applications-jdownloader-2--file-browser)
+7. [Phase 6: Customizing the Homer Portal & Quick Shortcuts](#phase-6-customizing-the-homer-portal--quick-shortcuts)
+8. [Phase 7: Automated Homelab Backups & Maintenance](#phase-7-automated-homelab-backups--maintenance)
+
+---
+
+## 1. Prerequisites & Architecture Optimization
+
+### Hardware Requirements
+* **Raspberry Pi 4 or 5** (Highly Recommended) [182].
+* **High-Speed Storage (SSD/HDD)**: Booting directly from an external USB 3.0 Solid State Drive (SSD) or Hard Drive is strongly recommended over standard SD cards [184]. The Raspberry Pi can boot natively via USB without an SD card inserted [184], resulting in significantly faster container read/write performance, increased database lifespan, and better overall homelab reliability [184].
+* **Network Connection**: An Ethernet connection is preferred for maximum server stability [185]. If Ethernet is unavailable, you can use the built-in Wi-Fi [185].
+
+### OS Architecture (ARM64 vs. ARM32)
+Ensure you are using the **ARM64 (64-bit) DietPi image** (e.g., `DietPi_RPi-ARMv8-Bookworm`) [175, 646]. Modern kernel configurations (such as Linux/arm64 6.18.34) fully optimize 64-bit instruction sets (`CONFIG_ARM64=y`, `CONFIG_64BIT=y`) [208, 219]. 
+> ⚠️ **Warning**: Support for **ARM32 is actively being deprecated** by major container maintainers [176]. For instance, modern Portainer and JDownloader images have dropped or severely restricted ARM32 support [176, 657]. 64-bit (ARM64) is essential to run current, secure software [176].
+
+---
+
+## Phase 1: Pre-Boot Headless Automation Configuration (Complete Spec)
+
+DietPi allows you to configure your entire system—from localizations and network settings to pre-installed software—before booting the device for the first time by editing configuration files on the boot partition [638, 641].
+
+### Step 1: Flash the Storage Device
+1. Download the **ARM64 DietPi** `.img.xz` file for the Raspberry Pi [646].
+2. Open **Raspberry Pi Imager** [184] or **BalenaEtcher** and flash the image directly to your SSD or Hard Drive [184].
+3. Once completed, do **not** eject the drive. Mount its boot partition (labeled `boot` or `dietpi`) on your computer.
+
+### Step 2: Verbatim Specification of Unattended Automation (`dietpi.txt`)
+
+Below is the **complete, verbatim template** representing the entire `dietpi.txt` specification parsed directly from the system installation files. You can copy this code block exactly as is and save it as `/boot/dietpi.txt` on your flashed boot partition to achieve a fully automated setup [641].
+
+#### 📦 Software ID Mapping Explanation (`AUTO_SETUP_INSTALL_SOFTWARE_ID`):
+According to the official **DietPi Software Wiki database**, your customized software installation ID list (`17 73 92 130 134 162 178 185 198 205`) translates to the following native and containerized services [4]:
+1. **`17` (Git)**: Native version control utility installed via APT [4].
+2. **`73` (Fail2Ban)**: Intrusion prevention system to secure SSH logins against brute-force attacks [4].
+3. **`92` (Certbot)**: Let's Encrypt SSL automated certificate manager for native reverse proxies [4].
+4. **`130` (Python 3 pip)**: Official Python package installer used for running custom automation scripts [4].
+5. **`134` (Docker Compose)**: Officially maintained helper utility for multi-container Docker orchestrations [4].
+6. **`162` (Docker)**: High-performance containerization engine [4].
+7. **`178` (Jellyfin)**: Native media streaming server installed directly via the official APT repository [4].
+8. **`185` (Portainer)**: Web-based GUI container management dashboard [4].
+9. **`198` (File Browser)**: Native web-based file management portal [4].
+10. **`205` (Homer)**: Simple, static landing dashboard served natively by the host web server [4].
+
+
+Below is the **complete, verbatim template** representing the entire `dietpi.txt` specification parsed directly from the system installation files. You can copy this code block exactly as is and save it as `/boot/dietpi.txt` on your flashed boot partition to achieve a fully automated setup [641]:
+
+```ini
+#------------------------------------------------------------------------------------------------------
+# DietPi-Automation settings, applied on first boot of DietPi only, ONCE!
+#------------------------------------------------------------------------------------------------------
+
+### Initial user and default software installation password
+### - Sets "root" and "dietpi" user's login passwords and is used by dietpi-software as default for software installs which require a password.
+### - Once applied during first run setup, the password is removed from this file, encrypted and stored to a safer location to be used by dietpi-software only.
+### - WARN: The default SSH server Dropbear does not support passwords over 100 bytes. Certain special characters, and such with accents, take 2 bytes.
+### - WARN: We cannot guarantee that all software options can handle special characters like $"|.
+AUTO_SETUP_GLOBAL_PASSWORD=MySecurePassword123
+
+###### Language/Regional options
+### Locale e.g.: "en_GB.UTF-8" / "de_DE.UTF-8" | One entry and UTF-8 ONLY!
+AUTO_SETUP_LOCALE=en_US.UTF-8
+
+### Keyboard layout e.g.: "gb" / "us" / "de" / "fr"
+AUTO_SETUP_KEYBOARD_LAYOUT=us
+
+### Time zone e.g.: "Europe/London" / "America/New_York" | Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+AUTO_SETUP_TIMEZONE=America/Matamoros
+
+###### Network options
+### Enable Ethernet or WiFi adapter: 1=enable | 0=disable
+### - If both Ethernet and WiFi are enabled, WiFi will take priority and Ethernet will be disabled.
+### - If using WiFi, please edit dietpi-wifi.txt to pre-enter credentials.
+AUTO_SETUP_NET_ETHERNET_ENABLED=1
+AUTO_SETUP_NET_WIFI_ENABLED=0
+
+### WiFi country code: 2 capital letter value (e.g. GB US DE JP): https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
+### - NB: This choice may be overridden if the WiFi access point sends a country code.
+AUTO_SETUP_NET_WIFI_COUNTRY_CODE=US
+
+### Enter your static network details below, if applicable.
+AUTO_SETUP_NET_USESTATIC=0
+AUTO_SETUP_NET_STATIC_IP=192.168.0.100
+AUTO_SETUP_NET_STATIC_MASK=255.255.255.0
+AUTO_SETUP_NET_STATIC_GATEWAY=192.168.0.1
+AUTO_SETUP_NET_STATIC_DNS=9.9.9.9 149.112.112.112
+
+### Set to "1" to convert DHCP leased network settings into static settings automatically on first boot.
+AUTO_SETUP_DHCP_TO_STATIC=0
+
+### Hostname
+AUTO_SETUP_NET_HOSTNAME=pi-hosted-server
+
+### Force Ethernet speeds: 0=automatic speed | 10 = 10 Mbit/s | 100 = 100 Mbit/s etc.
+### - Use this when your Ethernet adapter has an unstable 1 Gbit/s link.
+AUTO_SETUP_NET_ETH_FORCE_SPEED=0
+
+### Delay service starts at boot until network is established: 0=disabled | 1=enabled
+AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=1
+
+###### Misc options
+### Swap space size to generate: 0 => disable | 1 => auto | 2 and up => size in MiB
+AUTO_SETUP_SWAPFILE_SIZE=1
+
+### Swap space location: "zram" => swap space on /dev/zram0 (auto-size = 50% of RAM size) | /path/to/file => swap file at location (auto-size = 2 GiB minus RAM size)
+AUTO_SETUP_SWAPFILE_LOCATION=zram
+
+### Serial console: Set to "0" if you do not require a serial console. It will then be disabled automatically on first boot.
+### - If you leave it at "1", and first login does not happen on a serial console, a dialogue offers to disable it instead.
+CONFIG_SERIAL_CONSOLE_ENABLE=0
+
+### Unmask (enable) systemd-logind service (including dbus), which is masked by default on DietPi
+AUTO_UNMASK_LOGIND=0
+
+### Install APT packages automatically after first run setup.
+### - Add as many APT package names as you wish, separated by space.
+### - They will be installed after dietpi-software options and before the script defined via AUTO_SETUP_CUSTOM_SCRIPT_EXEC (see below) is executed.
+### - E.g. the following (without the leading "#") will install the APT packages iotop, iptables and xz-utils:
+#AUTO_SETUP_APT_INSTALLS=iotop iptables xz-utils
+
+### Custom pre-script
+### - Allows you to automatically execute a custom script on first boot, before network is up.
+### - Copy your script to /boot/Automation_Custom_PreScript.sh and it will be executed automatically.
+### - Logs can be found in /var/lib/dietpi/logs/dietpi-firstboot.log.
+
+### Custom post-script
+### - Allows you to automatically execute a custom script after DietPi first run installs finished.
+### - Option 0 = Copy your script to /boot/Automation_Custom_Script.sh and it will be executed automatically.
+### - Option 1 = Host your script online, then use e.g. AUTO_SETUP_CUSTOM_SCRIPT_EXEC=https://myweb.com/myscript.sh and it will be downloaded and executed automatically.
+### - Logs can be found near the end of /var/lib/dietpi/logs/dietpi-firstrun-setup.log.
+AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0
+
+### Restore a DietPi-Backup on first boot: 0 => disable | 1 => interactive restore (show list of found backups) | 2 => non-interactive restore (restore first found backup)
+### - Simply attach the drive/disk/stick which contains the backup. All attached drives will be mounted temporarily and searched automatically.
+AUTO_SETUP_BACKUP_RESTORE=0
+
+###### Software options
+### SSH server choice: 0=none/custom | -1=Dropbear | -2=OpenSSH
+AUTO_SETUP_SSH_SERVER_INDEX=-2
+
+### SSH server pubkey
+### - Public key(s) for "root" and "dietpi" users, which will be added to ~/.ssh/authorized_keys
+### - Use the same setting multiple times for adding multiple keys.
+### - See SOFTWARE_DISABLE_SSH_PASSWORD_LOGINS below for disabling SSH password logins.
+#AUTO_SETUP_SSH_PUBKEY=ssh-ed25519 AAAAAAAA111111111111BBBBBBBBBBBB222222222222cccccccccccc333333333333 mySSHkey
+
+### Desktop choice: none, lxde, xfce, mate, lxqt, gnustep
+AUTO_SETUP_DESKTOP=none
+
+### Logging mode choice: 0=none/custom | -1=RAMlog hourly clear | -2=RAMlog hourly save to disk + clear | -3=Rsyslog + Logrotate
+AUTO_SETUP_LOGGING_INDEX=-1
+
+### RAMlog max tmpfs size (MiB). 50 MiB should be fine for single use. 200+ MiB for heavy webserver access log etc.
+AUTO_SETUP_RAMLOG_MAXSIZE=50
+
+### Dependency preferences
+### - DietPi-Software installs all dependencies for selected software options automatically, which can include a webserver for web applications, and a web browser for desktop environments.
+### - Especially for non-interactive first run installs (see AUTO_SETUP_AUTOMATED below), you may want to define which webserver and/or browser you want to have installed in such case. For interactive installs you will be always asked to pick one.
+### - With below settings you can define your preference for non-interactive installs. However, it will only installed if any other selected software requires it, and an explicit webserver/browser selection overrides those settings:
+### - Webserver preference: 0=Apache | -1=Nginx | -2=Lighttpd
+AUTO_SETUP_WEB_SERVER_INDEX=0
+
+### - Browser preference: 0=None | -1=Firefox | -2=Chromium
+AUTO_SETUP_BROWSER_INDEX=-1
+
+### DietPi-Autostart: 0=Console | 7=Console autologin | 1=Kodi | 2=Desktop autologin | 16=Desktop | 4=OpenTyrian | 5=DietPi-CloudShell | 6=Amiberry fast boot | 8=Amiberry standard boot | 3=Amiberry-Lite | 9=DDX-Rebirth | 10=CAVA Spectrum | 11=Chromium kiosk | 14=Custom script (background) | 17=Custom script (foreground)
+### - This will be effective on 2nd boot, after first run update and installs have been done.
+### - Related software titles must be installed either on first run installs or via AUTO_SETUP_AUTOMATED=1 + AUTO_SETUP_INSTALL_SOFTWARE_ID (see below).
+AUTO_SETUP_AUTOSTART_TARGET_INDEX=0
+
+### Autologin user name
+### - This user must exist before first run installs, otherwise it will be reverted to root.
+### - Applies to all autostart options but: 0, 6, 14 and 16
+AUTO_SETUP_AUTOSTART_LOGIN_USER=root
+
+### Pre-select software to be installed on first login
+### - Set AUTO_SETUP_AUTOMATED=1 below to automate the whole installation on first boot.
+### - List of available software IDs: https://github.com/MichaIng/DietPi/wiki/DietPi-Software-list
+### - DietPi will install needed dependencies automatically, like ALSA/X11 for desktops, a webserver for web applications etc.
+### - Add one or more software IDs, separated by space.
+### - E.g. the following (without the leading "#") will install the LXDE desktop (23), the TigerVNC server (28) and the Kodi media centre (31):
+AUTO_SETUP_INSTALL_SOFTWARE_ID=17 73 92 130 134 162 178 185 198 205
+
+###### Non-interactive first run setup
+### On first boot, run updates, initial setup, and optional software installs without any user interaction.
+### - Please change AUTO_SETUP_GLOBAL_PASSWORD when enabling this option!
+### - In case of a failure with AUTO_SETUP_AUTOMATED=1, a dialogue will offer to rerun everything in interactive mode.
+AUTO_SETUP_AUTOMATED=1
+
+#------------------------------------------------------------------------------------------------------
+###### Misc DietPi program settings
+#------------------------------------------------------------------------------------------------------
+### DietPi-Survey: 1=opt in | 0=opt out | -1=ask on first call
+### - https://dietpi.com/docs/dietpi_tools/system_configuration/#dietpi-survey
+SURVEY_OPTED_IN=0
+
+#------------------------------------------------------------------------------------------------------
+###### DietPi-Config settings
+#------------------------------------------------------------------------------------------------------
+### CPU Governor: schedutil | ondemand | interactive | conservative | powersave | performance
+CONFIG_CPU_GOVERNOR=performance
+
+### Ondemand Sampling Rate | Min value: 10000 microseconds (10 ms)
+CONFIG_CPU_ONDEMAND_SAMPLE_RATE=25000
+
+### Ondemand Sampling Down Factor: Sampling Rate * Down Factor / 1000 = ms (40 = 1000 ms when sampling rate is 25000)
+CONFIG_CPU_ONDEMAND_SAMPLE_DOWNFACTOR=40
+
+### Throttle Up Percentage: Percentage of average CPU usage during sampling rate at which CPU will be throttled up/down
+CONFIG_CPU_USAGE_THROTTLE_UP=50
+
+### CPU Temperature Sensor Path
+### - "auto" or empty uses auto-detection (default)
+### - Set a specific path to override, e.g.: /sys/class/hwmon/hwmon1/temp1_input
+### - Use "dietpi-config" > "Display Options" > "CPU Temp Sensor" to select
+CONFIG_CPU_TEMP_PATH=auto
+
+### CPU Frequency Limits: Disabled=disabled
+### - Intel CPUs use a percentage value (%) from 0-100, e.g.: 55
+### - All other devices must use a specific MHz value, e.g.: 1600
+### - Has no effect on RPi, please set "arm_freq" and "arm_freq_min" in config.txt instead.
+CONFIG_CPU_MAX_FREQ=Disabled
+CONFIG_CPU_MIN_FREQ=Disabled
+
+### Disable Intel-based turbo/boost stepping. This flag should not be required, setting <100% MAX frequency should disable Turbo on Intel CPUs.
+CONFIG_CPU_DISABLE_TURBO=0
+
+### GPU Driver | Will also be applied during 1st run if set to a value other than 'none'
+### NB: x86_64 PC only!
+### Adds support for GUI/video hardware acceleration, OpenGL/GLES, Vulkan and VA-API
+### - none | Default, No GPU
+### - intel
+### - nvidia
+### - amd
+### - custom | Manual driver install (DietPi will not make driver changes to your system)
+CONFIG_GPU_DRIVER=none
+
+### System-wide proxy settings
+### - Do not modify, you must use dietpi-config > "Network Options: Adapters" to apply
+CONFIG_PROXY_ADDRESS=MyProxyServer.com
+CONFIG_PROXY_PORT=8080
+CONFIG_PROXY_USERNAME=
+CONFIG_PROXY_PASSWORD=
+
+### Connection timeout in seconds for G_CHECK_NET and G_CHECK_URL. Increase if you have a "flaky" connection or slow DNS resolver.
+### - Set this to "0" to allow unlimited time, however this is not recommended to avoid unlimited hanging background scripts, e.g. daily DietPi update check.
+### - A negative or non-integer value will result in the default of 10 seconds.
+CONFIG_G_CHECK_URL_TIMEOUT=10
+
+### Connection attempts with above timeout each, before G_CHECK_NET and G_CHECK_URL give up and prompt an error.
+### - Any value below "1" or a non-integer value will result in the default of 2 attempts.
+CONFIG_G_CHECK_URL_ATTEMPTS=2
+
+### General connection and DNS testing
+### - IPv4 address to ping when checking network connectivity. Default: 9.9.9.9 (Quad9 DNS IP)
+CONFIG_CHECK_CONNECTION_IP=9.9.9.9
+
+### - IPv6 address to ping when checking network connectivity. Default: 2620:fe::fe (Quad9 DNS IP)
+CONFIG_CHECK_CONNECTION_IPV6=2620:fe::fe
+
+### - Domain to resolve when checking DNS resolver. Default: dietpi.com
+CONFIG_CHECK_DNS_DOMAIN=dietpi.com
+
+### Daily check for DietPi updates: 0=disable | 1=enable
+### Checks are done by downloading a file of only 7 bytes.
+CONFIG_CHECK_DIETPI_UPDATES=1
+
+### Daily check for APT package updates: 0=disable | 1=check only | 2=check and upgrade automatically
+### - Upgrade logs can be found at: /var/lib/dietpi/logs/dietpi-update_apt.log
+CONFIG_CHECK_APT_UPDATES=1
+
+### Network time sync: 0=disabled | 1=boot only | 2=boot + daily | 3=boot + hourly | 4=Daemon + Drift
+CONFIG_NTP_MODE=2
+
+### Sound card
+CONFIG_SOUNDCARD=none
+
+### LCD Panel addon
+### - Do not modify, you must use dietpi-config to configure/set options
+CONFIG_LCDPANEL=none
+
+### IPv6
+CONFIG_ENABLE_IPV6=1
+
+### APT mirrors which are applied to /etc/apt/sources.list | Values here will also be applied during 1st run setup
+### - Raspbian: https://www.raspbian.org/RaspbianMirrors
+CONFIG_APT_RASPBIAN_MIRROR=http://raspbian.raspberrypi.com/raspbian
+
+### - Debian: https://www.debian.org/mirror/official#list
+CONFIG_APT_DEBIAN_MIRROR=https://deb.debian.org/debian
+
+### NTP server(s) applied to /etc/systemd/timesyncd.conf
+### - "default": Use the NTP server(s) provided via DHCP, else the debian.pool.ntp.org NTP pool.
+### - "gateway": Use the router/gateway as NTP server. Recommended, if it does provide this functionality.
+### - To use another public NTP pool, see the full list at: https://www.ntppool.org/zone/@
+### Use the pool domain without leading integer and dot (without "0."), like "debian.pool.ntp.org", "pool.ntp.org" or "uk.pool.ntp.org".
+### - You can also use a custom IP address, hostname or any combination of space-separated IP addresses, hostnames and NTP pool domains.
+CONFIG_NTP_MIRROR=default
+
+#------------------------------------------------------------------------------------------------------
+###### DietPi-Software settings
+#------------------------------------------------------------------------------------------------------
+### Public domain name
+### - If you plan to make this server accessible from the Internet, you can define its (planned) public domain name here.
+### - This will be used by certain software install options as default if a public domain name is required or beneficial for it to function.
+### - Currently used by:
+### Nextcloud Talk to configure it with Coturn
+### Synapse as public facing server name
+### dietpi-letsencrypt as default entry
+#SOFTWARE_PUBLIC_DOMAIN_NAME=mydomain.org
+
+### SSH Server
+### - Disable SSH password logins, e.g. when using pubkey authentication
+### 0=Allow password logins for all users, including root
+### root=Disable password login for root user only
+### 1=Disable password logins for all users, assure that you have a valid SSH key applied!
+SOFTWARE_DISABLE_SSH_PASSWORD_LOGINS=0
+
+### WireGuard
+### - Whether to install WireGuard as "Server" or "Client", relevant for unattended installs only, else a menu is shown
+SOFTWARE_WIREGUARD_MODE=Server
+
+### - Listening UDP port to use when installing WireGuard in server mode, relevant for unattended installs only, else an inputbox is shown
+SOFTWARE_WIREGUARD_PORT=51820
+
+### VNC Server
+SOFTWARE_VNCSERVER_WIDTH=1280
+SOFTWARE_VNCSERVER_HEIGHT=720
+SOFTWARE_VNCSERVER_DEPTH=16
+SOFTWARE_VNCSERVER_DISPLAY_INDEX=1
+SOFTWARE_VNCSERVER_SHARE_DESKTOP=0
+
+### Nextcloud
+### - Optional username for admin account, the default is "admin", applied during install
+SOFTWARE_NEXTCLOUD_USERNAME=admin
+
+### - Optional data directory, default is "/mnt/dietpi_userdata/nextcloud_data", applied during install
+SOFTWARE_NEXTCLOUD_DATADIR=/mnt/dietpi_userdata/nextcloud_data
+
+### Synapse
+### - Initial admin username, relevant for unattended installs only, else an inputbox is shown
+SOFTWARE_SYNAPSE_USERNAME=dietpi
+
+### WiFi Hotspot
+SOFTWARE_WIFI_HOTSPOT_SSID=DietPi-HotSpot
+
+### - Key requires a minimum of 8 characters
+SOFTWARE_WIFI_HOTSPOT_KEY=dietpihotspot
+
+### - 2.4 GHz WiFi channel, not effective if 5 GHz frequency is enabled
+SOFTWARE_WIFI_HOTSPOT_CHANNEL=3
+
+### - 802.11n/WiFi 4, 802.11ac/WiFi 5, 802.11ax/WiFi 6 and 5 GHz support: Note that your WiFi adapter must support it!
+### - WiFi 5 support implicitly switches to 5 GHz frequency.
+### - 5 GHz frequency implicitly enables WiFi 4 support if neither WiFi 4, 5 nor 6 is enabled.
+SOFTWARE_WIFI_HOTSPOT_WIFI4=0
+SOFTWARE_WIFI_HOTSPOT_WIFI5=0
+
+### - WiFi 6 is only supported from Debian Bookworm on!
+SOFTWARE_WIFI_HOTSPOT_WIFI6=0
+SOFTWARE_WIFI_HOTSPOT_5G=0
+
+### - A full list of supported 5 GHz WiFi channels per region can be found e.g. on Wikipedia: https://en.wikipedia.org/wiki/List_of_WLAN_channels#5_GHz_(802.11a/h/n/ac/ax)
+SOFTWARE_WIFI_HOTSPOT_5G_CHANNEL=36
+
+### X11
+### - DPI 96(default) 120(+25%) 144(+50%) 168(+75%) 192(+100%)
+SOFTWARE_XORG_DPI=96
+
+### Chromium
+SOFTWARE_CHROMIUM_RES_X=1280
+SOFTWARE_CHROMIUM_RES_Y=720
+SOFTWARE_CHROMIUM_AUTOSTART_URL=https://dietpi.com/
+
+### Home Assistant
+### - Optional Python build dependencies and modules, possibly required for certain HA components
+### Space separated list (no quotation!), will be installed together with Home Assistant automatically, if present
+SOFTWARE_HOMEASSISTANT_APT_DEPS=
+
+### Add Python modules with version string at best, e.g.: firstModule==1.2.3 secondModule==4.5.6
+SOFTWARE_HOMEASSISTANT_PIP_DEPS=
+
+### K3s
+### Command with flags to use for launching K3s in the service
+### The value of this variable is copied directly into the INSTALL_K3S_EXEC environment variable before running the K3s installer.
+### https://rancher.com/docs/k3s/latest/en/installation/install-options/#options-for-installation-with-script
+### Optionally, you can add a configuration file named /boot/dietpi-k3s.yaml, which will be copied into place during installation.
+### https://rancher.com/docs/k3s/latest/en/installation/install-options/#configuration-file
+SOFTWARE_K3S_EXEC=
+
+### DietPi-Dashboard
+### Version to use
+### - Stable = Use release version of DietPi-Dashboard.
+### - Nightly = Use unstable version DietPi-Dashboard. Might have bugs, but will probably have more features.
+SOFTWARE_DIETPI_DASHBOARD_VERSION=Stable
+
+### Whether to only install backend or not
+SOFTWARE_DIETPI_DASHBOARD_BACKEND=0
+
+### PiVPN
+### - For an unattended install, place a config file named "unattended_pivpn.conf" into the boot partition/directory.
+### - For example configs, have a look at: https://github.com/pivpn/pivpn/tree/master/examples
+
+### Shairport Sync
+### - Uncomment and set to "2" to install experimental AirPlay 2 build: https://github.com/mikebrady/shairport-sync/blob/master/AIRPLAY2.md
+#SOFTWARE_SHAIRPORT_SYNC_AIRPLAY=2
+
+### UrBackup Server
+### - Backup path, optional, defaults to "/mnt/dietpi_userdata/urbackup", effective on fresh UrBackup Server installs only
+SOFTWARE_URBACKUP_BACKUPPATH=/mnt/dietpi_userdata/urbackup
+
+### Roon Server
+### - Set to "1" to install early access builds instead of regular/stable ones: https://help.roonlabs.com/portal/en/kb/articles/roon-early-access-program
+### - Relevant for automated/unattended installs only, else a dialogue is shown to choose/switch between both.
+### - NB: Early access builds have a higher chance to contain bugs, and you may need to restore a database backup when reverting from early access to stable builds.
+SOFTWARE_ROONSERVER_EARLYACCESS=0
+
+#------------------------------------------------------------------------------------------------------
+###### Dev settings
+#------------------------------------------------------------------------------------------------------
+DEV_GITBRANCH=master
+DEV_GITOWNER=MichaIng
+```
+
+
+### Step 3: Verbatim Headless Wi-Fi Specification (`dietpi-wifi.txt`) [641, 646, 647, 657]
+
+If you are using a Wi-Fi connection, ensure `AUTO_SETUP_NET_WIFI_ENABLED=1` is configured in `dietpi.txt` above [657]. DietPi leverages a pre-boot credentials array in `/boot/dietpi-wifi.txt` to scrape your wireless network configuration before initialization [646, 657]. 
+
+#### ⚠️ Critical Escaping Rule for Wi-Fi Keys:
+If your Wi-Fi password contains a single quote character (`'`), standard variable parsing will fail [646, 647]. You must **replace every literal single quote `'` in your key with `'''` (three single quotes)** [646, 647]. No other special characters require escaping [646, 647].
+* *Plaintext Key*: `Homelab'Secure'Key`
+* *Escaped Value*: `aWIFI_KEY[0]='Homelab'''Secure'''Key'`
+
+#### 📝 Concrete Configuration Example:
+To configure your Pi's wireless profile for your network, customize **Entry 0** using these universal placeholders as a template:
+```ini
+#---------------------------------------------------------------
+### Entry 0
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[0]='your-ssid'
+
+### - WiFi key: Replace with your actual network password
+aWIFI_KEY[0]='your-wifi-password'
+
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP
+aWIFI_KEYMGR[0]='WPA-PSK'
+```
+
+Below is the **complete, verbatim stock template** of `dietpi-wifi.txt` representing all five network entries [646]. To connect, populate **Entry 0** with your SSID and Password [646]:
+
+```ini
+#---------------------------------------------------------------
+### Entry 0
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[0]=''
+### - WiFi key: If no key/open, leave this blank
+### - In case of WPA-PSK, alternatively enter the 64-digit hexadecimal key returned by wpa_passphrase
+### - Please replace single quote characters ' in your key with '''. No other escaping is required.
+aWIFI_KEY[0]=''
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP (then use settings below)
+aWIFI_KEYMGR[0]='WPA-PSK'
+### - WPA-EAP options: Only fill if WPA-EAP is set above
+aWIFI_PROTO[0]='' aWIFI_PAIRWISE[0]='' aWIFI_AUTH_ALG[0]='' aWIFI_EAP[0]='' aWIFI_IDENTITY[0]='' aWIFI_PASSWORD[0]='' aWIFI_PHASE1[0]='' aWIFI_PHASE2[0]=''
+### - Path to the certificate file, e.g.: /boot/mycert.cer
+aWIFI_CERT[0]='' #---------------------------------------------------------------
+### Entry 1
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[1]=''
+### - WiFi key: If no key/open, leave this blank
+### - In case of WPA-PSK, alternatively enter the 64-digit hexadecimal key returned by wpa_passphrase
+### - Please replace single quote characters ' in your key with '''. No other escaping is required.
+aWIFI_KEY[1]=''
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP (then use settings below)
+aWIFI_KEYMGR[1]='WPA-PSK'
+### - WPA-EAP options: Only fill if WPA-EAP is set above
+aWIFI_PROTO[1]='' aWIFI_PAIRWISE[1]='' aWIFI_AUTH_ALG[1]='' aWIFI_EAP[1]='' aWIFI_IDENTITY[1]='' aWIFI_PASSWORD[1]='' aWIFI_PHASE1[1]='' aWIFI_PHASE2[1]=''
+### - Path to the certificate file, e.g.: /boot/mycert.cer
+aWIFI_CERT[1]='' #---------------------------------------------------------------
+### Entry 2
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[2]=''
+### - WiFi key: If no key/open, leave this blank
+### - In case of WPA-PSK, alternatively enter the 64-digit hexadecimal key returned by wpa_passphrase
+### - Please replace single quote characters ' in your key with '''. No other escaping is required.
+aWIFI_KEY[2]=''
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP (then use settings below)
+aWIFI_KEYMGR[2]='WPA-PSK'
+### - WPA-EAP options: Only fill if WPA-EAP is set above
+aWIFI_PROTO[2]='' aWIFI_PAIRWISE[2]='' aWIFI_AUTH_ALG[2]='' aWIFI_EAP[2]='' aWIFI_IDENTITY[2]='' aWIFI_PASSWORD[2]='' aWIFI_PHASE1[2]='' aWIFI_PHASE2[2]=''
+### - Path to the certificate file, e.g.: /boot/mycert.cer
+aWIFI_CERT[2]='' #---------------------------------------------------------------
+### Entry 3
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[3]=''
+### - WiFi key: If no key/open, leave this blank
+### - In case of WPA-PSK, alternatively enter the 64-digit hexadecimal key returned by wpa_passphrase
+### - Please replace single quote characters ' in your key with '''. No other escaping is required.
+aWIFI_KEY[3]=''
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP (then use settings below)
+aWIFI_KEYMGR[3]='WPA-PSK'
+### - WPA-EAP options: Only fill if WPA-EAP is set above
+aWIFI_PROTO[3]='' aWIFI_PAIRWISE[3]='' aWIFI_AUTH_ALG[3]='' aWIFI_EAP[3]='' aWIFI_IDENTITY[3]='' aWIFI_PASSWORD[3]='' aWIFI_PHASE1[3]='' aWIFI_PHASE2[3]=''
+### - Path to the certificate file, e.g.: /boot/mycert.cer
+aWIFI_CERT[3]='' #---------------------------------------------------------------
+### Entry 4
+### - WiFi SSID: required, case sensitive
+aWIFI_SSID[4]=''
+### - WiFi key: If no key/open, leave this blank
+### - In case of WPA-PSK, alternatively enter the 64-digit hexadecimal key returned by wpa_passphrase
+### - Please replace single quote characters ' in your key with '''. No other escaping is required.
+aWIFI_KEY[4]=''
+### - Key type: NONE (no key/open) | WPA-PSK | WEP | WPA-EAP (then use settings below)
+aWIFI_KEYMGR[4]='WPA-PSK'
+### - WPA-EAP options: Only fill if WPA-EAP is set above
+aWIFI_PROTO[4]='' aWIFI_PAIRWISE[4]='' aWIFI_AUTH_ALG[4]='' aWIFI_EAP[4]='' aWIFI_IDENTITY[4]='' aWIFI_PASSWORD[4]='' aWIFI_PHASE1[4]='' aWIFI_PHASE2[4]=''
+### - Path to the certificate file, e.g.: /boot/mycert.cer
+aWIFI_CERT[4]=''
+```
+
+---
+
+### Step 4: Verbatim Low-Level Hardware Map (`config.txt`) [639, 640, 641, 642, 643]
+
+The `/boot/config.txt` file acts as the BIOS configuration for your Raspberry Pi [639]. DietPi configures this file by default to maximize your hardware resource availability, stripping down background overheads like unnecessary GPU memory allocations or unused card-reader interrupts [642, 643].
+
+Below is the **complete, verbatim stock template** of `config.txt` mapped directly from the boot partition [639]:
+
+```ini
+### Docs: https://www.raspberrypi.com/documentation/computers/config_txt.html
+### Overlays: https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README
+#-------Display---------
+### If you get no picture, set the following to "1" to apply most compatible HDMI settings.
+#hdmi_safe=1
+### Uncomment to adjust the HDMI signal strength if you have interferences, blanking, or no display.
+### - Ranges from "0" to "11", use values above "7" only if required, e.g. with very long HDMI cable.
+### - Defaults to "2" on first RPi1 A/B, else "5". From RPi4 on, this setting is ignored.
+#config_hdmi_boost=5
+### Uncomment if HDMI display is not detected and composite is being outputted.
+#hdmi_force_hotplug=1
+### Uncomment to disable HDMI even if plugged, e.g. to force composite output.
+#hdmi_ignore_hotplug=1
+### Uncomment to enable SDTV/composite output from RPi4 on. This has no effect on previous RPi models.
+#enable_tvout=1
+### Uncomment to force an HDMI mode rather than DVI. This enables HDMI audio in DMT modes.
+#hdmi_drive=2
+### Set "hdmi_blanking=1" to allow the display going into standby after 10 minutes without input.
+### With default value "0", the display shows a blank screen instead, but will not go into standby.
+hdmi_blanking=1
+### Set to "1" if your display has a black border of unused pixels visible.
+disable_overscan=1
+### Uncomment the following to adjust overscan.
+### Use positive numbers if console goes off screen, and negative if there is too much border.
+#overscan_left=16
+#overscan_right=16
+#overscan_top=16
+#overscan_bottom=16
+### LCD/OLED Rotation
+#lcd_rotate=0
+### Enable KMS/DRM display driver, recommended when a GUI application or desktop is used.
+### Remove ",noaudio" if HDMI audio is needed, or enable it via dietpi-config.
+#dtoverlay=vc4-kms-v3d,noaudio
+#-------RPi camera module-------
+#camera_auto_detect=1
+#disable_camera_led=1
+#-------GPU memory splits-------
+gpu_mem_256=16
+gpu_mem_512=16
+gpu_mem_1024=16
+#-------Boot splash screen------
+disable_splash=1
+#-------Onboard sound-----------
+dtparam=audio=off
+#-------I2C-------------
+#dtparam=i2c_arm=off
+#dtparam=i2c_arm_baudrate=100000
+#-------SPI-------------
+#dtparam=spi=off
+#-------Serial/UART-----
+### NB: "enable_uart=1" will enforce "core_freq=250" on RPi models with onboard WiFi.
+enable_uart=1
+#-------SD card HPD-----
+### Comment to enable SD card hot-plug detection, while booting via USB or network.
+### NB: This causes constant CPU load and kernel errors when no SD card is inserted.
+dtparam=sd_poll_once
+#-------Overclock-------
+temp_limit=65
+initial_turbo=20
+#over_voltage=0
+#arm_freq=900
+#core_freq=250
+#sdram_freq=400
+#over_voltage_min=0
+#arm_freq_min=300
+#core_freq_min=250
+#sdram_freq_min=400
+arm_64bit=1
+```
+
+---
+
+### Step 5: Verbatim Core Kernel Boot Arguments (`cmdline.txt`) [208]
+
+The `/boot/cmdline.txt` file contains a single, non-line-wrapped sequence of core parameters passed to the Linux kernel at the very early stages of system initialization [208].
+
+Below is the **verbatim stock layout** of your `cmdline.txt` file [208]:
+
+```text
+root=PARTUUID=your-card-uuid rootfstype=ext4 rootwait fsck.repair=yes net.ifnames=0 logo.nologo console=serial0,115200 console=tty1
+```
+
+> ⚠️ **CRITICAL WARNING**: Do **NOT** copy the `PARTUUID` from this guide verbatim! Each freshly flashed SD card or SSD has its own unique partition UUID. If you copy a different `PARTUUID` verbatim, your Pi will fail to boot with the error `sh: can't access tty`. 
+>
+> **How to configure this safely**:
+> 1. **Leave your stock `cmdline.txt` completely untouched**—it already contains your card's correct, unique `PARTUUID`.
+> 2. Alternatively, if you lost your original stock file, you can bypass PARTUUID matching entirely by mapping the root device to the generic SD card block path `/dev/mmcblk0p2` [231]:
+>    ```text
+>    root=/dev/mmcblk0p2 rootfstype=ext4 rootwait fsck.repair=yes net.ifnames=0 logo.nologo console=serial0,115200 console=tty1
+>    ```
+
+#### Key Architecture and Network Explanations:
+1. **`net.ifnames=0`**: Disables predictable network interface naming. This maps your network interfaces natively back to classic labels: **`eth0`** for your physical Ethernet card and **`wlan0`** for your Wi-Fi interface. This ensures full synchronicity with pre-configured Docker-compose configs, bridge configurations, and DietPi's internal network stats reporting modules which expect standard naming.
+2. **`console=serial0,115200`**: Directs early system console logs to the serial UART pins on your Pi on boot. As this is a headless homelab, you can disable this natively in `dietpi.txt` by setting `CONFIG_SERIAL_CONSOLE_ENABLE=0`, allowing you to free up physical GPIO RX/TX pins for home-automation hardware or sensors without the system terminal hijacking the ports.
+
+---
+
+### Step 6: Hardware-Kernel Verification & Optimization Map (`config-6.18.34+rpt-rpi-v8.txt`) [209]
+
+To verify that your system is operating at peak physical capacity, we have parsed your exact hardware kernel configuration file (`config-6.18.34+rpt-rpi-v8.txt`) extracted directly from your target Raspberry Pi 4 board [209]. This kernel configuration acts as the ultimate truth for how Docker, Portainer, and your software stacks will execute [209].
+
+#### 1. Architecture Alignment & deprecation Protection
+* **Kernel Flags**: `CONFIG_ARM64=y`, `CONFIG_64BIT=y` [220].
+* **Optimization Match**: Your kernel is compiled in native 64-bit mode. This is highly critical, as **ARM32 is actively being deprecated** by upstream container maintainers [176]. Modern Portainer and JDownloader images have dropped or severely restricted ARM32 support [176, 657]. Running this ARM64 kernel ensures full, future-proof software security and updates.
+
+#### 2. Container Isolation (Namespaces & Seccomp Security)
+* **Kernel Flags**: `CONFIG_NAMESPACES=y`, `CONFIG_USER_NS=y`, `CONFIG_SECCOMP=y`, `CONFIG_SECCOMP_FILTER=y` [217, 236].
+* **Optimization Match**: This ensures that your system natively supports multi-tenant namespace isolation [217] and secure computing filters [236]. Docker leverages this configuration to isolate the process and network spaces of JDownloader, File Browser, and Homer from each other, restricting root system-call hijacking.
+
+#### 3. Resource Allocation and Throttle Controls (Control Groups)
+* **Kernel Flags**: `CONFIG_CGROUPS=y`, `CONFIG_MEMCG=y` (Memory Controller) [215, 216].
+* **Optimization Match**: Without `CONFIG_MEMCG=y`, Docker would trigger the warning: *"WARNING: No memory limit support"*. Because your kernel explicitly compiles the memory cgroup controller, Portainer can perfectly monitor, graph, and throttle resource bounds (Memory/CPU limits) on a per-container basis.
+
+#### 4. Native Container Networking (veth Bridges)
+* **Kernel Flags**: `CONFIG_NETFILTER=y`, `CONFIG_BRIDGE=m`, `CONFIG_VETH=m` [251, 257, 268, 317].
+* **Optimization Match**: The core networking bridge (`bridge`) [268] and virtual Ethernet pair (`veth`) [317] drivers are compiled as loadable modules [268, 317]. On Docker engine initialization, the kernel dynamically loads these modules to construct virtual network switches, establishing high-speed container-to-host and container-to-container LAN routes.
+
+#### 5. Compressed swap-in-RAM Optimization (zram)
+* **Kernel Flags**: `CONFIG_ZRAM=m` (Compressed block device), `CONFIG_ZSWAP=y` [245, 298].
+* **Optimization Match**: This is the ultimate lifespan protector. In `dietpi.txt`, we configured:
+  ```ini
+  AUTO_SETUP_SWAPFILE_SIZE=1
+  AUTO_SETUP_SWAPFILE_LOCATION=zram
+  ```
+  Since your kernel natively supports zram block compression [298], DietPi will build a compressed, virtual swap area inside your RAM on first boot [298]. This allows the OS to handle heavy memory bursts from your container stacks **without writing a physical swapfile to your SD card or USB SSD**, preserving your storage drive's physical flash cells from write degradation!
+
+---
+
+## Phase 2: Custom Post-Setup Automation Script
+
+DietPi can execute a custom bash script immediately after the automated first-boot installation completes [642]. We can use this hook (`Automation_Custom_Script.sh`) to automatically prepare directory paths, generate configuration files, and deploy the **Homer Dashboard** container [165, 642].
+
+1. Create a new text file on the boot partition of your drive.
+2. Name the file exactly **`Automation_Custom_Script.sh`** [642].
+3. Paste the following bash code into the file and save it:
+
+```bash
+#!/bin/bash
+# DietPi First-Boot Custom Post-Setup Script
+# This runs automatically once initial updates and package installs finish! [642]
+
+echo "Starting automated homelab directory provisioning and configurations..."
+
+# 1. Create directory paths on the host for Homer, JDownloader, and File Browser config assets [165]
+mkdir -p /mnt/dietpi_userdata/jdownloader/config
+mkdir -p /mnt/dietpi_userdata/downloads
+mkdir -p /mnt/dietpi_userdata/filebrowser
+
+# Make sure the native Homer assets directory exists (installed via software ID 205) [165]
+mkdir -p /var/www/homer/assets
+
+# 2. Write out a custom config.yml configuration file for Homer [164]
+cat << 'EOF' > /var/www/homer/assets/config.yml
+title: "DietPi Hosted Homelab"
+subtitle: "Raspberry Pi Portal"
+logo: "logo.png"
+
+# Header Banner Message
+message:
+  title: "Welcome to your DietPi Server!"
+  content: "Use the portal links below to manage host containers and services."
+
+# Custom Link Groups
+services:
+  - name: "Infrastructure"
+    icon: "fa-server"
+    items:
+      - name: "Portainer"
+        logo: "assets/tools/portainer.png"
+        subtitle: "Container Management Engine"
+        url: "http://192.168.0.100:9000"
+        target: "_blank"
+
+  - name: "Hosted Services (Native)"
+    icon: "fa-server"
+    items:
+      - name: "Jellyfin"
+        logo: "assets/tools/jellyfin.png"
+        subtitle: "Native Media Server"
+        url: "http://192.168.0.100:8096"
+        target: "_blank"
+      - name: "File Browser"
+        logo: "assets/tools/filebrowser.png"
+        subtitle: "Native Web File Explorer"
+        url: "http://192.168.0.100:8081"
+        target: "_blank"
+
+  - name: "Containerized Services"
+    icon: "fa-cloud"
+    items:
+      - name: "JDownloader"
+        logo: "assets/tools/jdownloader.png"
+        subtitle: "Dockerized Download Manager"
+        url: "https://my.jdownloader.org"
+        target: "_blank"
+EOF
+
+# 3. Ensure proper directory user permissions [165]
+# Native Homer runs under Nginx's www-data user
+chown -R www-data:www-data /var/www/homer
+
+# Native File Browser and containerized user storage maps to 'dietpi' user
+chown -R dietpi:dietpi /mnt/dietpi_userdata/downloads
+chown -R dietpi:dietpi /mnt/dietpi_userdata/jdownloader
+chown -R dietpi:dietpi /mnt/dietpi_userdata/filebrowser
+
+# 4. Run the JDownloader Container natively via Docker [165]
+# Since dietpi-software installed Docker during first-boot, it is ready to run [638, 642]!
+docker run -d \
+  --name jdownloader \
+  --init \
+  --restart=unless-stopped \
+  -v /mnt/dietpi_userdata/downloads:/opt/JDownloader/Downloads \
+  -v /mnt/dietpi_userdata/jdownloader/config:/opt/JDownloader/app/cfg \
+  -p 3129:3129 \
+  jaymoulin/jdownloader:latest
+
+# 5. Restart host webserver to apply the new Homer dashboard assets [165]
+systemctl restart nginx 2>/dev/null || systemctl restart lighttpd 2>/dev/null
+
+echo "Automated setup completed successfully!"
+```
+
+---
+
+## Phase 3: First Boot & Zero-Touch Deployment
+
+1. Eject your storage device safely from your computer and plug it into the Raspberry Pi [185].
+2. Connect your Ethernet cable (if using wired network) [185] and power on the device [185].
+3. **Zero-Touch Execution**: The system will automatically:
+   * Boot up and resize the filesystem partition [186].
+   * Run initial system updates and upgrade package databases [186, 187].
+   * Install and configure **Docker Engine** [638, 642].
+   * Install and start the **Portainer** service container [638, 642].
+   * Execute your `Automation_Custom_Script.sh` post-script to mount the dashboard directories, generate the dashboard's YAML configurations, and deploy the **Homer** dashboard container [165, 642].
+4. Locate the Pi's IP address by checking your router's DHCP client list [191].
+5. On your computer, open a web browser and visit:
+   ```text
+   http://<YOUR_PI_IP_ADDRESS>:8080
+   ```
+   *Your fully customized Homer Dashboard is now live and waiting!*
+
+---
+
+## Phase 4: Portainer Administration & Architecture Templates
+
+With your homelab successfully deployed, configure administrative access and expand your app template library [191, 192].
+
+### Step 1: Initial Portainer Configuration
+1. Open your web browser and navigate to the Portainer interface [191]:
+   ```text
+   http://<YOUR_PI_IP_ADDRESS>:9000
+   ```
+2. Create your administrative user account [191]. If you did not change default installer variables, use `admin` and the password specified under `AUTO_SETUP_GLOBAL_PASSWORD` in `dietpi.txt` [191, 641].
+3. Under environments, select **Docker** and connect [191].
+
+### Step 2: Inject Architecture-Optimized App Templates
+Portainer's default list of application templates is basic [192]. To populate your homelab with dozens of optimized, ready-to-run server containers [172], swap the default settings with an architecture-specific template [175, 176]:
+
+1. Click on **Settings** in the bottom-left corner of the Portainer sidebar [192].
+2. Enable **Use external templates** [5].
+3. Depending on your Pi's hardware, copy and paste the correct URL into the **App Templates** text field [175, 176]:
+   * **ARM64 (64-Bit OS — Highly Recommended)** [175, 176]:
+     ```text
+     https://raw.githubusercontent.com/pi-hosted/pi-hosted/master/template/portainer-v3-arm64.json
+     ```
+   * **ARM32 (32-Bit OS — Legacy fallback only)** [175, 176]:
+     ```text
+     https://raw.githubusercontent.com/pi-hosted/pi-hosted/master/template/portainer-v2-arm32.json
+     ```
+4. Click **Save settings** [193].
+5. Go to **App Templates** in the sidebar. You now have immediate access to 1-click deployments of the entire Pi-Hosted catalog [172, 175, 192]!
+
+---
+
+## Phase 5: Deploying Core Applications (JDownloader 2 & File Browser)
+
+Now we can use Portainer **Stacks** (Docker Compose) to easily deploy and run the rest of our server application suite [196].
+
+### JDownloader 2 Deployment
+JDownloader 2 is a powerful download manager [653]. To avoid bulky VNC sessions, this Docker image integrates directly with the **MyJDownloader** secure web/mobile portal [654, 179].
+
+1. Register a free account at [MyJDownloader](https://my.jdownloader.org/) [179].
+2. In Portainer, click **Stacks** > **Add stack**.
+3. Name the stack `jdownloader`.
+4. Paste the following configuration in the editor [655]:
+
+```yaml
+version: "3"
+services:
+  jdownloader:
+    image: jaymoulin/jdownloader:latest
+    container_name: jdownloader
+    restart: always
+    ports:
+      - 3129:3129 # Port required for high-speed Direct Connection Mode [657, 660]
+    volumes:
+      - /mnt/dietpi_userdata/jdownloader/config:/opt/JDownloader/app/cfg
+      - /mnt/dietpi_userdata/downloads:/opt/JDownloader/Downloads
+    environment:
+      - MYJD_USER=your_my_jdownloader_email
+      - MYJD_PASSWORD=your_my_jdownloader_password
+      - MYJD_DEVICE_NAME=pi-hosted-downloader
+```
+5. Click **Deploy the stack**. 
+
+#### 🚀 Performance Optimization: Direct Connection Mode [660]
+By default, traffic is routed through MyJDownloader's public servers, which can be slow [660]. To enable direct communication on your LAN via port 3129 [660]:
+1. Log in to [MyJDownloader](https://my.jdownloader.org/) [179].
+2. Go to **Settings** > **Advanced Settings** and search for `myjdownloader` [663].
+3. Set **MyJDownloaderSettings: Custom Device IPs** to your Pi's static LAN IP, formatted exactly as `["192.168.0.x"]` [663].
+4. Set **MyJDownloaderSettings: Manual Local Port** to `3129` [663].
+5. Set **MyJDownloaderSettings: Direct Connect Mode** to `Allow lan/wan connections with manual port forwarding` [663].
+6. Restart the stack in Portainer [663].
+
+---
+
+### File Browser Deployment
+File Browser provides an elegant, responsive web interface to manage, upload, preview, and download files from any directory on your server [649].
+
+1. Go to **Stacks** > **Add stack** in Portainer.
+2. Name the stack `filebrowser`.
+3. Paste the following configuration in the editor [649]:
+
+```yaml
+version: "3"
+services:
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: filebrowser
+    restart: always
+    ports:
+      - 8081:80
+    volumes:
+      - /mnt/dietpi_userdata:/srv # Maps your server's userdata directory
+      - /mnt/dietpi_userdata/filebrowser/config.json:/etc/config.json
+      - /mnt/dietpi_userdata/filebrowser/database.db:/etc/database.db
+```
+4. Click **Deploy the stack**. Visit `http://<YOUR_PI_IP_ADDRESS>:8081` to manage your server filesystem (Default login: `admin`/`admin`, change immediately).
+
+---
+
+## Phase 6: Customizing the Homer Portal & Quick Shortcuts
+
+Access your new landing page at `http://<YOUR_PI_IP_ADDRESS>:8080` [165]. Because we bound the Homer container's path `/www/assets` to the persistent directory `/mnt/dietpi_userdata/homer/assets` on the host, you can easily tweak its YAML settings [165].
+
+### Customize `config.yml` On The Fly
+1. Open a terminal or use **File Browser** to navigate to `/mnt/dietpi_userdata/homer/assets/config.yml` [649].
+2. Replace or edit the addresses with your exact host IP (e.g. replacing `localhost` with `192.168.0.x`).
+3. Homer is static; as soon as you save the file, refresh your browser tab to see the updated page.
+
+### Keyboard Shortcuts for Power Users [163]
+Homer is optimized for speed and keyboard-first navigation. Try using these shortcuts directly on your landing page [163]:
+* `/` — Immediately focuses the search bar and lets you start typing to filter your homelab applications [163].
+* `Escape` — Stops your search, clears the query, and resets the interface [163].
+* `Enter` — Opens the first matched result in your filtered list (conforming to your defined item's link target) [163].
+* `Alt` (or `Option`) + `Enter` — Opens the first matched result in a brand-new browser tab [163].
+
+---
+
+## Phase 7: Automated Homelab Backups & Maintenance
+
+To ensure your homelab configurations, Docker volumes, and dashboard assets survive unexpected hardware or storage media failures, it is critical to implement a robust, automated backup strategy [165]. 
+
+We will create an optimized backup script at `/mnt/dietpi_userdata/backup_homelab.sh` that automates this entire process:
+1. **Ensures Database Consistency**: Stops active containers (Portainer, Homer, JDownloader) during the backup window to prevent database writes or locks from causing configuration corruption [165].
+2. **Compresses Directories**: Combines and compresses your core hosted app configuration paths and local Docker volumes into a high-density, timestamped `.tar.gz` archive.
+3. **Implements Automatic Rotation**: Automatically purges stale backup archives older than $N$ days to conserve storage space on your drive.
+4. **Resumes Services**: Restarts the system Docker daemon, prompting containers to automatically restart as per their `unless-stopped` rules [165].
+5. **Generates Local Logging**: Logs all actions and status updates to a dedicated file `/var/log/homelab_backup.log`.
+
+### Step 1: Write the Backup Script (`backup_homelab.sh`)
+
+1. Open an SSH terminal or use File Browser to create a file at `/mnt/dietpi_userdata/backup_homelab.sh` [649].
+2. Paste the following highly robust bash code into the file and save it:
+
+```bash
+#!/bin/bash
+# DietPi Hosted Homelab Automated Backup & Rotation Script
+
+# --- CONFIGURATION ---
+BACKUP_DIR="/mnt/dietpi_userdata/backups"       # Destination for backup archives
+SOURCE_DIRS=(                                   # List of configuration directories to back up [165]
+    "/mnt/dietpi_userdata/homer"
+    "/mnt/dietpi_userdata/jdownloader"
+    "/mnt/dietpi_userdata/filebrowser"
+)
+DOCKER_VOLUMES_DIR="/var/lib/docker/volumes"     # Backs up Portainer database volume data [191]
+BACKUP_RETENTION_DAYS=7                         # Number of days to keep backup archives
+LOG_FILE="/var/log/homelab_backup.log"           # Location of output log file
+# ---------------------
+
+# Ensure backup directory exists
+mkdir -p "$BACKUP_DIR"
+
+# Formatting logger function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+log "=== Starting Homelab Backup Sequence ==="
+
+# 1. Gracefully stop running containers to ensure data integrity
+# This stops Portainer, JDownloader, etc.
+docker stop portainer jdownloader 2>/dev/null
+
+# 2. Package and compress directories and volumes Package and compress directories and volumes
+TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+BACKUP_FILE="$BACKUP_DIR/homelab_backup_$TIMESTAMP.tar.gz"
+
+log "Creating compressed archive at $BACKUP_FILE..."
+tar -czf "$BACKUP_FILE" "${SOURCE_DIRS[@]}" "$DOCKER_VOLUMES_DIR" 2>/dev/null
+
+if [ $? -eq 0 ]; then
+    log "Backup archive successfully generated."
+else
+    log "ERROR: Tar compression failed!"
+fi
+
+# 3. Restart Docker daemon and resume containers [165]
+log "Restarting Docker service and resuming containers..."
+systemctl restart docker
+sleep 5
+
+# Log running container status
+log "Docker services resumed. Current container status:"
+docker ps --format "table {{.Names}}\t{{.Status}}" | tee -a "$LOG_FILE"
+
+# 4. Purge backup files older than retention limit
+log "Enforcing retention limit: Cleaning files older than $BACKUP_RETENTION_DAYS days..."
+find "$BACKUP_DIR" -type f -name "homelab_backup_*.tar.gz" -mtime +"$BACKUP_RETENTION_DAYS" -exec rm -f {} \; -print | while read -r deleted; do
+    log "Removed stale backup file: $deleted"
+done
+
+log "=== Homelab Backup Sequence Completed Successfully ==="
+```
+
+### Step 2: Make the Script Executable
+Give the script execution permissions so that it can be run by the system scheduler:
+```bash
+chmod +x /mnt/dietpi_userdata/backup_homelab.sh
+```
+
+### Step 3: Schedule Backups Natively with DietPi's Cron
+DietPi uses a highly streamlined, lightweight cron manager that avoids the complexity of manual crontab edits. To schedule your script to run automatically every night:
+
+Create a symlink for your script in DietPi's daily cron directory [125]:
+```bash
+ln -s /mnt/dietpi_userdata/backup_homelab.sh /etc/cron.daily/homelab_backup
+```
+*DietPi's built-in cron daemon will now automatically execute this script every day at midnight, ensuring your configuration directories and Portainer volumes are completely safe and secure!*

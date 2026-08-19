@@ -1,1007 +1,1258 @@
-
+#!/usr/bin/env bash
+# File: dependency-checker.sh
+# Desc: Arch Linux — iterative missing-dependency checker and installer.
+#       Audits installed packages via pacman -Dk, resolves official vs AUR
+#       classification, automatically rebuilds version-broken reverse dependents.
+#
+# ARCHITECTURAL EXCEPTION NOTICE (§4.1):
+# This script operates directly on host state (/var/lib/pacman, /etc/pacman.d)
+# and performs live mutating operations via host package managers. It is explicitly
+# classified as an out-of-bounds administrative monolith tool under Option A.
 set -euo pipefail
 set -E
 
-    clear
-    OK="$(tput setaf 2)[OK]$(tput sgr0)"
-    ERROR="$(tput setaf 1)[ERROR]$(tput sgr0)"
-    NOTE="$(tput setaf 3)[NOTE]$(tput sgr0)"
-    INFO="$(tput setaf 4)[INFO]$(tput sgr0)"
-    WARN="$(tput setaf 1)[WARN]$(tput sgr0)"
-    CAT="$(tput setaf 6)[ACTION]$(tput sgr0)"
-    MAGENTA="$(tput setaf 5)"
-    ORANGE="$(tput setaf 214)"
-    WARNING="$(tput setaf 1)"
-    YELLOW="$(tput setaf 3)"
-    GREEN="$(tput setaf 2)"
-    BLUE="$(tput setaf 4)"
-    SKY_BLUE="$(tput setaf 6)"
-    RESET="$(tput sgr0)"
-
-    trap 'echo -e "\nExiting..."; exit 1' SIGINT
-
-## Global Variables & Constants.
-
+# ── Global variables ───────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
-
 declare LOG_FILE_READY=false
 
 declare -r PACMAN_LOCK="/var/lib/pacman/db.lck"
 declare ALL_SYSTEM=false
+# Default is target/system audit without interactive installation prompts.
 declare INTERACTIVE_MODE=false
+declare PROMPT_IGNORE=false
 declare DEBUG_MODE=false
 declare YAY_AVAILABLE=false
-declare FIX_KEYS=false      # Manual trigger for keyring fix protocol
+declare FIX_KEYS=false
 
 declare -a DEFAULT_IGNORE_PKGS=("wayland")
 declare -a CUSTOM_IGNORE_PKGS=()
 declare -a CUSTOM_IGNORE_GROUPS=()
 declare -a TARGET_PKGLIST=()
-declare -A INSTALLED_PKGS
-declare -A OFFICIAL_PKGS
-declare -A AUR_PKGS
-declare -A PACKAGE_GROUPS
+declare -A INSTALLED_PKGS=()
+declare -A OFFICIAL_PKGS=()
+declare -A AUR_PKGS=()
+declare -A PACKAGE_GROUPS=()
+
+# PACKAGE_PROVIDES maps installed package -> raw 'Provides' string.
+# PROVIDES_INDEX is the reverse map: provided/virtual name -> installed package.
+declare -A PACKAGE_PROVIDES=()
+declare -A PROVIDES_INDEX=()
 declare TMP_DIR=""
 declare -a last_missing=()
+declare -a SCRIPT_ARGS=()
+declare CMD_OUTPUT=""
+declare -a MISSING_DEPS_RESULT=()
 
-error_handler () 
-{ 
-    local last_command="${BASH_COMMAND}";
-    local line_number="${LINENO}";
-    local exit_status="$?";
-    if [[ "${exit_status}" -eq 0 ]]; then
-        return;
-    fi;
-    log_message "FATAL" "Script error on line ${line_number}: '${last_command}' exited with status ${exit_status}.";
-    printf "FATAL: An unexpected error occurred. Check log file for details (requires sudo): %s\n" "${LOGFILE}" 1>&2;
-    exit 1
+# ── Bounded external execution ────────────────────────────────────────────────
+declare -ri EXTERNAL_TIMEOUT_SECONDS=900
+declare -ri SHORT_EXTERNAL_TIMEOUT_SECONDS=30
+declare -ri TIMEOUT_KILL_GRACE_SECONDS=10
+
+bounded_exec() {
+    local seconds="$1"
+    shift
+    timeout --foreground --kill-after="${TIMEOUT_KILL_GRACE_SECONDS}s" "${seconds}" "$@"
+}
+
+# ── Color / tag setup ──────────────────────────────────────────────────────────
+_t() { bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tput "$@" 2>/dev/null || true; }
+OK="$(_t setaf 2)[OK]$(_t sgr0)"
+ERROR="$(_t setaf 1)[ERROR]$(_t sgr0)"
+NOTE="$(_t setaf 3)[NOTE]$(_t sgr0)"
+INFO="$(_t setaf 4)[INFO]$(_t sgr0)"
+WARN="$(_t setaf 1)[WARN]$(_t sgr0)"
+CAT="$(_t setaf 6)[ACTION]$(_t sgr0)"
+MAGENTA="$(_t setaf 5)"
+WARNING="$(_t setaf 1)"
+YELLOW="$(_t setaf 3)"
+GREEN="$(_t setaf 2)"
+BLUE="$(_t setaf 4)"
+SKY_BLUE="$(_t setaf 6)"
+RESET="$(_t sgr0)"
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+log_message() {
+    local level="$1"
+    local message="$2"
+    local timestamp color_tag=""
+
+    [[ "${DEBUG_MODE}" = false && "${level}" = "DEBUG" ]] && return 0
+
+    case "$level" in
+        INFO)        color_tag="$INFO" ;;
+        WARN)        color_tag="$WARN" ;;
+        ERROR|FATAL) color_tag="$ERROR" ;;
+        DEBUG)       color_tag="$NOTE" ;;
+        OK)          color_tag="$OK" ;;
+        *)           color_tag="[$level]" ;;
+    esac
+
+    timestamp="$(printf '%(%Y-%m-%d %H:%M:%S)T' -1)"
+
+    if [[ "${LOG_FILE_READY}" = true && -n "${LOGFILE:-}" ]];
+    then
+        if ! printf "%s [%s] %s\n" "${timestamp}" "${level}" "${message}" >>"${LOGFILE}";
+        then
+            printf "%s %s %s (WARNING: Could not write to log file)\n" \
+                "${timestamp}" "${color_tag}" "${message}" >&2
+        fi
+    fi
+    printf "%s %s %s\n" "${timestamp}" "${color_tag}" "${message}" >&2
+}
+
+error_handler() {
+    local exit_status=$?
+    local last_command="${BASH_COMMAND}"
+    local line_number="${BASH_LINENO[0]:-unknown}"
+    [[ "${exit_status}" -eq 0 ]] && return 0
+    log_message "FATAL" "Script error on line ${line_number}: '${last_command}' exited with status ${exit_status}."
+    printf "FATAL: Unexpected error. Check log: %s\n" "${LOGFILE}" >&2
+    exit "${exit_status}"
 }
 trap error_handler ERR
 
-cleanup () 
-{ 
-    if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR:-}" ]]; then
-        log_message "INFO" "Cleaning up temporary directory: ${TMP_DIR}";
-        if ! rm -rf -- "${TMP_DIR}"; then
-            log_message "ERROR" "Failed to remove temporary directory: ${TMP_DIR}";
-            printf "Error: Failed to remove temporary directory: %s\n" "${TMP_DIR}" 1>&2;
-        fi;
+cleanup() {
+    local cleanup_status=0
+    if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR:-}" ]];
+    then
+        log_message "INFO" "Cleaning up temporary directory: ${TMP_DIR}"
+        bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" rm -rf -- "${TMP_DIR}" || {
+            cleanup_status=1
+            log_message "ERROR" "Failed to remove temporary directory: ${TMP_DIR}"
+        }
     fi
+    return "${cleanup_status}"
 }
-
 trap cleanup EXIT
 
-log_message() {
-	local level="$1"
-	local message="$2"
-	local timestamp # Declared as local
-    local color_tag=""
+trap 'printf "\nExiting...\n" >&2; exit 130' SIGINT
 
-	# If debug mode is off and the message is a DEBUG message, return early without logging.
-	if [[ "${DEBUG_MODE}" = false && "${level}" = "DEBUG" ]]; then
-		return 0
-	fi
-
-    # Map level to color tag
-    case "$level" in
-        INFO) color_tag="$INFO" ;;
-        WARN) color_tag="$WARN" ;;
-        ERROR|FATAL) color_tag="$ERROR" ;;
-        DEBUG) color_tag="$NOTE" ;;
-        OK) color_tag="$OK" ;;
-        *) color_tag="[$level]" ;;
-    esac
-
-	# Get current timestamp in YYYY-MM-DD HH:MM:SS format.
-	timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-
-	# If LOG_FILE_READY is true and LOGFILE is set, attempt to write to the file.
-	# Otherwise, log to standard error (console).
-	if [[ "${LOG_FILE_READY}" = true && -n "${LOGFILE:-}" ]]; then
-		# Attempt to write to the log file (plain text). If it fails, fall back to stderr.
-        # We strip ANSI codes for the log file if we were passing them, but here we are passing distinct vars.
-        # For the log file, we keep the standard format [LEVEL].
-		printf "%s [%s] %s\n" "${timestamp}" "${level}" "${message}" >>"${LOGFILE}" ||
-			printf "%s %s %s (WARNING: Could not write to log file)\n" "${timestamp}" "${color_tag}" "${message}" >&2
-        
-        # Output to console with color
-        printf "%s %s %s\n" "${timestamp}" "${color_tag}" "${message}" >&2
-	else
-		# If log file is not ready or not set, always log to stderr with color.
-		printf "%s %s %s\n" "${timestamp}" "${color_tag}" "${message}" >&2
-	fi
+# ── String & Tokenization Utilities (Top-Level Hoisted) ───────────────────────
+trim_whitespace() {
+    local value="$1"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s' "$value"
 }
 
-# Simple spinner function to provide visual feedback
+dependency_package_name() {
+    local dep="$1"
+    dep="${dep%%|*}"
+    dep="$(trim_whitespace "$dep")"
+    printf '%s' "$(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -E 's/[<>=].*$//')"
+}
+
+is_ignored() {
+    local pkg="$1" ignore_item pkg_groups
+
+    for ignore_item in "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}"; do
+        if [[ -n "$ignore_item" && "$pkg" == "$ignore_item" ]]; then
+            log_message "DEBUG" "Package '$pkg' ignored (listed as '$ignore_item')."
+            return 0
+        fi
+    done
+
+    pkg_groups="${PACKAGE_GROUPS[$pkg]:-}"
+    if [[ -n "$pkg_groups" && ${#CUSTOM_IGNORE_GROUPS[@]} -gt 0 ]]; then
+        for ignore_item in "${CUSTOM_IGNORE_GROUPS[@]:-}"; do
+            if printf ' %s ' "$pkg_groups" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" grep -Fq -- " ${ignore_item} "; then
+                log_message "DEBUG" "Package '$pkg' ignored (group '$ignore_item')."
+                return 0
+            fi
+        done
+    fi
+
+    log_message "DEBUG" "Package '$pkg' not ignored."
+    return 1
+}
+
+# ── Spinner ────────────────────────────────────────────────────────────────────
 show_spinner() {
-    local pid=$1
-    local delay=0.1
-    local spinstr='|/-'
-    while ps -p "$pid" > /dev/null; do
-        local temp=${spinstr#?}
+    local pid="$1" delay=0.1 spinstr=$'|/-\\'
+    local temp
+    while kill -0 "$pid" 2>/dev/null; do
+        temp="${spinstr#?}"
         printf " [%c]  " "$spinstr" >&2
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
+        spinstr="${temp}${spinstr%"$temp"}"
+        bounded_exec 2 sleep "$delay" || true
         printf "\b\b\b\b\b\b" >&2
     done
     printf "    \b\b\b\b" >&2
 }
 
-declare CMD_OUTPUT=""
+# ── Execution Executives ───────────────────────────────────────────────────────
+run_command() {
+    local output_file exit_code=0 cmd_pid
+    output_file="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" mktemp -p "${TMP_DIR:-/tmp}" "cmd_output.XXXXXX")"
 
-run_command () 
-{ 
-    local output_file exit_code cmd_pid;
-    output_file=$(mktemp -p "${TMP_DIR:-/tmp}" "cmd_output.XXXXXX");
-    set +e;
-    "$@" > "${output_file}" 2>&1 & cmd_pid=$!;
-    show_spinner "$cmd_pid";
-    wait "$cmd_pid"
-    exit_code=$?
-    set -e
+    bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" "$@" >"${output_file}" 2>&1 &
+    cmd_pid=$!
+    show_spinner "$cmd_pid"
 
-    CMD_OUTPUT=$(tr -d '\0' <"${output_file}")
-    rm -f "${output_file}"
+    wait "$cmd_pid" || exit_code=$?
 
-    if [[ ${exit_code} -ne 0 ]]; then
-        log_message "DEBUG" "Command failed with exit code ${exit_code}: $*";
-        log_message "DEBUG" "Output was: ${CMD_OUTPUT}";
-    fi;
+    CMD_OUTPUT="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr -d '\0' <"${output_file}" 2>/dev/null || true)"
+    bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" rm -f "${output_file}" 2>/dev/null || true
+
+    if [[ ${exit_code} -ne 0 ]];
+    then
+        log_message "DEBUG" "Command exited nonzero (rc=${exit_code}): $*"
+        log_message "DEBUG" "Output: ${CMD_OUTPUT}"
+    fi
     return "${exit_code}"
 }
 
-# Function to check if the script is run with root privileges.
-# Attempts to escalate privileges via sudo if not run as root.
+run_logged_command() {
+    bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" "$@" 2>&1 | bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" tee -a "${LOGFILE}"
+    local -a pipe_status=("${PIPESTATUS[@]}")
+    local command_status="${pipe_status[0]:-1}"
+    local tee_status="${pipe_status[1]:-1}"
+    if (( command_status != 0 ));
+    then
+        return "${command_status}"
+    fi
+    if (( tee_status != 0 ));
+    then
+        log_message "ERROR" "Unable to write command output to log file '${LOGFILE}'."
+        return "${tee_status}"
+    fi
+    return 0
+}
+
+# ── Unprivileged AUR Executive (makepkg Root-Bypass) ──────────────────────────
+run_yay() {
+    local target_user="${SUDO_USER:-}"
+    if [[ -z "$target_user" || "$target_user" == "root" ]]; then
+        target_user="$(logname 2>/dev/null || true)"
+        if [[ -z "$target_user" || "$target_user" == "root" ]]; then
+            target_user="$(id -nu 1000 2>/dev/null || true)"
+        fi
+    fi
+
+    if [[ -n "$target_user" && "$target_user" != "root" ]]; then
+        log_message "INFO" "Executing yay build pipeline as unprivileged user '${target_user}'..."
+        run_logged_command sudo -u "$target_user" yay \
+            --cleanmenu=false --diffmenu=false --editmenu=false \
+            --answerclean=None --answerdiff=None --answeredit=None --answerupgrade=None \
+            "$@"
+    else
+        log_message "ERROR" "Cannot execute yay/makepkg as root without an identifiable unprivileged host user (\$SUDO_USER)."
+        return 1
+    fi
+}
+
+# ── Prerequisites & Target Preflights ─────────────────────────────────────────
 require_root() {
-	if [[ "${EUID}" -ne 0 ]]; then
-        echo "Re-running the script with sudo privileges..."
-        if ! sudo "$0" "$@"; then
-            echo "Failed to escalate privileges. Exiting..."
+    if [[ "${EUID}" -ne 0 ]];
+    then
+        printf "Re-running with sudo privileges...\n" >&2
+        if ! command -v sudo >/dev/null 2>&1; then
+            printf "Error: sudo is required when not running as root.\n" >&2
+            exit 1
+        fi
+        if ! bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" sudo -- "$0" "${SCRIPT_ARGS[@]}"; then
+            printf "Failed to escalate privileges. Exiting.\n" >&2
             exit 1
         fi
         exit 0
-	fi
-	log_message "INFO" "Root privileges confirmed."
+    fi
+    log_message "INFO" "Root privileges confirmed."
 }
 
-prepare_log_dir () 
-{ 
-    local log_directory;
-    log_directory="$(dirname "${LOGFILE}")";
+prepare_log_dir() {
+    local log_directory
+    log_directory="${LOGFILE%/*}"
+    if [[ "${log_directory}" == "${LOGFILE}" ]]; then
+        log_directory="."
+    elif [[ -z "${log_directory}" ]]; then
+        log_directory="/"
+    fi
     if [[ ! -d "${log_directory}" ]]; then
-        log_message "INFO" "Creating log directory: ${log_directory}";
-        if ! mkdir -p "${log_directory}"; then
-            log_message "ERROR" "Cannot create log directory: ${log_directory}";
-            printf "Error: Cannot create log directory: %s\n" "${log_directory}" 1>&2;
-            exit 1;
-        fi;
-    fi;
-    if ! touch "${LOGFILE}" > /dev/null 2>&1; then
-        log_message "ERROR" "Cannot write to log file: ${LOGFILE}";
-        printf "Error: Cannot write to log file: %s\n" "${LOGFILE}" 1>&2;
-        exit 1;
-    fi;
-    LOG_FILE_READY=true;
+        log_message "INFO" "Creating log directory: ${log_directory}"
+        if ! bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" mkdir -p -- "${log_directory}"; then
+            printf "Error: Cannot create log directory: %s\n" "${log_directory}" >&2
+            exit 1
+        fi
+    fi
+    if ! bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" touch -- "${LOGFILE}" >/dev/null 2>&1; then
+        printf "Error: Cannot write to log file: %s\n" "${LOGFILE}" >&2
+        exit 1
+    fi
+    LOG_FILE_READY=true
     log_message "INFO" "Log file prepared: ${LOGFILE}"
 }
 
-check_requirements () 
-{ 
-    log_message "INFO" "Checking system requirements...";
-    local tool;
-    local -a essential_tools=("pacman");
-    local -a optional_tools=();
-    local -a missing_tools=();
-    if command -v yay > /dev/null 2>&1; then
-        optional_tools+=("yay");
-        YAY_AVAILABLE=true;
-        log_message "INFO" "'yay' found, AUR support enabled.";
+check_requirements() {
+    log_message "INFO" "Checking system requirements..."
+    local tool
+    local -a essential_tools=(
+        "pacman" "awk" "grep" "sort" "df" "mktemp"
+        "sed" "tee" "sha256sum" "pgrep" "timeout"
+        "pacman-key" "tr" "cut" "mkdir" "rm" "cp"
+        "touch" "sleep"
+    )
+    local -a missing_tools=()
+
+    if command -v yay >/dev/null 2>&1;
+    then
+        YAY_AVAILABLE=true
+        log_message "INFO" "'yay' found — AUR support enabled."
     else
-        YAY_AVAILABLE=false;
-        log_message "INFO" "'yay' not found. AUR support will be limited to identification.";
-    fi;
-    for tool in "${essential_tools[@]}";
-    do
-        if ! command -v "${tool}" > /dev/null 2>&1; then
-            missing_tools+=("${tool}");
-        fi;
-    done;
-    if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        local missing_str="${missing_tools[*]}";
-        log_message "ERROR" "Essential required tools missing: ${missing_str}";
-        printf "Error: Essential required tools missing: %s\n" "${missing_str}" 1>&2;
-        exit 1;
-    fi;
-    missing_tools=();
-    for tool in "${optional_tools[@]}";
-    do
-        if ! command -v "${tool}" > /dev/null 2>&1; then
-            missing_tools+=("${tool}");
-        fi;
-    done;
-    if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        local missing_str="${missing_tools[*]}";
-        log_message "WARN" "Optional tools missing: %s. Functionality may be limited." "${missing_str}";
-        printf "Warning: Optional tools missing: %s. Functionality may be limited.\n" "${missing_str}" 1>&2;
-    fi;
-    log_message "INFO" "All essential required tools found."
+        YAY_AVAILABLE=false
+        log_message "INFO" "'yay' not found — AUR support limited to identification."
+    fi
+
+    for tool in "${essential_tools[@]}"; do
+        command -v "${tool}" >/dev/null 2>&1 || missing_tools+=("${tool}")
+    done
+
+    if [[ ${#missing_tools[@]} -gt 0 ]];
+    then
+        log_message "ERROR" "Essential tools missing: ${missing_tools[*]}"
+        printf "Error: Essential tools missing: %s\n" "${missing_tools[*]}" >&2
+        exit 1
+    fi
+    log_message "INFO" "All essential tools found."
 }
 
-# Waits for the pacman lock file to disappear, with a timeout.
-# Smartly removes stale locks if pacman is not running.
 wait_for_pacman_lock() {
-	log_message "INFO" "Checking for pacman lock..."
-	local wait_time=120 # Maximum time to wait in seconds.
-	local interval=5    # Time to sleep between checks in seconds.
-	local elapsed=0     # Time elapsed so far.
+    log_message "INFO" "Checking for pacman lock..."
+    local wait_time=120 interval=5 elapsed=0
 
-	# Loop while the lock file exists.
-	while [[ -e "${PACMAN_LOCK}" ]]; do
-		# Check if pacman is actually running
-		if ! pgrep -x "pacman" >/dev/null; then
-			log_message "WARN" "Pacman lock file found but no pacman process running. Removing stale lock."
-			rm -f "${PACMAN_LOCK}"
-			break
-		fi
+    while [[ -e "${PACMAN_LOCK}" ]]; do
+        if command -v fuser >/dev/null 2>&1 && bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" fuser "${PACMAN_LOCK}" >/dev/null 2>&1; then
+            log_message "INFO" "Pacman database lock is currently in use."
+        elif bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" pgrep -x pacman >/dev/null 2>&1; then
+            log_message "INFO" "pacman is running; waiting for database lock."
+        else
+            log_message "WARN" "Pacman lock exists but no active pacman process was detected; leaving lock untouched."
+        fi
 
-		# Check if the maximum wait time has been reached.
-		if ((elapsed >= wait_time)); then
-			log_message "ERROR" "pacman lock persists after ${wait_time} seconds."
-			printf "Error: pacman lock persists after %d seconds. Remove lock with: sudo rm -f %s\n" "${wait_time}" "${PACMAN_LOCK}" >&2
-			exit 1 # Exit if lock persists too long.
-		fi
-		log_message "INFO" "Waiting for pacman lock... (${elapsed}/${wait_time} sec elapsed)"
-		sleep "${interval}"
-		((elapsed += interval))
-	done
-
-	log_message "INFO" "Pacman lock is not present."
+        if (( elapsed >= wait_time )); then
+            log_message "ERROR" "pacman lock persists after ${wait_time}s."
+            printf "Error: pacman lock persists. Verify no package manager is running, then remove only if confirmed stale: sudo rm -f %s\n" "${PACMAN_LOCK}" >&2
+            exit 1
+        fi
+        log_message "INFO" "Waiting for pacman lock... (${elapsed}/${wait_time}s)"
+        bounded_exec "$((interval + 2))" sleep "${interval}"
+        ((elapsed += interval))
+    done
+    log_message "INFO" "Pacman lock clear."
 }
 
-fix_pacman_keyring () 
-{ 
-    log_message "INFO" "Attempting to fix pacman keyring and database issues...";
-    local success=0;
-    log_message "INFO" "Updating archlinux-keyring...";
-    if ! pacman -Sy archlinux-keyring --noconfirm 2>&1 | tee -a "${LOGFILE}"; then
-        log_message "ERROR" "Failed to update archlinux-keyring.";
-        printf "Error: Failed to update archlinux-keyring.\n" 1>&2;
-        success=1;
-    fi;
-    log_message "INFO" "Cleaning pacman sync databases and gnupg directory...";
-    if ! rm -f /var/lib/pacman/sync/*; then
-        log_message "WARN" "Failed to remove sync databases.";
-    fi;
-    if ! rm -rf /etc/pacman.d/gnupg/*; then
-        log_message "WARN" "Failed to remove gnupg contents.";
-    fi;
-    log_message "INFO" "Re-initializing pacman keyring...";
-    if ! pacman-key --init 2>&1 | tee -a "${LOGFILE}"; then
-        log_message "ERROR" "pacman-key --init failed.";
-        printf "Error: pacman-key --init failed.\n" 1>&2;
-        success=1;
-    fi;
-    log_message "INFO" "Populating pacman keyring...";
-    if ! pacman-key --populate archlinux 2>&1 | tee -a "${LOGFILE}"; then
-        log_message "ERROR" "pacman-key --populate failed.";
-        printf "Error: pacman-key --populate failed.\n" 1>&2;
-        success=1;
-    else
-        log_message "INFO" "pacman-key --populate successful.";
-    fi;
-    log_message "INFO" "Refreshing pacman keys from servers...";
-    if ! pacman-key --refresh-keys 2>&1 | tee -a "${LOGFILE}"; then
-        log_message "WARN" "pacman-key --refresh-keys failed. This might indicate network issues or key server problems.";
-    fi;
-    log_message "INFO" "Attempting pacman database refresh again...";
-    if ! pacman -Syy --noconfirm 2>&1 | tee -a "${LOGFILE}"; then
-        log_message "ERROR" "Pacman database refresh still failing after keyring fix.";
-        printf "Error: Pacman database refresh still failing after keyring fix.\n" 1>&2;
-        success=1;
-    else
-        log_message "INFO" "Pacman database refresh successful after keyring fix.";
-    fi;
+# ── System Database Actions ───────────────────────────────────────────────────
+fix_pacman_keyring() {
+    log_message "WARN" "Keyring repair requested. This is destructive and modifies pacman databases/keyring state."
+    local success=0 backup_dir="${TMP_DIR}/pacman-keyring-backup"
+
+    bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" mkdir -p -- "${backup_dir}"
+    if [[ -d /etc/pacman.d/gnupg ]]; then
+        bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" cp -a -- /etc/pacman.d/gnupg "${backup_dir}/gnupg" || {
+            log_message "ERROR" "Unable to back up /etc/pacman.d/gnupg; refusing destructive repair."
+            return 1
+        }
+    fi
+    if [[ -d /var/lib/pacman/sync ]]; then
+        bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" cp -a -- /var/lib/pacman/sync "${backup_dir}/sync" || {
+            log_message "ERROR" "Unable to back up /var/lib/pacman/sync; refusing destructive repair."
+            return 1
+        }
+    fi
+    log_message "INFO" "Keyring/database backup stored at ${backup_dir}."
+
+    wait_for_pacman_lock
+    if ! run_logged_command pacman -Syu --needed archlinux-keyring --noconfirm; then
+        log_message "ERROR" "Failed to update archlinux-keyring with a synchronized system upgrade."
+        success=1
+    fi
+
+    if (( success == 0 )); then
+        bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" rm -rf -- /var/lib/pacman/sync/* || {
+            log_message "ERROR" "Failed to remove sync databases."
+            success=1
+        }
+        bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" rm -rf -- /etc/pacman.d/gnupg/* || {
+            log_message "ERROR" "Failed to remove gnupg contents."
+            success=1
+        }
+    fi
+
+    if (( success == 0 )) && ! run_logged_command pacman-key --init; then
+        log_message "ERROR" "pacman-key --init failed."
+        success=1
+    fi
+    if (( success == 0 )) && ! run_logged_command pacman-key --populate archlinux; then
+        log_message "ERROR" "pacman-key --populate failed."
+        success=1
+    fi
+    if (( success == 0 )); then
+        wait_for_pacman_lock
+        if ! run_logged_command pacman -Syy --noconfirm; then
+            log_message "ERROR" "Database refresh failed after keyring repair."
+            success=1
+        fi
+    fi
+
     return "${success}"
 }
 
-refresh_pacman_databases () 
-{ 
-    local db_refresh_successful=false;
-    log_message "INFO" "Refreshing pacman database (pacman -Syy)...";
-	# Attempt database refresh. Use tee to show progress to console while logging.
-	if pacman -Syy --noconfirm 2>&1 | tee -a "${LOGFILE}"; then
-		log_message "INFO" "Pacman database refreshed successfully."
-		db_refresh_successful=true
-	else
-		log_message "ERROR" "Failed to refresh pacman database."
-		printf "Error: Failed to refresh pacman database.\n" >&2
-		
-		if [[ "$FIX_KEYS" = true ]]; then
-			printf "\nWARNING: Emergency keyring repair protocol (-f) activated.\n" >&2
-			printf "This will delete and regenerate your pacman keys (4ndr0keyfix). This is a destructive operation.\n" >&2
-			printf "Are you absolutely sure you want to proceed? (y/N): " >&2
-			read -r confirm
-			if [[ "$confirm" =~ ^[Yy]$ ]]; then
-				log_message "INFO" "User confirmed keyring repair protocol."
-				# Attempt to fix keyring issues.
-				if fix_pacman_keyring; then # fix_pacman_keyring returns 0 on success
-					log_message "INFO" "Re-attempting pacman database refresh after keyring fix..."
-					if pacman -Syy --noconfirm 2>&1 | tee -a "${LOGFILE}"; then
-						log_message "INFO" "Pacman database refreshed successfully after re-attempt."
-						db_refresh_successful=true
-					else
-						log_message "ERROR" "Pacman database refresh failed again after keyring fix."
-						printf "Error: Pacman database refresh failed again after keyring fix.\n" >&2
-					fi
-				else
-					log_message "ERROR" "Keyring fix failed. Cannot proceed without database refresh."
-					printf "Error: Keyring fix failed. Cannot proceed without database refresh.\n" >&2
-				fi
-			else
-				log_message "INFO" "Keyring repair aborted by user."
-				printf "Aborted.\n" >&2
-			fi
-		else
-			printf "Tip: If you are experiencing keyring issues, run this script with '-f' to enable the manual keyring repair protocol.\n" >&2
-		fi
-	fi
+refresh_pacman_databases() {
+    local db_refresh_successful=false
+    log_message "INFO" "Refreshing pacman database (pacman -Syy)..."
+    wait_for_pacman_lock
+
+    if run_logged_command pacman -Syy --noconfirm; then
+        db_refresh_successful=true
+        log_message "INFO" "Pacman database refreshed."
+    else
+        log_message "ERROR" "Failed to refresh pacman database."
+        if [[ "$FIX_KEYS" = true ]]; then
+            printf "\n${WARNING}Emergency keyring repair protocol (-f) activated.${RESET}\n" >&2
+            printf "A backup will be created before keyring/database repair.\n" >&2
+            printf "Are you absolutely sure? (y/N): " >&2
+            local confirm
+            read -r confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                if fix_pacman_keyring; then
+                    db_refresh_successful=true
+                    log_message "INFO" "Database refreshed after keyring repair."
+                else
+                    log_message "ERROR" "Keyring repair failed."
+                fi
+            else
+                log_message "INFO" "Keyring repair aborted by user."
+            fi
+        else
+            printf "Tip: run with '-f' to enable the keyring repair protocol.\n" >&2
+        fi
+    fi
+
     if [[ "${db_refresh_successful}" = true ]]; then
-        log_message "INFO" "Verifying pacman database integrity by querying essential package 'filesystem' (pacman -Si filesystem)...";
-        if ! pacman -Si filesystem > /dev/null 2>&1; then
-            log_message "FATAL" "Failed to retrieve 'filesystem' package info (pacman -Si filesystem). This indicates a severe database issue despite -Syy success. Check /etc/pacman.conf, mirrorlist, and network connectivity.";
-            printf "FATAL: Pacman database appears empty or corrupted after refresh (failed to query 'filesystem'). Cannot proceed. Check /etc/pacman.conf, mirrorlist, and network connectivity.\n" 1>&2;
-            exit 1;
-        fi;
-        log_message "INFO" "Pacman database integrity verified: 'filesystem' package info retrieved successfully.";
+        log_message "INFO" "Verifying database integrity (pacman -Si filesystem)..."
+        if ! run_command pacman -Si filesystem; then
+            log_message "FATAL" "Failed to query 'filesystem' package — database is empty or corrupted."
+            exit 1
+        fi
+        log_message "INFO" "Database integrity verified."
     else
-        log_message "FATAL" "Unable to achieve a successful pacman database refresh. Exiting.";
-        printf "FATAL: Unable to achieve a successful pacman database refresh. Exiting.\n" 1>&2;
-        exit 1;
+        log_message "FATAL" "Unable to achieve a successful pacman database refresh. Exiting."
+        exit 1
     fi
 }
 
-cache_package_lists () 
-{ 
-    log_message "INFO" "Caching package lists...";
-    INSTALLED_PKGS=();
-    OFFICIAL_PKGS=();
-    AUR_PKGS=();
-    log_message "INFO" "Caching installed packages (pacman -Qq)...";
+check_disk_space() {
+    local required_kb=1048576 available_kb
+    if ! available_kb="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" df --output=avail -- / | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" awk 'NR==2 {gsub(/[[:space:]]/, "", $1); print $1}')"; then
+        log_message "ERROR" "Unable to determine available disk space."
+        return 1
+    fi
+    if [[ ! "$available_kb" =~ ^[0-9]+$ ]]; then
+        log_message "ERROR" "Unable to parse available disk space: '$available_kb'."
+        return 1
+    fi
+    if [[ "$available_kb" -lt "$required_kb" ]]; then
+        log_message "ERROR" "Insufficient disk space. Available: $((available_kb/1024))MB, Required: $((required_kb/1024))MB."
+        return 1
+    fi
+    log_message "INFO" "Disk space OK. Available: $((available_kb/1024))MB."
+    return 0
+}
+
+# ── Caching Machinery ─────────────────────────────────────────────────────────
+cache_package_lists() {
+    log_message "INFO" "Caching package lists..."
+    INSTALLED_PKGS=()
+    OFFICIAL_PKGS=()
+    AUR_PKGS=()
+
+    log_message "INFO" "Caching installed packages (pacman -Qq)..."
     if ! run_command pacman -Qq; then
-        log_message "FATAL" "pacman -Qq command failed. Cannot determine installed packages.";
-        printf "FATAL: Failed to get list of installed packages. Check pacman configuration.\n" 1>&2;
-        exit 1;
-    fi;
+        log_message "FATAL" "pacman -Qq failed."
+        exit 1
+    fi
     while IFS= read -r pkg; do
-        [[ -n "$pkg" ]] && INSTALLED_PKGS["$pkg"]=1;
-    done <<< "$CMD_OUTPUT";
-    log_message "INFO" "Cached ${#INSTALLED_PKGS[@]} installed packages.";
+        [[ -n "$pkg" ]] && INSTALLED_PKGS["$pkg"]=1
+    done <<<"$CMD_OUTPUT"
+
     if [[ ${#INSTALLED_PKGS[@]} -eq 0 ]]; then
-        log_message "FATAL" "No installed packages found. This indicates a severe pacman issue or an empty system. Cannot proceed.";
-        printf "FATAL: No installed packages found. This indicates a severe pacman issue or an empty system. Cannot proceed.\n" 1>&2;
-        exit 1;
-    fi;
-    log_message "INFO" "Caching official packages (pacman -Slq)...";
+        log_message "FATAL" "No installed packages found."
+        exit 1
+    fi
+    log_message "INFO" "Cached ${#INSTALLED_PKGS[@]} installed packages."
+
+    log_message "INFO" "Caching official packages (pacman -Slq)..."
     if ! run_command pacman -Slq; then
-        log_message "FATAL" "pacman -Slq command failed. Cannot determine official packages.";
-        printf "FATAL: Failed to get list of official packages. Check pacman database and mirrorlists.\n" 1>&2;
-        exit 1;
-    fi;
-    log_message "DEBUG" "Raw output from pacman -Slq (first 10 lines):";
-    log_message "DEBUG" "$(head -n 10 <<< "$CMD_OUTPUT")";
+        log_message "FATAL" "pacman -Slq failed."
+        exit 1
+    fi
     while IFS= read -r pkg; do
-        [[ -n "$pkg" ]] && OFFICIAL_PKGS["$pkg"]=1;
-    done <<< "$CMD_OUTPUT";
-    log_message "INFO" "Cached ${#OFFICIAL_PKGS[@]} official packages.";
+        [[ -n "$pkg" ]] && OFFICIAL_PKGS["$pkg"]=1
+    done <<<"$CMD_OUTPUT"
+
     if [[ ${#OFFICIAL_PKGS[@]} -eq 0 ]]; then
-        log_message "FATAL" "No official packages found. This indicates a severe pacman database issue. Cannot proceed.";
-        printf "FATAL: No official packages found. This indicates a severe pacman database issue. Cannot proceed.\n" 1>&2;
-        exit 1;
-    fi;
+        log_message "FATAL" "No official packages found — database may be corrupted."
+        exit 1
+    fi
+    log_message "INFO" "Cached ${#OFFICIAL_PKGS[@]} official packages."
+
     if [[ "$YAY_AVAILABLE" = true ]]; then
-        log_message "INFO" "Caching AUR packages (yay -Slqa)...";
-        if ! run_command yay -Slqa; then
-            log_message "WARN" "yay -Slqa command failed. AUR dependency resolution might be incomplete.";
-            printf "Warning: Failed to cache AUR packages (yay -Slqa). AUR dependency resolution might be incomplete.\n" 1>&2;
-        fi;
-        while IFS= read -r pkg; do
-            [[ -n "$pkg" ]] && AUR_PKGS["$pkg"]=1;
-        done <<< "$CMD_OUTPUT";
-        log_message "INFO" "Cached ${#AUR_PKGS[@]} AUR packages.";
-    else
-        log_message "INFO" "'yay' not found. Skipping AUR package caching.";
+        log_message "INFO" "Caching AUR packages (yay -Slqa)..."
+        local -a yay_query_cmd=("yay" "-Slqa")
+        local target_user="${SUDO_USER:-}"
+        if [[ -n "$target_user" && "$target_user" != "root" ]]; then
+            yay_query_cmd=("sudo" "-u" "$target_user" "yay" "-Slqa")
+        fi
+        if run_command "${yay_query_cmd[@]}"; then
+            while IFS= read -r pkg; do
+                [[ -n "$pkg" ]] && AUR_PKGS["$pkg"]=1
+            done <<<"$CMD_OUTPUT"
+            log_message "INFO" "Cached ${#AUR_PKGS[@]} AUR packages."
+        else
+            log_message "WARN" "yay -Slqa failed — AUR resolution may be incomplete."
+            CMD_OUTPUT=""
+        fi
     fi
 }
 
-cache_package_groups () 
-{ 
-    log_message "INFO" "Caching package group information...";
-    PACKAGE_GROUPS=();
-    local pkg groups line;
-    if ! run_command pacman -Qi; then
-        log_message "WARN" "pacman -Qi command failed. This may indicate a corrupted pacman database. Group-based ignore functionality will be disabled.";
-        printf "WARNING: pacman -Qi failed. Cannot retrieve package group info. Group-based ignore functionality will be disabled.\n" 1>&2;
-        return;
-    fi;
+cache_package_groups() {
+    log_message "INFO" "Caching package group and provides information..."
+    PACKAGE_GROUPS=()
+    PACKAGE_PROVIDES=()
+    PROVIDES_INDEX=()
+
+    if ! LC_ALL=C run_command pacman -Qi; then
+        log_message "WARN" "pacman -Qi failed — group-based ignore and provides resolution disabled."
+        return 0
+    fi
     if [[ -z "$CMD_OUTPUT" ]]; then
-        log_message "WARN" "pacman -Qi produced no output. Group-based ignore functionality will be disabled.";
-        printf "WARNING: pacman -Qi produced no output. Group-based ignore functionality will be disabled.\n" 1>&2;
-        return;
-    fi;
-    printf "%s" "$CMD_OUTPUT" | tr -d '\0' | awk '
-        /^Name[[:space:]]+:/ {
-            current_pkg = $0
-            sub(/^Name[[:space:]]+:/, "", current_pkg)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_pkg)
-            current_groups = ""
-        }
-
-        /^Groups[[:space:]]+:/ {
-            current_groups = $0
-            sub(/^Groups[[:space:]]+:/, "", current_groups)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_groups)
-            if (current_pkg != "") {
-                print current_pkg, current_groups
-            }
-            current_pkg = ""
-            current_groups = ""
-        }
-    ' | while IFS= read -r line; do
-        pkg="${line%% *}";
-        groups="${line#* }";
-        [[ -n "$pkg" ]] && PACKAGE_GROUPS["$pkg"]="$groups";
-    done;
-    if [[ ${#PACKAGE_GROUPS[@]} -eq 0 ]]; then
-        log_message "WARN" "No package group information cached. This might be normal if no installed packages have groups, or indicates a pacman -Qi parsing issue.";
-    else
-        log_message "INFO" "Cached group information for ${#PACKAGE_GROUPS[@]} packages.";
+        log_message "WARN" "pacman -Qi produced no output — group-based ignore and provides resolution disabled."
+        return 0
     fi
-}
 
-prompt_ignore_lists () 
-{ 
-    log_message "INFO" "Prompting for interactive ignore lists...";
-    local selected_pkgs selected_groups all_groups user_pkgs user_groups;
-    local -a tmp_pkgs tmp_groups;
-    local old_ifs;
-    if command -v fzf > /dev/null 2>&1 && [[ -t 0 ]]; then
-        printf -- "--- Interactive Ignore Selection ---\n" 1>&2;
-        printf "Select packages to ignore (TAB to mark, ENTER when done):\n" 1>&2;
-        selected_pkgs=$(printf "%s\n" "${!INSTALLED_PKGS[@]}" | sort | fzf --multi --prompt="Ignore Package: " --header="Select packages to ignore" 2> /dev/null);
-        if [[ -n "$selected_pkgs" ]]; then
-            log_message "INFO" "User selected packages to ignore via fzf.";
-            mapfile -t tmp_pkgs <<< "$selected_pkgs";
-            CUSTOM_IGNORE_PKGS+=("${tmp_pkgs[@]}");
-        else
-            log_message "INFO" "No packages selected to ignore via fzf.";
-        fi;
-        printf "Select groups to ignore (TAB to mark, ENTER when done):\n" 1>&2;
-        all_groups=$(for g in "${PACKAGE_GROUPS[@]}";
-do
-    [[ -n "$g" ]] && printf "%s\n" "$g";
-done | tr ' ' '\n' | sort -u);
-        selected_groups=$(printf "%s\n" "$all_groups" | fzf --multi --prompt="Ignore Group: " --header="Select groups to ignore" 2> /dev/null);
-        if [[ -n "$selected_groups" ]]; then
-            log_message "INFO" "User selected groups to ignore via fzf.";
-            mapfile -t tmp_groups <<< "$selected_groups";
-            CUSTOM_IGNORE_GROUPS+=("${tmp_groups[@]}");
-        else
-            log_message "INFO" "No groups selected to ignore via fzf.";
-        fi;
-        printf -- "------------------------------------\n" 1>&2;
+    local pkg groups provides provide_name
+    while IFS=$'\t' read -r pkg groups provides; do
+        [[ -z "$pkg" ]] && continue
+        PACKAGE_GROUPS["$pkg"]="$groups"
+        if [[ -n "$provides" && "$provides" != "None" ]]; then
+            PACKAGE_PROVIDES["$pkg"]="$provides"
+            while IFS= read -r provide_name; do
+                [[ -z "$provide_name" ]] && continue
+                provide_name="$(dependency_package_name "$provide_name")"
+                [[ -z "$provide_name" ]] && continue
+                if [[ -n "${PROVIDES_INDEX[$provide_name]:-}" ]]; then
+                    if [[ "${PROVIDES_INDEX[$provide_name]}" != "$pkg" ]]; then
+                        log_message "DEBUG" "Provides collision for '$provide_name': already mapped to '${PROVIDES_INDEX[$provide_name]}', also provided by '$pkg' — keeping first."
+                    fi
+                else
+                    PROVIDES_INDEX["$provide_name"]="$pkg"
+                fi
+            done < <(printf '%s' "$provides" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr ' ' '\n')
+        fi
+    done < <(
+        printf '%s\n' "$CMD_OUTPUT" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" awk '
+            function flush() {
+                if (current_pkg != "") {
+                    print current_pkg "\t" current_groups "\t" current_provides
+                }
+            }
+            /^Name[[:space:]]*:/ {
+                flush()
+                current_pkg = $0
+                sub(/^Name[[:space:]]*:[[:space:]]*/, "", current_pkg)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_pkg)
+                current_groups = ""
+                current_provides = ""
+            }
+            /^Groups[[:space:]]*:/ {
+                current_groups = $0
+                sub(/^Groups[[:space:]]*:[[:space:]]*/, "", current_groups)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_groups)
+            }
+            /^Provides[[:space:]]*:/ {
+                current_provides = $0
+                sub(/^Provides[[:space:]]*:[[:space:]]*/, "", current_provides)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_provides)
+            }
+            END { flush() }
+        '
+    )
+
+    if [[ ${#PACKAGE_GROUPS[@]} -eq 0 ]]; then
+        log_message "WARN" "No package group info cached (normal if no installed packages have groups)."
     else
-        log_message "INFO" "fzf not available or not interactive. Using fallback prompts.";
-        local current_ignored_pkgs_str;
-        if [[ ${#DEFAULT_IGNORE_PKGS[@]} -eq 0 && ${#CUSTOM_IGNORE_PKGS[@]} -eq 0 ]]; then
-            current_ignored_pkgs_str="none";
-        else
-            printf -v current_ignored_pkgs_str '%s,' "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}";
-            current_ignored_pkgs_str=${current_ignored_pkgs_str%,};
-        fi;
-        printf "Enter additional packages to ignore (comma-separated) [%s]: " "$current_ignored_pkgs_str" 1>&2;
-        read -r user_pkgs;
-        if [[ -n "$user_pkgs" ]]; then
-            log_message "INFO" "User entered packages to ignore via fallback: $user_pkgs";
-            old_ifs="$IFS";
-            IFS=',' read -r -a tmp_pkgs <<< "$user_pkgs";
-            IFS="$old_ifs";
-            for pkg in "${tmp_pkgs[@]}";
-            do
-                [[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg");
-            done;
-        fi;
-        local current_ignored_groups_str;
-        if [[ ${#CUSTOM_IGNORE_GROUPS[@]} -eq 0 ]]; then
-            current_ignored_groups_str="none";
-        else
-            printf -v current_ignored_groups_str '%s,' "${CUSTOM_IGNORE_GROUPS[@]:-}";
-            current_ignored_groups_str=${current_ignored_groups_str%,};
-        fi;
-        printf "Enter additional groups to ignore (comma-separated) [%s]: " "$current_ignored_groups_str" 1>&2;
-        read -r user_groups;
-        if [[ -n "$user_groups" ]]; then
-            log_message "INFO" "User entered groups to ignore via fallback: $user_groups";
-            old_ifs="$IFS";
-            IFS=',' read -r -a tmp_groups <<< "$user_groups";
-            IFS="$old_ifs";
-            for group in "${tmp_groups[@]}";
-            do
-                [[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group");
-            done;
-        fi;
-    fi;
-    log_message "INFO" "Interactive ignore lists processed."
+        log_message "INFO" "Cached group info for ${#PACKAGE_GROUPS[@]} packages."
+    fi
+    log_message "INFO" "Cached provides index for ${#PROVIDES_INDEX[@]} provided names across ${#PACKAGE_PROVIDES[@]} packages."
 }
 
-is_ignored () 
-{ 
-    local pkg="$1";
-    local ignore_item pkg_groups;
-    for ignore_item in "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}";
-    do
-        if [[ -n "$ignore_item" && "$pkg" == "$ignore_item" ]]; then
-            log_message "DEBUG" "Package '$pkg' ignored (explicitly listed as '$ignore_item').";
-            return 0;
-        fi;
-    done;
-    pkg_groups="${PACKAGE_GROUPS[$pkg]:-}";
-    if [[ -n "$pkg_groups" && ${#CUSTOM_IGNORE_GROUPS[@]} -gt 0 ]]; then
-        for ignore_item in "${CUSTOM_IGNORE_GROUPS[@]:-}";
-        do
-            if [[ " ${pkg_groups} " =~ (^|[[:space:]])${ignore_item}([[:space:]]|$) ]]; then
-                log_message "DEBUG" "Package '$pkg' ignored (belongs to ignored group '$ignore_item').";
-                return 0;
-            fi;
-        done;
-    fi;
-    log_message "DEBUG" "Package '$pkg' is not ignored.";
+resolve_installed_provider() {
+    local name="$1"
+    if [[ -n "${INSTALLED_PKGS[$name]:-}" ]]; then
+        printf '%s' "$name"
+        return 0
+    fi
+    if [[ -n "${PROVIDES_INDEX[$name]:-}" && -n "${INSTALLED_PKGS[${PROVIDES_INDEX[$name]}]:-}" ]]; then
+        printf '%s' "${PROVIDES_INDEX[$name]}"
+        return 0
+    fi
     return 1
 }
 
-compute_missing_dependencies () 
-{ 
-    local -a target_pkgs=("$@");
-    local -a missing=();
-    local -A missing_set=();
-    local line dep_name;
-    local pacman_output_file="${TMP_DIR}/pacman_output.txt";
-    log_message "INFO" "Checking for missing dependencies in ${#target_pkgs[@]} packages using 'pacman -Qkk'.";
-    set +e;
-    pacman -Qkk "${target_pkgs[@]}" > "$pacman_output_file" 2>&1 & local cmd_pid=$!;
-    show_spinner "$cmd_pid";
-    wait "$cmd_pid";
-    local exit_code=$?;
-    set -e;
-    if [[ $exit_code -ne 0 ]]; then
-        :;
-    fi;
+# ── Parsing, Diagnosis & Automated Remediation ───────────────────────────────
+parse_target_dependencies() {
+    local target="$1" deps
+    if ! LC_ALL=C run_command pacman -Qi -- "$target"; then
+        log_message "ERROR" "Target package '$target' is not installed or cannot be queried."
+        return 1
+    fi
+
+    deps=$(printf '%s\n' "$CMD_OUTPUT" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" awk '
+        /^Depends On[[:space:]]*:/ {
+            sub(/^Depends On[[:space:]]*:[[:space:]]*/, "", $0)
+            n = split($0, arr, /[[:space:]]+/)
+            for (i = 1; i <= n; i++) {
+                if (arr[i] != "" && arr[i] != "None") {
+                    print arr[i]
+                }
+            }
+            exit
+        }
+    ')
+
+    [[ -z "$deps" ]] && return 0
+    printf '%s\n' "$deps"
+}
+
+auto_rebuild_broken_reverse_deps() {
+    local bad_dep_expr="$1"
+    local line package_owner base_dep
+
+    base_dep="$(dependency_package_name "${bad_dep_expr}")"
+    log_message "WARN" "Fixed-point stall identified on constraint: ${bad_dep_expr}"
+    log_message "INFO" "Tracing local system reverse metadata to pinpoint parent owner..."
+
+    if LC_ALL=C run_command pacman -Dk; then
+        log_message "INFO" "No active database validation errors returned during back-trace."
+    fi
+
+    package_owner=""
     while IFS= read -r line; do
-        if [[ "$line" =~ 'is a missing dependency' ]]; then
-            dep_name=$(echo "$line" | sed -n "s/.*'\([^']*\)'.*/\1/p");
-            if [[ -n "$dep_name" ]]; then
-                if ! is_ignored "$dep_name"; then
-                    log_message "DEBUG" "Dependency '$dep_name' is missing and not ignored.";
-                    missing_set["$dep_name"]=1;
-                else
-                    log_message "DEBUG" "Dependency '$dep_name' is missing but ignored.";
-                fi;
-            fi;
-        fi;
-    done < "$pacman_output_file";
-    if [[ ${#missing_set[@]} -gt 0 ]]; then
-        mapfile -t missing < <(printf "%s\n" "${!missing_set[@]}" | sort);
-        log_message "INFO" "Found ${#missing[@]} missing dependencies.";
-        printf "%s\n" "${missing[@]}";
-    else
-        log_message "INFO" "No missing dependencies found.";
-    fi;
-    return 0
-}
+        [[ -z "$line" ]] && continue
+        if [[ "$line" == *"' dependency for '"* ]]; then
+            if [[ "$line" == *"${bad_dep_expr}"* ]]; then
+                package_owner=$(printf '%s\n' "$line" | sed -n "s/.*dependency for '\([^']*\)'.*/\1/p")
+                [[ -n "${package_owner}" ]] && break
+            fi
+        fi
+    done <<<"$CMD_OUTPUT"
 
-# Checks if there is sufficient disk space on the root partition.
-# Returns 0 if space is sufficient (>= 1GB), 1 otherwise.
-check_disk_space() {
-    local required_space_kb=1048576 # 1GB in KB
-    local available_space_kb
-
-    # Get available space on / in KB
-    available_space_kb=$(df --output=avail / | tail -n 1)
-
-    if [[ "$available_space_kb" -lt "$required_space_kb" ]]; then
-        log_message "ERROR" "Insufficient disk space on /. Available: $((available_space_kb / 1024))MB, Required: $((required_space_kb / 1024))MB."
-        printf "Error: Insufficient disk space. Operation aborted.\n" >&2
-        return 1
-    fi
-    
-    log_message "INFO" "Disk space check passed. Available: $((available_space_kb / 1024))MB."
-    return 0
-}
-
-install_dependencies () 
-{ 
-    local -a deps_to_install=("$@");
-    local -a official_deps=();
-    local -a aur_deps=();
-    local dep success=0 confirm;
-    
-    if ! check_disk_space; then
-        return 1
+    if [[ -z "${package_owner}" ]]; then
+        log_message "WARN" "Unable to isolate parent package package_owner via pacman -Dk. Attempting fallback reverse dependency trees..."
+        if run_command pacman -Qq; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                if LC_ALL=C run_command pacman -Qi "${line}"; then
+                    if [[ "$CMD_OUTPUT" == *"Depends On"* && "$CMD_OUTPUT" == *"${bad_dep_expr}"* ]]; then
+                        package_owner="${line}"
+                        break
+                    fi
+                fi
+            done <<<"$CMD_OUTPUT"
+        fi
     fi
 
-    if [[ ${#deps_to_install[@]} -eq 0 ]]; then
-        log_message "INFO" "No dependencies to install.";
-        return 0;
-    fi;
-    log_message "INFO" "Preparing to install ${#deps_to_install[@]} dependencies.";
-    for dep in "${deps_to_install[@]}";
-    do
-        [[ -z "$dep" ]] && continue;
-        if [[ -n "${OFFICIAL_PKGS[$dep]:-}" ]]; then
-            official_deps+=("$dep");
-        else
-            if [[ -n "${AUR_PKGS[$dep]:-}" ]]; then
-                aur_deps+=("$dep");
+    if [[ -n "${package_owner}" ]]; then
+        log_message "WARN" "CRITICAL DEPENDENCY FAULT LOCATED: Installed package '${package_owner}' demands unfulfillable dependency '${bad_dep_expr}'."
+        
+        if [[ -n "${AUR_PKGS[${package_owner}]:-}" || "$YAY_AVAILABLE" = true ]]; then
+            log_message "INFO" "AUTOMATED REHEAL ACTION: Initiating background unprivileged AUR build loop for package '${package_owner}'..."
+            if run_yay -S --rebuild --noconfirm "${package_owner}"; then
+                log_message "OK" "Automated build sequence succeeded. Package '${package_owner}' re-linked cleanly."
+                return 0
             else
-                log_message "WARN" "Dependency '$dep' not found in official repos or AUR cache. Skipping installation attempt.";
-                printf "Warning: Dependency '%s' not found in official or AUR repositories. Cannot install.\n" "$dep" 1>&2;
-            fi;
-        fi;
-    done;
-    	if [[ ${#official_deps[@]} -gt 0 ]]; then
-    		printf "${SKY_BLUE}Official dependencies to install:${RESET}\n" >&2
-    		for dep in "${official_deps[@]}"; do
-    			printf "  %s\n" "$dep" >&2
-    		done
-    		if [[ "$INTERACTIVE_MODE" = true ]]; then
-    			printf "${YELLOW}Proceed to install official dependencies? (y/N): ${RESET}" >&2
-    			read -r confirm
-    			if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    				log_message "INFO" "User declined installation of official dependencies."
-    				official_deps=()
-    			fi
-    		fi
-    
-    		if [[ ${#official_deps[@]} -gt 0 ]]; then
-    			log_message "INFO" "Installing official dependencies: ${official_deps[*]}"
-    			if ! pacman -S --needed --noconfirm "${official_deps[@]}" 2>&1 | tee -a "${LOGFILE}"; then
-    				log_message "ERROR" "Failed to install official dependencies: ${official_deps[*]}"
-    				printf "${ERROR}Error: Failed to install official dependencies.${RESET}\n" >&2
-    				success=1
-    			else
-    				log_message "INFO" "Official dependencies installed successfully."
-    			fi
-    		fi
-    	fi
-    
-    	if [[ ${#aur_deps[@]} -gt 0 ]]; then
-    		printf "${MAGENTA}AUR dependencies to install:${RESET}\n" >&2
-    		for dep in "${aur_deps[@]}"; do
-    			printf "  %s\n" "$dep" >&2
-    		done
-    		if [[ "$YAY_AVAILABLE" = true ]]; then
-    			if [[ "$INTERACTIVE_MODE" = true ]]; then
-    				printf "${YELLOW}Proceed to install AUR dependencies? (y/N): ${RESET}" >&2
-    				read -r confirm
-    				if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    					log_message "INFO" "User declined installation of AUR dependencies."
-    					aur_deps=()
-    				fi
-    			fi
-    
-    			if [[ ${#aur_deps[@]} -gt 0 ]]; then
-    				log_message "INFO" "Installing AUR dependencies: ${aur_deps[*]}"
-    				if ! yay -S --needed --noconfirm "${aur_deps[@]}" 2>&1 | tee -a "${LOGFILE}"; then
-    					log_message "ERROR" "Failed to install AUR dependencies: ${aur_deps[*]}"
-    					printf "${ERROR}Error: Failed to install AUR dependencies.${RESET}\n" >&2
-    					success=1
-    				else
-    					log_message "INFO" "AUR dependencies installed successfully."
-    				fi
-    			fi
-    		else
-    			log_message "WARN" "'yay' not found. Cannot install AUR dependencies: ${aur_deps[*]}"
-    			printf "${WARN}Warning: 'yay' not found. Cannot install AUR dependencies: %s${RESET}\n" "${aur_deps[*]}" >&2
-    			success=1
-    		fi
-    	fi
+                log_message "ERROR" "Automated build sequence failed for package '${package_owner}'."
+                return 1
+            fi
+        else
+            log_message "INFO" "AUTOMATED REHEAL ACTION: Reinstalling official repo package '${package_owner}' to refresh metadata..."
+            if run_logged_command pacman -S --needed --noconfirm "${package_owner}"; then
+                log_message "OK" "Automated repo reinstall succeeded for '${package_owner}'."
+                return 0
+            else
+                log_message "ERROR" "Automated repo reinstall failed for '${package_owner}'."
+                return 1
+            fi
+        fi
+    fi
+
+    log_message "ERROR" "Heuristic tracking engine could not map dependency '${bad_dep_expr}' to an active installed package."
+    return 1
+}
+
+compute_missing_dependencies() {
+    MISSING_DEPS_RESULT=()
+    local -a missing=()
+    local -A missing_set=()
+    local line dep_name dep_status target deps exit_code
+
+    if [[ "$ALL_SYSTEM" = true || $# -eq 0 ]]; then
+        log_message "INFO" "Checking for missing dependencies (pacman -Dk)."
+
+        if LC_ALL=C run_command pacman -Dk; then
+            exit_code=0
+        else
+            exit_code=$?
+        fi
+
+        if [[ $exit_code -eq 0 ]]; then
+            log_message "INFO" "pacman -Dk: all dependencies satisfied."
+            return 0
+        fi
+
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            if [[ "$line" == *"' dependency for '"* ]]; then
+                dep_name=$(printf '%s\n' "$line" |
+                    bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n "s/.*missing '\([^']*\)' dependency for '[^']*'.*/\1/p")
+                if [[ -n "$dep_name" ]]; then
+                    if ! is_ignored "$dep_name"; then
+                        log_message "DEBUG" "Missing dep (not ignored): '$dep_name'"
+                        missing_set["$dep_name"]=1
+                    else
+                        log_message "DEBUG" "Missing dep (ignored): '$dep_name'"
+                    fi
+                else
+                    log_message "DEBUG" "pacman -Dk line matched current format but name extraction failed: $line"
+                fi
+            elif [[ "$line" == *"is a missing dependency"* ]]; then
+                dep_name=$(printf '%s\n' "$line" |
+                    bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n "s/.*: '\([^']*\)' is a missing dependency/\1/p")
+                if [[ -n "$dep_name" ]]; then
+                    if ! is_ignored "$dep_name"; then
+                        log_message "DEBUG" "Missing dep via legacy-pattern fallback (not ignored): '$dep_name'"
+                        missing_set["$dep_name"]=1
+                    else
+                        log_message "DEBUG" "Missing dep via legacy-pattern fallback (ignored): '$dep_name'"
+                    fi
+                fi
+            else
+                log_message "DEBUG" "pacman -Dk line (unmatched diagnostic/output): $line"
+            fi
+        done <<<"$CMD_OUTPUT"
+
+        if [[ ${#missing_set[@]} -eq 0 ]]; then
+            log_message "ERROR" "pacman -Dk exited with status ${exit_code} but no missing dependencies were extracted from its output. This indicates a genuine database/runtime failure (lock contention, I/O error, corruption), not a clean 'no missing deps' result — treating as an audit failure rather than silently reporting success."
+            return 1
+        fi
+    else
+        log_message "INFO" "Checking dependencies for target package(s): $*"
+        for target in "$@"; do
+            deps="$(parse_target_dependencies "$target")" || return 1
+            while IFS= read -r dep_name; do
+                [[ -z "$dep_name" ]] && continue
+
+                if run_command pacman -T -- "$dep_name"; then
+                    dep_status=0
+                else
+                    dep_status=$?
+                fi
+
+                if [[ $dep_status -eq 0 ]]; then
+                    continue
+                elif [[ $dep_status -eq 1 || $dep_status -eq 127 ]]; then
+                    local alt found=false
+                    if [[ "$dep_name" == *'|'* ]]; then
+                        while IFS= read -r alt; do
+                            [[ -z "$alt" ]] && continue
+                            if run_command pacman -T -- "$alt"; then
+                                dep_status=0
+                            else
+                                dep_status=$?
+                            fi
+                            if [[ $dep_status -eq 0 ]]; then
+                                found=true
+                                break
+                            elif [[ $dep_status -ne 1 && $dep_status -ne 127 ]]; then
+                                log_message "ERROR" "pacman -T alternative check failed with unrecognized exit code: ${dep_status}."
+                                return 1
+                            fi
+                        done < <(printf '%s' "$dep_name" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+                    fi
+                    if [[ "$found" = false ]]; then
+                        if ! is_ignored "$dep_name"; then
+                            missing_set["$dep_name"]=1
+                        fi
+                    fi
+                else
+                    log_message "ERROR" "pacman -T target check failed with unrecognized exit code: ${dep_status}."
+                    return 1
+                fi
+            done <<<"$deps"
+        done
+    fi
+
+    if [[ ${#missing_set[@]} -gt 0 ]]; then
+        mapfile -t missing < <(printf "%s\n" "${!missing_set[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort)
+        log_message "INFO" "Found ${#missing[@]} missing dependencies."
+        MISSING_DEPS_RESULT=("${missing[@]}")
+    else
+        log_message "INFO" "No unignored missing dependencies found."
+    fi
+    return 0
+}
+
+# ── Core Loops & Execution Lifecycle ──────────────────────────────────────────
+install_dependencies() {
+    local -a deps_to_install=("$@")
+    local -a official_deps=() aur_deps=() unresolved_deps=()
+    local dep confirm success=0 resolved_dep
+
+    check_disk_space || return 1
+    [[ ${#deps_to_install[@]} -eq 0 ]] && { log_message "INFO" "No dependencies to install."; return 0; }
+
+    log_message "INFO" "Preparing to install ${#deps_to_install[@]} dependencies."
+
+    for dep in "${deps_to_install[@]}"; do
+        [[ -z "$dep" ]] && continue
+        if [[ "$dep" == *'|'* ]]; then
+            resolved_dep=""
+            while IFS= read -r candidate; do
+                candidate="$(trim_whitespace "$candidate")"
+                candidate="$(dependency_package_name "$candidate")"
+                if [[ -n "${OFFICIAL_PKGS[$candidate]:-}" ]]; then
+                    resolved_dep="$candidate"
+                    official_deps+=("$candidate")
+                    break
+                elif [[ -n "${AUR_PKGS[$candidate]:-}" ]]; then
+                    resolved_dep="$candidate"
+                    aur_deps+=("$candidate")
+                    break
+                fi
+            done < <(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+            [[ -z "$resolved_dep" ]] && unresolved_deps+=("$dep")
+        else
+            resolved_dep="$(dependency_package_name "$dep")"
+            if [[ -n "${OFFICIAL_PKGS[$resolved_dep]:-}" ]]; then
+                official_deps+=("$resolved_dep")
+            elif [[ -n "${AUR_PKGS[$resolved_dep]:-}" ]]; then
+                aur_deps+=("$resolved_dep")
+            else
+                unresolved_deps+=("$dep")
+            fi
+        fi
+    done
+
+    if [[ ${#unresolved_deps[@]} -gt 0 ]]; then
+        for dep in "${unresolved_deps[@]}"; do
+            log_message "WARN" "Dependency '$dep' not found in official or AUR cache — skipping."
+        done
+        success=1
+    fi
+
+    if [[ ${#official_deps[@]} -gt 0 ]]; then
+        printf "${SKY_BLUE}Official dependencies to install:${RESET}\n" >&2
+        printf '  %s\n' "${official_deps[@]}" >&2
+
+        if [[ "$INTERACTIVE_MODE" = true ]]; then
+            printf "${YELLOW}Proceed to install official dependencies? (y/N): ${RESET}" >&2
+            read -r confirm
+            if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                log_message "INFO" "User declined official deps."
+                official_deps=()
+                success=1
+            fi
+        fi
+
+        if [[ ${#official_deps[@]} -gt 0 ]]; then
+            log_message "INFO" "Installing official: ${official_deps[*]}"
+            wait_for_pacman_lock
+            if ! run_logged_command pacman -S --needed --noconfirm "${official_deps[@]}"; then
+                log_message "ERROR" "Failed to install official deps: ${official_deps[*]}"
+                success=1
+            else
+                log_message "INFO" "Official dependencies installed."
+            fi
+        fi
+    fi
+
+    if [[ ${#aur_deps[@]} -gt 0 ]]; then
+        printf "${MAGENTA}AUR dependencies to install:${RESET}\n" >&2
+        printf '  %s\n' "${aur_deps[@]}" >&2
+
+        if [[ "$YAY_AVAILABLE" = true ]]; then
+            if [[ "$INTERACTIVE_MODE" = true ]]; then
+                printf "${YELLOW}Proceed to install AUR dependencies? (y/N): ${RESET}" >&2
+                read -r confirm
+                if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                    log_message "INFO" "User declined AUR deps."
+                    aur_deps=()
+                    success=1
+                fi
+            fi
+
+            if [[ ${#aur_deps[@]} -gt 0 ]]; then
+                log_message "INFO" "Installing AUR: ${aur_deps[*]}"
+                wait_for_pacman_lock
+                if ! run_yay -S --needed --noconfirm "${aur_deps[@]}"; then
+                    log_message "ERROR" "Failed to install AUR deps: ${aur_deps[*]}"
+                    success=1
+                else
+                    log_message "INFO" "AUR dependencies installed."
+                fi
+            fi
+        else
+            log_message "WARN" "'yay' not found — cannot install AUR deps: ${aur_deps[*]}"
+            success=1
+        fi
+    fi
+
     return "$success"
 }
 
-process_dependency_closure () 
-{ 
-    log_message "INFO" "Starting dependency closure process.";
-    local iteration=1;
-    local max_iterations=15;
-    local -a current_targets missing_deps=();
-    if [[ "$ALL_SYSTEM" = true ]]; then
-        log_message "INFO" "Checking dependencies for all installed system packages.";
-        mapfile -t current_targets < <(printf "%s\n" "${!INSTALLED_PKGS[@]}" | sort);
-    else
-        if [[ ${#TARGET_PKGLIST[@]} -gt 0 ]]; then
-            log_message "INFO" "Checking dependencies for specified target packages: ${TARGET_PKGLIST[*]}";
-            current_targets=("${TARGET_PKGLIST[@]}");
-        fi;
-    fi;
-    last_missing=();
-    while ((iteration <= max_iterations)); do
-        log_message "INFO" "Dependency closure iteration $iteration.";
-        log_message "DEBUG" "Targets for iteration $iteration: ${current_targets[*]:-none}";
-        if [[ ${#current_targets[@]} -eq 0 ]]; then
-            log_message "INFO" "No targets for iteration $iteration. Stopping closure process.";
-            break;
-        fi;
-        if ! mapfile -t missing_deps < <(compute_missing_dependencies "${current_targets[@]}"); then
-            log_message "ERROR" "Failed to compute missing dependencies in iteration $iteration. Stopping closure.";
-            printf "Error: Failed to compute missing dependencies in iteration %d. Stopping closure.\n" "$iteration" 1>&2;
-            exit 1;
-        fi;
-        if [[ ${#missing_deps[@]} -eq 0 ]]; then
-            log_message "INFO" "No new missing dependencies found in iteration $iteration. Closure reached.";
-            last_missing=();
-            break;
-        fi;
-        last_missing=("${missing_deps[@]}");
-        log_message "INFO" "Found ${#missing_deps[@]} missing dependencies in iteration $iteration.";
-        log_message "DEBUG" "Missing dependencies: ${missing_deps[*]}";
-        if ! install_dependencies "${missing_deps[@]}"; then
-            log_message "ERROR" "Installation of dependencies failed in iteration $iteration. Stopping closure process.";
-            break;
-        fi;
-        log_message "INFO" "Re-caching package lists after installation.";
-        cache_package_lists;
-        current_targets=("${missing_deps[@]}");
-        ((iteration++));
-    done;
-    if ((iteration > max_iterations)); then
-        log_message "WARN" "Maximum iterations (${max_iterations}) reached. Dependency closure may not be complete.";
-        printf "Warning: Maximum iterations (%d) reached. Dependency closure may not be complete.\n" "$max_iterations" 1>&2;
-    fi;
-    log_message "INFO" "Dependency closure process finished."
-}
+process_dependency_closure() {
+    log_message "INFO" "Starting dependency closure process."
+    local iteration=1 max_iterations=15 fingerprint candidate dep
+    local -a current_targets=() missing_deps=()
+    local -A seen_missing_fingerprints=()
 
-parse_arguments() {
-	log_message "INFO" "Parsing arguments: $*"
-    
-    # Handle --help manually as getopts doesn't support long options
-    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-        print_help
-        exit 0
+    if [[ "$ALL_SYSTEM" = true ]]; then
+        log_message "INFO" "Checking all installed system packages."
+        current_targets=("${!INSTALLED_PKGS[@]}")
+    elif [[ ${#TARGET_PKGLIST[@]} -gt 0 ]]; then
+        log_message "INFO" "Checking target packages: ${TARGET_PKGLIST[*]}"
+        current_targets=("${TARGET_PKGLIST[@]}")
     fi
 
-	local opt packages_arg="" groups_arg=""
-	local -a tmp_pkgs tmp_groups
-	local old_ifs # Declare old_ifs as local to prevent global side effects
-	OPTIND=1
+    last_missing=()
 
-	while getopts ":aik:g:l:hdf" opt; do
-        case "$opt" in 
-            a)
-                ALL_SYSTEM=true;
-                log_message "INFO" "Option -a (ALL_SYSTEM) set."
-            ;;
-            i)
-                INTERACTIVE_MODE=true;
-                log_message "INFO" "Option -i (INTERACTIVE_MODE) set."
-            ;;
-			f)
-				FIX_KEYS=true
-				log_message "INFO" "Option -f (FIX_KEYS) set. Keyring repair protocol enabled."
-			;;
-            k)
-                packages_arg="$OPTARG";
-                log_message "INFO" "Option -k (ignore packages) argument: '$packages_arg'."
-            ;;
-            g)
-                groups_arg="$OPTARG";
-                log_message "INFO" "Option -g (ignore groups) argument: '$groups_arg'."
-            ;;
-            l)
-                LOGFILE="$OPTARG";
-                log_message "INFO" "Option -l (logfile) argument: '$LOGFILE'."
-            ;;
-            d)
-                DEBUG_MODE=true;
-                log_message "INFO" "INFO: Debug mode enabled."
-            ;;
-            h)
-                print_help;
-                exit 0
-            ;;
-            \?)
-                log_message "ERROR" "Invalid option: -$OPTARG";
-                printf "Error: Invalid option: -%s\n" "$OPTARG" 1>&2;
-                print_help 1>&2;
-                exit 1
-            ;;
-            :)
-                log_message "ERROR" "Option -$OPTARG requires an argument.";
-                printf "Error: Option -%s requires an argument.\n" "$OPTARG" 1>&2;
-                print_help 1>&2;
-                exit 1
-            ;;
-        esac;
-    done;
-    shift $((OPTIND - 1));
+    while (( iteration <= max_iterations )); do
+        log_message "INFO" "Closure iteration $iteration."
+        [[ ${#current_targets[@]} -eq 0 ]] && { log_message "INFO" "No targets. Stopping."; break; }
+
+        if [[ "$ALL_SYSTEM" = true ]]; then
+            if ! compute_missing_dependencies; then
+                log_message "ERROR" "Dependency audit failed during closure iteration $iteration."
+                return 1
+            fi
+        else
+            if ! compute_missing_dependencies "${current_targets[@]}"; then
+                log_message "ERROR" "Dependency audit failed during closure iteration $iteration."
+                return 1
+            fi
+        fi
+
+        missing_deps=("${MISSING_DEPS_RESULT[@]}")
+
+        if [[ ${#missing_deps[@]} -eq 0 ]]; then
+            log_message "INFO" "No missing dependencies in iteration $iteration. Closure reached."
+            last_missing=()
+            break
+        fi
+
+        fingerprint="$(printf "%s\n" "${missing_deps[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sha256sum | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" cut -d' ' -f1)"
+        if [[ -n "${seen_missing_fingerprints[$fingerprint]:-}" ]]; then
+            log_message "WARN" "Identical missing-dep set seen previously — dependency cycle or unresolvable deps detected."
+            
+            for dep in "${missing_deps[@]}"; do
+                if [[ "$dep" == *"="* ]]; then
+                    log_message "INFO" "Stall isolated on version restriction: ${dep}"
+                    if auto_rebuild_broken_reverse_deps "${dep}"; then
+                        log_message "OK" "Metadata discrepancy cured automatically. Re-evaluating database..."
+                        seen_missing_fingerprints=()
+                        cache_package_lists
+                        cache_package_groups
+                        iteration=0
+                        current_targets=("${!INSTALLED_PKGS[@]}")
+                        continue 2
+                    fi
+                fi
+            done
+
+            log_message "ERROR" "Automated healing tracks exhausted. Halting closure to prevent regression."
+            last_missing=("${missing_deps[@]}")
+            break
+        fi
+        seen_missing_fingerprints["$fingerprint"]=1
+
+        last_missing=("${missing_deps[@]}")
+        log_message "INFO" "Found ${#missing_deps[@]} missing deps in iteration $iteration: ${missing_deps[*]}"
+
+        if ! install_dependencies "${missing_deps[@]}"; then
+            log_message "ERROR" "Installation failed or was incomplete in iteration $iteration. Stopping."
+            break
+        fi
+
+        log_message "INFO" "Re-caching package lists after installation."
+        cache_package_lists
+        cache_package_groups
+        current_targets=()
+        local resolved
+        for dep in "${missing_deps[@]}"; do
+            if [[ "$dep" == *'|'* ]]; then
+                while IFS= read -r candidate; do
+                    candidate="$(dependency_package_name "$(trim_whitespace "$candidate")")"
+                    if resolved="$(resolve_installed_provider "$candidate")"; then
+                        current_targets+=("$resolved")
+                        break
+                    fi
+                done < <(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+            else
+                candidate="$(dependency_package_name "$dep")"
+                if resolved="$(resolve_installed_provider "$candidate")"; then
+                    current_targets+=("$resolved")
+                fi
+            fi
+        done
+        ((iteration++))
+    done
+
+    if (( iteration > max_iterations )); then
+        log_message "WARN" "Max iterations (${max_iterations}) reached — closure may be incomplete."
+    fi
+    log_message "INFO" "Dependency closure finished."
+    return 0
+}
+
+prompt_ignore_lists() {
+    log_message "INFO" "Prompting for interactive ignore lists..."
+    local selected_pkgs selected_groups all_groups user_pkgs user_groups old_ifs
+    local -a tmp_pkgs=() tmp_groups=()
+    local pkg group
+
+    if command -v fzf >/dev/null 2>&1 && [[ -t 0 ]]; then
+        printf -- "--- Interactive Ignore Selection ---\n" >&2
+        selected_pkgs=$(printf "%s\n" "${!INSTALLED_PKGS[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort |
+            bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" fzf --multi --prompt="Ignore Package: " --header="TAB to mark, ENTER when done" 2>/dev/null || true)
+        if [[ -n "$selected_pkgs" ]]; then
+            mapfile -t tmp_pkgs <<<"$selected_pkgs"
+            CUSTOM_IGNORE_PKGS+=("${tmp_pkgs[@]}")
+        fi
+
+        all_groups=$(printf '%s\n' "${PACKAGE_GROUPS[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr ' ' '\n' | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed '/^$/d' | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort -u)
+        selected_groups=$(printf "%s\n" "$all_groups" |
+            bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" fzf --multi --prompt="Ignore Group: " --header="TAB to mark, ENTER when done" 2>/dev/null || true)
+        if [[ -n "$selected_groups" ]]; then
+            mapfile -t tmp_groups <<<"$selected_groups"
+            CUSTOM_IGNORE_GROUPS+=("${tmp_groups[@]}")
+        fi
+        printf -- "------------------------------------\n" >&2
+    else
+        log_message "INFO" "fzf not available — using fallback prompts."
+
+        local cur_pkgs_str="none"
+        if [[ ${#DEFAULT_IGNORE_PKGS[@]} -gt 0 || ${#CUSTOM_IGNORE_PKGS[@]} -gt 0 ]]; then
+            printf -v cur_pkgs_str '%s,' "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}"
+            cur_pkgs_str="${cur_pkgs_str%,}"
+        fi
+        printf "Additional packages to ignore (comma-separated) [%s]: " "$cur_pkgs_str" >&2
+        read -r user_pkgs
+        if [[ -n "$user_pkgs" ]]; then
+            old_ifs="$IFS"; IFS=',' read -r -a tmp_pkgs <<<"$user_pkgs"; IFS="$old_ifs"
+            for pkg in "${tmp_pkgs[@]}"; do
+                pkg="$(trim_whitespace "$pkg")"
+                [[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg")
+            done
+        fi
+
+        local cur_groups_str="none"
+        if [[ ${#CUSTOM_IGNORE_GROUPS[@]} -gt 0 ]]; then
+            printf -v cur_groups_str '%s,' "${CUSTOM_IGNORE_GROUPS[@]:-}"
+            cur_groups_str="${cur_groups_str%,}"
+        fi
+        printf "Additional groups to ignore (comma-separated) [%s]: " "$cur_groups_str" >&2
+        read -r user_groups
+        if [[ -n "$user_groups" ]]; then
+            old_ifs="$IFS"; IFS=',' read -r -a tmp_groups <<<"$user_groups"; IFS="$old_ifs"
+            for group in "${tmp_groups[@]}"; do
+                group="$(trim_whitespace "$group")"
+                [[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group")
+            done
+        fi
+    fi
+    log_message "INFO" "Ignore lists finalised."
+}
+
+# ── Arguments Parsing & Help Usage ────────────────────────────────────────────
+parse_arguments() {
+    log_message "INFO" "Parsing arguments: $*"
+    [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && { print_help; exit 0; }
+
+    local opt packages_arg="" groups_arg=""
+    local -a tmp_pkgs=() tmp_groups=()
+    local old_ifs
+    OPTIND=1
+
+    while getopts ":aipk:g:l:hdf" opt; do
+        case "$opt" in
+            a) ALL_SYSTEM=true;       log_message "INFO" "-a (ALL_SYSTEM) set." ;;
+            i) INTERACTIVE_MODE=true; log_message "INFO" "-i (INTERACTIVE_MODE) set." ;;
+            p) PROMPT_IGNORE=true;    log_message "INFO" "-p (PROMPT_IGNORE) set." ;;
+            f) FIX_KEYS=true;         log_message "INFO" "-f (FIX_KEYS) set." ;;
+            k) packages_arg="$OPTARG"; log_message "INFO" "-k: '$packages_arg'" ;;
+            g) groups_arg="$OPTARG";   log_message "INFO" "-g: '$groups_arg'" ;;
+            l) LOGFILE="$OPTARG";      log_message "INFO" "-l: '$LOGFILE'" ;;
+            d) DEBUG_MODE=true;         log_message "INFO" "Debug mode enabled." ;;
+            h) print_help; exit 0 ;;
+            \?) log_message "ERROR" "Invalid option: -$OPTARG"; print_help >&2; exit 1 ;;
+            :)  log_message "ERROR" "Option -$OPTARG requires an argument."; print_help >&2; exit 1 ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
     if [[ -n "$packages_arg" ]]; then
-        old_ifs="$IFS";
-        IFS=',' read -r -a tmp_pkgs <<< "$packages_arg";
-        IFS="$old_ifs";
-        for pkg in "${tmp_pkgs[@]}";
-        do
-            [[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg");
-        done;
-        log_message "INFO" "CUSTOM_IGNORE_PKGS from args: ${CUSTOM_IGNORE_PKGS[*]:-none}";
-    fi;
+        old_ifs="$IFS"; IFS=',' read -r -a tmp_pkgs <<<"$packages_arg"; IFS="$old_ifs"
+        for pkg in "${tmp_pkgs[@]}"; do [[ -n "$pkg" ]] && CUSTOM_IGNORE_PKGS+=("$pkg"); done
+        log_message "INFO" "CUSTOM_IGNORE_PKGS: ${CUSTOM_IGNORE_PKGS[*]:-none}"
+    fi
+
     if [[ -n "$groups_arg" ]]; then
-        old_ifs="$IFS";
-        IFS=',' read -r -a tmp_groups <<< "$groups_arg";
-        IFS="$old_ifs";
-        for group in "${tmp_groups[@]}";
-        do
-            [[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group");
-        done;
-        log_message "INFO" "CUSTOM_IGNORE_GROUPS from args: ${CUSTOM_IGNORE_GROUPS[*]:-none}";
-    fi;
+        old_ifs="$IFS"; IFS=',' read -r -a tmp_groups <<<"$groups_arg"; IFS="$old_ifs"
+        for group in "${tmp_groups[@]}"; do [[ -n "$group" ]] && CUSTOM_IGNORE_GROUPS+=("$group"); done
+        log_message "INFO" "CUSTOM_IGNORE_GROUPS: ${CUSTOM_IGNORE_GROUPS[*]:-none}"
+    fi
+
     if [[ "$#" -gt 0 ]]; then
-        TARGET_PKGLIST=("$@");
-        ALL_SYSTEM=false;
-        log_message "INFO" "Target packages from args: ${TARGET_PKGLIST[*]}";
-    fi;
+        TARGET_PKGLIST=("$@")
+        ALL_SYSTEM=false
+        log_message "INFO" "Target packages: ${TARGET_PKGLIST[*]}"
+    elif [[ "$ALL_SYSTEM" = false ]]; then
+        ALL_SYSTEM=true
+        log_message "INFO" "No target packages supplied — defaulting to all installed packages."
+    fi
     log_message "INFO" "Argument parsing complete."
 }
 
-print_help () 
-{ 
-    cat <<EOF
+print_help() {
+    cat <<EOF_HELP
 Usage: ${0##*/} [OPTIONS] [package1 package2 ...]
 Checks for missing dependencies of installed packages on Arch Linux.
 
 Options:
-  -a             Check dependencies for ALL system packages (default if no packages specified).
-  -i             Interactive mode: Prompt before installing dependencies.
-  -k <pkgs>      Comma-separated list of packages to ALWAYS ignore (e.g., "pkg1,pkg2").
-  -g <groups>    Comma-separated list of package groups to ALWAYS ignore.
-  -l <logfile>   Specify a custom log file path. Defaults to ${SYSTEM_LOG_DIR}/${APP_NAME}.log.
-  -f             Enable manual keyring repair protocol (4ndr0keyfix). Use with caution.
+  -a             Check ALL installed system packages (default if no packages specified).
+  -i             Interactive mode: prompt before installing dependencies.
+  -p             Prompt mode: interactive ignore-list selection.
+  -k <pkgs>      Comma-separated packages to always ignore (e.g. "pkg1,pkg2").
+  -g <groups>    Comma-separated package groups to always ignore.
+  -l <logfile>   Custom log file path. Default: ${SYSTEM_LOG_DIR}/${APP_NAME}.log
+  -f             Enable keyring repair protocol (destructive — use with caution).
   -d             Enable debug logging.
-  -h             Show this help message and exit.
+  -h             Show this help and exit.
 
 Examples:
-  sudo ${0##*/}                             # Check dependencies for all installed packages
-  sudo ${0##*/} package-a package-b         # Check dependencies for package-a and package-b
-  sudo ${0##*/} -a -k "pkg-manual,pkg-git"  # Check all packages, ignoring pkg-manual and pkg-git
-  sudo ${0##*/} -i package-c                # Check package-c, prompt before installing deps
-  sudo ${0##*/} -d -l /tmp/debug.log        # Run with debug logging to a custom file
-EOF
-
+  sudo ${0##*/}                              # Check all installed packages
+  sudo ${0##*/} package-a package-b          # Check specific packages
+  sudo ${0##*/} -a -k "pkg-manual,pkg-git"   # Check all, ignoring two packages
+  sudo ${0##*/} -i package-c                 # Check package-c with install prompt
+  sudo ${0##*/} -i -p package-c              # Check package-c with interactive ignore and install prompt
+  sudo ${0##*/} -d -l /tmp/debug.log         # Debug mode with custom log
+EOF_HELP
 }
 
-main () 
-{ 
-    parse_arguments "$@";
-    require_root "$@";
+# ── Main Entrypoint ───────────────────────────────────────────────────────────
+main() {
+    SCRIPT_ARGS=("$@")
 
-    # If no work is specified (no -a and no package list), show usage and exit.
-    if [[ "$ALL_SYSTEM" = false && ${#TARGET_PKGLIST[@]} -eq 0 ]]; then
-        print_help
+    parse_arguments "$@"
+    require_root
+
+    prepare_log_dir
+
+    TMP_DIR="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" mktemp -d -t "${APP_NAME}-XXXXXX")"
+    [[ -d "${TMP_DIR:-}" ]] || { log_message "ERROR" "Failed to create TMP_DIR."; exit 1; }
+    log_message "INFO" "TMP_DIR: ${TMP_DIR}"
+
+    check_requirements
+    wait_for_pacman_lock
+    refresh_pacman_databases
+    cache_package_lists
+    cache_package_groups
+
+    [[ "$PROMPT_IGNORE" = true ]] && prompt_ignore_lists
+
+    local ignored_pkgs_str ignored_groups_str
+    printf -v ignored_pkgs_str '%s,' "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}"
+    ignored_pkgs_str="${ignored_pkgs_str%,}"
+    printf -v ignored_groups_str '%s,' "${CUSTOM_IGNORE_GROUPS[@]:-}"
+    ignored_groups_str="${ignored_groups_str%,}"
+
+    log_message "INFO" "ALL_SYSTEM=${ALL_SYSTEM} INTERACTIVE=${INTERACTIVE_MODE} PROMPT_IGNORE=${PROMPT_IGNORE} DEBUG=${DEBUG_MODE}"
+    log_message "INFO" "Ignore packages: ${ignored_pkgs_str:-none}"
+    log_message "INFO" "Ignore groups:   ${ignored_groups_str:-none}"
+    [[ ${#TARGET_PKGLIST[@]} -gt 0 ]] && log_message "INFO" "Targets: ${TARGET_PKGLIST[*]}"
+
+    if ! process_dependency_closure; then
+        log_message "FATAL" "Dependency closure aborted due to an audit failure."
         exit 1
     fi
 
-    prepare_log_dir;
-    TMP_DIR="$(mktemp -d -t "${APP_NAME}-XXXXXX")";
-    if [[ $? -ne 0 || -z "${TMP_DIR:-}" || ! -d "${TMP_DIR:-}" ]]; then
-        log_message "ERROR" "Failed to create temporary directory.";
-        printf "Error: Failed to create temporary directory.\n" 1>&2;
-        exit 1;
-    fi;
-    log_message "INFO" "Created temporary directory: ${TMP_DIR}";
-    check_requirements;
-    wait_for_pacman_lock;
-    refresh_pacman_databases;
-    log_message "INFO" "Caching package lists for initial operations and dependency check.";
-    cache_package_lists;
-    log_message "INFO" "Caching package groups for ignore logic.";
-    cache_package_groups;
-    if [[ "$INTERACTIVE_MODE" = true ]]; then
-        prompt_ignore_lists;
-    fi;
-    log_message "INFO" "Starting dependency checker (Log: ${LOGFILE})...";
-    log_message "INFO" "ALL_SYSTEM: ${ALL_SYSTEM}, INTERACTIVE_MODE: ${INTERACTIVE_MODE}, DEBUG_MODE: ${DEBUG_MODE}";
-    local ignored_pkgs_str ignored_groups_str;
-    printf -v ignored_pkgs_str '%s,' "${DEFAULT_IGNORE_PKGS[@]:-}" "${CUSTOM_IGNORE_PKGS[@]:-}";
-    ignored_pkgs_str=${ignored_pkgs_str%,};
-    log_message "INFO" "Ignore Packages: ${ignored_pkgs_str:-none}";
-    printf -v ignored_groups_str '%s,' "${CUSTOM_IGNORE_GROUPS[@]:-}";
-    ignored_groups_str=${ignored_groups_str%,};
-    log_message "INFO" "Ignore Groups: ${ignored_groups_str:-none}";
-    if [[ "$ALL_SYSTEM" = false && ${#TARGET_PKGLIST[@]} -gt 0 ]]; then
-        log_message "INFO" "Target Packages: ${TARGET_PKGLIST[*]}";
-    fi;
-    process_dependency_closure;
     log_message "INFO" "Generating final report."
-    declare -a final_missing=("${last_missing[@]}")
+    local -a final_missing=("${last_missing[@]}")
 
     printf "\n${GREEN}## Dependency Check Summary ##${RESET}\n"
-    if [[ ${#final_missing[@]} -gt 0 ]]; then
-        printf "${WARN}Found %d unresolved missing dependencies:${RESET}\n" "${#final_missing[@]}"
-        for dep in "${final_missing[@]}"; do
-            printf " ${WARN}- %s${RESET}\n" "$dep"
-        done
-        printf "\n"
 
-        local needs_yay_for_install=false
-        local -a official_only=() aur_only=() unknown_only=()
+    if [[ ${#final_missing[@]} -eq 0 ]]; then
+        printf "${OK} All dependencies satisfied — no further action needed.${RESET}\n"
+        log_message "INFO" "Script finished successfully — no missing deps."
+        return 0
+    fi
 
-        for dep in "${final_missing[@]}"; do
-            if [[ -n "${OFFICIAL_PKGS[$dep]:-}" ]]; then
-                official_only+=("$dep")
-            elif [[ -n "${AUR_PKGS[$dep]:-}" ]]; then
-                aur_only+=("$dep")
-                needs_yay_for_install=true
-            else
-                log_message "WARN" "Final missing dependency '$dep' not found in official or AUR caches. Cannot suggest installation method."
-                printf "${WARN}Warning: Dependency '%s' not found in official or AUR repositories.${RESET}\n" "$dep" >&2
-                unknown_only+=("$dep")
-            fi
-        done
+    printf "${WARN}Found %d unresolved missing dependencies:${RESET}\n" "${#final_missing[@]}"
+    for dep in "${final_missing[@]}"; do
+        printf "  ${WARN}- %s${RESET}\n" "$dep"
+    done
+    printf "\n"
 
-        if [[ ${#official_only[@]} -gt 0 ]]; then
-            printf "${SKY_BLUE}Official dependencies:${RESET}\n"
-            for dep in "${official_only[@]}"; do
-                printf "  %s\n" "$dep"
-            done
-        fi
-        if [[ ${#aur_only[@]} -gt 0 ]]; then
-            printf "${MAGENTA}AUR dependencies:${RESET}\n"
-            for dep in "${aur_only[@]}"; do
-                printf "  %s\n" "$dep"
-            done
-        fi
-        if [[ ${#unknown_only[@]} -gt 0 ]]; then
-            printf "${WARN}Unknown dependencies (not found in official/AUR caches):${RESET}\n"
-            for dep in "${unknown_only[@]}"; do
-                printf "  %s\n" "$dep"
-            done
-        fi
-        printf "\n"
+    local -a official_only=() aur_only=() unknown_only=()
+    local needs_yay=false dep_name_raw base_dep_name
 
-        if [[ "$needs_yay_for_install" = true && "$YAY_AVAILABLE" = true ]]; then
-            printf "${GREEN}To install all found missing dependencies (official and AUR):${RESET}\n"
-            local install_cmd="yay -S --needed"
-            for dep in "${final_missing[@]}"; do
-                install_cmd+=" '$dep'"
-            done
-            printf "  ${CAT}%s${RESET}\n" "$install_cmd"
-        elif [[ "$needs_yay_for_install" = true && "$YAY_AVAILABLE" = false ]]; then
-            printf "${WARN}Warning: 'yay' is required to install some dependencies, but it was not found.${RESET}\n" >&2
-            if [[ ${#official_only[@]} -gt 0 ]]; then
-                printf "${GREEN}To install official dependencies:${RESET}\n"
-                local install_cmd="sudo pacman -S --needed"
-                for dep in "${official_only[@]}"; do
-                    install_cmd+=" '$dep'"
-                done
-                printf "  ${CAT}%s${RESET}\n" "$install_cmd"
-            fi
+    for dep_name_raw in "${final_missing[@]}"; do
+        base_dep_name="$(dependency_package_name "$dep_name_raw")"
+        if [[ -n "${OFFICIAL_PKGS[$base_dep_name]:-}" ]]; then
+            official_only+=("$base_dep_name")
+        elif [[ -n "${AUR_PKGS[$base_dep_name]:-}" ]]; then
+            aur_only+=("$base_dep_name")
+            needs_yay=true
         else
-            if [[ ${#official_only[@]} -gt 0 ]]; then
-                printf "${GREEN}To install official dependencies:${RESET}\n"
-                local install_cmd="sudo pacman -S --needed"
-                for dep in "${official_only[@]}"; do
-                    install_cmd+=" '$dep'"
-                done
-                printf "  ${CAT}%s${RESET}\n" "$install_cmd"
-            fi
+            log_message "WARN" "Final missing dep '$dep_name_raw' (base: '$base_dep_name') not found in official or AUR caches."
+            unknown_only+=("$base_dep_name")
         fi
+    done
 
+    [[ ${#official_only[@]} -gt 0 ]] && {
+        printf "${SKY_BLUE}Official:${RESET}\n"
+        printf '  %s\n' "${official_only[@]}"
+    }
+    [[ ${#aur_only[@]} -gt 0 ]] && {
+        printf "${MAGENTA}AUR:${RESET}\n"
+        printf '  %s\n' "${aur_only[@]}"
+    }
+    [[ ${#unknown_only[@]} -gt 0 ]] && {
+        printf "${WARN}Unknown (not in official/AUR caches):${RESET}\n"
+        printf '  %s\n' "${unknown_only[@]}"
+    }
+    printf "\n"
+
+    if [[ "$needs_yay" = true && "$YAY_AVAILABLE" = true ]]; then
+        printf "${GREEN}Install all missing (official + AUR):${RESET}\n"
+        local cmd="yay -S --needed"
+        for dep in "${official_only[@]}" "${aur_only[@]}"; do cmd+=" '$dep'"; done
+        printf "  ${CAT}%s${RESET}\n" "$cmd"
     else
-        printf "${OK}All dependencies satisfied—no further action needed!${RESET}\n"
-    fi;
-    log_message "INFO" "Script finished successfully."
+        if [[ ${#official_only[@]} -gt 0 ]]; then
+            printf "${GREEN}Install official missing:${RESET}\n"
+            local cmd="sudo pacman -S --needed"
+            for dep in "${official_only[@]}"; do cmd+=" '$dep'"; done
+            printf "  ${CAT}%s${RESET}\n" "$cmd"
+        fi
+        [[ "$needs_yay" = true && "$YAY_AVAILABLE" = false ]] &&
+            printf "${WARN}'yay' required for AUR deps but not found.${RESET}\n" >&2
+    fi
+
+    log_message "INFO" "Script finished."
+    return 0
 }
 
 main "$@"
-

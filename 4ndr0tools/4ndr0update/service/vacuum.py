@@ -1004,19 +1004,24 @@ def check_db_dependencies():
     """
     Check pacman local DB metadata for unsatisfied dependencies (pacman -Dk).
     Returns a set of missing dependency package names.
+
+    pacman -Dk exits 0 when all deps are satisfied; non-zero when any are missing.
+    Its output format for a missing dep is exactly:
+        error: 'PKG': 'DEP' is a missing dependency
+    We match only that canonical form to avoid false positives from lines that
+    contain 'requires' in any other context (e.g. satisfied-dep descriptions).
     """
     log_and_print(f"{INFO} Auditing pacman database dependency tree...", "info")
     missing_deps = set()
     result = subprocess.run(["pacman", "-Dk"], capture_output=True, text=True)
     if result.returncode != 0:
-        for line in result.stdout.splitlines() + result.stderr.splitlines():
-            match = re.search(r"dependency ['\"]?([^'\"\s]+)['\"]? not satisfied", line)
+        for line in (result.stdout + result.stderr).splitlines():
+            # Canonical format: error: 'PKG': 'DEP' is a missing dependency
+            match = re.search(r"'([^']+)' is a missing dependency", line)
             if match:
                 missing_deps.add(match.group(1))
-            else:
-                match_req = re.search(r"requires ['\"]?([^'\"\s]+)['\"]?", line)
-                if match_req:
-                    missing_deps.add(match_req.group(1))
+    if missing_deps:
+        logging.debug(f"check_db_dependencies: found {len(missing_deps)} unsatisfied: {missing_deps}")
     return missing_deps
 def check_broken_shared_libraries():
     """
@@ -1045,14 +1050,35 @@ def resolve_so_to_package(so_name):
     if res.returncode == 0 and res.stdout.strip():
         return res.stdout.strip().splitlines()[0].split("/")[-1]
     return None
+def _build_official_pkg_set():
+    """
+    Build an O(1)-lookup set of official-repo package names via 'pacman -Slq'.
+    Called once per verify_installed_packages() invocation so that classifying
+    N missing packages costs one subprocess call, not N.
+    """
+    result = subprocess.run(["pacman", "-Slq"], capture_output=True, text=True)
+    if result.returncode != 0:
+        logging.warning("pacman -Slq failed; official-package classification may be inaccurate.")
+        return set()
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
 def verify_installed_packages():
     """
     Verify installed packages via multi-tier audit:
-    1) Database Dependency Check (pacman -Dk)
-    2) Shared Library Linkage (ldd missing .so)
-    3) File Integrity Check (pacman -Qk)
+    1) Database Dependency Check  — pacman -Dk
+    2) Shared Library Linkage     — ldd missing .so
+    3) File Integrity Check       — pacman -Qk
+
     Supports checking a single package or system-wide.
-    On pacman lock detection, aborts safely rather than removing the lock.
+
+    Architecture notes:
+    - All long-running subprocess calls that produce no user-facing output run
+      inside spinning_spinner() contexts. All log_and_print/print calls run
+      outside those contexts to prevent stdout races with the spinner thread.
+    - Official-repo membership is resolved via a single 'pacman -Slq' set lookup
+      rather than per-package 'pacman -Si' calls.
+    - Pacman lock is checked before any pacman write operation (keyring update).
     """
     log_and_print(f"{INFO} Starting multi-tier package & dependency verification...", "info")
     print("Choose scan scope:\n1) Single package\n2) System-wide")
@@ -1066,58 +1092,112 @@ def verify_installed_packages():
     elif choice != "2":
         log_and_print(f"{FAILURE} Invalid choice. Exiting.", "error")
         return
+
     missing_packages = set()
-    with spinning_spinner():
-        if single_pkg:
-            command = ["pacman", "-Qk", single_pkg]
-            result = subprocess.run(command, capture_output=True, text=True)
-            output = result.stdout + result.stderr
-            for line in output.strip().split("\n"):
-                if ": 0 missing files" not in line and line.strip():
-                    match = re.match(r"warning: (\S+): .*", line)
-                    if match:
-                        missing_packages.add(match.group(1))
-        else:
+
+    if single_pkg:
+        # ── Single-package file-integrity path ──────────────────────────────
+        log_and_print(f"{INFO} Checking file integrity for: {single_pkg}", "info")
+        with spinning_spinner():
+            result = subprocess.run(
+                ["pacman", "-Qk", single_pkg], capture_output=True, text=True
+            )
+        logging.debug(f"pacman -Qk {single_pkg} rc={result.returncode}")
+        output = result.stdout + result.stderr
+        for line in output.strip().split("\n"):
+            if ": 0 missing files" not in line and line.strip():
+                match = re.match(r"warning: (\S+): .*", line)
+                if match:
+                    missing_packages.add(match.group(1))
+    else:
+        # ── System-wide three-tier audit ────────────────────────────────────
+
+        # Tier 1: DB dependency check — silent subprocess, results reported after
+        log_and_print(f"{INFO} Tier 1: Auditing pacman database dependency tree...", "info")
+        with spinning_spinner():
             db_missing = check_db_dependencies()
-            if db_missing:
-                log_and_print(f"{WARNING} Found unsatisfied DB dependencies: {list(db_missing)}", "warning")
-                missing_packages.update(db_missing)
+        if db_missing:
+            log_and_print(
+                f"{WARNING} Found unsatisfied DB dependencies: {sorted(db_missing)}", "warning"
+            )
+            missing_packages.update(db_missing)
+        else:
+            log_and_print(f"{SUCCESS} Tier 1: No unsatisfied DB dependencies.", "info")
+
+        # Tier 2: Shared-library linkage check — silent subprocess, results after
+        log_and_print(f"{INFO} Tier 2: Scanning /usr/bin for missing shared libraries...", "info")
+        with spinning_spinner():
             broken_sos = check_broken_shared_libraries()
-            if broken_sos:
-                log_and_print(f"{WARNING} Found missing shared libraries: {broken_sos}", "warning")
-                for so in broken_sos:
-                    provider_pkg = resolve_so_to_package(so)
-                    if provider_pkg:
-                        log_and_print(f"{INFO} Library {so} is provided by package: {provider_pkg}", "info")
-                        missing_packages.add(provider_pkg)
-                    else:
-                        log_and_print(f"{WARNING} Could not resolve package provider for {so}", "warning")
-            log_and_print(f"{INFO} Checking system-wide file integrity (pacman -Qk)...", "info")
+        if broken_sos:
+            log_and_print(f"{WARNING} Found missing shared libraries: {broken_sos}", "warning")
+            for so in broken_sos:
+                provider_pkg = resolve_so_to_package(so)
+                if provider_pkg:
+                    log_and_print(
+                        f"{INFO} Library {so} provided by package: {provider_pkg}", "info"
+                    )
+                    missing_packages.add(provider_pkg)
+                else:
+                    log_and_print(
+                        f"{WARNING} Could not resolve package provider for {so}", "warning"
+                    )
+        else:
+            log_and_print(f"{SUCCESS} Tier 2: No broken shared library references.", "info")
+
+        # Tier 3: File integrity via pacman -Qk — long-running, wrapped in spinner
+        log_and_print(f"{INFO} Tier 3: File integrity check (pacman -Qk)...", "info")
+        with spinning_spinner():
             result = subprocess.run(["pacman", "-Qk"], capture_output=True, text=True)
-            output = result.stdout + result.stderr
-            for line in output.strip().split("\n"):
-                if ": 0 missing files" not in line and line.strip():
-                    match = re.match(r"warning: (\S+): .*", line)
-                    if match:
-                        missing_packages.add(match.group(1))
+        output = result.stdout + result.stderr
+        for line in output.strip().split("\n"):
+            if ": 0 missing files" not in line and line.strip():
+                match = re.match(r"warning: (\S+): .*", line)
+                if match:
+                    missing_packages.add(match.group(1))
+        if not any(
+            re.match(r"warning: \S+: .*", line)
+            for line in output.splitlines()
+            if ": 0 missing files" not in line
+        ):
+            log_and_print(f"{SUCCESS} Tier 3: All package files intact.", "info")
+
     if not missing_packages:
-        log_and_print(f"{SUCCESS} All system dependencies, shared libraries, and package files are intact.", "info")
+        log_and_print(
+            f"{SUCCESS} All system dependencies, shared libraries, and package files are intact.",
+            "info",
+        )
         return
+
+    # ── Report ──────────────────────────────────────────────────────────────
     pkglist_path = os.path.join(LOG_BASE_DIR, "missing_dependency_pkglist.txt")
     try:
         with open(pkglist_path, "w") as f:
             for pkg in sorted(missing_packages):
                 f.write(pkg + "\n")
-        log_and_print(f"{SUCCESS} Summary of missing/broken packages written to: {pkglist_path}", "info")
+        log_and_print(
+            f"{SUCCESS} Missing/broken packages written to: {pkglist_path}", "info"
+        )
     except IOError as e:
         log_and_print(f"{FAILURE} Error writing pkglist: {str(e)}", "error")
+
     confirm = prompt_with_timeout(
-        f"Found {len(missing_packages)} package(s) needing installation or reinstall. Proceed? [y/N]: ",
+        f"Found {len(missing_packages)} package(s) needing reinstall. Proceed? [y/N]: ",
         persistent=True,
     ).lower()
     if confirm != "y":
         log_and_print(f"{INFO} Package restoration aborted by user.", "info")
         return
+
+    # ── Pacman lock check — BEFORE any write operation ──────────────────────
+    pacman_lock = "/var/lib/pacman/db.lck"
+    if os.path.exists(pacman_lock):
+        log_and_print(
+            f"{FAILURE} Pacman lock at {pacman_lock} — another operation may be active; aborting safely.",
+            "error",
+        )
+        return
+
+    # ── Keyring update ──────────────────────────────────────────────────────
     log_and_print(f"{INFO} Updating keyrings before reinstallation...", "info")
     keyring_packages = ["archlinux-keyring"]
     if subprocess.run(
@@ -1126,6 +1206,7 @@ def verify_installed_packages():
         stderr=subprocess.DEVNULL,
     ).returncode == 0:
         keyring_packages.append("chaotic-keyring")
+
     keyring_update = subprocess.run(
         ["sudo", "pacman", "-S", "--needed", "--noconfirm", *keyring_packages],
         capture_output=True,
@@ -1135,47 +1216,41 @@ def verify_installed_packages():
         logging.error(keyring_update.stderr)
         log_and_print(f"{FAILURE} Failed to update keyrings.", "error")
         return
-    else:
-        logging.info(keyring_update.stdout)
-    pacman_lock = "/var/lib/pacman/db.lck"
-    if os.path.exists(pacman_lock):
-        log_and_print(
-            f"{FAILURE} Pacman lock exists at {pacman_lock}. Another package operation may be active; aborting safely.",
-            "error",
-        )
-        return
+    logging.info(keyring_update.stdout)
+
+    # ── Classify: official vs AUR — O(1) set lookup, one subprocess total ───
+    log_and_print(f"{INFO} Classifying packages against official repos...", "info")
+    with spinning_spinner():
+        official_pkg_set = _build_official_pkg_set()
+
     aur_helper = detect_aur_helper()
     official_packages = []
     aur_packages = []
     for pkg in missing_packages:
-        if is_official_package(pkg):
+        if pkg in official_pkg_set:
             official_packages.append(pkg)
         else:
             aur_packages.append(pkg)
+
     if official_packages:
         log_and_print(
-            f"{INFO} Reinstalling official packages in batch: {official_packages}",
-            "info",
+            f"{INFO} Reinstalling official packages: {sorted(official_packages)}", "info"
         )
         reinstall_packages_pexpect(official_packages)
+
     if aur_packages:
         if aur_helper:
             log_and_print(
-                f"{INFO} Reinstalling AUR packages in batch: {aur_packages}",
-                "info",
+                f"{INFO} Reinstalling AUR packages: {sorted(aur_packages)}", "info"
             )
             reinstall_aur_packages(aur_packages, aur_helper)
         else:
             log_and_print(
-                f"{FAILURE} AUR packages detected but no AUR helper found.",
-                "error",
+                f"{FAILURE} AUR packages detected but no AUR helper found.", "error"
             )
-            log_and_print(
-                "Please install an AUR helper like 'yay' or 'paru'.", "error"
-            )
-    log_and_print(
-        f"{SUCCESS} Package verification and reinstallation completed.", "info"
-    )
+            log_and_print("Install 'yay' or 'paru' and re-run.", "error")
+
+    log_and_print(f"{SUCCESS} Package verification and reinstallation completed.", "info")
 def detect_aur_helper():
     """Detect available AUR helper with memoization."""
     if hasattr(detect_aur_helper, "_cached_helper"):

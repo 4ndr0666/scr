@@ -50,18 +50,18 @@ path_prepend "${PYENV_ROOT}/bin"
 
 # ── GHOST EXORCISM (Idempotent Pip Cleanup) ──────────────────────────────────
 clean_pip_ghosts() {
-    log_psi "Initiating Ghost Exorcism Protocol on Python ${1:-3.13.5}"
+    log_psi "Initiating Ghost Exorcism Protocol on Python ${1:-3.14.6}"
 
-    local py_version="${1:-3.13.5}"
+    local py_version="${1:-3.14.6}"
     # D-19 FIX: This previously hardcoded /home/andro and andro:andro, silently
     # defeating the Dynamic User Discovery this file advertises in its own
     # header (REAL_USER/USER_HOME, derived above) on any host where the real
     # user is not literally named "andro". Now uses the already-discovered
     # $USER_HOME/$REAL_USER consistently with $BIN_TARGET above.
     # D-19 FIX (2): "${py_version#*.}" strips from the FRONT of the string,
-    # so "3.13.5" became "10.14" — the wrong pythonX.Y directory segment.
+    # so "3.14.6" became "10.14" — the wrong pythonX.Y directory segment.
     # "${py_version%.*}" strips the shortest match from the END instead,
-    # correctly yielding "3.13.5" (matches the convention already used in
+    # correctly yielding "3.14.6" (matches the convention already used in
     # service/optimize_python.sh's equivalent fallback path).
     local site_pkgs="${USER_HOME}/.local/share/pyenv/versions/${py_version}/lib/python${py_version%.*}/site-packages"
 
@@ -307,7 +307,7 @@ print(f'{sys.version_info.major}.{sys.version_info.minor}')
     if [[ -z "$target_py_ver" ]] && command -v jq &>/dev/null && [[ -f "$CONFIG_FILE" ]]; then
         local _cv
         _cv=$(jq -r '.python_version // ""' "$CONFIG_FILE" 2>/dev/null || echo "")
-        [[ -n "$_cv" && "$_cv" != "3.13.5" ]] && target_py_ver="$_cv"
+        [[ -n "$_cv" && "$_cv" != "3.14.6" ]] && target_py_ver="$_cv"
     fi
     if [[ -z "$target_py_ver" ]]; then
         target_py_ver=$(python3 -c \
