@@ -206,8 +206,13 @@ run_command() {
 }
 
 run_logged_command() {
-    bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" "$@" 2>&1 | bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" tee -a "${LOGFILE}"
-    local -a pipe_status=("${PIPESTATUS[@]}")
+    local -a pipe_status=()
+    if bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" "$@" 2>&1 |
+        bounded_exec "${EXTERNAL_TIMEOUT_SECONDS}" tee -a "${LOGFILE}"; then
+        pipe_status=("${PIPESTATUS[@]}")
+    else
+        pipe_status=("${PIPESTATUS[@]}")
+    fi
     local command_status="${pipe_status[0]:-1}"
     local tee_status="${pipe_status[1]:-1}"
     if (( command_status != 0 ));
@@ -1006,7 +1011,7 @@ process_dependency_closure() {
                 fi
             fi
         done
-        ((iteration++))
+        ((iteration += 1))
     done
 
     if (( iteration > max_iterations )); then
