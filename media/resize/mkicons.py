@@ -7,6 +7,7 @@ DESCRIPTION: Unified icon + banner generator. Produces arbitrary-sized outputs f
              use center-crop-to-ratio to prevent distortion. Fully interactive: prompts
              for source file, output directory, and as many custom outputs as needed.
              Defaults mirror both legacy scripts so existing workflows require zero changes.
+             Interactively prompts for backup names on file collisions.
 
 USAGE (interactive):
     python3 mkicons.py
@@ -86,11 +87,13 @@ def process_target(
     w: int,
     h: int,
     output_dir: str,
+    interactive: bool = True
 ) -> None:
     """
     Dispatch to the correct transform and write the output file.
     Square  → direct resize (mkicons.py behaviour).
     Non-square → center-crop-to-ratio (mkicons2.py behaviour).
+    Interactively handles existing files to allow custom backup conventions.
     """
     if w == h:
         final = resize_square(img, w)
@@ -98,8 +101,29 @@ def process_target(
         final = center_crop_to_ratio(img, w, h)
 
     out_path = os.path.join(output_dir, filename)
+
+    if os.path.exists(out_path):
+        name, ext = os.path.splitext(filename)
+        default_backup = f"{name}_original{ext}"
+
+        if interactive:
+            print(f"\n  [!] Collision: '{filename}' already exists in '{output_dir}/'.")
+            backup_name = prompt(f"      Enter backup name (or type 'overwrite')", default_backup)
+
+            if backup_name.lower() != 'overwrite':
+                backup_path = os.path.join(output_dir, backup_name)
+                os.replace(out_path, backup_path)
+                print(f"  [*] Backed up to '{backup_name}'")
+            else:
+                print(f"  [*] Overwriting '{filename}'")
+        else:
+            # Fallback for non-interactive CI/CD runs
+            backup_path = os.path.join(output_dir, default_backup)
+            os.replace(out_path, backup_path)
+            print(f"  [*] Backed up existing '{filename}' to '{default_backup}'")
+
     final.save(out_path)
-    print(f"  [+] {out_path}  ({w}×{h})")
+    print(f"  [+] Created {out_path}  ({w}×{h})")
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +219,7 @@ def generate_assets(
     source_path: str,
     output_dir:  str,
     targets:     list[tuple[str, int, int]],
+    interactive: bool = True,
 ) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -203,7 +228,7 @@ def generate_assets(
             print(f"\nSource : {source_path}  ({img.width}×{img.height}  {img.mode})")
             print(f"Output : {output_dir}/\n")
             for filename, w, h in targets:
-                process_target(img, filename, w, h, output_dir)
+                process_target(img, filename, w, h, output_dir, interactive)
 
         print(f"\nDone. {len(targets)} asset(s) written to '{output_dir}/'.")
 
@@ -240,13 +265,13 @@ def main() -> None:
     if args.defaults_icons:
         source = os.environ.get("SOURCE_FILE", "source_icon.png")
         outdir = os.environ.get("OUTPUT_DIR",  "icons")
-        generate_assets(source, outdir, DEFAULTS_ICONS)
+        generate_assets(source, outdir, DEFAULTS_ICONS, interactive=False)
         return
 
     if args.defaults_banner:
         source = os.environ.get("SOURCE_FILE", "source_banner.png")
         outdir = os.environ.get("OUTPUT_DIR",  "dist")
-        generate_assets(source, outdir, DEFAULTS_BANNER)
+        generate_assets(source, outdir, DEFAULTS_BANNER, interactive=False)
         return
 
     # ---- Fully interactive mode ----
@@ -274,7 +299,7 @@ def main() -> None:
         if add_more == "y":
             targets += prompt_targets()
 
-    generate_assets(source, outdir, targets)
+    generate_assets(source, outdir, targets, interactive=True)
 
 
 if __name__ == "__main__":

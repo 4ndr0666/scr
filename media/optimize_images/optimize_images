@@ -1,6 +1,42 @@
-#!/bin/sh
+#!/bin/bash
+set -euo pipefail
 
-find . -iname '*.png' -exec apply-zopflipng {} \;
-find . -iname '*.gif' -exec gifsicle -O2 -b {} \;
-find . -iname '*.jpg' -exec jpegoptim -p --strip-all {} \;
-find . -iname '*.jpeg' -exec jpegoptim -p --strip-all {} \;
+# Determine CPU core count for parallel processing
+CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# --- PNG Optimization Helper ---
+optimize_png() {
+    local input="$1"
+    local output="${input}.zopfli"
+
+    echo "[PNG] Optimizing: $input"
+
+    # Run zopflipng
+    if zopflipng -m --filters=01234mepb --lossy_transparent "$input" "$output" > /dev/null 2>&1; then
+        if [ -f "$output" ]; then
+            local input_size output_size
+            input_size=$(stat --format=%s "$input" 2>/dev/null || stat -f%z "$input")
+            output_size=$(stat --format=%s "$output" 2>/dev/null || stat -f%z "$output")
+
+            if [ "$output_size" -lt "$input_size" ]; then
+                mv -f "$output" "$input"
+            else
+                rm -f "$output"
+            fi
+        fi
+    fi
+}
+export -f optimize_png
+
+# --- Main Batch Processing ---
+
+echo "Optimizing PNG files in parallel ($CORES jobs)..."
+find . -type f -iname '*.png' -print0 | xargs -0 -n 1 -P "$CORES" bash -c 'optimize_png "$@"' _
+
+echo "Optimizing GIF files..."
+find . -type f -iname '*.gif' -exec gifsicle -O2 -b {} +
+
+echo "Optimizing JPEG files..."
+find . -type f \( -iname '*.jpg' -o -iname '*.jpeg' \) -exec jpegoptim -p --strip-all {} +
+
+echo "Optimization complete."
