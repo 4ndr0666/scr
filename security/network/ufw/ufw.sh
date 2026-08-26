@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# Synthesized by a Senior Software Architect
 set -euo pipefail
 #================= // UFW.SH //
+# VPN backend: MegaVPN (WireGuard, driven via NetworkManager `nmcli`),
+# DNS backend: resolvconf (openresolv) with a systemd-resolved fallback path
+# retained for hosts that have not migrated.
 
 # Use color variables for logging if the terminal supports it.
 if command -v tput >/dev/null 2>&1 && tput colors 2>/dev/null | grep -q '[0-9]'; then
@@ -47,6 +49,7 @@ readonly RESOLV_BACKUP="/etc/resolv.conf.ufw-orig"
 declare -a VPN_DNS_SERVERS=()
 declare -g PRIMARY_IF=""
 declare -g VPN_IFACES="" # Space-separated string of VPN interfaces
+declare -g WG_PROFILE="" # NetworkManager WireGuard connection NAME (MegaVPN profile)
 
 # --- Core Functions ---
 
@@ -144,7 +147,10 @@ usage() {
 	echo "Usage: $SCRIPT_NAME [options]"
 	echo ""
 	echo "Options:"
-	echo "  --vpn             : Connect ExpressVPN and apply VPN+DNS+UFW rules (kill switch)."
+	echo "  --vpn             : Connect MegaVPN (WireGuard via NetworkManager) and apply VPN+DNS+UFW rules (kill switch)."
+	echo "  --profile NAME    : NetworkManager WireGuard connection NAME to use with --vpn."
+	echo "                      Optional if exactly one WireGuard profile is imported, or if fzf"
+	echo "                      is available for interactive selection."
 	echo "  --disconnect      : Disconnect VPN, restore DNS, and reset UFW to defaults."
 	echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
 	echo "  --backup          : Create backups before modifying config files."
@@ -155,7 +161,8 @@ usage() {
 	echo "  --help, -h        : Show this help message."
 	echo ""
 	echo "Examples:"
-	echo "  $SCRIPT_NAME --vpn --backup"
+	echo "  $SCRIPT_NAME --vpn --profile megavpn-us --backup"
+	echo "  $SCRIPT_NAME --vpn --backup    # auto-select if only one WireGuard profile exists"
 	echo "  $SCRIPT_NAME --disconnect"
 	echo "  $SCRIPT_NAME --status"
 	exit "$exit_status"
@@ -169,6 +176,16 @@ parse_args() {
 		--vpn)
 			VPN_FLAG=1
 			log INFO "Option: --vpn enabled"
+			;;
+		--profile)
+			if [[ -n "${2:-}" ]]; then
+				WG_PROFILE="${2}"
+				log INFO "Option: --profile set to $WG_PROFILE"
+				shift
+			else
+				log ERROR "Missing value for --profile"
+				usage 1
+			fi
 			;;
 		--disconnect)
 			DISCONNECT_FLAG=1
@@ -210,7 +227,7 @@ parse_args() {
 			usage 1
 			;;
 		esac
-		shift
+shift
 	done
 }
 
@@ -220,7 +237,7 @@ parse_args() {
 check_dependencies() {
 	log INFO "Checking dependencies"
 	local -a req=('ufw' 'ss' 'awk' 'grep' 'sed' 'systemctl' 'ip' 'sysctl' 'timeout' 'tee' 'date' 'printf' 'basename' 'dirname' 'mkdir' 'touch' 'chmod' 'cat' 'mv' 'cp' 'rm')
-	local -a opt=('lsattr' 'chattr' 'expressvpnctl' 'resolvectl')
+	local -a opt=('lsattr' 'chattr' 'nmcli' 'wg' 'resolvconf' 'resolvectl' 'fzf')
 	local -a miss=()
 	for c in "${req[@]}"; do
 		command -v "$c" >/dev/null 2>&1 || miss+=("$c")
@@ -298,11 +315,21 @@ detect_primary_interface() {
 	return 0
 }
 
-# Detect active VPN interfaces (tun/ppp).
+# Detect active MegaVPN (WireGuard) interfaces.
+# Primary path: modern iproute2 supports `ip link show type wireguard`, which
+# identifies WireGuard devices regardless of what NetworkManager or wg-quick
+# named them (previously this matched tun/ppp naming, which is expressvpn-
+# specific and does not apply to a NetworkManager-managed WireGuard device).
+# Fallback path: older iproute2 without wireguard-type filtering resolves the
+# device bound to the active WG_PROFILE connection via nmcli instead.
 detect_vpn_interfaces() {
-	log INFO "Detecting VPN interfaces (tun/ppp)"
+	log INFO "Detecting VPN interfaces (WireGuard)"
 	local detected_ifaces_str
-	detected_ifaces_str=$(ip -o link show | awk -F': ' '$2 ~ /^(tun|ppp)/ {print $2}' | xargs || true)
+	detected_ifaces_str=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 | xargs || true)
+	if [[ -z "$detected_ifaces_str" && -n "$WG_PROFILE" ]] && command -v nmcli >/dev/null 2>&1; then
+		log INFO "No devices matched 'ip link show type wireguard'; falling back to nmcli device lookup for profile $WG_PROFILE."
+		detected_ifaces_str=$(nmcli -t -f GENERAL.DEVICES connection show "$WG_PROFILE" 2>/dev/null | awk -F: 'NF>1 {print $2}' | xargs || true)
+	fi
 	if [[ -z "$detected_ifaces_str" ]]; then
 		VPN_IFACES=""
 		log INFO "No VPN interfaces detected."
@@ -334,56 +361,91 @@ cidr_to_network() {
 	local net_int=$((ip_int & mask_int))
 	printf '%d.%d.%d.%d/%d\n' \
 		$(((net_int >> 24) & 0xFF)) $(((net_int >> 16) & 0xFF)) \
-		$(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
+$(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
 	return 0
 }
 
 # Parse nameservers that traffic should actually be allowed to reach.
 #
-# On a default Arch Linux install using NetworkManager + systemd-resolved
-# (Arch's recommended/common stack), /etc/resolv.conf is normally a symlink to
-# systemd-resolved's stub resolver (127.0.0.53 or 127.0.0.54), NOT the real
-# upstream DNS servers ExpressVPN configured. Trusting /etc/resolv.conf
-# verbatim in that case allowlists the stub loopback address instead of the
-# real VPN DNS servers, which silently defeats the DNS-leak-blocking rule this
-# function exists to support. This function therefore prefers `resolvectl`
-# (when present and resolv.conf points at the stub) to recover the real
-# per-interface upstream servers, falling back to a literal resolv.conf parse
-# for systems without systemd-resolved.
+# The user's stack is now NetworkManager + WireGuard (MegaVPN) with the
+# `resolvconf` (openresolv) DNS plugin, not systemd-resolved. Under
+# resolvconf, /etc/resolv.conf is typically a symlink into resolvconf's
+# runtime tree (or a generated file bearing a "# Generated by resolvconf"
+# header) that merges nameservers from every active interface's own record,
+# not just the VPN interface. Trusting it verbatim in that case allowlists
+# whatever interface happens to sort first, which can silently defeat the
+# DNS-leak-blocking rule this function exists to support. This function
+# therefore prefers `resolvconf -l <iface>*` (when present and resolv.conf is
+# resolvconf-managed) to recover the real per-interface upstream servers for
+# the WireGuard interface specifically. A systemd-resolved branch is retained
+# for hosts that have not migrated off it, and a literal resolv.conf parse is
+# the final fallback for systems running neither.
 parse_dns_servers() {
 	log INFO "Parsing DNS servers for VPN allowlist"
 	VPN_DNS_SERVERS=()
 
-	local using_stub=0
+	local managed_by=""
 	if [[ -L "$RESOLV_FILE" ]]; then
 		local link_target
 		link_target=$(readlink -f "$RESOLV_FILE" 2>/dev/null || true)
-		if [[ "$link_target" == *"systemd/resolve"* ]]; then
-			using_stub=1
+		if [[ "$link_target" == *"resolvconf"* ]]; then
+			managed_by="resolvconf"
+		elif [[ "$link_target" == *"systemd/resolve"* ]]; then
+			managed_by="systemd-resolved"
 		fi
+	elif [[ -f "$RESOLV_FILE" ]] && grep -q '^# Generated by resolvconf' "$RESOLV_FILE" 2>/dev/null; then
+		managed_by="resolvconf"
 	elif [[ -f "$RESOLV_FILE" ]] && grep -qE '^nameserver[[:space:]]+127\.0\.0\.5[34]$' "$RESOLV_FILE" 2>/dev/null; then
-		using_stub=1
+		managed_by="systemd-resolved"
 	fi
 
-	if [[ "$using_stub" -eq 1 ]] && command -v resolvectl >/dev/null 2>&1; then
-		log INFO "$RESOLV_FILE points at the systemd-resolved stub; querying resolvectl for real upstream DNS."
-		local iface_list="$VPN_IFACES"
-		if [[ -z "$iface_list" ]]; then
-			# No VPN interface known yet; query global upstream servers instead.
-			mapfile -t VPN_DNS_SERVERS < <(resolvectl dns 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+	if [[ "$managed_by" == "resolvconf" ]]; then
+		if command -v resolvconf >/dev/null 2>&1; then
+			log INFO "$RESOLV_FILE is resolvconf-managed; querying per-interface records for the VPN interface(s)."
+			local iface_list="$VPN_IFACES"
+			if [[ -n "$iface_list" ]]; then
+				local iface
+				for iface in $iface_list; do
+					while IFS= read -r ip; do
+						[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
+					done < <(resolvconf -l "${iface}*" 2>/dev/null | awk '/^nameserver/ {print $2}')
+				done
+			fi
+			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+				log INFO "No interface-scoped resolvconf record matched (expected for NetworkManager); querying all resolvconf records."
+				mapfile -t VPN_DNS_SERVERS < <(resolvconf -l 2>/dev/null | awk '/^nameserver/ {print $2}' | sort -u)
+			fi
+			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+				log WARN "resolvconf returned no nameservers; falling back to $RESOLV_FILE."
+			else
+				log OK "Parsed DNS servers via resolvconf: ${VPN_DNS_SERVERS[*]}"
+				return 0
+			fi
 		else
-			local iface
-			for iface in $iface_list; do
-				while IFS= read -r ip; do
-					[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
-				done < <(resolvectl dns "$iface" 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-			done
+			log WARN "resolvconf binary not found, but $RESOLV_FILE is resolvconf-managed. Falling back to literal parse."
 		fi
-		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
-			log WARN "resolvectl returned no upstream DNS servers for VPN interface(s); falling back to $RESOLV_FILE."
+	elif [[ "$managed_by" == "systemd-resolved" ]]; then
+		if command -v resolvectl >/dev/null 2>&1; then
+			log INFO "$RESOLV_FILE points at the systemd-resolved stub; querying resolvectl for real upstream DNS."
+			local iface_list="$VPN_IFACES"
+			if [[ -z "$iface_list" ]]; then
+				mapfile -t VPN_DNS_SERVERS < <(resolvectl dns 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+			else
+				local iface
+				for iface in $iface_list; do
+					while IFS= read -r ip; do
+						[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
+					done < <(resolvectl dns "$iface" 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+				done
+			fi
+			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+				log WARN "resolvectl returned no upstream DNS servers for VPN interface(s); falling back to $RESOLV_FILE."
+			else
+				log OK "Parsed real upstream DNS servers via resolvectl: ${VPN_DNS_SERVERS[*]}"
+				return 0
+			fi
 		else
-			log OK "Parsed real upstream DNS servers via resolvectl: ${VPN_DNS_SERVERS[*]}"
-			return 0
+			log WARN "resolvectl binary not found, but $RESOLV_FILE is systemd-resolved-managed. Falling back to literal parse."
 		fi
 	fi
 
@@ -393,10 +455,10 @@ parse_dns_servers() {
 			log WARN "No nameservers found in $RESOLV_FILE"
 			return 1
 		else
-			if [[ "$using_stub" -eq 1 ]]; then
+			if [[ "$managed_by" == "systemd-resolved" || "$managed_by" == "resolvconf" ]] && grep -qE '^nameserver[[:space:]]+127\.0\.0\.5[34]$' "$RESOLV_FILE" 2>/dev/null; then
 				log WARN "Using stub-resolver address(es) from $RESOLV_FILE (${VPN_DNS_SERVERS[*]}); DNS allowlist may not reflect real VPN DNS servers."
 			else
-				log OK "Parsed DNS servers: ${VPN_DNS_SERVERS[*]}"
+				log OK "Parsed DNS servers directly from $RESOLV_FILE: ${VPN_DNS_SERVERS[*]}"
 			fi
 			return 0
 		fi
@@ -437,12 +499,14 @@ backup_file() {
 }
 
 # Backup resolv.conf before modification.
-# Symlink-aware (Finding 4): on systemd-resolved systems /etc/resolv.conf is
-# normally a symlink to the stub resolver. Blindly `cp`-ing over it would
-# replace the symlink with a plain file, which can desync from
-# systemd-resolved's own state until the service is restarted. We record
-# whether it was a symlink and, if so, back up the link target path itself
-# rather than a copy of the (often loopback-stub) file contents.
+# Symlink-aware (Finding 4): under either systemd-resolved or resolvconf,
+# /etc/resolv.conf is normally a symlink to a daemon-managed runtime path.
+# Blindly `cp`-ing over it would replace the symlink with a plain file, which
+# can desync from the managing daemon's own state until it is restarted. We
+# record whether it was a symlink and, if so, back up the link target path
+# itself rather than a copy of the (often transient) file contents. This
+# logic is DNS-backend-agnostic and requires no change for the resolvconf
+# migration.
 backup_resolv_conf() {
 	if [[ -f "$RESOLV_BACKUP" || -L "$RESOLV_BACKUP" ]]; then
 		log INFO "VPN DNS backup already exists at $RESOLV_BACKUP"
@@ -474,7 +538,7 @@ backup_resolv_conf() {
 			log ERROR "Failed to backup $RESOLV_FILE"
 			return 1
 		fi
-	else
+else
 		log WARN "$RESOLV_FILE not found, cannot backup."
 		return 1
 	fi
@@ -483,7 +547,8 @@ backup_resolv_conf() {
 # Restore resolv.conf from backup.
 # Symlink-aware counterpart to backup_resolv_conf (Finding 4): if the backup
 # recorded a symlink target, restore the symlink itself rather than writing a
-# plain file over what systemd-resolved expects to manage.
+# plain file over what the DNS-managing daemon (resolvconf or
+# systemd-resolved) expects to own.
 restore_resolv_conf() {
 	if [[ ! -f "$RESOLV_BACKUP" && ! -L "$RESOLV_BACKUP" ]]; then
 		log INFO "No VPN DNS backup found at $RESOLV_BACKUP to restore."
@@ -527,57 +592,123 @@ restore_resolv_conf() {
 
 # --- VPN Management ---
 
-# Connect to ExpressVPN.
-# Bounded with a hard timeout (§4.2): the expressvpn CLI can stall on network
-# negotiation or, if the app is unactivated, wait on input that will never arrive
-# in a non-interactive script context. A hang here must not be able to hang the
-# whole orchestrator indefinitely.
-expressvpnctl_connect() {
-	log CAT "Connecting ExpressVPN"
-	if ! command -v expressvpnctl >/dev/null 2>&1; then
-		log ERROR "expressvpn command not found. Cannot connect."
+# Resolve which NetworkManager WireGuard connection (MegaVPN profile) to use.
+# EAFP-first: if --profile was given, trust it and let `nmcli connection up`
+# surface the failure if it's wrong. Otherwise attempt unambiguous
+# auto-selection (exactly one imported WireGuard connection), then fall back
+# to interactive fzf selection when available and the run is interactive.
+select_wg_profile() {
+	if [[ -n "$WG_PROFILE" ]]; then
+		log INFO "Using explicitly specified WireGuard profile: $WG_PROFILE"
+		return 0
+	fi
+	if ! command -v nmcli >/dev/null 2>&1; then
+		log ERROR "nmcli not found; cannot enumerate WireGuard connections."
 		return 1
 	fi
-	if ! run_cmd_dry timeout 45 expressvpnctl connect; then
-		log ERROR "ExpressVPN connect command failed or timed out after 45s."
+	log INFO "No --profile given; attempting to auto-select a WireGuard NM connection"
+	local wg_conns
+	wg_conns=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' || true)
+	if [[ -z "$wg_conns" ]]; then
+		log ERROR "No WireGuard connections found in NetworkManager. Import one or pass --profile NAME."
 		return 1
 	fi
-	log OK "ExpressVPN connect command executed."
+	local count
+	count=$(printf '%s\n' "$wg_conns" | wc -l)
+	if [[ "$count" -eq 1 ]]; then
+		WG_PROFILE="$wg_conns"
+		log OK "Auto-selected sole WireGuard profile: $WG_PROFILE"
+		return 0
+	fi
+	if command -v fzf >/dev/null 2>&1 && [[ "$SILENT" -eq 0 && "$DRY_RUN" -eq 0 ]] && [[ -t 0 ]]; then
+		WG_PROFILE=$(printf '%s\n' "$wg_conns" | fzf --prompt="Select WireGuard profile: " --height=40% --layout=reverse --border)
+		if [[ -z "$WG_PROFILE" ]]; then
+			log ERROR "No profile selected via fzf."
+			return 1
+		fi
+		log OK "Selected WireGuard profile via fzf: $WG_PROFILE"
+		return 0
+	fi
+	log ERROR "Multiple WireGuard profiles found (${wg_conns//$'\n'/, }) and no --profile specified; cannot auto-select non-interactively."
+	return 1
+}
+
+# Connect to MegaVPN via NetworkManager WireGuard.
+# Bounded with a hard timeout (§4.2): `nmcli connection up` can stall on
+# handshake negotiation or DNS-plugin setup, and must not be able to hang the
+# orchestrator indefinitely in a non-interactive script context.
+megavpn_connect() {
+	log CAT "Connecting MegaVPN (WireGuard via NetworkManager)"
+	if ! command -v nmcli >/dev/null 2>&1; then
+		log ERROR "nmcli command not found. Cannot connect."
+		return 1
+	fi
+	if ! select_wg_profile; then
+		return 1
+	fi
+
+	# Tear down any other active WireGuard tunnels first to prevent routing conflicts.
+	local active_conns
+	active_conns=$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' || true)
+	if [[ -n "$active_conns" ]]; then
+		while IFS= read -r active; do
+			[[ "$active" == "$WG_PROFILE" ]] && continue
+			log INFO "Bringing down conflicting active WireGuard connection: $active"
+			run_cmd_dry timeout 20 nmcli connection down "$active" || log WARN "Failed to bring down $active"
+		done <<<"$active_conns"
+	fi
+
+	if ! run_cmd_dry timeout 45 nmcli connection up "$WG_PROFILE"; then
+		log ERROR "nmcli connection up failed or timed out after 45s for profile $WG_PROFILE."
+		return 1
+	fi
+	log OK "nmcli connection up executed for $WG_PROFILE."
 
 	if [[ "$DRY_RUN" -eq 1 ]]; then
 		return 0
 	fi
 
-	# Verify the daemon actually reports a connected state; a zero exit code
-	# from `connect` does not guarantee the tunnel is up (e.g. it can race
-	# with negotiation, or silently no-op if already mid-handshake).
+	# Verify the connection actually reports active; a zero exit code from
+	# `connection up` does not guarantee the tunnel is fully established
+	# (e.g. it can race with handshake completion).
 	local tries=0 max_tries=10
 	while ((tries < max_tries)); do
-		if expressvpnctl status 2>/dev/null | grep -qi 'connected'; then
-			log OK "ExpressVPN reports Connected."
+		if nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' | grep -qxF "$WG_PROFILE"; then
+			log OK "MegaVPN reports Connected ($WG_PROFILE active)."
 			return 0
 		fi
 		tries=$((tries + 1))
 		sleep 1
 	done
-	log ERROR "ExpressVPN did not report Connected within ${max_tries}s of issuing connect."
+	log ERROR "MegaVPN did not report Connected within ${max_tries}s of issuing connection up."
 	return 1
 }
 
-# Disconnect from ExpressVPN.
-# Also bounded with a hard timeout (§4.2) for the same reason as expressvpn_connect.
-expressvpnctl_disconnect() {
-	log CAT "Disconnecting ExpressVPN"
-	if ! command -v expressvpnctl >/dev/null 2>&1; then
-		log ERROR "expressvpnctl command not found. Cannot disconnect."
+# Disconnect from MegaVPN. Tears down every active WireGuard connection
+# rather than only WG_PROFILE, since the kill-switch teardown path must
+# leave the host in a known-clean state regardless of which profile ended
+# up active.
+# Also bounded with a hard timeout (§4.2) for the same reason as megavpn_connect.
+megavpn_disconnect() {
+	log CAT "Disconnecting MegaVPN"
+	if ! command -v nmcli >/dev/null 2>&1; then
+		log ERROR "nmcli command not found. Cannot disconnect."
 		return 1
 	fi
-	if ! run_cmd_dry timeout 30 expressvpnctl disconnect; then
-		log ERROR "ExpressVPN disconnect command failed or timed out after 30s."
-		return 1
+	local active_conns
+	active_conns=$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' || true)
+	if [[ -z "$active_conns" ]]; then
+		log INFO "No active WireGuard connections to disconnect."
+		return 0
 	fi
-	log OK "ExpressVPN disconnect command executed."
-	return 0
+	local status=0
+	while IFS= read -r active; do
+		if ! run_cmd_dry timeout 30 nmcli connection down "$active"; then
+			log ERROR "Failed to bring down WireGuard connection $active."
+			status=1
+		fi
+	done <<<"$active_conns"
+	return "$status"
 }
 
 # --- Configuration & Application ---
@@ -668,7 +799,6 @@ net.ipv4.tcp_sack=1
 vm.swappiness=${SWAPPINESS_VAL}
 fs.inotify.max_user_instances=1024
 fs.inotify.max_user_watches=524288
-vm.max_map_count=1048576
 net.core.rmem_max=16777216
 net.core.wmem_max=16777216
 net.core.optmem_max=65536
@@ -695,7 +825,7 @@ EOF
 		echo "net.core.default_qdisc=cake" >>"$sysctl_out"
 		log INFO "Added net.core.default_qdisc=cake"
 	fi
-	if [[ -n "$bbr" ]]; then
+if [[ -n "$bbr" ]]; then
 		echo "net.ipv4.tcp_congestion_control=bbr" >>"$sysctl_out"
 		log INFO "Added net.ipv4.tcp_congestion_control=bbr"
 	fi
@@ -816,7 +946,7 @@ configure_ufw() {
 # Tear down VPN and reset firewall to a standard state.
 tear_down() {
 	log CAT "Tearing down VPN configuration and resetting firewall"
-	expressvpnctl_disconnect || log WARN "Failed to disconnect from VPN. Please check manually."
+	megavpn_disconnect || log WARN "Failed to disconnect from VPN. Please check manually."
 	restore_resolv_conf || log WARN "Failed to restore resolv.conf. DNS may require manual correction."
 	log INFO "Resetting UFW rules to default"
 	run_cmd_dry ufw --force reset || {
@@ -836,17 +966,24 @@ tear_down() {
 show_status() {
 	log CAT "Status overview"
 	run_status_cmd "UFW Status" ufw status verbose
-	if command -v expressvpnctl >/dev/null 2>&1; then
-		run_status_cmd "ExpressVPN Status" expressvpnctl status
+	if command -v nmcli >/dev/null 2>&1; then
+		run_status_cmd "NetworkManager WireGuard Connections" nmcli -f NAME,TYPE,DEVICE,STATE connection show
 	else
-		log NOTE "expressvpn command not found."
+		log NOTE "nmcli command not found."
+	fi
+	if command -v wg >/dev/null 2>&1; then
+		run_status_cmd "WireGuard Interface Status" wg show
+	else
+		log NOTE "wg command not found; skipping interface-level WireGuard status."
 	fi
 	if [[ -f "$SYSCTL_UFW_FILE" ]]; then
 		run_status_cmd "Sysctl Settings from $SYSCTL_UFW_FILE" cat "$SYSCTL_UFW_FILE"
 	else
 		log NOTE "$SYSCTL_UFW_FILE not found."
 	fi
-	if command -v resolvectl >/dev/null 2>&1; then
+	if command -v resolvconf >/dev/null 2>&1; then
+		run_status_cmd "DNS records (resolvconf -l)" resolvconf -l
+	elif command -v resolvectl >/dev/null 2>&1; then
 		run_status_cmd "DNS per interface (resolvectl)" resolvectl status
 	elif [[ -f "$RESOLV_FILE" ]]; then
 		run_status_cmd "resolv.conf content" cat "$RESOLV_FILE"
@@ -904,9 +1041,9 @@ main() {
 	if ((VPN_FLAG)); then
 		backup_resolv_conf || log WARN "resolv.conf backup failed, VPN DNS rules may not be applied correctly on restore."
 		local vpn_connect_failed=0
-		if ! expressvpnctl_connect; then
+		if ! megavpn_connect; then
 			vpn_connect_failed=1
-			log ERROR "ExpressVPN connection failed or could not be verified."
+			log ERROR "MegaVPN connection failed or could not be verified."
 			log WARN "Proceeding fail-closed: UFW will deny outbound by default because the kill switch is active and no VPN interface is confirmed up. This is intentional, not a misconfiguration."
 		fi
 		# CRITICAL: Mitigate race condition by allowing the interface to come up.
@@ -918,7 +1055,7 @@ main() {
 			if ((vpn_connect_failed)); then
 				log INFO "No VPN interfaces detected, consistent with the failed connection above."
 			else
-				log WARN "ExpressVPN reported connected, but no tun/ppp interface was detected. Kill switch will block outbound traffic."
+				log WARN "MegaVPN reported connected, but no WireGuard interface was detected. Kill switch will block outbound traffic."
 			fi
 		fi
 		parse_dns_servers || log WARN "Failed to parse DNS servers after connection attempt."
