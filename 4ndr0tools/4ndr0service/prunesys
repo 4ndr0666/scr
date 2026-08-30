@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Paradigm: POSIX shell utility — idempotent host cache maintenance.
+set -euo pipefail
+
+cleanup() {
+    echo "[+] Prune cleanup trap triggered. Exiting gracefully."
+}
+trap 'cleanup' EXIT INT TERM
+
+echo "========================================================"
+echo "Starting APEX-Compliant Non-Destructive System Prune"
+echo "========================================================"
+
+# Execute a command with a timeout, ignoring failures (EAFP paradigm).
+# Redirects stdout/stderr to /dev/null to deliberately suppress 'command not found' 
+# or noisy binary output, as we do not guarantee the presence of any specific build system.
+run_prune() {
+    local name="$1"
+    shift
+    echo " -> Pruning $name..."
+    # 300 seconds hard timeout per external binary execution
+    timeout 300 "$@" >/dev/null 2>&1 || true
+}
+
+# 1. NODE / JS PRUNE
+echo "[+] Pruning JS/Node artifacts..."
+run_prune "Yarn cache" yarn cache clean --all
+run_prune "NPM cache" npm cache clean --force
+rm -rf "${HOME}/.cache/yarn"
+rm -rf "${HOME}/.yarn/cache"
+rm -rf "${HOME}/.npm/_cacache" 2>/dev/null || true
+
+# 2. CARGO / RUST PRUNE
+echo "[+] Pruning Cargo (Rust) caches..."
+# Cargo often leaves read-only files in the registry cache. Force write permission before removal.
+chmod -R u+w "${HOME}/.cargo/registry/cache" 2>/dev/null || true
+chmod -R u+w "${HOME}/.cargo/registry/src" 2>/dev/null || true
+chmod -R u+w "${HOME}/.cargo/git" 2>/dev/null || true
+rm -rf "${HOME}/.cargo/registry/cache"
+rm -rf "${HOME}/.cargo/registry/src"
+rm -rf "${HOME}/.cargo/git/db"
+rm -rf "${HOME}/.cargo/git/checkouts"
+
+# 3. RUBY (GEM & BUNDLER) PRUNE
+echo "[+] Pruning Ruby, Bundler, and Gem caches..."
+run_prune "Ruby Gems" gem cleanup -q
+run_prune "Bundler" bundle clean --force
+rm -rf "${HOME}/.bundle/cache"
+rm -rf "${HOME}/.rbenv/cache" 2>/dev/null || true
+rm -rf "${HOME}/.rvm/archives" 2>/dev/null || true
+rm -rf "${HOME}/.rvm/src" 2>/dev/null || true
+
+# 4. GO (GOLANG) PRUNE
+echo "[+] Pruning Go module and build caches..."
+run_prune "Go caches" go clean -cache -testcache -fuzzcache -modcache
+# Direct filesystem fallback for when the Go binary is uninstalled but artifacts remain.
+# Go modules are downloaded with read-only permissions; force write access before removal.
+GOPATH_DIR="${GOPATH:-$HOME/go}"
+chmod -R u+w "${GOPATH_DIR}/pkg/mod" 2>/dev/null || true
+rm -rf "${GOPATH_DIR}/pkg/mod" 2>/dev/null || true
+rm -rf "${HOME}/.cache/go-build" 2>/dev/null || true
+
+# 5. DOCKER / PODMAN PRUNE
+echo "[+] Pruning Container artifacts..."
+run_prune "Docker system" docker system prune -f
+run_prune "Docker builder" docker builder prune -f
+run_prune "Podman system" podman system prune -f
+
+# 6. PYTHON (PIP, POETRY, CONDA) PRUNE
+echo "[+] Pruning Python caches..."
+run_prune "Pip cache" pip cache purge
+run_prune "Pip3 cache" pip3 cache purge
+run_prune "Poetry cache" poetry cache clear --all pypi -n
+run_prune "Conda cache" conda clean --all -y
+rm -rf "${HOME}/.cache/pip"
+# Find and remove local __pycache__ directories idempotently
+find "${HOME}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+echo "========================================================"
+echo "Unified system prune completed successfully."
+echo "========================================================"

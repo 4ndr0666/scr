@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4NDR0666 // 3LECTRIC-GLASS HDL STUDIO</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--base:rgb(10,19,26);--g1:rgba(10,19,26,.72);--g2:rgba(10,19,26,.65);--g3:rgba(10,19,26,.55);
+--gH:rgba(10,19,26,.95);--cyan:#00E5FF;--cyan2:#67E8F9;--alert:#ff0055;--white:#fff;
+--line:rgba(0,229,255,.2);--line2:rgba(0,229,255,.3);--line3:rgba(0,229,255,.4);
+--t:150ms ease-in-out;--mono:"JetBrains Mono",monospace;--disp:"Orbitron",sans-serif;}
+*{box-sizing:border-box;background:none;margin:0;padding:0;font-family:var(--mono);
+transition:color var(--t),background-color var(--t),border-color var(--t),box-shadow var(--t),opacity var(--t);}
+html,body{height:100%;}
+body{background:#050A0F;color:var(--cyan);overflow:hidden;}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:
+radial-gradient(600px 400px at 12% 88%,rgba(0,229,255,.10),transparent 70%),
+radial-gradient(700px 500px at 88% 12%,rgba(0,229,255,.07),transparent 70%),
+radial-gradient(rgba(0,229,255,.05) 1px,transparent 1px);background-size:auto,auto,28px 28px;}
+
+/* ═══ GLYPH — canonical component. No filters. ═══ */
+.gring1{animation:gspinA 36s linear infinite;transform-origin:64px 64px;}
+.gring2{animation:gspinB 24s linear infinite;transform-origin:64px 64px;}
+.ghex{animation:gspinA 120s linear infinite;transform-origin:64px 64px;}
+.gpsi{animation:gpulse 2.6s ease-in-out infinite;}
+@keyframes gspinA{to{transform:rotate(360deg);}}
+@keyframes gspinB{to{transform:rotate(-360deg);}}
+@keyframes gpulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+/* ═══ WINDOW — master values ═══ */
+#app{position:fixed;inset:14px;display:flex;flex-direction:column;background:var(--g1);
+backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+border:1px solid var(--line);border-radius:6px;box-shadow:0 0 40px rgba(0,229,255,.15);}
+#hdr{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--gH);
+border-bottom:2px solid var(--cyan);flex:0 0 auto;}
+#hdr .t{font-family:var(--disp);font-weight:700;font-size:14pt;color:var(--cyan2);letter-spacing:2px;line-height:1;}
+#hdr .s{font-size:9pt;color:rgba(0,229,255,.7);letter-spacing:1px;margin-top:2px;}
+#hdr .spacer{flex:1;}
+#status{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--gH);
+border-top:1px solid var(--line);font-size:8pt;color:rgba(0,229,255,.7);}
+#status .spacer{flex:1;}
+
+#body{flex:1;display:grid;grid-template-columns:260px 1fr 360px;grid-template-areas:"ctl ed out";
+min-height:0;padding:8px;gap:8px;}
+#ctl{grid-area:ctl;}#ed{grid-area:ed;}#out{grid-area:out;}
+@media(max-width:1150px){#body{grid-template-columns:240px 1fr;grid-template-areas:"ctl ed" "out out";grid-template-rows:auto 1fr 240px;}}
+@media(max-width:760px){#app{position:static;margin:0;}#body{grid-template-columns:1fr;grid-template-areas:"ctl" "ed" "out";}body{overflow:auto;}}
+.pane{overflow:auto;}
+
+/* ═══ GLASS PANEL ═══ */
+.gpanel{background:var(--g3);border:1px solid var(--line2);border-radius:4px;padding:10px;}
+.ctlbox{display:flex;flex-direction:column;gap:6px;}
+.ltitle{font-family:var(--disp);font-weight:700;font-size:11pt;color:var(--cyan2);}
+.lfield{font-size:8pt;color:rgba(0,229,255,.7);letter-spacing:.5px;margin-top:6px;}
+.lgroup{font-weight:700;color:var(--cyan2);margin:8px 0 2px;}
+.lval{color:var(--cyan2);word-break:break-word;}
+.lbadge{color:var(--alert);font-weight:700;font-size:8pt;}
+.hr{border:none;border-top:1px solid var(--line);margin:8px 0;}
+
+/* ═══ BUTTONS — spec §4.4 verbatim ═══ */
+button{background:rgba(10,19,26,.65);border:1px solid var(--line3);border-radius:0;color:var(--cyan);
+font-weight:700;font-size:9pt;padding:10px 20px;cursor:pointer;letter-spacing:1px;}
+button:hover{background:rgba(0,229,255,.2);border-color:var(--cyan);color:var(--cyan2);
+box-shadow:0 0 20px rgba(0,229,255,.5);}
+button:active{background:rgba(0,229,255,.3);color:var(--white);}
+button.on,button.active{background:rgba(0,229,255,.3);border-color:var(--cyan);color:var(--white);
+box-shadow:0 0 12px rgba(0,229,255,.4);}
+button.destructive{border-color:var(--alert);color:var(--alert);}
+button.destructive:hover{background:rgba(255,0,85,.3);border-color:var(--alert);box-shadow:0 0 25px var(--alert);color:var(--white);}
+button.mini{padding:2px 8px;font-size:8pt;}
+.moderail{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.moderail button{padding:8px 4px;font-size:8pt;}
+.seg{display:inline-flex;gap:2px;flex-wrap:wrap;}
+.seg button{padding:4px 8px;font-size:8pt;}
+.modbtn{padding:4px 10px;font-size:8pt;}
+
+/* ═══ FIELDS ═══ */
+input[type=text],input[type=number],textarea{width:100%;background:var(--g3);
+border:1px solid var(--line3);border-radius:0;color:var(--cyan);caret-color:var(--cyan);
+padding:6px 8px;font-size:9pt;outline:none;font-family:var(--mono);}
+input:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 12px rgba(0,229,255,.35);}
+textarea{resize:vertical;min-height:34px;}
+input[type=number]{-moz-appearance:textfield;}
+::-webkit-inner-spin-button{display:none;}
+.combo{position:relative;}
+.combo input,.combo textarea{padding-right:26px;}
+.cbtn{position:absolute;right:1px;top:1px;bottom:1px;border:none;border-radius:0;
+background:transparent;padding:0 7px;color:rgba(0,229,255,.7);font-size:9pt;
+letter-spacing:0;font-weight:400;box-shadow:none;}
+.cbtn:hover{background:rgba(0,229,255,.14);border:none;color:var(--cyan);box-shadow:none;}
+
+/* ═══ MANIFEST POPOVER — §4.7 values, fixed/floating ═══ */
+#dd-pop{position:fixed;z-index:400;background:var(--g2);
+backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line2);border-radius:4px;
+box-shadow:0 0 20px rgba(0,229,255,.15);min-width:300px;max-width:480px;}
+.ddhead{padding:4px 8px;font-size:8pt;color:rgba(0,229,255,.55);letter-spacing:1px;
+border-bottom:1px solid rgba(0,229,255,.18);text-transform:uppercase;}
+.ddnote{padding:4px 8px;font-size:8pt;color:var(--alert);border-bottom:1px solid rgba(255,0,85,.25);}
+.ddlist{max-height:300px;overflow-y:auto;}
+.dditem{padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,229,255,.08);}
+.dditem:hover{background:rgba(0,229,255,.2);}
+.dditem:hover .dk,.dditem:hover .ddd{color:var(--white);}
+.dditem.cur{border-left:2px solid var(--cyan2);background:rgba(0,229,255,.08);}
+.dditem.hide{display:none;}
+.dk{color:var(--cyan);font-size:9pt;font-weight:700;}
+.ddd{color:rgba(0,229,255,.55);font-size:8pt;display:block;}
+
+/* ═══ SWITCH §4.6 ═══ */
+.gswitch{position:relative;width:44px;height:24px;flex:0 0 auto;cursor:pointer;background:#050A0F;
+border:1px solid var(--cyan);border-radius:0;}
+.gswitch .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--cyan);
+box-shadow:0 0 12px rgba(0,229,255,.8);transition:left var(--t);}
+.gswitch.on{background:rgba(0,229,255,.2);}
+.gswitch.on .knob{left:22px;}
+
+/* ═══ CHIPS ═══ */
+.chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line3);
+background:rgba(10,19,26,.65);padding:2px 6px;font-size:8pt;color:var(--cyan2);}
+.chip .x{cursor:pointer;color:var(--alert);font-weight:700;}
+.chip .x:hover{text-shadow:0 0 8px var(--alert);}
+.chiprow{display:flex;gap:4px;margin-top:4px;align-items:stretch;}
+.chiprow .combo{flex:1;}
+
+/* ═══ SECTIONS ═══ */
+#sections{display:flex;flex-direction:column;gap:8px;}
+details.section{background:var(--g3);border:1px solid var(--line2);border-radius:4px;}
+details.section>summary{list-style:none;cursor:pointer;padding:10px 12px;font-family:var(--disp);
+font-weight:700;font-size:11pt;color:var(--cyan2);display:flex;align-items:center;gap:10px;user-select:none;}
+details.section>summary::-webkit-details-marker{display:none;}
+details.section>summary .arr{font-family:var(--mono);color:var(--cyan);transition:transform var(--t);}
+details.section[open]>summary .arr{transform:rotate(90deg);}
+details.section[open]>summary{border-bottom:1px solid var(--line2);}
+.sbtns{margin-left:auto;display:flex;gap:4px;}
+.secbody{padding:10px 14px;}
+.pcard{border:1px solid var(--line2);border-radius:4px;background:rgba(10,19,26,.55);
+padding:8px;margin-bottom:8px;}
+.pcard .phead{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+.pcard .phead .combo,.pcard .phead input{flex:1;}
+
+/* ═══ OUTPUT ═══ */
+#out .gpanel{height:100%;display:flex;flex-direction:column;gap:8px;}
+#outpre{flex:1;overflow:auto;white-space:pre;font-size:8pt;line-height:1.5;color:var(--cyan2);}
+#outpre.wrap{white-space:pre-wrap;word-break:break-word;}
+.j-key{color:var(--cyan);} .j-str{color:var(--cyan2);} .j-num{color:var(--white);} .j-dim{color:#0f6d7a;}
+.outhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.outhead .spacer{flex:1;}
+
+/* ═══ TOAST ═══ */
+#toast{position:fixed;top:28px;left:50%;transform:translateX(-50%) translateY(-16px);opacity:0;
+pointer-events:none;background:var(--g2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line2);border-radius:4px;padding:10px 20px;color:var(--white);
+font-weight:700;font-size:9pt;letter-spacing:1px;box-shadow:0 0 20px rgba(0,229,255,.15);
+transition:opacity var(--t),transform var(--t);z-index:500;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.error{border-color:var(--alert);color:var(--alert);box-shadow:0 0 25px var(--alert);}
+
+/* ═══ WIZARD ═══ */
+#wiz{position:fixed;inset:0;background:rgba(5,10,15,.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+display:none;align-items:center;justify-content:center;z-index:90;}
+#wiz.open{display:flex;}
+.wpanel{width:min(680px,92vw);max-height:86vh;display:flex;flex-direction:column;gap:10px;
+background:var(--g2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+border:1px solid var(--line3);border-radius:4px;box-shadow:0 0 40px rgba(0,229,255,.25);padding:16px;}
+.wtitle{font-family:var(--disp);font-weight:700;font-size:12pt;color:var(--cyan2);letter-spacing:1px;}
+.wprog{font-size:8pt;color:rgba(0,229,255,.7);}
+.wbar{height:3px;background:rgba(0,229,255,.12);}
+.wbar div{height:100%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);transition:width var(--t);}
+.wsec{font-size:9pt;font-weight:700;color:var(--cyan2);}
+.wpath{font-size:8pt;color:rgba(0,229,255,.55);word-break:break-all;}
+#wmount{overflow:auto;max-height:48vh;padding:4px 0;}
+.wbtns{display:flex;gap:6px;flex-wrap:wrap;}
+.wbtns .spacer{flex:1;}
+.modrow{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line2);
+background:rgba(10,19,26,.55);border-radius:4px;margin-bottom:6px;flex-wrap:wrap;}
+.modrow .mtitle{flex:1;font-size:9pt;font-weight:700;color:var(--cyan2);min-width:150px;}
+.modrow.mstatic .mtitle{color:rgba(0,229,255,.5);}
+
+/* ═══ SCROLLBARS §4.8 ═══ */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:rgba(0,0,0,.4);}
+::-webkit-scrollbar-thumb{background:var(--cyan);border-radius:0;}
+::-webkit-scrollbar-thumb:hover{background:var(--cyan2);}
+*{scrollbar-width:thin;scrollbar-color:var(--cyan) rgba(0,0,0,.4);}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="glyph" viewBox="0 0 128 128" fill="none" stroke="#00E5FF"
+ stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path class="gring1" d="M 64,12 A 52,52 0 1 1 63.9,12 Z" stroke-dasharray="21.78 21.78" stroke-width="2"/>
+  <path class="gring2" d="M 64,20 A 44,44 0 1 1 63.9,20 Z" stroke-dasharray="10 10" stroke-width="1.5" opacity="0.7"/>
+  <path class="ghex" d="M64 30 L91.3 47 L91.3 81 L64 98 L36.7 81 L36.7 47 Z"/>
+  <text class="gpsi" x="64" y="67" text-anchor="middle" dominant-baseline="middle"
+   fill="#00E5FF" stroke="none" font-size="56" font-weight="700"
+   font-family="'Cinzel Decorative',serif">Ψ</text>
+</symbol>
+</defs></svg>
+
+<div id="app">
+  <header id="hdr">
+    <svg width="26" height="26"><use href="#glyph"/></svg>
+    <div><div class="t">4NDR0666</div>
+    <div class="s">3LECTRIC-GLASS // HDL PROMPT ENGINE // OVERRIDE LEVEL 800</div></div>
+    <div class="spacer"></div>
+    <button id="btn-export">EXPORT</button>
+    <button id="btn-purge" class="destructive">PURGE ✖</button>
+  </header>
+  <div id="body">
+    <aside id="ctl" class="pane"><div class="gpanel ctlbox">
+      <svg width="52" height="52" style="margin:0 auto;display:block"><use href="#glyph"/></svg>
+      <div class="ltitle" style="text-align:center">4NDR0TOOLS</div>
+      <div class="lfield" style="text-align:center;margin:0">MODE SELECTION</div>
+      <div class="moderail">
+        <button id="m-default">DEFAULT</button>
+        <button id="m-stock">STOCK</button>
+        <button id="m-hybrid">HYBRID</button>
+        <button id="m-random">RANDOM</button>
+      </div>
+      <div class="lfield" style="margin-top:6px;line-height:1.7">
+        DEFAULT — walk every field from defaults<br>
+        STOCK — parse default HDL prompt only<br>
+        HYBRID — module select: skip / walk / ⚡rnd<br>
+        RANDOM — instant randomized schema
+      </div>
+      <hr class="hr">
+      <div class="lfield">SEED (0 = RND)</div>
+      <div style="display:flex;gap:4px;align-items:stretch;">
+        <input type="number" id="seed" min="0" max="999999" value="0" style="flex:1">
+        <button class="mini" id="btn-rnd">RND</button>
+      </div>
+      <div class="lfield">PANELS</div>
+      <input type="number" id="panels" min="1" max="9" value="6">
+      <button id="btn-gen">GENERATE (RANDOM)</button>
+      <hr class="hr">
+      <div class="lfield">OUTPUT MODE</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="lfield" style="margin:0">JSON</span>
+        <div class="gswitch" id="modesw"><div class="knob"></div></div>
+        <span class="lfield" style="margin:0">FLAT</span>
+      </div>
+    </div></aside>
+    <main id="ed" class="pane"><div id="sections"></div></main>
+    <aside id="out" class="pane"><div class="gpanel">
+      <div class="outhead"><span class="ltitle">LIVE OUTPUT</span><div class="spacer"></div>
+        <button class="mini" id="btn-copyjson">COPY JSON</button>
+        <button class="mini" id="btn-copyflat">COPY FLAT</button></div>
+      <pre id="outpre"></pre>
+    </div></aside>
+  </div>
+  <footer id="status">
+    <svg width="20" height="20"><use href="#glyph"/></svg>
+    <span id="statustext">ENGINE: BROWSER-NATIVE // MODULE REGISTRY ACTIVE</span>
+    <div class="spacer"></div><span id="statmode"></span>
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<div id="wiz"><div class="wpanel">
+  <div class="wtitle" id="wtitle">WALK</div>
+  <div class="wprog" id="wprog"></div>
+  <div class="wbar"><div id="wfill"></div></div>
+  <div class="wsec" id="wsec"></div>
+  <div class="wpath" id="wpath"></div>
+  <div id="wmount"></div>
+  <div class="wbtns" id="wfieldbtns">
+    <button id="wkeep">ACCEPT →</button>
+    <button id="wrest">KEEP ALL REMAINING</button>
+    <div class="spacer"></div>
+    <button id="wabort" class="destructive">ABORT</button>
+  </div>
+  <div class="wbtns" id="wmodbtns" style="display:none;">
+    <button id="wbegin">BEGIN WALK →</button>
+    <button id="wwalkall">WALK ALL</button>
+    <button id="wrndall">⚡RND ALL</button>
+    <button id="wskipall">SKIP ALL</button>
+    <div class="spacer"></div>
+    <button id="wabort2" class="destructive">ABORT</button>
+  </div>
+</div></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   MANIFEST REGISTRY — verbatim port of promptlib.py (full-length descriptions).
+   REGISTRY ⇄ SOURCE PARITY: canonical across all manifests, including the
+   Vintage / Character Lenses block. No authored data remains.
+   ═══════════════════════════════════════════════════════════════════════ */
+const M = {
+  "views": {
+    "EXTREME CLOSE-UP (ECU/XCU)": "Fills frame with single feature \u2014 eye, mouth, hand",
+    "CLOSE-UP (CU)": "Head and shoulders only, tight on face",
+    "MEDIUM CLOSE-UP (MCU)": "Chest and above \u2014 classic portrait framing",
+    "MEDIUM SHOT (MS)": "Waist and above \u2014 standard conversational",
+    "FULL SHOT (FS)": "Head to toe \u2014 full body in frame",
+    "WIDE SHOT (WS/LS)": "Subject dwarfed by environment \u2014 context dominant",
+    "EXTREME WIDE SHOT (EWS/XLS)": "Maximum environment \u2014 subject near invisible",
+    "BIRDS EYE (BE)": "True overhead, 90\u00b0 looking directly down",
+    "AERIAL OBLIQUE (AO)": "45\u201370\u00b0 downward from height \u2014 dramatic spatial context",
+    "WORM EYE LOW ANGLE (WELA)": "Camera at ground level looking steeply upward",
+    "LOW ANGLE DUTCH (LAD)": "Below subject, canted frame \u2014 power + disorientation",
+    "HIGH ANGLE STANDARD (HAS)": "Above subject looking down at 20\u201345\u00b0",
+    "SIDE CLOSE-UP (SCU)": "Lateral profile, chest level, slight downward tilt",
+    "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "45\u00b0 rotated, elevated 8ft, looking down",
+    "FRONT FISH EYE (FE)": "Ultra-wide rectilinear distortion, full front",
+    "FRONT EXTREME CLOSE-UP MACRO (ECUM/XCUM)": "100mm macro, full rib cage, f/2.8, razor sharp",
+    "OVER_SHOULDER (OS)": "Camera behind and above one shoulder, sees face",
+    "DUTCH_ANGLE_45 (DA45)": "Frame canted 45\u00b0 clockwise \u2014 tension, instability",
+    "TRACKING_LATERAL (TL)": "Camera moves parallel to subject mid-motion",
+    "REACTION SHOT (RS)": "Tight on face catching emotional response",
+    "INSERT MACRO DETAIL (IMD)": "Object or body-part detail \u2014 hands, lips, fabric",
+    "SPLIT DIOPTER (SD)": "Two focal planes sharp simultaneously",
+    "RACK_FOCUS_PULL (RFP)": "Foreground sharp \u2192 background sharp, soft middle",
+    "COWBOY SHOT (CS)": "Mid-thigh to head \u2014 American Western framing",
+    "TWO SHOT (2S)": "Two subjects in same frame, balanced composition",
+    "POINT OF VIEW (POV)": "Camera occupies subject's optical perspective",
+    "EXTREME MACRO DETAIL (XMD)": "Sub-millimetre magnification \u2014 pore, thread, droplet",
+    "REVERSE ANGLE (RA)": "180\u00b0 cut from prior angle \u2014 facing same axis",
+    "HANDHELD UNSTABLE (HU)": "Deliberate camera shake \u2014 urgency, documentary feel",
+    "SURVEILLANCE HIGH STATIC (SHS)": "Fixed high-corner security-cam aesthetic, wide",
+    "SNORKEL UNDERWATER (SUW)": "Below waterline looking up \u2014 distorted refraction",
+    "PERISCOPE LOW FLOOR (PLF)": "Camera at floor plane looking along surface",
+    "SILHOUETTE CONTRE-JOUR (SCJ)": "Subject fully backlit, detail lost to pure shadow form",
+    "PROFILE STRICT (PS)": "Pure 90\u00b0 lateral \u2014 zero facial front, full depth",
+    "NAPE OF NECK (NON)": "Tight on back of neck, base of skull, hair fall",
+    "HAND DETAIL MACRO (HDM)": "Hands only \u2014 knuckles, veins, tension, grip detail"
+  },
+  "kinematic": {
+    "structural_alignment": {
+      "anatomic_neutral": "0.0,0.0,0.0",
+      "supine_flat": "0.0,-1.0,0.0",
+      "supine_head_elevated": "0.0,-0.9,0.1",
+      "supine_legs_elevated": "0.0,-0.9,-0.1",
+      "prone_flat": "0.0,1.0,0.0",
+      "prone_head_turned_left": "-0.1,1.0,0.0",
+      "prone_head_turned_right": "0.1,1.0,0.0",
+      "fetal_position_left": "-0.5,-0.5,0.0",
+      "fetal_position_right": "0.5,-0.5,0.0",
+      "lateral_recumbent_left": "-1.0,0.0,0.0",
+      "lateral_recumbent_right": "1.0,0.0,0.0",
+      "spinal_extension_mild": "0.0,0.1,0.0",
+      "spinal_extension_maximum": "0.0,0.4,0.0",
+      "spinal_flexion_forward": "0.0,-0.3,0.1",
+      "spinal_flexion_deep": "0.0,-0.6,0.3",
+      "lateral_tilt_left": "-0.2,0.0,0.0",
+      "lateral_tilt_right": "0.2,0.0,0.0",
+      "axial_rotation_left": "0.0,0.0,-0.3",
+      "axial_rotation_right": "0.0,0.0,0.3",
+      "lithotomy_position": "0.0,-0.7,-0.4",
+      "obstetric_position": "0.0,-0.7,-0.4",
+      "supine_position_leg_stirrups": "0.0,-0.7,-0.4",
+      "dorsal_lithotomy_position": "0.0,-0.7,-0.4",
+      "fowlers_position": "0.0,-0.7,-0.4",
+      "knee-chest_position": "0.0,-0.7,-0.4",
+      "sims_position": "0.0,-0.7,-0.4",
+      "frog-leg_position": "0.0,-0.7,-0.4",
+      "perineal_position": "0.0,-0.7,-0.4",
+      "dorsal_recumbent_position": "0.0,-0.7,-0.4",
+      "jackkkife_position": "0.0,-0.7,-0.4",
+      "trendelenburg_position": "0.0,-1.0,-0.3",
+      "reverse_trendelenburg": "0.0,-1.0,0.3"
+    },
+    "postural_dynamics": {
+      "crouching_low_compression": "0.0,-0.8,0.0",
+      "crouching_mid_balance": "0.0,-0.4,0.0",
+      "crouching_high_stance": "0.0,-0.2,0.0",
+      "kneeling_upright_neutral": "0.0,-0.6,0.0",
+      "kneeling_low_heel_sit": "0.0,-0.9,0.0",
+      "kneeling_single_left_up": "-0.1,-0.5,0.1",
+      "kneeling_single_right_up": "0.1,-0.5,0.1",
+      "seated_upright_erect": "0.0,-0.5,0.0",
+      "seated_slouched_anterior": "0.0,-0.5,0.2",
+      "seated_crossed_legs_flat": "0.0,-0.5,0.1",
+      "seated_reclined_passive": "0.0,-0.6,-0.3",
+      "seated_vanity_counter_lean": "0.0,-0.4,0.3",
+      "seated_casual_vanity_lean": "seated casually on bathroom counter, leaning forward toward mirror, legs relaxed or crossed",
+      "squat_full_deep": "0.0,-0.95,0.0",
+      "squat_parallel_utility": "0.0,-0.7,0.0",
+      "squat_wide_sumo": "0.0,-0.65,0.0",
+      "standing_wide_base": "0.0,0.0,0.0",
+      "standing_one_leg_left": "-0.2,0.1,0.0",
+      "standing_one_leg_right": "0.2,0.1,0.0",
+      "bending_waist_orthogonal": "0.0,-0.5,0.5",
+      "stooping_low": "0.0,-0.6,0.4"
+    },
+    "extremity_articulation_upper": {
+      "arms_overhead_extended_maximum": "0.0,1.8,0.0",
+      "arms_lateral_t_pose": "0.0,1.2,0.0",
+      "arms_akimbo_assertive": "0.3,0.5,0.0",
+      "arms_crossed_chest": "0.0,0.5,0.1",
+      "hands_behind_head_interlocked": "0.0,1.4,0.0",
+      "reaching_forward_sagittal": "0.0,0.5,0.8",
+      "reaching_down_vertical": "0.0,-0.5,0.5",
+      "abduction_shoulder_left_90": "-0.8,0.5,0.0",
+      "abduction_shoulder_right_90": "0.8,0.5,0.0",
+      "adduction_shoulder_left_cross": "0.4,0.3,0.2",
+      "adduction_shoulder_right_cross": "-0.4,0.3,0.2",
+      "elbow_flexion_left_maximum": "-0.2,0.4,0.2",
+      "elbow_flexion_right_maximum": "0.2,0.4,0.2",
+      "elbow_extension_left_straight": "-0.5,0.0,0.0",
+      "elbow_extension_right_straight": "0.5,0.0,0.0",
+      "wrist_flexion_bilateral": "0.0,0.2,0.1",
+      "wrist_extension_bilateral": "0.0,0.2,-0.1",
+      "forearm_pronation_left": "-0.1,0.3,0.0",
+      "forearm_pronation_right": "0.1,0.3,0.0",
+      "forearm_supination_left": "-0.1,0.2,0.0",
+      "forearm_supination_right": "0.1,0.2,0.0",
+      "hands_clenched_fists": "0.0,0.3,0.2",
+      "hands_open_palms_up": "0.0,0.3,0.3"
+    },
+    "extremity_articulation_lower": {
+      "hip_flexion_left_90": "-0.2,0.4,0.4",
+      "hip_flexion_right_90": "0.2,0.4,0.4",
+      "hip_extension_left_back": "-0.1,-0.2,-0.5",
+      "hip_extension_right_back": "0.1,-0.2,-0.5",
+      "hip_abduction_left_wide": "-0.6,0.0,0.0",
+      "hip_abduction_right_wide": "0.6,0.0,0.0",
+      "knee_flexion_left_90": "-0.2,-0.3,-0.3",
+      "knee_flexion_right_90": "0.2,-0.3,-0.3",
+      "knee_hyper_extension": "0.0,0.05,0.0",
+      "ankle_dorsiflexion_left": "-0.1,-0.9,0.1",
+      "ankle_dorsiflexion_right": "0.1,-0.9,0.1",
+      "ankle_plantarflexion_left": "-0.1,-1.1,-0.1",
+      "ankle_plantarflexion_right": "0.1,-1.1,-0.1",
+      "foot_inversion_bilateral": "0.0,-1.0,0.0",
+      "foot_eversion_bilateral": "0.0,-1.0,0.0"
+    },
+    "gait_and_locomotion": {
+      "walking_slow_cadence": "0.0,0.0,0.3",
+      "walking_brisk_stride": "0.0,0.0,0.8",
+      "running_jog_sustained": "0.0,0.0,1.5",
+      "sprinting_full_propulsion": "0.0,0.0,2.5",
+      "stumbling_unbalanced_anterior": "0.2,0.0,0.4",
+      "leaping_vertical_clearance": "0.0,1.5,1.0",
+      "sidestepping_left": "-0.5,0.0,0.0",
+      "sidestepping_right": "0.5,0.0,0.0",
+      "backpedaling_rapid": "0.0,0.0,-0.8",
+      "crawling_quadrupedal": "0.0,-0.7,0.4",
+      "climbing_vertical_ladder": "0.0,0.8,0.2",
+      "marching_high_knee": "0.0,0.2,0.6",
+      "pacing_reflective": "0.0,0.0,0.2",
+      "lunging_forward_left": "-0.2,-0.4,0.6",
+      "lunging_forward_right": "0.2,-0.4,0.6",
+      "sliding_lateral_low": "0.0,-0.3,0.5",
+      "running_towards_camera": "0.0,0.0,1.5",
+      "running_away_from_camera": "0.0,0.0,-1.5"
+    },
+    "facial_and_cephalic_orientation": {
+      "facing_north_true": "0.0,0.0,1.0",
+      "facing_south_true": "0.0,0.0,-1.0",
+      "facing_east_true": "1.0,0.0,0.0",
+      "facing_west_true": "-1.0,0.0,0.0",
+      "tilting_up_superior": "0.0,0.5,0.0",
+      "tilting_down_inferior": "0.0,-0.5,0.0",
+      "head_rotation_left_90": "0.0,0.0,-1.0",
+      "head_rotation_right_90": "0.0,0.0,1.0",
+      "head_lateral_flexion_left": "-0.3,0.1,0.0",
+      "head_lateral_flexion_right": "0.3,0.1,0.0",
+      "jaw_depression_open": "0.0,-0.1,0.0",
+      "head_protraction_anterior": "0.0,0.0,0.2",
+      "head_retraction_posterior": "0.0,0.0,-0.1"
+    },
+    "kinetic_combat_and_athletic": {
+      "boxer_guard_left_lead": "-0.2,0.4,0.3",
+      "boxer_guard_right_lead": "0.2,0.4,0.3",
+      "martial_arts_crane_stance": "0.0,0.5,0.0",
+      "punch_straight_jab_left": "-0.5,0.6,0.9",
+      "punch_straight_cross_right": "0.5,0.6,1.1",
+      "kick_front_snap_right": "0.3,0.8,0.8",
+      "kick_roundhouse_right": "0.8,0.5,0.5",
+      "athletic_ready_split_stance": "0.0,-0.2,0.1",
+      "swimming_freestyle_stroke": "0.0,0.1,1.4",
+      "yoga_warrior_one": "0.0,-0.3,0.4",
+      "yoga_warrior_two": "0.0,-0.3,0.0",
+      "yoga_downward_dog": "0.0,-0.5,0.6",
+      "yoga_tree_pose_left": "-0.3,0.4,0.0",
+      "yoga_tree_pose_right": "0.3,0.4,0.0",
+      "sprinter_starting_blocks": "0.0,-0.7,0.2",
+      "diving_tuck_midair": "0.0,1.0,0.5"
+    },
+    "crouching_hiding_actions": {
+      "hide_behind_stones_desert": "0.0,-0.5,0.6",
+      "hide_behind_waterfall_stones": "0.0,-0.7,0.3",
+      "hide_around_corner_wall": "-0.3,-0.3,0.2",
+      "peering_through_gap": "0.0,-0.4,0.5",
+      "flat_against_wall_side": "0.0,0.0,0.0",
+      "ducking_below_sill": "0.0,-0.8,0.0",
+      "crawling_under_cover": "0.0,-0.9,0.3",
+      "pressed_into_doorframe_shadow": "0.0,-0.1,0.0",
+      "crouching_behind_car_door": "-0.2,-0.6,0.1",
+      "lying_flat_under_surface": "0.0,-1.0,0.0",
+      "kneeling_against_column": "0.0,-0.6,-0.1",
+      "shadow_merge_standing_still": "0.0,0.0,-0.1"
+    },
+    "ergonomic_and_occupational": {
+      "typing_keyboard_desk": "0.0,-0.1,0.3",
+      "lifting_heavy_box_ground": "0.0,-0.7,0.4",
+      "reaching_top_shelf": "0.0,1.6,0.4",
+      "driving_steering_wheel": "0.0,0.0,0.4",
+      "operating_machinery_standing": "0.0,0.0,0.5",
+      "writing_surface_sitting": "0.0,-0.4,0.2",
+      "carrying_shoulder_load": "0.2,0.3,0.1",
+      "pushing_heavy_object_anterior": "0.0,-0.1,0.6",
+      "pulling_heavy_rope_posterior": "0.0,-0.1,-0.6",
+      "scrubbing_floor_kneeling": "0.0,-0.8,0.3",
+      "filming_camera_eye_level": "0.0,0.4,0.2",
+      "saluting_military_protocol": "0.3,1.2,0.1",
+      "phone_to_ear_standing": "0.2,0.4,0.1",
+      "reading_book_seated_forward": "0.0,-0.4,0.3",
+      "applying_makeup_mirror_lean": "0.0,-0.3,0.4",
+      "smoking_standing_exhale": "0.0,0.1,-0.1",
+      "drinking_glass_tipped_back": "0.0,0.3,-0.2"
+    },
+    "intimate_and_expressive": {
+      "energetic_rhythmic_upper_body_dance": "0.0,0.4,0.1",
+      "intimate_rhythmic_upper_body_movement": "0.0,0.4,0.1",
+      "energetic_rhyhmic_upper_body_sway": "0.0,0.4,0.1",
+      "gentle_upper_body_sway": "0.0,0.4,0.1",
+      "liberated_rhythmic_upper_body_dance": "0.0,0.4,0.1",
+      "arms_wrapped_self_embrace": "0.0,0.3,0.1",
+      "hand_over_mouth_suppressed": "0.2,0.5,0.0",
+      "head_in_hands_grief": "0.0,-0.2,0.2",
+      "hand_on_chest_heart": "0.0,0.4,0.1",
+      "hand_trailing_neck_collarbone": "0.1,0.5,0.0",
+      "fingers_through_hair_slow": "0.0,0.7,0.1",
+      "pressing_palms_flat_surface": "0.0,-0.1,0.4",
+      "braced_against_wall_hands": "0.0,0.1,0.3",
+      "covering_eyes_one_hand": "0.1,0.5,0.0",
+      "chin_resting_on_knees_seated": "0.0,-0.6,0.3",
+      "stretched_out_arms_wall_lean": "0.0,0.3,0.5",
+      "curled_knees_to_chest_supine": "0.0,-0.8,0.2",
+      "one_arm_raised_wall_forearm_rest": "0.0,0.5,0.2",
+      "lying_face_down_arms_beside": "0.0,1.0,-0.1",
+      "sitting_legs_pulled_wide_floor": "0.0,-0.7,0.1",
+      "torso_twist_look_behind": "0.0,0.0,-0.5"
+    },
+    "micro_hand_articulation": {
+      "fingertips_resting_lightly_on_glass": "0.0,0.1,0.3",
+      "hand_gripping_fabric_high_tension": "0.0,0.2,0.1",
+      "fingers_interlaced_resting_chin": "0.0,0.4,0.2",
+      "single_index_finger_tracing_lip": "0.1,0.5,0.0"
+    }
+  },
+  "layouts": {
+    "LAYOUT: SINGLE_FRAME": "{'PRIMARY': ''}",
+    "LAYOUT: DIPTYCH_HORIZONTAL": "{'LEFT': '', 'RIGHT': ''}",
+    "LAYOUT: DIPTYCH_VERTICAL": "{'TOP': '', 'BOTTOM': ''}",
+    "LAYOUT: BEFORE_AFTER": "{'BEFORE': '', 'AFTER': ''}",
+    "LAYOUT: TRIPTYCH": "{'FRONT FACING': '', 'THREE QUARTER SIDE VIEW': '', 'BACK VIEW': ''}",
+    "LAYOUT: TRIPTYCH_NARRATIVE": "{'ACT_ONE': '', 'ACT_TWO': '', 'ACT_THREE': ''}",
+    "LAYOUT: FOUR_PANEL_CINEMATIC": "{'ESTABLISHING WIDE': '', 'MEDIUM CLOSE-UP': '', 'EXTREME CLOSE-UP': '', 'REACTION SHOT': ''}",
+    "LAYOUT: FOUR_PANEL_2x2": "{'TOP_LEFT': '', 'TOP_RIGHT': '', 'BOTTOM_LEFT': '', 'BOTTOM_RIGHT': ''}",
+    "LAYOUT: SIX_PANEL_COMPOSITE": "{'FRONT MEDIUM CLOSE-UP (MCU)': '', 'BIRDS EYE (BE)': '', 'FRONT EXTREME CLOSE-UP (ECU/XCU)': '', 'SIDE CLOSE-UP (SCU)': '', 'THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)': '', 'FRONT FISH EYE (FE)': ''}",
+    "LAYOUT: SIX_PANEL_2x3": "{'R1_C1': '', 'R1_C2': '', 'R1_C3': '', 'R2_C1': '', 'R2_C2': '', 'R2_C3': ''}",
+    "LAYOUT: NINE_PANEL_COMPOSITE": "{'FRONT MEDIUM CLOSE-UP (MCU)': '', 'BIRDS EYE (BE)': '', 'FRONT EXTREME CLOSE-UP (ECU/XCU)': '', 'SIDE CLOSE-UP (SCU)': '', 'THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)': '', 'FRONT FISH EYE (FE)': '', 'REAR MEDIUM SHOT (RMS)': '', 'OVERHEAD MACRO (OHM)': '', 'DUTCH ANGLE WORM EYE (DAWE)': ''}",
+    "LAYOUT: NINE_PANEL_3x3": "{'R1_C1': '', 'R1_C2': '', 'R1_C3': '', 'R2_C1': '', 'R2_C2': '', 'R2_C3': '', 'R3_C1': '', 'R3_C2': '', 'R3_C3': ''}"
+  },
+  "styling": [
+    "HELMUT_NEWTON",
+    "STEVEN_KLEIN",
+    "GUY_BOURDIN",
+    "ELLEN_VON_UNWERTH",
+    "PETRA_COLLINS",
+    "CASS_BIRD",
+    "ELLEN_VON_UNWERTH_AND_PETRA_COLLINS_AND_CASS_BIRD",
+    "ROXANNE_LOWIT",
+    "MARIO_SORRENTI",
+    "DAVID_LACHAPELLE",
+    "TIM_WALKER",
+    "NADIA_LEE_COHEN",
+    "DEBORAH_TURBEVILLE_AND_YELENA_YEMCHUK",
+    "CORINNE_DAY",
+    "NAN_GOLDIN",
+    "LARRY_CLARK",
+    "DAIDO_MORIYAMA",
+    "HORST_P_HORST_AND_RICHARD_AVEDON",
+    "PETER_LINDBERGH_AND_LEE_MILLER",
+    "MARIO_TESTINO_AND_BRUCE_WEBER",
+    "ANNIE_LEIBOVITZ_AND_TYLER_MITCHELL_AND_CAMPBELL_ADDY",
+    "HERB_RITTS",
+    "EMMA_SUMMERTON",
+    "RYAN_MCGINLEY",
+    "JUERGEN_TELLER",
+    "TERRY_RICHARDSON",
+    "PAOLO_ROVERSI",
+    "NICK_KNIGHT",
+    "STEVEN_MEISEL",
+    "GLEN_LUCHFORD",
+    "SOLVE_SUNDSBO",
+    "INEZ_AND_VINOODH",
+    "CRAIG_MCDEAN",
+    "FRANCESCA_WOODMAN",
+    "CINDY_SHERMAN",
+    "DIANE_ARBUS",
+    "LISETTE_MODEL",
+    "RALPH_GIBSON",
+    "JEANLOUP_SIEFF",
+    "SARAH_MOON",
+    "BETTINA_RHEIMS",
+    "ANDERS_PETERSEN",
+    "NOBUYOSHI_ARAKI",
+    "MASAHISA_FUKASE",
+    "DOROTHEA_LANGE",
+    "GORDON_PARKS",
+    "KWAME_BRATHWAITE",
+    "DEANA_LAWSON",
+    "ZANELE_MUHOLI",
+    "HARLEY_WEIR",
+    "COCO_CAPITAN",
+    "JAMIE_HAWKESWORTH",
+    "JACK_DAVISON",
+    "BRIANNA_CAPOZZI",
+    "COLLIER_SCHORR",
+    "WOLFGANG_TILLMANS",
+    "BORIS_MIKHAILOV",
+    "MARTIN_PARR",
+    "ALEC_SOTH",
+    "GREGORY_CREWDSON",
+    "PHILIP_LORCA_DICORCIA",
+    "NADAV_KANDER",
+    "ERWIN_OLAF",
+    "VIVIANE_SASSEN",
+    "MERT_AND_MARCUS",
+    "LUIGI_AND_IANGO",
+    "CHRIS_VON_WANGENHEIM",
+    "HIRO",
+    "IRVING_PENN",
+    "RICHARD_AVEDON_STREET"
+  ],
+  "lighting": {
+    "dramatic_studio_lighting_camera_left": "Single-source spotlight directly overhead shining down. Photonic interaction treated as pure optical variable governed by incidence angle (grazing angles produce heightened contour emphasis) and source power (linear-to-exponential increase in modeling intensity and light resistence)",
+    "intense_direct_overhead_spotlight": "intense, direct, single-source overhead light, hard flash luminosity with harsh shadows and specular highlights",
+    "on_camera_popup_flash_5500K": "Hard on-axis flash, inverse-square falloff, harsh catch-lights",
+    "off_camera_strobe_45_left_5600K": "45\u00b0 camera-left hard strobe, sharp single shadow",
+    "off_camera_strobe_45_right_5600K": "45\u00b0 camera-right hard strobe, mirrored shadow",
+    "ring_flash_on_axis_5500K": "Flat fill, signature ring catch-light, zero shadow",
+    "bare_bulb_handheld_flash_5400K": "Omnidirectional scatter, wrap-around hard light",
+    "softbox_large_octagonal_5600K": "Broad soft wrap, graduated shadow edge",
+    "softbox_strip_narrow_5600K": "Directional wrap, controlled spill, classic beauty",
+    "beauty_dish_silver_5500K": "Punchy skin texture, specular punch, mid-shadow",
+    "beauty_dish_white_5500K": "Softer punch, less specular than silver dish",
+    "parabolic_reflector_deep_5600K": "Focused hard spot, specular column, long throw",
+    "fresnel_spotlight_5600K": "Variable hard/soft with grid, theatrical control",
+    "hmi_daylight_5600K": "Parallel near-zero falloff, hard cinema key",
+    "led_panel_bicolor_variable_K": "Variable colour temp, soft even field, low shadow",
+    "tungsten_open_face_3200K": "Warm hard directional, high CRI warmth",
+    "tungsten_softbox_3200K": "Warm soft wrap, low colour temp, incandescent glow",
+    "candle_practical_1800K": "Extreme warm point source, 1600K, hard short falloff",
+    "neon_tube_practical_variable": "Coloured ambient wash, hum artefact, retro-industrial",
+    "fluorescent_overhead_bank_4000K": "Flat overhead fill, green-shift potential, commercial",
+    "window_natural_daylight_5600K": "Soft directional side fill, rolling gradient shadow",
+    "window_overcast_diffused_6500K": "Flat cool fill, near-zero contrast, even skin tone",
+    "skylight_open_shade_7000K": "Cool blue fill from open sky, subtle specular",
+    "bounce_silver_reflector_fill": "Specular bounce fill, 0.7 ratio to key",
+    "bounce_white_card_fill": "Soft matte bounce fill, 0.3\u20130.5 ratio",
+    "no_fill_true_ratio_lighting": "No fill \u2014 deep shadows, pure ratio setup",
+    "practical_lamp_3000K_background": "Background warm practical, 0.1 ratio ambient bleed",
+    "ambient_tungsten_3200K_background": "Dim warm background glow, ratio 0.04",
+    "ambient_moonlight_4100K": "Cool blue-grey ambient, very low intensity",
+    "grid_10_degree": "Tight grid on key \u2014 zero spill, spot control",
+    "grid_30_degree": "Medium grid \u2014 moderate spill control",
+    "gel_CTO_full_warm_3200K": "Full CTO warm gel over daylight source",
+    "gel_CTB_full_cool_6500K": "Full CTB cool gel over tungsten source",
+    "gel_red_saturated": "Deep red ambient wash, dramatic colour",
+    "gel_green_saturated": "Sickly green wash \u2014 clinical, horror adjacent",
+    "gel_blue_deep": "Cold blue wash \u2014 night, alienation",
+    "snoot_tight_beam": "Narrow cone, precise hot-spot isolation",
+    "barn_doors_four_way": "Rectangular spill control on key source",
+    "diffusion_silk_heavy": "Heavy diffusion over strobe \u2014 very soft",
+    "diffusion_frost_light": "Light frost \u2014 minor softening, retains punch",
+    "shadow_razor_hard_zero_penumbra": "Jet-black drop shadows, zero feather, contact print hard",
+    "shadow_moderate_10pct_feather": "Slight edge softness, still defined",
+    "shadow_soft_graduated_30pct": "Gradual transition, 30% penumbra blend zone",
+    "shadow_no_shadow_high_key": "No visible shadow \u2014 flat even illumination",
+    "shadow_double_crosslit_artifact": "Two shadow directions from cross-lit sources",
+    "shadow_long_oblique_directional": "Long stretched shadow \u2014 subject at oblique angle to key",
+    "flash_sync_1_60_standard": "Standard flash sync, slight ambient bleed at slow end",
+    "flash_sync_1_125_standard": "Clean standard sync, minimal ambient",
+    "flash_sync_1_250_hss": "High-speed sync, daylight killing capability",
+    "flash_sync_1_500_hss_full_kill": "Maximum daylight suppression, pure flash look",
+    "long_exposure_bulb_ambient_bleed": "Bulb exposure + flash pop \u2014 motion blur background",
+    "practical_tv_screen_cool_flicker": "Blue-white TV glow, 5000\u20136500K flicker, low intensity",
+    "practical_lighter_flame_very_close": "Extreme warm point source, 1600K, hard short falloff",
+    "practical_phone_screen_uplight": "Cold uplight from screen, 6000K, ghostly underlighting",
+    "practical_fridge_light_interior": "Diffused cold white from below, 4500K, deep shadow top",
+    "practical_aquarium_caustic_blue": "Undulating blue caustic ripple, 7000K, water refraction",
+    "red_room_darkroom_safelight": "Mono-chromatic deep red, 620nm, near-zero modelling",
+    "uv_blacklight_fluorescent_365nm": "UV reactive surface glow, ambient near-black, neon pop",
+    "fireplace_embers_low_practical": "Deep amber ember glow, 1200K, very dim, warm shadow fill",
+    "sodium_vapour_street_590nm": "Monochromatic warm orange, desaturates colour, flat CRI",
+    "mercury_vapour_cool_405nm": "Cold blue-purple industrial, skin appears grey-green",
+    "laser_pointer_grid_overlay": "Coherent 532nm green or 650nm red point scatter",
+    "hmi_par_5600K_hard_parallel": "Hard parallel HMI PAR \u2014 simulates direct sun beam",
+    "hmi_fresnel_5600K_spot_mode": "Focusable fresnel spot, hard centre, soft edge",
+    "arri_skypanel_s60_full_colour": "RGB+W LED soft panel, full colour mixing, even field",
+    "dedolight_150W_focusable": "Tiny hard focusable source, extreme precision, 3200K",
+    "kino_flo_4bank_5600K": "Fluorescent soft bank, low contrast, fashion fill",
+    "chimera_lightbank_large": "Large softbox equivalent over strobe, very soft",
+    "litepanels_astra_bicolor": "LED panel, variable 3200\u20135600K, low heat, soft field",
+    "leko_source_four_spot_5600K": "Ellipsoidal spotlight, sharp iris-cut beam, theatrical",
+    "astera_titan_tube_RGB_practical": "RGBWW pixel tube, full colour, remote DMX, practical",
+    "skypanel_s60_overhead_softbox": "ARRI SkyPanel overhead, full-field soft top light",
+    "18k_hmi_through_window_silk": "18K HMI bounced through diffusion silk \u2014 sun simulation",
+    "teal_orange_hollywood_grade": "Complementary teal shadow / orange skin grade",
+    "monochrome_silver_gelatin_grade": "Desaturated B&W with silver halide grain emulation",
+    "cross_process_e6_in_c41": "Slide film cross-processed \u2014 cyan shadows, yellow skin",

@@ -28,6 +28,7 @@ fi
 # --- Global Variables and Constants ---
 declare -i SILENT=0 DRY_RUN=0 VPN_FLAG=0 JD_FLAG=0 BACKUP_FLAG=0 STATUS_FLAG=0 RESOLV_BACKUP_CREATED=0 DISCONNECT_FLAG=0
 declare -i SWAPPINESS_VAL=60
+declare -i SWAPPINESS_EXPLICIT=0 # 1 only if --swappiness was actually passed; see configure_sysctl
 declare -i UFW_SUPPORTS_COMMENT=1
 declare -i CLEANUP_RAN=0
 
@@ -54,9 +55,9 @@ declare -g WG_PROFILE="" # NetworkManager WireGuard connection NAME (MegaVPN pro
 # --- Core Functions ---
 
 # Comprehensive cleanup trap to restore DNS on exit/error.
-# Reentrancy-guarded (Finding 5): a second signal arriving while cleanup is
-# already running (e.g. a second Ctrl-C) must not re-enter this function and
-# risk a half-completed restore_resolv_conf or duplicate log writes.
+# Reentrancy-guarded: a second signal arriving while cleanup is already
+# running (e.g. a second Ctrl-C) must not re-enter this function and risk a
+# half-completed restore_resolv_conf or duplicate log writes.
 cleanup() {
 	local status=$?
 	if [[ "$CLEANUP_RAN" -eq 1 ]]; then
@@ -150,14 +151,16 @@ usage() {
 	echo "  --vpn             : Connect MegaVPN (WireGuard via NetworkManager) and apply VPN+DNS+UFW rules (kill switch)."
 	echo "  --profile NAME    : NetworkManager WireGuard connection NAME to use with --vpn."
 	echo "                      Optional if exactly one WireGuard profile is imported, or if fzf"
-	echo "                      is available for interactive selection."
+	echo "                      is available and stdin is a TTY for interactive selection."
 	echo "  --disconnect      : Disconnect VPN, restore DNS, and reset UFW to defaults."
 	echo "  --jdownloader     : Configure JDownloader2-specific firewall rules."
 	echo "  --backup          : Create backups before modifying config files."
 	echo "  --silent          : Suppress console output (logs only)."
 	echo "  --dry-run         : Simulate actions without making changes."
 	echo "  --status          : Display current firewall/VPN status only."
-	echo "  --swappiness N    : Set vm.swappiness to N (default $DEFAULT_SWAPPINESS)."
+	echo "  --swappiness N    : Explicitly set vm.swappiness to N. Opt-in only -- if omitted,"
+	echo "                      ufw.sh does not touch vm.swappiness at all, leaving it to"
+	echo "                      whichever other sysctl.d file owns it (e.g. a zram config)."
 	echo "  --help, -h        : Show this help message."
 	echo ""
 	echo "Examples:"
@@ -214,6 +217,7 @@ parse_args() {
 		--swappiness)
 			if [[ -n "${2:-}" && "${2}" =~ ^[0-9]+$ ]]; then
 				SWAPPINESS_VAL="${2}"
+				SWAPPINESS_EXPLICIT=1
 				log INFO "Option: --swappiness set to $SWAPPINESS_VAL"
 				shift
 			else
@@ -227,7 +231,7 @@ parse_args() {
 			usage 1
 			;;
 		esac
-shift
+		shift
 	done
 }
 
@@ -318,8 +322,8 @@ detect_primary_interface() {
 # Detect active MegaVPN (WireGuard) interfaces.
 # Primary path: modern iproute2 supports `ip link show type wireguard`, which
 # identifies WireGuard devices regardless of what NetworkManager or wg-quick
-# named them (previously this matched tun/ppp naming, which is expressvpn-
-# specific and does not apply to a NetworkManager-managed WireGuard device).
+# named them (baseline matched tun/ppp naming, which is expressvpn-specific
+# and does not apply to a NetworkManager-managed WireGuard device).
 # Fallback path: older iproute2 without wireguard-type filtering resolves the
 # device bound to the active WG_PROFILE connection via nmcli instead.
 detect_vpn_interfaces() {
@@ -361,7 +365,7 @@ cidr_to_network() {
 	local net_int=$((ip_int & mask_int))
 	printf '%d.%d.%d.%d/%d\n' \
 		$(((net_int >> 24) & 0xFF)) $(((net_int >> 16) & 0xFF)) \
-$(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
+		$(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
 	return 0
 }
 
@@ -379,7 +383,10 @@ $(((net_int >> 8) & 0xFF)) $((net_int & 0xFF)) "$prefix"
 # resolvconf-managed) to recover the real per-interface upstream servers for
 # the WireGuard interface specifically. A systemd-resolved branch is retained
 # for hosts that have not migrated off it, and a literal resolv.conf parse is
-# the final fallback for systems running neither.
+# the final fallback for systems running neither. In every fallback path we
+# preserve, rather than discard, the "this may be a stub/loopback address,
+# not the real upstream" warning so the operator can tell a confident parse
+# from a best-effort one.
 parse_dns_servers() {
 	log INFO "Parsing DNS servers for VPN allowlist"
 	VPN_DNS_SERVERS=()
@@ -399,53 +406,47 @@ parse_dns_servers() {
 		managed_by="systemd-resolved"
 	fi
 
-	if [[ "$managed_by" == "resolvconf" ]]; then
-		if command -v resolvconf >/dev/null 2>&1; then
-			log INFO "$RESOLV_FILE is resolvconf-managed; querying per-interface records for the VPN interface(s)."
-			local iface_list="$VPN_IFACES"
-			if [[ -n "$iface_list" ]]; then
-				local iface
-				for iface in $iface_list; do
-					while IFS= read -r ip; do
-						[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
-					done < <(resolvconf -l "${iface}*" 2>/dev/null | awk '/^nameserver/ {print $2}')
-				done
-			fi
-			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
-				log INFO "No interface-scoped resolvconf record matched (expected for NetworkManager); querying all resolvconf records."
-				mapfile -t VPN_DNS_SERVERS < <(resolvconf -l 2>/dev/null | awk '/^nameserver/ {print $2}' | sort -u)
-			fi
-			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
-				log WARN "resolvconf returned no nameservers; falling back to $RESOLV_FILE."
-			else
-				log OK "Parsed DNS servers via resolvconf: ${VPN_DNS_SERVERS[*]}"
-				return 0
-			fi
-		else
-			log WARN "resolvconf binary not found, but $RESOLV_FILE is resolvconf-managed. Falling back to literal parse."
+	if [[ "$managed_by" == "resolvconf" ]] && command -v resolvconf >/dev/null 2>&1; then
+		log INFO "$RESOLV_FILE is resolvconf-managed; querying per-interface records for the VPN interface(s)."
+		local iface_list="$VPN_IFACES"
+		if [[ -n "$iface_list" ]]; then
+			local iface
+			for iface in $iface_list; do
+				while IFS= read -r ip; do
+					[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
+				done < <(resolvconf -l "${iface}*" 2>/dev/null | awk '/^nameserver/ {print $2}')
+			done
 		fi
-	elif [[ "$managed_by" == "systemd-resolved" ]]; then
-		if command -v resolvectl >/dev/null 2>&1; then
-			log INFO "$RESOLV_FILE points at the systemd-resolved stub; querying resolvectl for real upstream DNS."
-			local iface_list="$VPN_IFACES"
-			if [[ -z "$iface_list" ]]; then
-				mapfile -t VPN_DNS_SERVERS < <(resolvectl dns 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
-			else
-				local iface
-				for iface in $iface_list; do
-					while IFS= read -r ip; do
-						[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
-					done < <(resolvectl dns "$iface" 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-				done
-			fi
-			if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
-				log WARN "resolvectl returned no upstream DNS servers for VPN interface(s); falling back to $RESOLV_FILE."
-			else
-				log OK "Parsed real upstream DNS servers via resolvectl: ${VPN_DNS_SERVERS[*]}"
-				return 0
-			fi
+		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+			log INFO "No interface-scoped resolvconf record matched '$iface_list'; querying all resolvconf records as a broader fallback."
+			mapfile -t VPN_DNS_SERVERS < <(resolvconf -l 2>/dev/null | awk '/^nameserver/ {print $2}' | sort -u)
+		fi
+		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+			log WARN "resolvconf returned no nameservers; falling back to $RESOLV_FILE."
 		else
-			log WARN "resolvectl binary not found, but $RESOLV_FILE is systemd-resolved-managed. Falling back to literal parse."
+			log OK "Parsed DNS servers via resolvconf: ${VPN_DNS_SERVERS[*]}"
+			return 0
+		fi
+	elif [[ "$managed_by" == "resolvconf" ]]; then
+		log WARN "$RESOLV_FILE appears resolvconf-managed but the 'resolvconf' binary is unavailable; per-interface DNS cannot be confirmed. Falling back to a literal parse of $RESOLV_FILE."
+	elif [[ "$managed_by" == "systemd-resolved" ]] && command -v resolvectl >/dev/null 2>&1; then
+		log INFO "$RESOLV_FILE points at the systemd-resolved stub; querying resolvectl for real upstream DNS."
+		local iface_list="$VPN_IFACES"
+		if [[ -z "$iface_list" ]]; then
+			mapfile -t VPN_DNS_SERVERS < <(resolvectl dns 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+		else
+			local iface
+			for iface in $iface_list; do
+				while IFS= read -r ip; do
+					[[ -n "$ip" ]] && VPN_DNS_SERVERS+=("$ip")
+				done < <(resolvectl dns "$iface" 2>/dev/null | awk -F': ' 'NF>1 {print $2}' | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+			done
+		fi
+		if [[ ${#VPN_DNS_SERVERS[@]} -eq 0 ]]; then
+			log WARN "resolvectl returned no upstream DNS servers for VPN interface(s); falling back to $RESOLV_FILE."
+		else
+			log OK "Parsed real upstream DNS servers via resolvectl: ${VPN_DNS_SERVERS[*]}"
+			return 0
 		fi
 	fi
 
@@ -455,7 +456,7 @@ parse_dns_servers() {
 			log WARN "No nameservers found in $RESOLV_FILE"
 			return 1
 		else
-			if [[ "$managed_by" == "systemd-resolved" || "$managed_by" == "resolvconf" ]] && grep -qE '^nameserver[[:space:]]+127\.0\.0\.5[34]$' "$RESOLV_FILE" 2>/dev/null; then
+			if [[ "$managed_by" == "systemd-resolved" ]]; then
 				log WARN "Using stub-resolver address(es) from $RESOLV_FILE (${VPN_DNS_SERVERS[*]}); DNS allowlist may not reflect real VPN DNS servers."
 			else
 				log OK "Parsed DNS servers directly from $RESOLV_FILE: ${VPN_DNS_SERVERS[*]}"
@@ -499,14 +500,13 @@ backup_file() {
 }
 
 # Backup resolv.conf before modification.
-# Symlink-aware (Finding 4): under either systemd-resolved or resolvconf,
-# /etc/resolv.conf is normally a symlink to a daemon-managed runtime path.
-# Blindly `cp`-ing over it would replace the symlink with a plain file, which
-# can desync from the managing daemon's own state until it is restarted. We
-# record whether it was a symlink and, if so, back up the link target path
-# itself rather than a copy of the (often transient) file contents. This
-# logic is DNS-backend-agnostic and requires no change for the resolvconf
-# migration.
+# Symlink-aware: under either systemd-resolved or resolvconf, /etc/resolv.conf
+# is normally a symlink to a daemon-managed runtime path. Blindly `cp`-ing
+# over it would replace the symlink with a plain file, which can desync from
+# the managing daemon's own state until it is restarted. We record whether it
+# was a symlink and, if so, back up the link target path itself rather than a
+# copy of the (often transient) file contents. This logic is DNS-backend-
+# agnostic and requires no change for the resolvconf migration.
 backup_resolv_conf() {
 	if [[ -f "$RESOLV_BACKUP" || -L "$RESOLV_BACKUP" ]]; then
 		log INFO "VPN DNS backup already exists at $RESOLV_BACKUP"
@@ -538,17 +538,17 @@ backup_resolv_conf() {
 			log ERROR "Failed to backup $RESOLV_FILE"
 			return 1
 		fi
-else
+	else
 		log WARN "$RESOLV_FILE not found, cannot backup."
 		return 1
 	fi
 }
 
 # Restore resolv.conf from backup.
-# Symlink-aware counterpart to backup_resolv_conf (Finding 4): if the backup
-# recorded a symlink target, restore the symlink itself rather than writing a
-# plain file over what the DNS-managing daemon (resolvconf or
-# systemd-resolved) expects to own.
+# Symlink-aware counterpart to backup_resolv_conf: if the backup recorded a
+# symlink target, restore the symlink itself rather than writing a plain file
+# over what the DNS-managing daemon (resolvconf or systemd-resolved) expects
+# to own.
 restore_resolv_conf() {
 	if [[ ! -f "$RESOLV_BACKUP" && ! -L "$RESOLV_BACKUP" ]]; then
 		log INFO "No VPN DNS backup found at $RESOLV_BACKUP to restore."
@@ -596,7 +596,10 @@ restore_resolv_conf() {
 # EAFP-first: if --profile was given, trust it and let `nmcli connection up`
 # surface the failure if it's wrong. Otherwise attempt unambiguous
 # auto-selection (exactly one imported WireGuard connection), then fall back
-# to interactive fzf selection when available and the run is interactive.
+# to interactive fzf selection only when fzf is available, output is not
+# silenced, this is not a dry run, AND stdin is an actual TTY -- a
+# non-interactive invocation (cron, systemd unit, CI) must fail fast with an
+# actionable error rather than hang forever on an fzf prompt no one can see.
 select_wg_profile() {
 	if [[ -n "$WG_PROFILE" ]]; then
 		log INFO "Using explicitly specified WireGuard profile: $WG_PROFILE"
@@ -620,7 +623,7 @@ select_wg_profile() {
 		log OK "Auto-selected sole WireGuard profile: $WG_PROFILE"
 		return 0
 	fi
-	if command -v fzf >/dev/null 2>&1 && [[ "$SILENT" -eq 0 && "$DRY_RUN" -eq 0 ]] && [[ -t 0 ]]; then
+	if command -v fzf >/dev/null 2>&1 && [[ "$SILENT" -eq 0 && "$DRY_RUN" -eq 0 && -t 0 ]]; then
 		WG_PROFILE=$(printf '%s\n' "$wg_conns" | fzf --prompt="Select WireGuard profile: " --height=40% --layout=reverse --border)
 		if [[ -z "$WG_PROFILE" ]]; then
 			log ERROR "No profile selected via fzf."
@@ -634,8 +637,8 @@ select_wg_profile() {
 }
 
 # Connect to MegaVPN via NetworkManager WireGuard.
-# Bounded with a hard timeout (§4.2): `nmcli connection up` can stall on
-# handshake negotiation or DNS-plugin setup, and must not be able to hang the
+# Bounded with a hard timeout: `nmcli connection up` can stall on handshake
+# negotiation or DNS-plugin setup, and must not be able to hang the
 # orchestrator indefinitely in a non-interactive script context.
 megavpn_connect() {
 	log CAT "Connecting MegaVPN (WireGuard via NetworkManager)"
@@ -647,7 +650,10 @@ megavpn_connect() {
 		return 1
 	fi
 
-	# Tear down any other active WireGuard tunnels first to prevent routing conflicts.
+	# Bring down any other active WireGuard connections first, scoped strictly
+	# to TYPE=wireguard, to avoid routing/DNS-plugin conflicts between two
+	# simultaneously-active tunnels. This does not touch non-WireGuard
+	# connections (Wi-Fi/Ethernet/etc).
 	local active_conns
 	active_conns=$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' || true)
 	if [[ -n "$active_conns" ]]; then
@@ -688,7 +694,7 @@ megavpn_connect() {
 # rather than only WG_PROFILE, since the kill-switch teardown path must
 # leave the host in a known-clean state regardless of which profile ended
 # up active.
-# Also bounded with a hard timeout (§4.2) for the same reason as megavpn_connect.
+# Also bounded with a hard timeout for the same reason as megavpn_connect.
 megavpn_disconnect() {
 	log CAT "Disconnecting MegaVPN"
 	if ! command -v nmcli >/dev/null 2>&1; then
@@ -721,6 +727,21 @@ apply_ufw_rule() {
 		comment_str="${rule_str##* comment }"
 		rule_str="${rule_str%% comment *}"
 	fi
+	# comment_str at this point still carries the literal quote characters
+	# from the template's "comment 'Text'" syntax (e.g. "'Limit SSH'"), since
+	# rule_str is already a fully-expanded string, not raw shell syntax --
+	# no word-splitting pass is ever going to strip them. Strip exactly one
+	# matching pair explicitly, here, rather than depending on that never-
+	# happening implicit stripping. A comment containing a literal quote
+	# character makes UFW reject the entire rule with "Invalid syntax", not
+	# just the comment -- confirmed in production, this silently dropped
+	# every commented rule (SSH limit + both LAN rules) while still logging
+	# [OK] beneath it, since apply_ufw_rule's non-zero exit was never
+	# propagated by its caller.
+	if [[ "$comment_str" == \'*\' ]]; then
+		comment_str="${comment_str#\'}"
+		comment_str="${comment_str%\'}"
+	fi
 	local -a ufw_args
 	read -r -a ufw_args <<<"$rule_str"
 	if [[ "$UFW_SUPPORTS_COMMENT" -eq 1 && -n "$comment_str" ]]; then
@@ -732,12 +753,29 @@ apply_ufw_rule() {
 # Detect if the installed UFW version supports comments.
 detect_ufw_comment_support() {
 	log INFO "Detecting UFW comment support"
-	if ufw --help 2>&1 | grep -q comment; then
+	# NOTE: comment syntax is documented in `man ufw`, not in `ufw --help`'s
+	# terse usage listing, so grepping --help for the word "comment"
+	# false-negatives on every modern UFW release -- confirmed in production
+	# on an Arch host running a current UFW that fully supports comments.
+	# UFW has supported rule comments since 0.35 (2015); check the actual
+	# version instead of parsing help text that was never guaranteed to
+	# mention the feature.
+	local ver_str major minor
+	ver_str=$(ufw --version 2>&1 | head -n1 | grep -oP '\d+\.\d+(\.\d+)?' | head -n1 || true)
+	if [[ -z "$ver_str" ]]; then
+		log WARN "Could not parse 'ufw --version' output; assuming comment support is available (UFW >=0.35 has shipped it since 2015)."
 		UFW_SUPPORTS_COMMENT=1
-		log OK "UFW supports comments"
+		return 0
+	fi
+	major="${ver_str%%.*}"
+	minor="${ver_str#*.}"
+	minor="${minor%%.*}"
+	if ((major > 0 || (major == 0 && minor >= 35))); then
+		UFW_SUPPORTS_COMMENT=1
+		log OK "UFW $ver_str supports comments"
 	else
 		UFW_SUPPORTS_COMMENT=0
-		log WARN "UFW lacks comment support. Comments will be ignored."
+		log WARN "UFW $ver_str predates 0.35; comment support unavailable. Comments will be ignored."
 	fi
 }
 
@@ -782,6 +820,39 @@ configure_sysctl() {
 	cake=$(ls "/lib/modules/$kernel/kernel/net/sched/sch_cake.ko"* 2>/dev/null || true)
 	bbr=$(ls "/lib/modules/$kernel/kernel/net/ipv4/tcp_bbr.ko"* 2>/dev/null || true)
 
+	# NOTE on scope: this file owns only the keys that are specifically part
+	# of the kill-switch / DNS-leak-prevention job of this script, plus TCP
+	# buffer/congestion tuning that no other .d file on this host contests.
+	# The following keys were deliberately REMOVED from here because another,
+	# more specifically-named file already owns them, and this file's "zz"
+	# sort-order previously made it silently overwrite that file's intent on
+	# every run of ufw.sh:
+	#   - kernel.dmesg_restrict      -> owned by 99-4ndr0-hardening.conf (wants 1; this file was forcing 0)
+	#   - net.ipv4.conf.all.log_martians -> owned by /usr/lib/sysctl.d/99-sysctl.conf (wants 1; this file was forcing 0)
+	#   - net.ipv4.icmp_echo_ignore_all  -> owned by 99-4ndr0-stealth.conf (wants 1; this file was forcing 0)
+	#   - vm.swappiness               -> owned by 99-vm-zram-parameters.conf (wants 10; this file was forcing 60)
+	# net.core.somaxconn and net.core.netdev_max_backlog were RAISED to match
+	# /usr/lib/sysctl.d/99-sysctl.conf's higher values (32768 / 16384) rather
+	# than removed -- explicit performance-over-hardening choice, not an
+	# oversight. This file remains the winner for both keys by sort order.
+	#
+	# rp_filter needs THREE lines, not one: sysctl's glob expansion for
+	# net.ipv4.conf.*.X deliberately excludes the "all" and "default"
+	# pseudo-entries, matching only real interface names. .all participates
+	# in an effective = max(all, interface) computation (higher = looser),
+	# so a strict .all can never pull a looser interface value back down --
+	# it only raises a floor. .default seeds the initial rp_filter of any
+	# interface *created after this file applies* (e.g. a WireGuard tunnel
+	# brought up mid-session). The glob is what fixes interfaces that
+	# already existed when this file applied (e.g. a physical NIC present
+	# at boot, which 50-default.conf's own glob already wrote an explicit
+	# loose value into). Confirmed in production: dropping the explicit
+	# .default line and keeping only the glob left net.ipv4.conf.default.rp_filter
+	# stuck at 50-default.conf's loose value, which would silently apply to
+	# any interface created afterward. All three lines are required together.
+	# If you want ufw.sh to reassert one of these again, add it back
+	# explicitly and update this comment so future audits don't re-discover
+	# the same conflict from scratch.
 	cat >"$sysctl_out" <<EOF
 # $SYSCTL_UFW_FILE - Managed by $SCRIPT_NAME.
 net.ipv4.ip_forward=0
@@ -789,24 +860,23 @@ net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.default.accept_redirects=0
 net.ipv4.conf.all.rp_filter=1
 net.ipv4.conf.default.rp_filter=1
+net.ipv4.conf.*.rp_filter=1
 net.ipv4.conf.default.accept_source_route=0
 net.ipv4.conf.all.accept_source_route=0
 net.ipv4.icmp_ignore_bogus_error_responses=1
-net.ipv4.conf.all.log_martians=0
 net.ipv4.icmp_echo_ignore_broadcasts=1
-net.ipv4.icmp_echo_ignore_all=0
 net.ipv4.tcp_sack=1
-vm.swappiness=${SWAPPINESS_VAL}
 fs.inotify.max_user_instances=1024
 fs.inotify.max_user_watches=524288
+vm.max_map_count=1048576
 net.core.rmem_max=16777216
 net.core.wmem_max=16777216
 net.core.optmem_max=65536
 net.ipv4.tcp_rmem=4096 87380 16777216
 net.ipv4.tcp_wmem=4096 65536 16777216
-net.core.somaxconn=8192
+net.core.somaxconn=32768
 net.ipv4.tcp_window_scaling=1
-net.core.netdev_max_backlog=5000
+net.core.netdev_max_backlog=16384
 net.ipv4.udp_rmem_min=8192
 net.ipv4.udp_wmem_min=8192
 net.ipv4.tcp_fastopen=3
@@ -818,14 +888,17 @@ net.ipv4.tcp_keepalive_intvl=10
 net.ipv4.tcp_keepalive_probes=6
 net.ipv4.tcp_mtu_probing=1
 net.ipv4.tcp_timestamps=0
-kernel.dmesg_restrict=0
 EOF
 
+	if ((SWAPPINESS_EXPLICIT)); then
+		echo "vm.swappiness=${SWAPPINESS_VAL}" >>"$sysctl_out"
+		log INFO "Added vm.swappiness=${SWAPPINESS_VAL} (explicit --swappiness override; this will win over 99-vm-zram-parameters.conf on the next apply)"
+	fi
 	if [[ -n "$cake" ]]; then
 		echo "net.core.default_qdisc=cake" >>"$sysctl_out"
 		log INFO "Added net.core.default_qdisc=cake"
 	fi
-if [[ -n "$bbr" ]]; then
+	if [[ -n "$bbr" ]]; then
 		echo "net.ipv4.tcp_congestion_control=bbr" >>"$sysctl_out"
 		log INFO "Added net.ipv4.tcp_congestion_control=bbr"
 	fi
