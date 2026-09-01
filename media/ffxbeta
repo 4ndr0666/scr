@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# v8.1.1
+# v8.2.0
 set -euo pipefail
 IFS=$'\n\t'
 #                        === FFX === #
@@ -31,6 +31,16 @@ IFS=$'\n\t'
 # pass, so a partially-failed batch keeps its cache for a cheap retry
 # instead of wiping it on every partial success as v8.1.0 effectively would
 # have once a skip-instead-of-die path existed.
+# v8.2.0: adds an fzf-driven TUI (run_tui()). Running `ffx` with zero
+# arguments in an interactive terminal now opens a menu covering every
+# command, file selection (single/multi, video+image, with an ffprobe
+# preview pane), and an options screen for the same ADV_* settings
+# advanced_prompt() already exposes — the TUI populates those variables and
+# hands off to the exact same main_dispatch() every CLI invocation uses, so
+# there is no parallel implementation of any command to keep in sync. Purely
+# additive: fzf missing, or stdin/stdout not a terminal (piped/scripted
+# invocation), falls through to the original display_usage() zero-arg
+# behavior unchanged.
 
 # =============================================================================
 # XDG & SESSION DIRECTORIES
@@ -704,7 +714,7 @@ checkpoint_clear() {
 # =============================================================================
 # SELF-AUDIT ENGINE
 # =============================================================================
-FFX_VERSION="${FFX_VERSION:-8.1.1}"
+FFX_VERSION="${FFX_VERSION:-8.2.0}"
 FFX_SEGMENT_LINES="${FFX_SEGMENT_LINES:-500}"
 FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
 
@@ -2233,12 +2243,214 @@ cmd_cache_clean() {
     fi
 }
 # =============================================================================
+# TUI — fzf-driven front end
+#
+# NEW (v8.2.0): running `ffx` with zero arguments and an interactive terminal
+# now launches an fzf menu instead of immediately printing usage and exiting.
+# This is purely additive: every existing CLI invocation (`ffx merge ...`,
+# `ffx -A process foo.mp4`, etc.) is completely unaffected, since the TUI
+# only ever engages on the exact zero-argument path that previously called
+# display_usage() unconditionally — and it still falls through to that same
+# display_usage() if fzf isn't installed or stdin/stdout aren't a terminal
+# (piped/scripted invocation), so `ffx` with no args in a non-interactive
+# context (CI, `ffx | cat`, etc.) behaves exactly as before.
+#
+# The TUI does not duplicate any command's actual logic — it only gathers
+# the same inputs a CLI invocation would (files, encode options, per-command
+# extras) and then calls the exact same main_dispatch() every CLI path uses.
+# There is no second code path to keep in sync with cmd_merge/cmd_process/etc.
+# =============================================================================
+tui_available() { command_exists fzf && [[ -t 0 && -t 1 ]]; }
+
+# tui_discover_files(): candidate list for fzf file pickers. Deliberately
+# broader than apply_bulk_glob() (which is maxdepth-1 and video-only, tuned
+# for --bulk's directory-glob semantics) — the TUI also needs images, since
+# merge/composite accept them, and a little directory depth so a typical
+# project layout (./clips/*.mp4, ./stills/*.png) is browsable without cd'ing.
+tui_discover_files() {
+    find "$(pwd)" -maxdepth 3 -type f \( \
+        -iname '*.mp4' -o -iname '*.mkv'  -o -iname '*.mov' -o -iname '*.avi' \
+        -o -iname '*.webm' -o -iname '*.gif' -o -iname '*.ts' -o -iname '*.m4v' \
+        -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.bmp' \
+        -o -iname '*.webp' -o -iname '*.tif' -o -iname '*.tiff' \) 2>/dev/null | sort
+}
+
+tui_pick_one() {
+    local prompt="$1"
+    tui_discover_files | fzf --prompt="${prompt}> " --height='~60%' --reverse \
+        --preview 'ffprobe -hide_banner -i {} 2>&1 | sed -n "1,20p"' \
+        --header='Enter to select, Esc to cancel' 2>/dev/null
+}
+
+tui_pick_many() {
+    local prompt="$1"
+    tui_discover_files | fzf --multi --prompt="${prompt}> " --height='~60%' --reverse \
+        --preview 'ffprobe -hide_banner -i {} 2>&1 | sed -n "1,20p"' \
+        --header='Tab to multi-select, Enter to confirm, Esc to cancel' 2>/dev/null
+}
+
+# _tui_pick(): single-select menu helper for scalar settings (resolution,
+# codec, etc). Always offers "Keep current" and "Custom..." alongside the
+# supplied presets, so every setting is reachable even if the caller's
+# preset list doesn't cover it — never a dead end back to the CLI.
+_tui_pick() {
+    local prompt="$1" current="$2"; shift 2
+    local -a opts=("$@" "Keep current (${current})" "Custom...")
+    local choice
+    choice="$(printf '%s\n' "${opts[@]}" \
+        | fzf --prompt="${prompt}> " --height='~50%' --reverse --header="Current: ${current}" 2>/dev/null)"
+    case "$choice" in
+        ""|"Keep current"*) printf '%s' "$current" ;;
+        "Custom...")
+            local custom
+            read -r -p "${prompt} (custom value): " custom
+            printf '%s' "${custom:-$current}"
+            ;;
+        *) printf '%s' "$choice" ;;
+    esac
+}
+
+# tui_options_screen(): the fzf equivalent of advanced_prompt()'s read-based
+# flow, walking the same ADV_* variables advanced_prompt() does and calling
+# the same save_defaults() at the end so choices persist identically either
+# way. Callers dispatch with ADVANCED_MODE left at its current value; since
+# this function has already populated ADV_*, a subsequent advanced_prompt()
+# call inside the dispatched cmd_* (gated on ADVANCED_MODE) would just
+# re-prompt for values already chosen, so run_tui() dispatches with
+# ADVANCED_MODE forced false for the duration of the call (restored after).
+tui_options_screen() {
+    local include_layout="${1:-false}"
+    say "Configure encode options (Enter re-selects the current value)."
+    ADV_CONTAINER="$(_tui_pick "Container"      "$ADV_CONTAINER"   "mp4" "mkv" "mov")"
+    ADV_RES="$(_tui_pick       "Resolution"     "$ADV_RES"         "1920x1080" "1280x720" "3840x2160" "854x480")"
+    ADV_FPS="$(_tui_pick       "Frame rate"     "$ADV_FPS"         "24" "30" "60" "120")"
+    ADV_CODEC="$(_tui_pick     "Codec"          "$ADV_CODEC"       "libx264" "libx265")"
+    ADV_PIX_FMT="$(_tui_pick   "Pixel format"   "$ADV_PIX_FMT"     "yuv420p" "yuv422p" "yuv444p")"
+    ADV_PRESET="$(_tui_pick    "Encoder preset" "$ADV_PRESET"      "ultrafast" "fast" "medium" "slow")"
+    ADV_QUALITY_MODE="$(_tui_pick "Quality mode" "$ADV_QUALITY_MODE" "crf" "qp0")"
+    if [[ "$ADV_QUALITY_MODE" == "crf" ]]; then
+        ADV_CRF="$(_tui_pick "CRF (0-51, 18=near-lossless, 23=default)" "$ADV_CRF" "18" "20" "23" "28")"
+    else
+        ADV_CRF="18"; ADV_BR="10M"; ADV_MULTIPASS="false"
+    fi
+    if [[ "$include_layout" == true ]]; then
+        LAYOUT_MODE="$(_tui_pick "Composite layout" "$LAYOUT_MODE" "fixed" "random")"
+    fi
+    local ra_current ra_choice
+    ra_current="$([[ "$REMOVE_AUDIO" == true ]] && printf 'yes' || printf 'no')"
+    ra_choice="$(_tui_pick "Remove audio" "$ra_current" "yes" "no")"
+    [[ "$ra_choice" == "yes" ]] && REMOVE_AUDIO=true || REMOVE_AUDIO=false
+    save_defaults
+}
+
+run_tui() {
+    local -a menu=(
+        "probe        -- Inspect a file's stream info"
+        "process      -- Re-encode/scale a file"
+        "merge        -- Concatenate multiple files"
+        "composite    -- Multi-file layout composite"
+        "looperang    -- Forward+reverse palindrome"
+        "slowmo       -- Slow motion"
+        "filter       -- Colour/enhancement filter preset"
+        "fix          -- Repair DTS/timestamp issues"
+        "clean        -- Strip metadata"
+        "clean-fast   -- Strip metadata (stream-copy only)"
+        "clip         -- Trim by start/end time"
+        "manifest     -- Self-audit SHA-256 manifest"
+        "cache-clean  -- Remove FFX cache/checkpoints"
+        "help         -- Full usage text"
+        "quit         -- Exit"
+    )
+    local choice cmd
+    choice="$(printf '%s\n' "${menu[@]}" \
+        | fzf --prompt='ffx> ' --height='~70%' --reverse --header='Select an operation (Esc to quit)' 2>/dev/null)"
+    [[ -z "$choice" ]] && { say "No selection — exiting."; exit 0; }
+    cmd="${choice%% *}"
+
+    local -a dispatch_args=()
+    local f
+
+    case "$cmd" in
+        probe)
+            f="$(tui_pick_one "File to probe")"
+            [[ -z "$f" ]] && die "No file selected."
+            dispatch_args=(probe "$f")
+            ;;
+        process)
+            f="$(tui_pick_one "Input file")"
+            [[ -z "$f" ]] && die "No file selected."
+            tui_options_screen false
+            local mchoice; mchoice="$(_tui_pick "Clamp to 1080p" "$([[ "$MAX_1080" == true ]] && echo yes || echo no)" "yes" "no")"
+            [[ "$mchoice" == "yes" ]] && MAX_1080=true || MAX_1080=false
+            dispatch_args=(process "$f")
+            ;;
+        merge)
+            local -a files; mapfile -t files < <(tui_pick_many "Files to merge")
+            (( ${#files[@]} >= 1 )) || die "No files selected."
+            tui_options_screen false
+            local cchoice; cchoice="$(_tui_pick "Composite mode" "no" "yes" "no")"
+            dispatch_args=(merge "${files[@]}")
+            [[ "$cchoice" == "yes" ]] && dispatch_args+=(-C)
+            ;;
+        composite)
+            local -a files; mapfile -t files < <(tui_pick_many "Files to composite")
+            (( ${#files[@]} >= 1 )) || die "No files selected."
+            tui_options_screen true
+            dispatch_args=(composite "${files[@]}")
+            ;;
+        looperang)
+            f="$(tui_pick_one "Input file")"
+            [[ -z "$f" ]] && die "No file selected."
+            dispatch_args=(looperang "$f")
+            ;;
+        slowmo)
+            f="$(tui_pick_one "Input file")"
+            [[ -z "$f" ]] && die "No file selected."
+            local factor; read -r -p "Slow-motion factor (e.g. 2 = half speed) [2]: " factor
+            local ichoice; ichoice="$(_tui_pick "Motion interpolation" "no" "yes" "no")"
+            [[ "$ichoice" == "yes" ]] && INTERPOLATE=true || INTERPOLATE=false
+            dispatch_args=(slowmo "$f" -p "${factor:-2}")
+            ;;
+        filter)
+            f="$(tui_pick_one "Input file")"
+            [[ -z "$f" ]] && die "No file selected."
+            local preset
+            preset="$(printf '%s\n' enhance skintone denoise cross_process hdr2sdr smooth whitecal \
+                | fzf --prompt='Filter preset> ' --height='~40%' --reverse 2>/dev/null)"
+            dispatch_args=(filter "$f" --preset "${preset:-enhance}")
+            ;;
+        fix)        f="$(tui_pick_one "Input file")"; [[ -z "$f" ]] && die "No file selected."; dispatch_args=(fix "$f") ;;
+        clean)      f="$(tui_pick_one "Input file")"; [[ -z "$f" ]] && die "No file selected."; dispatch_args=(clean "$f") ;;
+        clean-fast) f="$(tui_pick_one "Input file")"; [[ -z "$f" ]] && die "No file selected."; dispatch_args=(clean-fast "$f") ;;
+        clip)       f="$(tui_pick_one "Input file")"; [[ -z "$f" ]] && die "No file selected."; dispatch_args=(clip "$f") ;;
+        manifest)
+            local sub
+            sub="$(printf '%s\n' save verify show | fzf --prompt='manifest> ' --height='~30%' --reverse 2>/dev/null)"
+            dispatch_args=(manifest "${sub:-show}")
+            ;;
+        cache-clean) dispatch_args=(cache-clean) ;;
+        help)        display_usage ;;
+        quit)        exit 0 ;;
+        *)           die "Unknown TUI selection: '$cmd'" ;;
+    esac
+
+    local saved_advanced_mode="$ADVANCED_MODE"
+    ADVANCED_MODE=false
+    main_dispatch "${dispatch_args[@]}"
+    local rc=$?
+    ADVANCED_MODE="$saved_advanced_mode"
+    return "$rc"
+}
+# =============================================================================
 # HELP
 # =============================================================================
 display_usage() {
-    printf '%b# === FFX v8.1.0 ===%b\n\n' "${CYAN}${BOLD}" "${RESET}"
+    printf '%b# === FFX v%s ===%b\n\n' "${CYAN}${BOLD}" "${FFX_VERSION}" "${RESET}"
     cat <<'HELPEOF'
 Usage: ffx [global options] <command> [arguments]
+       ffx                              Interactive fzf menu (requires fzf +
+                                         a terminal; falls back to this text
+                                         otherwise).
 
 Global Options:
   -A, --advanced             Interactive encoding prompt (persisted to XDG config).
@@ -2444,7 +2656,10 @@ main() {
     parse_global_options "$@"
     mkdir -p -- "$OUTPUT_DIR" || die "Cannot create output directory: $OUTPUT_DIR"
     [[ -w "$OUTPUT_DIR" ]] || die "Output directory not writable: $OUTPUT_DIR"
-    (( ${#REMAINING_ARGS[@]} >= 1 )) || display_usage
+    if (( ${#REMAINING_ARGS[@]} < 1 )); then
+        tui_available && run_tui || display_usage
+        return
+    fi
     main_dispatch "${REMAINING_ARGS[@]}"
 }
 

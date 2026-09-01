@@ -1,0 +1,2686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4NDR0666 // 3LECTRIC-GLASS HDL STUDIO</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--base:rgb(10,19,26);--g1:rgba(10,19,26,.72);--g2:rgba(10,19,26,.65);--g3:rgba(10,19,26,.55);
+--gH:rgba(10,19,26,.95);--cyan:#00E5FF;--cyan2:#67E8F9;--alert:#ff0055;--white:#fff;
+--line:rgba(0,229,255,.2);--line2:rgba(0,229,255,.3);--line3:rgba(0,229,255,.4);
+--t:150ms ease-in-out;--mono:"JetBrains Mono",monospace;--disp:"Orbitron",sans-serif;}
+*{box-sizing:border-box;background:none;margin:0;padding:0;font-family:var(--mono);
+transition:color var(--t),background-color var(--t),border-color var(--t),box-shadow var(--t),opacity var(--t);}
+html,body{height:100%;}
+body{background:#050A0F;color:var(--cyan);overflow:hidden;}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:
+radial-gradient(600px 400px at 12% 88%,rgba(0,229,255,.10),transparent 70%),
+radial-gradient(700px 500px at 88% 12%,rgba(0,229,255,.07),transparent 70%),
+radial-gradient(rgba(0,229,255,.05) 1px,transparent 1px);background-size:auto,auto,28px 28px;}
+
+/* ═══ GLYPH — canonical component. No filters. ═══ */
+.gring1{animation:gspinA 36s linear infinite;transform-origin:64px 64px;}
+.gring2{animation:gspinB 24s linear infinite;transform-origin:64px 64px;}
+.ghex{animation:gspinA 120s linear infinite;transform-origin:64px 64px;}
+.gpsi{animation:gpulse 2.6s ease-in-out infinite;}
+@keyframes gspinA{to{transform:rotate(360deg);}}
+@keyframes gspinB{to{transform:rotate(-360deg);}}
+@keyframes gpulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+/* ═══ WINDOW — master values ═══ */
+#app{position:fixed;inset:14px;display:flex;flex-direction:column;background:var(--g1);
+backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+border:1px solid var(--line);border-radius:6px;box-shadow:0 0 40px rgba(0,229,255,.15);}
+#hdr{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--gH);
+border-bottom:2px solid var(--cyan);flex:0 0 auto;}
+#hdr .t{font-family:var(--disp);font-weight:700;font-size:14pt;color:var(--cyan2);letter-spacing:2px;line-height:1;}
+#hdr .s{font-size:9pt;color:rgba(0,229,255,.7);letter-spacing:1px;margin-top:2px;}
+#hdr .spacer{flex:1;}
+#status{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--gH);
+border-top:1px solid var(--line);font-size:8pt;color:rgba(0,229,255,.7);}
+#status .spacer{flex:1;}
+
+#body{flex:1;display:grid;grid-template-columns:260px 1fr 360px;grid-template-areas:"ctl ed out";
+min-height:0;padding:8px;gap:8px;}
+#ctl{grid-area:ctl;}#ed{grid-area:ed;}#out{grid-area:out;}
+@media(max-width:1150px){#body{grid-template-columns:240px 1fr;grid-template-areas:"ctl ed" "out out";grid-template-rows:auto 1fr 240px;}}
+@media(max-width:760px){#app{position:static;margin:0;}#body{grid-template-columns:1fr;grid-template-areas:"ctl" "ed" "out";}body{overflow:auto;}}
+.pane{overflow:auto;}
+
+/* ═══ GLASS PANEL ═══ */
+.gpanel{background:var(--g3);border:1px solid var(--line2);border-radius:4px;padding:10px;}
+.ctlbox{display:flex;flex-direction:column;gap:6px;}
+.ltitle{font-family:var(--disp);font-weight:700;font-size:11pt;color:var(--cyan2);}
+.lfield{font-size:8pt;color:rgba(0,229,255,.7);letter-spacing:.5px;margin-top:6px;}
+.lgroup{font-weight:700;color:var(--cyan2);margin:8px 0 2px;}
+.lval{color:var(--cyan2);word-break:break-word;}
+.lbadge{color:var(--alert);font-weight:700;font-size:8pt;}
+.hr{border:none;border-top:1px solid var(--line);margin:8px 0;}
+
+/* ═══ BUTTONS — spec §4.4 verbatim ═══ */
+button{background:rgba(10,19,26,.65);border:1px solid var(--line3);border-radius:0;color:var(--cyan);
+font-weight:700;font-size:9pt;padding:10px 20px;cursor:pointer;letter-spacing:1px;}
+button:hover{background:rgba(0,229,255,.2);border-color:var(--cyan);color:var(--cyan2);
+box-shadow:0 0 20px rgba(0,229,255,.5);}
+button:active{background:rgba(0,229,255,.3);color:var(--white);}
+button.on,button.active{background:rgba(0,229,255,.3);border-color:var(--cyan);color:var(--white);
+box-shadow:0 0 12px rgba(0,229,255,.4);}
+button.destructive{border-color:var(--alert);color:var(--alert);}
+button.destructive:hover{background:rgba(255,0,85,.3);border-color:var(--alert);box-shadow:0 0 25px var(--alert);color:var(--white);}
+button.mini{padding:2px 8px;font-size:8pt;}
+.moderail{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.moderail button{padding:8px 4px;font-size:8pt;}
+.seg{display:inline-flex;gap:2px;flex-wrap:wrap;}
+.seg button{padding:4px 8px;font-size:8pt;}
+.modbtn{padding:4px 10px;font-size:8pt;}
+
+/* ═══ FIELDS ═══ */
+input[type=text],input[type=number],textarea{width:100%;background:var(--g3);
+border:1px solid var(--line3);border-radius:0;color:var(--cyan);caret-color:var(--cyan);
+padding:6px 8px;font-size:9pt;outline:none;font-family:var(--mono);}
+input:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 12px rgba(0,229,255,.35);}
+textarea{resize:vertical;min-height:34px;}
+input[type=number]{-moz-appearance:textfield;}
+::-webkit-inner-spin-button{display:none;}
+.combo{position:relative;}
+.combo input,.combo textarea{padding-right:26px;}
+.cbtn{position:absolute;right:1px;top:1px;bottom:1px;border:none;border-radius:0;
+background:transparent;padding:0 7px;color:rgba(0,229,255,.7);font-size:9pt;
+letter-spacing:0;font-weight:400;box-shadow:none;}
+.cbtn:hover{background:rgba(0,229,255,.14);border:none;color:var(--cyan);box-shadow:none;}
+
+/* ═══ MANIFEST POPOVER — §4.7 values, fixed/floating ═══ */
+#dd-pop{position:fixed;z-index:400;background:var(--g2);
+backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line2);border-radius:4px;
+box-shadow:0 0 20px rgba(0,229,255,.15);min-width:300px;max-width:480px;}
+.ddhead{padding:4px 8px;font-size:8pt;color:rgba(0,229,255,.55);letter-spacing:1px;
+border-bottom:1px solid rgba(0,229,255,.18);text-transform:uppercase;}
+.ddnote{padding:4px 8px;font-size:8pt;color:var(--alert);border-bottom:1px solid rgba(255,0,85,.25);}
+.ddlist{max-height:300px;overflow-y:auto;}
+.dditem{padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(0,229,255,.08);}
+.dditem:hover{background:rgba(0,229,255,.2);}
+.dditem:hover .dk,.dditem:hover .ddd{color:var(--white);}
+.dditem.cur{border-left:2px solid var(--cyan2);background:rgba(0,229,255,.08);}
+.dditem.hide{display:none;}
+.dk{color:var(--cyan);font-size:9pt;font-weight:700;}
+.ddd{color:rgba(0,229,255,.55);font-size:8pt;display:block;}
+
+/* ═══ SWITCH §4.6 ═══ */
+.gswitch{position:relative;width:44px;height:24px;flex:0 0 auto;cursor:pointer;background:#050A0F;
+border:1px solid var(--cyan);border-radius:0;}
+.gswitch .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--cyan);
+box-shadow:0 0 12px rgba(0,229,255,.8);transition:left var(--t);}
+.gswitch.on{background:rgba(0,229,255,.2);}
+.gswitch.on .knob{left:22px;}
+
+/* ═══ CHIPS ═══ */
+.chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line3);
+background:rgba(10,19,26,.65);padding:2px 6px;font-size:8pt;color:var(--cyan2);}
+.chip .x{cursor:pointer;color:var(--alert);font-weight:700;}
+.chip .x:hover{text-shadow:0 0 8px var(--alert);}
+.chiprow{display:flex;gap:4px;margin-top:4px;align-items:stretch;}
+.chiprow .combo{flex:1;}
+
+/* ═══ SECTIONS ═══ */
+#sections{display:flex;flex-direction:column;gap:8px;}
+details.section{background:var(--g3);border:1px solid var(--line2);border-radius:4px;}
+details.section>summary{list-style:none;cursor:pointer;padding:10px 12px;font-family:var(--disp);
+font-weight:700;font-size:11pt;color:var(--cyan2);display:flex;align-items:center;gap:10px;user-select:none;}
+details.section>summary::-webkit-details-marker{display:none;}
+details.section>summary .arr{font-family:var(--mono);color:var(--cyan);transition:transform var(--t);}
+details.section[open]>summary .arr{transform:rotate(90deg);}
+details.section[open]>summary{border-bottom:1px solid var(--line2);}
+.sbtns{margin-left:auto;display:flex;gap:4px;}
+.secbody{padding:10px 14px;}
+.pcard{border:1px solid var(--line2);border-radius:4px;background:rgba(10,19,26,.55);
+padding:8px;margin-bottom:8px;}
+.pcard .phead{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+.pcard .phead .combo,.pcard .phead input{flex:1;}
+
+/* ═══ OUTPUT ═══ */
+#out .gpanel{height:100%;display:flex;flex-direction:column;gap:8px;}
+#outpre{flex:1;overflow:auto;white-space:pre;font-size:8pt;line-height:1.5;color:var(--cyan2);}
+#outpre.wrap{white-space:pre-wrap;word-break:break-word;}
+.j-key{color:var(--cyan);} .j-str{color:var(--cyan2);} .j-num{color:var(--white);} .j-dim{color:#0f6d7a;}
+.outhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.outhead .spacer{flex:1;}
+
+/* ═══ TOAST ═══ */
+#toast{position:fixed;top:28px;left:50%;transform:translateX(-50%) translateY(-16px);opacity:0;
+pointer-events:none;background:var(--g2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line2);border-radius:4px;padding:10px 20px;color:var(--white);
+font-weight:700;font-size:9pt;letter-spacing:1px;box-shadow:0 0 20px rgba(0,229,255,.15);
+transition:opacity var(--t),transform var(--t);z-index:500;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.error{border-color:var(--alert);color:var(--alert);box-shadow:0 0 25px var(--alert);}
+
+/* ═══ WIZARD ═══ */
+#wiz{position:fixed;inset:0;background:rgba(5,10,15,.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+display:none;align-items:center;justify-content:center;z-index:90;}
+#wiz.open{display:flex;}
+.wpanel{width:min(680px,92vw);max-height:86vh;display:flex;flex-direction:column;gap:10px;
+background:var(--g2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+border:1px solid var(--line3);border-radius:4px;box-shadow:0 0 40px rgba(0,229,255,.25);padding:16px;}
+.wtitle{font-family:var(--disp);font-weight:700;font-size:12pt;color:var(--cyan2);letter-spacing:1px;}
+.wprog{font-size:8pt;color:rgba(0,229,255,.7);}
+.wbar{height:3px;background:rgba(0,229,255,.12);}
+.wbar div{height:100%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);transition:width var(--t);}
+.wsec{font-size:9pt;font-weight:700;color:var(--cyan2);}
+.wpath{font-size:8pt;color:rgba(0,229,255,.55);word-break:break-all;}
+#wmount{overflow:auto;max-height:48vh;padding:4px 0;}
+.wbtns{display:flex;gap:6px;flex-wrap:wrap;}
+.wbtns .spacer{flex:1;}
+.modrow{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line2);
+background:rgba(10,19,26,.55);border-radius:4px;margin-bottom:6px;flex-wrap:wrap;}
+.modrow .mtitle{flex:1;font-size:9pt;font-weight:700;color:var(--cyan2);min-width:150px;}
+.modrow.mstatic .mtitle{color:rgba(0,229,255,.5);}
+
+/* ═══ COHERENCE ENGINE ═══ */
+#cohbadge{cursor:pointer;font-weight:700;letter-spacing:1px;}
+#cohbadge.err{color:var(--alert);text-shadow:0 0 8px rgba(255,0,85,.5);}
+#cohbadge.warn{color:var(--cyan2);}
+#cohbadge.ok{color:rgba(0,229,255,.7);}
+#coh-pop{position:fixed;right:16px;bottom:42px;z-index:420;background:var(--g2);
+backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line2);border-radius:4px;
+box-shadow:0 0 20px rgba(0,229,255,.15);width:min(520px,92vw);max-height:60vh;
+display:none;flex-direction:column;}
+#coh-pop.open{display:flex;}
+.cohhead{padding:6px 10px;font-size:8pt;color:rgba(0,229,255,.55);letter-spacing:1px;
+border-bottom:1px solid rgba(0,229,255,.18);text-transform:uppercase;}
+.cohlist{overflow-y:auto;}
+.cohitem{padding:6px 10px;border-bottom:1px solid rgba(0,229,255,.08);font-size:9pt;}
+.cohitem .csev{font-weight:700;font-size:8pt;letter-spacing:.5px;}
+.cohitem.err .csev{color:var(--alert);}
+.cohitem.warn .csev{color:var(--cyan2);}
+.cohitem .cmsg{color:var(--cyan2);display:block;margin-top:2px;}
+.cohitem .cfld{color:rgba(0,229,255,.55);font-size:8pt;display:block;margin-top:2px;}
+.cohempty{padding:10px;color:rgba(0,229,255,.7);font-size:9pt;}
+.fmark{font-weight:700;margin-left:4px;cursor:help;}
+.fmark.err{color:var(--alert);}
+.fmark.warn{color:var(--cyan2);text-shadow:0 0 6px rgba(0,229,255,.4);}
+.ddaffhead{padding:4px 8px;font-size:8pt;color:var(--cyan2);letter-spacing:1px;
+border-bottom:1px solid rgba(0,229,255,.25);text-transform:uppercase;}
+.ddaff{border-left:2px solid var(--cyan2);background:rgba(0,229,255,.05);}
+
+/* ═══ FIELD PIN ENGINE ═══ */
+#pincount{font-weight:700;letter-spacing:1px;color:rgba(0,229,255,.7);}
+#pincount.act{color:var(--cyan2);text-shadow:0 0 8px rgba(0,229,255,.4);}
+.pinbtn{margin-left:5px;cursor:pointer;font-size:8pt;user-select:none;
+color:rgba(0,229,255,.35);filter:grayscale(1);}
+.pinbtn:hover{color:rgba(0,229,255,.75);}
+.pinbtn.pinned{color:var(--cyan);filter:none;text-shadow:0 0 8px rgba(0,229,255,.6);}
+
+/* ═══ PROVENANCE ENGINE ═══ */
+#fpbadge{cursor:pointer;font-weight:700;letter-spacing:1px;color:rgba(0,229,255,.7);}
+#fpbadge:hover{color:var(--cyan2);}
+.histrow{font-size:8pt;color:var(--cyan2);padding:3px 6px;border:1px solid var(--line2);
+background:rgba(10,19,26,.55);border-radius:4px;margin-bottom:3px;cursor:pointer;
+display:flex;justify-content:space-between;gap:6px;align-items:center;}
+.histrow:hover{background:rgba(0,229,255,.2);color:var(--white);}
+.histrow .hseed{color:var(--cyan);}
+.histrow .hmode{color:rgba(0,229,255,.7);}
+.histrow .hfp{color:rgba(0,229,255,.5);}
+.histempty{font-size:8pt;color:rgba(0,229,255,.4);padding:2px 6px;}
+
+/* ═══ DIFF VIEW ═══ */
+.dl-info{color:var(--cyan2);font-weight:700;}
+.dl-path{color:#0f6d7a;}
+.dl-del{color:var(--alert);}
+.dl-add{color:var(--cyan);}
+
+/* ═══ SCROLLBARS §4.8 ═══ */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:rgba(0,0,0,.4);}
+::-webkit-scrollbar-thumb{background:var(--cyan);border-radius:0;}
+::-webkit-scrollbar-thumb:hover{background:var(--cyan2);}
+*{scrollbar-width:thin;scrollbar-color:var(--cyan) rgba(0,0,0,.4);}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="glyph" viewBox="0 0 128 128" fill="none" stroke="#00E5FF"
+ stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path class="gring1" d="M 64,12 A 52,52 0 1 1 63.9,12 Z" stroke-dasharray="21.78 21.78" stroke-width="2"/>
+  <path class="gring2" d="M 64,20 A 44,44 0 1 1 63.9,20 Z" stroke-dasharray="10 10" stroke-width="1.5" opacity="0.7"/>
+  <path class="ghex" d="M64 30 L91.3 47 L91.3 81 L64 98 L36.7 81 L36.7 47 Z"/>
+  <text class="gpsi" x="64" y="67" text-anchor="middle" dominant-baseline="middle"
+   fill="#00E5FF" stroke="none" font-size="56" font-weight="700"
+   font-family="'Cinzel Decorative',serif">Ψ</text>
+</symbol>
+</defs></svg>
+
+<div id="app">
+  <header id="hdr">
+    <svg width="26" height="26"><use href="#glyph"/></svg>
+    <div><div class="t">4NDR0666</div>
+    <div class="s">3LECTRIC-GLASS // HDL PROMPT ENGINE // OVERRIDE LEVEL 800</div></div>
+    <div class="spacer"></div>
+    <button id="btn-import">IMPORT</button>
+    <button id="btn-export">EXPORT</button>
+    <button id="btn-purge" class="destructive">PURGE ✖</button>
+    <input type="file" id="fileimp" accept=".json,application/json" style="display:none">
+  </header>
+  <div id="body">
+    <aside id="ctl" class="pane"><div class="gpanel ctlbox">
+      <svg width="52" height="52" style="margin:0 auto;display:block"><use href="#glyph"/></svg>
+      <div class="ltitle" style="text-align:center">4NDR0TOOLS</div>
+      <div class="lfield" style="text-align:center;margin:0">MODE SELECTION</div>
+      <div class="moderail">
+        <button id="m-default">DEFAULT</button>
+        <button id="m-stock">STOCK</button>
+        <button id="m-hybrid">HYBRID</button>
+        <button id="m-random">RANDOM</button>
+      </div>
+      <div class="lfield" style="margin-top:6px;line-height:1.7">
+        DEFAULT — walk every field from defaults<br>
+        STOCK — parse default HDL prompt only<br>
+        HYBRID — module select: skip / walk / ⚡rnd<br>
+        RANDOM — instant randomized schema
+      </div>
+      <hr class="hr">
+      <div class="lfield">SEED (0 = RND)</div>
+      <div style="display:flex;gap:4px;align-items:stretch;">
+        <input type="number" id="seed" min="0" max="999999" value="0" style="flex:1">
+        <button class="mini" id="btn-rnd">RND</button>
+      </div>
+      <div class="lfield">PANELS</div>
+      <input type="number" id="panels" min="1" max="9" value="6">
+      <button id="btn-gen">GENERATE (RANDOM)</button>
+      <hr class="hr">
+      <div class="lfield">OUTPUT MODE</div>
+      <div class="seg" id="outseg">
+        <button id="out-json" class="on">JSON</button>
+        <button id="out-flat">FLAT</button>
+        <button id="out-diff">DIFF</button>
+      </div>
+      <hr class="hr">
+      <div class="lfield">HISTORY — LAST 12 GENERATIONS</div>
+      <div id="history"></div>
+      <button class="mini" id="btn-clearhist">CLEAR HISTORY</button>
+    </div></aside>
+    <main id="ed" class="pane"><div id="sections"></div></main>
+    <aside id="out" class="pane"><div class="gpanel">
+      <div class="outhead"><span class="ltitle">LIVE OUTPUT</span><div class="spacer"></div>
+        <button class="mini" id="btn-copyjson">COPY JSON</button>
+        <button class="mini" id="btn-copyflat">COPY FLAT</button></div>
+      <pre id="outpre"></pre>
+    </div></aside>
+  </div>
+  <footer id="status">
+    <svg width="20" height="20"><use href="#glyph"/></svg>
+    <span id="statustext">ENGINE: BROWSER-NATIVE // MODULE REGISTRY ACTIVE</span>
+    <div class="spacer"></div><span id="statmode"></span> <span id="cohbadge" class="cohbadge ok">CONFLICTS: 0</span> <span id="pincount">PINNED: 0</span> <span id="fpbadge">SCHEMA #——</span>
+  </footer>
+</div>
+
+<div id="toast"></div>
+<div id="coh-pop"></div>
+
+<div id="wiz"><div class="wpanel">
+  <div class="wtitle" id="wtitle">WALK</div>
+  <div class="wprog" id="wprog"></div>
+  <div class="wbar"><div id="wfill"></div></div>
+  <div class="wsec" id="wsec"></div>
+  <div class="wpath" id="wpath"></div>
+  <div id="wmount"></div>
+  <div class="wbtns" id="wfieldbtns">
+    <button id="wkeep">ACCEPT →</button>
+    <button id="wrest">KEEP ALL REMAINING</button>
+    <div class="spacer"></div>
+    <button id="wabort" class="destructive">ABORT</button>
+  </div>
+  <div class="wbtns" id="wmodbtns" style="display:none;">
+    <button id="wbegin">BEGIN WALK →</button>
+    <button id="wwalkall">WALK ALL</button>
+    <button id="wrndall">⚡RND ALL</button>
+    <button id="wskipall">SKIP ALL</button>
+    <div class="spacer"></div>
+    <button id="wabort2" class="destructive">ABORT</button>
+  </div>
+</div></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   MANIFEST REGISTRY — verbatim port of promptlib.py (full-length descriptions).
+   REGISTRY ⇄ SOURCE PARITY: canonical across all manifests, including the
+   Vintage / Character Lenses block. No authored data remains.
+   ═══════════════════════════════════════════════════════════════════════ */
+const M = {
+  "views": {
+"EXTREME CLOSE-UP (ECU/XCU)": "FILLS FRAME WITH SINGLE FEATURE \U2014 EYE, MOUTH, HAND",
+    "CLOSE-UP (CU)": "HEAD AND SHOULDERS ONLY, TIGHT ON FACE",
+    "MEDIUM CLOSE-UP (MCU)": "CHEST AND ABOVE \U2014 CLASSIC PORTRAIT FRAMING",
+    "MEDIUM SHOT (MS)": "WAIST AND ABOVE \U2014 STANDARD CONVERSATIONAL",
+    "FULL SHOT (FS)": "HEAD TO TOE \U2014 FULL BODY IN FRAME",
+    "WIDE SHOT (WS/LS)": "SUBJECT DWARFED BY ENVIRONMENT \U2014 CONTEXT DOMINANT",
+    "EXTREME WIDE SHOT (EWS/XLS)": "MAXIMUM ENVIRONMENT \U2014 SUBJECT NEAR INVISIBLE",
+    "BIRDS EYE (BE)": "TRUE OVERHEAD, 90\U00B0 LOOKING DIRECTLY DOWN",
+    "AERIAL OBLIQUE (AO)": "45\U201370\U00B0 DOWNWARD FROM HEIGHT \U2014 DRAMATIC SPATIAL CONTEXT",
+    "WORM'S EYE LOW ANGLE (WELA)": "CAMERA AT GROUND LEVEL LOOKING STEEPLY UPWARD",
+    "LOW ANGLE DUTCH (LAD)": "BELOW SUBJECT, CANTED FRAME \U2014 POWER + DISORIENTATION",
+    "HIGH ANGLE STANDARD (HAS)": "ABOVE SUBJECT LOOKING DOWN AT 20\U201345\U00B0",
+    "SIDE CLOSE-UP (SCU)": "LATERAL PROFILE, CHEST LEVEL, SLIGHT DOWNWARD TILT",
+    "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)": "45\U00B0 ROTATED, ELEVATED 8FT, LOOKING DOWN",
+    "FRONT FISH EYE (FE)": "ULTRA-WIDE RECTILINEAR DISTORTION, FULL FRONT",
+    "FRONT EXTREME CLOSE-UP MACRO (ECUM/XCUM)": "100MM MACRO, FULL RIB CAGE, F/2.8, RAZOR SHARP",
+    "OVER_SHOULDER (OS)": "CAMERA BEHIND AND ABOVE ONE SHOULDER, SEES FACE",
+    "DUTCH_ANGLE_45 (DA45)": "FRAME CANTED 45\U00B0 CLOCKWISE \U2014 TENSION, INSTABILITY",
+    "TRACKING_LATERAL (TL)": "CAMERA MOVES PARALLEL TO SUBJECT MID-MOTION",
+    "REACTION SHOT (RS)": "TIGHT ON FACE CATCHING EMOTIONAL RESPONSE",
+    "INSERT MACRO DETAIL (IMD)": "OBJECT OR BODY-PART DETAIL \U2014 HANDS, LIPS, FABRIC",
+    "SPLIT DIOPTER (SD)": "TWO FOCAL PLANES SHARP SIMULTANEOUSLY",
+    "RACK_FOCUS_PULL (RFP)": "FOREGROUND SHARP \U2192 BACKGROUND SHARP, SOFT MIDDLE",
+    "COWBOY SHOT (CS)": "MID-THIGH TO HEAD \U2014 AMERICAN WESTERN FRAMING",
+    "TWO SHOT (2S)": "TWO SUBJECTS IN SAME FRAME, BALANCED COMPOSITION",
+    "POINT OF VIEW (POV)": "CAMERA OCCUPIES SUBJECT'S OPTICAL PERSPECTIVE",
+    "EXTREME MACRO DETAIL (XMD)": "SUB-MILLIMETRE MAGNIFICATION \U2014 PORE, THREAD, DROPLET",
+    "REVERSE ANGLE (RA)": "180\U00B0 CUT FROM PRIOR ANGLE \U2014 FACING SAME AXIS",
+    "HANDHELD UNSTABLE (HU)": "DELIBERATE CAMERA SHAKE \U2014 URGENCY, DOCUMENTARY FEEL",
+    "SURVEILLANCE HIGH STATIC (SHS)": "FIXED HIGH-CORNER SECURITY-CAM AESTHETIC, WIDE",
+    "SNORKEL UNDERWATER (SUW)": "BELOW WATERLINE LOOKING UP \U2014 DISTORTED REFRACTION",
+    "PERISCOPE LOW FLOOR (PLF)": "CAMERA AT FLOOR PLANE LOOKING ALONG SURFACE",
+    "SILHOUETTE CONTRE-JOUR (SCJ)": "SUBJECT FULLY BACKLIT, DETAIL LOST TO PURE SHADOW FORM",
+    "PROFILE STRICT (PS)": "PURE 90\U00B0 LATERAL \U2014 ZERO FACIAL FRONT, FULL DEPTH",
+    "NAPE OF NECK (NON)": "TIGHT ON BACK OF NECK, BASE OF SKULL, HAIR FALL",
+    "HAND DETAIL MACRO (HDM)": "HANDS ONLY \U2014 KNUCKLES, VEINS, TENSION, GRIP DETAIL"
+  },
+  "kinematic": {
+    "structural_alignment": {
+"ANATOMIC_NEUTRAL": "0.0,0.0,0.0",
+      "SUPINE_FLAT": "0.0,-1.0,0.0",
+      "SUPINE_HEAD_ELEVATED": "0.0,-0.9,0.1",
+      "SUPINE_LEGS_ELEVATED": "0.0,-0.9,-0.1",
+      "PRONE_FLAT": "0.0,1.0,0.0",
+      "PRONE_HEAD_TURNED_LEFT": "-0.1,1.0,0.0",
+      "PRONE_HEAD_TURNED_RIGHT": "0.1,1.0,0.0",
+      "FETAL_POSITION_LEFT": "-0.5,-0.5,0.0",
+      "FETAL_POSITION_RIGHT": "0.5,-0.5,0.0",
+      "LATERAL_RECUMBENT_LEFT": "-1.0,0.0,0.0",
+      "LATERAL_RECUMBENT_RIGHT": "1.0,0.0,0.0",
+      "SPINAL_EXTENSION_MILD": "0.0,0.1,0.0",
+      "SPINAL_EXTENSION_MAXIMUM": "0.0,0.4,0.0",
+      "SPINAL_FLEXION_FORWARD": "0.0,-0.3,0.1",
+      "SPINAL_FLEXION_DEEP": "0.0,-0.6,0.3",
+      "LATERAL_TILT_LEFT": "-0.2,0.0,0.0",
+      "LATERAL_TILT_RIGHT": "0.2,0.0,0.0",
+      "AXIAL_ROTATION_LEFT": "0.0,0.0,-0.3",
+      "AXIAL_ROTATION_RIGHT": "0.0,0.0,0.3",
+      "LITHOTOMY_POSITION": "0.0,-0.7,-0.4",
+      "OBSTETRIC_POSITION": "0.0,-0.7,-0.4",
+      "SUPINE_POSITION_LEG_STIRRUPS": "0.0,-0.7,-0.4",
+      "DORSAL_LITHOTOMY_POSITION": "0.0,-0.7,-0.4",
+      "FOWLERS_POSITION": "0.0,-0.7,-0.4",
+      "KNEE-CHEST_POSITION": "0.0,-0.7,-0.4",
+      "SIMS_POSITION": "0.0,-0.7,-0.4",
+      "FROG-LEG_POSITION": "0.0,-0.7,-0.4",
+      "PERINEAL_POSITION": "0.0,-0.7,-0.4",
+      "DORSAL_RECUMBENT_POSITION": "0.0,-0.7,-0.4",
+      "JACKKKIFE_POSITION": "0.0,-0.7,-0.4",
+      "TRENDELENBURG_POSITION": "0.0,-1.0,-0.3",
+      "REVERSE_TRENDELENBURG": "0.0,-1.0,0.3"
+    },
+    "postural_dynamics": {
+"CROUCHING_LOW_COMPRESSION": "0.0,-0.8,0.0",
+      "CROUCHING_MID_BALANCE": "0.0,-0.4,0.0",
+      "CROUCHING_HIGH_STANCE": "0.0,-0.2,0.0",
+      "KNEELING_UPRIGHT_NEUTRAL": "0.0,-0.6,0.0",
+      "KNEELING_LOW_HEEL_SIT": "0.0,-0.9,0.0",
+      "KNEELING_SINGLE_LEFT_UP": "-0.1,-0.5,0.1",
+      "KNEELING_SINGLE_RIGHT_UP": "0.1,-0.5,0.1",
+      "SEATED_UPRIGHT_ERECT": "0.0,-0.5,0.0",
+      "SEATED_SLOUCHED_ANTERIOR": "0.0,-0.5,0.2",
+      "SEATED_CROSSED_LEGS_FLAT": "0.0,-0.5,0.1",
+      "SEATED_RECLINED_PASSIVE": "0.0,-0.6,-0.3",
+      "SEATED_VANITY_COUNTER_LEAN": "0.0,-0.4,0.3",
+      "SEATED_CASUAL_VANITY_LEAN": "SEATED CASUALLY ON BATHROOM COUNTER, LEANING FORWARD TOWARD MIRROR, LEGS RELAXED OR CROSSED",
+      "SQUAT_FULL_DEEP": "0.0,-0.95,0.0",
+      "SQUAT_PARALLEL_UTILITY": "0.0,-0.7,0.0",
+      "SQUAT_WIDE_SUMO": "0.0,-0.65,0.0",
+      "STANDING_WIDE_BASE": "0.0,0.0,0.0",
+      "STANDING_ONE_LEG_LEFT": "-0.2,0.1,0.0",
+      "STANDING_ONE_LEG_RIGHT": "0.2,0.1,0.0",
+      "BENDING_WAIST_ORTHOGONAL": "0.0,-0.5,0.5",
+      "STOOPING_LOW": "0.0,-0.6,0.4"
+    },
+    "extremity_articulation_upper": {
+"ARMS_OVERHEAD_EXTENDED_MAXIMUM": "0.0,1.8,0.0",
+      "ARMS_LATERAL_T_POSE": "0.0,1.2,0.0",
+      "ARMS_AKIMBO_ASSERTIVE": "0.3,0.5,0.0",
+      "ARMS_CROSSED_CHEST": "0.0,0.5,0.1",
+      "HANDS_BEHIND_HEAD_INTERLOCKED": "0.0,1.4,0.0",
+      "REACHING_FORWARD_SAGITTAL": "0.0,0.5,0.8",
+      "REACHING_DOWN_VERTICAL": "0.0,-0.5,0.5",
+      "ABDUCTION_SHOULDER_LEFT_90": "-0.8,0.5,0.0",
+      "ABDUCTION_SHOULDER_RIGHT_90": "0.8,0.5,0.0",
+      "ADDUCTION_SHOULDER_LEFT_CROSS": "0.4,0.3,0.2",
+      "ADDUCTION_SHOULDER_RIGHT_CROSS": "-0.4,0.3,0.2",
+      "ELBOW_FLEXION_LEFT_MAXIMUM": "-0.2,0.4,0.2",
+      "ELBOW_FLEXION_RIGHT_MAXIMUM": "0.2,0.4,0.2",
+      "ELBOW_EXTENSION_LEFT_STRAIGHT": "-0.5,0.0,0.0",
+      "ELBOW_EXTENSION_RIGHT_STRAIGHT": "0.5,0.0,0.0",
+      "WRIST_FLEXION_BILATERAL": "0.0,0.2,0.1",
+      "WRIST_EXTENSION_BILATERAL": "0.0,0.2,-0.1",
+      "FOREARM_PRONATION_LEFT": "-0.1,0.3,0.0",
+      "FOREARM_PRONATION_RIGHT": "0.1,0.3,0.0",
+      "FOREARM_SUPINATION_LEFT": "-0.1,0.2,0.0",
+      "FOREARM_SUPINATION_RIGHT": "0.1,0.2,0.0",
+      "HANDS_CLENCHED_FISTS": "0.0,0.3,0.2",
+      "HANDS_OPEN_PALMS_UP": "0.0,0.3,0.3"
+    },
+    "extremity_articulation_lower": {
+"HIP_FLEXION_LEFT_90": "-0.2,0.4,0.4",
+      "HIP_FLEXION_RIGHT_90": "0.2,0.4,0.4",
+      "HIP_EXTENSION_LEFT_BACK": "-0.1,-0.2,-0.5",
+      "HIP_EXTENSION_RIGHT_BACK": "0.1,-0.2,-0.5",
+      "HIP_ABDUCTION_LEFT_WIDE": "-0.6,0.0,0.0",
+      "HIP_ABDUCTION_RIGHT_WIDE": "0.6,0.0,0.0",
+      "KNEE_FLEXION_LEFT_90": "-0.2,-0.3,-0.3",
+      "KNEE_FLEXION_RIGHT_90": "0.2,-0.3,-0.3",
+      "KNEE_HYPER_EXTENSION": "0.0,0.05,0.0",
+      "ANKLE_DORSIFLEXION_LEFT": "-0.1,-0.9,0.1",
+      "ANKLE_DORSIFLEXION_RIGHT": "0.1,-0.9,0.1",
+      "ANKLE_PLANTARFLEXION_LEFT": "-0.1,-1.1,-0.1",
+      "ANKLE_PLANTARFLEXION_RIGHT": "0.1,-1.1,-0.1",
+      "FOOT_INVERSION_BILATERAL": "0.0,-1.0,0.0",
+      "FOOT_EVERSION_BILATERAL": "0.0,-1.0,0.0"
+    },
+    "gait_and_locomotion": {
+"WALKING_SLOW_CADENCE": "0.0,0.0,0.3",
+      "WALKING_BRISK_STRIDE": "0.0,0.0,0.8",
+      "RUNNING_JOG_SUSTAINED": "0.0,0.0,1.5",
+      "SPRINTING_FULL_PROPULSION": "0.0,0.0,2.5",
+      "STUMBLING_UNBALANCED_ANTERIOR": "0.2,0.0,0.4",
+      "LEAPING_VERTICAL_CLEARANCE": "0.0,1.5,1.0",
+      "SIDESTEPPING_LEFT": "-0.5,0.0,0.0",
+      "SIDESTEPPING_RIGHT": "0.5,0.0,0.0",
+      "BACKPEDALING_RAPID": "0.0,0.0,-0.8",
+      "CRAWLING_QUADRUPEDAL": "0.0,-0.7,0.4",
+      "CLIMBING_VERTICAL_LADDER": "0.0,0.8,0.2",
+      "MARCHING_HIGH_KNEE": "0.0,0.2,0.6",
+      "PACING_REFLECTIVE": "0.0,0.0,0.2",
+      "LUNGING_FORWARD_LEFT": "-0.2,-0.4,0.6",
+      "LUNGING_FORWARD_RIGHT": "0.2,-0.4,0.6",
+      "SLIDING_LATERAL_LOW": "0.0,-0.3,0.5",
+      "RUNNING_TOWARDS_CAMERA": "0.0,0.0,1.5",
+      "RUNNING_AWAY_FROM_CAMERA": "0.0,0.0,-1.5"
+    },
+    "facial_and_cephalic_orientation": {
+"FACING_NORTH_TRUE": "0.0,0.0,1.0",
+      "FACING_SOUTH_TRUE": "0.0,0.0,-1.0",
+      "FACING_EAST_TRUE": "1.0,0.0,0.0",
+      "FACING_WEST_TRUE": "-1.0,0.0,0.0",
+      "TILTING_UP_SUPERIOR": "0.0,0.5,0.0",
+      "TILTING_DOWN_INFERIOR": "0.0,-0.5,0.0",
+      "HEAD_ROTATION_LEFT_90": "0.0,0.0,-1.0",
+      "HEAD_ROTATION_RIGHT_90": "0.0,0.0,1.0",
+      "HEAD_LATERAL_FLEXION_LEFT": "-0.3,0.1,0.0",
+      "HEAD_LATERAL_FLEXION_RIGHT": "0.3,0.1,0.0",
+      "JAW_DEPRESSION_OPEN": "0.0,-0.1,0.0",
+      "HEAD_PROTRACTION_ANTERIOR": "0.0,0.0,0.2",
+      "HEAD_RETRACTION_POSTERIOR": "0.0,0.0,-0.1"
+    },
+    "kinetic_combat_and_athletic": {
+"BOXER_GUARD_LEFT_LEAD": "-0.2,0.4,0.3",
+      "BOXER_GUARD_RIGHT_LEAD": "0.2,0.4,0.3",
+      "MARTIAL_ARTS_CRANE_STANCE": "0.0,0.5,0.0",
+      "PUNCH_STRAIGHT_JAB_LEFT": "-0.5,0.6,0.9",
+      "PUNCH_STRAIGHT_CROSS_RIGHT": "0.5,0.6,1.1",
+      "KICK_FRONT_SNAP_RIGHT": "0.3,0.8,0.8",
+      "KICK_ROUNDHOUSE_RIGHT": "0.8,0.5,0.5",
+      "ATHLETIC_READY_SPLIT_STANCE": "0.0,-0.2,0.1",
+      "SWIMMING_FREESTYLE_STROKE": "0.0,0.1,1.4",
+      "YOGA_WARRIOR_ONE": "0.0,-0.3,0.4",
+      "YOGA_WARRIOR_TWO": "0.0,-0.3,0.0",
+      "YOGA_DOWNWARD_DOG": "0.0,-0.5,0.6",
+      "YOGA_TREE_POSE_LEFT": "-0.3,0.4,0.0",
+      "YOGA_TREE_POSE_RIGHT": "0.3,0.4,0.0",
+      "SPRINTER_STARTING_BLOCKS": "0.0,-0.7,0.2",
+      "DIVING_TUCK_MIDAIR": "0.0,1.0,0.5"
+    },
+    "crouching_hiding_actions": {
+"HIDE_BEHIND_STONES_DESERT": "0.0,-0.5,0.6",
+      "HIDE_BEHIND_WATERFALL_STONES": "0.0,-0.7,0.3",
+      "HIDE_AROUND_CORNER_WALL": "-0.3,-0.3,0.2",
+      "PEERING_THROUGH_GAP": "0.0,-0.4,0.5",
+      "FLAT_AGAINST_WALL_SIDE": "0.0,0.0,0.0",
+      "DUCKING_BELOW_SILL": "0.0,-0.8,0.0",
+      "CRAWLING_UNDER_COVER": "0.0,-0.9,0.3",
+      "PRESSED_INTO_DOORFRAME_SHADOW": "0.0,-0.1,0.0",
+      "CROUCHING_BEHIND_CAR_DOOR": "-0.2,-0.6,0.1",
+      "LYING_FLAT_UNDER_SURFACE": "0.0,-1.0,0.0",
+      "KNEELING_AGAINST_COLUMN": "0.0,-0.6,-0.1",
+      "SHADOW_MERGE_STANDING_STILL": "0.0,0.0,-0.1"
+    },
+    "ergonomic_and_occupational": {
+"TYPING_KEYBOARD_DESK": "0.0,-0.1,0.3",
+      "LIFTING_HEAVY_BOX_GROUND": "0.0,-0.7,0.4",
+      "REACHING_TOP_SHELF": "0.0,1.6,0.4",
+      "DRIVING_STEERING_WHEEL": "0.0,0.0,0.4",
+      "OPERATING_MACHINERY_STANDING": "0.0,0.0,0.5",
+      "WRITING_SURFACE_SITTING": "0.0,-0.4,0.2",
+      "CARRYING_SHOULDER_LOAD": "0.2,0.3,0.1",
+      "PUSHING_HEAVY_OBJECT_ANTERIOR": "0.0,-0.1,0.6",
+      "PULLING_HEAVY_ROPE_POSTERIOR": "0.0,-0.1,-0.6",
+      "SCRUBBING_FLOOR_KNEELING": "0.0,-0.8,0.3",
+      "FILMING_CAMERA_EYE_LEVEL": "0.0,0.4,0.2",
+      "SALUTING_MILITARY_PROTOCOL": "0.3,1.2,0.1",
+      "PHONE_TO_EAR_STANDING": "0.2,0.4,0.1",
+      "READING_BOOK_SEATED_FORWARD": "0.0,-0.4,0.3",
+      "APPLYING_MAKEUP_MIRROR_LEAN": "0.0,-0.3,0.4",
+      "SMOKING_STANDING_EXHALE": "0.0,0.1,-0.1",
+      "DRINKING_GLASS_TIPPED_BACK": "0.0,0.3,-0.2"
+    },
+    "intimate_and_expressive": {
+"ENERGETIC_RHYTHMIC_UPPER_BODY_DANCE": "0.0,0.4,0.1",
+      "INTIMATE_RHYTHMIC_UPPER_BODY_MOVEMENT": "0.0,0.4,0.1",
+      "ENERGETIC_RHYHMIC_UPPER_BODY_SWAY": "0.0,0.4,0.1",
+      "GENTLE_UPPER_BODY_SWAY": "0.0,0.4,0.1",
+      "LIBERATED_RHYTHMIC_UPPER_BODY_DANCE": "0.0,0.4,0.1",
+      "ARMS_WRAPPED_SELF_EMBRACE": "0.0,0.3,0.1",
+      "HAND_OVER_MOUTH_SUPPRESSED": "0.2,0.5,0.0",
+      "HEAD_IN_HANDS_GRIEF": "0.0,-0.2,0.2",
+      "HAND_ON_CHEST_HEART": "0.0,0.4,0.1",
+      "HAND_TRAILING_NECK_COLLARBONE": "0.1,0.5,0.0",
+      "FINGERS_THROUGH_HAIR_SLOW": "0.0,0.7,0.1",
+      "PRESSING_PALMS_FLAT_SURFACE": "0.0,-0.1,0.4",
+      "BRACED_AGAINST_WALL_HANDS": "0.0,0.1,0.3",
+      "COVERING_EYES_ONE_HAND": "0.1,0.5,0.0",
+      "CHIN_RESTING_ON_KNEES_SEATED": "0.0,-0.6,0.3",
+      "STRETCHED_OUT_ARMS_WALL_LEAN": "0.0,0.3,0.5",
+      "CURLED_KNEES_TO_CHEST_SUPINE": "0.0,-0.8,0.2",
+      "ONE_ARM_RAISED_WALL_FOREARM_REST": "0.0,0.5,0.2",
+      "LYING_FACE_DOWN_ARMS_BESIDE": "0.0,1.0,-0.1",
+      "SITTING_LEGS_PULLED_WIDE_FLOOR": "0.0,-0.7,0.1",
+      "TORSO_TWIST_LOOK_BEHIND": "0.0,0.0,-0.5"
+    },
+    "micro_hand_articulation": {
+"FINGERTIPS_RESTING_LIGHTLY_ON_GLASS": "0.0,0.1,0.3",
+      "HAND_GRIPPING_FABRIC_HIGH_TENSION": "0.0,0.2,0.1",
+      "FINGERS_INTERLACED_RESTING_CHIN": "0.0,0.4,0.2",
+      "SINGLE_INDEX_FINGER_TRACING_LIP": "0.1,0.5,0.0"
+    }
+  },
+  "layouts": {
+    "LAYOUT: SINGLE_FRAME": "{'PRIMARY': ''}",
+    "LAYOUT: DUOTYCH_HORIZONTAL": "{'LEFT': '', 'RIGHT': ''}",
+    "LAYOUT: DUOTYCH_VERTICAL": "{'TOP': '', 'BOTTOM': ''}",
+    "LAYOUT: BEFORE_AFTER": "{'BEFORE': '', 'AFTER': ''}",
+    "LAYOUT: TRIPTYCH": "{'FRONT FACING': '', 'THREE QUARTER SIDE VIEW': '', 'BACK VIEW': ''}",
+    "LAYOUT: TRIPTYCH_NARRATIVE": "{'ACT_ONE': '', 'ACT_TWO': '', 'ACT_THREE': ''}",
+    "LAYOUT: FOUR_PANEL_CINEMATIC": "{'ESTABLISHING WIDE': '', 'MEDIUM CLOSE-UP': '', 'EXTREME CLOSE-UP': '', 'REACTION SHOT': ''}",
+    "LAYOUT: FOUR_PANEL_2x2": "{'TOP_LEFT': '', 'TOP_RIGHT': '', 'BOTTOM_LEFT': '', 'BOTTOM_RIGHT': ''}",
+    "LAYOUT: SIX_PANEL_COMPOSITE": "{'FRONT MEDIUM CLOSE-UP (MCU)': '', 'BIRDS EYE (BE)': '', 'FRONT EXTREME CLOSE-UP (ECU/XCU)': '', 'SIDE CLOSE-UP (SCU)': '', 'THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)': '', 'FRONT FISH EYE (FE)': ''}",
+    "LAYOUT: SIX_PANEL_2x3": "{'R1_C1': '', 'R1_C2': '', 'R1_C3': '', 'R2_C1': '', 'R2_C2': '', 'R2_C3': ''}",
+    "LAYOUT: NINE_PANEL_COMPOSITE": "{'FRONT MEDIUM CLOSE-UP (MCU)': '', 'BIRDS EYE (BE)': '', 'FRONT EXTREME CLOSE-UP (ECU/XCU)': '', 'SIDE CLOSE-UP (SCU)': '', 'THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)': '', 'FRONT FISH EYE (FE)': '', 'REAR MEDIUM SHOT (RMS)': '', 'OVERHEAD MACRO (OHM)': '', 'DUTCH ANGLE WORM EYE (DAWE)': ''}",
+    "LAYOUT: NINE_PANEL_3x3": "{'R1_C1': '', 'R1_C2': '', 'R1_C3': '', 'R2_C1': '', 'R2_C2': '', 'R2_C3': '', 'R3_C1': '', 'R3_C2': '', 'R3_C3': ''}"
+  },
+  "styling": [
+    "HELMUT_NEWTON",
+    "STEVEN_KLEIN",
+    "GUY_BOURDIN",
+    "ELLEN_VON_UNWERTH",
+    "PETRA_COLLINS",
+    "CASS_BIRD",
+    "ELLEN_VON_UNWERTH_AND_PETRA_COLLINS_AND_CASS_BIRD",
+    "ROXANNE_LOWIT",
+    "MARIO_SORRENTI",
+    "DAVID_LACHAPELLE",
+    "TIM_WALKER",
+    "NADIA_LEE_COHEN",
+    "DEBORAH_TURBEVILLE_AND_YELENA_YEMCHUK",
+    "CORINNE_DAY",
+    "NAN_GOLDIN",
+    "LARRY_CLARK",
+    "DAIDO_MORIYAMA",
+    "HORST_P_HORST_AND_RICHARD_AVEDON",
+    "PETER_LINDBERGH_AND_LEE_MILLER",
+    "MARIO_TESTINO_AND_BRUCE_WEBER",
+    "ANNIE_LEIBOVITZ_AND_TYLER_MITCHELL_AND_CAMPBELL_ADDY",
+    "HERB_RITTS",
+    "EMMA_SUMMERTON",
+    "RYAN_MCGINLEY",
+    "JUERGEN_TELLER",
+    "TERRY_RICHARDSON",
+    "PAOLO_ROVERSI",
+    "NICK_KNIGHT",
+    "STEVEN_MEISEL",
+    "GLEN_LUCHFORD",
+    "SOLVE_SUNDSBO",
+    "INEZ_AND_VINOODH",
+    "CRAIG_MCDEAN",
+    "FRANCESCA_WOODMAN",
+    "CINDY_SHERMAN",
+    "DIANE_ARBUS",
+    "LISETTE_MODEL",
+    "RALPH_GIBSON",
+    "JEANLOUP_SIEFF",
+    "SARAH_MOON",
+    "BETTINA_RHEIMS",
+    "ANDERS_PETERSEN",
+    "NOBUYOSHI_ARAKI",
+    "MASAHISA_FUKASE",
+    "DOROTHEA_LANGE",
+    "GORDON_PARKS",
+    "KWAME_BRATHWAITE",
+    "DEANA_LAWSON",
+    "ZANELE_MUHOLI",
+    "HARLEY_WEIR",
+    "COCO_CAPITAN",
+    "JAMIE_HAWKESWORTH",
+    "JACK_DAVISON",
+    "BRIANNA_CAPOZZI",
+    "COLLIER_SCHORR",
+    "WOLFGANG_TILLMANS",
+    "BORIS_MIKHAILOV",
+    "MARTIN_PARR",
+    "ALEC_SOTH",
+    "GREGORY_CREWDSON",
+    "PHILIP_LORCA_DICORCIA",
+    "NADAV_KANDER",
+    "ERWIN_OLAF",
+    "VIVIANE_SASSEN",
+    "MERT_AND_MARCUS",
+    "LUIGI_AND_IANGO",
+    "CHRIS_VON_WANGENHEIM",
+    "HIRO",
+    "IRVING_PENN",
+    "RICHARD_AVEDON_STREET"
+  ],
+  "lighting": {
+    "DRAMATIC_STUDIO_LIGHTING_CAMERA_LEFT": "SINGLE-SOURCE_SPOTLIGHT_DIRECTLY_OVERHEAD_SHINING_DOWN. PHOTONIC_INTERACTION_TREATED_AS_PURE_OPTICAL_VARIABLE_GOVERNED_BY_INCIDENCE_ANGLE (GRAZING_ANGLES_PRODUCE_HEIGHTENED_CONTOUR_EMPHASIS) AND_SOURCE_POWER (LINEAR-TO-EXPONENTIAL_INCREASE_IN_MODELING_INTENSITY_AND_LIGHT_RESISTENCE)",
+    "INTENSE_DIRECT_OVERHEAD_SPOTLIGHT": "HARD_FLASH_LUMINOSITY_WITH_HARSH_SHADOWS_AND_SPECULAR_HIGHLIGHTS",
+    "on_camera_popup_flash_5500K": "HARD_ON-AXIS_FLASH, INVERSE-SQUARE_FALLOFF, INVERSE-SQUARE_FALLOFF, HARSH_CATCH-LIGHTS",
+    "OFF_CAMERA_STROBE_45_LEFT_5600K": "45\u00b0 CAMERA-LEFT_HARD_STROBE, SHARP_SINGLE_SHADOW",
+    "OFF_CAMERA_STROBE_45_RIGHT_5600K": "45\u00b0 CAMERA-RIGHT_HARD_STROBE, MIRRORED_SHADOW",
+    "RING_FLASH_ON_AXIS_5500K": "FLAT_FILL, SIGNATURE_RING_CATCH-LIGHT, ZERO_SHADOW",
+"BARE_BULB_HANDHELD_FLASH_5400K": "OMNIDIRECTIONAL SCATTER, WRAP-AROUND HARD LIGHT",
+    "SOFTBOX_LARGE_OCTAGONAL_5600K": "BROAD SOFT WRAP, GRADUATED SHADOW EDGE",
+    "SOFTBOX_STRIP_NARROW_5600K": "DIRECTIONAL WRAP, CONTROLLED SPILL, CLASSIC BEAUTY",
+    "BEAUTY_DISH_SILVER_5500K": "PUNCHY SKIN TEXTURE, SPECULAR PUNCH, MID-SHADOW",
+    "BEAUTY_DISH_WHITE_5500K": "SOFTER PUNCH, LESS SPECULAR THAN SILVER DISH",
+    "PARABOLIC_REFLECTOR_DEEP_5600K": "FOCUSED HARD SPOT, SPECULAR COLUMN, LONG THROW",
+    "FRESNEL_SPOTLIGHT_5600K": "VARIABLE HARD/SOFT WITH GRID, THEATRICAL CONTROL",
+    "HMI_DAYLIGHT_5600K": "PARALLEL NEAR-ZERO FALLOFF, HARD CINEMA KEY",
+    "LED_PANEL_BICOLOR_VARIABLE_K": "VARIABLE COLOUR TEMP, SOFT EVEN FIELD, LOW SHADOW",
+    "TUNGSTEN_OPEN_FACE_3200K": "WARM HARD DIRECTIONAL, HIGH CRI WARMTH",
+    "TUNGSTEN_SOFTBOX_3200K": "WARM SOFT WRAP, LOW COLOUR TEMP, INCANDESCENT GLOW",
+    "CANDLE_PRACTICAL_1800K": "EXTREME WARM POINT SOURCE, 1600K, HARD SHORT FALLOFF",
+    "NEON_TUBE_PRACTICAL_VARIABLE": "COLOURED AMBIENT WASH, HUM ARTEFACT, RETRO-INDUSTRIAL",
+    "FLUORESCENT_OVERHEAD_BANK_4000K": "FLAT OVERHEAD FILL, GREEN-SHIFT POTENTIAL, COMMERCIAL",
+    "WINDOW_NATURAL_DAYLIGHT_5600K": "SOFT DIRECTIONAL SIDE FILL, ROLLING GRADIENT SHADOW",
+    "WINDOW_OVERCAST_DIFFUSED_6500K": "FLAT COOL FILL, NEAR-ZERO CONTRAST, EVEN SKIN TONE",
+    "SKYLIGHT_OPEN_SHADE_7000K": "COOL BLUE FILL FROM OPEN SKY, SUBTLE SPECULAR",
+    "BOUNCE_SILVER_REFLECTOR_FILL": "SPECULAR BOUNCE FILL, 0.7 RATIO TO KEY",
+    "BOUNCE_WHITE_CARD_FILL": "SOFT MATTE BOUNCE FILL, 0.3\U20130.5 RATIO",
+    "NO_FILL_TRUE_RATIO_LIGHTING": "NO FILL \U2014 DEEP SHADOWS, PURE RATIO SETUP",
+    "PRACTICAL_LAMP_3000K_BACKGROUND": "BACKGROUND WARM PRACTICAL, 0.1 RATIO AMBIENT BLEED",
+    "AMBIENT_TUNGSTEN_3200K_BACKGROUND": "DIM WARM BACKGROUND GLOW, RATIO 0.04",
+    "AMBIENT_MOONLIGHT_4100K": "COOL BLUE-GREY AMBIENT, VERY LOW INTENSITY",
+    "GRID_10_DEGREE": "TIGHT GRID ON KEY \U2014 ZERO SPILL, SPOT CONTROL",
+    "GRID_30_DEGREE": "MEDIUM GRID \U2014 MODERATE SPILL CONTROL",
+    "GEL_CTO_FULL_WARM_3200K": "FULL CTO WARM GEL OVER DAYLIGHT SOURCE",
+    "GEL_CTB_FULL_COOL_6500K": "FULL CTB COOL GEL OVER TUNGSTEN SOURCE",
+    "GEL_RED_SATURATED": "DEEP RED AMBIENT WASH, DRAMATIC COLOUR",
+    "GEL_GREEN_SATURATED": "SICKLY GREEN WASH \U2014 CLINICAL, HORROR ADJACENT",
+    "GEL_BLUE_DEEP": "COLD BLUE WASH \U2014 NIGHT, ALIENATION",
+    "SNOOT_TIGHT_BEAM": "NARROW CONE, PRECISE HOT-SPOT ISOLATION",
+    "BARN_DOORS_FOUR_WAY": "RECTANGULAR SPILL CONTROL ON KEY SOURCE",
+    "DIFFUSION_SILK_HEAVY": "HEAVY DIFFUSION OVER STROBE \U2014 VERY SOFT",
+    "DIFFUSION_FROST_LIGHT": "LIGHT FROST \U2014 MINOR SOFTENING, RETAINS PUNCH",
+    "SHADOW_RAZOR_HARD_ZERO_PENUMBRA": "JET-BLACK DROP SHADOWS, ZERO FEATHER, CONTACT PRINT HARD",
+    "SHADOW_MODERATE_10PCT_FEATHER": "SLIGHT EDGE SOFTNESS, STILL DEFINED",
+    "SHADOW_SOFT_GRADUATED_30PCT": "GRADUAL TRANSITION, 30% PENUMBRA BLEND ZONE",
+    "SHADOW_NO_SHADOW_HIGH_KEY": "NO VISIBLE SHADOW \U2014 FLAT EVEN ILLUMINATION",
+    "SHADOW_DOUBLE_CROSSLIT_ARTIFACT": "TWO SHADOW DIRECTIONS FROM CROSS-LIT SOURCES",
+    "SHADOW_LONG_OBLIQUE_DIRECTIONAL": "LONG STRETCHED SHADOW \U2014 SUBJECT AT OBLIQUE ANGLE TO KEY",
+    "FLASH_SYNC_1_60_STANDARD": "STANDARD FLASH SYNC, SLIGHT AMBIENT BLEED AT SLOW END",
+    "FLASH_SYNC_1_125_STANDARD": "CLEAN STANDARD SYNC, MINIMAL AMBIENT",
+    "FLASH_SYNC_1_250_HSS": "HIGH-SPEED SYNC, DAYLIGHT KILLING CAPABILITY",
+    "FLASH_SYNC_1_500_HSS_FULL_KILL": "MAXIMUM DAYLIGHT SUPPRESSION, PURE FLASH LOOK",
+    "LONG_EXPOSURE_BULB_AMBIENT_BLEED": "BULB EXPOSURE + FLASH POP \U2014 MOTION BLUR BACKGROUND",
+    "PRACTICAL_TV_SCREEN_COOL_FLICKER": "BLUE-WHITE TV GLOW, 5000\U20136500K FLICKER, LOW INTENSITY",
+    "PRACTICAL_LIGHTER_FLAME_VERY_CLOSE": "EXTREME WARM POINT SOURCE, 1600K, HARD SHORT FALLOFF",
+    "PRACTICAL_PHONE_SCREEN_UPLIGHT": "COLD UPLIGHT FROM SCREEN, 6000K, GHOSTLY UNDERLIGHTING",
+    "PRACTICAL_FRIDGE_LIGHT_INTERIOR": "DIFFUSED COLD WHITE FROM BELOW, 4500K, DEEP SHADOW TOP",
+    "PRACTICAL_AQUARIUM_CAUSTIC_BLUE": "UNDULATING BLUE CAUSTIC RIPPLE, 7000K, WATER REFRACTION",
+    "RED_ROOM_DARKROOM_SAFELIGHT": "MONO-CHROMATIC DEEP RED, 620NM, NEAR-ZERO MODELLING",
+    "UV_BLACKLIGHT_FLUORESCENT_365NM": "UV REACTIVE SURFACE GLOW, AMBIENT NEAR-BLACK, NEON POP",
+    "FIREPLACE_EMBERS_LOW_PRACTICAL": "DEEP AMBER EMBER GLOW, 1200K, VERY DIM, WARM SHADOW FILL",
+    "SODIUM_VAPOUR_STREET_590NM": "MONOCHROMATIC WARM ORANGE, DESATURATES COLOUR, FLAT CRI",
+    "MERCURY_VAPOUR_COOL_405NM": "COLD BLUE-PURPLE INDUSTRIAL, SKIN APPEARS GREY-GREEN",
+    "LASER_POINTER_GRID_OVERLAY": "COHERENT 532NM GREEN OR 650NM RED POINT SCATTER",
+    "HMI_PAR_5600K_HARD_PARALLEL": "HARD PARALLEL HMI PAR \U2014 SIMULATES DIRECT SUN BEAM",
+    "HMI_FRESNEL_5600K_SPOT_MODE": "FOCUSABLE FRESNEL SPOT, HARD CENTRE, SOFT EDGE",
+    "ARRI_SKYPANEL_S60_FULL_COLOUR": "RGB+W LED SOFT PANEL, FULL COLOUR MIXING, EVEN FIELD",
+    "DEDOLIGHT_150W_FOCUSABLE": "TINY HARD FOCUSABLE SOURCE, EXTREME PRECISION, 3200K",
+    "KINO_FLO_4BANK_5600K": "FLUORESCENT SOFT BANK, LOW CONTRAST, FASHION FILL",
+    "CHIMERA_LIGHTBANK_LARGE": "LARGE SOFTBOX EQUIVALENT OVER STROBE, VERY SOFT",
+    "LITEPANELS_ASTRA_BICOLOR": "LED PANEL, VARIABLE 3200\U20135600K, LOW HEAT, SOFT FIELD",
+    "LEKO_SOURCE_FOUR_SPOT_5600K": "ELLIPSOIDAL SPOTLIGHT, SHARP IRIS-CUT BEAM, THEATRICAL",
+    "ASTERA_TITAN_TUBE_RGB_PRACTICAL": "RGBWW PIXEL TUBE, FULL COLOUR, REMOTE DMX, PRACTICAL",
+    "SKYPANEL_S60_OVERHEAD_SOFTBOX": "ARRI SKYPANEL OVERHEAD, FULL-FIELD SOFT TOP LIGHT",
+    "18K_HMI_THROUGH_WINDOW_SILK": "18K HMI BOUNCED THROUGH DIFFUSION SILK \U2014 SUN SIMULATION",
+    "TEAL_ORANGE_HOLLYWOOD_GRADE": "COMPLEMENTARY TEAL SHADOW / ORANGE SKIN GRADE",
+    "MONOCHROME_SILVER_GELATIN_GRADE": "DESATURATED B&W WITH SILVER HALIDE GRAIN EMULATION",
+    "CROSS_PROCESS_E6_IN_C41": "SLIDE FILM CROSS-PROCESSED \U2014 CYAN SHADOWS, YELLOW SKIN",
+    "BLEACH_BYPASS_SILVER_RETENTION": "INCREASED CONTRAST, DESATURATED, GRITTY SILVER OVERLAY",
+    "LO_FI_EXPIRED_FILM_COLOUR_SHIFT": "RANDOM COLOUR CAST, FOGGING, LIGHT LEAK EDGE BLOOM",
+    "CYANOTYPE_BLUE_GRADE": "PRUSSIAN BLUE MONOCHROME, PHOTOGRAM AESTHETIC",
+    "SEPIA_ALBUMIN_WARM_GRADE": "19TH-CENTURY WARM BROWN-GOLD PRINT EMULATION"
+  },
+  "photonic": {
+    "MICROFACET_DISTRIBUTION": "GGX/TROWBRIDGE-REITZ \U2014 PHYSICALLY BASED ROUGH SURFACE MODEL",
+    "LAMBERTIAN_DIFFUSE": "PERFECTLY DIFFUSE MATTE SURFACE \U2014 EQUAL SCATTERING ALL DIRECTIONS",
+    "OREN_NAYAR_ROUGH_DIFFUSE": "ROUGH DIFFUSE \U2014 ACCOUNTS FOR RETROREFLECTION ON TEXTURED SURFACES",
+    "COOK_TORRANCE_SPECULAR": "CLASSIC PHYSICALLY-BASED SPECULAR MODEL \U2014 ENERGY CONSERVING",
+    "ASHIKHMIN_SHIRLEY_ANISOTROPIC": "ANISOTROPIC HIGHLIGHT ELONGATION ALONG SURFACE TANGENT",
+    "GGX_ANISOTROPIC_FABRIC": "GGX WITH ANISOTROPIC TANGENT \U2014 SILK, SATIN WEAVE",
+    "SUBSURFACE_SCATTERING": "LIGHT PENETRATES SURFACE \U2014 SKIN, WAX, TRANSLUCENT TISSUE",
+    "SCATTER_THROUGH_WEAVE": "PHOTON PASSES THROUGH LOW-DENIER FABRIC WEAVE GAPS",
+    "DIRECT_ANGULAR_PENETRATION_V8": "HIGH-ANGLE DIRECT PENETRATION \U2014 SHEER FABRIC FLASH-THROUGH",
+    "EPIDERMAL_TRANSLUCENCY_PASS": "DERMAL LAYER LIGHT SCATTER \U2014 SUBSURFACE SKIN GLOW",
+    "THROUGH_FABRIC_DIFFUSE_BOUNCE": "BOUNCE LIGHT DIFFUSES THROUGH FABRIC BEFORE EXITING",
+    "RAY_MARCHING_VOLUMETRIC": "VOLUME RENDERING \U2014 SMOKE, FOG, GOD-RAYS, ATMOSPHERE",
+    "SINGLE_SCATTER_VOLUMETRIC": "SINGLE-EVENT LIGHT SCATTER IN PARTICIPATING MEDIA",
+    "MULTIPLE_SCATTER_VOLUMETRIC": "DEEP VOLUME SCATTER \U2014 OPTICALLY THICK MEDIA",
+    "RIM_LIGHT_SCATTERING_PASS": "BACKLIT RIM SCATTER \U2014 GLOWING EDGE SEPARATION ON SKIN",
+    "BACKLIT_SUBSURFACE_GLOW": "TRANSMITTED GLOW THROUGH THIN TISSUE WHEN BACKLIT",
+    "MEAN_FREE_PATH_MEDIUM": "AVERAGE PHOTON TRAVEL BEFORE SCATTER EVENT \U2014 SKIN ~2\U20134MM",
+    "MEAN_FREE_PATH_SHORT": "DENSE SCATTER \U2014 VERY SHORT FREE PATH, FAST DIFFUSION",
+    "MEAN_FREE_PATH_LONG": "SPARSE SCATTER \U2014 LONG FREE PATH, DEEP PENETRATION",
+    "SPOTLIGHT_TRANSVERSE_ORBIT_360": "360\U00B0 TRANSVERSE ORBIT LIGHTING SIMULATION",
+    "ISOTROPIC_DIFFUSION": "EQUAL SCATTER PROBABILITY IN ALL DIRECTIONS",
+    "ENERGY_CONSERVATION_COMPLIANT": "TOTAL OUTPUT ENERGY \U2264 INPUT \U2014 NO PHANTOM EMISSION",
+    "TRANSPARENCY_FOCUSED": "PRIORITY ON TRANSMISSION AND SCATTER OVER REFLECTION",
+    "FRESNEL_HIGH": "STRONG ANGLE-DEPENDENT REFLECTANCE \U2014 WET SURFACES, GLASS",
+    "FRESNEL_MEDIUM": "MODERATE FRESNEL \U2014 TYPICAL SKIN AT GRAZING ANGLE",
+    "FRESNEL_LOW": "WEAK FRESNEL \U2014 DRY MATTE SKIN, CLOTH",
+    "SPECULAR_LOBE_TIGHT_HIGH": "NARROW BRIGHT SPECULAR HIGHLIGHT \U2014 POLISHED, WET",
+    "SPECULAR_LOBE_BROAD_LOW": "WIDE SOFT SPECULAR \U2014 ROUGH, DRY, MATTE",
+    "LAMBERTIAN_REFLECTANCE_HIGH": "HIGH DIFFUSE ALBEDO \U2014 BRIGHT WHITE OR PALE SKIN",
+    "LAMBERTIAN_REFLECTANCE_LOW": "LOW DIFFUSE ALBEDO \U2014 DARK SKIN, DARK FABRIC",
+    "WARD_DUER_ANISOTROPIC": "ANISOTROPIC HIGHLIGHT ELONGATION ALONG SURFACE TANGENT",
+    "BLINN_PHONG_SPECULAR": "CLASSIC NON-PBR SPECULAR LOBE \U2014 LEGACY RENDER FEEL",
+    "THINFILM_INTERFERENCE": "SOAP-BUBBLE IRIDESCENCE \U2014 NANOMETRE THIN FILM DIFFRACTION",
+    "RETROREFLECTIVE_COATING": "LIGHT RETURNS DIRECTLY TO SOURCE \U2014 SAFETY VEST, CAT EYE",
+    "VELVET_ASHIKHMIN_PREETHAM": "CLOTH-SPECIFIC BRDF \U2014 FORWARD SCATTER + LIMB BRIGHTENING",
+    "HAIR_MARSCHNER_MODEL": "R, TT, TRT SCATTER PATHS FOR INDIVIDUAL HAIR FIBRE",
+    "KAJIYA_KAY_HAIR_SPECULAR": "SIMPLIFIED HAIR HIGHLIGHT \U2014 SPECULAR BAND ALONG SHAFT",
+    "SKIN_DONNER_JENSEN_SSS": "DIPOLE/MULTIPOLE SSS \U2014 DERMAL AND EPIDERMAL LAYERS",
+    "CORNEA_REFRACTION_PASS": "EYE LENS REFRACTION \U2014 SPECULAR HIGHLIGHT + IRIS DEPTH",
+    "WET_SURFACE_PUDDLE_REFLECTION": "GROUND-PLANE WATER MIRROR \U2014 SKY REFLECTION + RIPPLE",
+    "CAUSTIC_PROJECTION_UNDERWATER": "REFRACTED LIGHT CAUSTIC PATTERNS ON SUBSURFACE PLANES",
+    "PARTICIPATING_MEDIA_MIST": "IN-SCATTERING ATMOSPHERE \U2014 GOD RAYS, DEPTH HAZE",
+    "CHROMATIC_ABERRATION_LENS": "RGB CHANNEL SPLIT AT FRAME EDGES \U2014 LENS ABERRATION",
+    "LENS_DISTORTION_BARREL": "OUTWARD GEOMETRIC DISTORTION \U2014 WIDE-ANGLE CHARACTERISTIC",
+    "DIFFRACTION_STARBURST_PATTERN": "APERTURE BLADE STARBURST ON SPECULAR HIGHLIGHTS AT F/16+",
+    "SENSOR_NOISE_HIGH_ISO": "RANDOM LUMINANCE/CHROMA NOISE PATTERN \U2014 PUSHED ISO EMUL",
+    "FILM_GRAIN_T_MAX_3200": "SILVER HALIDE GRAIN CLUSTER \U2014 PUSHED T-MAX GRAIN MAP",
+    "HALATION_CINESTILL_RED_BLEED": "RED CHANNEL BLEED HALO AROUND BRIGHT SOURCES \U2014 CINESTILL"
+  },
+  "ray": {
+    "sources": {
+      "SINGLE_CONICAL_SPOTLIGHT": "HARD DIRECTIONAL CONE, HIGH CONTRAST FOCUSED BEAM",
+      "OMNIDIRECTIONAL_POINT_SOURCE": "UNBOUNDED SPHERICAL EMISSION FROM A SINGLE POINT",
+      "AREA_LIGHT_SOFT_PANEL": "RECTANGULAR EMISSION SURFACE, SOFT SHADOW WRAP",
+      "PARALLEL_DIRECTIONAL_SUN": "INFINITE DISTANCE SIMULATION, PARALLEL RAYS"
+    },
+    "coords": {
+      "2.50,-4.50,16.00": "DEFAULT CAMERA-LEFT ELEVATED ORIGIN",
+      "-0.04,5.67,2.39": "DEFAULT CENTER-SUBJECT TARGET",
+      "0.00,10.00,0.00": "DIRECT OVERHEAD ZENITH ORIGIN"
+    },
+    "angles": {
+      "10_DEGREE_SPOT": "VERY TIGHT PIN-SPOT, DRAMATIC ISOLATION",
+      "28_DEGREE_FOCUS": "STANDARD THEATRICAL SPOT FOCUS",
+      "45_DEGREE_FLOOD": "WIDE FLOOD SPREAD",
+      "120_DEGREE_WASH": "ULTRA-WIDE AMBIENT WASH"
+    },
+    "intensity": {
+      "110_PERCENT_SCALE": "OVER-DRIVEN, INTENTIONALLY CLIPPING CENTRAL HIGHLIGHTS",
+      "100_PERCENT_SCALE": "NOMINAL MAXIMUM EXPOSURE",
+      "50_PERCENT_SCALE": "MID-LEVEL FILL intensity"
+    },
+    "falloff": {
+      "AGGRESSIVE_INVERSE_SQUARE": "PHYSICALLY ACCURATE, RAPID LIGHT DECAY",
+      "LINEAR_ATTENUATION": "STYLIZED SLOW DECAY FOR CONSTANT ILLUMINATION",
+      "ZERO_FALLOFF_ORTHOGRAPHIC": "NO DECAY OVER DISTANCE"
+    },
+    "bounce": {
+      "INFINITE_RECURSIVE_REFLECTION": "FULL PATH TRACING, HALL OF MIRRORS EFFECT",
+      "SINGLE_BOUNCE_GLOBAL_ILLUMINATION": "FAST GI, ONE bounce ENVIRONMENT SCATTER",
+      "DIRECT_ILLUMINATION_ONLY": "NO bounce, PITCH BLACK DEEP SHADOWS"
+    }
+  },
+  "camera": {
+    "CANON EOS 5D MARK IV": "36\U00D724MM CMOS, 30.4MP, DIGIC 7, DUAL PIXEL AF",
+    "CANON EOS 5D MARK III": "36\U00D724MM CMOS, 22.3MP, DIGIC 5+, CLASSIC FILM-ERA OUTPUT",
+    "CANON EOS R5": "45MP BSI CMOS, IBIS, 8K RAW, DUAL PIXEL CMOS AF II",
+    "CANON EOS-1D X MARK III": "20.1MP, 16FPS, CFEXPRESS, PRO SPORT/STUDIO HYBRID",
+    "NIKON D850": "45.7MP BSI CMOS, 153PT AF, TILTING LCD, CLEAN ISO",
+    "NIKON D800": "36.3MP FX, LEGENDARY LANDSCAPE/STUDIO RESOLUTION",
+    "NIKON Z7 II": "45.7MP BSI, IBIS, Z-MOUNT MIRRORLESS, DUAL CARD",
+    "SONY A7R V": "61MP BSI EXMOR R, AI-AF, 5-AXIS IBIS, COMPACT FF",
+    "SONY A7R LV": "AND A SONY FE 50MM F/1.2 GM",
+    "SONY A7 III": "24.2MP BSI, DUAL NATIVE ISO, VERSATILE HYBRID",
+    "SONY A1": "50MP, 30FPS, 8K VIDEO, GLOBAL SHUTTER OPTION",
+    "CANON EOS 5D MARK IV": "AND A CANON EF 100MM F/2.8L MACRO IS USM",
+    "NIKON D850 WITH": "A NIKKOR 60MM F/2.8G MICRO",
+    "PHASE ONE IQ4 150MP WITH": "A SCHNEIDER KREUZNACH 120MM F/4 MACRO",
+    "HASSELBLAD X2D 100C": "100MP BSI, 5-AXIS IBIS, NO AA FILTER, NATURAL COLOUR",
+    "PHASE ONE IQ4 150MP": "150MP CMOS BACK, 16-BIT RAW, TRICHROMATIC OPTION",
+    "FUJIFILM GFX 100S": "102MP BSI CMOS, IBIS, COMPACT MF, SUPERB FILM SIMS",
+    "FUJIFILM GFX 50R": "51.4MP MF, RANGEFINDER BODY, RICH TONAL GRADATION",
+    "PENTAX 645Z": "51.4MP CMOS, WEATHER-SEALED, DSLR-STYLE MF, TILTING",
+    "LEICA M11": "60MP BSI, FRAMELESS BASE PLATE, TIMELESS RANGEFINDER",
+    "LEICA M10-R": "40MP, OPTICAL RANGEFINDER, NO EVF, PURE ANALOGUE FEEL",
+    "LEICA SL2-S": "24.6MP, CONTRAST AF, RUGGED L-MOUNT, CINEMA HYBRID",
+    "35MM FILM \U2014 KODAK PORTRA 400": "NATURAL SKIN TONES, FINE GRAIN, WIDE LATITUDE",
+    "35MM FILM \U2014 KODAK PORTRA 800": "PUSHED WARMTH, VISIBLE GRAIN, LOW-LIGHT LATITUDE",
+    "35MM FILM \U2014 KODAK EKTAR 100": "HYPER-SATURATED, FINE GRAIN, VIBRANT PRIMARIES",
+    "35MM FILM \U2014 FUJIFILM SUPERIA 1600": "HIGH-ISO GRAIN, PUSHED GREEN BIAS, CLUB/NIGHT",
+    "35MM FILM \U2014 FUJIFILM PRO 400H": "SOFT PASTEL SKIN, WIDE HIGHLIGHT LATITUDE, FEMININE",
+    "35MM FILM \U2014 ILFORD HP5 PLUS (B&W)": "CLASSIC B&W, PUSHED TO 3200 GRITTY, VERSATILE",
+    "35MM FILM \U2014 ILFORD DELTA 3200": "EXTREME GRAIN, B&W, PUSHED HIGH-ISO DOCUMENTARY",
+    "35MM FILM \U2014 KODAK TRI-X 400 (B&W)": "ICONIC B&W, RICH GRAIN, HIGH CONTRAST HERITAGE",
+    "35MM FILM \U2014 CINESTILL 800T": "TUNGSTEN-BALANCED, HALATION GLOW, CINEMA IN 35MM",
+    "35MM FILM \U2014 LOMOGRAPHY COLOR 100": "TOY-CAMERA CROSS-PROCESS, SATURATED, LO-FI",
+    "120MM FILM \U2014 KODAK PORTRA 400 MF": "MF PORTRA, ENORMOUS TONAL RANGE, FINE GRAIN AT 6\U00D77",
+    "120MM FILM \U2014 ILFORD FP4 125 (B&W)": "FINE GRAIN B&W, LONG TONAL SCALE, ARCHITECTURAL",
+    "120MM FILM \U2014 FUJIFILM FP-100C (INSTANT)": "PEEL-APART INSTANT, WARM TONES, UNIQUE SURFACE",
+    "POLAROID 600 SERIES": "SQUARE FORMAT INSTANT, SOFT VIGNETTE, SLOW EMULSION",
+    "POLAROID SX-70": "FOLDING SLR INSTANT, LEGENDARY SOFT FOCUS RENDERING",
+    "IMPOSSIBLE PROJECT I-1": "MODERN POLAROID, CONTROLLED COLOUR, RING FLASH BUILT-IN",
+    "CANON EOS R3": "24.1MP BSI STACKED CMOS, 30FPS, EYE-CONTROL AF, SPEED/QUALITY",
+    "NIKON Z9": "45.7MP STACKED CMOS, NO MECHANICAL SHUTTER, 20FPS RAW",
+    "NIKON Z8": "45.7MP STACKED, COMPACT Z9, BLACKOUT-FREE, FULL-FRAME SPEED",
+    "FUJIFILM X-T5": "40.2MP APS-C BSI, COMPACT, FILM SIMULATION LEGACY, X-TRANS",
+    "FUJIFILM X-PRO3": "26.1MP X-TRANS, HIDDEN LCD, RANGEFINDER HYBRID, ACROS GRAIN",
+    "RICOH GR IIIX": "24.2MP APS-C, 40MM EQUIV, POCKETABLE, HARD STREET SNAP",
+    "SIGMA FP L": "61MP BSI FF, WORLD'S SMALLEST FF, MINIMALIST, CINEMA RAW",
+    "PENTAX K-1 MARK II": "36.2MP AA-FILTERLESS, PIXEL SHIFT, WEATHER-SEALED DSLR",
+    "OM SYSTEM OM-1 MARK II": "20MP STACKED MFT, 120FPS, COMPUTATIONAL PHOTOGRAPHY",
+    "ARRI ALEXA LF": "WITH A PANAVISION C SERIES ANAMORPHIC 50MM T2.3",
+    "ARRI ALEXA MINI LF": "WITH A COOKE S7/I 40MM T2.0",
+    "ARRI ALEXA 35 (CINEMA)": "4.6K ALEV 4 SENSOR, LEGENDARY SKIN TONE RENDERING, CINEMA",
+    "RED RANGER MONSTRO": "WITH A PANAVISION T-SERIES ANAMORPHIC 35MM T2.3",
+    "RED MONSTRO 8K VV": "8K FULL FRAME, REDCODE RAW, CLINICAL HIGHLIGHT ROLL-OFF",
+    "BLACKMAGIC POCKET CINEMA 6K": "6K SUPER 35, BRAW, ANAMORPHIC OPTION, INDIE CINEMA LOOK",
+    "SONY VENICE 2 (CINEMA)": "8.6K FF, DUAL BASE ISO, BUILT-IN ND, CINEMA GLASS",
+    "35MM FILM \U2014 AGFA VISTA 200": "WARM SKIN SATURATION, SLIGHT YELLOW BIAS, CONSUMER QUALITY",
+    "35MM FILM \U2014 KODAK GOLD 200": "CLASSIC HOLIDAY COLOUR, WARM, FINE GRAIN, NOSTALGIC",
+    "35MM FILM \U2014 ROLLEI INFRARED 400": "NEAR-INFRARED SENSITIVITY, DARK SKIES, WHITE FOLIAGE",
+    "35MM FILM \U2014 FOMAPAN 400 (B&W)": "EASTERN EUROPEAN B&W, HIGH CONTRAST, LARGE GRAIN, CHEAP",
+    "120MM FILM \U2014 KODAK EKTAR 100 MF": "HYPER-SATURATED MF, ULTRA-FINE GRAIN, VIVID PRIMARIES",
+    "120MM FILM \U2014 ROLLEI RPX 400 (B&W)": "MF B&W, WIDE EXPOSURE LATITUDE, NATURAL GRAIN",
+    "4X5 FILM \U2014 KODAK PORTRA 160 LF": "LARGE FORMAT PORTRA, ENORMOUS TONAL SEPARATION, SURGICAL",
+    "4X5 FILM \U2014 ILFORD FP4 125 LF": "LARGE FORMAT B&W, VIRTUALLY GRAINLESS, ARCHITECTURAL",
+    "DISPOSABLE CAMERA \U2014 KODAK FUNSAVER": "LO-FI FLASH SNAPSHOT, HYPERSATURATED, RETRO SOCIAL",
+    "ARRI ALEXA 35": "4.6K ALEV 4, 17 STOPS DYNAMIC RANGE, SUPREME SKIN TONE",
+    "RED V-RAPTOR 8K VV": "8K VISTA VISION, 280FPS AT 4K, MODULAR, REDCODE RAW",
+    "SONY VENICE 2 8K": "8.6K FULL FRAME, DUAL ISO 800/3200, BUILT-IN ND, CINEMA",
+    "SONY VENICE": "WITH A HAWK V-LITE 55MM ANAMORPHIC T2.2",
+    "PANAVISION MILLENNIUM DXL2": "8K LF PANAVISION SENSOR, PANAVISED GLASS MOUNT, CINEMA"
+  },
+  "lens": {
+    "100MM": "PRIME LENS F8",
+    "25MM": "PRIME LENS F/1.2",
+    "25MM": "PRIME LENS F/0.4",
+    "12MM TO 17MM": "WIDE-ANGLE LENS F/8 TO F/16 (DEEP DEPTH OF FIELD)",
+    "CANON EF 100MM F/2.8L MACRO IS USM": "1:1 MACRO, IS, L-SERIES, CLINICALLY SHARP CLOSE-UP",
+    "CANON EF 85MM F/1.2L II USM": "LEGENDARY SUBJECT ISOLATION, CREAMY BOKEH, FAST AF",
+    "CANON EF 85MM F/1.4L IS USM": "SHARP WIDE OPEN, IS, MODERN 85MM PORTRAIT KING",
+    "CANON EF 50MM F/1.2L USM": "NATURAL PERSPECTIVE, CLASSIC BOKEH RENDITION",
+    "CANON EF 35MM F/1.4L II USM": "WIDE OPEN SHARPNESS, ENVIRONMENTAL PORTRAIT",
+    "CANON EF 24-70MM F/2.8L II USM": "WORKHORSE ZOOM, CONSTANT F/2.8, SHARP THROUGHOUT",
+    "CANON EF 70-200MM F/2.8L IS III USM": "REACH + BOKEH, PRESS/SPORT/PORTRAIT COMPRESSION",
+    "CANON RF 85MM F/1.2L USM DS": "DUAL SENSING ND COATING, REDUCED BOKEH FRINGING",
+    "NIKON AF-S 85MM F/1.4G": "3D POP BOKEH, WORLD-CLASS PORTRAIT RENDERING",
+    "NIKON AF-S 105MM F/1.4E ED": "EXCEPTIONAL RESOLUTION + SUBJECT SEPARATION AT F/1.4",
+    "NIKON AF-S 58MM F/1.4G": "MICRO-CONTRAST PERFECTION, SPHERICAL 3D RENDERING",
+    "NIKON AF-S MICRO 105MM F/2.8G VR": "MACRO + PORTRAIT, VR STABILISED, EXCEPTIONAL SHARPNESS",
+    "NIKON Z 85MM F/1.2 S": "BEST-IN-CLASS Z-MOUNT PORTRAIT, NEAR-PERFECT RENDERING",
+    "SONY FE 85MM F/1.4 GM": "G MASTER SHARPNESS, 11-BLADE CIRCULAR BOKEH",
+    "SONY FE 135MM F/1.8 GM": "STUNNING COMPRESSION, BOKEH SMOOTHNESS, RAZOR SHARP",
+    "SONY FE 50MM F/1.2 GM": "PERFECT 50MM \U2014 SHARP, SMALL, BEAUTIFUL RENDERING",
+    "SONY FE 90MM F/2.8 MACRO G OSS": "1:1 MACRO, OSS STABILISED, CLINICAL SHARPNESS",
+    "SIGMA 85MM F/1.4 DG DN ART": "THIRD-PARTY PORTRAIT KING, EXCEPTIONAL VALUE, SHARP",
+    "SIGMA 35MM F/1.4 DG HSM ART": "WIDE PORTRAIT, SUPERB SHARPNESS WIDE OPEN",
+    "SIGMA 105MM F/2.8 DG DN MACRO ART": "MACRO + PORTRAIT DUAL-USE, EXCEPTIONAL OPTICAL QUALITY",
+    "SIGMA 50MM F/1.4 DG HSM ART": "TECHNICAL MASTERPIECE 50MM, HEAVY BUT SUPERB",
+    "ZEISS OTUS 85MM F/1.4": "NEAR-PERFECT OPTICAL RESOLUTION, CLINICAL ZEISS RENDERING",
+    "ZEISS OTUS 55MM F/1.4": "SCIENTIFICALLY SHARP 50MM, MANUAL FOCUS MASTERPIECE",
+    "ZEISS MILVUS 135MM F/2": "DRAMATIC COMPRESSION, ZEISS MICRO-CONTRAST, MANUAL",
+    "ZEISS LOXIA 50MM F/2": "COMPACT FE PORTRAIT, CLINICAL ZEISS QUALITY COMPACT",
+    "VOIGTL\U00C4NDER 40MM F/1.2 NOKTON": "COMPACT FAST LENS, SMOOTH RENDERING, UNIQUE CHARACTER",
+    "VOIGTL\U00C4NDER 75MM F/1.5 NOKTON II": "LEICA M PORTRAIT, SMOOTH TRANSITIONAL BOKEH",
+    "LEICA SUMMILUX 50MM F/1.4 ASPH": "LEGENDARY LEICA CHARACTER, PRECISE MICRO-CONTRAST",
+    "LEICA APO-SUMMICRON 75MM F/2 ASPH": "NEAR-PERFECT OPTICAL CORRECTION, UNMATCHED CLARITY",
+    "HELIOS 44-2 58MM F/2 (SWIRLY BOKEH)": "SOVIET SWIRLY BOKEH, CHARACTER IMPERFECTION, CULT LENS",
+    "MEYER-OPTIK TRIOPLAN 100MM F/2.8 (SOAP BUBBLE BOKEH)": "SOAP BUBBLE OOF CIRCLES, DREAMY RENDERING",
+    "PETZVAL 85MM F/2.2 ART LENS": "SWIRLY FIELD, SHARP CENTRE, 19TH CENTURY OPTICAL CHARACTER",
+    "NIKKOR 105MM F/2.5 AI (VINTAGE)": "CLASSIC PORTRAIT RENDERING, WARM, SMOOTH, LEGENDARY",
+    "CANON TS-E 90MM F/2.8L MACRO": "TILT-SHIFT PERSPECTIVE CORRECTION + SELECTIVE FOCUS PLANE",
+    "CANON TS-E 135MM F/4L MACRO": "LONG TILT-SHIFT, ARCHITECTURAL + BEAUTY MACRO",
+    "LAOWA 100MM F/2.8 2X ULTRA MACRO": "2:1 MACRO MAGNIFICATION, MANUAL, HYPER DETAIL",
+    "CANON RF 50MM F/1.2L USM": "REFERENCE-CLASS 50MM, L-MOUNT, CLINICAL + BOKEH BALANCE",
+    "CANON RF 35MM F/1.4L VCM": "WIDE PORTRAIT, L-SERIES, VIDEO-OPTIMISED BREATHING CONTROL",
+    "CANON RF 135MM F/1.8L IS USM": "TELEPHOTO PORTRAIT KING, IS, RAZOR SHARPNESS, COMPRESSION",
+    "NIKON Z 50MM F/1.2 S": "REFERENCE 50MM, Z-MOUNT, OUTSTANDING AT ALL APERTURES",
+    "NIKON Z 135MM F/1.8 S PLENA": "PURPOSE-BUILT PORTRAIT, CIRCULAR BOKEH PRIORITY, SUPERB",
+    "NIKON Z 58MM F/0.95 S NOCT": "F/0.95 MANUAL, EXTREME SUBJECT ISOLATION, REFERENCE BUILD",
+    "SONY FE 24MM F/1.4 GM": "WIDE ENVIRONMENTAL PORTRAIT, SHARP CORNER-TO-CORNER",
+    "SONY FE 100MM F/2.8 STF GM OSS": "APODISATION FILTER, SMOOTHEST BOKEH TRANSITION, PORTRAIT",
+    "SONY FE 200-600MM F/5.6-6.3 G OSS": "REACH FOR ENVIRONMENTAL COMPRESSION FROM DISTANCE",
+    "FUJINON GF 110MM F/2 WR": "MF PORTRAIT, 87MM EQUIV, WIDE OPEN RENDERING EXCEPTIONAL",
+    "FUJINON GF 80MM F/1.7 WR": "MF 63MM EQUIV, FASTEST GF PRIME, NATURAL MF ISOLATION",
+    "FUJINON GF 45-100MM F/4 WR": "MF ZOOM, SURGICAL SHARPNESS, WEATHER SEALED, STUDIO",
+    "ARRI SIGNATURE PRIME 65MM T1.8": "CINEMA PRIME, ANAMORPHIC-ADJACENT RENDERING, WARM BOKEH",
+    "COOKE S7/I 75MM T2.0": "COOKE LOOK \U2014 ORGANIC WARMTH, OVAL BOKEH, SKIN FLATTERY",
+    "LEICA THALIA 100MM T2.6": "LARGE FORMAT CINEMA, EXTREME ORGANIC RENDERING, NO LCA",
+    "ZEISS SUPREME PRIME 85MM T1.5": "MODERN CINEMA PRIME, CLINICALLY SHARP, BOLD CONTRAST",
+    "ATLAS ORION 65MM T2 ANAMORPHIC": "1.5\U00D7 SQUEEZE, HORIZONTAL FLARE, OVAL BOKEH, CINEMATIC",
+    "SLR MAGIC ANAMORPHOT 1.33X": "BUDGET ANAMORPHIC ADAPTER, DISTINCTIVE OVAL BOKEH + STREAK",
+    "LAOWA 15MM F/4.5 ZERO-D": "ZERO DISTORTION ULTRAWIDE, NEAR-ZERO BARREL, ARCHITECTURE",
+    "VENUS OPTICS LAOWA 25MM F/2.8 2.5-5X ULTRA MACRO": "5X MAGNIFICATION, INSECT-SCALE DETAIL",
+    "MITAKON SPEEDMASTER 50MM F/0.95": "F/0.95 FULL FRAME, DREAM-LIKE WIDE OPEN, HEAVY CHARACTER",
+    "VOIGTL\U00C4NDER NOKTON 50MM F/1.0 VM": "LEICA M F/1.0, EXTREME SHALLOW, WARM VOIGT RENDERING",
+    "NIKKOR 58MM F/1.2 NOCT AI-S": "VINTAGE HAND-GROUND ASPHERICAL, LEGENDARY, NOCTURNAL"
+  },
+  "color": [
+    "ARRI_LOGC4_AWG4",
+    "SONY_SLOG3_SGAMUT3",
+    "REDLOGFILM_RWG",
+    "PANASONIC_VLOG",
+    "BLACKMAGIC_FILM_GEN5",
+    "CANON_CLOG3",
+    "ACESCG",
+    "DCI_P3",
+    "REC_709_BROADCAST",
+    "REC_2020_HDR",
+    "KODAK_VISION3_500T_TUNGSTEN",
+    "CINESTILL_800T_HALATION",
+    "TECHNICOLOR_3_STRIP_PROCESS",
+    "BLEACH_BYPASS_PROCESS",
+    "CROSS_PROCESSED_E6_IN_C41"
+  ],
+  "optics": [
+    "ANAMORPHIC_2X_SQUEEZE_BLUE_STREAK",
+    "ANAMORPHIC_1.5X_AMBER_STREAK",
+    "ANAMORPHIC_MUMPS_DISTORTION",
+    "LONGITUDINAL_CHROMATIC_ABERRATION",
+    "SPHERICAL_ABBERRATION_ONION_RING",
+    "CAT_EYE_MECHANICAL_VIGNETTING",
+    "COMA_SAGITTAL_ASTIGMATISM",
+    "SINGLE_COATED_VINTAGE_FLARE",
+    "MULTI_COATED_MODERN_CLINICAL",
+    "UNCOATED_FRONT_ELEMENT_BLOOMING"
+  ],
+  "aperture": [
+    "f/1.0",
+    "f/1.2",
+    "f/1.4",
+    "f/1.8",
+    "f/2.0",
+    "f/2.8",
+    "f/4.0",
+    "f/5.6",
+    "f/8.0",
+    "f/11",
+    "f/16",
+    "f/22"
+  ],
+  "shutter": [
+    "FLASH_SYNC_1_60_STANDARD",
+    "FLASH_SYNC_1_125_STANDARD",
+    "FLASH_SYNC_1_250_HSS",
+    "FLASH_SYNC_1_500_HSS_FULL_KILL",
+    "LONG_EXPOSURE_BULB_AMBIENT_BLEED",
+    "FLASH_SYNC_1_30_HEAVY_AMBIENT",
+    "FLASH_SYNC_1_8000_LEAF_SHUTTER",
+    "REAR_CURTAIN_SYNC_MOTION_TRAIL",
+    "MULTI_FLASH_STROBOSCOPIC_FREEZE"
+  ],
+  "levels": [
+    "HIGH",
+    "MEDIUM",
+    "LOW",
+    "ULTRA",
+    "OFF"
+  ],
+  "wardrobe": [
+    "VERY_LOOSE_WHITE_TANK_TOP",
+    "WHITE_VINTAGE_SILK_SLIP_DRESS_LACE_TRIM",
+    "WHITE_COTTON_TANK_TOP_WORN",
+    "WHITE_SHEER_NYLON_BODYSUIT",
+    "WHITE_COTTON_DRESS_SHIRT_OVERSIZED",
+    "WHITE_LINEN_SHIFT_DRESS_UNSTRUCTURED",
+    "IVORY_SATIN_CHEMISE_BIAS_CUT",
+    "WHITE_MESH_CROP_TOP",
+    "CREAM_KNIT_SWEATER_OVERSIZED",
+    "CHANGE_THE_COLOR_TO_BEIGE",
+    "CHANGE_THE_COLOR_TO_BROWNISH",
+    "CHANGE_THE_COLOR_TO_DRAB",
+    "CHANGE_THE_COLOR_TO_KHAKI",
+    "CHANGE_THE_COLOR_TO_BISCUIT",
+    "CHANGE_THE_COLOR_TO_BRONZE",
+    "CHANGE_THE_COLOR_TO_BROWN",
+    "CHANGE_THE_COLOR_TO_BUFF",
+    "CHANGE_THE_COLOR_TO_CREAM",
+    "CHANGE_THE_COLOR_TO_ECRU",
+    "CHANGE_THE_COLOR_TO_GOLD",
+    "CHANGE_THE_COLOR_TO_NATURAL",
+    "CHANGE_THE_COLOR_TO_OLIVE",
+    "CHANGE_THE_COLOR_TO_SUNTAN",
+    "CHANGE_THE_COLOR_TO_UMBER",
+    "CHANGE_THE_COLOR_TO_LEATHER-COLORED",
+    "CHANGE_THE_COLOR_TO_OLIVE-BROWN",
+    "CHANGE_THE_COLOR_TO_TAWNY",
+    "CHANGE_THE_COLOR_TO_YELLOWISH",
+    "BLACK_SHEER_ORGANZA_BLOUSE_OPEN",
+    "BLACK_BODYCON_BANDAGE_DRESS",
+    "BLACK_VELVET_SLIP_DRESS",
+    "BLACK_LEATHER_JACKET_OPEN",
+    "BLACK_FISHNET_BODYSUIT",
+    "DARK_DENIM_JACKET_OPEN_DISTRESSED",
+    "RAW_LINEN_SHIFT_UNSTRUCTURED",
+    "OVERSIZED_VINTAGE_T_SHIRT_DISTRESSED",
+    "GREY_COTTON_JERSEY_BODYSUIT",
+    "NUDE_SEAMLESS_BODYSUIT",
+    "WET_WHITE_COTTON_FULLY_SATURATED",
+    "WET_SILK_FULLY_SATURATED_ADHESION",
+    "BARE_SKIN_NO_WARDROBE",
+    "LOW-DENIER-SILK",
+    "BLACK_LACE_BODYSUIT_FLORAL_PATTERN",
+    "WHITE_LACE_GARTER_BELT_STOCKINGS",
+    "IVORY_LACE_SLIP_HIGH_LOW_HEM",
+    "RED_LACE_BRALETTE_NO_UNDERWIRE",
+    "SHEER_BLACK_LACE_OVERLAY_DRESS",
+    "WHITE_BUTTON_DOWN_UNTUCKED_HALF_OPEN",
+    "BLACK_TURTLENECK_FINE_KNIT_FITTED",
+    "TRENCH_COAT_BEIGE_BELTED_OPEN",
+    "BLAZER_OVERSIZED_PINSTRIPE_NOTHING_UNDER",
+    "LATEX_BLACK_FULL_BODY_CATSUIT",
+    "PATENT_LEATHER_CORSET_WAIST_CINCH",
+    "COTTON_BRIEF_UNDERWEAR_SIMPLE",
+    "SATIN_SLIP_SHORTS_HIGH_CUT",
+    "SPORTS_BRA_COMPRESSION_ATHLETIC",
+    "BANDEAU_TUBE_STRAPLESS_JERSEY",
+    "NUDE_ADHESIVE_NIPPLE_COVERS",
+    "TORN_FISHNET_LAYERED_OVER_BODYSUIT",
+    "WET_OVERSIZED_SHIRT_DRESS_TRANSPARENT",
+    "VINTAGE_SLIP_DRESS_UNDER_SHEER_BLAZER",
+    "DECONSTRUCTED_DRESS_SAFETY_PIN_SEAMS",
+    "WRAPPED_SINGLE_BEDSHEET_TOGA",
+    "MUGLER_ARCHIVAL_STRUCTURED_CORSET",
+    "IRIS_VAN_HERPEN_3D_PRINTED_MESH",
+    "HEAVY_PVC_VINYL_TRENCH_COAT",
+    "GORE_TEX_HARDSHELL_TACTICAL_JACKET",
+    "KEVLAR_WEAVE_BALLISTIC_VEST",
+    "VACUUM_SEALED_LATEX_CATSUIT"
+  ],
+  "opacity": [
+    "GRADIENT_TENSION_MAPPING",
+    "FULLY_OPAQUE",
+    "FULLY_TRANSPARENT",
+    "STATIC_SEMI_OPAQUE_50PCT",
+    "WET_SATURATION_OVERRIDE",
+    "WET_SATURATION_FULL",
+    "PATTERN_BASED_LACE_OPACITY",
+    "MESH_GRID_BINARY_OPACITY",
+    "LAYERED_DUAL_MATERIAL_COMPOSITE",
+    "STRETCH_ZONE_GRADIENT",
+    "BACKLIT_TRANSMISSION_ONLY"
+  ],
+  "sheen": [
+    "ANISOTROPIC_SILK_FLASH_FOLDS",
+    "MATTE_COTTON_ZERO_SPECULAR",
+    "SATIN_BROAD_LOW_ROUGHNESS",
+    "DENIM_ROUGH_DIFFUSE_MINIMAL",
+    "SHEER_NYLON_HIGH_TRANSPARENCY",
+    "VELVET_ANISOTROPIC_DIRECTIONAL",
+    "LEATHER_HIGH_SPECULAR_GRAIN",
+    "WET_FABRIC_GLOSS_EVERYWHERE",
+    "LATEX_MIRROR_REFLECTION",
+    "PATENT_LEATHER_POINT_HOTSPOT",
+    "LINEN_CROSS_WEAVE_MICRO_SPECULAR",
+    "CHIFFON_VERY_LOW_SHEEN",
+    "SEQUIN_DISCRETE_POINT_SCATTER",
+    "METALLIC_FABRIC_BROAD_MIRROR",
+    "TWEED_ROUGH_HARRIS_ZERO_SHEEN"
+  ],
+  "topo": [
+    "UNFILTERED_HYPER_REALISTIC_DERMAL_DETAIL",
+    "HIGH_MAGNIFICATION_SEBACEOUS_FOLLICLES",
+    "WET_SKIN_CONDENSATION_TEXTURE",
+    "DRY_AGED_DEEP_CREASE_MAPPING",
+    "SUN_DAMAGED_HYPERPIGMENTATION",
+    "YOUNG_UNRETOUCHED_FINE_PORE_MAPPING",
+    "POST_WORKOUT_FLUSHED_CAPILLARY_MAP",
+    "COLD_SKIN_PALLOR_REDUCED_CIRCULATION",
+    "FEVERED_SKIN_WARM_FLUSH_DAMP",
+    "SCARRED_TERRAIN_IRREGULAR_SURFACE",
+    "TATTOOED_SURFACE_INK_EMBEDDED",
+    "VERY_DARK_SKIN_DEEP_MELANIN_MAPPING",
+    "VERY_PALE_TRANSLUCENT_VESSEL_VISIBLE",
+    "MATURE_SKIN_DEEP_STRUCTURAL_FOLD"
+  ],
+  "skinMicro": [
+    "FULL_UNRETOUCHED_PORES_GOOSEBUMPS_SWEAT",
+    "MICRO_SWEAT_POOLING_CLAVICLE",
+    "DRY_FLAKE_LIPS_UNDER_EYE_CREASES",
+    "GOOSEBUMP_SHOULDER_ARM_ONLY",
+    "ACNE_UNRETOUCHED_VISIBLE_TEXTURE",
+    "FRECKLES_SUN_DAMAGE_HYPER_PIGMENTATION",
+    "BODY_HAIR_NATURAL_VISIBLE",
+    "STRETCH_MARKS_NATURAL",
+    "VEIN_VISIBILITY_SUBSURFACE",
+    "BRUISE_HEALING_YELLOW_PURPLE",
+    "TATTOO_LINEWORK_FINE_BLACK",
+    "TATTOO_BLACKWORK_DENSE_COVERAGE",
+    "SCAR_TISSUE_RAISED_KELOID",
+    "SCAR_DEPRESSED_ATROPHIC",
+    "CELLULITE_NATURAL_THIGH_SURFACE",
+    "RAZOR_STUBBLE_3DAY_GROWTH",
+    "PEACH_FUZZ_VELLUS_HAIR_CHEEK",
+    "CHAPPED_LIP_TEXTURE_DRY_CRACK",
+    "UNDER_EYE_DARK_CIRCLE_VESSEL",
+    "SKIN_FOLD_NATURAL_COMPRESSION",
+    "SMEARED_MAKEUP_TEAR_TRACKS",
+    "ELECTRO_PAINT_PARTY_SPLATTER"
+  ],
+  "skinRef": [
+    "HIGH_SPECULAR_DAMP_SKIN_FLASH",
+    "OILED_SKIN_BROAD_LOW_ROUGHNESS",
+    "MATTE_DRY_ZERO_SPECULAR",
+    "MIXED_WET_DRY_ZONAL",
+    "SSS_DOMINANT_TRANSLUCENT_RIM",
+    "VERY_DARK_SKIN_LOW_ALBEDO_HIGH_SPECULAR",
+    "VERY_PALE_SKIN_HIGH_ALBEDO_LOW_SPECULAR",
+    "SWEAT_POOLED_RIVULET_STREAK",
+    "WATER_DROPLET_BEADED_REPELLENT",
+    "MINERAL_OIL_FULL_BODY_COAT",
+    "ASH_POWDER_MATTE_OVERRIDE"
+  ],
+  "skinExp": [
+    "COOL_DETACHED_NEUTRAL_LIPS_PARTED",
+    "VACANT_DISSOCIATIVE_MID_DISTANCE",
+    "MICRO_TENSION_BROW_SUPPRESSED",
+    "EYES_CLOSED_MEDITATIVE",
+    "DOWNWARD_GAZE_INTROSPECTIVE",
+    "CONFRONTATIONAL_DIRECT_BROW_RELAXED",
+    "SLIGHT_MOUTH_CORNER_TENSION",
+    "UPPER_LIP_MICRO_CURL",
+    "OPEN_MOUTH_EXHALE_LIPS_WET",
+    "TEETH_BARELY_VISIBLE_LIP_PART",
+    "EYES_HALF_CLOSED_HEAVY_LID",
+    "JAW_CLENCHED_MUSCLE_VISIBLE",
+    "LOOKING_PAST_CAMERA_RIGHT",
+    "LOOKING_PAST_CAMERA_LEFT",
+    "EYES_UPWARD_DISSOCIATED",
+    "CHEEK_COMPRESSION_PRESSED_SURFACE",
+    "LIPS_COMPRESSED_RESOLUTE",
+    "CHIN_DROPPED_LOOK_UNDER_BROW",
+    "PROFILE_GAZE_WINDOW_LIGHT",
+    "TEARS_TRACK_ONE_CHEEK",
+    "REVULSION_LICKING_FINGER_CLEAN"
+  ],
+  "skinHair": [
+    "MESSY_LOOSE_UPDO_STRAY_STRANDS",
+    "SOAKED_WET_PLASTERED_FLAT",
+    "DOWN_DISHEVELLED_TANGLED_PARTIAL_COVER",
+    "SHORT_CROPPED_DAMP_SWEAT",
+    "SEVERE_PULLED_BACK_HIGH_TENSION",
+    "HALF_UP_HALF_DOWN_CLIP_ONE_SIDE",
+    "LONG_LOOSE_WINDSWEPT_ACROSS_FACE",
+    "BRAIDED_TIGHT_CORNROWS",
+    "NATURAL_COILY_TEXTURED_VOLUME",
+    "BLEACHED_PLATINUM_DRY_DAMAGED",
+    "DARK_ROOTS_GROWN_OUT_BLONDE",
+    "SHAVED_UNDERCUT_SIDES_LONG_TOP",
+    "LOC_FREEFORM_MEDIUM_LENGTH",
+    "WET_CURLS_RINGLET_DEFINED",
+    "SINGLE_BRAID_OVER_SHOULDER",
+    "BOWL_CUT_BLUNT_FRINGE_PRECISE",
+    "SIDE_SHAVED_ASYMMETRIC_PUNK",
+    "HAIR_PULLED_COVERING_FACE_ENTIRELY"
+  ],
+  "location": [
+    "BATHROOM_STEAM_CERAMIC_HARSH_FLASH",
+    "SHOWER_WATERFALL_STONE_HIDING",
+    "INDOOR_POOL_UNDERWATER_TILES",
+    "HOTEL_BATHROOM_MARBLE_TUNGSTEN",
+    "LOCKER_ROOM_INDUSTRIAL_FLUORESCENT",
+    "WET_CONCRETE_FLOOR_DRAIN_FLASH",
+    "COMPACT_RESIDENTIAL_BATHROOM_VANITY_CLUTTER",
+    "HOTEL_ROOM_WINDOW_BACKLIGHT_ONLY",
+    "INDUSTRIAL_WAREHOUSE_SINGLE_PENDANT",
+    "STUDIO_BLACK_SEAMLESS_PURE",
+    "STUDIO_WHITE_HIGH_KEY",
+    "APARTMENT_BEDROOM_NATURAL_CHAOS",
+    "UNDERGROUND_CLUB_STROBE_AMBIENT",
+    "DRESSING_ROOM_VANITY_MIRROR_BULBS",
+    "HOSPITAL_CORRIDOR_FLUORESCENT_COLD",
+    "BRUTALIST_STAIRWELL_CONCRETE",
+    "ROOFTOP_CITY_BACKLIGHT_NIGHT",
+    "URBAN_ALLEY_SINGLE_SODIUM_LAMP",
+    "WET_PAVEMENT_REFLECTION_NEON",
+    "EMPTY_PARKING_GARAGE_FLUORESCENT",
+    "FOREST_MOONLIGHT_NO_AMBIENT",
+    "INDUSTRIAL_LOADING_DOCK_NIGHT",
+    "OUTDOOR_WATERFALL_NATURAL_MIST",
+    "ROOFTOP_GOLDEN_HOUR_RIM_LIGHT",
+    "BEACH_OVERCAST_FLAT_NATURAL",
+    "DESERT_HARSH_MIDDAY_ZENITH",
+    "DENSE_FOREST_DAPPLED_CANOPY",
+    "SNOW_FIELD_BLUEWHITE_OVERCAST",
+    "URBAN_ROOFTOP_WATER_TOWER_MAGIC_HOUR",
+    "ABANDONED_INDUSTRIAL_YARD_OVERCAST",
+    "QUARRY_STONE_WALLS_HARD_MIDDAY",
+    "CORNFIELD_BACKLIT_LATE_AFTERNOON",
+    "PRISON_CELL_BAR_SHADOW_HARD",
+    "PSYCHIATRIC_WARD_PADDED_ROOM",
+    "AUTOPSY_SUITE_SURGICAL_OVERHEAD",
+    "SCHOOL_CORRIDOR_FLUORESCENT_EMPTY",
+    "LABORATORY_CLEAN_ROOM_COLD",
+    "OFFICE_CUBICLE_MONITOR_GLOW",
+    "CHURCH_INTERIOR_STAINED_GLASS_SLASH",
+    "PENTHOUSE_FLOOR_TO_CEILING_CITY",
+    "ART_GALLERY_TRACK_LIT_WHITE_WALL",
+    "HIGH_FASHION_BOUTIQUE_MIRROR_ARRAY",
+    "HOTEL_SUITE_DARK_WOOD_CANDLE",
+    "CASINO_LOW_CEILING_CHANDELIER",
+    "SPA_WET_ROOM_STEAM_DIFFUSED",
+    "ELEVATOR_MIRROR_INTERIOR",
+    "STAIRWELL_FIRE_ESCAPE_EXTERIOR",
+    "CAR_INTERIOR_NIGHT_DASH_GLOW",
+    "TRAIN_WINDOW_MOTION_BLUR_AMBIENT",
+    "AIRPORT_TERMINAL_OVERHEAD_FLAT",
+    "BACKSTAGE_DRESSING_ROOM_BULBS",
+    "ROOFTOP_STAIRWELL_EXIT_DOOR_OPEN"
+  ],
+  "glass": [
+    "REFLECTIVE SLEEK",
+    "CONDENSATION_CALCIUM_GREASE_DUST",
+    "HEAVY_STEAM_OCCLUDED_CENTRE",
+    "CRACKED_SILVER_NITRATE_DECAY_EDGE",
+    "FRESHLY_WIPED_SQUEEGEE_STREAK",
+    "RAIN_STREAKED_EXTERIOR_NEON_REFLECTION",
+    "NO_GLASS_OPEN_ENVIRONMENT",
+    "FOGGED_EXTERIOR_FROST_INTERIOR",
+    "LIPSTICK_TEXT_ON_GLASS_CONDENSATION",
+    "FINGERPRINT_SMEAR_DENSE",
+    "MIRROR_BLACK_GLASS_MINIMAL_FOG",
+    "SILVER_NITRATE_DECAY_FULL_SURFACE",
+    "ONE_WAY_MIRROR_DARK_SIDE",
+    "FROSTED_GLASS_FULL_DIFFUSION",
+    "ETCHED_PATTERN_GEOMETRIC",
+    "BROKEN_SHARDS_MOSAIC",
+    "DOUBLE_PANE_GHOST_REFLECTION",
+    "CONDENSATION_SINGLE_WIPE_ARC",
+    "LIPSTICK_KISS_MARK_GLASS",
+    "DRIED_WATER_DROPLET_CALCIUM_MAP",
+    "OIL_SLICK_RAINBOW_SMEAR",
+    "MIRROR_SMUDGES_WATER_SPOTS_TEXT"
+  ],
+  "meteo": [
+    "MIE_SCATTERING_DENSE_FOG",
+    "MIE_SCATTERING_SUSPENDED_DUST",
+    "RAYLEIGH_SCATTERING_BLUE_HOUR",
+    "MARINE_LAYER_COASTAL_HAZE",
+    "INDUSTRIAL_SMOG_PARTICULATE",
+    "WIND_VELOCITY_ZERO_STAGNANT",
+    "WIND_VELOCITY_LOW_LAMINAR",
+    "WIND_VELOCITY_HIGH_TURBULENT",
+    "THERMAL_UPDRAFT_VERTICAL"
+  ],
+  "dofFg": [
+    "SHALLOW_CINEMATIC_DRAMATIC",
+    "EXTREME_SHALLOW_SUBJECT_SHARP_PURE_BOKEH",
+    "DEEP_FOCUS_FULL_SCENE_SHARP",
+    "MEDIUM_DOF_SOFT_BACKGROUND",
+    "TILT_SHIFT_SELECTIVE_PLANE",
+    "SPLIT_DIOPTER_DUAL_PLANE",
+    "RACK_FOCUS_PULL_MID_TRANSITION",
+    "FOREGROUND_ELEMENT_SOFT_FRAME",
+    "MACRO_1_1_SINGLE_PLANE_RAZOR",
+    "PORTHOLE_SOFT_VIGNETTE_EDGE",
+    "ANAMORPHIC_BOKEH_OVAL_HORIZONTAL",
+    "SWIRLY_HELIOS_FIELD_CURVATURE"
+  ],
+  "dofMg": [
+    "SUBJECT_SEATED_POSTURE_STRAIGHT",
+    "SUBJECT_SEATED,_POSTURE_STRAIGHT",
+    "SUBJECT_BEHIND_WATERFALL_STONES",
+    "SUBJECT_VANITY_BACK_TO_MIRROR",
+    "SUBJECT_STANDING_QUARTER_TURN_AWAY",
+    "SUBJECT_LYING_SUPINE_UP_AT_CAMERA",
+    "SUBJECT_CROUCHING_CORNER_ARMS_WRAPPED",
+    "SUBJECT_MID_MOTION_MID_STRIDE",
+    "SUBJECT_SEATED_VANITY_LEAN_FORWARD",
+    "SUBJECT_PRESSED_GLASS_FROM_BEHIND",
+    "SUBJECT_EMERGING_FROM_WATER_WAIST",
+    "SUBJECT_SILHOUETTED_DOORWAY",
+    "SUBJECT_DESCENDING_STAIRCASE",
+    "SUBJECT_READING_LETTER_SEATED",
+    "SUBJECT_ON_PHONE_WINDOW_LEAN",
+    "SUBJECT_DRESSING_MIRROR_REFLECTION",
+    "SUBJECT_SLEEPING_FETAL_FLOOR"
+  ],
+  "dofBg": [
+    "FULL-LENGTH MIRRORS",
+    "CERAMIC_TILES_DEEP_SHADOW_GROUT",
+    "PURE_BLACK_VOID_ZERO_DETAIL",
+    "EXPOSED_CONCRETE_BRUTALIST_RAKING",
+    "DENSE_DARK_FOLIAGE_JUNGLE",
+    "BLURRED_URBAN_NEON_BOKEH",
+    "SMOKE_CORRIDOR_SINGLE_EXIT_LIGHT",
+    "WATERFALL_MIST_NATURAL_DIFFUSION",
+    "HOTEL_ROOM_DARK_WINDOW_CITY_GLOW",
+    "CHAIN_LINK_FENCE_BOKEH_CIRCLES",
+    "CORRUGATED_IRON_WALL_RUSTY",
+    "PEELING_PAINTED_BRICK_WALL",
+    "HOSPITAL_CURTAIN_INSTITUTIONAL_GREEN",
+    "WHITE_BEDSHEET_CRUMPLED_FLAT",
+    "STACKED_NEWSPAPER_ARCHIVE_WALL",
+    "BROKEN_PLASTER_EXPOSED_LATH",
+    "RAIN_ON_WINDOW_BOKEH_STREAKS",
+    "SHALLOW_WATER_PEBBLE_CAUSTIC"
+  ],
+  "textStr": [
+    "SEE_YOU_SOON_ELLIPSIS",
+    "DONT_LOOK_FOR_ME",
+    "I_WAS_HERE",
+    "YOU_WERE_RIGHT",
+    "FORGET_THIS",
+    "ITS_TOO_LATE",
+    "IM_FINE",
+    "NO_TEXT_NONE",
+    "CUSTOM_FREEFORM",
+    "DONT_WAIT_UP",
+    "NOTHING_HAPPENED",
+    "I_KNOW_WHAT_YOU_DID",
+    "NOT_YOUR_FAULT",
+    "CALL_ME",
+    "HELP",
+    "IM_SORRY",
+    "ALMOST",
+    "STAY",
+    "LEAVE_ME_ALONE",
+    "YOU_WONT_FIND_ME",
+    "THIS_IS_HOW_IT_ENDS",
+    "NEVER_MIND",
+    "PHONE_NUMBER_PARTIAL",
+    "ADDRESS_PARTIAL_SCRAWL",
+    "DATE_ONLY"
+  ],
+  "textFont": [
+    "LIPSTICK_FINGER_SCRAWL_RED",
+    "LIPSTICK_BLOCK_PRINT_SMEARED",
+    "EYELINER_SCRIPT_SHAKY",
+    "BLOODY_FINGERTIP_DRAG_STROKES",
+    "CONDENSATION_FINGER_TRACED",
+    "PERMANENT_MARKER_THICK_QUICK",
+    "NO_TEXT_NONE",
+    "NAIL_VARNISH_PAINTED_SLOW",
+    "MASCARA_RUN_DOWN_SURFACE",
+    "CHALK_ON_WET_SURFACE_DISSOLVING",
+    "WHITE_PAINT_HOUSE_BRUSH_CRUDE",
+    "NEWSPAPER_CUTOUT_RANSOM_STYLE",
+    "ENGRAVED_DEEP_SURFACE_SCRATCH",
+    "SOAP_BAR_WRITTEN_WINDOW"
+  ],
+  "textPlace": [
+    "MIRROR_GLASS_PLANE_SHARP",
+    "MIRROR_UPPER_LEFT_PARTIAL_FOG",
+    "MIRROR_LOWER_RIGHT_INTIMATE",
+    "MIRROR_CENTER_FULL_WIDTH",
+    "WALL_TILE_ADJACENT_MIRROR",
+    "NO_TEXT_PLACEMENT_NONE",
+    "ON_SKIN_FOREARM_WRITTEN",
+    "ON_SKIN_CHEST_PALM_PRINT",
+    "FLOOR_TILE_UNDERFOOT",
+    "STEAMED_WINDOW_EXTERIOR_VIEW",
+    "FOLDED_NOTE_HALF_OPEN",
+    "OVER_IMAGE_AS_TITLE_CARD",
+    "SCRATCHED_INTO_DOOR_PAINT"
+  ]
+};
+
+const POSE_POOL=Object.assign({},
+  ...Object.values(M.kinematic),
+  {"SUPPINE_POSITION":"Canonical panel-1 pose — lying face-up",
+   "LITHOTOMY_POSITION":"Supine variant — legs raised",
+   "AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD":"Canonical birds-eye descriptor",
+   "~45°_ROTATED_CLOCKWISE":"Camera yaw token",
+   "CHEST_LEVEL":"Camera height token",
+   "SLIGHTLY_TILTED_DOWNWARD":"Camera pitch token",
+   "~45°_ROTATED_CLOCKWISE_AND_SLIGHTLY_TILTED_DOWNWARD_FROM_8FT":"Canonical TQDH descriptor",
+   "FULL_LENGTH_OF_RIB_CAGE":"Framing token",
+   "FINE_DETAILS":"Detail emphasis token",
+   "FABRIC_WEAVE":"Texture focus token",
+   "RAZOR_SHARP_FOCUS_ON_TEXTURED_SKIN":"Focus lock token",
+   "RAZOR-SHARP_FOCUS_ON_GLISTENING_SWEATBEADS_AND_TEXTURED_SKIN":"Macro focus token",
+   "SHALLOW_DEPTH_OF_FIELD":"DOF token",
+   "100mm_MACRO_LENS_AT_f/2.8":"Optical spec token"});
+const POSE_KEYS=Object.keys(POSE_POOL);
+const VIEW_KEYS=Object.keys(M.views);
+const RAY_KEYS=Object.values(M.ray).flatMap(Object.keys);
+const POOLS={
+  views:M.views, poses:POSE_POOL, layouts:M.layouts, counts:["1","2","3","4","5","6","7","8","9"],
+  styling:M.styling, lighting:M.lighting, photonic:M.photonic, ray:RAY_KEYS, camera:M.camera, lens:M.lens,
+  color:M.color, optics:M.optics, aperture:M.aperture, shutter:M.shutter, levels:M.levels,
+  wardrobe:M.wardrobe, opacity:M.opacity, sheen:M.sheen, topo:M.topo,
+  skinMicro:M.skinMicro, skinRef:M.skinRef, skinExp:M.skinExp, skinHair:M.skinHair,
+  location:M.location, glass:M.glass, meteo:M.meteo,
+  dofFg:M.dofFg, dofMg:M.dofMg, dofBg:M.dofBg,
+  textStr:M.textStr, textFont:M.textFont, textPlace:M.textPlace
+};
+function poolEntries(name){
+  const p=POOLS[name]; if(!p) return [];
+  return Array.isArray(p)?p.map(k=>({k,d:null})):Object.entries(p).map(([k,d])=>({k,d}));
+}
+const MACRO_VIEWS=new Set(["FRONT EXTREME CLOSE-UP (ECU/XCU)","FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)","FRONT EXTREME CLOSE-UP MACRO (ECUM/XCUM)","INSERT MACRO DETAIL (IMD)","EXTREME MACRO DETAIL (XMD)","HAND DETAIL MACRO (HDM)"]);
+const LIST_VIEWS=new Set(["SIDE CLOSE-UP (SCU)","THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)"]);
+
+const POOL_OF_KEY={
+LOCATION_SETTING:"location",GLASS_SURFACE_METRICS:"glass",PARTICULATE_SCATTERING:"meteo",WIND_VECTOR_FORCE:"meteo",
+FOREGROUND:"dofFg",MIDGROUND:"dofMg",BACKGROUND:"dofBg",
+LAYOUT_PRESET:"layouts",PANELS:"counts",
+SKIN_TOPOGRAPHY_LOGIC:"topo",SURFACE_MICRO_ELEMENTS:"skinMicro",REFLECTANCE_MAP:"skinRef",EXPRESSION:"skinExp",HAIR:"skinHair",
+STYLE_OF:"styling",HARDWARE_EMULATION:"camera",OPTICAL_HARDWARE:"lens",COLOR_SCIENCE_PROFILE:"color",
+OPTICAL_ABERRATIONS:"optics",APERTURE_SETTING:"aperture",SHUTTER_AESTHETIC:"shutter",
+ILLUMINATION_AXIS:"lighting",KEY_LIGHT_CHARACTER:"lighting",FILL_LIGHT_CHARACTER:"lighting",SHADOW_PROFILE:"lighting",
+PHOTONIC_ENERGY:"photonic",ENERGY_CONSERVATION_COMPLIANT:"photonic",
+LIGHT_SOURCE_01:"ray",ORIGIN_COORDINATE:"ray",TARGET_COORDINATE:"ray",BEAM_ANGLE:"ray",
+LUMINOUS_INTENSITY:"ray",FALLOFF_PROFILE:"ray",BOUNCE_LIGHT_LOGIC:"ray",
+WARDROBE_SPECIFICATION:"wardrobe",OPACITY:"opacity",TEXTILE_SURFACE_SHEEN:"sheen",
+TEXT_STRING_LITERAL:"textStr",FONTTYPE_AESTHETIC:"textFont",LAYER_PLACEMENT:"textPlace"};
+const BOOL_KEYS=new Set(["RIM_LIGHT_SCATTERING_PASS","EPIDERMAL_TRANSLUCENCY_PASS","THROUGH_FABRIC_DIFFUSE_BOUNCE","FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE"]);
+const ONOFF_KEYS=new Set(["LOW_DENIER_SSS_PASS"]);
+const LEVEL_KEYS=new Set(["PHOTON_TRANSMISSION_RATIO","MEAN_FREE_PATH_SCATTERING","BACKLIT_SUBSURFACE_GLOW","FRESNEL_REFLECTION_COEFFICIENT","SPECULAR_HIGHLIGHT_LOBE","LAMBERTIAN_DIFFUSE_REFLECTANCE","MICRO_FIBER_DRAPE_PHYSICS","LOW_TENSILE_STRUCTURAL_DEFORMITY","GRAVITY_WEIGHTED_FOLDS","SUB_MICRON_WEAVE_DENSITY","SURFACE_ADHESION_COEFFICIENT"]);
+function poolForCtl(path){
+  const key=path[path.length-1];
+  if(path.includes("!EXEC_COMPOSITION_MATRIX")){
+    if(key==="LAYOUT_PRESET")return"layouts";
+    if(key==="PANELS")return"counts";
+    return"poses";
+  }
+  return POOL_OF_KEY[key]||null;
+}
+
+/* ═══ COHERENCE ENGINE ═══
+   Cross-pool contradiction detection + affinity suggestions.
+   • Rules evaluate ONLY canonical pool tokens; free-text values never fire.
+   • Statics (MEM_LOCK / FINALIZE) are outside rule scope by design.
+   • C01–C08 = errors (physically impossible / self-contradictory).
+   • C09–C15 = warnings (implausible / character mismatch).
+   • Affinity rows appear in the manifest popover above the full list;
+     they carry .dditem so hover behaves uniformly and they are never
+     hidden by typing-filter (suggestions stay visible by intent).      */
+const FP={
+"LOCATION_SETTING":["!ENV_ATMOSPHERICS","LOCATION_SETTING"],
+"GLASS_SURFACE_METRICS":["!ENV_ATMOSPHERICS","GLASS_SURFACE_METRICS"],
+"PARTICULATE_SCATTERING":["!ENV_ATMOSPHERICS","PARTICULATE_SCATTERING"],
+"WIND_VECTOR_FORCE":["!ENV_ATMOSPHERICS","WIND_VECTOR_FORCE"],
+"FOREGROUND":["!ENV_ATMOSPHERICS","COMPOSITION_DEPTH","FOREGROUND"],
+"MIDGROUND":["!ENV_ATMOSPHERICS","COMPOSITION_DEPTH","MIDGROUND"],
+"BACKGROUND":["!ENV_ATMOSPHERICS","COMPOSITION_DEPTH","BACKGROUND"],
+"HARDWARE_EMULATION":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","HARDWARE_EMULATION"],
+"OPTICAL_HARDWARE":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","OPTICAL_HARDWARE"],
+"COLOR_SCIENCE_PROFILE":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","COLOR_SCIENCE_PROFILE"],
+"OPTICAL_ABERRATIONS":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","OPTICAL_ABERRATIONS"],
+"APERTURE_SETTING":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","APERTURE_SETTING"],
+"SHUTTER_AESTHETIC":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","SHUTTER_AESTHETIC"],
+"ILLUMINATION_AXIS":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","ILLUMINATION_AXIS"],
+"KEY_LIGHT_CHARACTER":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","KEY_LIGHT_CHARACTER"],
+"FILL_LIGHT_CHARACTER":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","FILL_LIGHT_CHARACTER"],
+"SHADOW_PROFILE":["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY","SHADOW_PROFILE"],
+"SKIN_TOPOGRAPHY_LOGIC":["!ENV_ATMOSPHERICS","!EXEC_BIO_DERMAL_MAP","SKIN_TOPOGRAPHY_LOGIC"],
+"REFLECTANCE_MAP":["!ENV_ATMOSPHERICS","!EXEC_BIO_DERMAL_MAP","REFLECTANCE_MAP"],
+"EXPRESSION":["!ENV_ATMOSPHERICS","!EXEC_BIO_DERMAL_MAP","EXPRESSION"],
+"HAIR":["!ENV_ATMOSPHERICS","!EXEC_BIO_DERMAL_MAP","HAIR"],
+"WARDROBE_SPECIFICATION":["!ENV_ATMOSPHERICS","!EXEC_MATERIAL_PHYSICS","WARDROBE_SPECIFICATION"],
+"OPACITY":["!ENV_ATMOSPHERICS","!EXEC_MATERIAL_PHYSICS","OPACITY"],
+"TEXTILE_SURFACE_SHEEN":["!ENV_ATMOSPHERICS","!EXEC_MATERIAL_PHYSICS","TEXTILE_SURFACE_SHEEN"],
+"TEXT_STRING_LITERAL":["!ENV_ATMOSPHERICS","TEXT_RECON_ENGINE","TEXT_STRING_LITERAL"],
+"FONTTYPE_AESTHETIC":["!ENV_ATMOSPHERICS","TEXT_RECON_ENGINE","FONTTYPE_AESTHETIC"],
+"LAYER_PLACEMENT":["!ENV_ATMOSPHERICS","TEXT_RECON_ENGINE","LAYER_PLACEMENT"]};
+const COH={
+FILM_BODY:/Film|Polaroid|Disposable/,
+VINTAGE_LENS:/Helios|Petzval|Trioplan|Vintage\)|Noct AI-S/,
+MODERN_LENS:new Set(["Zeiss Otus 85mm f/1.4","Zeiss Otus 55mm f/1.4","Sony FE 85mm f/1.4 GM","Sony FE 135mm f/1.8 GM","Sony FE 50mm f/1.2 GM","Canon RF 50mm f/1.2L USM","Nikon Z 85mm f/1.2 S","Nikon Z 135mm f/1.8 S Plena"]),
+HARD_KEY:new Set(["intense_direct_overhead_spotlight","on_camera_popup_flash_5500K","off_camera_strobe_45_left_5600K","off_camera_strobe_45_right_5600K","bare_bulb_handheld_flash_5400K"]),
+WATER_LOC:new Set(["bathroom_steam_ceramic_harsh_flash","shower_waterfall_stone_hiding","indoor_pool_underwater_tiles","hotel_bathroom_marble_tungsten","spa_wet_room_steam_diffused","outdoor_waterfall_natural_mist","wet_concrete_floor_drain_flash"]),
+GLASS_PLACE:new Set(["mirror_glass_plane_sharp","mirror_upper_left_partial_fog","mirror_lower_right_intimate","mirror_center_full_width","wall_tile_adjacent_mirror","steamed_window_exterior_view"]),
+GLASS_FONT:new Set(["condensation_finger_traced","soap_bar_written_window","lipstick_finger_scrawl_red","lipstick_block_print_smeared","mascara_run_down_surface","nail_varnish_painted_slow"]),
+SHEER_WARD:new Set(["white_sheer_nylon_bodysuit","black_sheer_organza_blouse_open","sheer_black_lace_overlay_dress","wet_white_cotton_fully_saturated","wet_oversized_shirt_dress_transparent","white_mesh_crop_top","torn_fishnet_layered_over_bodysuit"]),
+WET_WARD:new Set(["wet_white_cotton_fully_saturated","wet_silk_fully_saturated_adhesion","wet_oversized_shirt_dress_transparent"]),
+rules:[
+{id:"C01",sev:"err",m:"1/8000 leaf-shutter sync is impossible on a focal-plane film body — select an electronic-shutter body or a standard sync speed.",f:[FP.SHUTTER_AESTHETIC,FP.HARDWARE_EMULATION],t:(sh,cam)=>sh==="flash_sync_1_8000_leaf_shutter"&&typeof cam==="string"&&COH.FILM_BODY.test(cam)},
+{id:"C02",sev:"err",m:"Text placement requires a glazed surface but GLASS specifies an open environment with none.",f:[FP.LAYER_PLACEMENT,FP.GLASS_SURFACE_METRICS],t:(tp,gl)=>gl==="no_glass_open_environment"&&COH.GLASS_PLACE.has(tp)},
+{id:"C03",sev:"err",m:"Writing medium requires glass/condensation but GLASS specifies an open environment with none.",f:[FP.FONTTYPE_AESTHETIC,FP.GLASS_SURFACE_METRICS],t:(tf,gl)=>gl==="no_glass_open_environment"&&COH.GLASS_FONT.has(tf)},
+{id:"C04",sev:"err",m:"Subject emerging from water has no water source at this location.",f:[FP.MIDGROUND,FP.LOCATION_SETTING],t:(mg,loc)=>mg==="subject_emerging_from_water_waist"&&typeof loc==="string"&&M.location.includes(loc)&&!COH.WATER_LOC.has(loc)},
+{id:"C05",sev:"err",m:"Hard single-source flash mandates cast shadows; SHADOW_PROFILE claims a no-shadow high-key field.",f:[FP.SHADOW_PROFILE,FP.KEY_LIGHT_CHARACTER],t:(sp,key)=>sp==="shadow_no_shadow_high_key"&&COH.HARD_KEY.has(key)},
+{id:"C06",sev:"err",m:"Opacity is locked fully opaque but the wardrobe selection is a sheer/transparent garment.",f:[FP.OPACITY,FP.WARDROBE_SPECIFICATION],t:(op,wd)=>op==="fully_opaque"&&COH.SHEER_WARD.has(wd)},
+{id:"C07",sev:"err",m:"Bare-skin wardrobe leaves no fabric to carry a textile sheen profile.",f:[FP.WARDROBE_SPECIFICATION,FP.TEXTILE_SURFACE_SHEEN],t:(wd,sh)=>wd==="bare_skin_no_wardrobe"&&typeof sh==="string"&&M.sheen.includes(sh)},
+{id:"C08",sev:"err",m:"Desert interior location cannot carry a coastal marine layer.",f:[FP.LOCATION_SETTING,FP.PARTICULATE_SCATTERING],t:(loc,me)=>loc==="desert_harsh_midday_zenith"&&me==="MARINE_LAYER_COASTAL_HAZE"},
+{id:"C09",sev:"warn",m:"Vintage character lens paired with modern multi-coated clinical optics — rendering intents oppose.",f:[FP.OPTICAL_HARDWARE,FP.OPTICAL_ABERRATIONS],t:(ln,ob)=>typeof ln==="string"&&COH.VINTAGE_LENS.test(ln)&&ob==="MULTI_COATED_MODERN_CLINICAL"},
+{id:"C10",sev:"warn",m:"Modern reference lens paired with single-coated/uncoated vintage flare — expect character contamination.",f:[FP.OPTICAL_HARDWARE,FP.OPTICAL_ABERRATIONS],t:(ln,ob)=>typeof ln==="string"&&COH.MODERN_LENS.has(ln)&&(ob==="SINGLE_COATED_VINTAGE_FLARE"||ob==="UNCOATED_FRONT_ELEMENT_BLOOMING")},
+{id:"C11",sev:"warn",m:"Saturated/wet wardrobe with no water source at this location.",f:[FP.WARDROBE_SPECIFICATION,FP.LOCATION_SETTING],t:(wd,loc)=>COH.WET_WARD.has(wd)&&typeof loc==="string"&&M.location.includes(loc)&&!COH.WATER_LOC.has(loc)},
+{id:"C12",sev:"warn",m:"Heavy occluding steam cannot persist under high-turbulent wind.",f:[FP.GLASS_SURFACE_METRICS,FP.WIND_VECTOR_FORCE],t:(gl,wi)=>gl==="heavy_steam_occluded_centre"&&wi==="WIND_VELOCITY_HIGH_TURBULENT"},
+{id:"C13",sev:"warn",m:"Pure black seamless studio has no glazed surfaces for steam/calcium glass metrics.",f:[FP.LOCATION_SETTING,FP.GLASS_SURFACE_METRICS],t:(loc,gl)=>loc==="studio_black_seamless_pure"&&(gl==="condensation_calcium_grease_dust"||gl==="heavy_steam_occluded_centre")},
+{id:"C14",sev:"warn",m:"Daylight window fill floods the UV key — blacklight effect will not survive.",f:[FP.KEY_LIGHT_CHARACTER,FP.FILL_LIGHT_CHARACTER],t:(key,fill)=>key==="uv_blacklight_fluorescent_365nm"&&fill==="window_natural_daylight_5600K"},
+{id:"C15",sev:"warn",m:"Eyes-closed meditative expression contradicts a midground action that requires looking.",f:[FP.EXPRESSION,FP.MIDGROUND],t:(ex,mg)=>ex==="eyes_closed_meditative"&&(mg==="subject_on_phone_window_lean"||mg==="subject_reading_letter_seated")}
+]};
+const AFF=[
+{when:["LOCATION_SETTING",["bathroom_steam_ceramic_harsh_flash","shower_waterfall_stone_hiding"]],
+ then:{GLASS_SURFACE_METRICS:["heavy_steam_occluded_centre","condensation_calcium_grease_dust"],PARTICULATE_SCATTERING:["MIE_SCATTERING_DENSE_FOG"],HAIR:["soaked_wet_plastered_flat"]}},
+{when:["LOCATION_SETTING",["indoor_pool_underwater_tiles"]],
+ then:{PARTICULATE_SCATTERING:["MIE_SCATTERING_SUSPENDED_DUST"],SKIN_TOPOGRAPHY_LOGIC:["wet_skin_condensation_texture"]}},
+{when:["LOCATION_SETTING",["desert_harsh_midday_zenith"]],
+ then:{SHADOW_PROFILE:["shadow_razor_hard_zero_penumbra"],KEY_LIGHT_CHARACTER:["hmi_par_5600K_hard_parallel"]}},
+{when:["LOCATION_SETTING",["studio_black_seamless_pure"]],
+ then:{BACKGROUND:["pure_black_void_zero_detail"],KEY_LIGHT_CHARACTER:["on_camera_popup_flash_5500K"]}},
+{when:["LOCATION_SETTING",["underground_club_strobe_ambient"]],
+ then:{SHUTTER_AESTHETIC:["multi_flash_stroboscopic_freeze"],KEY_LIGHT_CHARACTER:["neon_tube_practical_variable"]}},
+{when:["LOCATION_SETTING",["rooftop_golden_hour_rim_light"]],
+ then:{OPTICAL_ABERRATIONS:["ANAMORPHIC_2X_SQUEEZE_BLUE_STREAK"],COLOR_SCIENCE_PROFILE:["kodak_vision3_500T_tungsten"]}},
+{when:["WARDROBE_SPECIFICATION",["latex_black_full_body_catsuit","vacuum_sealed_latex_catsuit"]],
+ then:{TEXTILE_SURFACE_SHEEN:["latex_mirror_reflection"],OPACITY:["fully_opaque"]}},
+{when:["WARDROBE_SPECIFICATION",["wet_silk_fully_saturated_adhesion"]],
+ then:{TEXTILE_SURFACE_SHEEN:["wet_fabric_gloss_everywhere"],OPACITY:["wet_saturation_full"]}},
+{when:["HAIR",["soaked_wet_plastered_flat"]],
+ then:{SKIN_TOPOGRAPHY_LOGIC:["wet_skin_condensation_texture"],REFLECTANCE_MAP:["high_specular_damp_skin_flash"]}},
+{when:["TEXT_STRING_LITERAL",["help"]],
+ then:{LAYER_PLACEMENT:["mirror_center_full_width"],FONTTYPE_AESTHETIC:["lipstick_finger_scrawl_red"]}}];
+let cohIssues=[];
+let cohOpen=false;
+function cohGet(p){
+  try{let n=state.schema;for(const k of p){if(!(k in n))return undefined;n=n[k];}return n;}
+  catch(e){return undefined;}
+}
+function coherenceCheck(){
+  const out=[];
+  for(const r of COH.rules){
+    try{
+      const vals=r.f.map(p=>cohGet(p));
+      if(r.t(...vals))out.push({id:r.id,sev:r.sev,msg:r.m,f:r.f});
+    }catch(e){/* rule isolated — one bad path never breaks the sweep */}
+  }
+  return out;
+}
+function affinityFor(fkey){
+  const out=[];
+  for(const a of AFF){
+    const cur=cohGet(FP[a.when[0]]);
+    if(typeof cur!=="string"||!a.when[1].includes(cur))continue;
+    const toks=a.then[fkey];
+    if(toks)for(const t of toks)out.push(t);
+  }
+  return [...new Set(out)];
+}
+function updateCoherence(){
+  cohIssues=coherenceCheck();
+  const e=cohIssues.filter(i=>i.sev==="err").length;
+  const w=cohIssues.length-e;
+  const b=$("#cohbadge");
+  if(!b)return;
+  b.textContent="CONFLICTS: "+cohIssues.length+(w&&!e?" ("+w+"W)":"");
+  b.className="cohbadge "+(e?"err":(w?"warn":"ok"));
+  if(cohOpen)renderCohPop();
+}
+function renderCohPop(){
+  const el=$("#coh-pop");
+  if(!el)return;
+  el.innerHTML="";
+  const head=document.createElement("div");
+  head.className="cohhead";
+  head.textContent="COHERENCE REPORT — "+cohIssues.length+" ISSUE"+(cohIssues.length===1?"":"S");
+  el.appendChild(head);
+  const list=document.createElement("div");
+  list.className="cohlist";
+  if(!cohIssues.length){
+    const emp=document.createElement("div");
+    emp.className="cohempty";
+    emp.textContent="NO CONFLICTS — ALL POOLS COHERENT";
+    list.appendChild(emp);
+  }
+  cohIssues.forEach(i=>{
+    const it=document.createElement("div");
+    it.className="cohitem "+i.sev;
+    const sev=document.createElement("span");
+    sev.className="csev";
+    sev.textContent=(i.sev==="err"?"⛔ CONFLICT ":"⚠ WARNING ")+i.id;
+    it.appendChild(sev);
+    const msg=document.createElement("span");
+    msg.className="cmsg";
+    msg.textContent=i.msg;
+    it.appendChild(msg);
+    const fld=document.createElement("span");
+    fld.className="cfld";
+    fld.textContent=i.f.map(p=>p[p.length-1]).join(" · ");
+    it.appendChild(fld);
+    list.appendChild(it);
+  });
+  el.appendChild(list);
+}
+function toggleCohPop(force){
+  cohOpen=(force===undefined)?!cohOpen:force;
+  const el=$("#coh-pop");
+  if(!el)return;
+  if(cohOpen){renderCohPop();el.classList.add("open");}
+  else el.classList.remove("open");
+}
+function cohMark(key){
+  const hits=cohIssues.filter(i=>i.f.some(p=>p[p.length-1]===key));
+  if(!hits.length)return null;
+  const sev=hits.some(h=>h.sev==="err")?"err":"warn";
+  const s=document.createElement("span");
+  s.className="fmark "+sev;
+  s.textContent=sev==="err"?"⛔":"⚠";
+  s.title=hits.map(h=>h.id+": "+h.msg).join("\n");
+  return s;
+}
+
+const MEM_LOCK = {
+  SYSTEM_REFERENCE_INPUT: "INGREDIENT",
+  BIOMETRIC_LOCK: "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANITOMALOGICAL_TOPOPGRAPHY_PERFECTLY)",
+  IDENTITY_DRIFT_CONTROL: "MAXIMUM_LOCK (INHIBIT_AUTOMATIC_AI_SKIN-SMOOTHING_FILTERS,_ELIMINATE_FACIAL_BALANCING_OR_SYMMETRY_MODIFICATIONS,_BYPASS_DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS._ENFORE=VISCERAL_REACTION_TO_AN_UNPLEASANT_TASTE,_OPENING_MOUTH_REVEALING_TONGUE_SLATHERED_IN_SEMI_TRANSLUCENT,_MILKY_VISCOUS_GEL--TONGUE_ROLLS;_WINCES)",
+  STRUCTURAL_NON_DEVIATION: "HIGH",
+  STRUCTURAL_FIDELITY: "HIGH",
+  UNALTERABLE: [
+    "EXACT_FACIAL_ID_GEOMETRY",
+    "TRUE_ORBITAL_BONE_SPACING",
+    "UNFILTERED_LIP_PROPORTIONS",
+    "RAW_JAWLINE_ANGLE",
+    "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+    "EXACT_BODY_PROPORTIONS",
+    "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
+  ],
+  "!INHIBIT": [
+    "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+    "FACIAL_BALANCING",
+    "POSE_MODIFICATIONS",
+    "BRAZZIER_SUPPORT",
+    "CAMERA_ANGLE_MODIFICATIONS",
+    "SYMMETRY_MODIFICATIONS",
+    "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+  ]
+};
+
+const FINALIZE = {
+  REQUIREMENT_CHECKS: {
+    FOCUS_LOCK: "MAXIMUM_MICRO-CONTRAST_FOCUS_LOCKED_ONTO_CLOTH_WEAVE_AND_SKIN_GRAIN",
+    GLOBAL_NEGATIVE_BIAS: [
+      "BEAUTY_FILTER",
+      "AIRBRUSHED_SKIN",
+      "PERFECT_FACIAL_SYMMETRY",
+      "DIGITAL_3D_RENDER",
+      "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+      "WATERMARK_OR_CREDIT_OVERLAY",
+      "HAPPY_EXPRESSIONS",
+      "IDENTITY_SHIFTING",
+      "HAIR_CLEANUP_FLYAWAY",
+      "OPAQUE_FABRIC_PROCESSING",
+      "BODY_PROPORTION_ALTERATION"
+    ]
+  }
+};
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function makeRng(seed){const rng=mulberry32(seed==null?(Math.random()*1e9)|0:seed);
+const r=a=>a[Math.floor(rng()*a.length)];
+const rl=(a,lo,hi)=>{const k=lo+Math.floor(rng()*(Math.min(hi,a.length)-lo+1));const c=a.slice(),o=[];while(o.length<k)o.push(c.splice(Math.floor(rng()*c.length),1)[0]);return o;};
+return{rng,r,rl};}
+const clone=o=>JSON.parse(JSON.stringify(o));
+
+const MODULES=[
+{id:"memlock",title:"MEM LOCK PROTOCOL",isStatic:true,basePath:["!INIT_MEM_LOCK_PROTOCOL"],
+ defaults:()=>clone(MEM_LOCK),random:()=>clone(MEM_LOCK)},
+{id:"atmo",title:"ENV ATMOSPHERICS",parentPath:["!ENV_ATMOSPHERICS"],
+ ownKeys:["LOCATION_SETTING","GLASS_SURFACE_METRICS","PARTICULATE_SCATTERING","WIND_VECTOR_FORCE","COMPOSITION_DEPTH"],
+ basePath:["!ENV_ATMOSPHERICS"],
+ defaults:()=>({
+  LOCATION_SETTING:"ALL_PROVIDED_INGREDIENTS_ARE_REQUIRED_TO_CREATE_SEVERAL_CINEMATIC_STILLS_ALIGNED_WITH_THE_NUMBER_OF_SELECETED_PANELS--CONTINUITY; TELL_A_SHORT_STORY",
+  GLASS_SURFACE_METRICS:"DUST_PARTICLES_CATCHING_DIRECT_LIGHT_ILLUMINATION",
+  PARTICULATE_SCATTERING:"MIE_SCATTERING_DENSE_FOG",
+  WIND_VECTOR_FORCE:"WIND_VELOCITY_HIGH_TURBULENT",
+  COMPOSITION_DEPTH:{
+   FOREGROUND:"SHALLOW_DEPTH_OF_FIELD_TO_CREATE_A_FILM_LIKE_DRAMATIC_STYLE",
+   MIDGROUND:"SHE_IS_POSING_FOR_THE_CAMERA",
+   BACKGROUND:["STUDIO","SINGLE_LIGHT_SOURCE","POWERFUL_SPOTLIGHT","TOTAL_DARKNESS","MIRRORED_WALLS_AND_TILES","HIGH_REFLECTANCE"]}}),
+ random:g=>({
+  LOCATION_SETTING:g.r(M.location),GLASS_SURFACE_METRICS:g.r(M.glass),
+  PARTICULATE_SCATTERING:g.r(M.meteo),WIND_VECTOR_FORCE:g.r(M.meteo),
+  COMPOSITION_DEPTH:{FOREGROUND:g.r(M.dofFg),MIDGROUND:g.r(M.dofMg),BACKGROUND:g.rl(M.dofBg,2,5)}})},
+{id:"matrix",title:"COMPOSITION MATRIX",parentPath:["!ENV_ATMOSPHERICS"],key:"!EXEC_COMPOSITION_MATRIX",
+ basePath:["!ENV_ATMOSPHERICS","!EXEC_COMPOSITION_MATRIX"],
+ defaults:()=>({LAYOUT_PRESET:"LAYOUT: SIX_PANEL_COMPOSITE",PANELS:"6",
+  "FRONT MEDIUM CLOSE-UP (MCU)":"LITHOTOMY_POSITION",
+  "BIRDS EYE (BE)":"AERIAL_VIEW, SLIGHTLY_IN_FRONT_OF_SUBJECT_LOOKING_DOWNWARD",
+  "FRONT EXTREME CLOSE-UP (ECU/XCU)":["FULL_LENGTH_OF_RIB_CAGE","FINE_DETAILS","FABRIC_WEAVE","RAZOR_SHARP_FOCUS_ON_TEXTURED_SKIN"],
+  "SIDE CLOSE-UP (SCU)":["~45°_ROTATED_CLOCKWISE","CHEST_LEVEL","SLIGHTLY_TILTED_DOWNWARD"],
+  "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)":["~45°_ROTATED_CLOCKWISE_AND_SLIGHTLY_TILTED_DOWNWARD_FROM_8FT"],
+  "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)":["FULL_LENGTH_OF_RIB_CAGE","FABRIC_WEAVE","RAZOR-SHARP_FOCUS_ON_GLISTENING_SWEATBEADS_AND_TEXTURED_SKIN","SHALLOW_DEPTH_OF_FIELD","100mm_MACRO_LENS_AT_f/2.8"]}),
+ random:(g,panels)=>{const n=panels||1+Math.floor(g.rng()*9);const m={PANELS:String(n)};const used=new Set();
+  for(let i=0;i<n;i++){const avail=VIEW_KEYS.filter(v=>!used.has(v));
+   const view=g.r(avail.length?avail:VIEW_KEYS);used.add(view);
+   if(MACRO_VIEWS.has(view))m[view]=g.rl(POSE_KEYS,2,4);
+   else if(LIST_VIEWS.has(view))m[view]=g.rl(POSE_KEYS,2,3);
+   else m[view]=g.r(POSE_KEYS);}
+  return m;}},
+{id:"bio",title:"BIO DERMAL MAP",parentPath:["!ENV_ATMOSPHERICS"],key:"!EXEC_BIO_DERMAL_MAP",
+ basePath:["!ENV_ATMOSPHERICS","!EXEC_BIO_DERMAL_MAP"],
+ defaults:()=>({
+  SKIN_TOPOGRAPHY_LOGIC:"UNFILTERED_HUMAN_SKIN_TEXTURE_SHOWING_HYPER_REALISTIC_DETAILS",
+  SURFACE_MICRO_ELEMENTS:"TRUE_VISIBLE_DERMAL_PORES,_FINE_GOOSEBUMPS_ON_ARMS,_MICRO_SWEATBEADS_CATCHING_SPECULAR_HIGHLIGHTS,_NATURAL_SKIN_FOLDS,_RAW_UN-AIRBRUSED_COMPLEXION",
+  REFLECTANCE_MAP:"HIGH_SPECULAR_GLISTEN_ON_DAMP_SKIN_TISSUE_INTERACTING_DIRECTLY_WITH_THE_HARSH_fLASH_RAYS",
+  EXPRESSION:"COOL,_DETACHED,_NEUTRAL_EXPRESSION;_JAW_SLIGHTLY_RELAXED,_LIPS_SUBTLY_PARTED,_GAZE_FIXED_STEADILY_ON_CAMERA_LENS",
+  HAIR:"MESSY,_LOOSE_AND_DISHEVELED_WITH_STRAY_HAIR_STANDS_FALLING_NEATURALLY_ACROSS_CHEEKS_AND_NECK"}),
+ random:g=>({SKIN_TOPOGRAPHY_LOGIC:g.r(M.topo),SURFACE_MICRO_ELEMENTS:g.r(M.skinMicro),
+  REFLECTANCE_MAP:g.r(M.skinRef),EXPRESSION:g.r(M.skinExp),HAIR:g.r(M.skinHair)})},
+{id:"photo",title:"ENV PHOTOMETRY",parentPath:["!ENV_ATMOSPHERICS"],key:"!ENV_PHOTOMETRY",
+ basePath:["!ENV_ATMOSPHERICS","!ENV_PHOTOMETRY"],
+ defaults:()=>({
+  STYLE_OF:["DAVID_LACHAPELLE"],HARDWARE_EMULATION:"FULL-FRAME_DSLR_SENSOR_CAMERA",
+  OPTICAL_HARDWARE:"Canon EOS 5D Mark IV and a Canon EF 100mm",COLOR_SCIENCE_PROFILE:"ARRI_LogC4_AWG4",
+  OPTICAL_ABERRATIONS:"ANAMORPHIC_2X_SQUEEZE_BLUE_STREAK",
+  APERTURE_SETTING:"f/2.8L (ENSURING_DEEP_TECHNICAL_SHARPNESS_ACROSS_BOTH_THE_FOREGROUND_AND_THE_MIDGROUND_SUBJECT_DETAILS",
+  SHUTTER_AESTHETIC:"Macro IS USM",
+  ILLUMINATION_AXIS:"SINGLE_SOURCE,_HARD_ON-CAMERA_POP-UP_FLASH_ALIGNED_PARALLEL_TO_THE_LENS_AXIS",
+  KEY_LIGHT_CHARACTER:"INTENSE_DIRECT_5500K_CAMERA_FLASH_LUMINOSITY_(FORCING_CENTRAL_OVEREXPOSURE_BLOWOUT,_STARK_WHITE_SPECULAR_HIGHLIGHTS_ON_REFLECTIVE_SURFACES,_AND_AGGRESSIVE_INVERSE-SQUARE_FALLOFF",
+  FILL_LIGHT_CHARACTER:"DIM_AMBIENT_TUNGSTEN_GLOW,_3200K_COLOR_TEMPERATURE_(RATIO: 0.04,_RESTRICTED_TO_THE_DEEP_BACKGROUND_RECESSES)",
+  SHADOW_PROFILE:"RAZOR-SHARP,_JET-BLACK_DROP_SHADOWS_DIRECTLY_BEHIND_PHYSICAL_SUBJECT_CONTOURS_WITH_ZERO_PENUMBRA_BLENDING",
+  PHOTONIC_VECTORS:{PHOTONIC_ENERGY:"SUBSURFACE_SCATTERING",ENERGY_CONSERVATION_COMPLIANT:"TRANSPARENCY-FOCUSED",
+   RIM_LIGHT_SCATTERING_PASS:"TRUE",EPIDERMAL_TRANSLUCENCY_PASS:"TRUE",THROUGH_FABRIC_DIFFUSE_BOUNCE:"TRUE",
+   PHOTON_TRANSMISSION_RATIO:"HIGH",MEAN_FREE_PATH_SCATTERING:"MEDIUM",BACKLIT_SUBSURFACE_GLOW:"MEDIUM",
+   FRESNEL_REFLECTION_COEFFICIENT:"LOW",SPECULAR_HIGHLIGHT_LOBE:"LOW",LAMBERTIAN_DIFFUSE_REFLECTANCE:"LOW"}}),
+ random:g=>({STYLE_OF:g.rl(M.styling,1,3),HARDWARE_EMULATION:g.r(Object.keys(M.camera)),
+  OPTICAL_HARDWARE:g.r(Object.keys(M.lens)),COLOR_SCIENCE_PROFILE:g.r(M.color),
+  OPTICAL_ABERRATIONS:g.r(M.optics),APERTURE_SETTING:g.r(M.aperture),SHUTTER_AESTHETIC:g.r(M.shutter),
+  ILLUMINATION_AXIS:g.r(Object.keys(M.lighting)),KEY_LIGHT_CHARACTER:g.r(Object.keys(M.lighting)),
+  FILL_LIGHT_CHARACTER:g.r(Object.keys(M.lighting)),SHADOW_PROFILE:g.r(Object.keys(M.lighting)),
+  PHOTONIC_VECTORS:{PHOTONIC_ENERGY:g.r(Object.keys(M.photonic)),ENERGY_CONSERVATION_COMPLIANT:"TRANSPARENCY-FOCUSED",
+   RIM_LIGHT_SCATTERING_PASS:g.r(["TRUE","FALSE"]),EPIDERMAL_TRANSLUCENCY_PASS:g.r(["TRUE","FALSE"]),
+   THROUGH_FABRIC_DIFFUSE_BOUNCE:g.r(["TRUE","FALSE"]),PHOTON_TRANSMISSION_RATIO:g.r(M.levels),
+   MEAN_FREE_PATH_SCATTERING:g.r(M.levels),BACKLIT_SUBSURFACE_GLOW:g.r(M.levels),
+   FRESNEL_REFLECTION_COEFFICIENT:g.r(M.levels),SPECULAR_HIGHLIGHT_LOBE:g.r(M.levels),
+   LAMBERTIAN_DIFFUSE_REFLECTANCE:g.r(M.levels)}})},
+{id:"ray",title:"RAY TRACING PHOTOMETRY",parentPath:["!ENV_ATMOSPHERICS"],key:"!ENV_RAY_TRACING_PHOTOMETRY",
+ basePath:["!ENV_ATMOSPHERICS","!ENV_RAY_TRACING_PHOTOMETRY"],
+ defaults:()=>({LIGHT_SOURCE_01:"SINGLE_CONICAL_SPOTLIGHT",ORIGIN_COORDINATE:"2.50,-4.50,16.00",
+  TARGET_COORDINATE:"-0.04,5.67,2.39",BEAM_ANGLE:"28_DEGREE_FOCUS",LUMINOUS_INTENSITY:"110_PERCENT_SCALE",
+  FALLOFF_PROFILE:"AGGRESSIVE_INVERSE_SQUARE",BOUNCE_LIGHT_LOGIC:"INFINITE_RECURSIVE_REFLECTION"}),
+ random:g=>({LIGHT_SOURCE_01:g.r(RAY_KEYS),ORIGIN_COORDINATE:g.r(RAY_KEYS),TARGET_COORDINATE:g.r(RAY_KEYS),
+  BEAM_ANGLE:g.r(RAY_KEYS),LUMINOUS_INTENSITY:g.r(RAY_KEYS),FALLOFF_PROFILE:g.r(RAY_KEYS),BOUNCE_LIGHT_LOGIC:g.r(RAY_KEYS)})},
+{id:"material",title:"MATERIAL PHYSICS",parentPath:["!ENV_ATMOSPHERICS"],key:"!EXEC_MATERIAL_PHYSICS",
+ basePath:["!ENV_ATMOSPHERICS","!EXEC_MATERIAL_PHYSICS"],
+ defaults:()=>({
+  WARDROBE_SPECIFICATION:"REALISTIC_SINGLE-LAYER_MATERIALS,_LOW-DENNIER,_WHITE_VINTAGE_SLIK_SLIP_DRESS_WITH_RAW_LACE_BORDER_TRIM_ALONG_THE_NEXT",
+  OPACITY:"FABRIC_TRANSPARENCY_SCALES_DYNAMICALLY_WITH_TENSION;_MATERIAL_SHIFTS_FROM_OPAQUE_WHIRE_TO_A_SEMI-TRANSLUCENT_APLHA_LAYER_WHERE_STRETCHED_TIGHT_ACROSS_PHYSICAL_PEAKS,_REVEALING_THE_MUTED_SKIN_TONES_UNDERNEATH",
+  TEXTILE_SURFACE_SHEEN:"ANSIOTROPIC_SILK_REFLECTION_MAPPING_DIRECT_FLASH_GLARE_ALONG_TIGHT_FABRIC_FOLDS_AND_FINE_MICRO-WRINKLES",
+  DRAPE_AND_TENSION_LOGIC:{MICRO_FIBER_DRAPE_PHYSICS:"HIGH",LOW_TENSILE_STRUCTURAL_DEFORMITY:"MEDIUM",
+   GRAVITY_WEIGHTED_FOLDS:"LOW",SUB_MICRON_WEAVE_DENSITY:"LOW",LOW_DENIER_SSS_PASS:"ON",
+   SURFACE_ADHESION_COEFFICIENT:"HIGH",FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE:"TRUE"}}),
+ random:g=>({WARDROBE_SPECIFICATION:g.r(M.wardrobe),OPACITY:g.r(M.opacity),TEXTILE_SURFACE_SHEEN:g.r(M.sheen),
+  DRAPE_AND_TENSION_LOGIC:{MICRO_FIBER_DRAPE_PHYSICS:g.r(M.levels),LOW_TENSILE_STRUCTURAL_DEFORMITY:g.r(M.levels),
+   GRAVITY_WEIGHTED_FOLDS:g.r(M.levels),SUB_MICRON_WEAVE_DENSITY:g.r(M.levels),LOW_DENIER_SSS_PASS:g.r(["ON","OFF"]),
+   SURFACE_ADHESION_COEFFICIENT:g.r(M.levels),FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE:g.r(["TRUE","FALSE"])}})},
+{id:"text",title:"TEXT RECON ENGINE",parentPath:["!ENV_ATMOSPHERICS"],key:"TEXT_RECON_ENGINE",
+ basePath:["!ENV_ATMOSPHERICS","TEXT_RECON_ENGINE"],
+ defaults:()=>({TEXT_STRING_LITERAL:"NO_TEXT",FONTTYPE_AESTHETIC:"NO_TEXT",LAYER_PLACEMENT:"NO_TEXT"}),
+ random:g=>({TEXT_STRING_LITERAL:g.r(M.textStr),FONTTYPE_AESTHETIC:g.r(M.textFont),LAYER_PLACEMENT:g.r(M.textPlace)})},
+{id:"finalize",title:"FINALIZE OUTPUT",parentPath:["!ENV_ATMOSPHERICS"],key:"!FINALIZE_OUTPUT",isStatic:true,
+ basePath:["!ENV_ATMOSPHERICS","!FINALIZE_OUTPUT"],
+ defaults:()=>clone(FINALIZE),random:()=>clone(FINALIZE)}
+];
+
+const $=s=>document.querySelector(s);
+const state={schema:null,mode:"RANDOM",seed:null};
+function getPath(path){let n=state.schema;for(const k of path)n=n[k];return n;}
+function setPath(path,val){
+  try{
+    let n=state.schema;
+    for(let i=0;i<path.length-1;i++){n=n[path[i]];if(!n||typeof n!=="object")return;}
+    n[path[path.length-1]]=val;schedulePreview();
+  }catch(e){}
+}
+function panelsIn(){return Math.min(9,Math.max(1,parseInt($("#panels").value)||6));}
+function seedIn(){const s=parseInt($("#seed").value)||0;return s>0?s:null;}
+
+/* ═══ FIELD PIN ENGINE ═══
+   Pins protect a field's CURRENT value from automated randomization:
+   ⤾ RE-ROLL, ⚡RND (module + ALL), GENERATE (RANDOM), PURGE.
+   Explicit canonical restores (≡ DEFAULTS, hybrid SKIP, STOCK, DEFAULT
+   baseline) intentionally overwrite pins — those actions must deliver
+   exactly what their label promises.
+   • snapPins() captures current values at pinned paths.
+   • restorePins() writes them back — ONLY into keys that exist in the
+     new state (a vanished panel view never injects a phantom key).
+   • Matrix rename migrates the pin key; panel delete drops it (zero orphans).
+   • Statics have no pin UI; walk-engine edits are manual and always allowed. */
+const pins=new Set();
+const pinKey=p=>p.join("›");
+function snapPins(){
+  const s=new Map();
+  for(const k of pins){
+    const v=cohGet(k.split("›"));
+    if(v!==undefined)s.set(k,v);
+  }
+  return s;
+}
+function restorePins(s){
+  for(const [k,v] of s){
+    const p=k.split("›");
+    try{
+      let n=state.schema;
+      for(let i=0;i<p.length-1;i++){n=n[p[i]];if(!n||typeof n!=="object"){n=null;break;}}
+      if(n&&typeof n==="object"&&(p[p.length-1] in n))n[p[p.length-1]]=v;
+    }catch(e){/* stale path — safe skip */}
+  }
+}
+function mkPinBtn(path){
+  const k=pinKey(path);
+  const s=document.createElement("span");
+  s.textContent="📌";
+  const paint=()=>{s.className="pinbtn"+(pins.has(k)?" pinned":"");
+    s.title=pins.has(k)?"PINNED — value survives randomization (click to unpin)":"PIN — protect this value from randomization";};
+  paint();
+  s.addEventListener("click",ev=>{
+    ev.stopPropagation();
+    if(pins.has(k))pins.delete(k);else pins.add(k);
+    paint();updatePinCount();
+  });
+  return s;
+}
+function updatePinCount(){
+  const el=$("#pincount");
+  if(!el)return;
+  el.textContent="PINNED: "+pins.size;
+  el.className=pins.size?"act":"";
+}
+
+/* ═══ PROVENANCE ENGINE ═══
+   Fingerprint — FNV-1a over the canonical JSON of the live schema; shown
+   live in the status bar (6-hex prefix; click = copy full 8-hex).
+   History — last 12 generation snapshots (deduped by fingerprint),
+   click any row to recall that exact schema.
+   Seed URL — every regen encodes session into location.hash; a fresh
+   tab opened on that URL restores the generation (seed/mode/panels).
+   Envelope — EXPORT wraps schema with full provenance; IMPORT reads
+   both envelope and raw schema, validating structure first.          */
+function fnv1a(str){
+  let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  return h>>>0;
+}
+function fpOf(){
+  try{return fnv1a(JSON.stringify(state.schema)).toString(16).padStart(8,"0");}
+  catch(e){return"00000000";}
+}
+const sessionStack=[];
+function pushHistory(mode,seed){
+  const fp=fpOf();
+  if(sessionStack.length&&sessionStack[0].fp===fp)return;
+  sessionStack.unshift({mode,seed,fp,schema:clone(state.schema)});
+  if(sessionStack.length>12)sessionStack.length=12;
+  renderHistory();
+}
+function renderHistory(){
+  const el=$("#history");
+  if(!el)return;
+  el.innerHTML="";
+  if(!sessionStack.length){
+    const emp=document.createElement("div");
+    emp.className="histempty";
+    emp.textContent="— no generations this session —";
+    el.appendChild(emp);
+    return;
+  }
+  sessionStack.forEach((e,i)=>{
+    const row=document.createElement("div");
+    row.className="histrow";
+    const left=document.createElement("span");
+    left.className="hseed";
+    left.textContent=(e.seed==null?"RND":"SEED "+e.seed);
+    const mid=document.createElement("span");
+    mid.className="hmode";
+    mid.textContent=e.mode;
+    const right=document.createElement("span");
+    right.className="hfp";
+    right.textContent="#"+e.fp.slice(0,6);
+    row.appendChild(left);row.appendChild(mid);row.appendChild(right);
+    row.addEventListener("click",()=>recallEntry(i));
+    el.appendChild(row);
+  });
+}
+function recallEntry(i){
+  const e=sessionStack[i];
+  if(!e)return;
+  state.schema=clone(e.schema);state.seed=e.seed;setMode(e.mode);
+  $("#seed").value=e.seed==null?0:e.seed;
+  buildSections();renderPreview();encodeHash();
+  toast(`RECALLED — ${e.mode} · ${e.seed==null?"RND":"seed "+e.seed} · #${e.fp.slice(0,6)}`);
+}
+function encodeHash(){
+  try{
+    const q=[];
+    if(state.seed!=null)q.push("s="+state.seed);
+    q.push("m="+encodeURIComponent(state.mode));
+    const p=panelsIn();if(p!==6)q.push("p="+p);
+    history.replaceState(null,"","#"+q.join("&"));
+  }catch(e){/* hash encode is best-effort — never blocks */}
+}
+function applyHashBoot(){
+  const h=location.hash.slice(1);
+  if(!h)return false;
+  try{
+    const q=new URLSearchParams(h);
+    const m=(q.get("m")||"").toUpperCase();
+    const s=parseInt(q.get("s"))||0;
+    const p=parseInt(q.get("p"))||6;
+    $("#panels").value=String(Math.min(9,Math.max(1,p)));
+    if(m==="STOCK"){
+      regen(assemble("stock",null,null),"STOCK",null,"SESSION RESTORED FROM URL — STOCK",false);
+      return true;
+    }
+    if(m==="DEFAULT"){
+      regen(assemble("stock",null,null),"DEFAULT",null,"SESSION RESTORED FROM URL — DEFAULT WALK",false);
+      startDefaultWalk();
+      return true;
+    }
+    if(m==="HYBRID"){
+      if(s>0)$("#seed").value=String(s);
+      startHybrid();
+      return true;
+    }
+    if(m==="RANDOM"){
+      if(s>0)$("#seed").value=String(s);
+      regen(assemble("random",s>0?s:null,panelsIn()),"RANDOM",s>0?s:null,
+        "SESSION RESTORED FROM URL — "+(s>0?"SEED "+s:"RND"));
+      return true;
+    }
+  }catch(e){/* malformed hash — fall through to default boot */}
+  return false;
+}
+function validateSchema(sc){
+  const errs=[],warns=[];
+  if(!sc||typeof sc!=="object"||Array.isArray(sc))return{ok:false,errs:["root is not an object"],warns};
+  if(!sc["!INIT_MEM_LOCK_PROTOCOL"]||typeof sc["!INIT_MEM_LOCK_PROTOCOL"]!=="object")
+    errs.push("!INIT_MEM_LOCK_PROTOCOL missing");
+  const env=sc["!ENV_ATMOSPHERICS"];
+  if(!env||typeof env!=="object")errs.push("!ENV_ATMOSPHERICS missing");
+  if(errs.length)return{ok:false,errs,warns};
+  for(const m of MODULES){
+    if(!m.parentPath)continue;
+    if(m.key&&!(m.key in env))warns.push(m.key);
+  }
+  return{ok:true,errs,warns};
+}
+
+/* ═══ DIFF ENGINE — structural drift vs STOCK ═══
+   Deep union-key walk; arrays and primitives are leaves. Statics never
+   drift (locked, no controls) so they never appear. Output: path header
+   + − stock / + current pairs; zero entries = IDENTICAL TO STOCK.   */
+let stockCache=null;
+function getStock(){
+  if(!stockCache)stockCache=assemble("stock",null,null);
+  return stockCache;
+}
+function diffWalk(a,b,base,out){
+  const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
+  for(const k of keys){
+    const p=base.concat(k);
+    const av=a? a[k] : undefined;
+    const bv=b? b[k] : undefined;
+    const aObj=av&&typeof av==="object"&&!Array.isArray(av);
+    const bObj=bv&&typeof bv==="object"&&!Array.isArray(bv);
+    if(aObj&&bObj){diffWalk(av,bv,p,out);continue;}
+    if(JSON.stringify(av)!==JSON.stringify(bv)){
+      out.push({p,kind:av===undefined?"added":(bv===undefined?"removed":"changed"),av,bv});
+    }
+  }
+}
+function renderDiffPane(pre){
+  const d=[];
+  diffWalk(getStock(),state.schema,[],d);
+  pre.classList.add("wrap");
+  if(!d.length){
+    pre.innerHTML='<span class="dl-info">IDENTICAL TO STOCK — ZERO DRIFT</span>';
+    return;
+  }
+  const ch=d.filter(x=>x.kind==="changed").length;
+  const ad=d.filter(x=>x.kind==="added").length;
+  const rm=d.filter(x=>x.kind==="removed").length;
+  const lines=[];
+  lines.push(`<span class="dl-info">DIFF VS STOCK — ${d.length} CHANGE${d.length===1?"":"S"} (${ch} changed · ${ad} added · ${rm} removed)</span>`);
+  for(const e of d){
+    lines.push(`<span class="dl-path">${esc(e.p.join(" › "))}</span>`);
+    if(e.kind==="removed"||e.kind==="changed")
+      lines.push(`<span class="dl-del">  − ${esc(JSON.stringify(e.av))}</span>`);
+    if(e.kind==="added"||e.kind==="changed")
+      lines.push(`<span class="dl-add">  + ${esc(JSON.stringify(e.bv))}</span>`);
+  }
+  pre.innerHTML=lines.join("\n");
+}
+
+function assemble(kind,seed,panels){
+  const g=makeRng(seed);
+  const env={};
+  for(const m of MODULES){
+    if(!m.parentPath)continue;
+    const val=kind==="stock"?m.defaults():m.random(g,panels);
+    if(m.key)env[m.key]=val;else Object.assign(env,val);
+  }
+  return{"!INIT_MEM_LOCK_PROTOCOL":clone(MEM_LOCK),"!ENV_ATMOSPHERICS":env};
+}
+function moduleNode(m){
+  if(!m.parentPath)return state.schema["!INIT_MEM_LOCK_PROTOCOL"];
+  const parent=getPath(m.parentPath);
+  if(m.key)return parent[m.key];
+  const o={};m.ownKeys.forEach(k=>{if(k in parent)o[k]=parent[k];});return o;
+}
+function moduleApply(m,val,protect=true){
+  const snap=protect&&pins.size?snapPins():null;
+  if(!m.parentPath){state.schema["!INIT_MEM_LOCK_PROTOCOL"]=val;}
+  else{
+    const parent=getPath(m.parentPath);
+    if(m.key)parent[m.key]=val;
+    else{m.ownKeys.forEach(k=>delete parent[k]);Object.assign(parent,val);}
+  }
+  if(snap)restorePins(snap);
+}
+
+let outMode="json",previewTid=null,toastTid=null;
+function schedulePreview(){if(previewTid)clearTimeout(previewTid);previewTid=setTimeout(renderPreview,120);}
+function flatten(node,prefix=""){
+  const parts=[];
+  if(Array.isArray(node))return prefix+node.join(", ");
+  if(node&&typeof node==="object"){for(const[k,v]of Object.entries(node))
+    parts.push(flatten(v,prefix+k.replace(/^!/,"")+" — "));}
+  else return prefix+String(node);
+  return parts.filter(Boolean).join(" | ");
+}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function renderPreview(){
+  updateCoherence();
+  const pre=$("#outpre");
+  const fp=fpOf();
+  const fb=$("#fpbadge");
+  if(fb){fb.textContent="SCHEMA #"+fp.slice(0,6);fb.title="FINGERPRINT "+fp+" — click to copy";}
+  if(outMode==="flat"){
+    pre.classList.add("wrap");pre.textContent=flatten(state.schema);return;
+  }
+  if(outMode==="diff"){renderDiffPane(pre);return;}
+  pre.classList.remove("wrap");
+  const text=JSON.stringify(state.schema,null,2);
+  if(text.length>40000){pre.textContent=text;return;}
+  pre.innerHTML=text.split("\n").map(line=>{
+    const m=line.match(/^(\s*)"([^"]+)":\s?(.*)$/);
+    if(!m)return`<span class="j-dim">${esc(line)}</span>`;
+    const[,ind,key,rest]=m;let vh=esc(rest);
+    if(rest.startsWith('"'))vh=`<span class="j-str">${esc(rest)}</span>`;
+    else if(/\d/.test(rest))vh=`<span class="j-num">${esc(rest)}</span>`;
+    return`${ind}<span class="j-key">"${esc(key)}"</span>: ${vh}`;}).join("\n");
+}
+function toast(msg,error){
+  const t=$("#toast");t.textContent=msg;t.classList.toggle("error",!!error);t.classList.add("show");
+  $("#statustext").textContent="STATUS: "+msg;
+  if(toastTid)clearTimeout(toastTid);toastTid=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+/* ═══ MANIFEST POPOVER — open=full manifest; type=filter; never empty ═══ */
+const DD={el:null,owner:null,pool:null,pick:null,key:null,tid:null,note:null,list:null};
+function ddClose(){
+  if(DD.tid){clearTimeout(DD.tid);DD.tid=null;}
+  if(DD.el){DD.el.remove();DD.el=null;DD.owner=null;DD.pool=null;DD.pick=null;DD.key=null;DD.note=null;DD.list=null;}
+}
+function ddBuild(){
+  const el=DD.el;el.innerHTML="";
+  const all=poolEntries(DD.pool);
+  const head=document.createElement("div");head.className="ddhead";
+  head.textContent="MANIFEST — "+all.length+" ENTRIES";
+  el.appendChild(head);
+  DD.note=document.createElement("div");DD.note.className="ddnote";DD.note.style.display="none";
+  DD.note.textContent="NO MANIFEST MATCH — FREE TEXT ACCEPTED // FULL MANIFEST BELOW";
+  el.appendChild(DD.note);
+  const aff=DD.key?affinityFor(DD.key):[];
+  if(aff.length){
+    const ah=document.createElement("div");ah.className="ddaffhead";
+    ah.textContent="AFFINITY — "+aff.length+" SUGGESTED FOR "+DD.key;
+    el.appendChild(ah);
+    aff.forEach(t=>{
+      const row=document.createElement("div");row.className="dditem ddaff";
+      row.dataset.k=t.toLowerCase();row.dataset.d="";row._key=t;
+      const k=document.createElement("span");k.className="dk";k.textContent=t;
+      row.appendChild(k);
+      row.addEventListener("mousedown",e=>{e.preventDefault();DD.pick(t);ddClose();});
+      el.appendChild(row);
+    });
+  }
+  DD.list=document.createElement("div");DD.list.className="ddlist";
+  const cur=DD.owner.value;
+  all.forEach(it=>{
+    const row=document.createElement("div");row.className="dditem"+(it.k===cur?" cur":"");
+    row.dataset.k=it.k.toLowerCase();row.dataset.d=(it.d||"").toLowerCase();row._key=it.k;
+    row.innerHTML=`<span class="dk">${esc(it.k)}</span>`+(it.d?`<span class="ddd">${esc(it.d)}</span>`:"");
+    row.addEventListener("mousedown",e=>{e.preventDefault();DD.pick(it.k);ddClose();});
+    DD.list.appendChild(row);
+  });
+  el.appendChild(DD.list);
+}
+function ddFilter(showAll){
+  if(!DD.list)return;
+  const q=showAll?"":DD.owner.value.trim().toLowerCase();
+  let shown=0;
+  DD.list.querySelectorAll(".dditem").forEach(row=>{
+    const hit=!q||row.dataset.k.includes(q)||row.dataset.d.includes(q);
+    row.classList.toggle("hide",!hit);
+    row.classList.toggle("cur",row._key===DD.owner.value);
+    if(hit)shown++;
+  });
+  if(q&&shown===0){
+    DD.list.querySelectorAll(".dditem").forEach(r=>r.classList.remove("hide"));
+    DD.note.style.display="block";
+  }else{
+    DD.note.style.display="none";
+  }
+}
+function ddPosition(){
+  const el=DD.el,r=DD.owner.getBoundingClientRect();
+  const w=Math.min(Math.max(r.width,300),480,innerWidth-16);
+  el.style.width=w+"px";
+  const h=el.offsetHeight;
+  let x=r.left;
+  if(x+w>innerWidth-8)x=innerWidth-8-w;
+  if(x<8)x=8;
+  let y=r.bottom+6;
+  if(y+h>innerHeight-8)y=Math.max(8,r.top-h-6);
+  el.style.left=x+"px";el.style.top=y+"px";
+}
+function ddOpen(inp,poolName,onPick,fkey){
+  ddClose();
+  DD.owner=inp;DD.pool=poolName;DD.pick=onPick;DD.key=fkey||null;
+  DD.el=document.createElement("div");DD.el.id="dd-pop";
+  document.body.appendChild(DD.el);
+  ddBuild();
+  ddFilter(true);
+  ddPosition();
+}
+function attachDD(inp,poolName,onPick,fkey){
+  inp.addEventListener("focus",()=>ddOpen(inp,poolName,onPick,fkey));
+  inp.addEventListener("input",()=>{if(DD.owner===inp){ddFilter(false);ddPosition();}});
+  inp.addEventListener("blur",()=>{DD.tid=setTimeout(ddClose,140);});
+}
+function mkDdbtn(inp,poolName,onPick,fkey){
+  const btn=document.createElement("button");btn.type="button";btn.className="mini cbtn";btn.textContent="▾";
+  btn.addEventListener("mousedown",e=>{e.preventDefault();
+    if(DD.owner===inp){ddClose();return;}
+    inp.focus();
+    if(DD.owner!==inp)ddOpen(inp,poolName,onPick,fkey);
+  });
+  return btn;
+}
+document.addEventListener("pointerdown",e=>{
+  if(DD.el&&!DD.el.contains(e.target)&&e.target!==DD.owner&&
+     !(e.target.closest&&e.target.closest(".cbtn")))ddClose();
+  const cp=$("#coh-pop");
+  if(cohOpen&&cp&&!cp.contains(e.target)&&e.target.id!=="cohbadge")toggleCohPop(false);
+},true);
+window.addEventListener("scroll",e=>{
+  if(!DD.el)return;
+  const t=e.target;
+  if(t&&DD.el.contains(t))return;
+  if(t&&typeof t.contains==="function"&&t.contains(DD.owner)){ddPosition();return;}
+  ddClose();
+},true);
+window.addEventListener("resize",()=>ddClose());
+ $("#cohbadge").addEventListener("click",()=>toggleCohPop());
+ $("#fpbadge").addEventListener("click",()=>copyText(fpOf(),"FINGERPRINT"));
+
+function comboCtl(path,value,poolName){
+  const v=String(value);
+  const long=v.length>60||v.includes(";")||v.includes(",_");
+  const wrap=document.createElement("div");wrap.className="combo";
+  const inp=document.createElement(long?"textarea":"input");
+  if(!long)inp.type="text";
+  inp.value=v;
+  if(long)inp.rows=Math.min(4,Math.max(2,Math.ceil(v.length/60)));
+  if(poolName){
+    const pick=x=>{inp.value=x;setPath(path,x);};
+    const fkey=path[path.length-1];
+    wrap.appendChild(mkDdbtn(inp,poolName,pick,fkey));
+    attachDD(inp,poolName,pick,fkey);
+  }
+  inp.addEventListener("input",()=>setPath(path,inp.value));
+  wrap.appendChild(inp);
+  return wrap;
+}
+function switchCtl(path,value,onTok,offTok){
+  const sw=document.createElement("div");sw.className="gswitch"+(String(value).toUpperCase()===onTok?" on":"");
+  sw.innerHTML='<div class="knob"></div>';
+  sw.onclick=()=>{const now=!sw.classList.contains("on");sw.classList.toggle("on",now);
+    setPath(path,now?onTok:offTok);};
+  return sw;
+}
+function segCtl(path,value){
+  const box=document.createElement("div");box.className="seg";
+  const opts=[...new Set([String(value),...M.levels])];
+  opts.forEach(o=>{const b=document.createElement("button");b.textContent=o;
+    if(o===String(value))b.classList.add("on");
+    b.onclick=()=>{box.querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");setPath(path,o);};box.appendChild(b);});
+  return box;
+}
+function chipsCtl(path,values){
+  const poolName=poolForCtl(path);
+  const wrap=document.createElement("div");
+  const chips=document.createElement("div");chips.className="chips";
+  const row=document.createElement("div");row.className="chiprow";
+  const cw=document.createElement("div");cw.className="combo";
+  const inp=document.createElement("input");inp.type="text";inp.placeholder="+ TOKEN (▾ manifest)";
+  cw.appendChild(inp);row.appendChild(cw);
+  const add=document.createElement("button");add.className="mini";add.textContent="+";row.appendChild(add);
+  const emit=()=>setPath(path,[...chips.querySelectorAll(".cv")].map(s=>s.textContent));
+  const addChip=v=>{if(!v.trim())return;
+    const c=document.createElement("span");c.className="chip";
+    c.innerHTML=`<span class="cv">${esc(v)}</span><span class="x">×</span>`;
+    c.querySelector(".x").onclick=()=>{c.remove();emit();};
+    chips.appendChild(c);emit();};
+  values.forEach(addChip);
+  const doAdd=()=>{addChip(inp.value);inp.value="";};
+  add.onclick=doAdd;
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();doAdd();}});
+  if(poolName){
+    const pick=v=>{inp.value=v;doAdd();};
+    const fkey=path[path.length-1];
+    cw.appendChild(mkDdbtn(inp,poolName,pick,fkey));
+    attachDD(inp,poolName,pick,fkey);
+  }
+  wrap.appendChild(chips);wrap.appendChild(row);
+  return wrap;
+}
+function controlFor(path,value){
+  const key=path[path.length-1];
+  if(Array.isArray(value))return chipsCtl(path,value);
+  if(BOOL_KEYS.has(key))return switchCtl(path,value,"TRUE","FALSE");
+  if(ONOFF_KEYS.has(key))return switchCtl(path,value,"ON","OFF");
+  if(LEVEL_KEYS.has(key))return segCtl(path,value);
+  return comboCtl(path,value,poolForCtl(path));
+}
+
+function renderFields(container,node,base,depth){
+  const ind=depth*14;
+  for(const[key,val]of Object.entries(node)){
+    if(val&&typeof val==="object"&&!Array.isArray(val)){
+      const g=document.createElement("div");g.className="lgroup";g.textContent=key;g.style.marginLeft=ind+"px";
+      container.appendChild(g);renderFields(container,val,base.concat(key),depth+1);continue;}
+    const l=document.createElement("div");l.className="lfield";l.textContent=key;
+    const mk=cohMark(key);
+    if(mk)l.appendChild(mk);
+    l.appendChild(mkPinBtn(base.concat(key)));
+    l.style.margin=(depth?"2px":"6px")+" 0 0 "+ind+"px";
+    const c=controlFor(base.concat(key),val);c.style.marginLeft=(ind+6)+"px";
+    container.appendChild(l);container.appendChild(c);
+  }
+}
+function renderLocked(container,node,depth){
+  const ind=depth*14;
+  for(const[key,val]of Object.entries(node)){
+    const l=document.createElement("div");l.className="lfield";l.textContent=key;l.style.margin="4px 0 0 "+ind+"px";
+    container.appendChild(l);
+    if(val&&typeof val==="object"&&!Array.isArray(val)){renderLocked(container,val,depth+1);continue;}
+    const v=document.createElement("div");v.className="lval";
+    v.textContent=Array.isArray(val)?val.join(", "):String(val);
+    v.style.margin="0 0 4px "+(ind+8)+"px";
+    container.appendChild(v);
+  }
+}
+function renderMatrix(container,node,base){
+  for(const k of["LAYOUT_PRESET","PANELS"])if(k in node){
+    const l=document.createElement("div");l.className="lfield";l.textContent=k;
+    container.appendChild(l);
+    const c=controlFor(base.concat(k),node[k]);c.style.marginLeft="6px";container.appendChild(c);}
+  const keys=Object.keys(node).filter(k=>k!=="PANELS"&&k!=="LAYOUT_PRESET");
+  keys.forEach((view,i)=>{
+    const card=document.createElement("div");card.className="pcard";
+    const head=document.createElement("div");head.className="phead";
+    const n=document.createElement("div");n.className="lfield";n.textContent="PANEL "+(i+1);n.style.margin="0";
+    head.appendChild(n);
+    const cw=document.createElement("div");cw.className="combo";
+    const ve=document.createElement("input");ve.type="text";ve.value=view;cw.appendChild(ve);
+    const commitRename=()=>{
+      const nv=ve.value.trim(),m=getPath(base);
+      if(!nv||nv===view)return;
+      if(nv in m){toast("PANEL KEY COLLISION — RENAME REJECTED",true);ve.value=view;return;}
+      const rb={};for(const[k,v]of Object.entries(m))rb[k===view?nv:k]=v;
+      Object.keys(m).forEach(k=>delete m[k]);Object.assign(m,rb);
+      const oldK=pinKey(base.concat(view)),newK=pinKey(base.concat(nv));
+      if(pins.has(oldK)){pins.delete(oldK);pins.add(newK);updatePinCount();}
+      buildSections();schedulePreview();
+    };
+    cw.appendChild(mkDdbtn(ve,"views",v=>{if(v!==view){ve.value=v;commitRename();}},null));
+    attachDD(ve,"views",v=>{if(v!==view){ve.value=v;commitRename();}},null);
+    ve.addEventListener("change",commitRename);
+    ve.addEventListener("keydown",e=>{if(e.key==="Enter")ve.blur();});
+    head.appendChild(cw);
+    head.appendChild(mkPinBtn(base.concat(view)));
+    const del=document.createElement("button");del.className="mini destructive";del.textContent="×";
+    del.onclick=()=>{const m=getPath(base);delete m[view];
+      pins.delete(pinKey(base.concat(view)));updatePinCount();
+      m.PANELS=String(Object.keys(m).filter(k=>k!=="PANELS"&&k!=="LAYOUT_PRESET").length);
+      buildSections();schedulePreview();toast("PANEL REMOVED");};
+    head.appendChild(del);card.appendChild(head);
+    const c=controlFor(base.concat(view),node[view]);c.style.marginLeft="6px";card.appendChild(c);
+    container.appendChild(card);});
+  const add=document.createElement("button");add.className="mini";add.textContent="+ ADD PANEL";
+  add.onclick=()=>{const m=getPath(base);
+    let nv="FRONT MEDIUM CLOSE-UP (MCU)",i=2;while(nv in m){nv="FRONT MEDIUM CLOSE-UP (MCU) #"+i;i++;}
+    m[nv]="STANDING_WIDE_BASE";
+    m.PANELS=String(Object.keys(m).filter(k=>k!=="PANELS"&&k!=="LAYOUT_PRESET").length);
+    buildSections();schedulePreview();toast("PANEL ADDED");};
+  container.appendChild(add);
+}
+function buildSections(){
+  ddClose();
+  updateCoherence();
+  const root=$("#sections");
+  const edPane=$("#ed");
+  const openIds=new Set([...root.querySelectorAll("details.section[open]")].map(d=>d.dataset.sid));
+  const scTop=edPane.scrollTop;
+  root.innerHTML="";
+  for(const m of MODULES){
+    const det=document.createElement("details");det.className="section";det.dataset.sid=m.id;
+    if(openIds.has(m.id)||(openIds.size===0&&state.mode!=="STOCK"&&(m.id==="matrix"||m.id==="atmo")))det.open=true;
+    const sum=document.createElement("summary");
+    sum.innerHTML=`<span class="arr">▸</span> ${m.title}`+
+      (m.isStatic?' <span class="lbadge">[ STATIC ]</span>':"");
+    if(!m.isStatic){
+      const sb=document.createElement("span");sb.className="sbtns";
+      const rr=document.createElement("button");rr.className="mini";rr.textContent="⤾ RE-ROLL";
+      rr.onclick=e=>{e.stopPropagation();
+        const g=makeRng(null);moduleApply(m,m.random(g,panelsIn()));
+        buildSections();schedulePreview();toast(m.title+" RE-ROLLED");};
+      const df=document.createElement("button");df.className="mini";df.textContent="≡ DEFAULTS";
+      df.onclick=e=>{e.stopPropagation();moduleApply(m,m.defaults(),false);
+        buildSections();schedulePreview();toast(m.title+" → STOCK DEFAULTS");};
+      sb.appendChild(rr);sb.appendChild(df);sum.appendChild(sb);
+    }
+    sum.addEventListener("click",e=>{if(e.target.closest("button"))e.preventDefault();});
+    det.appendChild(sum);
+    const body=document.createElement("div");body.className="secbody";
+    const node=moduleNode(m);
+    if(m.isStatic)renderLocked(body,node,0);
+    else if(m.id==="matrix")renderMatrix(body,node,m.basePath);
+    else renderFields(body,node,m.basePath,0);
+    det.appendChild(body);root.appendChild(det);
+  }
+  edPane.scrollTop=scTop;
+}
+
+/* ═══ WALK ENGINE ═══ */
+const wiz={phase:"fields",leaves:[],idx:0,label:"ACCEPT →",selections:{}};
+function collectLeavesOf(mods){
+  const out=[];
+  for(const m of mods){
+    if(m.isStatic)continue;
+    (function walk(node,base){
+      for(const[k,v]of Object.entries(node)){
+        if(v&&typeof v==="object"&&!Array.isArray(v))walk(v,base.concat(k));
+        else out.push({path:base.concat(k),value:v,section:m.title});}
+    })(moduleNode(m),m.basePath);
+  }
+  return out;
+}
+function showWizBtns(phase){
+  $("#wfieldbtns").style.display=phase==="fields"?"flex":"none";
+  $("#wmodbtns").style.display=phase==="modules"?"flex":"none";
+}
+function startDefaultWalk(){
+  wiz.phase="fields";wiz.selections={};
+  wiz.leaves=collectLeavesOf(MODULES);wiz.idx=0;wiz.label="ACCEPT →";
+  $("#wtitle").textContent="DEFAULT MODE — FIELD WALK";
+  $("#wkeep").textContent=wiz.label;
+  showWizBtns("fields");
+  $("#wiz").classList.add("open");
+  wizStep();
+}
+function startHybrid(){
+  const s=seedIn();
+  regen(assemble("stock",null,null),"HYBRID",s,
+    "HYBRID MODULE SELECT — SKIP=DEFAULT · WALK=REVIEW · ⚡RND=RANDOMIZE",false);
+  wiz.phase="modules";wiz.selections={};wiz.leaves=[];wiz.idx=0;
+  $("#wtitle").textContent="HYBRID MODE — MODULE SELECT";
+  renderModuleSelect();
+  showWizBtns("modules");
+  $("#wiz").classList.add("open");
+}
+function renderModuleSelect(){
+  const active=MODULES.filter(m=>!m.isStatic).length;
+  let walked=0,rnded=0;
+  MODULES.forEach(m=>{
+    if(wiz.selections[m.id]==="walk")walked++;
+    if(wiz.selections[m.id]==="rnd")rnded++;});
+  $("#wprog").textContent="MODULES: "+active+" CONFIGURABLE // STATICS ENFORCED";
+  $("#wfill").style.width="0%";
+  $("#wsec").textContent="SELECT ACTION PER MODULE";
+  $("#wpath").textContent="SKIP → KEEP DEFAULT OUTPUT · ⚡RND → RANDOM VALUES · WALK → FIELD-BY-FIELD REVIEW";
+  const mount=$("#wmount");mount.innerHTML="";
+  const wrap=document.createElement("div");
+  for(const m of MODULES){
+    const row=document.createElement("div");row.className="modrow"+(m.isStatic?" mstatic":"");
+    const t=document.createElement("span");t.className="mtitle";
+    t.textContent=m.title+(m.isStatic?" — [STATIC · ENFORCED]":"");
+    row.appendChild(t);
+    if(!m.isStatic){
+      const sel=wiz.selections[m.id]||"skip";
+      const mk=(label,val)=>{
+        const b=document.createElement("button");b.className="modbtn"+(sel===val?" on":"");
+        b.textContent=label;
+        b.onclick=()=>{
+          wiz.selections[m.id]=val;
+          if(val==="skip")moduleApply(m,m.defaults(),false);
+          if(val==="rnd"){
+            const s=seedIn();
+            const g=makeRng(s==null?null:s+MODULES.indexOf(m)*977);
+            moduleApply(m,m.random(g,panelsIn()));
+          }
+          schedulePreview();
+          renderModuleSelect();
+        };
+        return b;
+      };
+      row.appendChild(mk("SKIP","skip"));
+      row.appendChild(mk("WALK","walk"));
+      row.appendChild(mk("⚡RND","rnd"));
+    }
+    wrap.appendChild(row);
+  }
+  const sum=document.createElement("div");sum.className="wpath";
+  sum.textContent=`${walked} WALK · ${rnded} ⚡RND · ${active-walked-rnded} SKIP (DEFAULT OUTPUT)`;
+  wrap.appendChild(sum);
+  mount.appendChild(wrap);
+}
+ $("#wbegin").onclick=()=>{
+  const walkMods=MODULES.filter(m=>!m.isStatic&&wiz.selections[m.id]==="walk");
+  wiz.phase="fields";
+  wiz.leaves=collectLeavesOf(walkMods);wiz.idx=0;wiz.label="ACCEPT →";
+  $("#wtitle").textContent="HYBRID MODE — FIELD WALK";
+  $("#wkeep").textContent=wiz.label;
+  showWizBtns("fields");
+  if(!wiz.leaves.length){wizClose();toast("HYBRID COMPLETE — NO MODULES QUEUED FOR WALK");return;}
+  wizStep();
+};
+ $("#wwalkall").onclick=()=>{MODULES.forEach(m=>{if(!m.isStatic)wiz.selections[m.id]="walk";});renderModuleSelect();};
+ $("#wskipall").onclick=()=>{
+  MODULES.forEach(m=>{if(!m.isStatic){wiz.selections[m.id]="skip";moduleApply(m,m.defaults(),false);}});
+  schedulePreview();renderModuleSelect();};
+ $("#wrndall").onclick=()=>{
+  const s=seedIn();
+  MODULES.forEach((m,i)=>{if(!m.isStatic){
+    wiz.selections[m.id]="rnd";
+    const g=makeRng(s==null?null:s+i*977);
+    moduleApply(m,m.random(g,panelsIn()));}});
+  schedulePreview();renderModuleSelect();};
+ $("#wabort").onclick=wizClose;
+ $("#wabort2").onclick=wizClose;
+
+function wizStep(){
+  ddClose();
+  const L=wiz.leaves[wiz.idx];
+  if(!L){wizClose();toast(`WALK COMPLETE — ${wiz.leaves.length} FIELDS REVIEWED`);return;}
+  $("#wprog").textContent=`FIELD ${wiz.idx+1} / ${wiz.leaves.length}`;
+  $("#wfill").style.width=(100*(wiz.idx+1)/wiz.leaves.length)+"%";
+  $("#wsec").textContent=L.section;
+  $("#wpath").textContent=L.path.join(" → ");
+  const mount=$("#wmount");mount.innerHTML="";
+  const c=controlFor(L.path,L.value);mount.appendChild(c);
+  const inp=c.querySelector("input,textarea");
+  if(inp)inp.focus();
+}
+function wizClose(){
+  ddClose();
+  $("#wiz").classList.remove("open");
+  wiz.phase="fields";
+  buildSections();schedulePreview();
+}
+ $("#wkeep").onclick=()=>{wiz.idx++;wizStep();};
+ $("#wrest").onclick=()=>{wiz.idx=wiz.leaves.length;wizStep();};
+ $("#wiz").addEventListener("keydown",e=>{
+  if(wiz.phase!=="fields")return;
+  if(e.key==="Enter"&&e.target.tagName!=="TEXTAREA"){e.preventDefault();wiz.idx++;wizStep();}});
+
+/* ═══ MODES ═══ */
+function setMode(mode){state.mode=mode;
+  document.querySelectorAll(".moderail button").forEach(b=>b.classList.remove("active"));
+  const map={DEFAULT:"#m-default",STOCK:"#m-stock",HYBRID:"#m-hybrid",RANDOM:"#m-random"};
+  const b=$(map[mode]);if(b)b.classList.add("active");
+  $("#statmode").textContent="MODE: "+mode;
+}
+function regen(schema,mode,seed,msg,protect=true){
+  ddClose();
+  const snap=protect&&pins.size?snapPins():null;
+  state.schema=schema;state.seed=seed;setMode(mode);
+  if(snap)restorePins(snap);
+  $("#seed").value=seed==null?0:seed;
+  buildSections();renderPreview();updatePinCount();
+  pushHistory(mode,seed);encodeHash();
+  toast(msg);
+}
+ $("#m-random").onclick=$("#btn-gen").onclick=()=>{
+  const s=seedIn(),p=panelsIn();
+  regen(assemble("random",s,p),"RANDOM",s,`RANDOM // seed=${s==null?"RND":s} // panels=${p}`);};
+ $("#m-stock").onclick=()=>regen(assemble("stock",null,null),"STOCK",null,
+  "STOCK DEFAULTS PARSED — DEFAULT HDL PROMPT // NO OPTIONS PRESENTED",false);
+ $("#m-default").onclick=()=>{
+  regen(assemble("stock",null,null),"DEFAULT",null,
+    "DEFAULT WALK INITIATED — DEFAULT VALUE SHOWN + FULL MANIFEST PER FIELD",false);
+  startDefaultWalk();};
+ $("#m-hybrid").onclick=startHybrid;
+ $("#btn-purge").onclick=()=>{
+  const n=1+Math.floor(Math.random()*9);
+  regen(assemble("random",null,n),"RANDOM",null,`MEMORY PURGED // REINIT ${n} PANELS`);};
+ $("#btn-rnd").onclick=()=>{$("#seed").value=1+Math.floor(Math.random()*999999);};
+ $("#btn-clearhist").onclick=()=>{sessionStack.length=0;renderHistory();toast("HISTORY CLEARED");};
+
+/* ═══ OUTPUT ═══ */
+[["#out-json","json"],["#out-flat","flat"],["#out-diff","diff"]].forEach(([id,m])=>{
+  $(id).addEventListener("click",()=>{
+    outMode=m;
+    ["#out-json","#out-flat","#out-diff"].forEach(x=>$(x).classList.remove("on"));
+    $(id).classList.add("on");
+    renderPreview();
+  });
+});
+function copyText(t,label){
+  const done=()=>toast(label+" → CLIPBOARD // "+t.length+" CHARS");
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(done,()=>fallbackCopy(t,done));
+  else fallbackCopy(t,done);
+}
+function fallbackCopy(t,done){
+  const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();
+  try{document.execCommand("copy");done();}catch(e){toast("CLIPBOARD BLOCKED",true);}ta.remove();
+}
+ $("#btn-copyjson").onclick=()=>copyText(JSON.stringify(state.schema,null,2),"JSON");
+ $("#btn-copyflat").onclick=()=>copyText(flatten(state.schema),"FLAT PROMPT");
+ $("#btn-export").onclick=()=>{
+  const env={
+    HDL_STUDIO:"4NDR0666/3LECTRIC-GLASS v11",
+    GENERATED_UTC:new Date().toISOString(),
+    MODE:state.mode,
+    SEED:state.seed,
+    SCHEMA_FINGERPRINT:fpOf(),
+    PINNED_PATHS:[...pins].map(k=>k.split("›")),
+    SCHEMA:state.schema
+  };
+  const blob=new Blob([JSON.stringify(env,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="hdl_prompt.json";
+  a.click();URL.revokeObjectURL(a.href);
+  toast("EXPORTED → hdl_prompt.json // ENVELOPE #"+fpOf().slice(0,6));
+};
+ $("#btn-import").onclick=()=>$("#fileimp").click();
+ $("#fileimp").addEventListener("change",ev=>{
+  const f=ev.target.files[0];
+  if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let obj=null;
+    try{obj=JSON.parse(r.result);}
+    catch(e){toast("IMPORT FAILED — INVALID JSON",true);return;}
+    let schema=obj,env=null;
+    if(obj&&typeof obj==="object"&&obj.HDL_STUDIO&&obj.SCHEMA&&typeof obj.SCHEMA==="object"){
+      env=obj;schema=obj.SCHEMA;
+    }
+    const v=validateSchema(schema);
+    if(!v.ok){toast("IMPORT REJECTED — "+v.errs[0],true);return;}
+    state.schema=clone(schema);
+    if(env){
+      const s=(typeof env.SEED==="number"&&env.SEED>0)?env.SEED:null;
+      state.seed=s;$("#seed").value=s==null?0:s;
+      const known=["DEFAULT","STOCK","HYBRID","RANDOM"];
+      setMode(known.includes(env.MODE)?env.MODE:"RANDOM");
+      pins.clear();
+      if(Array.isArray(env.PINNED_PATHS))
+        for(const a of env.PINNED_PATHS)
+          if(Array.isArray(a)&&a.length&&a.every(x=>typeof x==="string"))pins.add(a.join("›"));
+      updatePinCount();
+    }
+    buildSections();renderPreview();encodeHash();
+    if(v.warns.length)
+      toast("IMPORTED — "+v.warns.length+" MODULE KEY(S) MISSING, LOADED ANYWAY: "+v.warns.slice(0,3).join(", "));
+    else
+      toast("IMPORTED — SCHEMA #"+fpOf().slice(0,6));
+  };
+  r.readAsText(f);
+  ev.target.value="";
+});
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    if(cohOpen){toggleCohPop(false);return;}
+    if(DD.el){ddClose();return;}
+    if($("#wiz").classList.contains("open"))wizClose();
+    return;
+  }
+  if(e.key==="F2"){e.preventDefault();$("#m-random").click();}
+  if(e.key==="F5"){e.preventDefault();$("#btn-export").click();}
+  if(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==="c"){e.preventDefault();$("#btn-copyflat").click();}
+  if(e.ctrlKey&&e.key.toLowerCase()==="q"){e.preventDefault();toast("QUIT REQUESTED — CLOSE TAB TO EXIT");}});
+
+/* ═══ BOOT ═══ */
+renderHistory();
+if(!applyHashBoot()){
+  regen(assemble("random",null,6),"RANDOM",null,
+    "SYSTEM ONLINE // FULL MANIFEST REGISTRY // COHERENCE + PIN + PROVENANCE ENGINES ACTIVE");
+}
+</script>
+</body>
+</html>
