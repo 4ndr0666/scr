@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HDL VISUALIZER — Nano Banana Photometric Rig</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#04090d; --panel:rgba(8,17,22,.62); --panel2:rgba(10,21,27,.5);
+  --line:rgba(126,224,238,.14); --line2:rgba(126,224,238,.28);
+  --cyan:#57e6f2; --cyan-hi:#a9f4fb; --cyan-dim:rgba(87,230,242,.55);
+  --cyan-faint:rgba(87,230,242,.10);
+  --txt:#c7dade; --txt-dim:#6f8894; --amber:#ffb454;
+  --mono:'JetBrains Mono',monospace; --disp:'Space Grotesk',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:var(--disp);user-select:none}
+#stage{position:fixed;inset:0;z-index:0}
+#stage canvas{display:block;touch-action:none;cursor:crosshair}
+#stage canvas.pose{cursor:grab}
+#stage canvas.pose:active{cursor:grabbing}
+
+/* ---------- CRT / vignette overlays ---------- */
+#crt{position:fixed;inset:0;z-index:90;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(2,8,12,.20) 0 1px,transparent 1px 3px);opacity:.55}
+#crt::before{content:'';position:absolute;left:0;right:0;height:130px;top:-140px;
+  background:linear-gradient(180deg,transparent,rgba(120,235,255,.03),transparent);
+  animation:sweep 9s linear infinite}
+@keyframes sweep{to{top:110%}}
+#vig{position:fixed;inset:0;z-index:89;pointer-events:none;
+  background:radial-gradient(ellipse 120% 90% at 50% 42%,transparent 55%,rgba(1,5,8,.55) 100%)}
+
+/* ---------- glass / HUD primitives ---------- */
+.glass{background:var(--panel);backdrop-filter:blur(15px) saturate(1.35);-webkit-backdrop-filter:blur(15px) saturate(1.35);border:1px solid var(--line)}
+.corner{position:relative}
+.corner::before,.corner::after{content:'';position:absolute;width:10px;height:10px;border:1px solid var(--cyan-dim);pointer-events:none}
+.corner::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.corner::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.ptitle{font-family:var(--mono);font-size:9.5px;letter-spacing:.28em;color:var(--cyan);opacity:.85;padding:10px 12px 6px;border-bottom:1px solid var(--cyan-faint)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(87,230,242,.18);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(87,230,242,.35)}
+
+/* ---------- header / hero ---------- */
+#hero{position:fixed;top:0;left:0;right:0;height:64px;z-index:60;display:flex;align-items:center;
+  justify-content:space-between;padding:0 18px;background:linear-gradient(180deg,rgba(5,12,16,.85),rgba(5,12,16,.35) 80%,transparent);
+  border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:13px}
+.brand svg{filter:drop-shadow(0 0 6px rgba(87,230,242,.5))}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:.30em;color:var(--cyan-hi);text-shadow:0 0 14px rgba(87,230,242,.35);line-height:1}
+.brand p{font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:var(--txt-dim);margin-top:5px}
+.status{display:flex;align-items:center;gap:18px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--txt-dim)}
+.status b{color:var(--cyan);font-weight:500}
+#renderLamp{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);display:inline-block;transition:opacity .25s}
+.framecount b{color:var(--cyan-hi)}
+.hbtn{display:none;font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--cyan);
+  background:var(--cyan-faint);border:1px solid var(--line2);padding:7px 11px;cursor:pointer}
+
+/* ---------- left column (rail + presets + params) ---------- */
+#left{position:fixed;left:14px;top:80px;bottom:128px;width:298px;z-index:50;display:flex;overflow:hidden}
+#rail{width:46px;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0}
+.rbtn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--txt-dim);
+  background:transparent;border:1px solid transparent;cursor:pointer;position:relative}
+.rbtn svg{width:17px;height:17px}
+.rbtn:hover{color:var(--cyan);background:var(--cyan-faint)}
+.rbtn.on{color:var(--cyan);border-color:var(--line2);background:var(--cyan-faint);box-shadow:0 0 10px rgba(87,230,242,.15) inset,0 0 8px rgba(87,230,242,.12)}
+.rbtn.dis{opacity:.28;pointer-events:none}
+.rdiv{width:22px;height:1px;background:var(--line);margin:5px 0}
+.rbtn[data-tip]::after{content:attr(data-tip);position:absolute;left:44px;top:50%;transform:translateY(-50%);
+  font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;color:var(--cyan-hi);background:rgba(6,14,19,.95);
+  border:1px solid var(--line2);padding:4px 8px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:99}
+.rbtn:hover::after{opacity:1}
+#leftbody{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+
+.prow{display:flex;gap:11px;padding:9px 12px;border-bottom:1px solid rgba(126,224,238,.06);cursor:pointer;
+  border-left:2px solid transparent;transition:background .12s}
+.prow:hover{background:var(--cyan-faint)}
+.prow.on{border-left-color:var(--cyan);background:linear-gradient(90deg,rgba(87,230,242,.10),transparent 75%)}
+.pnum{font-family:var(--mono);font-size:9px;color:var(--txt-dim);padding-top:3px;width:16px}
+.prow.on .pnum{color:var(--cyan)}
+.pmid{flex:1;min-width:0}
+.pname{font-size:12.5px;font-weight:600;letter-spacing:.14em;color:var(--txt)}
+.prow.on .pname{color:var(--cyan-hi);text-shadow:0 0 10px rgba(87,230,242,.3)}
+.pspec{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--txt-dim);margin-top:3px}
+.pglyph{width:40px;height:40px;flex-shrink:0}
+
+.srow{padding:8px 12px 4px}
+.slabel{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;color:var(--txt-dim);margin-bottom:5px}
+.slabel b{color:var(--cyan);font-weight:500}
+input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:rgba(87,230,242,.22);outline:none;cursor:ew-resize}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:15px;background:var(--cyan);
+  box-shadow:0 0 8px rgba(87,230,242,.6);cursor:ew-resize;border-radius:1px}
+input[type=range]::-moz-range-thumb{width:9px;height:15px;background:var(--cyan);border:0;border-radius:1px;box-shadow:0 0 8px rgba(87,230,242,.6);cursor:ew-resize}
+.hint{font-family:var(--mono);font-size:8px;letter-spacing:.12em;color:var(--txt-dim);line-height:1.9;
+  padding:12px;border-top:1px solid var(--cyan-faint);margin-top:auto}
+.hint em{color:var(--cyan);font-style:normal}
+
+/* ---------- right column (data panels) ---------- */
+#right{position:fixed;right:14px;top:80px;bottom:128px;width:348px;z-index:50;display:flex;flex-direction:column;overflow:hidden}
+#tabs{display:flex;border-bottom:1px solid var(--line)}
+.tab{flex:1;font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;padding:10px 2px;text-align:center;
+  color:var(--txt-dim);background:transparent;border:0;border-bottom:2px solid transparent;cursor:pointer}
+.tab:hover{color:var(--txt)}
+.tab.on{color:var(--cyan);border-bottom-color:var(--cyan);background:linear-gradient(180deg,rgba(87,230,242,.08),transparent)}
+.pbody{flex:1;overflow-y:auto;display:none}
+.pbody.on{display:block}
+
+/* anatomy */
+.aname{font-size:16px;font-weight:600;letter-spacing:.06em;color:var(--cyan-hi);padding:14px 14px 2px}
+.alatin{font-family:var(--mono);font-style:italic;font-size:10px;color:var(--txt-dim);padding:0 14px}
+.achips{display:flex;flex-wrap:wrap;gap:5px;padding:10px 14px}
+.achips span{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--cyan);border:1px solid var(--line2);padding:3px 7px;background:var(--cyan-faint)}
+.aregion{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--txt);padding:0 14px 10px;border-bottom:1px solid var(--cyan-faint)}
+.adl{padding:8px 14px}
+.adl dt{font-family:var(--mono);font-size:8px;letter-spacing:.2em;color:var(--txt-dim);margin-top:8px}
+.adl dd{font-size:11.5px;line-height:1.55;color:var(--txt);margin-top:2px}
+.asub{font-family:var(--mono);font-size:9px;letter-spacing:.26em;color:var(--cyan);padding:12px 14px 6px;border-top:1px solid var(--cyan-faint);margin-top:6px}
+.atab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:9.5px}
+.atab td{padding:3.5px 14px;color:var(--txt);border:0}
+.atab td:first-child{color:var(--txt-dim);letter-spacing:.1em;width:118px;font-size:8px;padding-left:14px}
+.atab td:last-child{color:var(--cyan-hi)}
+.aempty{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--txt-dim);line-height:2;padding:22px 16px;text-align:center}
+.aempty b{color:var(--cyan);font-weight:400}
+.phead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--cyan-faint)}
+.phead .t{font-family:var(--mono);font-size:9px;letter-spacing:.22em;color:var(--cyan)}
+.abtn{font-family:var(--mono);font-size:8px;letter-spacing:.16em;color:var(--cyan);background:var(--cyan-faint);
+  border:1px solid var(--line2);padding:5px 9px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.abtn:hover{background:rgba(87,230,242,.2);box-shadow:0 0 10px rgba(87,230,242,.18)}
+.abtn svg{width:11px;height:11px}
+
+/* kinematics */
+#kinPosture{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--cyan-hi);padding:11px 14px;
+  border-bottom:1px solid var(--cyan-faint);line-height:1.7;background:linear-gradient(90deg,rgba(87,230,242,.06),transparent)}
+#kinPosture .lbl{color:var(--txt-dim);font-size:8px;letter-spacing:.2em}
+.jrow{padding:9px 14px;border-bottom:1px solid rgba(126,224,238,.06)}
+.jrow.hot{background:linear-gradient(90deg,rgba(87,230,242,.08),transparent)}
+.jhead{display:flex;justify-content:space-between;align-items:baseline}
+.jname{font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--txt)}
+.jrow.hot .jname{color:var(--cyan-hi)}
+.jdof{font-family:var(--mono);font-size:7.5px;color:var(--txt-dim);letter-spacing:.14em}
+.plane{display:flex;align-items:center;gap:8px;margin-top:5px}
+.pl{font-family:var(--mono);font-size:7.5px;letter-spacing:.12em;color:var(--txt-dim);width:26px}
+.ptrack{flex:1;height:3px;background:rgba(126,224,238,.10);position:relative}
+.pzero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:rgba(126,224,238,.3)}
+.pfill{position:absolute;top:0;bottom:0;background:var(--cyan);box-shadow:0 0 5px rgba(87,230,242,.6)}
+.pfill.lim{background:var(--amber);box-shadow:0 0 5px rgba(255,180,84,.6)}
+.pval{font-family:var(--mono);font-size:8.5px;color:var(--cyan);width:52px;text-align:right}
+.pval.lim{color:var(--amber)}
+.jterms{font-family:var(--mono);font-size:8.5px;color:var(--txt-dim);letter-spacing:.04em;margin-top:5px;line-height:1.6}
+.jterms b{color:var(--txt);font-weight:400}
+
+/* log / vectors */
+#segRow{display:flex;flex-wrap:wrap;gap:4px;padding:9px 12px;border-bottom:1px solid var(--cyan-faint)}
+.seg{font-family:var(--mono);font-size:7.5px;letter-spacing:.12em;color:var(--txt-dim);border:1px solid var(--line);
+  padding:3px 7px;cursor:pointer;background:transparent}
+.seg.on{color:var(--cyan);border-color:var(--line2);background:var(--cyan-faint)}
+#logView,#vecView{font-family:var(--mono);font-size:9.5px;line-height:1.62;padding:12px 14px;white-space:pre-wrap;word-break:break-word;color:#9db8c0}
+#logView .k{color:var(--cyan)} #logView .s{color:#cfe9ef} #logView .n{color:var(--amber)}
+#vecFoot{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--cyan-faint)}
+
+/* ---------- bottom manifest bar ---------- */
+#manifest{position:fixed;left:328px;right:368px;bottom:14px;z-index:50;padding:8px 14px 10px;display:flex;gap:22px;flex-wrap:wrap;max-height:112px;overflow-y:auto}
+.mgroup{display:flex;flex-direction:column;gap:5px}
+.mglabel{font-family:var(--mono);font-size:7.5px;letter-spacing:.24em;color:var(--txt-dim)}
+.mchips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--txt-dim);border:1px solid var(--line);
+  padding:4px 9px;cursor:pointer;background:transparent;white-space:nowrap;transition:all .12s}
+.chip:hover{color:var(--txt);border-color:var(--line2)}
+.chip.on{color:var(--cyan-hi);border-color:var(--cyan-dim);background:var(--cyan-faint);text-shadow:0 0 8px rgba(87,230,242,.5)}
+
+/* ---------- drag HUD / toast ---------- */
+#dragHUD{position:fixed;z-index:70;pointer-events:none;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  color:var(--cyan-hi);padding:6px 10px;display:none;white-space:nowrap}
+#toastWrap{position:fixed;bottom:132px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:6px;align-items:center}
+.toast{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--cyan-hi);padding:8px 16px;
+  background:rgba(6,15,20,.92);border:1px solid var(--cyan-dim);box-shadow:0 0 18px rgba(87,230,242,.2);
+  opacity:0;transform:translateY(8px);transition:all .25s}
+.toast.in{opacity:1;transform:none}
+
+@media (max-width:1180px){#manifest{left:328px;right:14px}}
+@media (max-width:980px){
+  .hbtn{display:inline-block}
+  #left,#right{display:none}
+  #left.open,#right.open{display:flex}
+  #left.open{z-index:65}#right.open{z-index:65}
+  #manifest{left:14px;right:14px}
+  .brand p{display:none}
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<header id="hero">
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+      <path d="M15 2 L26 8.5 V21.5 L15 28 L4 21.5 V8.5 Z" stroke="#57e6f2" stroke-width="1.2"/>
+      <circle cx="15" cy="15" r="5.5" stroke="#57e6f2" stroke-width="1.2"/>
+      <path d="M15 6 V9.5 M15 20.5 V24 M21.8 11 L18.7 12.8 M11.3 17.2 L8.2 19 M21.8 19 L18.7 17.2 M11.3 12.8 L8.2 11" stroke="#57e6f2" stroke-width="1.2"/>
+    </svg>
+    <div><h1>HDL VISUALIZER</h1><p>PROFESSIONAL PHOTOGRAPHY FOR NANO BANANA</p></div>
+  </div>
+  <div class="status">
+    <span><span id="renderLamp"></span>&nbsp;RENDER POLICY · ON-CALL</span>
+    <span class="framecount">FRAME <b id="frameCount">00000</b></span>
+    <button class="hbtn" id="btnLeft">PRESETS</button>
+    <button class="hbtn" id="btnRight">DATA</button>
+  </div>
+</header>
+
+<aside id="left" class="glass corner">
+  <nav id="rail"></nav>
+  <div id="leftbody">
+    <div class="ptitle">LIGHTING PRESETS</div>
+    <div id="presetList"></div>
+    <div class="ptitle">EMITTER PARAMETERS</div>
+    <div id="paramBody"></div>
+    <div class="hint">
+      <em>LIGHT MODE</em> — CLICK MODEL TO STRIKE LIGHT BEAM<br>
+      <em>POSE MODE</em> — DRAG LIMB TO ARTICULATE JOINT<br>
+      QUALIFIERS · <em>SHIFT</em> H-LOCK · <em>CTRL</em> V-LOCK · <em>ALT</em> FINE
+    </div>
+  </div>
+</aside>
+
+<aside id="right" class="glass corner">
+  <div id="tabs">
+    <button class="tab on" data-panel="anatomy">ANATOMY</button>
+    <button class="tab" data-panel="kinematics">KINEMATICS</button>
+    <button class="tab" data-panel="photometrics">PHOTOMETRICS</button>
+    <button class="tab" data-panel="vectors">VECTORS</button>
+  </div>
+  <div class="pbody on" id="panelAnatomy">
+    <div class="aempty" id="anatEmpty"><b>NO STRUCTURE ACQUIRED</b><br>CLICK THE MODEL IN LIGHT MODE<br>TO CAST A BEAM &amp; PARSE METADATA</div>
+    <div id="anatBody" style="display:none"></div>
+  </div>
+  <div class="pbody" id="panelKinematics">
+    <div id="kinPosture"></div>
+    <div id="kinList"></div>
+  </div>
+  <div class="pbody" id="panelPhotometrics">
+    <div id="segRow"></div>
+    <div id="logView"></div>
+  </div>
+  <div class="pbody" id="panelVectors">
+    <div class="phead"><span class="t">VECTOR ACQUISITION → NANO BANANA</span></div>
+    <div id="vecView"></div>
+    <div id="vecFoot">
+      <button class="abtn" id="btnParse">RE-PARSE VECTORS</button>
+      <button class="abtn" id="btnCopy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="1"/><path d="M5 15V4a1 1 0 0 1 1-1h10"/></svg>
+        COPY PAYLOAD</button>
+    </div>
+  </div>
+</aside>
+
+<footer id="manifest" class="glass corner"></footer>
+
+<div id="dragHUD" class="glass corner"></div>
+<div id="toastWrap"></div>
+<div id="vig"></div>
+<div id="crt"></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+
+/* ============================================================
+   0 · ON-CALL RENDER CORE — no loop, one frame per state change
+   ============================================================ */
+let frame = 0, queued = false;
+const frameEl = document.getElementById('frameCount');
+const lampEl  = document.getElementById('renderLamp');
+function requestRender(){
+  if (queued) return; queued = true;
+  requestAnimationFrame(() => {
+    queued = false;
+    controls.update();                 // damping chain stops itself when settled
+    renderer.render(scene, camera);
+    frame++;
+    frameEl.textContent = String(frame).padStart(5,'0');
+    lampEl.style.opacity = '.25';
+    setTimeout(()=>lampEl.style.opacity='1', 90);
+  });
+}
+/* bounded one-shot sequence for the beam strike (user-initiated) */
+function pulseSequence(ticks, fn){ let t=0; (function step(){ fn(t/ticks); requestRender(); if(++t<ticks) requestAnimationFrame(step); })(); }
+
+/* ============================================================
+   1 · RENDERER / SCENE / CAMERA
+   ============================================================ */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.setClearColor(0x04090d);
+stage.appendChild(renderer.domElement);
+RectAreaLightUniformsLib.init();
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x04090d, 0.040);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.1, 60);
+camera.position.set(0.9, 1.75, 3.7);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.02, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 1.4; controls.maxDistance = 9;
+controls.maxPolarAngle = Math.PI * 0.56;
+controls.addEventListener('change', requestRender);
+
+/* environment — stage, grid, backdrop, cyan studio kicker */
+const SUBJ_C = new THREE.Vector3(0, 1.02, 0);
+{
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(5.2, 64),
+    new THREE.MeshStandardMaterial({ color:0x0a1116, roughness:0.55, metalness:0.12 }));
+  ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+  const grid = new THREE.GridHelper(9, 36, 0x1a5b66, 0x0b2b33);
+  grid.material.transparent = true; grid.material.opacity = 0.35; grid.position.y = 0.002; scene.add(grid);
+  const backdrop = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 8),
+    new THREE.MeshStandardMaterial({ color:0x070d12, roughness:0.92 }));
+  backdrop.position.set(0, 3, -4.2); backdrop.receiveShadow = true; scene.add(backdrop);
+  const kicker = new THREE.PointLight(0x2ad8e8, 1.6, 0, 2);   // constant cyan backlight — instrument identity
+  kicker.position.set(-1.8, 2.4, -2.2); scene.add(kicker);
+}
+
+/* ============================================================
+   2 · ANATOMICAL REGISTRY (TA2-style metadata per segment)
+   ============================================================ */
+const ANATOMY = {
+  HEAD:      { canonical:'Cranium', latin:'Cranium', system:'SKELETAL', ta2:'A02.1.00.001', fma:'46565',
+    region:['Head','Neurocranium','Calvaria'],
+    det:{ 'ARTICULATION':['Atlanto-occipital joint','Temporomandibular joint'],
+          'MARKINGS':['Parietal eminence','External occipital protuberance','Glabella'] }},
+  NECK:      { canonical:'Cervical Spine / Sternocleidomastoid', latin:'Columna cervicalis · M. sternocleidomastoideus', system:'MUSCULAR', ta2:'A02.2.01.001', fma:'72901',
+    region:['Neck','Anterior triangle','Carotid sheath'],
+    det:{ 'ACTION':['Contralateral head rotation','Ipsilateral lateral flexion'], 'INNERVATION':'CN XI · C2–C3 ventral rami' }},
+  CHEST:     { canonical:'Thoracic Cage / Pectoralis Major', latin:'Cavea thoracis · M. pectoralis major', system:'MUSCULAR', ta2:'A02.4.01.001', fma:'7183',
+    region:['Thorax','Anterior wall','Sternocostal compartment'],
+    det:{ 'ACTION':['Horizontal adduction','Medial rotation of humerus'], 'INNERVATION':'Pectoral nerves (C5–T1)',
+          'ORIGIN':['Clavicle','Sternum','Costal cartilages 1–6'], 'INSERTION':['Lateral lip of intertubercular groove'] }},
+  ABDOMEN:   { canonical:'Rectus Abdominis / Lumbar Spine', latin:'M. rectus abdominis · L1–L5', system:'MUSCULAR', ta2:'A04.5.02.001', fma:'9628',
+    region:['Abdomen','Anterior wall','Rectus sheath'],
+    det:{ 'ACTION':['Trunk flexion','Posterior pelvic tilt'], 'INNERVATION':'Thoracoabdominal nerves T7–T12' }},
+  PELVIS:    { canonical:'Pelvic Girdle', latin:'Cingulum pelvicum', system:'SKELETAL', ta2:'A02.5.01.001', fma:'62274',
+    region:['Pelvis','Bony pelvis','—'],
+    det:{ 'ARTICULATION':['Sacroiliac joints','Symphysis pubis','Acetabulofemoral joints'], 'MARKINGS':['Iliac crest','ASIS','Ischial tuberosity'] }},
+  CLAVICLE:  { canonical:'Clavicle / Pectoral Girdle', latin:'Clavicula', system:'SKELETAL', ta2:'A02.4.02.001', fma:'17094',
+    region:['Upper Limb','Pectoral girdle','—'],
+    det:{ 'ARTICULATION':['Sternoclavicular joint','Acromioclavicular joint'], 'MARKINGS':['Conoid tubercle'] }},
+  UPPER_ARM: { canonical:'Humerus / Brachium — Deltoid · Biceps Brachii', latin:'Humerus · M. biceps brachii', system:'MUSCULAR', ta2:'A02.4.03.001', fma:'13384',
+    region:['Upper Limb','Brachium (Arm)','Anterior compartment'],
+    det:{ 'ACTION':['Elbow flexion','Forearm supination','Shoulder abduction (deltoid)'], 'INNERVATION':'Musculocutaneous n. (C5–C6) · Axillary n. (deltoid)',
+          'ORIGIN':['Coracoid process','Supraglenoid tubercle'], 'INSERTION':['Radial tuberosity','Bicipital aponeurosis'] }},
+  FOREARM:   { canonical:'Radius & Ulna / Antebrachium — Flexor Group', latin:'Radius et ulna · flexores antebrachii', system:'MUSCULAR', ta2:'A02.4.06.001', fma:'23489',
+    region:['Upper Limb','Antebrachium (Forearm)','Anterior compartment'],
+    det:{ 'ACTION':['Wrist flexion','Pronation (pronator teres)'], 'INNERVATION':'Median n. · Ulnar n. (flexor carpi ulnaris)' }},
+  HAND:      { canonical:'Carpus & Digits', latin:'Ossa manus', system:'SKELETAL', ta2:'A02.4.08.001', fma:'9712',
+    region:['Upper Limb','Manus (Hand)','Carpal tunnel'],
+    det:{ 'ACTION':['Precision grasp','Power grip'], 'INNERVATION':'Median · ulnar · radial nerve terminals',
+          'MARKINGS':['Hook of hamate','Tubercle of scaphoid'] }},
+  THIGH:     { canonical:'Femur / Quadriceps Femoris', latin:'Femur · M. quadriceps femoris', system:'MUSCULAR', ta2:'A02.5.02.001', fma:'24978',
+    region:['Lower Limb','Thigh (Femur)','Anterior compartment'],
+    det:{ 'ACTION':['Knee extension','Hip flexion (rectus femoris)'], 'INNERVATION':'Femoral nerve (L2–L4)',
+          'ORIGIN':['ASIS','AIIS','Linea aspera'], 'INSERTION':['Tibial tuberosity via patellar ligament'] }},
+  SHIN:      { canonical:'Tibia & Fibula / Gastrocnemius', latin:'Tibia et fibula · M. gastrocnemius', system:'MUSCULAR', ta2:'A02.5.06.001', fma:'24479',
+    region:['Lower Limb','Crus (Leg)','Posterior superficial compartment'],
+    det:{ 'ACTION':['Ankle plantarflexion','Knee flexion'], 'INNERVATION':'Tibial nerve (S1–S2)',
+          'ORIGIN':['Medial & lateral femoral condyles'], 'INSERTION':['Calcaneus via Achilles tendon'] }},
+  FOOT:      { canonical:'Tarsus & Metatarsals', latin:'Ossa pedis', system:'SKELETAL', ta2:'A02.5.09.001', fma:'23885',
+    region:['Lower Limb','Pes (Foot)','Medial arch'],
+    det:{ 'ACTION':['Support','Shock absorption','Push-off'], 'INNERVATION':'Tibial · deep fibular nerves',
+          'MARKINGS':['Sustentaculum tali','Tuberosity of calcaneus'] }},
+};
+
+/* ============================================================
+   3 · HUMAN RIG — ISB-standard joint hierarchy (Y up, +Z anterior)
+   ============================================================ */
+const bodyMat  = new THREE.MeshStandardMaterial({ color:0xb6c2c8, roughness:0.52, metalness:0.06 });
+const hoverMat = new THREE.MeshStandardMaterial({ color:0xa8d4dc, roughness:0.45, emissive:0x0a2c34, emissiveIntensity:1 });
+const selMat   = new THREE.MeshStandardMaterial({ color:0x9fdce4, roughness:0.40, emissive:0x155e6b, emissiveIntensity:1.1 });
+
+const bodyGroup = new THREE.Group(); scene.add(bodyGroup);
+const meshes = [];
+function capsule(r, len, entity, sx=1, sz=1){
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), bodyMat.clone());
+  m.scale.set(sx, 1, sz); m.castShadow = m.receiveShadow = true;
+  m.userData.entityKey = entity; m.userData.baseMat = m.material;
+  meshes.push(m); return m;
+}
+const J = {};                       // joint groups by name
+const joint = (parent, name, x, y, z=0) => { const g = new THREE.Group(); g.name = name; g.position.set(x, y, z); parent.add(g); J[name] = g; return g; };
+
+const root = joint(bodyGroup, 'ROOT', 0, 1.00, 0);
+{
+  const pelvis = capsule(0.155, 0.10, 'PELVIS', 1.25, 0.9); pelvis.position.set(0, 0.02, 0); root.add(pelvis);
+
+  const spineJ = joint(root, 'SPINE', 0, 0.14, 0);
+  const abdomen = capsule(0.132, 0.13, 'ABDOMEN', 1.22, 0.85); abdomen.position.set(0, 0.10, 0); spineJ.add(abdomen);
+
+  const chestJ = joint(spineJ, 'CHEST', 0, 0.22, 0);
+  const chest = capsule(0.148, 0.16, 'CHEST', 1.32, 0.85); chest.position.set(0, 0.10, 0); chestJ.add(chest);
+
+  const neckJ = joint(chestJ, 'NECK', 0, 0.22, 0);
+  const neckM = capsule(0.052, 0.08, 'NECK'); neckM.position.set(0, 0.05, 0); neckJ.add(neckM);
+  const headJ = joint(neckJ, 'HEADJ', 0, 0.10, 0);
+  const headM = capsule(0.105, 0.02, 'HEAD'); headM.scale.set(0.86, 1.28, 0.98); headM.position.set(0, 0.095, 0); headJ.add(headM);
+
+  for (const [s, sx] of [['L', 1], ['R', -1]]){
+    const clav = capsule(0.026, 0.15, 'CLAVICLE'); clav.rotation.z = Math.PI/2;
+    clav.position.set(sx*0.10, 0.205, 0.015); chestJ.add(clav);
+
+    const sh = joint(chestJ, 'SHOULDER_'+s, sx*0.195, 0.175, 0);
+    const up  = capsule(0.052, 0.22, 'UPPER_ARM'); up.position.set(0, -0.155, 0); sh.add(up);
+    const el  = joint(sh, 'ELBOW_'+s, 0, -0.30, 0);
+    const fo  = capsule(0.042, 0.18, 'FOREARM'); fo.position.set(0, -0.125, 0); el.add(fo);
+    const wr  = joint(el, 'WRIST_'+s, 0, -0.255, 0);
+    const ha  = capsule(0.047, 0.06, 'HAND'); ha.scale.set(0.82, 1, 0.5); ha.position.set(0, -0.058, 0); wr.add(ha);
+
+    const hip = joint(root, 'HIP_'+s, sx*0.095, -0.10, 0);
+    const th  = capsule(0.068, 0.28, 'THIGH'); th.position.set(0, -0.185, 0); hip.add(th);
+    const kn  = joint(hip, 'KNEE_'+s, 0, -0.42, 0);
+    const shn = capsule(0.050, 0.28, 'SHIN'); shn.position.set(0, -0.185, 0); kn.add(shn);
+    const an  = joint(kn, 'ANKLE_'+s, 0, -0.40, 0);
+    const ft  = capsule(0.038, 0.11, 'FOOT'); ft.rotation.x = Math.PI/2; ft.position.set(0, -0.032, 0.05); an.add(ft);
+  }
+}
+/* which joint articulates a clicked segment */
+const POSE_OF = m => {
+  const n = m.parent.name;
+  if (n === 'HEADJ') return 'NECK';
+  if (['SHOULDER_L','SHOULDER_R','ELBOW_L','ELBOW_R','WRIST_L','WRIST_R','HIP_L','HIP_R','KNEE_L','KNEE_R','ANKLE_L','ANKLE_R','SPINE','CHEST'].includes(n)) return n;
+  return null;
+};
+
+/* ============================================================
+   4 · BIOMECHANICS — ISB frames, terminology, ROM constraints
+   ============================================================ */
+const AX = { sagittal:'x', coronal:'z', transverse:'y' };   // ISB: X mediolateral · Y longitudinal · Z anteroposterior
+const JOINTS = [
+  { id:'NECK', g:'NECK', name:'Cervical Spine (Neck)', dof:['sagittal','coronal','transverse'],
+    terms:{ sagittal:['Forward Flexion','Extension'], coronal:['Lateral Flexion (L)','Lateral Flexion (R)'], transverse:['Rotation (L)','Rotation (R)'] },
+    signs:{ sagittal:1, coronal:-1, transverse:1 }, limits:{ sagittal:[-45,45], coronal:[-45,45], transverse:[-60,60] }, drag:{ dy:'sagittal', dx:'transverse' } },
+  { id:'SPINE', g:'SPINE', name:'Lumbar Joint Complex', dof:['sagittal','coronal','transverse'],
+    terms:{ sagittal:['Forward Flexion','Extension'], coronal:['Lateral Flexion (L)','Lateral Flexion (R)'], transverse:['Rotation (L)','Rotation (R)'] },
+    signs:{ sagittal:1, coronal:-1, transverse:1 }, limits:{ sagittal:[-30,45], coronal:[-25,25], transverse:[-20,20] }, drag:{ dy:'sagittal', dx:'coronal' } },
+  { id:'CHEST', g:'CHEST', name:'Thoracic Joint Complex', dof:['sagittal','coronal','transverse'],
+    terms:{ sagittal:['Forward Flexion','Extension'], coronal:['Lateral Flexion (L)','Lateral Flexion (R)'], transverse:['Rotation (L)','Rotation (R)'] },
+    signs:{ sagittal:1, coronal:-1, transverse:1 }, limits:{ sagittal:[-15,20], coronal:[-15,15], transverse:[-15,15] }, drag:{ dy:'sagittal', dx:'coronal' } },
+];
+const sideJoints = [
+  ['L','Left'],  ['R','Right'],
+];
+for (const [s, full] of sideJoints){
+  JOINTS.push(
+  { id:'SHOULDER_'+s, g:'SHOULDER_'+s, name:`${full} Glenohumeral (Shoulder)`, dof:['sagittal','coronal','transverse'],
+    terms:{ sagittal:['Flexion','Extension'], coronal:['Abduction','Adduction'], transverse: s==='L'?['External Rotation','Internal Rotation']:['Internal Rotation','External Rotation'] },
+    signs:{ sagittal:-1, coronal: s==='L'?1:-1, transverse:1 }, limits:{ sagittal:[-60,180], coronal:[-50,180], transverse:[-90,90] }, drag:{ dy:'sagittal', dx:'coronal' } },
+  { id:'ELBOW_'+s, g:'ELBOW_'+s, name:`${full} Humeroulnar / Radioulnar`, dof:['sagittal','transverse'],
+    terms:{ sagittal:['Flexion','Extension'], transverse: s==='L'?['Supination','Pronation']:['Pronation','Supination'] },
+    signs:{ sagittal:-1, transverse:1 }, limits:{ sagittal:[0,150], transverse:[-80,80] }, drag:{ dy:'sagittal', dx:'transverse' } },
+  { id:'WRIST_'+s, g:'WRIST_'+s, name:`${full} Radiocarpal (Wrist)`, dof:['sagittal','coronal'],
+    terms:{ sagittal:['Flexion','Extension'], coronal: s==='L'?['Radial Deviation','Ulnar Deviation']:['Radial Deviation','Ulnar Deviation'] },
+    signs:{ sagittal:-1, coronal: s==='L'?1:-1 }, limits:{ sagittal:[-70,80], coronal:[-30,20] }, drag:{ dy:'sagittal', dx:'coronal' } },
+  { id:'HIP_'+s, g:'HIP_'+s, name:`${full} Acetabulofemoral (Hip)`, dof:['sagittal','coronal','transverse'],
+    terms:{ sagittal:['Flexion','Extension'], coronal:['Abduction','Adduction'], transverse: s==='L'?['External Rotation','Internal Rotation']:['Internal Rotation','External Rotation'] },
+    signs:{ sagittal:-1, coronal: s==='L'?1:-1, transverse:1 }, limits:{ sagittal:[-30,120], coronal:[-30,45], transverse:[-45,45] }, drag:{ dy:'sagittal', dx:'coronal' } },
+  { id:'KNEE_'+s, g:'KNEE_'+s, name:`${full} Tibiofemoral (Knee)`, dof:['sagittal'],
+    terms:{ sagittal:['Flexion','Extension'] }, signs:{ sagittal:1 }, limits:{ sagittal:[0,140] }, drag:{ dy:'sagittal' } },
+  { id:'ANKLE_'+s, g:'ANKLE_'+s, name:`${full} Talocrural (Ankle)`, dof:['sagittal','coronal'],
+    terms:{ sagittal:['Dorsiflexion','Plantarflexion'], coronal:['Inversion','Eversion'] },
+    signs:{ sagittal:-1, coronal: s==='L'?1:-1 }, limits:{ sagittal:[-20,50], coronal:[-15,35] }, drag:{ dy:'sagittal', dx:'coronal' } });
+}
+const JOINT_BY_ID = Object.fromEntries(JOINTS.map(j => [j.id, j]));
+
+function evalJoint(def){
+  const rot = J[def.g].rotation, vals = {}, terms = [], lim = [];
+  for (const p of def.dof){
+    const a = rot[AX[p]] * def.signs[p]; vals[p] = a;
+    if (Math.abs(a) > 2.0)
+      terms.push(a > 0 ? def.terms[p][0] : def.terms[p][1] + ' (' + Math.abs(a).toFixed(1) + '\u00B0)');
+    const [lo, hi] = def.limits[p], s = def.signs[p];
+    if (Math.abs(a - Math.max(lo, Math.min(hi, a))) > 0.01) lim.push(p);
+  }
+  return { vals, terms: terms.length ? terms : ['Neutral Anatomical Position (0.0\u00B0)'], lim };
+}
+function clampPlane(def, p, val){
+  const s = def.signs[p], [lo, hi] = def.limits[p];
+  return THREE.MathUtils.clamp(val, Math.min(lo*s, hi*s), Math.max(lo*s, hi*s));
+}
+function applyPoseDelta(def, plane, anatomicalDeg){
+  const ax = AX[plane];
+  J[def.g].rotation[ax] = clampPlane(def, plane, J[def.g].rotation[ax] + anatomicalDeg * def.signs[plane]);
+}
+
+/* ============================================================
+   5 · STATE + LIGHT RIG (emitters / falloff / transport)
+   ============================================================ */
+const EMITTERS = {
+  SPOT_CONICAL:   { label:'SINGLE CONICAL SPOTLIGHT',  k:2.3 },
+  POINT_OMNI:     { label:'OMNIDIRECTIONAL POINT SOURCE', k:2.1 },
+  AREA_PANEL:     { label:'AREA LIGHT SOFT PANEL',     k:7.5 },
+  DIR_SUN:        { label:'PARALLEL DIRECTIONAL SUN',  k:2.6 },
+  BOWL_REFLECTOR: { label:'BOWL REFLECTOR PHOTONIC',   k:2.9 },
+};
+const FALLOFFS = {
+  INVERSE_SQUARE: { label:'AGGRESSIVE INVERSE SQUARE', decay:2 },
+  LINEAR:         { label:'LINEAR ATTENUATION',        decay:1 },
+  ZERO_FALLOFF:   { label:'ZERO FALLOFF ORTHOGRAPHIC', decay:0 },
+};
+const TRANSPORT = {
+  DIRECT_ONLY:          { label:'DIRECT ILLUMINATION ONLY' },
+  SINGLE_BOUNCE_GI:     { label:'SINGLE BOUNCE GLOBAL ILLUMINATION' },
+  INFINITE_RECURSIVE:   { label:'INFINITE RECURSIVE REFLECTION' },
+};
+
+const state = {
+  mode: 'light', method: 'illumination',
+  emitter: 'SPOT_CONICAL', falloff: 'INVERSE_SQUARE', transport: 'SINGLE_BOUNCE_GI',
+  kelvin: 4800, intensity: 78, dolly: 2.6,
+  spotAngle: 0.42, penumbra: 0.5,
+  lightPos: new THREE.Vector3(-1.55, 2.2, 1.55), lightAim: new THREE.Vector3(0, 1.5, 0),
+  paintTarget: null, activeVector: null, coreIdentity: 'REMBRANDT',
+  brand: '', presetIndex: -1,
+};
+const seg = { photometrics:true, photonic:true, raytracing:true, biomech:true, vectors:false };
+
+/* --- lights --- */
+const spot = new THREE.SpotLight(0xffffff, 0, 0, 0.42, 0.5, 2);
+spot.castShadow = true; spot.shadow.mapSize.set(1024, 1024);
+spot.shadow.bias = -0.0004; spot.shadow.camera.near = 0.4; spot.shadow.camera.far = 16;
+scene.add(spot, spot.target);
+
+const point = new THREE.PointLight(0xffffff, 0, 0, 2); scene.add(point);
+const dirL  = new THREE.DirectionalLight(0xffffff, 0);
+dirL.castShadow = true; dirL.shadow.mapSize.set(1024, 1024);
+dirL.shadow.camera.left = dirL.shadow.camera.bottom = -2.5;
+dirL.shadow.camera.right = dirL.shadow.camera.top = 2.5;
+dirL.shadow.camera.far = 16; dirL.shadow.bias = -0.0004;
+scene.add(dirL, dirL.target);
+
+const rectL = new THREE.RectAreaLight(0xffffff, 0, 1.35, 0.95); scene.add(rectL);
+const areaShadow = new THREE.SpotLight(0xffffff, 0, 0, 0.85, 0.9, 2);   // shadow proxy for the panel
+areaShadow.castShadow = true; areaShadow.shadow.mapSize.set(1024, 1024);
+areaShadow.shadow.bias = -0.0004; areaShadow.shadow.camera.far = 16;
+scene.add(areaShadow, areaShadow.target);
+
+const hemi = new THREE.HemisphereLight(0x24444c, 0x0a1216, 0.2); scene.add(hemi);
+const fill = new THREE.PointLight(0x9db6c4, 0, 0, 2); scene.add(fill);
+const clamFill = new THREE.PointLight(0xffd9a8, 0, 0, 2); scene.add(clamFill);
+
+/* --- fixture visuals --- */
+const fixture = new THREE.Mesh(new THREE.SphereGeometry(0.038, 16, 12),
+  new THREE.MeshBasicMaterial({ color:0xffffff })); scene.add(fixture);
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64,64,0,64,64,64);
+  gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.25,'rgba(255,255,255,.35)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0,0,128,128); return new THREE.CanvasTexture(c);
+})();
+const glowSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.85 }));
+glowSpr.scale.setScalar(0.55); scene.add(glowSpr);
+const panelMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 0.95),
+  new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide })); scene.add(panelMesh);
+const panelFrame = new THREE.LineSegments(new THREE.EdgesGeometry(panelMesh.geometry),
+  new THREE.LineBasicMaterial({ color:0x57e6f2, transparent:true, opacity:0.5 })); scene.add(panelFrame);
+const bowlMesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 12, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0x3a4a52, metalness:0.85, roughness:0.28, side:THREE.DoubleSide, emissive:0x0a1418 }));
+scene.add(bowlMesh);
+const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, blending:THREE.AdditiveBlending, depthWrite:false }));
+sunSpr.scale.setScalar(1.4); scene.add(sunSpr);
+const coneMesh = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 28, 1, true),
+  new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.05, side:THREE.DoubleSide,
+    blending:THREE.AdditiveBlending, depthWrite:false }));
+scene.add(coneMesh);
+const sunRays = new THREE.Group(); scene.add(sunRays);
+{
+  const rm = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.10, blending:THREE.AdditiveBlending, depthWrite:false });
+  for (let i = 0; i < 4; i++){
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6, 1, true), rm);
+    sunRays.add(r);
+  }
+}
+
+/* --- beam strike visuals (LightPaint proof) --- */
+const beamMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.0,
+  blending:THREE.AdditiveBlending, depthWrite:false });
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.007, 1, 10, 1, true), beamMat); scene.add(beam);
+const ringMat = new THREE.MeshBasicMaterial({ color:0x57e6f2, transparent:true, opacity:0,
+  side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false });
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.022, 0.036, 36), ringMat); scene.add(ring);
+
+const UP = new THREE.Vector3(0,1,0);
+function orientBetween(mesh, a, b){
+  const dir = b.clone().sub(a), len = dir.length();
+  mesh.position.copy(a).addScaledVector(dir, 0.5);
+  mesh.scale.set(1, len, 1);
+  mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
+}
+function kelvinToRGB(k){
+  k /= 100; let r, g, b;
+  if (k <= 66){ r = 255; g = 99.47*Math.log(k) - 161.12; } else { r = 329.7*Math.pow(k-60, -0.1332); g = 288.12*Math.pow(k-60, -0.0755); }
+  if (k >= 66) b = 255; else if (k <= 19) b = 0; else b = 138.52*Math.log(k-10) - 305.04;
+  const cl = v => Math.max(0, Math.min(255, v)) / 255;
+  return new THREE.Color(cl(r), cl(g), cl(b));
+}
+
+function updateLight(){
+  const col = kelvinToRGB(state.kelvin);
+  const d = state.lightPos.distanceTo(state.lightAim);
+  const decay = FALLOFFS[state.falloff].decay;
+  const isBowl = state.emitter === 'BOWL_REFLECTOR';
+  const isSpot = state.emitter === 'SPOT_CONICAL' || isBowl;
+
+  spot.visible = isSpot;
+  if (isSpot){
+    spot.color.copy(col); spot.position.copy(state.lightPos); spot.target.position.copy(state.lightAim);
+    spot.angle = isBowl ? Math.min(state.spotAngle, 0.30) : state.spotAngle;
+    spot.penumbra = isBowl ? 0.08 : state.penumbra;
+    spot.decay = decay;
+    spot.intensity = (state.intensity/100) * EMITTERS[state.emitter].k * Math.pow(Math.max(d,0.5), decay);
+    coneMesh.visible = true;
+    orientBetween(coneMesh, state.lightPos, state.lightAim);
+    coneMesh.scale.x = coneMesh.scale.z = Math.tan(spot.angle) * d * 0.92;
+    coneMesh.material.color.copy(col).lerp(new THREE.Color(0x57e6f2), 0.35);
+    coneMesh.material.opacity = 0.05;
+  } else coneMesh.visible = false;
+
+  point.visible = state.emitter === 'POINT_OMNI';
+  if (point.visible){
+    point.color.copy(col); point.position.copy(state.lightPos);
+    point.decay = decay;
+    point.intensity = (state.intensity/100) * EMITTERS.POINT_OMNI.k * Math.pow(Math.max(d,0.5), decay);
+  }
+
+  const isArea = state.emitter === 'AREA_PANEL';
+  rectL.visible = panelMesh.visible = panelFrame.visible = isArea;
+  areaShadow.visible = isArea;
+  if (isArea){
+    rectL.color.copy(col); rectL.intensity = (state.intensity/100) * EMITTERS.AREA_PANEL.k;
+    rectL.position.copy(state.lightPos); rectL.lookAt(state.lightAim);
+    panelMesh.position.copy(state.lightPos); panelMesh.lookAt(state.lightAim);
+    panelMesh.material.color.copy(col);
+    panelFrame.position.copy(state.lightPos); panelFrame.lookAt(state.lightAim);
+    areaShadow.color.copy(col);
+    areaShadow.position.copy(state.lightPos).addScaledVector(state.lightAim.clone().sub(state.lightPos).normalize(), 0.05);
+    areaShadow.target.position.copy(state.lightAim);
+    areaShadow.intensity = rectL.intensity * 0.30; areaShadow.decay = 0;
+  }
+
+  const isDir = state.emitter === 'DIR_SUN';
+  dirL.visible = isDir; sunSpr.visible = isDir; sunRays.visible = isDir;
+  if (isDir){
+    dirL.color.copy(col); dirL.intensity = (state.intensity/100) * EMITTERS.DIR_SUN.k;
+    dirL.position.copy(state.lightPos); dirL.target.position.copy(state.lightAim);
+    const dirv = state.lightAim.clone().sub(state.lightPos).normalize();
+    sunSpr.position.copy(state.lightAim).addScaledVector(dirv, -6);
+    sunSpr.material.color.copy(col);
+    const offs = [[0.55,0.42],[-0.55,0.42],[0.6,-0.55],[-0.6,-0.55]];
+    sunRays.children.forEach((r, i) => {
+      const o = new THREE.Vector3(offs[i][0], offs[i][1], 0);
+      const a = state.lightAim.clone().add(o).addScaledVector(dirv, 2.0);
+      const b = state.lightAim.clone().add(o).addScaledVector(dirv, -0.9);
+      orientBetween(r, a, b); r.material.color.copy(col);
+    });
+  }
+
+  bowlMesh.visible = isBowl;
+  if (isBowl){
+    const dirv = state.lightAim.clone().sub(state.lightPos).normalize();
+    bowlMesh.position.copy(state.lightPos);
+    bowlMesh.quaternion.setFromUnitVectors(UP, dirv.clone().negate());
+  }
+
+  fixture.visible = (isSpot || state.emitter === 'POINT_OMNI');
+  fixture.position.copy(state.lightPos); fixture.material.color.copy(col);
+  glowSpr.visible = (state.emitter === 'POINT_OMNI' || isBowl);
+  glowSpr.position.copy(state.lightPos); glowSpr.material.color.copy(col);
+
+  /* transport ≈ ambient interreflection model */
+  const hemiI = { DIRECT_ONLY:0.015, SINGLE_BOUNCE_GI:0.22, INFINITE_RECURSIVE:0.5 }[state.transport];
+  const fillI = { DIRECT_ONLY:0, SINGLE_BOUNCE_GI:5, INFINITE_RECURSIVE:13 }[state.transport];
+  hemi.intensity = hemiI;
+  fill.intensity = fillI; fill.color.copy(col).lerp(new THREE.Color(0x8fa8b5), 0.5);
+  fill.position.set(-state.lightPos.x*0.5, 0.5, -state.lightPos.z*0.5);
+  clamFill.visible = state.coreIdentity === 'CLAMSHELL';
+  if (clamFill.visible){
+    clamFill.intensity = (state.intensity/100) * 6;
+    clamFill.position.set(0.1, 0.45, 1.5);
+  }
+
+  requestRender();
+  refreshLog(); refreshVectors();
+}
+
+/* ============================================================
+   6 · LIGHTPAINT — real raycast solvers (merged spec methods)
+   ============================================================ */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+function castAt(cx, cy){
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((cx - r.left)/r.width)*2 - 1, -((cy - r.top)/r.height)*2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(meshes, false);
+  return hits.length ? hits[0] : null;
+}
+function paint(cx, cy){
+  const hit = castAt(cx, cy);
+  const d = state.dolly;
+  if (hit){
+    const P = hit.point.clone();
+    const N = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    let pos;
+    switch (state.method){
+      case 'illumination': pos = P.clone().addScaledVector(N, d); break;
+      case 'shade':        pos = P.clone().addScaledVector(N, -d); break;
+      case 'reflection': { const V = P.clone().sub(camera.position).normalize();
+                           const R = V.sub(N.clone().multiplyScalar(2*V.dot(N)));
+                           pos = P.clone().addScaledVector(R, d); break; }
+      case 'rim':          pos = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction,
+                               d + raycaster.ray.origin.distanceTo(P)); break;
+      case 'shadow': {     const T = state.paintTarget || SUBJ_C.clone();
+                           pos = T.clone().addScaledVector(P.clone().sub(T).normalize(), d);
+                           state.lightPos.copy(pos); state.lightAim.copy(T);
+                           strikeBeam(P, N, hit.object); return; }
+    }
+    state.lightPos.copy(pos); state.lightAim.copy(P);
+    if (state.method !== 'shadow') state.paintTarget = P.clone();
+    state.activeVector = { start: P.clone(), normal: N.clone() };
+    strikeBeam(P, N, hit.object);
+  } else {
+    /* empty space → canvas move along view ray */
+    state.lightPos.copy(raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, d + 3));
+    state.activeVector = null;
+    updateLight();
+  }
+}
+function strikeBeam(P, N, mesh){
+  beamMat.color.copy(kelvinToRGB(state.kelvin)).lerp(new THREE.Color(0xffffff), 0.4);
+  orientBetween(beam, state.lightPos, P);
+  ring.position.copy(P).addScaledVector(N, 0.005);
+  ring.lookAt(P.clone().add(N));
+  ring.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()).premultiply(
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), N)));
+  updateLight();
+  pulseSequence(9, t => {                     // bounded 9-frame strike pulse
+    beamMat.opacity = 0.55 * Math.min(1, t*2.4);
+    ringMat.opacity = 0.95 * (1 - t*0.45);
+    ring.scale.setScalar(2.3 - 1.3*t);
+  });
+}
+
+/* ============================================================
+   7 · PRESETS — classic portrait schemas
+   ============================================================ */
+const PRESETS = [
+  { id:'REMBRANDT', name:'REMBRANDT', spec:'45\u00B0 LATERAL · 45\u00B0 ELEVATION · CHEEK TRIANGLE',
+    glyph:[[8,7]], emitter:'SPOT_CONICAL', falloff:'INVERSE_SQUARE', transport:'SINGLE_BOUNCE_GI',
+    kelvin:4800, intensity:78, pos:[-1.55,2.2,1.55], aim:[0,1.5,0], angle:0.42, pen:0.5,
+    brand:'MODIFIED LOOP \u2192 TRIANGLE ILLUMINATION · FAR-CHEEK SCULPT' },
+  { id:'BUTTERFLY', name:'BUTTERFLY', spec:'AXIAL PARAMOUNT · NOSE-SHADOW SYMMETRY',
+    glyph:[[20,4]], emitter:'SPOT_CONICAL', falloff:'INVERSE_SQUARE', transport:'SINGLE_BOUNCE_GI',
+    kelvin:5400, intensity:82, pos:[0,2.55,2.15], aim:[0,1.48,0], angle:0.36, pen:0.35,
+    brand:'PARAMOUNT AXIAL KEY · BUTTERFLY UMBRA GEOMETRY' },
+  { id:'CLAMSHELL', name:'CLAMSHELL', spec:'OVER KEY + UNDER FILL · SOFT SANDWICH',
+    glyph:[[20,6],[20,36]], emitter:'AREA_PANEL', falloff:'INVERSE_SQUARE', transport:'SINGLE_BOUNCE_GI',
+    kelvin:5200, intensity:76, pos:[0,2.2,1.75], aim:[0,1.5,0], angle:0.5, pen:0.9,
+    brand:'BI-DIRECTIONAL SOFTBOX SANDWICH · WRAPPING FALLOFF' },
+  { id:'SPLIT', name:'SPLIT', spec:'90\u00B0 LATERAL · HARD DIVISION',
+    glyph:[[3,22]], emitter:'SPOT_CONICAL', falloff:'INVERSE_SQUARE', transport:'DIRECT_ONLY',
+    kelvin:5200, intensity:88, pos:[-2.45,1.35,0.15], aim:[0,1.48,0], angle:0.30, pen:0.06,
+    brand:'FALLOFF BISECTION · LATERAL HARD KEY' },
+  { id:'UNDER_KICKER', name:'UNDER KICKER', spec:'SUB-AXIAL INFERIOR KEY · NOIR',
+    glyph:[[28,37]], emitter:'BOWL_REFLECTOR', falloff:'INVERSE_SQUARE', transport:'DIRECT_ONLY',
+    kelvin:3200, intensity:72, pos:[0.5,0.25,1.65], aim:[0,1.5,0], angle:0.34, pen:0.1,
+    brand:'INFERIOR BOWL SOURCE · NOIR UPSHOT GEOMETRY' },
+  { id:'DRAMATIC', name:'DRAMATIC STUDIO', spec:'HIGH BACK-QUARTER · TIGHT HARD KEY',
+    glyph:[[6,6]], emitter:'SPOT_CONICAL', falloff:'INVERSE_SQUARE', transport:'DIRECT_ONLY',
+    kelvin:6100, intensity:95, pos:[-1.95,3.1,-1.0], aim:[0,1.42,0.1], angle:0.26, pen:0.1,
+    brand:'QUARTER-BACK HARD KEY · TIGHT CONE ISOLATION' },
+];
+function applyPreset(i, silent){
+  const p = PRESETS[i];
+  state.presetIndex = i; state.coreIdentity = p.id; state.brand = p.brand;
+  state.emitter = p.emitter; state.falloff = p.falloff; state.transport = p.transport;
+  state.kelvin = p.kelvin; state.intensity = p.intensity;
+  state.spotAngle = p.angle; state.penumbra = p.pen;
+  state.lightPos.set(...p.pos); state.lightAim.set(...p.aim);
+  state.dolly = Math.round(state.lightPos.distanceTo(SUBJ_C)*10)/10;
+  syncControls(); updateLight();
+  document.querySelectorAll('.prow').forEach((el, k) => el.classList.toggle('on', k === i));
+  if (!silent){
+    setActivePanel('photometrics');      // auto-open photometrics on preset apply
+    toast('PRESET APPLIED · ' + p.name);
+  }
+}
+
+/* ============================================================
+   8 · UI CONSTRUCTION
+   ============================================================ */
+const ICONS = {
+  light:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
+  pose:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 3v5l-3 6M7 8h4l3 5M11 8l2 9M4 21l3-7M13 17l3 4"/><circle cx="7" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  illum:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4l7 9M12 13h7M12 13v7"/><circle cx="12" cy="13" r="2"/></svg>',
+  shade:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor" stroke="none"/></svg>',
+  refl:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 18L10 8l4 5 7-10"/><path d="M21 3v5M21 3h-5"/></svg>',
+  rim:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M2 12a10 10 0 0120 0" stroke-dasharray="2 3"/></svg>',
+  shadow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6"/><circle cx="15" cy="15" r="6" fill="currentColor" stroke="none" opacity=".45"/></svg>',
+};
+const rail = document.getElementById('rail');
+function railBtn(icon, tip, cls, attr){
+  const b = document.createElement('button');
+  b.className = 'rbtn ' + (cls||''); b.innerHTML = ICONS[icon]; b.dataset.tip = tip;
+  if (attr) Object.assign(b.dataset, attr);
+  rail.appendChild(b); return b;
+}
+railBtn('light','MODE · LIGHT','on',{mode:'light'});
+railBtn('pose','MODE · POSE','',{mode:'pose'});
+const rdiv = document.createElement('div'); rdiv.className = 'rdiv'; rail.appendChild(rdiv);
+const methodBtns = {};
+[['illuminate','ILLUMINATION'],['shade','SHADE'],['reflection','REFLECTION'],['rim','RIM'],['shadow','SHADOW']].forEach(([m, tip], i) => {
+  methodBtns[m] = railBtn(['illum','shade','refl','rim','shadow'][i], 'METHOD · ' + tip, i === 0 ? 'on' : '', { method:m });
+});
+rail.addEventListener('click', e => {
+  const b = e.target.closest('.rbtn'); if (!b || !b.dataset.mode && !b.dataset.method) return;
+  if (b.dataset.mode){
+    state.mode = b.dataset.mode;
+    rail.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
+    Object.values(methodBtns).forEach(x => x.classList.toggle('dis', state.mode !== 'light'));
+    renderer.domElement.classList.toggle('pose', state.mode === 'pose');
+  } else if (b.dataset.method){
+    state.method = b.dataset.method;
+    Object.entries(methodBtns).forEach(([k, x]) => x.classList.toggle('on', k === state.method));
+    toast('LIGHTPAINT · ' + b.dataset.method.toUpperCase());
+  }
+});
+
+/* presets */
+const presetList = document.getElementById('presetList');
+PRESETS.forEach((p, i) => {
+  const row = document.createElement('div');
+  row.className = 'prow';
+  let dots = '';
+  for (const [x, y] of p.glyph)
+    dots += `<circle cx="${x}" cy="${y}" r="2.4" fill="#57e6f2"/><line x1="${x}" y1="${y}" x2="20" y2="22" stroke="#57e6f2" stroke-width=".8" stroke-dasharray="2 2" opacity=".6"/>`;
+  row.innerHTML = `<span class="pnum">0${i+1}</span>
+    <div class="pmid"><div class="pname">${p.name}</div><div class="pspec">${p.spec}</div></div>
+    <svg class="pglyph" viewBox="0 0 40 40"><circle cx="20" cy="22" r="8" fill="none" stroke="#6f8894" stroke-width="1"/>${dots}</svg>`;
+  row.addEventListener('click', () => applyPreset(i));
+  presetList.appendChild(row);
+});
+
+/* sliders */
+const paramBody = document.getElementById('paramBody');
+function slider(id, label, min, max, step, val, fmt){
+  const w = document.createElement('div'); w.className = 'srow';
+  w.innerHTML = `<div class="slabel"><span>${label}</span><b id="${id}Val">${fmt(val)}</b></div>
+    <input type="range" id="${id}Range" min="${min}" max="${max}" step="${step}" value="${val}">`;
+  paramBody.appendChild(w);
+  const r = w.querySelector('input');
+  r.addEventListener('input', () => {
+    state[id] = +r.value;
+    document.getElementById(id + 'Val').textContent = fmt(+r.value);
+    updateLight();
+  });
+}
+slider('kelvin','KELVIN TARGET', 2000, 10000, 50, state.kelvin, v => v + 'K');
+slider('intensity','LUMINANCE INTENSITY', 5, 100, 1, state.intensity, v => v + '%');
+slider('dolly','SMART DOLLY DISTANCE', 1.2, 4.5, 0.1, state.dolly, v => v.toFixed(1) + 'm');
+
+/* manifest chips */
+const manifest = document.getElementById('manifest');
+function chipGroup(label, dict, key){
+  const g = document.createElement('div'); g.className = 'mgroup';
+  g.innerHTML = `<div class="mglabel">${label}</div>`;
+  const chips = document.createElement('div'); chips.className = 'mchips';
+  Object.entries(dict).forEach(([k, v]) => {
+    const c = document.createElement('button');
+    c.className = 'chip' + (state[key] === k ? ' on' : '');
+    c.textContent = v.label; c.dataset.key = k; c.dataset.state = key;
+    c.addEventListener('click', () => {
+      state[key] = k;
+      manifest.querySelectorAll(`[data-state="${key}"]`).forEach(x => x.classList.toggle('on', x.dataset.key === k));
+      updateLight();
+    });
+    chips.appendChild(c);
+  });
+  g.appendChild(chips); manifest.appendChild(g);
+}
+chipGroup('EMITTER', EMITTERS, 'emitter');
+chipGroup('FALLOFF PHYSICS', FALLOFFS, 'falloff');
+chipGroup('LIGHT TRANSPORT', TRANSPORT, 'transport');
+function syncControls(){
+  ['emitter','falloff','transport'].forEach(key =>
+    manifest.querySelectorAll(`[data-state="${key}"]`).forEach(x => x.classList.toggle('on', x.dataset.key === state[key])));
+  ['kelvin','intensity','dolly'].forEach(key => {
+    const r = document.getElementById(key + 'Range'); if (r){ r.value = state[key]; }
+    const v = document.getElementById(key + 'Val'); if (v) v.textContent =
+      key === 'kelvin' ? state.kelvin + 'K' : key === 'intensity' ? state.intensity + '%' : state.dolly.toFixed(1) + 'm';
+  });
+}
+
+/* tabs */
+function setActivePanel(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.panel === name));
+  document.querySelectorAll('.pbody').forEach(p => p.classList.toggle('on', p.id === 'panel' + name[0].toUpperCase() + name.slice(1)));
+}
+document.getElementById('tabs').addEventListener('click', e => {
+  const t = e.target.closest('.tab'); if (t) setActivePanel(t.dataset.panel);
+});
+
+/* segment toggles */
+const segRow = document.getElementById('segRow');
+[['photometrics','PHOTOMETRIC'],['photonic','PHOTONIC ENERGY'],['raytracing','RAY PHOTOMETRY'],['biomech','BIOMECHANICS'],['vectors','VECTOR LOCK']].forEach(([k, l]) => {
+  const c = document.createElement('button');
+  c.className = 'seg' + (seg[k] ? ' on' : ''); c.textContent = l;
+  c.addEventListener('click', () => { seg[k] = !seg[k]; c.classList.toggle('on', seg[k]); refreshLog(); });
+  segRow.appendChild(c);
+});
+
+/* ============================================================
+   9 · LIVE SCHEMA (log view)
+   ============================================================ */
+const logView = document.getElementById('logView');
+function patternSchema(){
+  switch (state.emitter){
+    case 'AREA_PANEL': return 'LAMBERTIAN DIFFUSER';
+    case 'POINT_OMNI': return 'SPHERICAL ISOTROPIC';
+    case 'DIR_SUN':    return 'COLLINEAR PARALLEL';
+    default: return state.penumbra >= 0.4 ? 'SOFT_QUALIFIER' : state.penumbra <= 0.15 ? 'HARD_QUALIFIER' : 'MODIFIED_SOURCE';
+  }
+}
+function incidenceClass(){
+  if (!state.activeVector) return 'AMBIENT';
+  const L = state.lightPos.clone().sub(state.activeVector.start).normalize();
+  const a = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(L.dot(state.activeVector.normal), -1, 1)));
+  return a < 25 ? `BROAD/WRAPPING ${a.toFixed(0)}\u00B0` : a < 55 ? `DIRECTIONAL ${a.toFixed(0)}\u00B0` : `CUTTING/SPECULAR ${a.toFixed(0)}\u00B0`;
+}
+function buildSchema(){
+  const s = { '!SYSTEM_INIT': { BIOMETRIC_LOCK:'TRUE', STRUCTURAL_NON_DEVIATION:'MAXIMUM',
+    RENDER_POLICY:'ON_CALL_DEMAND_DRIVEN', FRAME_COUNT:frame } };
+  const d = state.lightPos.distanceTo(state.lightAim);
+  if (seg.photometrics){
+    s['!PHOTOMETRIC_PROTOCOL'] = {
+      CORE_IDENTIFIER: state.coreIdentity,
+      BRAND_SPECIFICATION: state.brand || 'CUSTOM RIG',
+      LUMINANCE_INTENSITY: state.intensity + '%',
+      KELVIN_TARGET: state.kelvin + 'K',
+      VECTOR_LOCK: state.activeVector
+        ? `COORD_${Math.round(state.activeVector.start.x*100)}_${Math.round(state.activeVector.start.y*100)}_${Math.round(state.activeVector.start.z*100)}`
+        : 'AMBIENT',
+      SYSTEM_RAY_TRACING: {
+        EMITTER: EMITTERS[state.emitter].label,
+        FALLOFF_LOGIC: FALLOFFS[state.falloff].label,
+        BOUNCE_DEPTH: state.transport,
+        PATTERN_SCHEMA: patternSchema(),
+      },
+    };
+  }
+  if (seg.photonic){
+    const lam = 2.898e-3 / state.kelvin;                    // Wien peak wavelength (m)
+    const eV = 1240 / (lam * 1e9);                          // photon energy (eV)
+    const W  = state.intensity / 100 * 480;                 // radiant power of a 480W studio head
+    const flux = W / (6.626e-34 * 2.998e8 / lam);           // photons / second
+    s['!PHOTONIC_ENERGY_MANIFEST'] = {
+      PEAK_WAVELENGTH_NM: (lam*1e9).toFixed(0),
+      PHOTON_ENERGY_EV: eV.toFixed(3),
+      RADIANT_POWER_W: W.toFixed(0),
+      PHOTON_FLUX_PER_SEC: flux.toExponential(2),
+      SUBJECT_DISTANCE_M: d.toFixed(2),
+      INCIDENCE_CLASS: incidenceClass(),
+    };
+  }
+  if (seg.raytracing){
+    const th = (state.emitter === 'SPOT_CONICAL' || state.emitter === 'BOWL_REFLECTOR') ? state.spotAngle : Math.PI/2;
+    s['!RAY_PHOTOMETRY_MANIFEST'] = {
+      EMITTER_GEOMETRY: EMITTERS[state.emitter].label,
+      SOLID_ANGLE_SR: (2*Math.PI*(1 - Math.cos(th))).toFixed(3),
+      DECAY_EXPONENT: FALLOFFS[state.falloff].decay,
+      SHADOW_MODEL: 'PCF_SOFT · 1024\u00B2 DEPTH',
+      TRANSPORT_MODEL: TRANSPORT[state.transport].label,
+      BOUNCE_DEPTH: { DIRECT_ONLY:'0', SINGLE_BOUNCE_GI:'1', INFINITE_RECURSIVE:'\u221E' }[state.transport],
+    };
+  }
+  if (seg.biomech){
+    let best = null;
+    for (const def of JOINTS){
+      const r = evalJoint(def);
+      for (const p of def.dof){
+        const [lo, hi] = def.limits[p];
+        const n = Math.abs(r.vals[p]) / (hi - lo);
+        if (!best || n > best.n) best = { def, p, n, r };
+      }
+    }
+    s['!BIOMECHANICAL_FEED'] = {
+      ACTIVE_JOINT: best ? best.def.name.toUpperCase() : '—',
+      DOMINANT_PLANE: best ? best.p.toUpperCase() + ' PLANE' : '—',
+      TERMINOLOGY: best ? best.r.terms.join(' · ') : 'NEUTRAL',
+      JOINT_COUNT: JOINTS.length,
+    };
+  }
+  if (seg.vectors && state.activeVector){
+    s['!VECTOR_ACQUISITION'] = {
+      HIT_POINT: state.activeVector.start.toArray().map(v => +v.toFixed(3)),
+      SURFACE_NORMAL: state.activeVector.normal.toArray().map(v => +v.toFixed(3)),
+    };
+  }
+  return s;
+}
+function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function refreshLog(){
+  const json = JSON.stringify(buildSchema(), null, 2);
+  logView.innerHTML = esc(json)
+    .replace(/"([^"]+)":/g, '"<span class="k">$1</span>":')
+    .replace(/: "([^"]*)"/g, ': <span class="s">"$1"</span>')
+    .replace(/: ([\d.\-eE+]+)(,?)$/gm, ': <span class="n">$1</span>$2');
+}
+
+/* ============================================================
+   10 · ANATOMY PANEL + VECTOR ACQUISITION
+   ============================================================ */
+const anatEmpty = document.getElementById('anatEmpty');
+const anatBody  = document.getElementById('anatBody');
+function showEntity(mesh, hit){
+  const e = ANATOMY[mesh.userData.entityKey]; if (!e) return;
+  const P = hit.point, N = hit.face.normal.clone().transformDirection(mesh.matrixWorld);
+  const L = state.lightPos.clone().sub(P).normalize();
+  const inc = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(L.dot(N), -1, 1)));
+  const d = state.lightPos.distanceTo(P);
+  let det = '';
+  for (const [k, v] of Object.entries(e.det))
+    det += `<dt>${k}</dt><dd>${Array.isArray(v) ? v.join(' · ') : v}</dd>`;
+  anatEmpty.style.display = 'none'; anatBody.style.display = 'block';
+  anatBody.innerHTML = `
+    <div class="aname">${e.canonical}</div>
+    <div class="alatin">${e.latin}</div>
+    <div class="achips"><span>${e.system}</span><span>TA2 ${e.ta2}</span><span>FMA ${e.fma}</span></div>
+    <div class="aregion">${e.region.join(' \u203A ')}</div>
+    <dl class="adl">${det}</dl>
+    <div class="asub">PHOTOMETRIC READOUT</div>
+    <table class="atab">
+      <tr><td>HIT POINT (WORLD)</td><td>${P.x.toFixed(3)}, ${P.y.toFixed(3)}, ${P.z.toFixed(3)}</td></tr>
+      <tr><td>SURFACE NORMAL</td><td>${N.x.toFixed(3)}, ${N.y.toFixed(3)}, ${N.z.toFixed(3)}</td></tr>
+      <tr><td>INCIDENCE ANGLE</td><td>${inc.toFixed(1)}\u00B0 · ${inc < 25 ? 'BROAD' : inc < 55 ? 'DIRECTIONAL' : 'CUTTING'}</td></tr>
+      <tr><td>SOURCE DISTANCE</td><td>${d.toFixed(2)} m</td></tr>
+      <tr><td>EST. IRRADIANCE</td><td>${((state.intensity/100) * 6 / (d*d)).toFixed(2)} a.u.</td></tr>
+      <tr><td>LIGHTPAINT</td><td>${state.method.toUpperCase()}</td></tr>
+    </table>`;
+  meshes.forEach(m => m.material = (m === mesh) ? selMat : m.userData.baseMat);
+}
+const vecView = document.getElementById('vecView');
+let vecPayload = '';
+function refreshVectors(){
+  const top = JOINTS.map(def => ({ def, r: evalJoint(def) }))
+    .map(({ def, r }) => ({ name: def.name, terms: r.terms.slice(0, 2) }))
+    .filter(j => j.terms[0] !== 'Neutral Anatomical Position (0.0\u00B0)')
+    .slice(0, 3);
+  vecPayload = JSON.stringify({
+    tool: 'HDL-VISUALIZER/1.0', target: 'NANO_BANANA', schema: 'TA2/ISB-1.0',
+    emitter: { type: EMITTERS[state.emitter].label, position: state.lightPos.toArray().map(v=>+v.toFixed(3)),
+      aim: state.lightAim.toArray().map(v=>+v.toFixed(3)), kelvin: state.kelvin, intensity_pct: state.intensity,
+      falloff: FALLOFFS[state.falloff].label, transport: TRANSPORT[state.transport].label, preset: state.coreIdentity },
+    subject_vector: state.activeVector ? {
+      hit_point: state.activeVector.start.toArray().map(v=>+v.toFixed(3)),
+      surface_normal: state.activeVector.normal.toArray().map(v=>+v.toFixed(3)),
+      region: 'see anatomy panel' } : { mode: 'AMBIENT' },
+    camera: { position: camera.position.toArray().map(v=>+v.toFixed(3)), fov: camera.fov },
+    biomechanics: top,
+  }, null, 2);
+  vecView.innerHTML = esc(vecPayload)
+    .replace(/"([^"]+)":/g, '"<span class="k">$1</span>":')
+    .replace(/: "([^"]*)"/g, ': <span class="s">"$1"</span>');
+}
+document.getElementById('btnParse').addEventListener('click', () => { refreshVectors(); toast('VECTORS RE-PARSED'); });
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); }
+  catch(e){
+    const ta = document.createElement('textarea'); ta.value = t;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  toast('PAYLOAD COPIED \u2192 NANO BANANA');
+}
+document.getElementById('btnCopy').addEventListener('click', () => copyText(vecPayload));
+
+/* ============================================================
+   11 · KINEMATICS PANEL
+   ============================================================ */
+const kinList = document.getElementById('kinList');
+const kinPosture = document.getElementById('kinPosture');
+const kinRefs = new Map();
+JOINTS.forEach(def => {
+  const row = document.createElement('div'); row.className = 'jrow';
+  let planes = '';
+  for (const p of def.dof)
+    planes += `<div class="plane"><span class="pl">${p.slice(0,3).toUpperCase()}</span>
+      <div class="ptrack"><div class="pfill"></div><i class="pzero"></i></div><span class="pval">0.0\u00B0</span></div>`;
+  row.innerHTML = `<div class="jhead"><span class="jname">${def.name.toUpperCase()}</span><span class="jdof">${def.dof.length}-DOF</span></div>
+    ${planes}<div class="jterms"></div>`;
+  kinList.appendChild(row);
+  kinRefs.set(def.id, { row, fills: [...row.querySelectorAll('.pfill')], vals: [...row.querySelectorAll('.pval')], terms: row.querySelector('.jterms') });
+});
+function updateKinematics(hotId){
+  let best = null;
+  for (const def of JOINTS){
+    const r = evalJoint(def), ref = kinRefs.get(def.id);
+    def.dof.forEach((p, i) => {
+      const [lo, hi] = def.limits[p], a = r.vals[p];
+      const span = hi - lo, zeroPct = (0 - lo) / span * 100, w = Math.abs(a) / span * 100;
+      const fill = ref.fills[i], val = ref.vals[i];
+      fill.style.left = a >= 0 ? zeroPct + '%' : (zeroPct - w) + '%';
+      fill.style.width = w + '%';
+      const limited = r.lim.includes(p);
+      fill.classList.toggle('lim', limited); val.classList.toggle('lim', limited);
+      val.textContent = (a >= 0 ? '' : '\u2212') + Math.abs(a).toFixed(1) + '\u00B0' + (limited ? ' \u26A0' : '');
+    });
+    ref.terms.innerHTML = r.terms.map(t => '<b>' + t.split('(')[0].trim() + '</b>' + (t.includes('(') ? ' (' + t.split('(')[1] : '')).join(' · ');
+    ref.row.classList.toggle('hot', def.id === hotId);
+    const [blo, bhi] = def.limits[def.dof[0]];
+    const n = Math.abs(r.vals[def.dof[0]]) / (bhi - blo);
+    if (!best || n > best.n) best = { def, n, r };
+  }
+  kinPosture.innerHTML = `<span class="lbl">DOMINANT MOTION</span><br>${best ? best.def.name.toUpperCase() + ' \u2014 ' + best.r.terms[0].toUpperCase() + ' (' + best.def.dof[0].toUpperCase() + ' PLANE)' : '—'}`;
+}
+
+/* ============================================================
+   12 · POINTER INTERACTION (paint / hover / pose drag)
+   ============================================================ */
+const dragHUD = document.getElementById('dragHUD');
+let downPos = null, poseDrag = null, hoverMesh = null;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  downPos = { x: e.clientX, y: e.clientY };
+  if (state.mode === 'pose'){
+    const hit = castAt(e.clientX, e.clientY);
+    const jid = hit ? POSE_OF(hit.object) : null;
+    if (jid){
+      controls.enabled = false;
+      poseDrag = { def: JOINT_BY_ID[jid], lx: e.clientX, ly: e.clientY };
+      setActivePanel('kinematics');
+      updateKinematics(jid);
+    }
+  }
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (poseDrag){
+    const fine = e.altKey ? 0.18 : 1;
+    let dx = (e.clientX - poseDrag.lx) * 0.5 * fine;
+    let dy = (e.clientY - poseDrag.ly) * 0.5 * fine;
+    if (e.shiftKey) dy = 0;                 // horizontal lock
+    if (e.ctrlKey) dx = 0;                  // vertical lock
+    const d = poseDrag.def;
+    if (d.drag.dy && d.dof.includes(d.drag.dy) && dy) applyPoseDelta(d, d.drag.dy, -dy);
+    if (d.drag.dx && d.dof.includes(d.drag.dx) && dx) applyPoseDelta(d, d.drag.dx, dx);
+    poseDrag.lx = e.clientX; poseDrag.ly = e.clientY;
+    updateKinematics(d.id);
+    dragHUD.style.display = 'block';
+    dragHUD.style.left = (e.clientX + 18) + 'px';
+    dragHUD.style.top = (e.clientY - 12) + 'px';
+    const r = evalJoint(d);
+    dragHUD.textContent = d.name.toUpperCase() + ' \u00B7 ' + r.terms.join(' \u00B7 ');
+    requestRender(); refreshLog();
+    return;
+  }
+  if (e.buttons) return;
+  /* hover highlight */
+  const hit = castAt(e.clientX, e.clientY);
+  const m = hit ? hit.object : null;
+  if (m !== hoverMesh){
+    if (hoverMesh && hoverMesh.material === hoverMat) hoverMesh.material = hoverMesh.userData.baseMat;
+    hoverMesh = m;
+    if (hoverMesh && hoverMesh.material !== selMat) hoverMesh.material = hoverMat;
+    requestRender();
+  }
+});
+addEventListener('pointerup', e => {
+  if (poseDrag){ poseDrag = null; dragHUD.style.display = 'none'; controls.enabled = true; return; }
+  if (!downPos) return;
+  const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+  downPos = null;
+  if (moved < 6 && state.mode === 'light' && e.button === 0 && e.target === renderer.domElement){
+    paint(e.clientX, e.clientY);
+    const hit = castAt(e.clientX, e.clientY);
+    if (hit){ showEntity(hit.object, hit); setActivePanel('anatomy'); }
+  }
+});
+renderer.domElement.addEventListener('pointerleave', () => {
+  if (hoverMesh && hoverMesh.material === hoverMat){ hoverMesh.material = hoverMesh.userData.baseMat; hoverMesh = null; requestRender(); }
+});
+
+/* ============================================================
+   13 · TOAST / MOBILE / RESIZE / INIT
+   ============================================================ */
+const toastWrap = document.getElementById('toastWrap');
+function toast(msg){
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  toastWrap.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('in'));
+  setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 2300);
+}
+document.getElementById('btnLeft').addEventListener('click', () => {
+  document.getElementById('left').classList.toggle('open');
+  document.getElementById('right').classList.remove('open');
+});
+document.getElementById('btnRight').addEventListener('click', () => {
+  document.getElementById('right').classList.toggle('open');
+  document.getElementById('left').classList.remove('open');
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  requestRender();
+});
+
+/* init */
+applyPreset(0, true);
+updateKinematics(null);
+refreshVectors();
+setActivePanel('anatomy');
+requestRender();
+</script>
+</body>
+</html>
