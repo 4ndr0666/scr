@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# v1.6.0 — audited & hardened (see AUDIT.md): 't' now selects Topgrade
-# (dependency tree OF is 'tree'/'7'), 'flag=' forwarding actually works,
-# db.lck is only removed when stale, /var/log purge is confirmed and
-# preserves pacman.log, fzf/paccache guarded, pamac flags translated,
-# new read-only 's' System Analyze directive.
 set -Eeuo pipefail
 #                   #=== 4ndr0pac ===#
 # Description: Advanced Arch Linux Package Manager UI (Production Grade).
@@ -40,18 +35,11 @@ aur_exec() {
 	case "$AUR_Helper" in
 	paru) cmd=("$AUR_Helper" "${argument_flag[@]}" --sudoloop "$@" --color always) ;;
 	pamac)
-		# v1.6: translate pacman-style flags — pamac has its own subcommands
-		# (the old code sent 'pamac -S pkg', which always fails).
-		local sub="install"
-		case "$1" in
-		-Syu | -Syuu) sub="update -a" ;;
-		-Ss*) sub="search" ;;
-		-Si*) sub="info" ;;
-		-S*) sub="install" ;;
-		-R*) sub="remove" ;;
-		*) sub="$1" ;;
-		esac
-		cmd=("$AUR_Helper" "${argument_flag[@]}" $sub "${@:2}")
+		if [[ "$1" == "-Syu" ]]; then
+			cmd=("$AUR_Helper" "${argument_flag[@]}" update -a)
+		else
+			cmd=("$AUR_Helper" "${argument_flag[@]}" "$@")
+		fi
 		;;
 	pacman) cmd=(sudo pacman "${argument_flag[@]}" "$@" --color always) ;;
 	*) cmd=("$AUR_Helper" "${argument_flag[@]}" "$@" --color always) ;;
@@ -60,25 +48,11 @@ aur_exec() {
 }
 
 # --- SHARED HELPERS ---
-# v1.6: dependency guard — clear message + clean exit code instead of a raw
-# 'command not found' abort deep inside set -e.
-_need() {
-	if ! command -v "$1" &>/dev/null; then
-		echo -e " ${BRED}Error: '$1' is not installed. ${2:-Install it and retry.}${RESET}"
-		return 1
-	fi
-}
-
 _remove_db_lock() {
 	local dbpath
 	dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
 	dbpath="${dbpath:-/var/lib/pacman/}"
 	if [[ -f "${dbpath}db.lck" ]]; then
-		# v1.6: never remove the lock while pacman is running (corruption risk).
-		if pgrep -x pacman &>/dev/null; then
-			echo " pacman is currently running — NOT removing db.lck (avoids database corruption)."
-			return 0
-		fi
 		echo " removing stale pacman database lock ..."
 		sudo unlink "${dbpath}db.lck"
 		echo ""
@@ -107,24 +81,17 @@ _check_network_connectivity() {
 
 # --- CORE UI HELPERS ---
 4ndr0pac_tty_clean() {
-	# v1.6: the old '$(tty)' test never matched /dev/pts/* pseudoterminals,
-	# so the screen was never cleared on desktop terminals.
-	if [[ -t 1 ]]; then
-		clear 2>/dev/null || true
+	if [[ "$(tty)" == *"tty"* ]]; then
+		clear
 	fi
-	return 0
 }
 
 func_diff() {
 	local file1 file2 half_width cols
 	file1="$(echo "$argument_input" | awk '{print $1}')"
 	file2="$(echo "$argument_input" | awk '{print $2}')"
-	if [[ -z "$file1" || -z "$file2" || ! -f "$file1" || ! -f "$file2" ]]; then
-		echo -e " ${BRED}Usage: 4ndr0pac.sh diff <file1> <file2> — both files must exist.${RESET}"
-		return 1
-	fi
 	cols=$(tput cols)
-	half_width=$(( (cols / 2) - ${#file1} - ${#file2} ))
+	half_width=$(( (cols / 2) - ${#file1} + ${#file2} ))
 	half_width=$(( half_width > 1 ? half_width : 1 ))
 
 	echo -n -e "${RED}${BOLD}$file1"
@@ -155,7 +122,7 @@ func_u() {
 				echo -e " ${BRED}Connectivity was lost during the sync attempt. Not retrying — check your network first.${RESET}"
 				return 1
 			fi
-			echo -e " ${BRED}Network is reachable; failure was mirror-specific. Retry with --overwrite '*' (pacman will REPLACE all conflicting files — configs may be clobbered)? [y/N] ${RESET}"
+			echo -e " ${BRED}Network is reachable; failure was mirror-specific. Try updating forcefully? [y/N] ${RESET}"
 			read -r -n 1 -e answer
 			case "${answer:-n}" in
 			y | Y | yes | Yes)
@@ -267,30 +234,25 @@ func_m() {
 	echo ""
 
 	echo " cleaning pacman package cache ..."
-	if command -v paccache &>/dev/null; then
-		sudo paccache --verbose --remove --uninstalled --keep 1
-		echo ""
-		sudo paccache --verbose --remove --keep 3
-		echo ""
-	else
-		echo -e " ${BRED}'paccache' (pacman-contrib) is not installed — skipping cache cleanup.${RESET}"
-		echo ""
-	fi
+	sudo paccache --verbose --remove --uninstalled --keep 1
+	echo ""
+	sudo paccache --verbose --remove --keep 3
+	echo ""
 
 	case "$AUR_Helper" in
 	yay)
 		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
 		echo ""
 		;;
 	pikaur)
 		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
 		echo ""
 		;;
 	paru)
 		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
 		echo ""
 		;;
 	pamac)
@@ -398,7 +360,6 @@ detect_aur_helper
 # FUNC_I — Install Packages (Native)
 # ==============================================================================
 func_i() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	echo -e " ${CYAN}Fetching synchronization databases...${RESET}"
 	local pkgs=()
 	mapfile -t pkgs < <(pacman -Slq | sort -u | fzf \
@@ -423,7 +384,6 @@ func_i() {
 # FUNC_A — Search & Install AUR
 # ==============================================================================
 func_a() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	echo -e " ${CYAN}Fetching AUR & Repository databases via ${AUR_Helper}...${RESET}"
 	local pkgs=()
 	mapfile -t pkgs < <("${AUR_Helper}" -Slq 2>/dev/null | sort -u | fzf \
@@ -448,7 +408,6 @@ func_a() {
 # FUNC_R — Remove Packages & Dependencies (with full recovery loop)
 # ==============================================================================
 func_r() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	echo -e " ${CYAN}Loading installed packages...${RESET}"
 	local pkgs=()
 	mapfile -t pkgs < <(pacman -Qq | fzf \
@@ -505,7 +464,7 @@ func_r() {
 				if ! sudo pacman -Rns "${retry_pkgs[@]}" --color always; then
 					echo ""
 					echo -e " ${BRED}Package removal failed again. Press ENTER to retry or Ctrl+C to abort.${RESET}"
-					read -r || true
+					read -r
 					pkg_backup=("${retry_pkgs[@]}")
 				else
 					pkg_backup=()
@@ -524,7 +483,6 @@ func_r() {
 # FUNC_L — List Installed Packages & Versions
 # ==============================================================================
 func_l() {
-	_need fzf "Install 'fzf' (community repo) for interactive package listing." || return 1
 	echo -e " ${CYAN}Displaying installed packages... (ESC to exit)${RESET}"
 	pacman -Q --color always | fzf \
 		--ansi \
@@ -539,7 +497,6 @@ func_l() {
 # FUNC_T — Dependency Tree (packages required BY target)
 # ==============================================================================
 func_t() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	if ! command -v pactree &>/dev/null; then
 		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
 		return 1
@@ -558,7 +515,6 @@ func_t() {
 # FUNC_V — Reverse Dependency Tree (packages that depend ON target)
 # ==============================================================================
 func_v() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	if ! command -v pactree &>/dev/null; then
 		echo -e " ${BRED}Error: 'pactree' is not installed. Please install 'pacman-contrib'.${RESET}"
 		return 1
@@ -577,7 +533,6 @@ func_v() {
 # FUNC_B — Roll Back System
 # ==============================================================================
 func_b() {
-	_need fzf "Install 'fzf' (community repo) for the rollback transaction picker." || return 1
 	local cache logpath cachePACAUR=""
 	local line temp1 temp2 temp3
 	local pacui_cache_packages pacui_cache_install pacui_aur_install=""
@@ -724,12 +679,6 @@ func_b() {
 # FUNC_FIX — Fix Pacman Errors
 # ==============================================================================
 func_fix() {
-	# v1.6: self-heal an interrupted repair that left SigLevel=Never in place.
-	if [[ -f /etc/pacman.conf.backup ]]; then
-		echo -e " ${BRED}Found a leftover /etc/pacman.conf.backup from an interrupted repair — restoring it now.${RESET}"
-		sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf
-		sudo rm -f /etc/pacman.conf.backup
-	fi
 	if sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
 		echo " deleting 4ndr0pac cache ..."
 		sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -exec rm -rf {} +
@@ -809,8 +758,7 @@ func_fix() {
 			echo " Lowering pacman securities (in case keyring is broken) ..."
 			echo -e " ${BRED}WARNING: Do NOT kill this script (Ctrl+C) until securities are restored.${RESET}"
 			sudo cp --preserve=all -f /etc/pacman.conf /etc/pacman.conf.backup &&
-				# v1.6: anchored so LocalFileSigLevel can never be rewritten.
-				sudo sed -i 's/^SigLevel[[:space:]]*=.*/SigLevel = Never/' /etc/pacman.conf
+				sudo sed -i 's/SigLevel[ ]*=[A-Za-z ]*/SigLevel = Never/' /etc/pacman.conf
 			trap "sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf && sudo rm -f /etc/pacman.conf.backup" EXIT
 			echo ""
 
@@ -935,7 +883,6 @@ func_fix() {
 # FUNC_D — Rollback / Downgrade Package
 # ==============================================================================
 func_d() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	if ! command -v downgrade &>/dev/null; then
 		echo -e " ${BRED}Error: 'downgrade' is not installed. Please install it from the AUR.${RESET}"
 		echo -e " ${BOLD}Alternatively, use Roll Back System (option B) for cache-based downgrades.${RESET}"
@@ -955,7 +902,6 @@ func_d() {
 # FUNC_E — Edit System Configurations
 # ==============================================================================
 func_e() {
-	_need fzf "Install 'fzf' (community repo) for the configuration picker." || return 1
 	local editor="${EDITOR:-vim}"
 	local configs=()
 
@@ -1137,7 +1083,6 @@ func_e() {
 # FUNC_INFO — Detailed Package Information
 # ==============================================================================
 func_info() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	local target
 	target=$(pacman -Slq | sort -u | fzf --reverse --prompt="[Package Info] > " --preview 'pacman -Si {1}')
 	if [[ -n "$target" ]]; then
@@ -1161,7 +1106,7 @@ func_f() {
 		pacman -Fy "$search_term"
 		echo ""
 		echo -e " ${BOLD}Press ENTER to return...${RESET}"
-		read -r || true
+		read -r
 	fi
 }
 
@@ -1169,7 +1114,6 @@ func_f() {
 # FUNC_FO — List Files Owned by Package
 # ==============================================================================
 func_fo() {
-	_need fzf "Install 'fzf' (community repo) for interactive package selection." || return 1
 	local target
 	target=$(pacman -Qq | fzf --reverse --prompt="[List Files In] > " --preview 'pacman -Qi {1}')
 	if [[ -n "$target" ]]; then
@@ -1182,7 +1126,6 @@ func_fo() {
 # FUNC_LS — List Packages by Size
 # ==============================================================================
 func_ls() {
-	_need fzf "Install 'fzf' (community repo) for interactive package listing." || return 1
 	if ! command -v expac &>/dev/null; then
 		echo -e " ${BRED}Error: 'expac' is not installed. Please install 'expac'.${RESET}"
 		return 1
@@ -1226,7 +1169,6 @@ func_ua() {
 # FUNC_LA — List Installed from AUR
 # ==============================================================================
 func_la() {
-	_need fzf "Install 'fzf' (community repo) for interactive package listing." || return 1
 	4ndr0pac_tty_clean
 	echo -e " ${CYAN}Listing packages installed from AUR or manually...${RESET}"
 	pacman -Qqm | fzf \
@@ -1292,14 +1234,8 @@ func_cachyos() {
 			local oldDefault newDefault escapedOld
 			oldDefault="$(grep '^GRUB_DEFAULT=' /etc/default/grub | head -n 1)"
 			newDefault='GRUB_DEFAULT="Advanced options for Arch Linux>Arch Linux, with Linux linux-cachyos-lts"'
-			# v1.6: an empty match made sed fail ('no previous regular expression').
-			if [[ -n "$oldDefault" ]]; then
-				escapedOld="$(echo "$oldDefault" | sed 's/[\/&]/\\&/g')"
-				sudo sed -i "s/${escapedOld}/${newDefault}/" /etc/default/grub
-			else
-				echo -e " ${BRED}No GRUB_DEFAULT= line found — append this line to /etc/default/grub manually:${RESET}"
-				echo -e " ${BOLD}${newDefault}${RESET}"
-			fi
+			escapedOld="$(echo "$oldDefault" | sed 's/[\/&]/\\&/g')"
+			sudo sed -i "s/${escapedOld}/${newDefault}/" /etc/default/grub
 			echo -e " ${CYAN}Regenerating GRUB config...${RESET}"
 			sudo grub-mkconfig -o /boot/grub/grub.cfg
 			echo -e " ${BOLD}CachyOS-LTS is now the default kernel. Reboot to activate.${RESET}"
@@ -1369,15 +1305,10 @@ func_chaotic() {
 		return 0
 	fi
 	echo -e " ${CYAN}Installing Chaotic-AUR repository...${RESET}"
-	# v1.6: fail fast with a clean message instead of a confusing cascade.
-	sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com ||
-		{ echo -e " ${BRED}Failed to fetch the Chaotic-AUR signing key (keyserver unreachable?). Aborting — nothing was changed.${RESET}"; return 1; }
-	sudo pacman-key --lsign-key 3056513887B78AEB ||
-		{ echo -e " ${BRED}Failed to locally sign the Chaotic-AUR key. Aborting — nothing was changed.${RESET}"; return 1; }
-	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' ||
-		{ echo -e " ${BRED}Failed to install chaotic-keyring. Aborting — /etc/pacman.conf was NOT modified.${RESET}"; return 1; }
-	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' ||
-		{ echo -e " ${BRED}Failed to install chaotic-mirrorlist. Aborting — /etc/pacman.conf was NOT modified.${RESET}"; return 1; }
+	sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
+	sudo pacman-key --lsign-key 3056513887B78AEB
+	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst'
+	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
 	printf "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n" | sudo tee -a /etc/pacman.conf >/dev/null
 	sudo pacman -Syu --noconfirm
 	echo -e " ${BOLD}Chaotic-AUR repository installed and enabled.${RESET}"
@@ -1401,19 +1332,9 @@ func_cleanup() {
 		echo " no orphaned packages found."
 	fi
 
-	# v1.6: destructive step now requires confirmation and preserves pacman.log
-	# (Roll Back depends on it). The old code truncated every log silently.
-	echo -n -e " Purge /tmp & /var/tmp files unused 5+ days and truncate system logs (pacman.log preserved)? [y/N]: "
-	read -r -n 1 -e log_response
-	case "${log_response:-n}" in
-	y | Y)
-		if [[ -d /var/tmp ]]; then sudo find /var/tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /tmp ]]; then sudo find /tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /var/log ]]; then sudo find /var/log -type f -name "*.log" ! -name "pacman.log" -exec truncate -s 0 {} + 2>/dev/null || true; fi
-		echo -e "\n ${BOLD}Temp and log cleanup completed (pacman.log preserved).${RESET}"
-		;;
-	*) echo -e "\n ${BOLD}Skipping temp/log cleanup.${RESET}" ;;
-	esac
+	if [[ -d /var/tmp ]]; then sudo find /var/tmp -type f -atime +5 -delete; fi
+	if [[ -d /tmp ]]; then sudo find /tmp -type f -atime +5 -delete 2>/dev/null || true; fi
+	if [[ -d /var/log ]]; then sudo find /var/log -type f -name "*.log" -exec truncate -s 0 {} \; ; fi
 
 	if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
 		sudo journalctl --vacuum-time=3d
@@ -1455,7 +1376,6 @@ func_topgrade() {
 # FUNC_REMOVE_DE — Detect and Uninstall Desktop Environments / Window Managers
 # ==============================================================================
 func_remove_de() {
-	_need fzf "Install 'fzf' (community repo) for interactive DE selection." || return 1
 	local de_table=("GNOME|gnome-shell" "KDE Plasma|startplasma-x11" "XFCE|xfce4-session" "Cinnamon|cinnamon-session" "MATE|mate-session" "Budgie|budgie-desktop" "LXQt|lxqt-session" "LXDE|lxsession" "i3|i3" "Sway|sway" "DWM|dwm" "Awesome|awesome" "BSPWM|bspwm" "Openbox|openbox" "Fluxbox|fluxbox" "niri|niri" "river|river" "hyde|Hyprland" "miracle-wm|miracle-wm")
 	local installed_names=()
 	for entry in "${de_table[@]}"; do
@@ -1471,98 +1391,24 @@ func_remove_de() {
 	selected=$(printf '%s\n' "${installed_names[@]}" | fzf --reverse --prompt="[Select DE/WM to uninstall] > ")
 	[[ -z "$selected" ]] && return 0
 
-	# v1.6: arrays + quoting — the old unquoted $packages/$config_dirs broke
-	# (and could mis-target rm -rf) when $HOME contains spaces.
-	local packages=() config_dirs=()
+	local packages="" config_dirs=""
 	case "$selected" in
-	"GNOME") packages=(gnome gnome-extra); config_dirs=("$HOME/.config/gnome-shell" "$HOME/.local/share/gnome-shell" "$HOME/.config/dconf") ;;
-	"KDE Plasma") packages=(plasma kde-applications); config_dirs=("$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" "$HOME/.config/plasmarc" "$HOME/.kde") ;;
-	"XFCE") packages=(xfce4 xfce4-goodies); config_dirs=("$HOME/.config/xfce4" "$HOME/.local/share/xfce4") ;;
-	"Cinnamon") packages=(cinnamon); config_dirs=("$HOME/.cinnamon" "$HOME/.config/cinnamon") ;;
-	"MATE") packages=(mate mate-extra); config_dirs=("$HOME/.config/mate" "$HOME/.local/share/mate") ;;
-	*) packages=("${selected,,}"); config_dirs=("$HOME/.config/${selected,,}") ;;
+	"GNOME") packages="gnome gnome-extra"; config_dirs="$HOME/.config/gnome-shell $HOME/.local/share/gnome-shell $HOME/.config/dconf" ;;
+	"KDE Plasma") packages="plasma kde-applications"; config_dirs="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc $HOME/.config/plasmarc $HOME/.kde" ;;
+	"XFCE") packages="xfce4 xfce4-goodies"; config_dirs="$HOME/.config/xfce4 $HOME/.local/share/xfce4" ;;
+	"Cinnamon") packages="cinnamon"; config_dirs="$HOME/.cinnamon $HOME/.config/cinnamon" ;;
+	"MATE") packages="mate mate-extra"; config_dirs="$HOME/.config/mate $HOME/.local/share/mate" ;;
+	*) packages="${selected,,}"; config_dirs="$HOME/.config/${selected,,}" ;;
 	esac
 
 	echo -n -e " Purge ${BOLD}$selected${RESET} and configurations permanently? [y/N]: "
 	read -r -n 1 -e confirm
 	if [[ "$confirm" =~ ^[yY] ]]; then
-		sudo pacman -Rns "${packages[@]}" --noconfirm || true
-		local _dir
-		for _dir in "${config_dirs[@]}"; do
-			if [[ -e "$_dir" ]]; then rm -rf "$_dir"; fi
-		done
+		# shellcheck disable=SC2086
+		sudo pacman -Rns $packages --noconfirm || true
+		for dir in $config_dirs; do if [[ -e "$dir" ]]; then rm -rf "$dir"; fi; done
 		sudo paccache -rk0 2>/dev/null || true
 	fi
-}
-
-# ==============================================================================
-# FUNC_ANALYZE — v1.6: Read-Only System Health Report (directive 's')
-# ==============================================================================
-func_analyze() {
-	4ndr0pac_tty_clean
-	echo -e " ${BOLD}${CYAN}--- 4ndr0pac: SYSTEM HEALTH ANALYSIS (read-only) ---${RESET}"
-	echo -e " ${CYAN}Nothing is installed, removed, or modified by this directive.${RESET}"
-	echo ""
-
-	if command -v checkupdates &>/dev/null; then
-		local updates=()
-		mapfile -t updates < <(checkupdates 2>/dev/null || true)
-		echo -e " Pending repo updates:  ${BOLD}${#updates[@]}${RESET}"
-	else
-		echo -e " Pending repo updates:  ${BOLD}unknown${RESET} ${CYAN}(checkupdates from pacman-contrib not installed)${RESET}"
-	fi
-
-	if command -v pacman &>/dev/null; then
-		echo -e " Installed packages:    $(pacman -Qq 2>/dev/null | wc -l)"
-		echo -e " AUR/foreign packages:  $(pacman -Qqm 2>/dev/null | wc -l || true)"
-		local orphan_count
-		orphan_count="$(pacman -Qqdt 2>/dev/null | wc -l || true)"
-		if (( orphan_count > 0 )); then
-			echo -e " Orphaned packages:     ${BRED}${orphan_count}${RESET} (removable via Maintain/Cleanup)"
-		else
-			echo -e " Orphaned packages:     0"
-		fi
-	fi
-
-	local dbpath
-	dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf 2>/dev/null || true)"
-	dbpath="${dbpath:-/var/lib/pacman/}"
-	if [[ -f "${dbpath}db.lck" ]]; then
-		echo -e " Pacman db lock:        ${BRED}present${RESET} ${CYAN}(only remove it when pacman is not running)${RESET}"
-	fi
-
-	if command -v systemctl &>/dev/null; then
-		local failed_count
-		failed_count="$(LC_ALL=C systemctl list-units --state=failed --no-legend 2>/dev/null | wc -l || true)"
-		if (( failed_count > 0 )); then
-			echo -e " Failed systemd units:  ${BRED}${failed_count}${RESET}"
-			LC_ALL=C systemctl list-units --state=failed --no-legend 2>/dev/null | head -n 10
-		else
-			echo -e " Failed systemd units:  0"
-		fi
-	fi
-
-	if command -v df &>/dev/null; then
-		echo ""
-		echo -e " ${CYAN}Disk usage (key filesystems):${RESET}"
-		df -h / /boot /home /var 2>/dev/null | awk '!seen[$1]++' || df -h / 2>/dev/null || true
-	fi
-
-	echo ""
-	echo -e " ${CYAN}Cache & journal footprint:${RESET}"
-	du -sh /var/cache/pacman/pkg 2>/dev/null || true
-	if command -v journalctl &>/dev/null; then
-		journalctl --disk-usage 2>/dev/null || true
-	fi
-
-	local logpath
-	logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf 2>/dev/null || true)"
-	logpath="${logpath:-/var/log/pacman.log}"
-	if [[ -f "$logpath" ]]; then
-		echo ""
-		echo -e " Last pacman transaction: ${BOLD}$(tail -n 1 "$logpath" | awk -F'[][]' '{print $2}')${RESET}"
-	fi
-	echo ""
 }
 
 # ==============================================================================
@@ -1571,47 +1417,37 @@ func_analyze() {
 func_help() {
 	4ndr0pac_tty_clean
 	cat <<'HELPEOF' | less -R
-4ndr0pac - MANUAL (v1.6.0)
+4ndr0pac - GOD MODE MANUAL
 
 CORE COMMANDS:
-  1/u Update        - Full system sync (Native + AUR + Flatpak + Snap).
-  2/m Maintain      - Mirror sort, cache clean, orphan removal, consistency, pacdiff.
-  3/i Install       - Search and install from official repositories.
-  4/a AUR           - Search and install from the AUR (active helper shown in menu).
-  5/r Remove        - Recursive removal with retry/force/cascade recovery.
-  6/l List          - Interactive viewer for installed packages.
-  7/tree Deps (OF)  - Visual tree of what a package requires.
-  8/v Deps (ON)     - Visual tree of what requires a package.
-  9/e Edit          - Full system + Wayland/Hyprland configuration manager.
-  s   Analyze       - READ-ONLY health report: updates, orphans, disks, failed units.
-  b   Roll Back     - Reverse installs/upgrades/removals from pacman.log.
-  z   Fix Errors    - Repair mirrors, DB lock, keyring, GPG, and update failures.
+  1. Update        - Full system sync (Native + AUR + Flatpak + Snap).
+  2. Maintain      - Mirror sort, cache clean, orphan removal, consistency, pacdiff.
+  3. Install       - Search and install from official repositories.
+  4. AUR           - Search and install from the AUR (active helper shown in menu).
+  5. Remove        - Recursive removal with retry/force/cascade recovery.
+  6. List          - Interactive viewer for installed packages.
+  7. Deps (OF)     - Visual tree of what a package requires.
+  8. Deps (ON)     - Visual tree of what requires a package.
+  9. Edit          - Full system + Wayland/Hyprland configuration manager.
+  B. Roll Back     - Reverse installs/upgrades/removals from pacman.log.
+  Z. Fix Errors    - Repair mirrors, DB lock, keyring, GPG, and update failures.
+  X. By Size       - List installed packages sorted by installation size.
+  W. Force AUR     - Force rebuild of all AUR packages including devel (--devel).
+  N. List AUR      - Show all manually installed and AUR packages.
 
 ADMIN TOOLS:
-  x   By Size       - List installed packages sorted by installation size.
-  w   Force AUR     - Force rebuild of all AUR packages including devel (--devel).
-  n   List AUR      - Show all manually installed and AUR packages.
-  c   CachyOS       - Manage CachyOS repos and set/reset the CachyOS-LTS kernel.
-  g   Chaotic AUR   - Install the Chaotic-AUR third-party repository.
-  k   Cleanup       - Deep cleanup: cache, orphans, logs (pacman.log kept), trash.
-  t   Topgrade      - Install and run topgrade (meta-updater for everything).
-  y   Remove DE     - Detect and uninstall a desktop environment or window manager.
+  C. CachyOS       - Manage CachyOS repos and set/reset the CachyOS-LTS kernel.
+  G. Chaotic AUR   - Install the Chaotic-AUR third-party repository.
+  K. Cleanup       - Deep system cleanup: cache, orphans, logs, trash.
+  T. Topgrade      - Install and run topgrade (meta-updater for everything).
+  Y. Remove DE     - Detect and uninstall a desktop environment or window manager.
 
 EXTRAS:
-  p   Package Info  - Detailed info for any repo or installed package.
-  f   Find File     - Search which package owns a file.
-  o   Files In Pkg  - List all files installed by a package.
-  d   Downgrade     - Downgrade a package via 'downgrade' tool.
-  h   Help          - This manual.
-
-CLI (one directive, then exit — this is how the Python frontend calls it):
-  4ndr0pac.sh <command> [words...]          e.g. 4ndr0pac.sh s
-  4ndr0pac.sh flag=--noconfirm <command>    forward pacman flag(s), comma-separated
-  4ndr0pac.sh diff <file1> <file2>          side-by-side diff
-  4ndr0pac.sh version                       print version
-
-NOTE (v1.6): 't' now selects Topgrade (it never reached it before);
-dependency trees are 'tree'/'7' (OF) and 'v'/'8' (ON).
+  P) Package Info  - Detailed info for any repo or installed package.
+  F) Find File     - Search which package owns a file.
+  O) Files In Pkg  - List all files installed by a package.
+  D) Downgrade     - Downgrade a package via 'downgrade' tool.
+  H) Help          - This manual.
 HELPEOF
 }
 
@@ -1632,7 +1468,7 @@ func_menu() {
 	echo -e " ---------------------------------------------------------------"
 	echo -e "  ${BOLD}C${RESET}) CachyOS Repo/Kernel   ${BOLD}G${RESET}) Chaotic AUR"
 	echo -e "  ${BOLD}K${RESET}) System Cleanup        ${BOLD}T${RESET}) Topgrade"
-	echo -e "  ${BOLD}Y${RESET}) Remove Desktop        ${BOLD}S${RESET}) System Analyze"
+	echo -e "  ${BOLD}Y${RESET}) Remove Desktop"
 	echo -e " ---------------------------------------------------------------"
 	echo -e "  ${BOLD}P${RESET}) Package Info          ${BOLD}F${RESET}) Find File Owner"
 	echo -e "  ${BOLD}O${RESET}) Files in Package      ${BOLD}H${RESET}) Manual / Help"
@@ -1644,33 +1480,13 @@ func_menu() {
 # CLEANUP
 # ==============================================================================
 4ndr0pac_clean() {
-	# v1.6: the old glob '4ndr0pac_*' matched nothing (mktemp files use hyphens).
-	rm -rf /tmp/4ndr0pac* 2>/dev/null || true
+	rm -f /tmp/4ndr0pac_* 2>/dev/null || true
 	4ndr0pac_tty_clean
 }
 
 # ==============================================================================
 # CLI ARGUMENT DISPATCH
 # ==============================================================================
-# v1.6: 'flag=' / '--flag=' tokens are collected from ANYWHERE in the argument
-# list into argument_flag (comma-separated values allowed). The old code set
-# the variable and then 'exec "$0" ...' — exec replaces the process image, so
-# the flag was always silently lost.
-_pre_args=()
-for _a in "$@"; do
-	if [[ "$_a" == flag=* || "$_a" == --flag=* ]]; then
-		_v="${_a#*flag=}"
-		if [[ -n "$_v" ]]; then
-			IFS=',' read -r -a _fl <<<"$_v"
-			argument_flag+=("${_fl[@]}")
-		fi
-	else
-		_pre_args+=("$_a")
-	fi
-done
-set -- "${_pre_args[@]}"
-unset _a _v _fl _pre_args
-
 if [[ $# -gt 0 ]]; then
 	key="${1,,}"
 	key="${key##-}"
@@ -1685,7 +1501,7 @@ if [[ $# -gt 0 ]]; then
 	4 | a | aur)            func_a ;;
 	5 | r | remove)         func_r ;;
 	6 | l | list)           func_l ;;
-	7 | tree | tree-of)     func_t ;;
+	7 | t | tree)           func_t ;;
 	8 | v | rtree | rev-tree) func_v ;;
 	9 | e | edit)           func_e ;;
 	b | rollback)           func_b ;;
@@ -1703,12 +1519,14 @@ if [[ $# -gt 0 ]]; then
 	t | topgrade)           func_topgrade ;;
 	y | remove-de | de)     func_remove_de ;;
 	h | help)               func_help ;;
-	s | analyze | health)  func_analyze ;;
-	version)               echo -e " 4ndr0pac backend v1.6.0 (bash) — frontend: 4ndr0pac (python) v1.6.0" ;;
 	diff)                   func_diff ;;
+	flag=*)
+		argument_flag=("${key#*=}")
+		exec "$0" "$@"
+		;;
 	*)
 		echo -e " ${BRED}Unknown option: $key. Press ENTER to start 4ndr0pac UI.${RESET}"
-		read -r || true
+		read -r
 		;;
 	esac
 	exit $?
@@ -1722,10 +1540,8 @@ main_loop() {
 	while true; do
 		4ndr0pac_tty_clean
 		func_menu
-		read -r choice || exit $(( $? > 128 ? $? : 0 ))
+		read -r choice
 
-		# v1.6: a failing directive no longer kills the interactive session
-		# (the one-shot CLI path used by the frontend stays fail-fast).
 		case "$choice" in
 		1 | u | U) func_u ;;
 		2 | m | M) func_m ;;
@@ -1733,8 +1549,8 @@ main_loop() {
 		4 | a | A) func_a ;;
 		5 | r | R) func_r ;;
 		6 | l | L) func_l ;;
-		7 | tree)  func_t ;;
-		8 | v | V) func_v ;;
+		7 | t | T) func_t ;;
+		8)         func_v ;;
 		9 | e | E) func_e ;;
 		b | B)     func_b ;;
 		z | Z)     func_fix ;;
@@ -1751,17 +1567,16 @@ main_loop() {
 		t | T)     func_topgrade ;;
 		y | Y)     func_remove_de ;;
 		h | H)     func_help ;;
-		s | S)     func_analyze ;;
 		0 | q | Q) exit 0 ;;
 		*)
 			echo -e " ${BRED} Invalid Option ${RESET}"
 			sleep 1
 			;;
-		esac || echo -e " ${BRED}Directive exited with an error — returning to menu (see messages above).${RESET}"
+		esac
 
 		if [[ "$choice" != "0" && "$choice" != "q" && "$choice" != "Q" ]]; then
 			echo -n -e "${CYAN}Task Complete. Press ENTER for Menu...${RESET}"
-			read -r || true
+			read -r
 		fi
 	done
 }

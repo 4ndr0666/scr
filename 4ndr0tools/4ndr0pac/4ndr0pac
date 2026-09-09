@@ -1,136 +1,459 @@
 #!/usr/bin/env python3
+"""4NDR0PAC — Advanced Arch Linux Package Manager (TUI frontend).
+
+v1.6.0 — audited & hardened. Contract: invokes the Bash backend
+``4ndr0pac.sh <flag> [extra words...]`` located next to this file
+(or override with ``--backend PATH``).
+
+New in v1.6.0 (see AUDIT.md):
+  * Backend exit codes are surfaced (SUCCESS / FAILED banners).
+  * Ctrl+C during a directive returns to the menu instead of killing the session.
+  * prompt_toolkit is optional — falls back to a plain numbered menu.
+  * Typo suggestions, up-arrow history, numeric quick-select.
+  * One-shot CLI mode, --list, --dry-run, --backend, --version.
+  * NO_COLOR / TERM=dumb / non-TTY safe output.
+  * 'Analyze' now maps to the real read-only backend directive 's'.
+  * 'Dependency Tree (OF)' maps to 'tree' (backend 't' now means Topgrade).
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
 import os
+import re
+import shlex
 import subprocess
 import sys
-from prompt_toolkit import prompt
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.styles import Style
-from prompt_toolkit.formatted_text import HTML
+from pathlib import Path
 
-# --- THEME TOKENS: ELECTRIC-GLASSMORPHISM ---
-# 24-bit ANSI True-Color Escapes for Standard Output
-ANSI_CYAN = "\033[38;2;21;255;255m"
-# \033[38;2;0;229;255m
-ANSI_CYAN_MUTED = "\033[38;2;21;125;125m"
-ANSI_TEXT_PRIMARY = "\033[38;2;234;234;234m"
-ANSI_TEXT_SECONDARY = "\033[38;2;158;158;158m"
-ANSI_RED = "\033[38;2;255;77;77m"
-BOLD = "\033[1m"
-NC = "\033[0m"
+APP_NAME = "4NDR0PAC"
+VERSION = "1.6.0"
+BACKEND_NAME = "4ndr0pac.sh"
 
-# prompt_toolkit Style Engine
-style = Style.from_dict(
-    {
-        "prompt": "fg:#15FFFF bold",
-        "separator": "fg:#151515",
-        "completion-menu": "bg:#101827 fg:#15FFFF",
-        "completion-menu.completion": "bg:#101827 fg:#157d7d",
-        "completion-menu.completion.current": "bg:#070B14 fg:#15FFFF bold",
-    }
-)
+EXIT_OK = 0
+EXIT_BACKEND = 1
+EXIT_USAGE = 2
+EXIT_ABORT = 130
 
-# Command Mapping (Frontend Name -> Backend Bash Flag)
-MENU_MAP = {
-    "Analyze": "u",  # Example mapping, adjust to your bash flags
-    "Update System": "u",
-    "Maintain System": "m",
-    "Install (Native)": "i",
-    "Install (AUR)": "a",
-    "Remove Packages": "r",
-    "List Installed": "l",
-    "Dependency Tree (OF)": "t",
-    "Dependency Tree (ON)": "v",
-    "Edit Configurations": "e",
-    "Roll Back System": "b",
-    "Fix Pacman Errors": "z",
-    "Packages by Size": "x",
-    "Force Update AUR": "w",
-    "List AUR Installed": "n",
-    "Downgrade Package": "d",
-    "Package Info": "p",
-    "Find File Owner": "f",
-    "Files in Package": "o",
-    "CachyOS Repo/Kernel": "c",
-    "Chaotic AUR": "g",
-    "System Cleanup": "k",
-    "Topgrade": "topgrade",
-    "Remove Desktop": "y",
-    "Manual / Help": "h",
-    "Quit": "q",
+QUIT_WORDS = {"q", "quit", "exit", ":q"}
+
+# --- MENU: (display name, backend flag, needs extra confirmation) ---
+DIRECTIVES: list[tuple[str, str, bool]] = [
+    ("Analyze", "s", False),
+    ("Update System", "u", False),
+    ("Maintain System", "m", False),
+    ("Install (Native)", "i", False),
+    ("Install (AUR)", "a", False),
+    ("Remove Packages", "r", True),
+    ("List Installed", "l", False),
+    ("Dependency Tree (OF)", "tree", False),
+    ("Dependency Tree (ON)", "v", False),
+    ("Edit Configurations", "e", False),
+    ("Roll Back System", "b", True),
+    ("Fix Pacman Errors", "z", False),
+    ("Packages by Size", "x", False),
+    ("Force Update AUR", "w", False),
+    ("List AUR Installed", "n", False),
+    ("Downgrade Package", "d", False),
+    ("Package Info", "p", False),
+    ("Find File Owner", "f", False),
+    ("Files in Package", "o", False),
+    ("CachyOS Repo/Kernel", "c", True),
+    ("Chaotic AUR", "g", True),
+    ("System Cleanup", "k", False),
+    ("Topgrade", "topgrade", False),
+    ("Remove Desktop", "y", True),
+    ("Manual / Help", "h", False),
+]
+
+# Backend command words accepted as raw one-shot pass-through.
+BACKEND_WORDS = {
+    "u", "update", "1", "m", "maintain", "2", "i", "install", "3", "a", "aur",
+    "4", "r", "remove", "5", "l", "list", "6", "tree", "7", "v", "rtree", "8",
+    "e", "edit", "9", "b", "rollback", "z", "fix", "x", "ls", "listsize",
+    "w", "ua", "force-aur", "n", "la", "list-aur", "d", "down", "downgrade",
+    "p", "info", "f", "find", "find-file", "o", "fo", "files-in-pkg",
+    "c", "cachyos", "g", "chaotic", "k", "cleanup", "clean", "topgrade",
+    "y", "remove-de", "de", "h", "help", "s", "analyze", "health",
+    "diff", "version",
 }
 
+# --- prompt_toolkit is OPTIONAL (graceful degradation) ---
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.formatted_text import HTML
 
-def print_header():
-    """Renders the rigid, monospaced glass topology header."""
-    os.system("clear" if os.name == "posix" else "cls")
-    print(
-        f"\n{ANSI_CYAN}┌────────────────────────────────────────────────────────────┐{NC}"
-    )
-    print(
-        f"{ANSI_CYAN}│{NC} {BOLD}{ANSI_TEXT_PRIMARY}   ⦑ {ANSI_CYAN}Ψ{NC} ⦒ 4NDR0PAC: ADVANCED ARCH LINUX PACKAGE MANAGER {NC}    {ANSI_CYAN}│{NC}"
-    )
-    print(
-        f"{ANSI_CYAN}├────────────────────────────────────────────────────────────┤{NC}"
-    )
-    print(
-        f"{ANSI_CYAN}│{NC} {ANSI_TEXT_SECONDARY}            v1.5.0 Copyright © 2026 4ndr0{ANSI_CYAN}666{NC}               {ANSI_CYAN}│{NC}"
-    )
-    print(
-        f"{ANSI_CYAN}└────────────────────────────────────────────────────────────┘{NC}\n"
-    )
+    HAVE_PTK = True
+except ImportError:
+    HAVE_PTK = False
 
 
-def main():
-    completer = WordCompleter(list(MENU_MAP.keys()), ignore_case=True)
-    bash_script_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "4ndr0pac.sh"
+# --- THEME TOKENS: ELECTRIC-GLASSMORPHISM ---
+class Theme:
+    """24-bit ANSI palette, disabled automatically when unsupported."""
+
+    def __init__(self, enabled: bool) -> None:
+        e = enabled
+        self.cyan = "\033[38;2;21;255;255m" if e else ""
+        self.cyan_muted = "\033[38;2;21;125;125m" if e else ""
+        self.text = "\033[38;2;234;234;234m" if e else ""
+        self.text2 = "\033[38;2;158;158;158m" if e else ""
+        self.red = "\033[38;2;255;77;77m" if e else ""
+        self.bold = "\033[1m" if e else ""
+        self.reset = "\033[0m" if e else ""
+
+
+def _color_default() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    term = os.environ.get("TERM", "")
+    if term in ("", "dumb"):
+        return False
+    return True
+
+
+TH = Theme(_color_default())
+
+
+def ptk_style():
+    return Style.from_dict(
+        {
+            "prompt": "fg:#15FFFF bold",
+            "separator": "fg:#151515",
+            "bottom": "fg:#157d7d",
+            "completion-menu": "bg:#101827 fg:#15FFFF",
+            "completion-menu.completion": "bg:#101827 fg:#157d7d",
+            "completion-menu.completion.current": "bg:#070B14 fg:#15FFFF bold",
+        }
     )
 
-    if not os.path.exists(bash_script_path):
-        print(f"{ANSI_RED}Fatal: Backend script '{bash_script_path}' not found.{NC}")
-        sys.exit(1)
+
+# --- BANNER (width-computed so borders always align) ---
+INNER = 60
+ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _vlen(s: str) -> int:
+    return len(ANSI_RE.sub("", s))
+
+
+def _row(text: str) -> None:
+    pad = " " * max(1, INNER - 2 - _vlen(text) + 1)
+    print(f"{TH.cyan}│{TH.reset} {text}{pad}{TH.cyan}│{TH.reset}")
+
+
+def clear_screen() -> None:
+    if sys.stdout.isatty():
+        sys.stdout.write("\033[H\033[2J\033[3J")
+        sys.stdout.flush()
+
+
+def print_header() -> None:
+    clear_screen()
+    print(f"\n{TH.cyan}┌{'─' * INNER}┐{TH.reset}")
+    _row(
+        f"{TH.bold}{TH.text}   ⦑ {TH.cyan}Ψ{TH.reset} ⦒ "
+        f"{TH.bold}{TH.text}{APP_NAME}: ADVANCED ARCH LINUX PACKAGE MANAGER{TH.reset}"
+    )
+    print(f"{TH.cyan}├{'─' * INNER}┤{TH.reset}")
+    _row(f"{TH.text2}v{VERSION} Copyright © 2026 4ndr0{TH.cyan}666{TH.reset}")
+    print(f"{TH.cyan}└{'─' * INNER}┘{TH.reset}\n")
+
+
+# --- RESOLUTION & SUGGESTIONS ---
+def resolve_menu(raw: str) -> tuple[str, str] | str | None:
+    """Map user input to ('name', 'flag'), the sentinel 'quit', or None."""
+    low = raw.strip().lower()
+    if not low:
+        return None
+    if low in QUIT_WORDS:
+        return "quit"
+    if low.isdigit():
+        n = int(low)
+        if n == 0:
+            return "quit"
+        if 1 <= n <= len(DIRECTIVES):
+            name, flag, _ = DIRECTIVES[n - 1]
+            return name, flag
+        return None
+    for name, flag, _ in DIRECTIVES:
+        if low == name.lower():
+            return name, flag
+    for name, flag, _ in DIRECTIVES:
+        if low == flag.lower():
+            return name, flag
+    return None
+
+
+def suggest(raw: str) -> list[str]:
+    names = [n.lower() for n, _, _ in DIRECTIVES]
+    return difflib.get_close_matches(raw.strip().lower(), names, n=3, cutoff=0.6)
+
+
+# --- BACKEND EXECUTION ---
+def locate_backend(override: str | None) -> Path | None:
+    path = (
+        Path(override).expanduser()
+        if override
+        else Path(__file__).resolve().parent / BACKEND_NAME
+    )
+    if not path.is_file():
+        print(
+            f"{TH.red}Fatal: backend script '{path}' not found.{TH.reset}\n"
+            f"       Place {BACKEND_NAME} next to this script or pass --backend PATH."
+        )
+        return None
+    if path.stat().st_mode & 0o002:
+        print(
+            f"{TH.red}Fatal: backend '{path}' is world-writable — refusing to run "
+            f"(possible tampering). Fix with: chmod o-w '{path}'{TH.reset}"
+        )
+        return None
+    return path
+
+
+def run_backend(backend: Path, flag: str, extras: list[str], dry: bool = False) -> int:
+    cmd = ["bash", str(backend), flag, *extras]
+    if dry:
+        print(f"[dry-run] {shlex.join(cmd)}")
+        return EXIT_OK
+    try:
+        return subprocess.run(cmd).returncode
+    except KeyboardInterrupt:
+        print(f"\n{TH.red}Directive interrupted — the backend received Ctrl+C as well.{TH.reset}")
+        return EXIT_ABORT
+
+
+def report_rc(rc: int) -> None:
+    if rc == EXIT_OK:
+        print(f"\n{TH.cyan}▓▓ TASK COMPLETE (exit 0) ▓▓{TH.reset}")
+    elif rc == EXIT_ABORT:
+        print(f"\n{TH.red}▓▓ TASK INTERRUPTED (exit {rc}) ▓▓{TH.reset}")
+    else:
+        print(f"\n{TH.red}▓▓ TASK FAILED (exit {rc}) — read the backend output above ▓▓{TH.reset}")
+
+
+def confirm_danger(name: str) -> bool:
+    try:
+        ans = input(
+            f"{TH.red}{TH.bold}{name}{TH.reset}{TH.red} can remove packages or alter "
+            f"system state. Proceed? [y/N] {TH.reset}"
+        )
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return ans.strip().lower() in ("y", "yes")
+
+
+def pause() -> None:
+    try:
+        input(f"\n{TH.cyan}Press ENTER to return to the Grid...{TH.reset}")
+    except (EOFError, KeyboardInterrupt):
+        print()
+
+
+# --- INTERACTIVE MODE ---
+def history_file() -> Path | None:
+    try:
+        base = Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser()
+        d = base / "4ndr0pac"
+        d.mkdir(parents=True, exist_ok=True)
+        return d / "history"
+    except OSError:
+        return None
+
+
+def print_menu() -> None:
+    """Compact two-column numbered menu (fallback when prompt_toolkit is absent)."""
+    entries = []
+    for i, (name, _, danger) in enumerate(DIRECTIVES, 1):
+        mark = f" {TH.red}*{TH.reset}" if danger else ""
+        entries.append(f"{i:>2}) {name}{mark}")
+    half = (len(entries) + 1) // 2
+    left, right = entries[:half], entries[half:]
+    for a, b in zip(left, right + [""] * len(left)):
+        print(f"  {a:<30}{b}")
+    print(f"   {TH.text2}0/q) quit  ·  * = asks for confirmation{TH.reset}")
+
+
+def interactive(backend: Path) -> int:
+    session = None
+    # prompt_toolkit reads piped stdin in greedy chunks, which starves the
+    # plain input() calls made by confirm()/pause() between prompts. Use it
+    # only when stdin is a real terminal; pipes get the deterministic
+    # line-by-line fallback instead.
+    if HAVE_PTK and sys.stdin.isatty():
+        names = [n for n, _, _ in DIRECTIVES]
+        completer = FuzzyCompleter(WordCompleter(names, ignore_case=True))
+        hist = FileHistory(str(history_file())) if history_file() else None
+        session = PromptSession(
+            completer=completer, history=hist, style=ptk_style()
+        )
+    elif not HAVE_PTK and sys.stdin.isatty():
+        print(
+            f"{TH.cyan_muted}prompt_toolkit not installed — using the plain menu "
+            f"(pacman -S python-prompt-toolkit restores fuzzy completion).{TH.reset}\n"
+        )
 
     while True:
         print_header()
         try:
-            choice = prompt(
-                HTML("<prompt>█▓░SYSTEM_ONLINE</prompt><separator> > </separator>"),
-                completer=completer,
-                style=style,
-            ).strip()
+            if session is not None:
+                raw = session.prompt(
+                    HTML("<prompt>█▓░SYSTEM_ONLINE</prompt><separator> > </separator>"),
+                    bottom_toolbar=HTML(
+                        "<bottom>Tab: complete · ↑: history · name / # / flag · q: quit</bottom>"
+                    ),
+                ).strip()
+            else:
+                print_menu()
+                raw = input(
+                    f"{TH.bold}{TH.cyan}█▓░SYSTEM_ONLINE{TH.reset} "
+                    f"{TH.cyan_muted}[name/number/q]>{TH.reset} "
+                ).strip()
+        except KeyboardInterrupt:
+            print(f"\n{TH.cyan}Session aborted.{TH.reset}")
+            return EXIT_ABORT
+        except EOFError:
+            print(f"\n{TH.cyan}Terminating session...{TH.reset}")
+            return EXIT_OK
 
-            # Resolve input to flag
-            selected_cmd = next(
-                (cmd for key, cmd in MENU_MAP.items() if choice.lower() == key.lower()),
-                None,
-            )
-
-            if not selected_cmd:
-                if choice.lower() in ["q", "quit", "exit"]:
-                    break
-                print(
-                    f"{ANSI_RED}Unrecognized directive. Press Tab to view the topology menu.{NC}"
+        got = resolve_menu(raw)
+        if got == "quit":
+            print(f"{TH.cyan}Terminating session...{TH.reset}")
+            return EXIT_OK
+        if got is None:
+            hints = suggest(raw)
+            msg = f"{TH.red}Unrecognized directive: '{raw}'.{TH.reset}"
+            if hints:
+                msg += f" Did you mean: {TH.cyan}{' / '.join(hints)}{TH.reset}?"
+            else:
+                msg += (
+                    f" {TH.cyan_muted}(Tab lists the topology menu; "
+                    f"number keys 1-{len(DIRECTIVES)} also work){TH.reset}"
                 )
-                input("Press ENTER to continue...")
-                continue
+            print(msg)
+            pause()
+            continue
 
-            if selected_cmd == "q":
-                print(f"{ANSI_CYAN}Terminating session...{NC}")
+        name, flag = got
+        if dict((n, d) for n, _, d in DIRECTIVES)[name] and not confirm_danger(name):
+            print(f"{TH.cyan_muted}Directive cancelled.{TH.reset}")
+            continue
+
+        print(f"\n{TH.cyan}Executing directive: {name}...{TH.reset}\n")
+        rc = run_backend(backend, flag, [])
+        report_rc(rc)
+        pause()
+
+
+# --- ONE-SHOT MODE ---
+def one_shot(backend: Path, words: list[str], extras: list[str], dry: bool) -> int:
+    joined = " ".join(words).lower()
+    got = resolve_menu(joined)
+    name = flag = None
+    rest: list[str] = extras
+
+    if got == "quit":
+        print(f"{TH.cyan}Terminating session...{TH.reset}")
+        return EXIT_OK
+    if isinstance(got, tuple):
+        name, flag = got
+    else:
+        # Try the longest menu-name prefix, e.g. "Update System" + trailing words.
+        for k in range(len(words) - 1, 0, -1):
+            cand = " ".join(words[:k]).lower()
+            g = resolve_menu(cand)
+            if isinstance(g, tuple):
+                name, flag = g
+                rest = words[k:] + extras
                 break
+        if name is None and words and words[0].lower() in BACKEND_WORDS:
+            name = flag = words[0]
+            rest = words[1:] + extras
 
-            print(f"\n{ANSI_CYAN}Executing directive: {choice}...{NC}\n")
+    if name is None:
+        hints = suggest(joined)
+        msg = f"{TH.red}Unknown directive: '{joined}'.{TH.reset}"
+        if hints:
+            msg += f" Did you mean: {TH.cyan}{' / '.join(hints)}{TH.reset}?"
+        msg += f" {TH.cyan_muted}(Run with --list to see all directives.){TH.reset}"
+        print(msg)
+        return EXIT_USAGE
 
-            # Subprocess handoff to the Bash backend
-            subprocess.run(["bash", bash_script_path, selected_cmd])
+    print(f"{TH.cyan}Executing directive: {name}...{TH.reset}\n")
+    rc = run_backend(backend, flag, rest, dry)
+    if not dry:
+        report_rc(rc)
+    return rc
 
-            input(
-                f"\n{ANSI_CYAN}Task Complete. Press ENTER to return to the Grid...{NC}"
-            )
 
-        except (EOFError, KeyboardInterrupt):
-            print(f"\n{ANSI_CYAN}Session aborted.{NC}")
-            break
+def print_directives() -> None:
+    print(f"{TH.bold}{TH.cyan}{APP_NAME} v{VERSION} — available directives{TH.reset}\n")
+    for i, (name, flag, danger) in enumerate(DIRECTIVES, 1):
+        mark = f" {TH.red}[confirm]{TH.reset}" if danger else ""
+        print(f" {i:>2}  {name:<24} -> {flag:<9}{mark}")
+    print(f"\n  0 / q / quit          -> exit")
+    print(
+        f"\n  {TH.text2}Interactive: run with no arguments. One-shot: "
+        f"4ndr0pac \"Update System\" [extra words for the backend]{TH.reset}"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="4ndr0pac",
+        description="Advanced Arch Linux package manager — TUI frontend for 4ndr0pac.sh",
+        epilog=(
+            "examples:\n"
+            "  4ndr0pac                          interactive session\n"
+            "  4ndr0pac 'Update System'          one-shot directive, exit code propagates\n"
+            "  4ndr0pac 3                        numeric alias (Install (Native))\n"
+            "  4ndr0pac diff file1 file2         raw backend pass-through\n"
+            "  4ndr0pac --dry-run Maintain       show the backend command only\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "directive", nargs="*", metavar="directive",
+        help="menu name, backend flag, or menu number; trailing words go to the backend",
+    )
+    parser.add_argument("--backend", metavar="PATH", help="path to 4ndr0pac.sh backend")
+    parser.add_argument("--list", "-L", action="store_true", help="list directives and exit")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the backend command without executing"
+    )
+    parser.add_argument(
+        "--no-color", action="store_true", help="force colors off (NO_COLOR is honored too)"
+    )
+    parser.add_argument("--version", "-V", action="version", version=f"{APP_NAME} v{VERSION}")
+    args, unknown = parser.parse_known_args(argv)
+
+    global TH
+    TH = Theme(_color_default() and not args.no_color)
+
+    backend = locate_backend(args.backend)
+    if backend is None:
+        return EXIT_BACKEND
+
+    if args.list:
+        print_directives()
+        return EXIT_OK
+
+    if args.directive or unknown:
+        return one_shot(backend, [w for w in args.directive], unknown, args.dry_run)
+
+    try:
+        return interactive(backend)
+    except KeyboardInterrupt:
+        print(f"\n{TH.red}Session aborted.{TH.reset}")
+        return EXIT_ABORT
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
