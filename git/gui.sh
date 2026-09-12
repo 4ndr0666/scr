@@ -1,28 +1,23 @@
 #!/bin/bash
 # shellcheck disable=SC2155,SC2034
-# Rev: 6.0 (Golden-Unit Merge: regression fix + first-run identity config + gui2 grafts)
+# Rev: 6.1 (Superset: added reset_to_upstream / discard unpushed commits)
+# Rev: 6.2 (Superset: fixed hook-install path corruption [SC2318] and inverted
+#           commit-detection logic in quick_commit_push/auto_commit_sync;
+#           replaced `source`d config with a safe non-eval codec + legacy
+#           auto-migration; made config/hook/cron-script writes atomic and
+#           interrupt-safe; documented intentional force-push in emergency
+#           recovery; switched repo-backup copy to reflink-aware for large repos)
+# Rev: 6.3 (Superset: `hostname` binary is no longer a hard dependency -- was
+#           blocking the entire console from starting on minimal distros that
+#           don't ship it by default; replaced with a no-external-binary
+#           get_hostname() fallback chain. shellcheck/shfmt reclassified as
+#           optional [only gate 'Setup Git Hooks'] so a missing linter can no
+#           longer block core git operations either.)
 # Author: 4ndr0666, Ψ-Anarch, HIC-7
 set -euo pipefail
 # ============================== // GUI.SH //
 # Description: A unified strategic command console for Git operations,
 # with a refined, user-friendly interface.
-#
-# Rev 6.0 changelog against Rev 5.3:
-#   - FIX: emergency_recovery_protocol regressed a Rev-4 safety guarantee
-#     (pre-reset commit inspection). Restored.
-#   - NEW: first-run configuration file (~/.config/git-gui-console/config)
-#     replaces all hardcoded personal identity (email/GitHub username)
-#     that shipped in the rejected gui2.sh candidate.
-#   - NEW: update_remote_url, reconnect_old_repo, rebase_branch,
-#     resolve_merge_conflicts, edit_config — grafted from gui2.sh candidate
-#     review, re-implemented against the config system, with the gui2
-#     operator-precedence bug and hardcoded-identity defects removed.
-#   - EXCLUDED (deliberately, not silently): gui2.sh's run_integration_tests,
-#     resolve_git_conflicts_automatically, setup_cron_job, setup_dependencies,
-#     and perform_backup all dispatch to external "Git/scripts/*.sh" paths
-#     that are not part of this repository and were never provided as
-#     canonical source. Including them would ship orphaned references. See
-#     the trailing note in this file's delivery message.
 # -------------------------------------------
 
 # Constants: Colors, Symbols, & Styles
@@ -34,6 +29,13 @@ readonly SUCCESS="✔️"; readonly WARN="⚠️"
 # Constants: First-run identity config
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git-gui-console"
 readonly CONFIG_FILE="${CONFIG_DIR}/config"
+
+# Constants: Dependencies. CORE_DEPS are required for the console to run at
+# all; OPTIONAL_DEPS gate exactly one narrow feature each and must never block
+# startup -- a missing linter or hostname tool shouldn't lock a user out of
+# `git status`. (See check_dependencies/setup_dependencies.)
+readonly CORE_DEPS=("git" "fzf" "gh" "less")
+readonly OPTIONAL_DEPS=("shellcheck" "shfmt")  # only used by setup_git_hooks's pre-commit hook
 
 # --- // UI & HELPER FUNCTIONS
 prominent() { printf "${BOLD}${GREEN}%s${NC}\n" "$1"; }
@@ -50,22 +52,93 @@ ask_confirmation() {
     done
 }
 
+# --- // ATOMIC FILE I/O
+# Writes stdin to $1 via a same-directory temp file + atomic rename, so a crash,
+# Ctrl-C, or failed intermediate step never leaves $1 half-written. Self-contained:
+# every step's exit status is checked explicitly rather than relying on the
+# caller's `set -e` being active, so it is safe to call from any context.
+# Usage: printf '%s' "$content" | atomic_write "$target_path" [chmod_mode]
+atomic_write() {
+    local target="$1" mode="${2:-}"
+    local dir; dir=$(dirname -- "$target")
+    local tmp
+    tmp=$(mktemp "${dir}/.tmp.$(basename -- "$target").XXXXXX") || {
+        bug "atomic_write: could not create temp file in ${dir}"; return 1
+    }
+    trap 'rm -f "$tmp"' RETURN
+    if ! cat > "$tmp"; then
+        bug "atomic_write: failed writing content for ${target}"; return 1
+    fi
+    if [ -n "$mode" ] && ! chmod "$mode" "$tmp"; then
+        bug "atomic_write: failed setting mode '${mode}' on ${target}"; return 1
+    fi
+    if ! mv -f "$tmp" "$target"; then
+        bug "atomic_write: failed to move temp file into place at ${target}"; return 1
+    fi
+    return 0
+}
+
+# --- // CONFIG VALUE CODEC (no eval, no source of untrusted content)
+# Config values are base64-encoded on write so ANY byte sequence (spaces,
+# quotes, unicode, etc.) round-trips exactly without needing shell escaping,
+# and the loader never has to eval/source the file to reverse an escape format.
+encode_config_value() {
+    if command -v base64 &>/dev/null; then
+        printf '%s' "$1" | base64 | tr -d '\n'
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# Returns 0 + prints the decoded value only if $1 is plausibly one of our own
+# base64 encodings; returns 1 otherwise. This doubles as legacy-format
+# detection: pre-6.2 config files stored plain (%q-formatted) values, and
+# GUI_GIT_EMAIL / GUI_GH_USER always contain '@', '.', or '-' in practice,
+# none of which are valid base64 alphabet characters, so legacy lines fail
+# this check and safely fall through to being read as literal plaintext in
+# load_config(). (Bare alnum-only legacy values are additionally guarded by
+# requiring valid base64 length/padding and printable-ASCII decoded output.)
+decode_config_value() {
+    local raw="$1" decoded
+    [[ -z "$raw" ]] && return 1
+    [[ "$raw" =~ ^[A-Za-z0-9+/]*=*$ ]] || return 1
+    (( ${#raw} % 4 == 0 )) || return 1
+    command -v base64 &>/dev/null || return 1
+    decoded=$(printf '%s' "$raw" | base64 -d 2>/dev/null) || return 1
+    [[ "$decoded" =~ [^[:print:]] ]] && return 1
+    printf '%s' "$decoded"
+}
+
 # --- // PRE-FLIGHT CHECKS
 check_dependencies() {
-    local missing_deps=(); local deps=("git" "fzf" "gh" "shellcheck" "shfmt" "less" "hostname")
-    prominent "Checking for required dependencies..."; for cmd in "${deps[@]}"; do if ! command -v "$cmd" &>/dev/null; then missing_deps+=("$cmd"); fi; done
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        bug "Error: Missing dependencies:"; for dep in "${missing_deps[@]}"; do printf "${RED}- %s${NC}\n" "$dep"; done
-        bug "Please install them and try again."; exit 1
-    else prominent "All dependencies are installed. ${SUCCESS}"; fi
+    local missing_core=() missing_optional=()
+    prominent "Checking for required dependencies..."
+    for cmd in "${CORE_DEPS[@]}"; do command -v "$cmd" &>/dev/null || missing_core+=("$cmd"); done
+    for cmd in "${OPTIONAL_DEPS[@]}"; do command -v "$cmd" &>/dev/null || missing_optional+=("$cmd"); done
+
+    if [ ${#missing_core[@]} -gt 0 ]; then
+        bug "Error: Missing required dependencies:"
+        for dep in "${missing_core[@]}"; do printf "${RED}- %s${NC}\n" "$dep"; done
+        bug "Please install them and try again."
+        exit 1
+    fi
+
+    if [ ${#missing_optional[@]} -gt 0 ]; then
+        warning "${WARN} Missing optional dependencies (only needed for 'Setup Git Hooks'): ${missing_optional[*]}"
+    fi
+    prominent "All required dependencies are installed. ${SUCCESS}"
 }
 
 # --- // FIRST-RUN IDENTITY CONFIGURATION
-# Replaces gui2.sh's hardcoded personal email/username (a portability and
-# correctness defect: running gui2.sh as anyone but its original author
-# generated SSH keys under the wrong email and built remote URLs under the
-# wrong GitHub namespace). Values are collected once, persisted to disk,
-# and reused; get_gh_user()/get_git_email() read from this store.
+# Writes GUI_GIT_EMAIL/GUI_GH_USER to $CONFIG_FILE atomically, base64-encoded.
+# Shared by first_run_setup() and load_config()'s legacy-format auto-migration.
+write_config_file() {
+    {
+        printf 'GUI_GIT_EMAIL=%s\n' "$(encode_config_value "$GUI_GIT_EMAIL")"
+        printf 'GUI_GH_USER=%s\n' "$(encode_config_value "$GUI_GH_USER")"
+    } | atomic_write "$CONFIG_FILE" 600
+}
+
 first_run_setup() {
     prominent "First-Run Setup"
     info "No configuration found at ${CONFIG_FILE}. Let's set one up."
@@ -92,30 +165,71 @@ first_run_setup() {
         read -rp "GitHub username (required): " GUI_GH_USER
     done
 
-    {
-        printf 'GUI_GIT_EMAIL=%q\n' "$GUI_GIT_EMAIL"
-        printf 'GUI_GH_USER=%q\n' "$GUI_GH_USER"
-    } > "$CONFIG_FILE"
-    chmod 600 "$CONFIG_FILE"
+    if ! write_config_file; then
+        bug "Failed to save configuration to ${CONFIG_FILE}."
+        return 1
+    fi
     export GUI_GIT_EMAIL GUI_GH_USER
     prominent "Configuration saved to ${CONFIG_FILE}. ${SUCCESS}"
 }
 
+# Parses $CONFIG_FILE as strict KEY=VALUE lines -- never source/eval's the file,
+# so a corrupted or hand-edited config can never execute arbitrary shell.
+# Values are decoded via decode_config_value(); lines that don't decode as our
+# base64 format are treated as legacy (pre-6.2) plaintext and used as-is, then
+# the file is silently rewritten in the new format so migration only happens once.
 load_config() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         first_run_setup
         return 0
     fi
-    # shellcheck source=/dev/null
-    source "$CONFIG_FILE"
+
+    local line key value decoded was_legacy=0
+    unset GUI_GIT_EMAIL GUI_GH_USER
+    while IFS= read -r line || [ -n "$line" ]; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^(GUI_GIT_EMAIL|GUI_GH_USER)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            if decoded=$(decode_config_value "$value"); then
+                printf -v "$key" '%s' "$decoded"
+            else
+                was_legacy=1
+                printf -v "$key" '%s' "$value"
+            fi
+        else
+            bug "Ignoring unrecognized line in ${CONFIG_FILE}: ${line}"
+        fi
+    done < "$CONFIG_FILE"
+
+    if [ -z "${GUI_GIT_EMAIL:-}" ] || [ -z "${GUI_GH_USER:-}" ]; then
+        bug "Config file at ${CONFIG_FILE} is incomplete or unreadable."
+        if ask_confirmation "Re-run first-run setup now?"; then
+            first_run_setup
+            return 0
+        fi
+        return 1
+    fi
+
     export GUI_GIT_EMAIL GUI_GH_USER
+
+    if [ "$was_legacy" -eq 1 ]; then
+        if write_config_file; then
+            info "Migrated ${CONFIG_FILE} to the current (safer) config format."
+        else
+            warning "${WARN} Could not auto-migrate legacy config format; it will keep working, but re-run Edit Configuration to upgrade it manually."
+        fi
+    fi
 }
 
 edit_config() {
     prominent "Current Configuration"
     if [[ -f "$CONFIG_FILE" ]]; then
+        if [ -z "${GUI_GIT_EMAIL:-}" ] || [ -z "${GUI_GH_USER:-}" ]; then load_config || true; fi
         info "File: ${CONFIG_FILE}"
-        cat "$CONFIG_FILE"
+        info "  Email:          ${GUI_GIT_EMAIL:-<unset>}"
+        info "  GitHub username: ${GUI_GH_USER:-<unset>}"
+        info "(Values are stored base64-encoded on disk for safe, eval-free parsing.)"
     else
         info "No config file exists yet."
     fi
@@ -133,6 +247,26 @@ get_gh_user() {
 get_git_email() {
     if [ -z "${GUI_GIT_EMAIL:-}" ]; then load_config; fi
     echo "$GUI_GIT_EMAIL"
+}
+
+# Portable hostname lookup requiring no external binary (avoids a hard
+# dependency on the `hostname` package, which isn't installed by default on
+# several minimal distros, e.g. Arch's base group). Tries, in order: the
+# `hostname` command if present, bash's own $HOSTNAME, the kernel's exposed
+# hostname file, then `uname -n`, finally falling back to a static label so
+# callers always get a usable (if generic) string.
+get_hostname() {
+    if command -v hostname &>/dev/null; then
+        hostname
+    elif [ -n "${HOSTNAME:-}" ]; then
+        printf '%s' "$HOSTNAME"
+    elif [ -r /proc/sys/kernel/hostname ]; then
+        cat /proc/sys/kernel/hostname
+    elif command -v uname &>/dev/null; then
+        uname -n
+    else
+        printf 'unknown-host'
+    fi
 }
 
 # --- // GUIDED WORKFLOWS
@@ -198,10 +332,18 @@ push_to_remote() {
 
 interactive_add() { prominent "Entering Interactive Staging"; info "Use 's' to see status, 'u' to update, 'p' to patch, 'q' to quit."; git add -i; prominent "Exited interactive staging."; git status -s; }
 
+# Single source of truth for "is there anything to commit": clean vs HEAD AND no
+# untracked files. Shared by quick_commit_push/auto_commit_sync specifically so
+# this predicate only has to be correct in one place -- it previously existed as
+# separately-inlined (and inconsistently-inverted) conditions in each function.
+has_no_changes_to_commit() {
+    git diff-index --quiet HEAD -- && ! git ls-files --others --exclude-standard | grep -q .
+}
+
 quick_commit_push() {
     prominent "Quick Commit & Push"
     git status -s
-    if ! git diff-index --quiet HEAD -- && ! git ls-files --others --exclude-standard | grep -q .; then info "No changes to commit."; return 0; fi
+    if has_no_changes_to_commit; then info "No changes to commit."; return 0; fi
     if ! ask_confirmation "The above changes will be staged. Proceed?"; then info "Operation cancelled."; return 1; fi
     git add .
     read -rp "Enter commit message: " commit_message
@@ -214,7 +356,7 @@ auto_commit_sync() {
     prominent "Auto-Commit & Sync"
     info "This will stage all changes, commit with a timestamped message, and push."
     git status -s
-    if ! git diff-index --quiet HEAD -- && ! git ls-files --others --exclude-standard | grep -q .; then info "No changes to commit."; return 0; fi
+    if has_no_changes_to_commit; then info "No changes to commit."; return 0; fi
     if ! ask_confirmation "Proceed with auto-commit and push?"; then info "Operation cancelled."; return 1; fi
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
     git add .
@@ -274,9 +416,6 @@ interactive_rebase() {
     else info "Rebase cancelled."; fi
 }
 
-# NEW (grafted from gui2.sh, non-interactive counterpart to interactive_rebase
-# above): rebase straight onto an arbitrary branch with no editor pass. Fills
-# a genuine gap the pre-PR-only workflow above doesn't cover.
 rebase_branch() {
     prominent "Rebase Onto Branch (non-interactive)"
     info "Loading branches to select a base..."
@@ -305,13 +444,6 @@ cherry_pick_commit() {
     else info "Cherry-pick cancelled."; fi
 }
 
-# NEW (grafted from gui2.sh, rewritten): merge a branch into the current one.
-# On conflict, offers real, native resolution strategies (ours/theirs/
-# per-file) backed directly by 'git checkout --ours/--theirs', rather than
-# gui2.sh's original design, which called an unverified external
-# "automated_git_conflict_resolver.sh" that is not part of this codebase.
-# This is a fully self-contained, operational replacement for that feature —
-# no external script, nothing fabricated, nothing orphaned.
 resolve_merge_conflicts() {
     prominent "Merge Branch & Resolve Conflicts"
     local current_branch source_branch
@@ -376,6 +508,46 @@ resolve_merge_conflicts() {
 }
 
 # --- // RECOVERY & REPAIR
+reset_to_upstream() {
+    prominent "Discard Unpushed Commits & Restore to Remote State"
+    local current_branch upstream_branch
+    current_branch=$(git branch --show-current) || { bug "Not currently on a branch."; return 1; }
+
+    info "Fetching latest updates for origin..."
+    git fetch origin
+
+    upstream_branch=$(git rev-parse --abbrev-ref "${current_branch}@{u}" 2>/dev/null || echo "")
+    if [ -z "$upstream_branch" ]; then
+        if git show-ref --verify --quiet "refs/remotes/origin/${current_branch}"; then
+            upstream_branch="origin/${current_branch}"
+        else
+            bug "No upstream tracking branch found for '${current_branch}' (e.g. origin/${current_branch})."
+            return 1
+        fi
+    fi
+
+    local ahead_count
+    ahead_count=$(git rev-list --count "${upstream_branch}..${current_branch}")
+    if [ "$ahead_count" -eq 0 ]; then
+        info "Branch '${current_branch}' is not ahead of '${upstream_branch}'. Nothing to discard."
+        return 0
+    fi
+
+    info "Local branch '${current_branch}' is ahead of '${upstream_branch}' by ${ahead_count} commit(s):"
+    git --no-pager log --oneline "${upstream_branch}..${current_branch}"
+    echo
+    warning "${WARN} This will hard-reset '${current_branch}' back to '${upstream_branch}'."
+    warning "Any unpushed commits and uncommitted tracked changes will be discarded, and remote files will be restored."
+    
+    if ! ask_confirmation "Discard these unpushed commits and restore workspace to '${upstream_branch}'?"; then
+        info "Operation cancelled."
+        return 1
+    fi
+
+    git reset --hard "$upstream_branch"
+    prominent "Successfully reset '${current_branch}' to '${upstream_branch}'. Working tree is restored. ${SUCCESS}"
+}
+
 emergency_recovery_protocol() {
     prominent "EMERGENCY RECOVERY PROTOCOL"
     info "This wizard helps you recover from a bad state using the reflog."; echo
@@ -387,8 +559,6 @@ emergency_recovery_protocol() {
     if [ -z "$reflog_entry" ]; then bug "No state selected. Aborting recovery."; return 1; fi
     local good_hash=$(echo "$reflog_entry" | cut -d' ' -f1)
     local description=$(echo "$reflog_entry" | cut -d' ' -f2-)
-    # RESTORED (Rev 5.3 dropped this): let the operator preview the exact
-    # commit before committing to a destructive hard-reset.
     if ask_confirmation "Inspect '${good_hash}' (log + stat) before deciding?"; then
         git --no-pager log -1 --stat "$good_hash" | less -R
         if ! ask_confirmation "Continue with recovery to '${good_hash}'?"; then info "Recovery aborted."; return 1; fi
@@ -400,6 +570,12 @@ emergency_recovery_protocol() {
     if [ "$confirmation" != "$current_branch" ]; then bug "Confirmation failed. Recovery aborted."; return 1; fi
     prominent "Executing recovery..."
     info "Step 1: Resetting local branch..."; git reset --hard "$good_hash"
+    # Intentionally plain --force (not --force-with-lease): the whole point of this
+    # recovery path is to unconditionally overwrite the remote with the operator's
+    # chosen last-known-good state, even if the remote moved again since the last
+    # fetch. A lease check could block the exact recovery being requested here.
+    # (Contrast with pre_pr_cleanup_assistant's --force-with-lease, which protects
+    # against clobbering a collaborator's concurrent push during routine cleanup.)
     info "Step 2: Force-pushing to remote..."; git push origin "$current_branch" --force
     prominent "Recovery protocol complete. Branch '$current_branch' has been restored. ${SUCCESS}"
 }
@@ -440,7 +616,12 @@ fix_git_repository() {
     if ! ask_confirmation "This is a last resort. Are you sure you want to proceed?"; then info "Repair aborted."; return 1; fi
     local backup_dir="../git_repo_backup_$(date +%Y%m%d_%H%M%S)"
     prominent "Backing up current repository to ${backup_dir}..."
-    if ! cp -r . "${backup_dir}"; then bug "Backup failed. Aborting repair."; return 1; fi; info "Backup complete. ${SUCCESS}"
+    # --reflink=auto: byte-for-byte identical result to a plain `cp -r` (same
+    # full-fidelity guarantee -- includes .git, untracked, and ignored files),
+    # but uses copy-on-write clones instead of physically duplicating data on
+    # filesystems that support it (btrfs, xfs, apfs); transparently falls back
+    # to a normal copy everywhere else, so this is never worse than before.
+    if ! cp -r --reflink=auto . "${backup_dir}"; then bug "Backup failed. Aborting repair."; return 1; fi; info "Backup complete. ${SUCCESS}"
     info "Running repair protocol..."; git fsck --full && git gc --prune=now --aggressive
     prominent "Repair process complete. Verify repository integrity. ${SUCCESS}"
 }
@@ -459,9 +640,15 @@ setup_git_hooks() {
     if ! ask_confirmation "This will overwrite existing hooks (after backing them up). Proceed?"; then info "Setup cancelled."; return 1; fi
     local GIT_HOOKS_DIR=".git/hooks"; if [[ ! -d "${GIT_HOOKS_DIR}" ]]; then mkdir -p "${GIT_HOOKS_DIR}"; fi
     install_hook() {
-        local hook_name="$1" hook_content="$2" hook_path="${GIT_HOOKS_DIR}/${hook_name}"
+        local hook_name="$1" hook_content="$2"
+        local hook_path="${GIT_HOOKS_DIR}/${hook_name}"
         if [[ -f "${hook_path}" && ! "${hook_path}" =~ \.sample$ ]]; then cp "${hook_path}" "${hook_path}.backup.$(date +%s)"; fi
-        printf '%s\n' "${hook_content}" >"${hook_path}"; chmod +x "${hook_path}"; info "Installed/updated '${hook_name}' hook."
+        if printf '%s\n' "${hook_content}" | atomic_write "${hook_path}" 755; then
+            info "Installed/updated '${hook_name}' hook."
+        else
+            bug "Failed to install '${hook_name}' hook at ${hook_path}."
+            return 1
+        fi
     }
     install_hook "pre-commit" '#!/usr/bin/env bash
 set -eu
@@ -474,10 +661,6 @@ if [ "${#files[@]}" -gt 0 ]; then
 fi'
     install_hook "commit-msg" '#!/usr/bin/env bash
 set -eu; subject=$(head -n1 "$1"); if (( ${#subject} > 72 )); then echo "ERROR: Subject line > 72 chars." >&2; exit 1; fi'
-    # Grafted from gui2.sh: optional pre-push test gate. Unlike gui2.sh's
-    # original (a hardcoded path to a script that may not exist), this
-    # auto-detects a real test entry point the same way run_integration_tests
-    # does, so it degrades gracefully with no orphaned reference.
     install_hook "pre-push" '#!/usr/bin/env bash
 set -eu
 if [[ -x "./run_tests.sh" ]]; then
@@ -504,10 +687,6 @@ fi'
     prominent "Git hooks installed successfully. ${SUCCESS}"
 }
 
-# NEW (native replacement for gui2.sh's run_integration_tests, which
-# unconditionally dispatched to a fixed "Git/scripts/integration_tests.sh"
-# path that isn't part of this codebase). This version auto-detects a real
-# test entry point in the current repository — no external file assumed.
 run_integration_tests() {
     prominent "Run Project Test Suite"
     info "Auto-detecting a test entry point..."
@@ -556,12 +735,6 @@ run_integration_tests() {
     fi
 }
 
-# NEW (native replacement for gui2.sh's setup_cron_job, which had no
-# self-contained implementation to begin with). Installs a real crontab
-# entry that fetches and fast-forwards this repo on a schedule; it never
-# commits or pushes on the user's behalf. Idempotent: re-running replaces
-# any prior entry tagged for this exact repository path rather than
-# duplicating it.
 setup_cron_job() {
     prominent "Schedule Automatic Fetch/Fast-Forward"
     if ! command -v crontab &>/dev/null; then
@@ -585,7 +758,7 @@ setup_cron_job() {
     if [ -z "$schedule" ]; then bug "Empty schedule."; return 1; fi
 
     local sync_script="${repo_root}/.git/gui-console-autosync.sh"
-    cat > "$sync_script" <<-EOF
+    if ! atomic_write "$sync_script" 755 <<-EOF
 	#!/usr/bin/env bash
 	set -eu
 	cd "${repo_root}" || exit 1
@@ -594,7 +767,10 @@ setup_cron_job() {
 	    git pull --ff-only >/dev/null 2>&1 || true
 	fi
 	EOF
-    chmod +x "$sync_script"
+    then
+        bug "Failed to write autosync script to ${sync_script}."
+        return 1
+    fi
 
     local marker="#git-gui-console:${repo_root}"
     local cron_line="${schedule} ${sync_script} ${marker}"
@@ -609,18 +785,12 @@ setup_cron_job() {
     prominent "Cron job installed. ${SUCCESS}"
 }
 
-# NEW (native replacement for gui2.sh's setup_dependencies). Detects the
-# system package manager and offers to install whatever check_dependencies
-# found missing. Package names are not guaranteed identical across every
-# distro (notably 'gh' and 'shfmt' sometimes need a vendor repo instead of
-# the default one) — this is stated explicitly rather than silently assumed.
 setup_dependencies() {
     prominent "Install Missing Dependencies"
-    local deps=("git" "fzf" "gh" "shellcheck" "shfmt" "less" "hostname")
     local -a missing=()
-    for cmd in "${deps[@]}"; do command -v "$cmd" &>/dev/null || missing+=("$cmd"); done
+    for cmd in "${CORE_DEPS[@]}" "${OPTIONAL_DEPS[@]}"; do command -v "$cmd" &>/dev/null || missing+=("$cmd"); done
     if [ ${#missing[@]} -eq 0 ]; then
-        prominent "All dependencies are already installed. ${SUCCESS}"
+        prominent "All dependencies (required and optional) are already installed. ${SUCCESS}"
         return 0
     fi
     info "Missing: ${missing[*]}"
@@ -647,9 +817,6 @@ setup_dependencies() {
     prominent "Dependency installation attempted. Re-run to verify what's still missing. ${SUCCESS}"
 }
 
-# NEW (native replacement for gui2.sh's perform_backup). Archives the entire
-# repository (including .git, so it's a fully restorable copy) to a
-# timestamped tarball at a destination the user chooses.
 perform_backup() {
     prominent "Repository Backup"
     local repo_root
@@ -697,10 +864,6 @@ list_and_manage_remotes() {
     esac
 }
 
-# NEW (grafted from gui2.sh, rewritten against the config system): point an
-# existing remote at a different repository under the configured GitHub
-# user. gui2.sh's version hardcoded the username "4ndr0666" into the
-# constructed URL; this reads GUI_GH_USER from config instead.
 update_remote_url() {
     prominent "Update Remote URL"
     local remote_name; remote_name=$(git remote | fzf --height=20% --prompt="Select remote to update: ")
@@ -717,9 +880,6 @@ update_remote_url() {
     else info "Operation cancelled."; fi
 }
 
-# NEW (grafted from gui2.sh, rewritten against the config system): reconnect
-# the current working directory to a remote, by name (assumed to belong to
-# the configured GitHub user) or by pasting a full URL directly.
 reconnect_old_repo() {
     prominent "Reconnect to a Repository"
     if git remote get-url origin &>/dev/null; then
@@ -763,7 +923,7 @@ check_and_setup_ssh() {
         ssh-keygen -t ed25519 -C "$(get_git_email)"; prominent "New SSH key generated. ${SUCCESS}"
     fi
     if ask_confirmation "Add this key to your GitHub account?"; then
-        if gh ssh-key add "$ssh_key_path" --title "Git-GUI-$(hostname)"; then prominent "SSH key successfully added to GitHub. ${SUCCESS}"; else bug "Failed to add SSH key. Check 'gh' auth."; fi
+        if gh ssh-key add "$ssh_key_path" --title "Git-GUI-$(get_hostname)"; then prominent "SSH key successfully added to GitHub. ${SUCCESS}"; else bug "Failed to add SSH key. Check 'gh' auth."; fi
     fi
 }
 
@@ -781,12 +941,16 @@ switch_to_ssh() {
 # --- // HELP SYSTEM ---
 display_help() {
     clear
-    printf "${BOLD}${GREEN}Git Strategic Command Console - Help & Usage${NC}\n"
-    printf "${CYAN}Enter the number corresponding to the desired command. Use 'h' for help, 'q' or 'e' to exit.${NC}\n\n"
+    printf '%b' "${BOLD}${GREEN}Git Strategic Command Console - Help & Usage${NC}\n"
+    printf '%b' "${CYAN}Enter the number corresponding to the desired command. Use 'h' for help, 'q' or 'e' to exit.${NC}\n\n"
 
     local category_format="${BOLD}${YELLOW}${UNDERLINE}%s${NC}\n"
     local help_format="  ${GREEN}%-3s${NC} %-25s ${CYAN}%s${NC}\n"
-
+    # category_format/help_format are static, author-controlled column-layout
+    # templates (never derived from user input or file contents); the multi-slot
+    # %-3s/%-25s/%s alignment they provide is intentional and can't be expressed
+    # as a fixed literal format string.
+    # shellcheck disable=SC2059
     printf "$category_format" "GUIDED WORKFLOWS"
     printf "$help_format" "1" "Pristine Contribution" "Create a new feature branch from an up-to-date main/master."
     printf "$help_format" "2" "Pre-PR Cleanup" "Interactively rebase current branch against main/master."
@@ -815,36 +979,39 @@ display_help() {
     printf "$help_format" "19" "Restore Single File" "Find and restore a deleted file from Git history."
     printf "$help_format" "20" "Restore Branch" "Create a new branch from any commit in the history."
     printf "$help_format" "21" "Fix Corrupt Repo" "${BOLD}${RED}DANGEROUS:${NC} Attempt to repair a corrupted local repository."
+    printf "$help_format" "22" "Reset to Upstream" "Discard unpushed commits & restore working tree to remote state."
 
     printf "\n$category_format" "REPOSITORY & CONFIG"
-    printf "$help_format" "22" "Initialize Repository" "Run 'git init' in the current directory."
-    printf "$help_format" "23" "Intelligent Clone" "Clone one of your GitHub repos using fzf."
-    printf "$help_format" "24" "Manage Remotes" "View, add, or remove remote repositories."
-    printf "$help_format" "25" "Update Remote URL" "Point an existing remote at a different repo you own."
-    printf "$help_format" "26" "Reconnect Old Repo" "(Re)point 'origin' at a repo by name or full URL."
-    printf "$help_format" "27" "Convert to SSH" "Convert a remote's HTTPS URL to its SSH equivalent."
-    printf "$help_format" "28" "Add to .gitignore" "Append a pattern to the .gitignore file."
-    printf "$help_format" "29" "Check & Setup SSH" "Check/generate an SSH key and add it to GitHub."
-    printf "$help_format" "30" "Edit Configuration" "View or reset your saved email/GitHub username."
+    printf "$help_format" "23" "Initialize Repository" "Run 'git init' in the current directory."
+    printf "$help_format" "24" "Intelligent Clone" "Clone one of your GitHub repos using fzf."
+    printf "$help_format" "25" "Manage Remotes" "View, add, or remove remote repositories."
+    printf "$help_format" "26" "Update Remote URL" "Point an existing remote at a different repo you own."
+    printf "$help_format" "27" "Reconnect Old Repo" "(Re)point 'origin' at a repo by name or full URL."
+    printf "$help_format" "28" "Convert to SSH" "Convert a remote's HTTPS URL to its SSH equivalent."
+    printf "$help_format" "29" "Add to .gitignore" "Append a pattern to the .gitignore file."
+    printf "$help_format" "30" "Check & Setup SSH" "Check/generate an SSH key and add it to GitHub."
+    printf "$help_format" "31" "Edit Configuration" "View or reset your saved email/GitHub username."
 
     printf "\n$category_format" "DIAGNOSTICS & AUTOMATION"
-    printf "$help_format" "31" "Search Repository" "Search for a string in all tracked files ('git grep')."
-    printf "$help_format" "32" "Find Large Files" "Scan history for files larger than 50MB."
-    printf "$help_format" "33" "Setup Git Hooks" "Install client-side hooks for linting, formatting, and tests."
+    printf "$help_format" "32" "Search Repository" "Search for a string in all tracked files ('git grep')."
+    printf "$help_format" "33" "Find Large Files" "Scan history for files larger than 50MB."
+    printf "$help_format" "34" "Setup Git Hooks" "Install client-side hooks for linting, formatting, and tests."
+    printf "$help_format" "35" "Run Test Suite" "Auto-detect and run test suites (Makefile, npm, cargo, etc.)."
+    printf "$help_format" "36" "Schedule Autosync Cron" "Install a safe, non-pushing fetch/fast-forward cron job."
+    printf "$help_format" "37" "Setup Dependencies" "Detect package manager and install required CLI dependencies."
+    printf "$help_format" "38" "Backup Repository" "Create an archive tarball of the repo and its history."
     echo
 }
 
 # --- // MAIN MENU & LOOP ---
 display_menu() {
     clear
-    local ver="6.0"
+    local ver="6.3"
     local head_color="${BOLD}${CYAN}"
     local border_color="${CYAN}"
     local cat_color="${BOLD}${YELLOW}"
     local num_color="${GREEN}"
 
-    # Use %b to interpret ANSI color codes in the arguments.
-    # Each column: Number (2 chars), Text (21 chars), Space (2 chars) = 25 chars wide.
     local menu_line_format="  ${num_color}%-2s)${NC} %-21b${num_color}%-2s)${NC} %-21b${num_color}%-2s)${NC} %-21b\n"
 
     printf "${border_color}╭──────────────────────────────────────────────────────────────────────────╮${NC}\n"
@@ -852,12 +1019,15 @@ display_menu() {
     printf "${border_color}╰──────────────────────────────────────────────────────────────────────────╯${NC}\n"
 
     printf "  ${cat_color}%-25s %-25s %-25s${NC}\n" "WORKFLOWS & DAILY OPS" "BRANCHING & HISTORY" "RECOVERY & REPAIR"
+    # menu_line_format is a static, author-controlled 3-column layout template
+    # (see rationale at category_format/help_format above).
+    # shellcheck disable=SC2059
     printf "$menu_line_format" \
         "1" "Pristine Contribution" "10" "View History"        "18" "${RED}Emergency Recovery${NC}" \
         "2" "Pre-PR Cleanup"        "11" "Switch Branch"       "19" "Restore Single File" \
         "3" "Fetch All Remotes"     "12" "Create Branch"       "20" "Restore Branch" \
         "4" "Pull (Safe Rebase)"    "13" "Delete Branch"       "21" "${RED}Fix Corrupt Repo${NC}" \
-        "5" "Push to Upstream"      "14" "Interactive Rebase"  "" "" \
+        "5" "Push to Upstream"      "14" "Interactive Rebase"  "22" "Reset to Upstream" \
         "6" "Interactive Add"       "15" "Cherry-Pick Commit"  "" "" \
         "7" "Quick Commit & Push"   "16" "Rebase Onto Branch"  "" "" \
         "8" "Auto-Commit & Sync"    "17" "Resolve Conflicts"   "" "" \
@@ -865,16 +1035,18 @@ display_menu() {
 
     printf "\n"
     printf "  ${cat_color}%-25s %-25s %-25s${NC}\n" "REPOSITORY & CONFIG" "DIAGNOSTICS & AUTOMATION" ""
+    # See rationale above.
+    # shellcheck disable=SC2059
     printf "$menu_line_format" \
-        "22" "Initialize Repo"       "31" "Search Repository"   "" "" \
-        "23" "Intelligent Clone"     "32" "Find Large Files"    "" "" \
-        "24" "Manage Remotes"        "33" "Setup Git Hooks"     "" "" \
-        "25" "Update Remote URL"     ""   ""                    "" "" \
-        "26" "Reconnect Old Repo"    ""   ""                    "" "" \
-        "27" "Convert to SSH"        ""   ""                    "" "" \
-        "28" "Add to .gitignore"     ""   ""                    "" "" \
-        "29" "Check & Setup SSH"     ""   ""                    "" "" \
-        "30" "Edit Configuration"    ""   ""                    "" ""
+        "23" "Initialize Repo"       "32" "Search Repository"   "" "" \
+        "24" "Intelligent Clone"     "33" "Find Large Files"    "" "" \
+        "25" "Manage Remotes"        "34" "Setup Git Hooks"     "" "" \
+        "26" "Update Remote URL"     "35" "Run Test Suite"      "" "" \
+        "27" "Reconnect Old Repo"    "36" "Schedule Auto-Sync"  "" "" \
+        "28" "Convert to SSH"        "37" "Setup Dependencies"  "" "" \
+        "29" "Add to .gitignore"     "38" "Backup Repository"   "" "" \
+        "30" "Check & Setup SSH"     ""   ""                    "" "" \
+        "31" "Edit Configuration"    ""   ""                    "" ""
 
     printf "${border_color}──────────────────────────────────────────────────────────────────────────${NC}\n"
     printf "  ${num_color}h)${NC} Help                                                           ${num_color}q/e)${NC} Exit\n"
@@ -894,11 +1066,12 @@ gui() {
       10) view_commit_history ;; 11) switch_branch ;; 12) create_new_branch ;; 13) delete_branch ;;
       14) interactive_rebase ;; 15) cherry_pick_commit ;; 16) rebase_branch ;; 17) resolve_merge_conflicts ;;
       18) emergency_recovery_protocol ;; 19) restore_single_file ;; 20) restore_branch_from_commit ;;
-      21) fix_git_repository ;;
-      22) initialize_repository ;; 23) intelligent_clone ;; 24) list_and_manage_remotes ;;
-      25) update_remote_url ;; 26) reconnect_old_repo ;;
-      27) switch_to_ssh ;; 28) add_to_gitignore ;; 29) check_and_setup_ssh ;; 30) edit_config ;;
-      31) search_repository ;; 32) find_large_files ;; 33) setup_git_hooks ;;
+      21) fix_git_repository ;; 22) reset_to_upstream ;;
+      23) initialize_repository ;; 24) intelligent_clone ;; 25) list_and_manage_remotes ;;
+      26) update_remote_url ;; 27) reconnect_old_repo ;;
+      28) switch_to_ssh ;; 29) add_to_gitignore ;; 30) check_and_setup_ssh ;; 31) edit_config ;;
+      32) search_repository ;; 33) find_large_files ;; 34) setup_git_hooks ;;
+      35) run_integration_tests ;; 36) setup_cron_job ;; 37) setup_dependencies ;; 38) perform_backup ;;
       h|H) display_help ;;
       e|q|E|Q) info "Exiting..."; exit 0 ;;
       *) bug "Invalid choice '$choice'. Displaying help..."; display_help ;;
@@ -927,451 +1100,10 @@ main() {
     gui
 }
 
-main "$@"#!/bin/bash
-# shellcheck disable=SC2155,SC2034
-# Rev: 4
-# Author: 4ndr0666, Ψ-Anarch, HIC-7
-set -euo pipefail
-# ============================== // GUI.SH //
-# Description: A strategic command console for Git operations.
-#
-# -------------------------------------------
-
-# Constants: Colors & Symbols
-readonly GREEN='\033[0;32m'; readonly BOLD='\033[1m'; readonly RED='\033[0;31m'
-readonly CYAN='\033[0;36m'; readonly NC='\033[0m'
-readonly SUCCESS="✔️"; readonly FAILURE="❌"; readonly INFO="➡️"
-
-# UI & HELPER FUNCTIONS:
-prominent() { printf "${BOLD}${GREEN}%s${NC}\n" "$1"; }
-bug() { printf "${BOLD}${RED}%s${NC}\n" "$1" >&2; }
-info() { printf "${CYAN}%s${NC}\n" "$1"; }
-pause() { read -n 1 -s -r -p "Press any key to continue..."; echo; }
-
-ask_confirmation() {
-    local prompt_message="$1"; local response
-    while true; do
-        read -rp "$prompt_message (y/n): " response
-        case "$response" in [yY]|[yY][eE][sS]) return 0;; [nN]|[nN][oO]) return 1;; *) bug "Invalid input.";; esac
-    done
-}
-
-# --- // PRE-FLIGHT CHECKS:
-check_dependencies() {
-    local missing_deps=(); local deps=("git" "fzf" "gh" "shellcheck" "shfmt" "rsync")
-    prominent "Checking for required dependencies..."; for cmd in "${deps[@]}"; do if ! command -v "$cmd" &>/dev/null; then missing_deps+=("$cmd"); fi; done
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        bug "Error: Missing dependencies:"; for dep in "${missing_deps[@]}"; do printf "${RED}- %s${NC}\n" "$dep"; done
-        bug "Please install them and try again."; exit 1
-    else prominent "All dependencies are installed. ${SUCCESS}"; fi
-}
-
-# --- // DYNAMIC CONFIGURATION:
-get_gh_user() { if [ -z "${GH_USER:-}" ]; then local user_name; user_name=$(gh api user --jq .login) || { bug "Failed to get GitHub username."; return 1; }; export GH_USER="$user_name"; fi; echo "$GH_USER"; }
-get_git_email() { git config user.email || echo "user@example.com"; }
-
-# --- // GUIDED WORKFLOWS
-pristine_contribution_wizard() {
-    prominent "Pristine Contribution Wizard"
-    local main_branch="main"
-    if ! git show-ref --verify --quiet refs/heads/"$main_branch"; then
-        main_branch="master"
-        if ! git show-ref --verify --quiet refs/heads/"$main_branch"; then
-            bug "Could not determine default branch (main/master). Aborting."
-            return 1
-        fi
-    fi
-    info "Step 1: Ensuring '$main_branch' is up-to-date."
-    git checkout "$main_branch" && git pull origin "$main_branch" --rebase
-    read -rp "Step 2: Enter name for your new feature branch: " new_branch
-    if [ -z "$new_branch" ]; then bug "Branch name cannot be empty."; return 1; fi
-    git checkout -b "$new_branch"
-    prominent "Switched to new branch '$new_branch'."
-    info "You can now start working on your changes."
-    if ask_confirmation "Push this new branch to origin to set up tracking?"; then
-        git push --set-upstream origin "$new_branch"
-    fi
-    prominent "Wizard complete. Happy coding! ${SUCCESS}"
-}
-
-pre_flight_cleanup_assistant() {
-    prominent "Pre-PR Cleanup Assistant"
-    local current_branch=$(git branch --show-current)
-    local target_branch="main"
-    if ! git show-ref --verify --quiet refs/heads/"$target_branch"; then
-        target_branch="master"
-    fi
-    info "This assistant helps you clean up '$current_branch' before creating a pull request against '$target_branch'."
-    if ask_confirmation "Start an interactive rebase against '$target_branch' to squash/reword commits?"; then
-        info "Rebasing '$current_branch' onto '$target_branch'..."
-        if ! git rebase -i "$target_branch"; then
-            bug "Rebase failed. Please resolve conflicts and run 'git rebase --continue' or 'git rebase --abort'."
-            return 1
-        fi
-        info "Rebase complete."
-        if ask_confirmation "Force-push the cleaned branch to update the remote? (Required after rebase)"; then
-            git push --force-with-lease
-            prominent "Force push complete."
-        fi
-    fi
-    prominent "Cleanup complete. Your branch is ready for a pull request. ${SUCCESS}"
-}
-
-# --- // EMERGENCY & RECOVERY PROTOCOLS
-emergency_recovery_protocol() {
-    prominent "EMERGENCY RECOVERY PROTOCOL"
-    info "This wizard helps you recover from a bad state (e.g., accidental deletion)."; echo
-    if ! ask_confirmation "This involves 'git reset --hard' and 'git push --force'. Proceed with caution?"; then info "Recovery aborted."; return 1; fi
-    local current_branch=$(git branch --show-current)
-    info "Analyzing the reference log for the current branch: '$current_branch'..."
-    local reflog_entry; reflog_entry=$(git reflog --pretty=format:'%h %gs' | fzf --height=50% --prompt="Select the LAST KNOWN GOOD state to restore to: ")
-    if [ -z "$reflog_entry" ]; then bug "No state selected. Aborting recovery."; return 1; fi
-    local good_hash=$(echo "$reflog_entry" | cut -d' ' -f1)
-    local description=$(echo "$reflog_entry" | cut -d' ' -f2-)
-    info "You have selected: ${good_hash} - ${description}"
-    if ask_confirmation "Do you want to temporarily checkout this commit to inspect it?"; then
-        git checkout "$good_hash"
-        prominent "You are now in a DETACHED HEAD state at ${good_hash} for inspection."
-        info "Check your files. When you are done, return here and press any key."
-        pause
-        git checkout "$current_branch"
-        info "Returned to branch '$current_branch'."
-    fi
-    bug "FINAL WARNING: The next step is DESTRUCTIVE and will rewrite history."
-    printf "${RED}You are about to hard-reset '${current_branch}' to '${good_hash}' and force-push.${NC}\n"
-    read -rp "To confirm, type the branch name ('$current_branch'): " confirmation
-    if [ "$confirmation" != "$current_branch" ]; then bug "Confirmation failed. Recovery aborted."; return 1; fi
-    prominent "Executing recovery..."
-    info "Step 1: Resetting local branch..."; git reset --hard "$good_hash"
-    info "Step 2: Force-pushing to remote..."; git push origin "$current_branch" --force
-    prominent "Recovery protocol complete. Branch '$current_branch' has been restored. ${SUCCESS}"
-}
-
-restore_single_file() {
-    prominent "Restore Single Deleted File"
-    info "Finding commits where files were deleted..."
-    local deletion_log
-    deletion_log=$(git log --diff-filter=D --summary --pretty=format:'%C(yellow)%h %C(reset)%s' | sed -n '/delete mode/p' | sed 's/ delete mode [0-9]* //')
-    if [ -z "$deletion_log" ]; then bug "Could not find any file deletions in the history."; return 1; fi
-    local selection
-    selection=$(echo "$deletion_log" | fzf --prompt="Select the deletion event to reverse: ")
-    if [ -z "$selection" ]; then info "Operation canceled."; return 1; fi
-    local commit_hash=$(echo "$selection" | awk '{print $1}')
-    local file_path=$(echo "$selection" | awk '{$1=""; print $0}' | xargs)
-    local parent_hash="${commit_hash}^"
-    info "You are about to restore '${file_path}' from the commit before it was deleted (${parent_hash})."
-    if ! ask_confirmation "Proceed?"; then info "Restore canceled."; return 1; fi
-    git checkout "$parent_hash" -- "$file_path"
-    prominent "File '${file_path}' has been restored to your working directory. ${SUCCESS}"
-    info "Please stage and commit this change."; git status --short
-}
-
-# --- // DAILY OPERATIONS
-fetch_from_remote() { prominent "Fetching updates..."; git fetch --all --prune; prominent "Fetch complete."; }
-
-pull_from_remote() {
-    local current_branch=$(git branch --show-current)
-    if ! git diff-index --quiet HEAD --; then
-        info "Local changes detected."
-        if ask_confirmation "Stash changes before pulling?"; then
-            git stash push -u -m "autostash-before-pull-$(date +%s)"
-            prominent "Changes stashed."
-            if ! git pull --rebase; then
-                bug "Pull failed. Your changes remain stashed. Please resolve the pull issues manually."
-                return 1
-            fi
-            if ! git stash pop; then
-                bug "Could not pop stashed changes. There might be a conflict. Use 'git stash apply' to inspect."
-                return 1
-            fi
-            prominent "Pulled with rebase and restored stashed changes. ${SUCCESS}"
-        else
-            bug "Pull aborted due to uncommitted changes."; return 1
-        fi
-    else
-        prominent "Pulling updates for branch '$current_branch'..."; git pull --rebase; prominent "Pull complete. ${SUCCESS}"
-    fi
-}
-
-push_to_remote() {
-    local current_branch=$(git branch --show-current)
-    local remote_branch=$(git rev-parse --abbrev-ref "$current_branch"@{u} 2>/dev/null)
-    if [ -z "$remote_branch" ]; then
-        info "No upstream branch is set for '$current_branch'."
-        if ask_confirmation "Push and set upstream to 'origin/$current_branch'?"; then
-            git push --set-upstream origin "$current_branch"
-        else
-            info "Push aborted."; return 1
-        fi
-    else
-        prominent "Pushing to '$remote_branch'..."; git push
-    fi
-    prominent "Push complete. ${SUCCESS}"
-}
-
-interactive_add() {
-    prominent "Entering Interactive Staging"
-    info "Use 's' to see status, 'u' to update, 'p' to patch, 'q' to quit."
-    git add -i
-    prominent "Exited interactive staging."
-    git status -s
-}
-
-quick_commit_push() {
-    prominent "Quick Commit & Push"
-    git status -s
-    if ! ask_confirmation "The above changes will be staged. Proceed?"; then
-        info "Operation cancelled."
-        return 1
-    fi
-    git add .
-    read -rp "Enter commit message: " commit_message
-    if [ -z "$commit_message" ]; then
-        bug "Commit message cannot be empty. Aborting."
-        return 1
-    fi
-    git commit -m "$commit_message"
-    push_to_remote
-}
-
-manage_stashes() {
-    prominent "Stash Manager"
-    local stashes=$(git stash list)
-    if [ -z "$stashes" ]; then
-        info "No stashes found."; return 0
-    fi
-    local selection=$(echo "$stashes" | fzf --prompt="Select a stash: " --header="[a]pply, [p]op, [d]rop, [s]how")
-    if [ -z "$selection" ]; then info "Operation cancelled."; return 1; fi
-    
-    local stash_ref=$(echo "$selection" | awk '{print $1}' | sed 's/://')
-    read -rp "Action for $stash_ref ([a]pply, [p]op, [d]rop, [s]how): " action
-
-    case "$action" in
-        a|A) git stash apply "$stash_ref" ;;
-        p|P) git stash pop "$stash_ref" ;;
-        d|D) if ask_confirmation "Really drop $stash_ref?"; then git stash drop "$stash_ref"; fi ;;
-        s|S) git stash show -p "$stash_ref" | less -R ;;
-        *) bug "Invalid action." ;;
-    esac
-}
-
-# --- // BRANCHING & HISTORY
-view_commit_history() { git log --oneline --graph --decorate --all | less -R; }
-
-list_branches() { prominent "Branches:"; git branch -a --color=always | less -R; }
-
-switch_branch() {
-    local branch
-    branch=$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin | sed 's/origin\///' | sort -u | fzf --prompt="Select branch to switch to: ")
-    if [ -n "$branch" ]; then git checkout "$branch"; fi
-}
-
-create_new_branch() { read -rp "Enter new branch name: " name; if [ -n "$name" ]; then git checkout -b "$name"; fi; }
-
-delete_branch() {
-    local branch
-    branch=$(git branch --format='%(refname:short)' | fzf --prompt="Select LOCAL branch to delete: ")
-    if [ -n "$branch" ]; then
-        if ask_confirmation "Delete local branch '$branch'?"; then git branch -d "$branch"; fi
-        if ask_confirmation "Also delete remote branch 'origin/$branch'?"; then git push origin --delete "$branch"; fi
-    fi
-}
-
-# --- // ADVANCED DIAGNOSTICS
-search_repository() { read -rp "Enter search query (grep): " q; if [ -n "$q" ]; then git grep -i "$q"; fi; }
-
-find_large_files() {
-    prominent "Scanning repository for large files (>50MB)..."
-    git rev-list --objects --all | \
-      git cat-file --batch-check='%(objectname) %(objecttype) %(objectsize) %(rest)' | \
-      awk '$3 > 50000000 {printf "%.2f MB\t%s\n", $3/1048576, $4}' | \
-      sort -hr | less
-}
-
-initialize_repository() {
-    if [ -d ".git" ]; then
-        bug "This is already a Git repository."; return 1
-    fi
-    prominent "Initializing new Git repository..."
-    git init
-    info "Creating initial commit..."
-    echo "# New Project" > README.md
-    git add README.md
-    git commit -m "Initial commit"
-    if ask_confirmation "Do you want to add a remote origin now?"; then
-        read -rp "Enter remote URL (e.g., git@github.com:user/repo.git): " remote_url
-        if [ -n "$remote_url" ]; then
-            git remote add origin "$remote_url"
-            prominent "Remote 'origin' added. ${SUCCESS}"
-        fi
-    fi
-}
-
-# --- // CONFIGURATION
-add_to_gitignore() {
-    if [ ! -f ".gitignore" ]; then
-        info "Creating .gitignore file."
-        touch .gitignore
-    fi
-    read -rp "Enter pattern to add to .gitignore: " p
-    if [ -n "$p" ]; then
-        echo "$p" >> .gitignore
-        prominent "'$p' added to .gitignore. ${SUCCESS}"
-    fi
-}
-
-check_and_setup_ssh() {
-    prominent "SSH Key Setup Assistant"
-    local ssh_key_path="$HOME/.ssh/id_ed25519.pub"
-    if [ -f "$ssh_key_path" ]; then
-        prominent "Existing SSH key found: $ssh_key_path ${SUCCESS}"
-    else
-        info "No SSH key found at $ssh_key_path."
-        if ! ask_confirmation "Do you want to generate a new SSH key?"; then
-            info "SSH setup aborted."; return 1
-        fi
-        local email=$(get_git_email)
-        ssh-keygen -t ed25519 -C "$email"
-        prominent "New SSH key generated. ${SUCCESS}"
-    fi
-    if ask_confirmation "Do you want to add this key to your GitHub account?"; then
-        if gh ssh-key add "$ssh_key_path" --title "Git-GUI-$(hostname)"; then
-            prominent "SSH key successfully added to GitHub. ${SUCCESS}"
-        else
-            bug "Failed to add SSH key to GitHub. Please check 'gh' authentication."
-        fi
-    fi
-}
-
-intelligent_clone() {
-    prominent "Intelligent Clone Assistant"
-    info "Fetching a list of your GitHub repositories..."
-    local repo_to_clone
-    repo_to_clone=$(gh repo list --limit 100 | fzf --prompt="Select a repository to clone: ")
-    if [ -z "$repo_to_clone" ]; then info "Clone operation cancelled."; return 1; fi
-    local repo_name=$(echo "$repo_to_clone" | awk '{print $1}')
-    info "Cloning $repo_name..."
-    gh repo clone "$repo_name"
-    prominent "Repository cloned successfully. ${SUCCESS}"
-}
-
-list_and_manage_remotes() {
-    prominent "Remote Management"
-    git remote -v
-    read -rp "Action ([a]dd, [r]emove, [q]uit): " action
-    case "$action" in
-        a|A)
-            read -rp "Enter remote name (e.g., upstream): " name
-            read -rp "Enter remote URL: " url
-            if [ -n "$name" ] && [ -n "$url" ]; then git remote add "$name" "$url"; fi
-            ;;
-        r|R)
-            local remote_to_remove=$(git remote | fzf --prompt="Select remote to remove: ")
-            if [ -n "$remote_to_remove" ]; then git remote remove "$remote_to_remove"; fi
-            ;;
-        *)
-            info "No action taken."
-            ;;
-    esac
-}
-
-auto_commit_sync() {
-    prominent "Auto-Commit & Sync"
-    info "This will stage all changes, commit with a timestamped message, and push."
-    git status -s
-    if ! ask_confirmation "Proceed with auto-commit and push?"; then
-        info "Operation cancelled."; return 1
-    fi
-    local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    git add .
-    git commit -m "Auto-sync: $timestamp"
-    push_to_remote
-    prominent "Auto-sync complete. ${SUCCESS}"
-}
-
-# --- // MAIN LOGIC LOOP:
-gui() {
-  while true; do
-    clear
-    local menu_format="  ${GREEN}%-2s)${NC} %-30s ${GREEN}%-3s)${NC} %s\n"
-    local heading_format="\n  ${BOLD}${GREEN}%-34s %-34s${NC}\n"
-    
-    prominent "# --- // Git Strategic Command Console //"
-    
-    printf "$heading_format" "GUIDED WORKFLOWS" "EMERGENCY & RECOVERY"
-    printf "$menu_format" "1" "Pristine Contribution Wizard" "10" "Emergency Recovery Protocol"
-    printf "$menu_format" "2" "Pre-PR Cleanup Assistant" "11" "Restore Single Deleted File"
-    
-    printf "$heading_format" "DAILY OPERATIONS" "BRANCHING & HISTORY"
-    printf "$menu_format" "20" "Fetch All Remotes" "30" "View Commit History"
-    printf "$menu_format" "21" "Pull (Safe Rebase)" "31" "List & Switch Branches"
-    printf "$menu_format" "22" "Push to Upstream" "32" "Create New Branch"
-    printf "$menu_format" "23" "Interactive Add" "33" "Delete Branch"
-    printf "$menu_format" "24" "Quick Commit & Push" "34" "Manage Stashes"
-    printf "$menu_format" "25" "Auto-Commit & Sync" "" ""
-
-    printf "$heading_format" "REPOSITORY & CONFIG" "ADVANCED DIAGNOSTICS"
-    printf "$menu_format" "40" "Initialize Repository" "50" "Search Repository Content"
-    printf "$menu_format" "41" "Intelligent Clone" "51" "Find Large Files in History"
-    printf "$menu_format" "42" "Manage Remotes" "" ""
-    printf "$menu_format" "43" "Add to .gitignore" "" ""
-    printf "$menu_format" "44" "Check & Setup SSH Key" "" ""
-
-    printf "\n  ${GREEN}e/q)${NC} Exit\n"
-    printf "\n${GREEN}By your command:${NC}\n"
-    read -rp "❯ " choice
-
-    case "$choice" in
-      1) pristine_contribution_wizard ;;
-      2) pre_flight_cleanup_assistant ;;
-      10) emergency_recovery_protocol ;;
-      11) restore_single_file ;;
-
-      20) fetch_from_remote ;;
-      21) pull_from_remote ;;
-      22) push_to_remote ;;
-      23) interactive_add ;;
-      24) quick_commit_push ;;
-      25) auto_commit_sync ;;
-
-      30) view_commit_history ;;
-      31) switch_branch ;;
-      32) create_new_branch ;;
-      33) delete_branch ;;
-      34) manage_stashes ;;
-
-      40) initialize_repository ;;
-      41) intelligent_clone ;;
-      42) list_and_manage_remotes ;;
-      43) add_to_gitignore ;;
-      44) check_and_setup_ssh ;;
-
-      50) search_repository ;;
-      51) find_large_files ;;
-
-      e|q) info "Exiting..."; exit 0 ;;
-      *) bug "Invalid choice!" ;;
-    esac || true
-    pause
-  done
-}
-
-# --- // SCRIPT ENTRYPOINT
-main() {
-    # Check if we are inside a git repository for context-sensitive commands
-    if ! git rev-parse --is-inside-work-tree &> /dev/null; then
-        info "Not inside a Git repository. Some commands will be unavailable."
-        if ask_confirmation "Do you want to initialize a new repository here or clone an existing one?"; then
-            read -rp "Choose: [i]nitialize or [c]lone? " init_choice
-            case "$init_choice" in
-                i|I) initialize_repository ;;
-                c|C) intelligent_clone ;;
-                *) info "Proceeding with limited functionality." ;;
-            esac
-        fi
-    fi
-    check_dependencies
-    gui
-}
-
-main
+# Only auto-run when executed directly (./gui.sh, bash gui.sh) -- guarded so
+# this file can also be `source`d (e.g. by tests/gui_smoke_test.sh) to load its
+# function definitions without launching check_dependencies/load_config/the
+# interactive TUI loop. Zero behavior change for normal direct execution.
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
+    main "$@"
+fi

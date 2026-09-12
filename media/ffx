@@ -94,14 +94,14 @@ IFS=$'\n\t'
 # =============================================================================
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
-: "${XDG_CACHE_HOME:=$HOME/.cache}"
-: "${XDG_RUNTIME_DIR:=${TMPDIR:-/tmp}}"
+#: "${XDG_CACHE_HOME:=$HOME/.cache}"
+#: "${XDG_RUNTIME_DIR:=${TMPDIR:-/sto2/tmp}}"
 
 FFX_CONFIG_DIR="$XDG_CONFIG_HOME/ffx"
 FFX_LOG_DIR="$XDG_DATA_HOME/ffx"
-FFX_CACHE_DIR="$XDG_CACHE_HOME/ffx"
+FFX_CACHE_DIR="/sto2/tmp/ffx"
 FFX_DEFAULTS="$FFX_CONFIG_DIR/defaults"
-FFX_RUN_DIR="$(mktemp -d -p "${XDG_RUNTIME_DIR}" "ffx.XXXXXXXX")"
+FFX_RUN_DIR="$(mktemp -d -p "/sto2/tmp/" "ffx.XXXXXXXX")"
 LOG_FILE="$FFX_LOG_DIR/ffx.log"
 
 # FFX_CHECKPOINT_DIR persists ACROSS runs (unlike FFX_RUN_DIR, which is wiped on
