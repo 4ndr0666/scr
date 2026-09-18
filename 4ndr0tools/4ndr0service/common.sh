@@ -302,6 +302,48 @@ path_prepend() {
     fi
 }
 
+# =============================================================================
+# 8.5 BOUNDED EAFP EXECUTION
+# =============================================================================
+# Central execution boundary for external commands. Callers supply the timeout
+# budget explicitly so policy remains visible at each call site while timeout
+# mechanics, diagnostics, and exit-status propagation remain centralized.
+#
+# Usage:
+#   run_bounded <seconds> <label> <command> [args...]
+#
+# The command is executed directly (EAFP). A timeout returns the same non-zero
+# failure path as any other command; callers must not append `|| true` to this
+# primitive when failure is operationally significant.
+# =============================================================================
+run_bounded() {
+    local seconds="$1"
+    local label="$2"
+    shift 2
+
+    [[ "$seconds" =~ ^[1-9][0-9]*$ ]] || {
+        log_error "run_bounded: invalid timeout '$seconds' for $label"
+        return 2
+    }
+    (($# > 0)) || {
+        log_error "run_bounded: missing command for $label"
+        return 2
+    }
+
+    log_info "Executing $label (timeout: ${seconds}s)..."
+    if timeout --signal=TERM --kill-after=10s -- "$seconds" "$@"; then
+        return 0
+    fi
+
+    local status=$?
+    if (( status == 124 || status == 137 )); then
+        log_error "$label timed out after ${seconds}s."
+    else
+        log_error "$label failed with exit code $status."
+    fi
+    return "$status"
+}
+
 # Execute multiple functions in parallel and wait for all to complete.
 # Returns 1 if any worker failed; 0 if all succeeded.
 run_parallel_checks() {
