@@ -31,7 +31,6 @@ if [[ -z "${_4NDR0_MUTEX_LOCKED:-}" ]]; then
     fi
 
     exec 200>"$_LOCK_FILE"
-    # --wait 10: block up to 10s for the lock — safe for systemd oneshot context
     if ! flock --wait 10 200; then
         echo -e "\033[38;5;208m[WARN] Could not acquire mutex lock after 10s (UID ${EUID:-$(id -u)}). Aborting.\033[0m" >&2
         exit 1
@@ -40,10 +39,6 @@ if [[ -z "${_4NDR0_MUTEX_LOCKED:-}" ]]; then
 fi
 # =============================================================================
 # 1. ANSI COLORS
-# FIX: The original file exported these variables then immediately re-declared
-#      them with `declare -r`.  Under `set -euo pipefail`, re-declaring an
-#      already-exported variable as readonly raises a fatal error.  Single
-#      authoritative `export` block; no `declare -r` anywhere in this file.
 # =============================================================================
 
 export C_RED='\033[0;31m'
@@ -54,8 +49,6 @@ export C_RESET='\033[0m'
 
 # =============================================================================
 # 2. XDG BASE DIRECTORY SPECIFICATION  (single authoritative block)
-# FIX: Original had two separate export blocks for XDG vars (Sections 2 & 4)
-#      which created redundancy and a maintenance hazard.  Unified here.
 # =============================================================================
 
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -85,14 +78,6 @@ export LOG_FILE="${XDG_CACHE_HOME}/4ndr0service/service.log"
 # =============================================================================
 
 ensure_pkg_path() {
-    # D-14 NOTE: This fallback walker is intentionally shallow (3 levels up).
-    # All production entry points (main.sh, final_audit.sh, ascension.sh,
-    # purge_matrix.sh, install_env_maintenance.sh) set PKG_PATH explicitly via
-    # self-resolution before sourcing common.sh, so this function only activates
-    # during interactive debugging where PKG_PATH was not pre-set.
-    # Risk: a parent directory containing an unrelated common.sh within 3 levels
-    # could be found instead. If this is a concern for your deployment layout,
-    # always set PKG_PATH explicitly before sourcing common.sh.
     if [[ -z "${PKG_PATH:-}" || ! -f "${PKG_PATH:-}/common.sh" ]]; then
         local caller="${BASH_SOURCE[0]:-$0}"
         local script_dir
@@ -143,9 +128,6 @@ handle_error() {
     local command="$2"
     local exit_code="${3:-$?}"
     log_error "Command '$command' failed at line $line_no with exit code $exit_code."
-    # D-08 FIX: Services can set _ALLOW_ERRORS=1 to make handle_error recoverable
-    # (log and return) rather than fatal (exit). Default behavior (exit) is
-    # preserved for all callers that do not set the flag — no breaking change.
     if [[ "${_ALLOW_ERRORS:-0}" == "1" ]]; then
         return "$exit_code"
     fi
@@ -178,12 +160,6 @@ ensure_xdg_dirs() {
 
 # =============================================================================
 # 6. PACKAGE MANAGEMENT
-# FIX: pkg_is_installed() logic was inverted. Original:
-#        `[[ -z "$pkg" ]] && pacman -Qi "$pkg" &>/dev/null`
-#      This called pacman when $pkg was EMPTY (guaranteed failure) and silently
-#      returned exit-0 ("installed") for every non-empty value without querying
-#      pacman at all, meaning install_sys_pkg() never installed anything.
-#      Corrected: guard returns 1 on empty input, then pacman is queried.
 # =============================================================================
 
 detect_pkg_manager() { echo "pacman"; }
@@ -200,8 +176,6 @@ install_sys_pkg() {
         log_info "$pkg is already installed."
         return 0
     fi
-    # Serialize pacman access — multiple parallel services may call this.
-    # Wait up to 60s for any existing pacman transaction to complete.
     local lock_wait=0
     while [[ -f /var/lib/pacman/db.lck ]] && (( lock_wait < 60 )); do
         log_info "Waiting for pacman lock... (${lock_wait}s elapsed)"
@@ -212,7 +186,6 @@ install_sys_pkg() {
         log_error "pacman lock persists after 60s. Cannot install $pkg. Remove /var/lib/pacman/db.lck if stale."
         return 1
     fi
-    # Detect privilege level — avoid sudo when already root
     local -a pacman_cmd=(pacman -S --noconfirm --needed "$pkg")
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         pacman_cmd=(sudo "${pacman_cmd[@]}")
@@ -228,8 +201,6 @@ install_sys_pkg() {
 create_config_if_missing() {
     ensure_dir "$(dirname "$CONFIG_FILE")"
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        # Discover the real python version rather than hardcoding a stale value.
-        # Priority: pyenv global → system python3 → safe fallback.
         local detected_py_ver=""
         if command -v pyenv &>/dev/null; then
             local _pv
@@ -331,8 +302,12 @@ run_bounded() {
     }
 
     log_info "Executing $label (timeout: ${seconds}s)..."
-    timeout --signal=TERM --kill-after=10s -- "$seconds" "$@"
-    local status=$?
+    local status=0
+    if timeout --signal=TERM --kill-after=10s -- "$seconds" "$@"; then
+        status=0
+    else
+        status=$?
+    fi
 
     if (( status == 0 )); then
         return 0
@@ -380,6 +355,6 @@ initialize_suite() {
     log_success "4ndr0service initialized."
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     initialize_suite
 fi
