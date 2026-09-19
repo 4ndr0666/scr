@@ -2,6 +2,11 @@
 # Paradigm: POSIX shell utility — idempotent host cache maintenance.
 set -euo pipefail
 
+_PRUNE_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+export PKG_PATH="$_PRUNE_DIR"
+# shellcheck source=./common.sh
+source "$PKG_PATH/common.sh"
+
 cleanup() {
     echo "[+] Prune cleanup trap triggered. Exiting gracefully."
 }
@@ -11,15 +16,14 @@ echo "========================================================"
 echo "Starting APEX-Compliant Non-Destructive System Prune"
 echo "========================================================"
 
-# Execute a command with a timeout, ignoring failures (EAFP paradigm).
-# Redirects stdout/stderr to /dev/null to deliberately suppress 'command not found' 
+# Execute a command with the suite's centralized bounded-execution primitive.
+# Redirects stdout/stderr to /dev/null to deliberately suppress 'command not found'
 # or noisy binary output, as we do not guarantee the presence of any specific build system.
 run_prune() {
     local name="$1"
     shift
     echo " -> Pruning $name..."
-    # 300 seconds hard timeout per external binary execution
-    timeout 300 "$@" >/dev/null 2>&1 || true
+    run_bounded 300 "$name" "$@" >/dev/null 2>&1 || true
 }
 
 # 1. NODE / JS PRUNE
