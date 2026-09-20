@@ -35,14 +35,27 @@ command awk '
 command grep -q '^run_bounded()' "$unit_file"
 command grep -q '^}$' "$unit_file"
 
-command bash --noprofile --norc -s "$unit_file" <<'CHILD'
+# Resolve real executable paths once. timeout(1) performs exec(3); shell
+# builtins/functions such as `command` are not executable targets.
+bash_bin="$(type -P bash)"
+sleep_bin="$(type -P sleep)"
+true_bin="$(type -P true)"
+
+[[ -x "$bash_bin" && -x "$sleep_bin" && -x "$true_bin" ]]
+
+command bash --noprofile --norc -s "$unit_file" "$bash_bin" "$sleep_bin" "$true_bin" <<'CHILD'
 set -euo pipefail
 IFS=$'\n\t'
 
 unit_file="$1"
+bash_bin="$2"
+sleep_bin="$3"
+true_bin="$4"
+
 source "$unit_file"
 
-# Ensure inherited command wrappers cannot intercept the proof target.
+# Remove shell-level timeout wrappers from the proof process. The production
+# primitive resolves timeout as an external executable at execution time.
 unalias timeout 2>/dev/null || true
 unset -f timeout 2>/dev/null || true
 
@@ -79,12 +92,12 @@ run_case() {
 pass=0
 fail=0
 
-if run_case 'successful command' 0 run_bounded 5 'true' true; then ((pass+=1)); else ((fail+=1)); fi
-if run_case 'ordinary failure preserves rc' 7 run_bounded 5 'exit-7' command bash -c 'exit 7'; then ((pass+=1)); else ((fail+=1)); fi
-if run_case 'timeout returns 124' 124 run_bounded 1 'sleep-timeout' command sleep 5; then ((pass+=1)); else ((fail+=1)); fi
-if run_case 'invalid timeout rejected' 2 run_bounded 0 'invalid-timeout' true; then ((pass+=1)); else ((fail+=1)); fi
+if run_case 'successful command' 0 run_bounded 5 'true' "$true_bin"; then ((pass+=1)); else ((fail+=1)); fi
+if run_case 'ordinary failure preserves rc' 7 run_bounded 5 'exit-7' "$bash_bin" -c 'exit 7'; then ((pass+=1)); else ((fail+=1)); fi
+if run_case 'timeout returns 124' 124 run_bounded 1 'sleep-timeout' "$sleep_bin" 5; then ((pass+=1)); else ((fail+=1)); fi
+if run_case 'invalid timeout rejected' 2 run_bounded 0 'invalid-timeout' "$true_bin"; then ((pass+=1)); else ((fail+=1)); fi
 if run_case 'missing command rejected' 2 run_bounded 5 'missing-command'; then ((pass+=1)); else ((fail+=1)); fi
-if run_case 'TERM-resistant process reaches KILL' 137 run_bounded 1 'term-resistant' command bash -c 'trap "" TERM; command sleep 30'; then ((pass+=1)); else ((fail+=1)); fi
+if run_case 'TERM-resistant process reaches KILL' 137 run_bounded 1 'term-resistant' "$bash_bin" -c 'trap "" TERM; "$0" 30' "$sleep_bin"; then ((pass+=1)); else ((fail+=1)); fi
 
 command printf '\nGUPv5.3.1 runtime proof: %d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
