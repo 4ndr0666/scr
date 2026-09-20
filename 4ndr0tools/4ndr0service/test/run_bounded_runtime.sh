@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # File: test/run_bounded_runtime.sh
 # Description: Isolated runtime proof for common.sh::run_bounded().
-# GUPv5.3.1: This harness extracts only the target unit from common.sh and
-# executes it in a disposable Bash process. It does not source common.sh,
-# acquire the production mutex, initialize XDG state, invoke pacman/sudo,
-# start/stop services, or execute the installer.
+# GUPv5.3.1: Extracts only the target unit and executes it in a clean Bash
+# process. Production initialization, mutexes, XDG setup, installers,
+# package management, and service lifecycle operations are not invoked.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -17,45 +16,35 @@ common="$repo_root/4ndr0tools/4ndr0service/common.sh"
     exit 1
 }
 
-# Extract by stable source-section boundaries rather than brace counting. This
-# deliberately avoids executing or parsing unrelated production initialization.
 unit_file="$(command mktemp)"
-child_pid=""
-
 cleanup() {
-    if [[ -n "$child_pid" ]]; then
-        kill -KILL "$child_pid" 2>/dev/null || true
-        wait "$child_pid" 2>/dev/null || true
-    fi
     command rm -f -- "$unit_file"
 }
 trap cleanup EXIT HUP INT TERM
 
+# Stable source-section extraction; no brace scan and no production execution.
 command awk '
     /^run_bounded\(\)[[:space:]]*\{$/ { capture=1 }
-    /^# Execute multiple functions in parallel and wait for all to complete\./ {
+    /^# Execute multiple functions in parallel and wait for all to complete\.$/ {
         if (capture) exit
     }
     capture { print }
 ' "$common" >"$unit_file"
 
-[[ -s "$unit_file" ]] || {
-    command printf '[FAIL] Could not extract run_bounded() from %s\n' "$common" >&2
-    exit 1
-}
-
+[[ -s "$unit_file" ]]
 command grep -q '^run_bounded()' "$unit_file"
 command grep -q '^}$' "$unit_file"
 
-# Execute the extracted unit in a clean Bash process. Only the minimum logging
-# interface consumed by run_bounded() is supplied.
-child_status=0
-command bash --noprofile --norc -s "$unit_file" <<'CHILD' &
+command bash --noprofile --norc -s "$unit_file" <<'CHILD'
 set -euo pipefail
 IFS=$'\n\t'
 
 unit_file="$1"
 source "$unit_file"
+
+# Ensure inherited command wrappers cannot intercept the proof target.
+unalias timeout 2>/dev/null || true
+unset -f timeout 2>/dev/null || true
 
 log_info() {
     command printf '[INFO] %s\n' "$*"
@@ -100,11 +89,5 @@ if run_case 'TERM-resistant process reaches KILL' 137 run_bounded 1 'term-resist
 command printf '\nGUPv5.3.1 runtime proof: %d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
 CHILD
-child_pid=$!
-
-wait "$child_pid" || child_status=$?
-child_pid=""
-
-(( child_status == 0 )) || exit "$child_status"
 
 command printf '[PASS] Isolated run_bounded() runtime proof\n'
