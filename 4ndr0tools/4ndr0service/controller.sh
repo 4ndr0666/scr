@@ -47,12 +47,20 @@ source_all_services() {
     if [[ ! -d "$services_dir" ]]; then
         handle_error "$LINENO" "Services directory missing: $services_dir"
     fi
+
+    local status=0
     for script in "$services_dir"/optimize_*.sh; do
         if [[ -f "$script" ]]; then
             # shellcheck disable=SC1090
-            source "$script" || log_warn "Failed to source service: $script"
+            if source "$script"; then
+                continue
+            fi
+            log_error "Failed to source service: $script"
+            status=1
         fi
     done
+
+    return "$status"
 }
 
 source_views() {
@@ -89,9 +97,19 @@ run_all_services() {
     local -a services
     mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$' | grep -v '^optimize_nvm_service$')
 
+    local status=0
     for svc in "${services[@]}"; do
-        "$svc" || log_warn "$svc failed."
+        if "$svc"; then
+            continue
+        fi
+        log_error "$svc failed."
+        status=1
     done
+
+    if (( status != 0 )); then
+        log_error "One or more services failed."
+        return "$status"
+    fi
 
     log_success "All services sequence complete."
     touch "${XDG_CACHE_HOME}/.scr_dirty"
@@ -131,7 +149,7 @@ export_functions() {
     export -f log_info log_warn log_error log_success handle_error
     export -f ensure_dir path_prepend install_sys_pkg
     # run_parallel_services subshell workers need these:
-    export -f optimize_go_service optimize_ruby_service optimize_cargo_service 2>/dev/null || true
+    export -f optimize_go_service optimize_ruby_service optimize_cargo_service
 }
 
 main_controller() {
