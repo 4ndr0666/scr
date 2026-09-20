@@ -64,7 +64,7 @@ run_controller_test() {
     source "$controller"
 
     run_case 'source_all_services aggregates source failure' 1 source_all_services
-    unset -f optimize_bad_source_service 2>/dev/null || true
+    command rm -f -- "$tmp/service/optimize_bad_source.sh"
 
     run_case 'run_all_services propagates service failure' 1 run_all_services
 }
