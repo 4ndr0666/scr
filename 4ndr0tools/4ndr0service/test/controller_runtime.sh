@@ -4,20 +4,20 @@ IFS=$'\n\t'
 
 repo="${GUP_REPO_ROOT:?GUP_REPO_ROOT must point to the repository root}"
 controller="$repo/4ndr0tools/4ndr0service/controller.sh"
-tmp="$(mktemp -d)"
-cleanup() { rm -rf -- "$tmp"; }
+tmp="$(command mktemp -d)"
+cleanup() { command rm -rf -- "$tmp"; }
 trap cleanup EXIT INT TERM HUP
 
-mkdir -p "$tmp/service" "$tmp/plugins" "$tmp/cache"
+command mkdir -p "$tmp/service" "$tmp/plugins" "$tmp/cache"
 
-cat >"$tmp/common.sh" <<'STUB'
+command cat >"$tmp/common.sh" <<'STUB'
 set -euo pipefail
-log_info() { printf '[INFO] %s\n' "$*"; }
-log_warn() { printf '[WARN] %s\n' "$*" >&2; }
-log_error() { printf '[ERROR] %s\n' "$*" >&2; }
-log_success() { printf '[OK] %s\n' "$*"; }
+log_info() { command printf '[INFO] %s\n' "$*"; }
+log_warn() { command printf '[WARN] %s\n' "$*" >&2; }
+log_error() { command printf '[ERROR] %s\n' "$*" >&2; }
+log_success() { command printf '[OK] %s\n' "$*"; }
 handle_error() { return "${3:-1}"; }
-ensure_dir() { mkdir -p -- "$1"; }
+ensure_dir() { command mkdir -p -- "$1"; }
 path_prepend() { :; }
 install_sys_pkg() { :; }
 run_parallel_checks() { return 0; }
@@ -26,15 +26,15 @@ STUB
 : >"$tmp/settings_functions.sh"
 : >"$tmp/manage_files.sh"
 
-cat >"$tmp/service/optimize_good.sh" <<'STUB'
+command cat >"$tmp/service/optimize_good.sh" <<'STUB'
 optimize_good_service() { return 0; }
 STUB
 
-cat >"$tmp/service/optimize_bad_source.sh" <<'STUB'
+command cat >"$tmp/service/optimize_bad_source.sh" <<'STUB'
 return 23
 STUB
 
-cat >"$tmp/service/optimize_fail.sh" <<'STUB'
+command cat >"$tmp/service/optimize_fail.sh" <<'STUB'
 optimize_fail_service() { return 17; }
 STUB
 
@@ -49,10 +49,10 @@ run_case() {
         actual=$?
     fi
     if [[ "$actual" -ne "$expected" ]]; then
-        printf '[FAIL] %s: expected rc=%s got rc=%s\n' "$name" "$expected" "$actual" >&2
+        command printf '[FAIL] %s: expected rc=%s got rc=%s\n' "$name" "$expected" "$actual" >&2
         return 1
     fi
-    printf '[PASS] %s: rc=%s\n' "$name" "$actual"
+    command printf '[PASS] %s: rc=%s\n' "$name" "$actual"
 }
 
 run_controller_test() {
@@ -70,4 +70,4 @@ run_controller_test() {
 }
 
 run_controller_test
-printf '\nGUPv5.3.1 controller runtime proof: PASS\n'
+command printf '\nGUPv5.3.1 controller runtime proof: PASS\n'
