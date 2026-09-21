@@ -51,7 +51,14 @@ run_purge() {
     done
 
     log_info "Pruning ${BIN_DIR} for dead ghost links..."
-    find -L "$BIN_DIR" -maxdepth 1 -type l -delete 2>/dev/null
+    local purge_rc=0
+    if find -L "$BIN_DIR" -maxdepth 1 -type l -delete 2>/dev/null; then
+        :
+    else
+        purge_rc=$?
+        log_error "Failed to purge broken symlinks from $BIN_DIR."
+        return "$purge_rc"
+    fi
     log_success "Broken symlinks purged from $BIN_DIR."
 
     local sys_py_ver
@@ -95,8 +102,14 @@ run_purge() {
     fi
 
     log_info "Liquidating __pycache__ artifacts..."
-    find "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" \
-        -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
+    if find "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" \
+        -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; then
+        :
+    else
+        purge_rc=$?
+        log_error "Failed to liquidate __pycache__ artifacts."
+        return "$purge_rc"
+    fi
 
     log_success "System is zeroed. SUPREMACY ACHIEVED."
     log_purge "EXECUTION COMPLETE."
