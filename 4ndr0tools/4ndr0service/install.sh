@@ -254,17 +254,20 @@ log_step "Establishing invocation symlink: $SYMLINK_PATH → $INSTALL_LOCATION/m
 [[ -d "$BIN_DIR" ]] || run sudo mkdir -p "$BIN_DIR"
 [[ -L "$SYMLINK_PATH" || -e "$SYMLINK_PATH" ]] && run sudo rm -f "$SYMLINK_PATH"
 run sudo ln -s "$INSTALL_LOCATION/main.sh" "$SYMLINK_PATH" \
-    || log_warn "Failed to create symlink $SYMLINK_PATH — invoke via $INSTALL_LOCATION/main.sh directly."
+    || { log_error "Failed to create required invocation symlink: $SYMLINK_PATH"; return 1; }
 
 # ── DEPENDENCY GATE ───────────────────────────────────────────────────────────
 log_step "Verifying runtime dependencies..."
 if ! command -v jq &>/dev/null; then
     log_warn "jq not found — required for JSON config parsing."
     if command -v pacman &>/dev/null; then
-        run sudo pacman -S --noconfirm --needed jq \
-            || log_warn "Automatic jq install failed — install it manually before using the suite."
+        if ! run sudo pacman -S --noconfirm --needed jq; then
+            log_error "Automatic jq installation failed."
+            exit 1
+        fi
     else
         log_error "Install jq manually before using the suite."
+        exit 1
     fi
 else
     log_ok "jq: $(jq --version)"
@@ -279,16 +282,13 @@ if [[ "$SKIP_SYSTEMD" == "false" ]]; then
         if systemctl --user status &>/dev/null 2>&1 || systemctl --user list-units &>/dev/null 2>&1; then
             if [[ "$DRY_RUN" == "false" ]]; then
                 if [[ "${SUDO_USER:-}" != "" ]]; then
-                    # Pass HOME explicitly so common.sh inside
-                    # install_env_maintenance.sh resolves XDG vars to the
-                    # real user's home, not root's /root.
                     _inst_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
                     sudo -u "$SUDO_USER" HOME="$_inst_home" \
                         bash "$_systemd_installer" \
-                        || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
+                        || { log_error "systemd maintenance timer activation failed: $_systemd_installer"; exit 1; }
                 else
                     bash "$_systemd_installer" \
-                        || log_warn "systemd maintenance timer activation failed — run $_systemd_installer manually later."
+                        || { log_error "systemd maintenance timer activation failed: $_systemd_installer"; exit 1; }
                 fi
             else
                 log_dry "Would run: bash $_systemd_installer"
@@ -308,21 +308,15 @@ fi
 log_step "Running post-install verification (--report)..."
 if [[ "$DRY_RUN" == "false" ]]; then
     if [[ -n "${SUDO_USER:-}" ]]; then
-        # Run report as the invoking user so XDG paths evaluate correctly.
-        # Explicitly pass HOME via getent so common.sh XDG defaults resolve to
-        # the real user's home, not root's /root, when sudo is not called with -i.
         _sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
         sudo -u "$SUDO_USER" HOME="$_sudo_home" \
             "$INSTALL_LOCATION/main.sh" --report \
-            || log_warn "--report returned non-zero; review output above."
+            || { log_error "Post-install verification failed."; exit 1; }
     else
-        "$INSTALL_LOCATION/main.sh" --report || log_warn "--report returned non-zero; review output above."
+        "$INSTALL_LOCATION/main.sh" --report \
+            || { log_error "Post-install verification failed."; exit 1; }
     fi
-else
-    log_dry "Would run: HOME=~${SUDO_USER:-$USER} sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
 fi
 
-# ── DONE ──────────────────────────────────────────────────────────────────────
-_ROLLBACK_NEEDED=false   # disarm the rollback trap — install succeeded
-log_ok "Deployment complete. 4ndr0service is installed at $INSTALL_LOCATION"
-[[ "$DRY_RUN" == "false" ]] && log_info "Invoke with: 4ndr0service  (ensure $BIN_DIR is in PATH)"
+log_ok "4ndr0service installation complete."
+exit 0
