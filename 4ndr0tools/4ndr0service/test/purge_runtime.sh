@@ -19,6 +19,7 @@ log_info() { :; }
 log_warn() { :; }
 log_success() { :; }
 log_purge() { :; }
+log_error() { :; }
 
 VENV_HOME="$tmpdir/venvs"
 BIN_DIR="$tmpdir/bin"
@@ -28,12 +29,10 @@ mkdir -p "$VENV_HOME" "$BIN_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
 source "$tmpdir/unit.sh"
 
-# The first case injects a failure at the broken-link pruning operation.
+# The first case injects failure only into the broken-link pruning operation.
 find() {
-    if [[ "$*" == *"find -L"* ]] || [[ "$*" == *"-L $BIN_DIR"* ]]; then
-        if [[ "$*" == *"-maxdepth 1 -type l -delete"* ]]; then
-            return 71
-        fi
+    if [[ "${1-}" == "-L" && "${2-}" == "$BIN_DIR" && "${3-}" == "-maxdepth" && "${4-}" == "1" && "${5-}" == "-type" && "${6-}" == "l" && "${7-}" == "-delete" ]]; then
+        return 71
     fi
     return 0
 }
@@ -48,7 +47,7 @@ printf '[PASS] ghost-link purge failure propagates: rc=71\n'
 # The second case allows the earlier operations to succeed and injects failure
 # only at the __pycache__ purge operation.
 find() {
-    if [[ "$*" == *"-type d -name __pycache__ -exec"* ]]; then
+    if [[ "${1-}" == "$XDG_CONFIG_HOME" && "${2-}" == "$XDG_DATA_HOME" && "${3-}" == "-type" && "${4-}" == "d" && "${5-}" == "-name" && "${6-}" == "__pycache__" && "${7-}" == "-exec" ]]; then
         return 73
     fi
     return 0
