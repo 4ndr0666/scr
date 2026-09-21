@@ -30,8 +30,10 @@ source "$tmpdir/unit.sh"
 
 # The first case injects a failure at the broken-link pruning operation.
 find() {
-    if [[ "$*" == *"-maxdepth 1 -type l -delete"* ]]; then
-        return 71
+    if [[ "$*" == *"find -L"* ]] || [[ "$*" == *"-L $BIN_DIR"* ]]; then
+        if [[ "$*" == *"-maxdepth 1 -type l -delete"* ]]; then
+            return 71
+        fi
     fi
     return 0
 }
