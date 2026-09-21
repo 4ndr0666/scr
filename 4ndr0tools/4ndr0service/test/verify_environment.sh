@@ -58,7 +58,7 @@ remove_tool() {
     if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
         local _tmp
         _tmp=$(mktemp)
-        if jq --arg t "$tool" '(.python_tools // []) |= map(select(. != $t))'                 "$CONFIG_FILE" > "$_tmp"; then
+        if jq --arg t "$tool" '(.python_tools // []) |= map(select(. != $t))' "$CONFIG_FILE" > "$_tmp"; then
             mv "$_tmp" "$CONFIG_FILE"
             log_success "Removed $tool from config.json python_tools"
         else
@@ -85,11 +85,16 @@ _provision_hive() {
     local _asc="${PKG_PATH}/ascension.sh"
     if [[ -f "$_asc" ]]; then
         # shellcheck source=/dev/null
-        source "$_asc" 2>/dev/null || true
+        if ! source "$_asc" 2>/dev/null; then
+            log_error "_provision_hive: failed to source ascension.sh"
+            return 1
+        fi
         if declare -f install_resilient_tool >/dev/null 2>&1; then
             install_resilient_tool "$hive"
             return
         fi
+        log_error "_provision_hive: ascension.sh loaded but install_resilient_tool is unavailable"
+        return 1
     fi
 
     # Last resort: direct venv + pip
@@ -98,7 +103,8 @@ _provision_hive() {
     ensure_dir "$VENV_HOME"
     python3 -m venv "$target_venv"
     "$target_venv/bin/pip" install --quiet --upgrade pip
-    "$target_venv/bin/pip" install "$hive"         && log_success "Provisioned hive (fallback): $hive"         || log_warn "Fallback provisioning failed for: $hive"
+    "$target_venv/bin/pip" install "$hive"
+    log_success "Provisioned hive (fallback): $hive"
 }
 
 run_verification() {
@@ -113,7 +119,7 @@ run_verification() {
     # Hardcoded ["stig","ImgCodeCheck"] removed — config.json is the authority.
     log_info "Verifying Offensive Tooling Hives..."
     local -a offensive_hives
-    mapfile -t offensive_hives < <(jq -r '(.offensive_hives // [])[]'  "$CONFIG_FILE" 2>/dev/null || true)
+    mapfile -t offensive_hives < <(jq -r '(.offensive_hives // [])[]' "$CONFIG_FILE" 2>/dev/null || true)
 
     if [[ ${#offensive_hives[@]} -eq 0 ]]; then
         log_info "No offensive hives defined in config.json (offensive_hives key absent or empty)."
@@ -135,9 +141,9 @@ run_verification() {
     log_info "Verifying Environment Alignment..."
 
     local -a req_env dir_vars req_tools
-    mapfile -t req_env   < <(jq -r '(.required_env   // [])[]'  "$CONFIG_FILE")
-    mapfile -t dir_vars  < <(jq -r '(.directory_vars // [])[]'  "$CONFIG_FILE")
-    mapfile -t req_tools < <(jq -r '(.tools          // [])[]'  "$CONFIG_FILE")
+    mapfile -t req_env   < <(jq -r '(.required_env   // [])[]' "$CONFIG_FILE")
+    mapfile -t dir_vars  < <(jq -r '(.directory_vars // [])[]' "$CONFIG_FILE")
+    mapfile -t req_tools < <(jq -r '(.tools          // [])[]' "$CONFIG_FILE")
 
     # ── 1. Environment Variable Audit ────────────────────────────────────────
     for var in "${req_env[@]}"; do
