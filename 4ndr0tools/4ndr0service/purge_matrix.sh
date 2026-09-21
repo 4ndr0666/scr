@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# File: purge_matrix.sh
 # 4ndr0666OS: Null-Sector Purge Protocol (v1.4 — Suite-Integrated)
 # - Logic: Mandatory --force gate for kinetic liquidation.
 # - Integration: Aligned to 4ndr0service common.sh (XDG paths, logging).
@@ -7,9 +6,6 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# ── SELF-LOCATE & SOURCE SUITE CORE ──────────────────────────────────────────
-# Resolve PKG_PATH from BASH_SOURCE[0] unconditionally — never inherit a stale
-# environment value (same pattern as install_env_maintenance.sh fix).
 _PURGE_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 
 _found_pkg=""
@@ -26,15 +22,10 @@ if [[ -z "$_found_pkg" ]]; then
 fi
 
 export PKG_PATH="$_found_pkg"
-# shellcheck source=./common.sh
 source "$PKG_PATH/common.sh"
 
-# ── VISUALS ───────────────────────────────────────────────────────────────────
-# INTEGRATION NOTE: common.sh owns log_info, log_warn, log_success, log_error.
-# Purge-specific prefix added without conflicting with suite logging.
 log_purge() { echo -e "\033[38;5;196m[Ψ-PURGE]\033[0m $*"; }
 
-# ── USAGE ─────────────────────────────────────────────────────────────────────
 show_usage() {
     log_purge "Purge Protocol v1.4"
     echo -e "Usage: $(basename "$0") [options]"
@@ -46,22 +37,11 @@ show_usage() {
     echo -e "${C_GREEN}Required: Use --force to initiate system-wide rebuild.${C_RESET}"
 }
 
-# ── PURGE ─────────────────────────────────────────────────────────────────────
 run_purge() {
     log_purge "INITIATING RECURSIVE SYSTEM AUTOCLEAN..."
 
-    # 1. Hive Artifact Liquidation
-    # INTEGRATION: The --site-packages and .venv garbage-dir removal is also
-    # in ascension.sh::run_sync(). (D-24 FIX: this comment previously also
-    # claimed optimize_venv.sh duplicated this logic — verified false during
-    # audit; optimize_venv.sh's own scrub step only targets GPUCache, "Code
-    # Cache", and the pip cache, never --site-packages/.venv.)
-    # Kept here for standalone --force invocations; idempotent with the suite.
     log_info "Sterilizing virtualenv hive..."
     for garbage in "--site-packages" ".venv"; do
-        # D-07 FIX: Use VENV_HOME:? to catch unset variable before path construction.
-        # Use rm -- to prevent any path component beginning with '--' being
-        # interpreted as a flag by rm (POSIX end-of-options separator).
         local target
         target="${VENV_HOME:?VENV_HOME is unset — cannot safely remove hive artifacts}/${garbage}"
         if [[ -d "$target" ]]; then
@@ -70,14 +50,10 @@ run_purge() {
         fi
     done
 
-    # 2. Ghost Link Audit — Broken Symlink Pruning in ~/.local/bin
-    # UNIQUE: This logic exists nowhere else in the suite.
     log_info "Pruning ${BIN_DIR} for dead ghost links..."
-    find -L "$BIN_DIR" -maxdepth 1 -type l -delete 2>/dev/null || true
+    find -L "$BIN_DIR" -maxdepth 1 -type l -delete 2>/dev/null
     log_success "Broken symlinks purged from $BIN_DIR."
 
-    # 3. Kinetic System Rebuild (AUR Orphan Recompile)
-    # UNIQUE: AUR orphan detection and --rebuild invocation.  Not in the suite.
     local sys_py_ver
     sys_py_ver=$(/usr/bin/python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
     log_info "Target Runtime: $sys_py_ver"
@@ -102,13 +78,11 @@ run_purge() {
                 find "$dead_dir" -type f 2>/dev/null \
                 | xargs -r pacman -Qo 2>/dev/null \
                 | awk '/is owned by/ {print $5}' \
-                | sort -u \
-                || true
+                | sort -u
             )
         done
 
         if [[ ${#orphan_pkgs[@]} -gt 0 ]]; then
-            # Deduplicate
             local -a unique_orphans=()
             mapfile -t unique_orphans < <(printf "%s\n" "${orphan_pkgs[@]}" | sort -u)
 
@@ -120,20 +94,14 @@ run_purge() {
         fi
     fi
 
-    # 4. Deep Cache Liquidation
-    # D-24 FIX: this previously claimed "__pycache__ removal also runs in
-    # optimize_venv.sh scrub" — verified false during audit. No other file in
-    # the suite purges __pycache__; this is its sole removal point. Kept here
-    # for completeness on standalone --force invocations.
     log_info "Liquidating __pycache__ artifacts..."
     find "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" \
-        -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 
     log_success "System is zeroed. SUPREMACY ACHIEVED."
     log_purge "EXECUTION COMPLETE."
 }
 
-# ── ARGUMENT GATING ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
     show_usage
     exit 0
