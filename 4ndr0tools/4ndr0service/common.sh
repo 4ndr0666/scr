@@ -171,7 +171,6 @@ ensure_xdg_dirs() {
     ensure_dir "$XDG_CONFIG_HOME"
     ensure_dir "$XDG_DATA_HOME"
     ensure_dir "$XDG_STATE_HOME"
-    ensure_dir "$XDG_CACHE_HOME"
     ensure_dir "$XDG_BIN_HOME"
     ensure_dir "$(dirname "$LOG_FILE")"
 }
@@ -355,19 +354,27 @@ run_bounded() {
 run_parallel_checks() {
     local funcs=("$@")
     local pids=()
+    local status=0
 
     for f in "${funcs[@]}"; do
         if declare -f "$f" >/dev/null; then
             "$f" &
             pids+=($!)
         else
-            log_warn "Function $f not found for parallel run."
+            log_error "Function $f not found for parallel run."
+            status=1
         fi
     done
 
-    local status=0
+    if ((${#pids[@]} == 0)); then
+        log_error "No valid functions supplied for parallel run."
+        return 1
+    fi
+
     for pid in "${pids[@]}"; do
-        wait "$pid" || status=1
+        if ! wait "$pid"; then
+            status=1
+        fi
     done
 
     return "$status"
