@@ -101,9 +101,25 @@ _provision_hive() {
     log_warn "_provision_hive fallback: ascension unavailable — installing $hive via direct venv"
     local target_venv="${VENV_HOME}/${hive}"
     ensure_dir "$VENV_HOME"
-    python3 -m venv "$target_venv"
-    "$target_venv/bin/pip" install --quiet --upgrade pip
-    "$target_venv/bin/pip" install "$hive"
+
+    python3 -m venv "$target_venv" || {
+        local rc=$?
+        log_error "_provision_hive: failed to create venv for $hive"
+        return "$rc"
+    }
+
+    "$target_venv/bin/pip" install --quiet --upgrade pip || {
+        local rc=$?
+        log_error "_provision_hive: failed to bootstrap pip for $hive"
+        return "$rc"
+    }
+
+    "$target_venv/bin/pip" install "$hive" || {
+        local rc=$?
+        log_error "_provision_hive: failed to install $hive"
+        return "$rc"
+    }
+
     log_success "Provisioned hive (fallback): $hive"
 }
 
