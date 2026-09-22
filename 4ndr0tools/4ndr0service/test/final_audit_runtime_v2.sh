@@ -12,9 +12,9 @@ command bash -n "$SOURCE"
 extract_function() {
     local name="$1"
     awk -v fn="$name" '
-        $0 ~ ("^" fn "\\(\\)$") { found=1 }
+        $0 ~ ("^" fn "[[:space:]]*\\(\\)[[:space:]]*\\{") { found=1 }
         found { print }
-        found && /^}$/ { exit }
+        found && $0 ~ "^[[:space:]]*[[:alnum:]_]+[[:space:]]*\\(\\)[[:space:]]*\\{" && $0 !~ ("^" fn "[[:space:]]*\\(\\)[[:space:]]*\\{") { exit }
     ' "$SOURCE"
 }
 
