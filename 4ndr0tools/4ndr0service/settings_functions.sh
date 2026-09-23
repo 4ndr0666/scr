@@ -72,14 +72,21 @@ prompt_config_value() {
     fi
 
     local tmp
-    tmp="$(mktemp)"
-    # 4.4 FIX: guarantee temp file cleanup on all exit paths —
-    # jq failure leaves $tmp on disk without the explicit || rm -f.
+    tmp="$(mktemp)" || return $?
+    local rc
     if jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp"; then
-        mv "$tmp" "$CONFIG_FILE"
-        log_success "Set $key to $val"
-    else
+        if mv "$tmp" "$CONFIG_FILE"; then
+            log_success "Set $key to $val"
+            return 0
+        fi
+        rc=$?
         rm -f "$tmp"
-        log_warn "Failed to update config.json for key: $key"
+        log_warn "Failed to replace config.json for key: $key"
+        return "$rc"
     fi
+
+    rc=$?
+    rm -f "$tmp"
+    log_warn "Failed to update config.json for key: $key"
+    return "$rc"
 }
