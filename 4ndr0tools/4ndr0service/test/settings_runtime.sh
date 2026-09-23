@@ -45,10 +45,11 @@ EOF
     printf '%s\n' '' >"$case_dir/config.json"
 
     local rc=0
-    if ! PATH="$case_dir/bin:$PATH" PKG_PATH="$case_dir/pkg" CONFIG_FILE="$case_dir/config.json" \
-        bash -c 'source "$1"; prompt_config_value python_version 3.14.6' _ "$SETTINGS" < <(printf '\n'); then
-        rc=$?
-    fi
+    set +e
+    PATH="$case_dir/bin:$PATH" PKG_PATH="$case_dir/pkg" CONFIG_FILE="$case_dir/config.json" \
+        bash -c 'source "$1"; prompt_config_value python_version 3.14.6' _ "$SETTINGS" < <(printf '\n')
+    rc=$?
+    set -e
 
     if [[ "$rc" -eq "$expected" ]]; then
         pass "$name: rc=$rc"
