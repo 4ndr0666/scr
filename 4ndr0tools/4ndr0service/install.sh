@@ -269,9 +269,10 @@ if [[ "$DRY_RUN" == "false" ]]; then
         _sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
         sudo -u "$SUDO_USER" HOME="$_sudo_home" \
             "$INSTALL_LOCATION/main.sh" --report \
-            || log_warn "--report returned non-zero; review output above."
+            || { log_error "--report verification failed; installation aborted."; exit 1; }
     else
-        "$INSTALL_LOCATION/main.sh" --report || log_warn "--report returned non-zero; review output above."
+        "$INSTALL_LOCATION/main.sh" --report \
+            || { log_error "--report verification failed; installation aborted."; exit 1; }
     fi
 else
     log_dry "Would run: HOME=~${SUDO_USER:-$USER} sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
