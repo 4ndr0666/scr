@@ -74,19 +74,23 @@ prompt_config_value() {
     local tmp
     tmp="$(mktemp)" || return $?
     local rc
-    if jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp"; then
-        if mv "$tmp" "$CONFIG_FILE"; then
-            log_success "Set $key to $val"
-            return 0
-        fi
-        rc=$?
+
+    jq --arg k "$key" --arg v "$val" '.[$k]=$v' "$CONFIG_FILE" >"$tmp"
+    rc=$?
+    if (( rc != 0 )); then
+        rm -f "$tmp"
+        log_warn "Failed to update config.json for key: $key"
+        return "$rc"
+    fi
+
+    mv "$tmp" "$CONFIG_FILE"
+    rc=$?
+    if (( rc != 0 )); then
         rm -f "$tmp"
         log_warn "Failed to replace config.json for key: $key"
         return "$rc"
     fi
 
-    rc=$?
-    rm -f "$tmp"
-    log_warn "Failed to update config.json for key: $key"
-    return "$rc"
+    log_success "Set $key to $val"
+    return 0
 }
