@@ -23,13 +23,14 @@ log_success() { :; }
 path_prepend() { :; }
 ensure_dir() { command mkdir -p "$1"; }
 load_config() { :; }
+C_BLUE=''; C_RESET=''; C_GREEN=''; C_YELLOW=''; C_RED=''
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
 VENV_HOME="${VENV_HOME:-$HOME/.local/share/4ndr0service/venvs}"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
 EOF
     command chmod +x "$dir/common.sh"
     command cp "$source_file" "$dir/ascension.sh"
-    command sed '/^# ── ARGUMENT GATING /,$d' "$dir/ascension.sh" >"$dir/ascension_functions.sh"
+    command sed '/^if \[\[ \$# -eq 0 \]\]; then$/,$d' "$dir/ascension.sh" >"$dir/ascension_functions.sh"
 }
 
 run_clean_case() {
