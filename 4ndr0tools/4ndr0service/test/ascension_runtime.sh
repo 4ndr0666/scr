@@ -22,18 +22,19 @@ log_error() { printf '%s\n' "$*" >&2; }
 log_info() { :; }
 log_success() { :; }
 path_prepend() { :; }
-ensure_dir() { mkdir -p "$1"; }
+ensure_dir() { command mkdir -p "$1"; }
 load_config() { :; }
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
 VENV_HOME="${VENV_HOME:-$HOME/.local/share/4ndr0service/venvs}"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
 EOF
-    chmod +x "$dir/common.sh"
+    command chmod +x "$dir/common.sh"
+    command cp "$source_file" "$dir/ascension.sh"
 }
 
 run_clean_case() {
     local case_dir="$tmp_root/clean"
-    mkdir -p "$case_dir" "$case_dir/site" "$case_dir/bin"
+    command mkdir -p "$case_dir/site" "$case_dir/bin"
     make_common "$case_dir"
     cat >"$case_dir/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -42,19 +43,19 @@ if [[ ${ASCENSION_SUDO_FAIL_RC:-0} -ne 0 && "$1" == "rm" ]]; then
 fi
 exec "$@"
 EOF
-    chmod +x "$case_dir/sudo"
-    touch "$case_dir/site/~irtual-broken"
+    command chmod +x "$case_dir/sudo"
+    command touch "$case_dir/site/~irtual-broken"
 
     USER_HOME="$case_dir"
     REAL_USER="tester"
     PYENV_ROOT="$case_dir/pyenv"
     VENV_HOME="$case_dir/venvs"
     CONFIG_FILE="$case_dir/config.json"
-    mkdir -p "$case_dir/.local/share/pyenv/versions/3.14.6/lib/python3.14/site-packages"
-    mv "$case_dir/site/~irtual-broken" "$case_dir/.local/share/pyenv/versions/3.14.6/lib/python3.14/site-packages/~irtual-broken"
+    command mkdir -p "$case_dir/.local/share/pyenv/versions/3.14.6/lib/python3.14/site-packages"
+    command mv "$case_dir/site/~irtual-broken" "$case_dir/.local/share/pyenv/versions/3.14.6/lib/python3.14/site-packages/~irtual-broken"
     PATH="$case_dir:$PATH"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
-    source "$source_file"
+    source "$case_dir/ascension.sh"
     set +e
     ASCENSION_SUDO_FAIL_RC=71 clean_pip_ghosts 3.14.6 >/dev/null 2>&1
     local rc=$?
@@ -64,28 +65,28 @@ EOF
 
 run_install_case() {
     local case_dir="$tmp_root/install"
-    mkdir -p "$case_dir" "$case_dir/pyenv/versions/3.14.6/bin"
+    command mkdir -p "$case_dir/pyenv/versions/3.14.6/bin"
     make_common "$case_dir"
     cat >"$case_dir/pyenv/versions/3.14.6/bin/python" <<'EOF'
 #!/usr/bin/env bash
 set -e
 [[ "$1" == "-m" && "$2" == "venv" ]] || exit 90
-mkdir -p "$3/bin"
+command mkdir -p "$3/bin"
 cat >"$3/bin/pip" <<'PIP'
 #!/usr/bin/env bash
 exit 73
 PIP
-chmod +x "$3/bin/pip"
+command chmod +x "$3/bin/pip"
 EOF
-    chmod +x "$case_dir/pyenv/versions/3.14.6/bin/python"
+    command chmod +x "$case_dir/pyenv/versions/3.14.6/bin/python"
     USER_HOME="$case_dir"
     REAL_USER="tester"
     PYENV_ROOT="$case_dir/pyenv"
     VENV_HOME="$case_dir/venvs"
     CONFIG_FILE="$case_dir/config.json"
-    mkdir -p "$VENV_HOME" "$case_dir/.local/bin"
+    command mkdir -p "$VENV_HOME" "$case_dir/.local/bin"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE
-    source "$source_file"
+    source "$case_dir/ascension.sh"
     set +e
     install_resilient_tool example-tool >/dev/null 2>&1
     local rc=$?
@@ -95,14 +96,14 @@ EOF
 
 run_eject_case() {
     local case_dir="$tmp_root/eject"
-    mkdir -p "$case_dir" "$case_dir/venvs/example-tool" "$case_dir/.local/bin" "$case_dir/.config"
+    command mkdir -p "$case_dir/venvs/example-tool" "$case_dir/.local/bin" "$case_dir/.config"
     make_common "$case_dir"
     printf '{"python_tools":["example-tool"]}\n' >"$case_dir/config.json"
     cat >"$case_dir/jq" <<'EOF'
 #!/usr/bin/env bash
 exit 79
 EOF
-    chmod +x "$case_dir/jq"
+    command chmod +x "$case_dir/jq"
     USER_HOME="$case_dir"
     REAL_USER="tester"
     PYENV_ROOT="$case_dir/pyenv"
@@ -110,7 +111,7 @@ EOF
     CONFIG_FILE="$case_dir/config.json"
     PATH="$case_dir:$PATH"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
-    source "$source_file"
+    source "$case_dir/ascension.sh"
     set +e
     remove_hive_tool example-tool >/dev/null 2>&1
     local rc=$?
