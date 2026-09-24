@@ -29,6 +29,7 @@ CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
 EOF
     command chmod +x "$dir/common.sh"
     command cp "$source_file" "$dir/ascension.sh"
+    command sed '/^# ── ARGUMENT GATING /,$d' "$dir/ascension.sh" >"$dir/ascension_functions.sh"
 }
 
 run_clean_case() {
@@ -46,7 +47,7 @@ EOF
     command mv "$case_dir/site/~irtual-broken" "$case_dir/.local/share/pyenv/versions/3.14.6/lib/python3.14/site-packages/~irtual-broken"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json" PATH="$case_dir:$PATH"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
-    source "$case_dir/ascension.sh"
+    source "$case_dir/ascension_functions.sh"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
     set +e
     ASCENSION_SUDO_FAIL_RC=71 clean_pip_ghosts 3.14.6 >/dev/null 2>&1
@@ -74,7 +75,7 @@ EOF
     command mkdir -p "$case_dir/venvs" "$case_dir/.local/bin"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE
-    source "$case_dir/ascension.sh"
+    source "$case_dir/ascension_functions.sh"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
     set +e
     install_resilient_tool example-tool >/dev/null 2>&1
@@ -95,7 +96,7 @@ EOF
     command chmod +x "$case_dir/jq"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json" PATH="$case_dir:$PATH"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
-    source "$case_dir/ascension.sh"
+    source "$case_dir/ascension_functions.sh"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
     set +e
     remove_hive_tool example-tool >/dev/null 2>&1
