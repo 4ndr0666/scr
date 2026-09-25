@@ -24,19 +24,21 @@ run_prune() {
     echo " -> Pruning $name..."
     if run_bounded 300 "$name" "$@" >/dev/null 2>&1; then
         return 0
+    else
+        local rc=$?
+        echo "[ERROR] Pruning $name failed with rc=$rc" >&2
+        return "$rc"
     fi
-    local rc=$?
-    echo "[ERROR] Pruning $name failed with rc=$rc" >&2
-    return "$rc"
 }
 
 record_prune() {
     if "$@"; then
         return 0
+    else
+        local rc=$?
+        prune_failed=1
+        return "$rc"
     fi
-    local rc=$?
-    prune_failed=1
-    return "$rc"
 }
 
 # 1. NODE / JS PRUNE
