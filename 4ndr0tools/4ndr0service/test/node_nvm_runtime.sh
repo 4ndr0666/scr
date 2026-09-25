@@ -20,7 +20,7 @@ EOF
 cat >"$TMP/service/service/optimize_node.sh" <<EOF
 $(sed '/^if \[\[ "\${BASH_SOURCE\[0\]}" == "\$0" \]\]; then/,$d' "$SVC/service/optimize_node.sh")
 EOF
-source "$TMP/service/optimize_node.sh"
+source "$TMP/service/service/optimize_node.sh"
 set +e
 optimize_node_service >/dev/null 2>&1
 rc=$?
