@@ -37,14 +37,18 @@ optimize_node_service() {
         # shellcheck source=/dev/null
         source "$PKG_PATH/service/optimize_nvm.sh"
     fi
-    if ! optimize_nvm_service; then
+    if optimize_nvm_service; then
+        :
+    else
         local nvm_rc=$?
         handle_error "$LINENO" "NVM prerequisite service failed" "$nvm_rc"
         return "$nvm_rc"
     fi
 
     # 2. Load NVM into current shell context after bootstrap
-    if ! _load_nvm_context; then
+    if _load_nvm_context; then
+        :
+    else
         local nvm_load_rc=$?
         handle_error "$LINENO" "NVM failed to load after optimize_nvm_service" "$nvm_load_rc"
         return "$nvm_load_rc"
