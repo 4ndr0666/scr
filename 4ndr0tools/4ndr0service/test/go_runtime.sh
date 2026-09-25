@@ -4,7 +4,7 @@ IFS=$'\n\t'
 ROOT="${GUP_REPO_ROOT:?GUP_REPO_ROOT is required}"
 SVC="$ROOT/4ndr0tools/4ndr0service"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap '/usr/bin/rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/service" "$TMP/bin" "$TMP/data" "$TMP/cache"
 cat >"$TMP/service/common.sh" <<'EOF'
 XDG_DATA_HOME="$TEST_DATA"
@@ -18,18 +18,14 @@ ensure_dir() { mkdir -p "$1"; }
 handle_error() { return 73; }
 install_sys_pkg() { return 73; }
 EOF
-cat >"$TMP/bin/jq" <<'EOF'
-#!/usr/bin/env bash
-printf '\n'
-EOF
-chmod +x "$TMP/bin/jq"
 : >"$TMP/config.json"
 export TEST_DATA="$TMP/data" TEST_CACHE="$TMP/cache" TEST_CONFIG="$TMP/config.json"
 export PKG_PATH="$TMP/service"
-# Keep the isolated PATH free of host Go so the prerequisite branch is deterministic.
+# Isolate the prerequisite check from the host toolchain.
 export PATH="$TMP/bin"
-sed '/^if \[\[ "\${BASH_SOURCE\[0\]}" == "\$0" \]\]; then/,$d' "$SVC/service/optimize_go.sh" > "$TMP/service/optimize_go.sh"
-source "$TMP/service/optimize_go.sh"
+# Source only the function definitions; the production script's standalone
+# bootstrap is intentionally not entered because BASH_SOURCE[0] != $0.
+source "$SVC/service/optimize_go.sh"
 set +e
 optimize_go_service >/dev/null 2>&1
 rc=$?
