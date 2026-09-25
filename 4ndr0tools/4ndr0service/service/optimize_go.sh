@@ -21,7 +21,13 @@ optimize_go_service() {
     # 1. Binary Infrastructure
     if ! command -v go &>/dev/null; then
         log_warn "Go binary missing from stack. Initiating Pacman deployment..."
-        install_sys_pkg "go" || handle_error "$LINENO" "Go deployment failed."
+        if install_sys_pkg "go"; then
+            :
+        else
+            local rc=$?
+            handle_error "$LINENO" "Go deployment failed."
+            return "$rc"
+        fi
     fi
 
     # 2. Environment Activation
