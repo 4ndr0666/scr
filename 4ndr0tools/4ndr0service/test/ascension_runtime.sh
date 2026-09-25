@@ -20,10 +20,12 @@ log_warn() { :; }
 log_error() { printf '%s\n' "$*" >&2; }
 log_info() { :; }
 log_success() { :; }
+log_psi() { :; }
 path_prepend() { :; }
 ensure_dir() { command mkdir -p "$1"; }
 load_config() { :; }
 C_BLUE=''; C_RESET=''; C_GREEN=''; C_YELLOW=''; C_RED=''
+PSI_COLOR=''; RESET_ASC=''
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
 VENV_HOME="${VENV_HOME:-$HOME/.local/share/4ndr0service/venvs}"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
@@ -59,14 +61,14 @@ EOF
 
 run_install_case() {
     local case_dir="$tmp_root/install"
-    command mkdir -p "$case_dir/pyenv/versions/3.14.6/bin"
+    command mkdir -p "$case_dir/pyenv/bin" "$case_dir/pyenv/versions/3.14.6/bin"
     make_common "$case_dir"
-    cat >"$case_dir/pyenv" <<'EOF'
+    cat >"$case_dir/pyenv/bin/pyenv" <<'EOF'
 #!/usr/bin/env bash
 [[ "$1" == "global" ]] && { printf '%s\n' '3.14.6'; exit 0; }
 exit 90
 EOF
-    command chmod +x "$case_dir/pyenv"
+    command chmod +x "$case_dir/pyenv/bin/pyenv"
     cat >"$case_dir/pyenv/versions/3.14.6/bin/python" <<'EOF'
 #!/usr/bin/env bash
 set -e
@@ -80,7 +82,7 @@ command chmod +x "$3/bin/pip"
 EOF
     command chmod +x "$case_dir/pyenv/versions/3.14.6/bin/python"
     command mkdir -p "$case_dir/venvs" "$case_dir/.local/bin"
-    USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json" PATH="$case_dir:$PATH"
+    USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json" PATH="$case_dir/pyenv/bin:$case_dir:$PATH"
     export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
     source "$case_dir/ascension_functions.sh"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
