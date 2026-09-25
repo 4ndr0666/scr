@@ -15,7 +15,7 @@ log_success() { :; }
 log_warn() { :; }
 path_prepend() { PATH="$1:$PATH"; export PATH; }
 ensure_dir() { mkdir -p "$1"; }
-handle_error() { return "${1:-1}"; }
+handle_error() { return 73; }
 install_sys_pkg() { return 73; }
 EOF
 cat >"$TMP/bin/jq" <<'EOF'
