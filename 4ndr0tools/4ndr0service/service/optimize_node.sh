@@ -8,8 +8,8 @@
 # D-04 FIX: Removed duplicate install_nvm() and load_nvm() which diverged from
 # optimize_nvm.sh — critically, they omitted remove_npmrc_prefix_conflict(),
 # causing .npmrc prefix schisms and EEXIST on corepack binaries. NVM bootstrap
-# is now exclusively owned by optimize_nvm_service(). This service calls it as
-# a prerequisite, then handles Node-specific global tool management.
+# is now exclusively owned by optimize_nvm_service(). This service calls it as a
+# prerequisite, then handles Node-specific global tool management.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -37,10 +37,18 @@ optimize_node_service() {
         # shellcheck source=/dev/null
         source "$PKG_PATH/service/optimize_nvm.sh"
     fi
-    optimize_nvm_service || handle_error "$LINENO" "NVM prerequisite service failed"
+    if ! optimize_nvm_service; then
+        local nvm_rc=$?
+        handle_error "$LINENO" "NVM prerequisite service failed" "$nvm_rc"
+        return "$nvm_rc"
+    fi
 
     # 2. Load NVM into current shell context after bootstrap
-    _load_nvm_context || handle_error "$LINENO" "NVM failed to load after optimize_nvm_service"
+    if ! _load_nvm_context; then
+        local nvm_load_rc=$?
+        handle_error "$LINENO" "NVM failed to load after optimize_nvm_service" "$nvm_load_rc"
+        return "$nvm_load_rc"
+    fi
 
     # 3. Surgical Liquidation (Sanitization)
     log_info "Pruning Toolchain Artifacts..."
