@@ -26,7 +26,8 @@ chmod +x "$TMP/bin/jq"
 : >"$TMP/config.json"
 export TEST_DATA="$TMP/data" TEST_CACHE="$TMP/cache" TEST_CONFIG="$TMP/config.json"
 export PKG_PATH="$TMP/service"
-export PATH="$TMP/bin:/usr/bin:/bin"
+# Keep the isolated PATH free of host Go so the prerequisite branch is deterministic.
+export PATH="$TMP/bin"
 sed '/^if \[\[ "\${BASH_SOURCE\[0\]}" == "\$0" \]\]; then/,$d' "$SVC/service/optimize_go.sh" > "$TMP/service/optimize_go.sh"
 source "$TMP/service/optimize_go.sh"
 set +e
