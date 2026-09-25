@@ -61,6 +61,12 @@ run_install_case() {
     local case_dir="$tmp_root/install"
     command mkdir -p "$case_dir/pyenv/versions/3.14.6/bin"
     make_common "$case_dir"
+    cat >"$case_dir/pyenv" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == "global" ]] && { printf '%s\n' '3.14.6'; exit 0; }
+exit 90
+EOF
+    command chmod +x "$case_dir/pyenv"
     cat >"$case_dir/pyenv/versions/3.14.6/bin/python" <<'EOF'
 #!/usr/bin/env bash
 set -e
@@ -74,8 +80,8 @@ command chmod +x "$3/bin/pip"
 EOF
     command chmod +x "$case_dir/pyenv/versions/3.14.6/bin/python"
     command mkdir -p "$case_dir/venvs" "$case_dir/.local/bin"
-    USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
-    export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE
+    USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json" PATH="$case_dir:$PATH"
+    export USER_HOME REAL_USER PYENV_ROOT VENV_HOME CONFIG_FILE PATH
     source "$case_dir/ascension_functions.sh"
     USER_HOME="$case_dir" REAL_USER="tester" PYENV_ROOT="$case_dir/pyenv" VENV_HOME="$case_dir/venvs" CONFIG_FILE="$case_dir/config.json"
     set +e
