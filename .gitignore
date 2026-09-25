@@ -164,3 +164,4 @@ config-6.18.34+rpt-rpi-v8.txt
 env
 4NDR0-TRACKER*
 dietpi-wifi.txt
+hdl_prompt-random.json
