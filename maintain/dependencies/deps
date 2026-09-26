@@ -2729,6 +2729,12 @@ report_heal_outcome() {
 		done
 		if [[ ${#aur_pgp[@]} -gt 0 ]]; then
 			printf '  %sPGP-blocked — import the key(s) listed above as the build user, then: yay -S --rebuild --noconfirm %s%s\n' "$CAT" "${aur_pgp[*]}" "$RESET"
+			# v2.3.3: distinguish an unreachable-dirmngr failure from a plain
+			# keyserver outage — the generic line above reads identically for
+			# both, but only one of them is fixed by importing the key again.
+			if [[ "${HEAL_PGP_DIRMNGR_UNAVAILABLE}" = true ]]; then
+				printf '  %sdirmngr could not be started for the build user this run — first: sudo -u <builduser> gpgconf --launch dirmngr%s\n' "$CAT" "$RESET"
+			fi
 		fi
 		for pkg in "${aur_conflict[@]}"; do
 			cglob="${aur_glob_map[$pkg]:-}"
@@ -2744,6 +2750,34 @@ report_heal_outcome() {
 		if [[ ${#aur_unknown[@]} -gt 0 ]]; then
 			printf '  %sRetry manually: yay -S --rebuild --noconfirm %s%s\n' "$CAT" "${aur_unknown[*]}" "$RESET"
 		fi
+	fi
+	printf "\n"
+	return 0
+}
+
+# v2.3.3: surfaces .pacnew files and directory-permission mismatches that
+# pacman reported during a chunk install/heal — pacman -Qk's file-presence
+# check has no visibility into either, so a heal that leaves
+# /etc/passwd.pacnew unmerged was previously reported as fully restored.
+report_pacnew_findings() {
+	if [[ ${#HEAL_PACNEW_FILES[@]} -eq 0 && ${#HEAL_PERM_DIFF_DIRS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	local -a uniq_pacnew=() uniq_perm=()
+	if [[ ${#HEAL_PACNEW_FILES[@]} -gt 0 ]]; then
+		mapfile -t uniq_pacnew < <(printf '%s\n' "${HEAL_PACNEW_FILES[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort -u)
+		printf '%s.pacnew file(s) created by a heal/install reinstall — pacman -Qk reports these packages as restored, but the new config was NOT merged:%s\n' "$WARN" "$RESET"
+		printf '  %s\n' "${uniq_pacnew[@]}"
+		printf '%sReview and merge each manually, then remove the .pacnew:%s\n' "$GREEN" "$RESET"
+		local f
+		for f in "${uniq_pacnew[@]}"; do
+			printf '  %sdiff -u "%s" "%s"%s\n' "$CAT" "${f%.pacnew}" "$f" "$RESET"
+		done
+	fi
+	if [[ ${#HEAL_PERM_DIFF_DIRS[@]} -gt 0 ]]; then
+		mapfile -t uniq_perm < <(printf '%s\n' "${HEAL_PERM_DIFF_DIRS[@]}" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sort -u)
+		printf '%sDirectory permission mismatch(es) reported during reinstall (pacman does not overwrite existing directory permissions):%s\n' "$WARN" "$RESET"
+		printf '  %s\n' "${uniq_perm[@]}"
 	fi
 	printf "\n"
 	return 0
@@ -3080,6 +3114,7 @@ main() {
 			fi
 		fi
 		report_heal_outcome
+		report_pacnew_findings
 		report_deep_integrity_findings
 		report_orphan_findings
 		log_message "INFO" "Script finished successfully — no missing deps."
@@ -3151,6 +3186,7 @@ main() {
 	fi
 
 	report_heal_outcome
+	report_pacnew_findings
 	report_deep_integrity_findings
 	report_orphan_findings
 	log_message "INFO" "Script finished."
