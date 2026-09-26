@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+# ── SUITE DIR RESOLUTION (GAP-F FIX) ──────────────────────────────────────────
+# Dual-layout: honor GUP_REPO_ROOT when it targets the legacy 4ndr0tools/
+# layout (the original dotfiles repo), else self-resolve — this file lives at
+# <suite>/test/, so the suite root is one dirname up. The proofs now run from
+# both repository layouts with no CI env hints and no git dependency.
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SUITE_DIR="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SUITE_DIR="$(dirname -- "$_TEST_DIR")"
+fi
+source_file="$SUITE_DIR/purge_matrix.sh"
+tmpdir="$(mktemp -d)"
+cleanup() { rm -rf -- "$tmpdir"; }
+trap cleanup EXIT INT TERM HUP
+
+awk '
+    /^run_purge\(\)[[:space:]]*\{/ { capture=1 }
+    capture { print }
+    capture && /^}$/ { exit }
+' "$source_file" >"$tmpdir/unit.sh"
+grep -q '^run_purge()' "$tmpdir/unit.sh"
+
+log_info() { :; }
+log_warn() { :; }
+log_success() { :; }
+log_purge() { :; }
+log_error() { :; }
+
+VENV_HOME="$tmpdir/venvs"
+BIN_DIR="$tmpdir/bin"
+XDG_CONFIG_HOME="$tmpdir/config"
+XDG_DATA_HOME="$tmpdir/data"
+mkdir -p "$VENV_HOME" "$BIN_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+
+source "$tmpdir/unit.sh"
+
+# The first case injects failure only into the broken-link pruning operation.
+find() {
+    if [[ "${1-}" == "-L" && "${2-}" == "$BIN_DIR" && "${3-}" == "-maxdepth" && "${4-}" == "1" && "${5-}" == "-type" && "${6-}" == "l" && "${7-}" == "-delete" ]]; then
+        return 71
+    fi
+    return 0
+}
+actual=0
+if run_purge; then actual=0; else actual=$?; fi
+if (( actual != 71 )); then
+    printf '[FAIL] ghost-link purge failure: expected rc=71, got rc=%s\n' "$actual" >&2
+    exit 1
+fi
+printf '[PASS] ghost-link purge failure propagates: rc=71\n'
+
+# The second case allows the earlier operations to succeed and injects failure
+# only at the __pycache__ purge operation.
+find() {
+    if [[ "${1-}" == "$XDG_CONFIG_HOME" && "${2-}" == "$XDG_DATA_HOME" && "${3-}" == "-type" && "${4-}" == "d" && "${5-}" == "-name" && "${6-}" == "__pycache__" && "${7-}" == "-exec" ]]; then
+        return 73
+    fi
+    return 0
+}
+actual=0
+if run_purge; then actual=0; else actual=$?; fi
+if (( actual != 73 )); then
+    printf '[FAIL] cache purge failure: expected rc=73, got rc=%s\n' "$actual" >&2
+    exit 1
+fi
+printf '[PASS] cache purge failure propagates: rc=73\n'
+
+printf '\nGUPv5.3.1 purge runtime proof: 2 passed, 0 failed\n'
+printf '[PASS] Isolated run_purge() failure-propagation proof\n'

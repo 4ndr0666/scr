@@ -8,8 +8,43 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=../common.sh
-source "${PKG_PATH:-.}/common.sh"
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
+fi
+# shellcheck source=/dev/null
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 
 # D-17 FIX (clarification): Do NOT set FIX_MODE / REPORT_MODE inside THIS file
 # at source-time. The correct pattern is for callers (final_audit.sh, main.sh)
@@ -58,7 +93,7 @@ remove_tool() {
     if command -v jq &>/dev/null && [[ -f "${CONFIG_FILE:-}" ]]; then
         local _tmp
         _tmp=$(mktemp)
-        if jq --arg t "$tool" '(.python_tools // []) |= map(select(. != $t))'                 "$CONFIG_FILE" > "$_tmp"; then
+        if jq --arg t "$tool" '(.python_tools // []) |= map(select(. != $t))' "$CONFIG_FILE" > "$_tmp"; then
             mv "$_tmp" "$CONFIG_FILE"
             log_success "Removed $tool from config.json python_tools"
         else
@@ -85,20 +120,45 @@ _provision_hive() {
     local _asc="${PKG_PATH}/ascension.sh"
     if [[ -f "$_asc" ]]; then
         # shellcheck source=/dev/null
-        source "$_asc" 2>/dev/null || true
+        if ! source "$_asc" 2>/dev/null; then
+            log_error "_provision_hive: failed to source ascension.sh"
+            return 1
+        fi
         if declare -f install_resilient_tool >/dev/null 2>&1; then
             install_resilient_tool "$hive"
             return
         fi
+        log_error "_provision_hive: ascension.sh loaded but install_resilient_tool is unavailable"
+        return 1
     fi
 
     # Last resort: direct venv + pip
     log_warn "_provision_hive fallback: ascension unavailable — installing $hive via direct venv"
     local target_venv="${VENV_HOME}/${hive}"
     ensure_dir "$VENV_HOME"
-    python3 -m venv "$target_venv"
-    "$target_venv/bin/pip" install --quiet --upgrade pip
-    "$target_venv/bin/pip" install "$hive"         && log_success "Provisioned hive (fallback): $hive"         || log_warn "Fallback provisioning failed for: $hive"
+
+    # GUP 4.2: the fallback path carries the same hard timeouts as the
+    # ascension inject vector — a hung venv create or pip install must never
+    # wedge an audit run.
+    run_bounded 300 "fallback venv create ($hive)" python3 -m venv "$target_venv" || {
+        local rc=$?
+        log_error "_provision_hive: failed to create venv for $hive"
+        return "$rc"
+    }
+
+    run_bounded 300 "fallback pip upgrade ($hive)" "$target_venv/bin/pip" install --quiet --upgrade pip || {
+        local rc=$?
+        log_error "_provision_hive: failed to bootstrap pip for $hive"
+        return "$rc"
+    }
+
+    run_bounded 900 "fallback pip install $hive" "$target_venv/bin/pip" install "$hive" || {
+        local rc=$?
+        log_error "_provision_hive: failed to install $hive"
+        return "$rc"
+    }
+
+    log_success "Provisioned hive (fallback): $hive"
 }
 
 run_verification() {
@@ -113,7 +173,7 @@ run_verification() {
     # Hardcoded ["stig","ImgCodeCheck"] removed — config.json is the authority.
     log_info "Verifying Offensive Tooling Hives..."
     local -a offensive_hives
-    mapfile -t offensive_hives < <(jq -r '(.offensive_hives // [])[]'  "$CONFIG_FILE" 2>/dev/null || true)
+    mapfile -t offensive_hives < <(jq -r '(.offensive_hives // [])[]' "$CONFIG_FILE" 2>/dev/null || true)
 
     if [[ ${#offensive_hives[@]} -eq 0 ]]; then
         log_info "No offensive hives defined in config.json (offensive_hives key absent or empty)."
@@ -135,9 +195,9 @@ run_verification() {
     log_info "Verifying Environment Alignment..."
 
     local -a req_env dir_vars req_tools
-    mapfile -t req_env   < <(jq -r '(.required_env   // [])[]'  "$CONFIG_FILE")
-    mapfile -t dir_vars  < <(jq -r '(.directory_vars // [])[]'  "$CONFIG_FILE")
-    mapfile -t req_tools < <(jq -r '(.tools          // [])[]'  "$CONFIG_FILE")
+    mapfile -t req_env   < <(jq -r '(.required_env   // [])[]' "$CONFIG_FILE")
+    mapfile -t dir_vars  < <(jq -r '(.directory_vars // [])[]' "$CONFIG_FILE")
+    mapfile -t req_tools < <(jq -r '(.tools          // [])[]' "$CONFIG_FILE")
 
     # ── 1. Environment Variable Audit ────────────────────────────────────────
     for var in "${req_env[@]}"; do

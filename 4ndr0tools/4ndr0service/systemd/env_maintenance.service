@@ -6,8 +6,10 @@ ConditionUser=!root
 
 [Service]
 Type=oneshot
-# PKG_PATH must be set so main.sh can locate common.sh and all sourced modules.
-# Without this, every "source $PKG_PATH/..." resolves to "source /..." and fails.
+# Defense-in-depth suite-root hint. Since v1.5.1 every entry point resolves
+# the suite root from its own physical location (canonical bootstrap), so the
+# suite works even if this line is stale — but install_env_maintenance.sh
+# rewrites it to the actual install location at deploy time.
 Environment=PKG_PATH=/opt/4ndr0service
 # ExecStart is patched at install time by install_env_maintenance.sh
 ExecStart=/opt/4ndr0service/main.sh --fix --report

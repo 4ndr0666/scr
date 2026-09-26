@@ -16,19 +16,43 @@ for arg in "$@"; do
 done
 export FIX_MODE REPORT_MODE
 
-# ── PATH RESOLUTION ───────────────────────────────────────────────────────────
-_AUDIT_SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
-_COMPUTED_PKG_PATH="$(dirname "$_AUDIT_SCRIPT_DIR")"
-
-if [[ ! -f "$_COMPUTED_PKG_PATH/common.sh" ]]; then
-    echo "[FATAL] Cannot locate common.sh. Expected: $_COMPUTED_PKG_PATH/common.sh" >&2
-    exit 1
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
 fi
-
-export PKG_PATH="$_COMPUTED_PKG_PATH"
-
-# shellcheck source=../common.sh
-source "$PKG_PATH/common.sh"
+# shellcheck source=/dev/null
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 
 # shellcheck source=./verify_environment.sh
 source "$PKG_PATH/test/verify_environment.sh"
@@ -37,9 +61,6 @@ source "$PKG_PATH/test/verify_environment.sh"
 _AUDITD_RULES_FILE="/etc/audit/rules.d/4ndr0service.rules"
 
 # ── AUDITD RULE PROVISIONER ───────────────────────────────────────────────────
-# GAP-03/04 FIX: Rules are now written and loaded when missing, not just warned.
-# Also called by install_env_maintenance.sh on first deploy so fresh installs
-# never produce audit warnings on first run.
 provision_auditd_rules() {
     if ! command -v auditctl &>/dev/null; then
         log_warn "provision_auditd_rules: auditd not installed — skipping"
@@ -54,22 +75,32 @@ provision_auditd_rules() {
     fi
 
     log_info "Writing auditd rules to $_AUDITD_RULES_FILE..."
-    sudo tee "$_AUDITD_RULES_FILE" > /dev/null << AUDITEOF
+    if ! sudo tee "$_AUDITD_RULES_FILE" > /dev/null << AUDITEOF
 # 4ndr0service audit rules — managed by install_env_maintenance.sh
 # DO NOT EDIT MANUALLY — regenerated on suite install/update.
 -w ${XDG_CONFIG_HOME}/4ndr0service -p rwxa -k config_watch
 -w ${XDG_DATA_HOME} -p rwxa -k data_watch
 -w ${XDG_CACHE_HOME} -p rwxa -k cache_watch
 AUDITEOF
+    then
+        log_error "provision_auditd_rules: failed to write $_AUDITD_RULES_FILE"
+        return 1
+    fi
 
     if command -v augenrules &>/dev/null; then
-        sudo augenrules --load 2>/dev/null \
-            && log_success "auditd rules loaded via augenrules" \
-            || log_warn "augenrules --load failed — rules written but not yet active"
+        if sudo augenrules --load 2>/dev/null; then
+            log_success "auditd rules loaded via augenrules"
+        else
+            log_error "augenrules --load failed — auditd rules are not active"
+            return 1
+        fi
     else
-        sudo auditctl -R "$_AUDITD_RULES_FILE" 2>/dev/null \
-            && log_success "auditd rules loaded via auditctl" \
-            || log_warn "auditctl -R failed — rules written but not yet active"
+        if sudo auditctl -R "$_AUDITD_RULES_FILE" 2>/dev/null; then
+            log_success "auditd rules loaded via auditctl"
+        else
+            log_error "auditctl -R failed — auditd rules are not active"
+            return 1
+        fi
     fi
 }
 
@@ -87,14 +118,24 @@ check_systemd_timer() {
     log_info "Checking systemd user timer: $timer..."
     if systemctl --user is-active --quiet "$timer"; then
         log_success "$timer is active."
-    else
-        log_warn "$timer is not active."
-        if [[ "$FIX_MODE" == "true" ]]; then
-            log_info "Attempting to enable and start $timer..."
-            systemctl --user enable "$timer" && systemctl --user start "$timer" \
-                || log_warn "Failed to start $timer"
-        fi
+        return 0
     fi
+
+    log_warn "$timer is not active."
+    if [[ "$FIX_MODE" != "true" ]]; then
+        return 0
+    fi
+
+    log_info "Attempting to enable and start $timer..."
+    if ! systemctl --user enable "$timer"; then
+        log_error "Failed to enable $timer"
+        return 1
+    fi
+    if ! systemctl --user start "$timer"; then
+        log_error "Failed to start $timer"
+        return 1
+    fi
+    log_success "$timer enabled and started."
 }
 
 check_auditd_rules() {
@@ -103,8 +144,6 @@ check_auditd_rules() {
     fi
     log_info "Checking auditd rules..."
     local -a keywords
-    # D-22 FIX: null-coalescing fallback consistent with all other CONFIG_FILE
-    # array reads in the suite — prevents jq error on missing key.
     mapfile -t keywords < <(jq -r '(.audit_keywords // [])[]' "$CONFIG_FILE")
 
     local missing=0
@@ -137,8 +176,7 @@ check_pacman_dupes() {
 run_audit() {
     log_info "===== 4ndr0service Finalization Audit ====="
 
-    run_verification   # sourced above; FIX_MODE/REPORT_MODE are exported
-
+    run_verification
     check_systemd_bus
     check_systemd_timer
     check_auditd_rules
@@ -147,8 +185,6 @@ run_audit() {
     log_info "===== Audit Complete ====="
 }
 
-# GAP-04 FIX: export provision_auditd_rules so install_env_maintenance.sh
-# can call it after sourcing final_audit.sh without re-implementing the logic.
 export -f provision_auditd_rules 2>/dev/null || true
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

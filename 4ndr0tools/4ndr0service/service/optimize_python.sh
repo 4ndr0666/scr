@@ -12,8 +12,43 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
+fi
 # shellcheck source=/dev/null
-source "${PKG_PATH:-.}/common.sh"
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 
 # D-20 FIX: This re-derived the same path common.sh already exports as
 # VENV_HOME (and which optimize_venv.sh re-exports identically). Three
@@ -46,7 +81,11 @@ install_pyenv() {
         log_error "Dependency missing: curl. Pyenv deployment aborted."
         return 1
     fi
-    curl https://pyenv.run | bash || handle_error "$LINENO" "Pyenv deployment failed."
+    # GUP 4.2: pipefail is re-asserted inside the child so a failed curl is
+    # not masked by bash's exit status; 300s ceiling on the remote bootstrap.
+    run_bounded 300 "pyenv bootstrap" \
+        bash -c 'set -o pipefail; curl -sSf https://pyenv.run | bash' \
+        || handle_error "$LINENO" "Pyenv deployment failed."
     load_pyenv
 }
 
@@ -91,10 +130,14 @@ print(sysconfig.get_paths()['purelib'])
 
     if [[ $ghost_count -gt 0 ]]; then
         log_warn "Found $ghost_count ghost artifact(s) — removing..."
-        sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || true
-        sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || true
+        # GAP-C FIX: only the variable is quoted; both wildcards are live glob
+        # characters. The previous "${site_pkgs}/*virtualenvondemand"* form
+        # quoted the leading '*', making it a literal — ghosts were counted
+        # by find but silently never removed by rm (rm -f masks the miss).
+        sudo rm -rf "${site_pkgs}"/~irtual* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}"/-irtual* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}"/*virtualenvondemand* 2>/dev/null || true
+        sudo rm -rf "${site_pkgs}"/*virtualenv-tools3* 2>/dev/null || true
 
         sudo chown -R "${REAL_USER}:${REAL_USER}" \
             "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || true
@@ -164,9 +207,15 @@ optimize_python_service() {
     fi
 
     log_info "Ensuring Python $target_ver via Pyenv Hive..."
-    pyenv install -s "$target_ver"
-    pyenv global "$target_ver"
-    pyenv rehash
+    # GUP 4.2: pyenv install compiles a full CPython from source — the single
+    # longest operation in the suite. 3600s ceiling with explicit failure
+    # handling (baseline semantics: an install failure aborts the service).
+    if ! run_bounded 3600 "pyenv install $target_ver" pyenv install -s "$target_ver"; then
+        log_error "pyenv install failed for $target_ver. Aborting Python optimization."
+        return 1
+    fi
+    run_bounded 60 "pyenv global $target_ver" pyenv global "$target_ver"
+    run_bounded 60 "pyenv rehash" pyenv rehash
 
     # Persist the detected version back to config.json so future runs skip
     # this discovery path and don't accidentally revert to a stale value.
@@ -191,7 +240,7 @@ optimize_python_service() {
     if [[ ! -d "$hive_main" ]]; then
         log_info "Initializing Main Hive Venv at $hive_main..."
         ensure_dir "$VENV_BASE"
-        python3 -m venv "$hive_main"
+        run_bounded 300 "Main Hive venv init" python3 -m venv "$hive_main"
         log_success "Main Hive online."
     else
         log_info "Main Hive venv present: $hive_main"
@@ -217,7 +266,7 @@ optimize_python_service() {
         log_warn "pipx interpreter broken (stale pyenv path in shebang). Reinstalling..."
         rm -f "${PIPX_BIN_DIR:-$HOME/.local/bin}/pipx" 2>/dev/null || true
         if command -v pacman &>/dev/null; then
-            sudo pacman -S --needed --noconfirm python-pipx \
+            run_bounded 600 "pacman python-pipx reinstall" sudo pacman -S --needed --noconfirm python-pipx \
                 && log_success "pipx reinstalled via pacman." \
                 || { log_error "pacman reinstall of pipx failed — reinstall manually."; return 1; }
         fi
@@ -241,10 +290,10 @@ optimize_python_service() {
                 # pipx's free-text listing.
                 if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$tool"; then
                     log_info "Deploying tool to Hive sector: $tool"
-                    pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
+                    run_bounded 900 "pipx install $tool" pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
                 else
                     log_info "Verifying tool integrity: $tool"
-                    pipx upgrade "$tool" >/dev/null 2>&1 || log_warn "Pipx upgrade failed for: $tool"
+                    run_bounded 900 "pipx upgrade $tool" pipx upgrade "$tool" >/dev/null 2>&1 || log_warn "Pipx upgrade failed for: $tool"
                 fi
             done
         else
@@ -261,13 +310,14 @@ optimize_python_service() {
 # STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    if [[ -z "${PKG_PATH:-}" ]]; then
-        _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
-        readonly _CURRENT_SVC_DIR
-        PKG_PATH="$(dirname "$_CURRENT_SVC_DIR")"
-        export PKG_PATH
-    fi
     # shellcheck source=/dev/null
     source "$PKG_PATH/common.sh"
+    # GAP-J FIX: standalone runs previously skipped suite initialization —
+    # CONFIG_FILE could be absent, so every jq read silently failed and tool
+    # sync was silently skipped. initialize_suite guarantees the XDG dirs,
+    # the config file and the jq dependency exactly as the main.sh entry
+    # point does (idempotent; the flock mutex is already held from the
+    # common.sh source above).
+    initialize_suite
     optimize_python_service
 fi

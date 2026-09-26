@@ -5,8 +5,43 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=./common.sh
-source "${PKG_PATH:-.}/common.sh"
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
+fi
+# shellcheck source=/dev/null
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 # shellcheck source=./settings_functions.sh
 source "$PKG_PATH/settings_functions.sh"
 # shellcheck source=./manage_files.sh
@@ -22,6 +57,7 @@ load_plugins() {
         return 0
     fi
 
+    local status=0
     for plugin in "$PLUGINS_DIR"/*.sh; do
         [[ -f "$plugin" ]] || continue
 
@@ -34,12 +70,18 @@ load_plugins() {
             log_info "Loaded plugin: $(basename "$plugin")"
             if [[ -n "${PLUGIN_REGISTER:-}" ]] && declare -f "${PLUGIN_REGISTER}" >/dev/null 2>&1; then
                 log_info "Executing plugin entry point: ${PLUGIN_REGISTER}"
-                "${PLUGIN_REGISTER}" || log_warn "Plugin ${PLUGIN_REGISTER} returned non-zero."
+                if ! "${PLUGIN_REGISTER}"; then
+                    log_error "Plugin ${PLUGIN_REGISTER} returned non-zero."
+                    status=1
+                fi
             fi
         else
-            log_warn "Failed to load plugin: $plugin"
+            log_error "Failed to load plugin: $plugin"
+            status=1
         fi
     done
+
+    return "$status"
 }
 
 source_all_services() {
@@ -47,12 +89,20 @@ source_all_services() {
     if [[ ! -d "$services_dir" ]]; then
         handle_error "$LINENO" "Services directory missing: $services_dir"
     fi
+
+    local status=0
     for script in "$services_dir"/optimize_*.sh; do
         if [[ -f "$script" ]]; then
             # shellcheck disable=SC1090
-            source "$script" || log_warn "Failed to source service: $script"
+            if source "$script"; then
+                continue
+            fi
+            log_error "Failed to source service: $script"
+            status=1
         fi
     done
+
+    return "$status"
 }
 
 source_views() {
@@ -68,30 +118,41 @@ source_views() {
 
 run_all_services() {
     log_info "Running all services in sequence..."
-    # D-09 FIX: Guard against double-sourcing. main_controller() already calls
-    # source_all_services(). Re-sourcing redefines functions harmlessly under
-    # normal conditions but would be fatal if any future service file acquires
-    # a readonly variable. The presence of optimize_go_service is a reliable
-    # sentinel that all services have been loaded.
     if ! declare -f optimize_go_service >/dev/null 2>&1; then
         source_all_services
     fi
 
-    # D-21 FIX: optimize_nvm_service matches the ^optimize_.*_service$ discovery
-    # pattern below (it's defined in service/optimize_nvm.sh, which the
-    # optimize_*.sh glob in source_all_services() includes), but it is NOT an
-    # independently dispatchable service — it is Node's internal prerequisite,
-    # called directly by optimize_node_service() every time Node runs. Neither
-    # view/cli.sh nor view/dialog.sh exposes "NVM" as its own menu item, which
-    # confirms that design intent. Without this exclusion, a full sequential
-    # run executed NVM sync twice per pass: once here as a "discovered"
-    # top-level service, and again moments later inside optimize_node_service.
     local -a services
+    # NOTE: optimize_nvm_service is deliberately excluded from the sequential
+    # batch — it is owned by optimize_node_service as its prerequisite (which
+    # sources and executes it inline), so batching it here would run the full
+    # NVM install path twice per pass. Single-run interactive access is
+    # provided by the CLI/dialog "NVM Optimization" menu entries and by direct
+    # standalone execution of service/optimize_nvm.sh.
     mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$' | grep -v '^optimize_nvm_service$')
 
+    local status=0
     for svc in "${services[@]}"; do
-        "$svc" || log_warn "$svc failed."
+        # D-08 ACTIVATION (auto-healing): batch runs execute each service in
+        # recoverable mode — an explicit handle_error() inside a service logs
+        # and returns instead of exiting, so ONE failed service can no longer
+        # abort the entire healing pass (baseline: the systemd oneshot died
+        # mid-run, skipping every remaining service, often with a masked
+        # exit 0). Overall failure propagation is preserved: each non-zero
+        # return still marks status=1 for the final rc.
+        export _ALLOW_ERRORS=1
+        if "$svc"; then
+            continue
+        fi
+        log_error "$svc failed."
+        status=1
     done
+    unset _ALLOW_ERRORS
+
+    if (( status != 0 )); then
+        log_error "One or more services failed."
+        return "$status"
+    fi
 
     log_success "All services sequence complete."
     touch "${XDG_CACHE_HOME}/.scr_dirty"
@@ -100,21 +161,25 @@ run_all_services() {
 
 run_parallel_services() {
     log_info "Running services in parallel (Go, Ruby, Cargo)..."
-    # CONSTRAINT: Only these three services are safe to parallelize.
-    # They write to disjoint directories: $GOPATH, $GEM_HOME, $CARGO_HOME.
-    # REQUIREMENT: D-02 patch (pacman lock wait) must be applied — all three
-    # can trigger install_sys_pkg() and will deadlock without the lock guard.
-    # NOTE: path_prepend() mutations inside subshells (&) do NOT propagate
-    # back to the parent shell. PATH changes from parallel workers are lost.
-    # Rely on persistent profile exports (~/.zprofile) for PATH permanence.
     if ! declare -f optimize_go_service >/dev/null 2>&1; then
         source_all_services
     fi
 
+    # D-08 ACTIVATION (auto-healing): parallel workers inherit recoverable
+    # mode so a failure in one worker is reported (rc via run_parallel_checks)
+    # without killing its siblings mid-flight.
+    export _ALLOW_ERRORS=1
     run_parallel_checks \
         "optimize_go_service" \
         "optimize_ruby_service" \
         "optimize_cargo_service"
+    local _par_rc=$?
+    unset _ALLOW_ERRORS
+
+    if (( _par_rc != 0 )); then
+        log_error "One or more parallel services failed (rc=$_par_rc)."
+        return "$_par_rc"
+    fi
 
     log_success "Parallel services completed."
     touch "${XDG_CACHE_HOME}/.scr_dirty"
@@ -122,26 +187,16 @@ run_parallel_services() {
 }
 
 export_functions() {
-    # D-15 FIX: Only export what parallel worker subshells (spawned via &)
-    # actually require at runtime. Full function export pollutes every child
-    # process environment and can trigger "readonly variable" fatal errors if
-    # common.sh is re-sourced in a child that inherited an exported-readonly var.
-    # Functions available via 'source' in the parent shell do NOT need export -f
-    # for direct calls; only & subshells require it.
     export -f log_info log_warn log_error log_success handle_error
     export -f ensure_dir path_prepend install_sys_pkg
-    # run_parallel_services subshell workers need these:
-    export -f optimize_go_service optimize_ruby_service optimize_cargo_service 2>/dev/null || true
+    export -f optimize_go_service optimize_ruby_service optimize_cargo_service
 }
 
 main_controller() {
     load_plugins
     source_all_services
     export_functions
-    # Lazy-load verify_environment.sh only when the audit/verification
-    # path is needed (main_controller is the interactive entry point).
     if ! declare -f run_verification >/dev/null 2>&1; then
-        # shellcheck source=./test/verify_environment.sh
         source "$PKG_PATH/test/verify_environment.sh"
     fi
     source_views
