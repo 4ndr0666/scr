@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
-ROOT="${GUP_REPO_ROOT:?GUP_REPO_ROOT is required}"
-SVC="$ROOT/4ndr0tools/4ndr0service"
+# ── SUITE DIR RESOLUTION (GAP-F FIX) ──────────────────────────────────────────
+# Dual-layout: honor GUP_REPO_ROOT when it targets the legacy 4ndr0tools/
+# layout (the original dotfiles repo), else self-resolve — this file lives at
+# <suite>/test/, so the suite root is one dirname up. The proofs now run from
+# both repository layouts with no CI env hints and no git dependency.
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SUITE_DIR="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SUITE_DIR="$(dirname -- "$_TEST_DIR")"
+fi
+SVC="$SUITE_DIR"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/service/service" "$TMP/home/.local/share/nvm"

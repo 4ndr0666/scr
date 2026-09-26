@@ -2,8 +2,18 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-repo_root="${GUP_REPO_ROOT:-$(git rev-parse --show-toplevel)}"
-source_file="$repo_root/4ndr0tools/4ndr0service/ascension.sh"
+# ── SUITE DIR RESOLUTION (GAP-F FIX) ──────────────────────────────────────────
+# Dual-layout: honor GUP_REPO_ROOT when it targets the legacy 4ndr0tools/
+# layout (the original dotfiles repo), else self-resolve — this file lives at
+# <suite>/test/, so the suite root is one dirname up. The proofs now run from
+# both repository layouts with no CI env hints and no git dependency.
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SUITE_DIR="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SUITE_DIR="$(dirname -- "$_TEST_DIR")"
+fi
+source_file="$SUITE_DIR/ascension.sh"
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
 
@@ -16,6 +26,7 @@ make_common() {
     local dir="$1"
     cat >"$dir/common.sh" <<'EOF'
 #!/usr/bin/env bash
+# 4ndr0service suite sentinel (canonical resolver contract, v1.5.1)
 log_warn() { :; }
 log_error() { printf '%s\n' "$*" >&2; }
 log_info() { :; }
@@ -24,6 +35,11 @@ log_psi() { :; }
 path_prepend() { :; }
 ensure_dir() { command mkdir -p "$1"; }
 load_config() { :; }
+# STEP-5 companion: production install_resilient_tool()/clean_pip_ghosts() now
+# route pip/venv through run_bounded(). Pass-through stub keeps the unit
+# proof focused on failure propagation — child exit codes flow through the
+# execution boundary unchanged, exactly as timeout(1) propagates them.
+run_bounded() { shift 2; "$@"; }
 C_BLUE=''; C_RESET=''; C_GREEN=''; C_YELLOW=''; C_RED=''
 PSI_COLOR=''; RESET_ASC=''
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
@@ -32,7 +48,12 @@ CONFIG_FILE="${CONFIG_FILE:-$HOME/.config/4ndr0service/config.json}"
 EOF
     command chmod +x "$dir/common.sh"
     command cp "$source_file" "$dir/ascension.sh"
-    command sed '/^if \[\[ \$# -eq 0 \]\]; then$/,$d' "$dir/ascension.sh" >"$dir/ascension_functions.sh"
+    # GAP-A FIX companion: ascension.sh now wraps its standalone argument
+    # dispatch in a BASH_SOURCE guard (same convention as service/optimize_*.sh
+    # and node_nvm_runtime.sh's extraction below). Strip from the guard line —
+    # the legacy '^if [[ $# -eq 0 ]]' marker is nested inside the guard block
+    # and would leave the outer if unterminated in the extracted payload.
+    command sed '/^if \[\[ "\${BASH_SOURCE\[0\]}" == "\$0" \]\]; then$/,$d' "$dir/ascension.sh" >"$dir/ascension_functions.sh"
 }
 
 run_clean_case() {

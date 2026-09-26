@@ -280,4 +280,14 @@ fi
 
 _ROLLBACK_NEEDED=false
 log_ok "Deployment complete. 4ndr0service is installed at $INSTALL_LOCATION"
-[[ "$DRY_RUN" == "false" ]] && log_info "Invoke with: 4ndr0service  (ensure $BIN_DIR is in PATH)"
+# GAP-D FIX: this was previously the final statement written as
+# `[[ "$DRY_RUN" == "false" ]] && log_info ...`. When the test failed (i.e.
+# under --dry-run) the whole AND-OR list — and therefore the script — exited 1
+# with no diagnostic, breaking scripted/CI use of `install.sh -n`. Explicit
+# branch plus a guaranteed success exit for the completed-install path.
+if [[ "$DRY_RUN" == "false" ]]; then
+    log_info "Invoke with: 4ndr0service  (ensure $BIN_DIR is in PATH)"
+else
+    log_dry "Dry-run complete. No filesystem changes were made."
+fi
+exit 0

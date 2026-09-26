@@ -1,29 +1,55 @@
 #!/usr/bin/env bash
 # File: ascension.sh
-# 4ndr0666OS: Arch Universal Ascension Protocol v8.3
+# 4ndr0666OS: Arch Universal Ascension Protocol v8.6 (suite v1.5.1)
 # - Host: theworkpc | User: andro (Dynamic Discovery)
 # - Logic: Mandatory flag architecture + Tool Injection Vector + Ghost Exorcism
 # - Integration: Aligned to 4ndr0service common.sh (XDG paths, logging, ensure_dir)
+# - v8.5: source-safe bootstrap guard; ghost-glob quoting fix; hard timeouts
+#   on venv/pip/exorcism vectors (GUP 4.2). Header and usage now agree — the
+#   baseline shipped v8.3 in the header against v8.4 in the usage banner.
+# - v8.6: canonical suite-root resolver — cwd-independent, sentinel-checked
+#   (v1.5.1 remediation of the PKG_PATH cwd-fallback conflict class)
 
 set -euo pipefail
 IFS=$'\n\t'
 
-_ASC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
-_found_pkg=""
-for _candidate in "$_ASC_DIR" "$(dirname "$_ASC_DIR")" "$(dirname "$(dirname "$_ASC_DIR")")"; do
-    if [[ -f "$_candidate/common.sh" ]]; then
-        _found_pkg="$_candidate"
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
         break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
     fi
-done
-
-if [[ -z "$_found_pkg" ]]; then
-    echo -e "\033[38;5;196m[FATAL] Cannot locate common.sh from $_ASC_DIR\033[0m" >&2
-    exit 1
+    export PKG_PATH="${_4NDR0_FOUND}"
 fi
-
-export PKG_PATH="$_found_pkg"
-source "$PKG_PATH/common.sh"
+# shellcheck source=/dev/null
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 
 PSI_COLOR="\033[38;5;196m"
 RESET_ASC="\033[0m"
@@ -57,17 +83,24 @@ clean_pip_ghosts() {
 
     if [[ $ghost_count -gt 0 ]]; then
         log_warn "Found $ghost_count ghost artifact(s) in $site_pkgs — removing..."
-        sudo rm -rf "${site_pkgs}/~irtual"* 2>/dev/null || { local rc=$?; log_error "Failed removing ~irtual ghosts"; return "$rc"; }
-        sudo rm -rf "${site_pkgs}/-irtual"* 2>/dev/null || { local rc=$?; log_error "Failed removing -irtual ghosts"; return "$rc"; }
-        sudo rm -rf "${site_pkgs}/*virtualenvondemand"* 2>/dev/null || { local rc=$?; log_error "Failed removing virtualenvondemand ghosts"; return "$rc"; }
-        sudo rm -rf "${site_pkgs}/*virtualenv-tools3"* 2>/dev/null || { local rc=$?; log_error "Failed removing virtualenv-tools3 ghosts"; return "$rc"; }
+        # GAP-C FIX: the two wildcard globs below previously quoted their
+        # leading '*' ("${site_pkgs}/*virtualenvondemand"*), which made that
+        # asterisk LITERAL — the pattern only matched files whose names begin
+        # with a literal '*' character. Ghosts were counted by find (correct
+        # unquoted patterns) but never removed by rm, while the success log
+        # claimed "N artifact(s) removed". Only the variable is quoted now;
+        # both wildcards are live glob characters.
+        sudo rm -rf "${site_pkgs}"/~irtual* 2>/dev/null || { local rc=$?; log_error "Failed removing ~irtual ghosts"; return "$rc"; }
+        sudo rm -rf "${site_pkgs}"/-irtual* 2>/dev/null || { local rc=$?; log_error "Failed removing -irtual ghosts"; return "$rc"; }
+        sudo rm -rf "${site_pkgs}"/*virtualenvondemand* 2>/dev/null || { local rc=$?; log_error "Failed removing virtualenvondemand ghosts"; return "$rc"; }
+        sudo rm -rf "${site_pkgs}"/*virtualenv-tools3* 2>/dev/null || { local rc=$?; log_error "Failed removing virtualenv-tools3 ghosts"; return "$rc"; }
 
         sudo chown -R "${REAL_USER}:${REAL_USER}" \
             "${USER_HOME}/.local/share/pyenv/versions/${py_version}" 2>/dev/null || { local rc=$?; log_error "Failed reclaiming Python ownership"; return "$rc"; }
 
         log_info "Corruption detected — purging pip cache and reinstalling build tools..."
-        python -m pip cache purge 2>/dev/null || { local rc=$?; log_error "Failed purging pip cache"; return "$rc"; }
-        python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps \
+        run_bounded 120 "pip cache purge" python -m pip cache purge 2>/dev/null || { local rc=$?; log_error "Failed purging pip cache"; return "$rc"; }
+        run_bounded 600 "pip build-tools reinstall" python -m pip install --upgrade --force-reinstall --no-cache-dir --no-deps \
             pip setuptools wheel 2>/dev/null || { local rc=$?; log_error "Failed reinstalling Python build tools"; return "$rc"; }
         log_success "Ghost exorcism complete for Python ${py_version} ($ghost_count artifact(s) removed)"
     else
@@ -76,7 +109,7 @@ clean_pip_ghosts() {
 }
 
 show_usage() {
-    echo -e "${PSI_COLOR}4ndr0666OS | Ascension Protocol v8.4${RESET_ASC}"
+    echo -e "${PSI_COLOR}4ndr0666OS | Ascension Protocol v8.6 (suite v${SUITE_VERSION:-1.5.1})${RESET_ASC}"
     echo -e "Usage: $(basename "$0") [options]"
     echo -e ""
     echo -e "${C_BLUE}Operational Vectors:${C_RESET}"
@@ -115,11 +148,18 @@ install_resilient_tool() {
     fi
 
     ensure_dir "$VENV_HOME" || return $?
-    "$py_exec" -m venv "$target_venv" || { local rc=$?; log_error "Failed creating venv for $pkg_name"; return "$rc"; }
+    # GUP 4.2: venv creation, pip upgrade and tool install are all network-
+    # capable operations that can hang indefinitely — every one now carries a
+    # hard timeout through the common.sh run_bounded() execution boundary,
+    # with the original failure-propagation contracts preserved verbatim.
+    run_bounded 300 "venv create ($pkg_name)" "$py_exec" -m venv "$target_venv" \
+        || { local rc=$?; log_error "Failed creating venv for $pkg_name"; return "$rc"; }
 
     log_info "Updating sector pip and installing $pkg_name..."
-    "$target_venv/bin/pip" install --upgrade pip >/dev/null 2>&1 || { local rc=$?; log_error "Failed upgrading pip for $pkg_name"; return "$rc"; }
-    "$target_venv/bin/pip" install "$pkg_name" >/dev/null 2>&1 || { local rc=$?; log_error "Failed installing $pkg_name"; return "$rc"; }
+    run_bounded 300 "pip upgrade ($pkg_name)" "$target_venv/bin/pip" install --upgrade pip >/dev/null 2>&1 \
+        || { local rc=$?; log_error "Failed upgrading pip for $pkg_name"; return "$rc"; }
+    run_bounded 900 "pip install $pkg_name" "$target_venv/bin/pip" install "$pkg_name" >/dev/null 2>&1 \
+        || { local rc=$?; log_error "Failed installing $pkg_name"; return "$rc"; }
 
     if [[ -f "$target_venv/bin/$pkg_name" ]]; then
         ln -sf "$target_venv/bin/$pkg_name" "$BIN_TARGET/$pkg_name" || { local rc=$?; log_error "Failed creating Ghost Link for $pkg_name"; return "$rc"; }
@@ -260,51 +300,65 @@ run_sync() {
     log_psi "ASCENSION COMPLETE. SYSTEM ZEROED."
 }
 
-if [[ $# -eq 0 ]]; then
-    show_usage
-    exit 0
-fi
+# ──────────────────────────────────────────────────────────────────────────────
+# STANDALONE BOOTSTRAP GUARD (GAP-A FIX)
+# view/cli.sh, view/dialog.sh and test/verify_environment.sh::_provision_hive()
+# source this file inline to reuse its functions without re-acquiring the
+# common.sh flock mutex in a subprocess. The argument dispatch below MUST run
+# only when this file is executed directly — without this guard, sourcing the
+# file from an interactive session with no positional parameters executed
+# `show_usage; exit 0`, silently terminating the entire CLI menu, and with
+# inherited parameters (e.g. --fix) hit the `*)` branch and exited 1, killing
+# the systemd audit mid-run. Guard pattern matches the convention already used
+# by every service/optimize_*.sh.
+# ──────────────────────────────────────────────────────────────────────────────
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ $# -eq 0 ]]; then
+        show_usage
+        exit 0
+    fi
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -h|--help)
-            show_usage
-            exit 0
-            ;;
-        --sync)
-            run_sync
-            shift
-            ;;
-        --inject)
-            if [[ -n "${2:-}" ]]; then
-                install_resilient_tool "$2"
-                shift 2
-            else
-                log_warn "Error: Tool name missing for --inject"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            --sync)
+                run_sync
+                shift
+                ;;
+            --inject)
+                if [[ -n "${2:-}" ]]; then
+                    install_resilient_tool "$2"
+                    shift 2
+                else
+                    log_warn "Error: Tool name missing for --inject"
+                    exit 1
+                fi
+                ;;
+            --eject)
+                if [[ -n "${2:-}" ]]; then
+                    remove_hive_tool "$2"
+                    shift 2
+                else
+                    log_warn "Error: Tool name missing for --eject"
+                    exit 1
+                fi
+                ;;
+            --list)
+                list_hive_tools
+                shift
+                ;;
+            --clean-ghosts)
+                clean_pip_ghosts
+                shift
+                ;;
+            *)
+                log_warn "Unknown vector: $1"
+                show_usage
                 exit 1
-            fi
-            ;;
-        --eject)
-            if [[ -n "${2:-}" ]]; then
-                remove_hive_tool "$2"
-                shift 2
-            else
-                log_warn "Error: Tool name missing for --eject"
-                exit 1
-            fi
-            ;;
-        --list)
-            list_hive_tools
-            shift
-            ;;
-        --clean-ghosts)
-            clean_pip_ghosts
-            shift
-            ;;
-        *)
-            log_warn "Unknown vector: $1"
-            show_usage
-            exit 1
-            ;;
-    esac
-done
+                ;;
+        esac
+    done
+fi

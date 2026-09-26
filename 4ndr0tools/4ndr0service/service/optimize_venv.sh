@@ -8,8 +8,43 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
+fi
 # shellcheck source=/dev/null
-source "${PKG_PATH:-.}/common.sh"
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 
 # ---[ DYNAMIC PATH RESOLUTION ]---
 export VENV_HOME="${XDG_DATA_HOME}/virtualenv"
@@ -36,7 +71,7 @@ optimize_venv_service() {
     if [[ ! -d "$VENV_PATH" ]]; then
         log_info "Initializing Main Hive Venv: $VENV_PATH"
         ensure_dir "$VENV_HOME"
-        python3 -m venv "$VENV_PATH"
+        run_bounded 300 "Main Hive venv init" python3 -m venv "$VENV_PATH"
     fi
 
     # 2. Hive Core Update
@@ -47,7 +82,7 @@ optimize_venv_service() {
     # the ERR trap under set -euo pipefail and killing the service run.
     # shellcheck disable=SC1091
     if source "$VENV_PATH/bin/activate" 2>/dev/null; then
-        pip install --upgrade pip || log_warn "Hive Pip upgrade suppressed (Check network/build)."
+        run_bounded 300 "Hive pip upgrade" pip install --upgrade pip || log_warn "Hive Pip upgrade suppressed (Check network/build)."
         deactivate
     else
         log_warn "Could not activate venv at $VENV_PATH — skipping pip upgrade. Venv may be corrupted; run with --fix to recreate."
@@ -69,7 +104,7 @@ optimize_venv_service() {
 
             for bpkg in $broken_pkgs; do
                 log_info "Attempting Sector Repair: $bpkg"
-                if ! pipx install --force "$bpkg"; then
+                if ! run_bounded 900 "pipx sector repair ($bpkg)" pipx install --force "$bpkg"; then
                     log_error "Metadata Deadlock: Repair failed for $bpkg"
 
                     if ! pipx uninstall "$bpkg"; then
@@ -105,7 +140,7 @@ optimize_venv_service() {
             # rather than scraping free text.
             if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$p"; then
                 log_info "Deploying: $p"
-                pipx install "$p" || log_warn "Deployment failed: $p"
+                run_bounded 900 "pipx install $p" pipx install "$p" || log_warn "Deployment failed: $p"
             fi
         done
     fi
@@ -120,21 +155,17 @@ optimize_venv_service() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STANDALONE BOOTSTRAP
-# FIX: Original referenced `$_CURRENT_svc_dir` (lowercase) after declaring
-#      `_CURRENT_SVC_DIR` (uppercase), so PKG_PATH was set to an empty string
-#      and `source "$PKG_PATH/common.sh"` silently sourced `./common.sh` from
-#      cwd (which may not exist).  Variable name is now consistent uppercase.
+# STANDALONE BOOTSTRAP (SC2155 & SC1091 Compliant)
 # ──────────────────────────────────────────────────────────────────────────────
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    if [[ -z "${PKG_PATH:-}" ]]; then
-        _CURRENT_SVC_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
-        readonly _CURRENT_SVC_DIR
-        PKG_PATH="$(dirname "$_CURRENT_SVC_DIR")"
-        export PKG_PATH
-    fi
-
     # shellcheck source=/dev/null
     source "$PKG_PATH/common.sh"
+    # GAP-J FIX: standalone runs previously skipped suite initialization —
+    # CONFIG_FILE could be absent, so every jq read silently failed and tool
+    # sync was silently skipped. initialize_suite guarantees the XDG dirs,
+    # the config file and the jq dependency exactly as the main.sh entry
+    # point does (idempotent; the flock mutex is already held from the
+    # common.sh source above).
+    initialize_suite
     optimize_venv_service
 fi

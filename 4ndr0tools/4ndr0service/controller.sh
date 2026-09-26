@@ -5,8 +5,43 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# shellcheck source=./common.sh
-source "${PKG_PATH:-.}/common.sh"
+# ── SUITE ROOT RESOLUTION (canonical, v1.5.1) ─────────────────────────────────
+# The suite root is the directory containing common.sh, resolved from THIS
+# file's own physical location — never from the caller's current working
+# directory. An inherited PKG_PATH is honored only when this file is being
+# SOURCED and that path is valid (the sandbox/test contract); executed entry
+# points always self-resolve, so a stale exported PKG_PATH can never silently
+# redirect the suite to a foreign copy. Every self-resolved candidate must
+# carry the 4ndr0service sentinel — an unrelated common.sh in a parent
+# directory can never be adopted.
+if [[ "${BASH_SOURCE[0]}" != "$0" && -n "${PKG_PATH:-}" && -f "${PKG_PATH}/common.sh" ]]; then
+    :   # sourced with a valid suite context — honor it
+else
+    _4NDR0_SELF_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd -P)"
+    _4NDR0_FOUND=""
+    for _4NDR0_CAND in "$_4NDR0_SELF_DIR" "$(dirname "$_4NDR0_SELF_DIR")" "$(dirname "$(dirname "$_4NDR0_SELF_DIR")")"; do
+        [[ -f "${_4NDR0_CAND}/common.sh" ]] || continue
+        _4NDR0_MARKED=0
+        while IFS= read -r _4NDR0_LINE; do
+            if [[ "${_4NDR0_LINE}" == *4ndr0service* ]]; then
+                _4NDR0_MARKED=1
+                break
+            fi
+        done 2>/dev/null < "${_4NDR0_CAND}/common.sh" || true
+        [[ "${_4NDR0_MARKED}" == 1 ]] || continue
+        _4NDR0_FOUND="${_4NDR0_CAND}"
+        break
+    done
+    if [[ -z "${_4NDR0_FOUND}" ]]; then
+        printf '[FATAL] %s: cannot locate the 4ndr0service suite root (common.sh) near %s\n' \
+            "${BASH_SOURCE[0]:-$0}" "${_4NDR0_SELF_DIR}" >&2
+        exit 1
+    fi
+    export PKG_PATH="${_4NDR0_FOUND}"
+fi
+# shellcheck source=/dev/null
+source "${PKG_PATH}/common.sh"
+unset _4NDR0_SELF_DIR _4NDR0_FOUND _4NDR0_CAND _4NDR0_MARKED _4NDR0_LINE
 # shellcheck source=./settings_functions.sh
 source "$PKG_PATH/settings_functions.sh"
 # shellcheck source=./manage_files.sh
@@ -88,16 +123,31 @@ run_all_services() {
     fi
 
     local -a services
+    # NOTE: optimize_nvm_service is deliberately excluded from the sequential
+    # batch — it is owned by optimize_node_service as its prerequisite (which
+    # sources and executes it inline), so batching it here would run the full
+    # NVM install path twice per pass. Single-run interactive access is
+    # provided by the CLI/dialog "NVM Optimization" menu entries and by direct
+    # standalone execution of service/optimize_nvm.sh.
     mapfile -t services < <(declare -F | awk '{print $3}' | grep '^optimize_.*_service$' | grep -v '^optimize_nvm_service$')
 
     local status=0
     for svc in "${services[@]}"; do
+        # D-08 ACTIVATION (auto-healing): batch runs execute each service in
+        # recoverable mode — an explicit handle_error() inside a service logs
+        # and returns instead of exiting, so ONE failed service can no longer
+        # abort the entire healing pass (baseline: the systemd oneshot died
+        # mid-run, skipping every remaining service, often with a masked
+        # exit 0). Overall failure propagation is preserved: each non-zero
+        # return still marks status=1 for the final rc.
+        export _ALLOW_ERRORS=1
         if "$svc"; then
             continue
         fi
         log_error "$svc failed."
         status=1
     done
+    unset _ALLOW_ERRORS
 
     if (( status != 0 )); then
         log_error "One or more services failed."
@@ -115,10 +165,21 @@ run_parallel_services() {
         source_all_services
     fi
 
+    # D-08 ACTIVATION (auto-healing): parallel workers inherit recoverable
+    # mode so a failure in one worker is reported (rc via run_parallel_checks)
+    # without killing its siblings mid-flight.
+    export _ALLOW_ERRORS=1
     run_parallel_checks \
         "optimize_go_service" \
         "optimize_ruby_service" \
         "optimize_cargo_service"
+    local _par_rc=$?
+    unset _ALLOW_ERRORS
+
+    if (( _par_rc != 0 )); then
+        log_error "One or more parallel services failed (rc=$_par_rc)."
+        return "$_par_rc"
+    fi
 
     log_success "Parallel services completed."
     touch "${XDG_CACHE_HOME}/.scr_dirty"

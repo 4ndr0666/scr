@@ -2,8 +2,18 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-repo_root="${GUP_REPO_ROOT:-$(git rev-parse --show-toplevel)}"
-source_file="$repo_root/4ndr0tools/4ndr0service/prunesys"
+# ── SUITE DIR RESOLUTION (GAP-F FIX) ──────────────────────────────────────────
+# Dual-layout: honor GUP_REPO_ROOT when it targets the legacy 4ndr0tools/
+# layout (the original dotfiles repo), else self-resolve — this file lives at
+# <suite>/test/, so the suite root is one dirname up. The proofs now run from
+# both repository layouts with no CI env hints and no git dependency.
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SUITE_DIR="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SUITE_DIR="$(dirname -- "$_TEST_DIR")"
+fi
+source_file="$SUITE_DIR/prunesys"
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
 
@@ -12,6 +22,7 @@ command mkdir -p "$case_dir/pkg" "$case_dir/home"
 
 cat >"$case_dir/pkg/common.sh" <<'EOF'
 #!/usr/bin/env bash
+# 4ndr0service suite sentinel (canonical resolver contract, v1.5.1)
 run_bounded() {
     if [[ "$2" == "Yarn cache" ]]; then
         return 73

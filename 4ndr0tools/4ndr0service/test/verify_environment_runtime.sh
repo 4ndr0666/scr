@@ -5,8 +5,18 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-repo_root="${GUP_REPO_ROOT:?GUP_REPO_ROOT must identify the repository root}"
-source_file="$repo_root/4ndr0tools/4ndr0service/test/verify_environment.sh"
+# ── SUITE DIR RESOLUTION (GAP-F FIX) ──────────────────────────────────────────
+# Dual-layout: honor GUP_REPO_ROOT when it targets the legacy 4ndr0tools/
+# layout (the original dotfiles repo), else self-resolve — this file lives at
+# <suite>/test/, so the suite root is one dirname up. The proofs now run from
+# both repository layouts with no CI env hints and no git dependency.
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SUITE_DIR="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SUITE_DIR="$(dirname -- "$_TEST_DIR")"
+fi
+source_file="$SUITE_DIR/test/verify_environment.sh"
 
 tmpdir="$(mktemp -d)"
 cleanup() {
@@ -28,6 +38,10 @@ log_warn()  { printf '[WARN] %s\n' "$*" >&2; }
 log_error() { printf '[ERROR] %s\n' "$*" >&2; }
 log_success() { printf '[PASS-LOG] %s\n' "$*"; }
 ensure_dir() { mkdir -p -- "$1"; }
+# STEP-5 companion: the fallback path now routes venv/pip through
+# run_bounded(). Pass-through stub keeps child exit codes (e.g. the fake
+# python3 exiting 77) flowing through the boundary unchanged.
+run_bounded() { shift 2; "$@"; }
 
 source "$tmpdir/unit.sh"
 
