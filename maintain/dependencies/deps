@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # File: dependency-checker.sh
-# Version: 2.3.1 (GUP v5.3 field-run gap mitigation on the v2.3.0 golden unit)
+# Version: 2.3.2 (GUP v5.3 field-run gap mitigation on the v2.3.1 golden unit)
 # Desc: Arch Linux — iterative missing-dependency checker, installer, and
 #       dependency-health manager. Audits installed packages via pacman -Dk,
 #       resolves official vs AUR vs virtual-provider classification, audits
@@ -96,6 +96,48 @@
 #     healing through an ABI transition is the exact contingency the sync
 #     preflight exists to prevent.
 #
+# Changelog (v2.3.2 — mitigation of the blind spots exposed by the second
+# production field run (-I force-heal, deps_debug.txt, 2026-09-26: 8 of 242
+# attempted packages still broken under one undifferentiated remediation
+# line, a stale-python heal verified 'restored' while pacman's own hook
+# flagged it during the heal transaction, and a no-op 'run pacman -Syu'
+# note after the preflight had already proven the sync held); no baseline
+# capability removed):
+#   - Fixed: stale-python-dir heals were verified with pacman -Qk, which
+#     only proves file PRESENCE. python-thefuzz was reinstalled from a
+#     repository build that still targets the retired interpreter
+#     directory (/usr/lib/python3.13 under a 3.14 interpreter), pacman's
+#     post-transaction hook flagged it again during the very heal
+#     transaction, and the run reported it restored. Attempted
+#     stale-only packages are now re-verified against their pacman -Qql
+#     file list; those still installing into a retired pythonX.Y
+#     directory are reported in a dedicated 'Stale-Python unresolved'
+#     block on BOTH summary exits with honest remediation (a reinstall
+#     cannot fix this — only a repository or source rebuild targeting
+#     the current interpreter can), and the summary headline counts
+#     them as outstanding.
+#   - Fixed: remediation commands echoed the exact operations that had
+#     just failed in the same run. AUR rebuild failures are now
+#     classified at the point of failure (LOGFILE segment scan, the same
+#     idiom as the v2.2.0 PGP fingerprint recovery): PGP-blocked,
+#     file-conflict ('exists in filesystem', with a tightly-scoped
+#     --overwrite glob derived from the observed conflicting paths),
+#     broken build/PKGBUILD, or unknown — each class gets its own
+#     remediation instead of a blanket 'yay -S --rebuild' that provably
+#     re-fails. Official chunk failures get the same conflict scan, and
+#     still-broken officials gain a 'pacman -Qkk' diagnosis line, because
+#     the plain reinstall has already run once.
+#   - Fixed: the preflight system upgrade could 'complete successfully'
+#     with 'nothing to do' while an IgnorePkg-held 'python' upgrade
+#     stayed pending, and the final note still advised 'run pacman -Syu'
+#     — advice the run itself had just proven to be a no-op. Residual
+#     pending upgrades after the preflight are now detected, named, and
+#     explained (held back by IgnorePkg/IgnoreGroup or repository usage
+#     policy); the final note reports the hold instead of the no-op
+#     advice; and a repeat preflight within the same run elides the
+#     redundant -Syu + database re-cache when the pending set is
+#     unchanged.
+#
 # Changelog (v2.3.0 — GUP v5.3 superset audit, gap mitigation & contingency
 # hardening on the v2.2.0 golden unit; no baseline capability removed):
 #   - Fixed: the EOF/no-TTY input class. v2.1.1 hardened exactly one prompt
@@ -138,7 +180,7 @@ set -E
 
 # ── Global variables ───────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-declare -r APP_VERSION="2.3.1"
+declare -r APP_VERSION="2.3.2"
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
@@ -164,6 +206,17 @@ declare STRICT_EXIT=false
 # Populated by detect_pending_upgrades(); informational only.
 declare -i PENDING_UPGRADES_COUNT=0
 declare PENDING_PYTHON_UPGRADE=false
+# v2.3.2: pending-upgrade package names — the sync preflight and the final
+# note must be able to NAME held-back packages, not just count them (field
+# evidence: '1 upgrade(s) pending including python' that a successful
+# preflight 'pacman -Syu' could not clear).
+declare -a PENDING_UPGRADE_PKGS=()
+# v2.3.2: sync-preflight postcondition state — residual pending upgrades
+# that survived a successful preflight upgrade (IgnorePkg/IgnoreGroup or
+# repository usage policy holds), and whether a preflight already completed
+# in this run (a second heal category then elides the redundant re-sync).
+declare -a PREFLIGHT_RESIDUAL_PKGS=()
+declare PREFLIGHT_SYNC_DONE=false
 # Populated by deep_integrity_audit() when -e is given; report-only.
 declare -a DEEP_INTEGRITY_FINDINGS=()
 # Populated by report_orphans() when -o is given; report-only.
@@ -207,6 +260,25 @@ declare -a HEAL_UNHEALED_OFFICIAL_PKGS=()
 declare -a HEAL_UNHEALED_AUR_PKGS=()
 declare -a HEAL_UNHEALED_UNKNOWN_PKGS=()
 declare -a HEAL_UNHEALED_REASONS=()
+# v2.3.2: stale-python heal verification. HEAL_ATTEMPTED_STALE_PKGS records
+# which attempted officials came from the stale-python-dir batch;
+# verify_heal_outcomes() re-checks their pacman -Qql file list against the
+# retired interpreter directories and records the packages a reinstall
+# could not fix (the repository build still targets the old pythonX.Y) in
+# HEAL_STALE_UNRESOLVED_PKGS for the final report.
+declare -a HEAL_ATTEMPTED_STALE_PKGS=()
+declare -a HEAL_STALE_UNRESOLVED_PKGS=()
+# v2.3.2: install-failure classification, populated from LOGFILE segment
+# scans at the point of failure. AUR: parallel pkg/mode/glob arrays with
+# mode in {conflict,pgp,build,unknown} and glob a tightly-scoped
+# --overwrite pattern derived from observed 'exists in filesystem' paths
+# (empty when no safe scope exists). Official: conflict-caught packages of
+# failed heal chunks, with their derived globs.
+declare -a HEAL_AUR_FAIL_PKGS=()
+declare -a HEAL_AUR_FAIL_MODES=()
+declare -a HEAL_AUR_FAIL_GLOBS=()
+declare -a HEAL_OFFICIAL_FAIL_CONFLICT_PKGS=()
+declare -a HEAL_OFFICIAL_FAIL_CONFLICT_GLOBS=()
 
 declare -A PACKAGE_PROVIDES=()
 declare -A PROVIDES_INDEX=()
@@ -969,13 +1041,44 @@ sync_system_preflight() {
 		log_message "WARN" "Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal."
 	fi
 
+	# v2.3.2: a second heal category in the same run must not repeat a full
+	# preflight cycle that just completed (field evidence: the stale-python
+	# batch re-ran 'pacman -Syu' + a database re-cache four minutes after an
+	# identical no-op cycle). Elide the re-sync when a preflight already
+	# completed this run and the pending set is unchanged; new pending
+	# upgrades since (e.g. pulled in by AUR rebuilds) still take the full
+	# path.
+	if [[ "$PREFLIGHT_SYNC_DONE" = true ]]; then
+		detect_pending_upgrades
+		if [[ "${PENDING_UPGRADE_PKGS[*]:-}" == "${PREFLIGHT_RESIDUAL_PKGS[*]:-}" ]]; then
+			log_message "INFO" "Preflight sync already completed this run and the pending set is unchanged — skipping the redundant upgrade and database refresh."
+			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
+				log_message "WARN" "Pending upgrades remain held back (IgnorePkg/IgnoreGroup or repository usage policy): ${PREFLIGHT_RESIDUAL_PKGS[*]}"
+			fi
+			return 0
+		fi
+		log_message "WARN" "Pending upgrade set changed since this run's preflight — re-running the sync gate."
+	fi
+
 	log_message "INFO" "Executing preflight system upgrade (pacman -Syu --noconfirm)..."
 	if run_pacman_install pacman -Syu --noconfirm; then
 		log_message "OK" "Preflight system upgrade completed successfully."
+		PREFLIGHT_SYNC_DONE=true
 		refresh_pacman_databases
 		cache_package_lists
 		cache_package_groups
 		detect_pending_upgrades
+		# v2.3.2: postcondition check — a 'successful' preflight can still
+		# leave upgrades pending when they are held back by IgnorePkg/
+		# IgnoreGroup or repository usage policy (field evidence: 'nothing
+		# to do' while 'python' stayed pending). Name the residual set so
+		# the operator knows the heal ran out-of-sync through a HELD
+		# transition, not an unsynced one.
+		PREFLIGHT_RESIDUAL_PKGS=()
+		if (( ${#PENDING_UPGRADE_PKGS[@]} > 0 )); then
+			PREFLIGHT_RESIDUAL_PKGS=("${PENDING_UPGRADE_PKGS[@]}")
+			log_message "WARN" "Preflight upgrade did not clear ${#PREFLIGHT_RESIDUAL_PKGS[@]} pending upgrade(s) — held back by IgnorePkg/IgnoreGroup or repository usage policy: ${PREFLIGHT_RESIDUAL_PKGS[*]}"
+		fi
 		return 0
 	else
 		log_message "ERROR" "Preflight system upgrade failed."
@@ -1119,6 +1222,97 @@ import_pgp_keys_for_build_user() {
 	return 1
 }
 
+# v2.3.2 — Post-failure forensics on the tee'd pacman/yay output (the same
+# LOGFILE-segment idiom as the v2.2.0 PGP fingerprint recovery). Every heal
+# attempt's console output is captured in LOGFILE by run_logged_command();
+# this scanner reads the lines appended since a caller-captured start line
+# and classifies WHY the install failed:
+#   conflict — pacman refused because target files 'exist in filesystem'
+#              (orphaned debris from earlier installs; observed for the
+#              npm namespace packages peerflix/textlint/electron-builder in
+#              the 2026-09-26 field run). A tightly-scoped --overwrite glob
+#              is derived from the longest common directory prefix of the
+#              observed conflicting paths, and only when that prefix is at
+#              least four path components deep — a shallower prefix is
+#              never offered as an overwrite scope.
+#   pgp      — the build could not import or verify a source signature key.
+#   build    — makepkg failed inside build()/package()/check().
+#   unknown  — failure signature not recognized; generic retry advice.
+# Output: one '<pkg><TAB>conflict<TAB><glob>' row per conflict-affected
+# package (owner parsed from the 'pkg: /path exists in filesystem' lines),
+# plus a single '<fallback_pkg><TAB><pgp|build|unknown><TAB>' row when a
+# fallback package is supplied and no conflict lines were found (AUR
+# per-package isolation). All matching is literal substring or boundary-
+# anchored prefix comparison — no unbounded externals beyond one bounded
+# sed read of the segment.
+scan_install_failure_segment() {
+	local start_line="$1"
+	local fallback_pkg="${2:-}"
+	local seg line cpkg cpath
+	seg="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n "$((start_line + 1)),\$p" "${LOGFILE}" 2>/dev/null || true)"
+	[[ -n "$seg" ]] || return 0
+
+	# Conflict rows: '<pkg>: /path exists in filesystem'.
+	local -A conflict_paths=()
+	local -a conflict_order=()
+	while IFS= read -r line; do
+		[[ "$line" == *" exists in filesystem" ]] || continue
+		cpkg="${line%%:*}"
+		cpath="${line% exists in filesystem}"
+		cpath="${cpath#*: }"
+		[[ "$cpkg" =~ ^[a-z0-9@._+-]+$ && "$cpath" == /* ]] || continue
+		if [[ -z "${conflict_paths[$cpkg]:-}" ]]; then
+			conflict_paths["$cpkg"]="$cpath"
+			conflict_order+=("$cpkg")
+		else
+			conflict_paths["$cpkg"]+=$'\n'"$cpath"
+		fi
+	done <<<"$seg"
+
+	local pkg common dir first
+	for pkg in "${conflict_order[@]}"; do
+		# Longest common directory prefix, at a path-component boundary.
+		common=""
+		first=1
+		while IFS= read -r cpath; do
+			[[ -n "$cpath" ]] || continue
+			dir="${cpath%/*}"
+			if (( first )); then
+				common="$dir"
+				first=0
+				continue
+			fi
+			while [[ "$common" != "/" && "$dir" != "$common" && "$dir" != "$common"/* ]]; do
+				common="${common%/*}"
+			done
+			if [[ -z "$common" || ( "$dir" != "$common" && "$dir" != "$common"/* ) ]]; then
+				common=""
+				break
+			fi
+		done <<<"${conflict_paths[$pkg]}"
+		# Depth guard: only offer an overwrite scope that is at least four
+		# path components deep (e.g. /usr/lib/node_modules/peerflix) — a
+		# shallower prefix must never be handed to --overwrite.
+		if [[ -n "$common" && "$common" == /*/*/*/* ]]; then
+			printf '%s\tconflict\t%s/*\n' "$pkg" "$common"
+		else
+			printf '%s\tconflict\t\n' "$pkg"
+		fi
+	done
+
+	# Non-conflict classification for the attempt owner (AUR isolation).
+	if [[ ${#conflict_order[@]} -eq 0 && -n "$fallback_pkg" ]]; then
+		if [[ "$seg" == *"No public key"* || "$seg" == *"PGP keys need importing"* || "$seg" == *"problem importing keys"* || "$seg" == *"keyserver receive failed"* ]]; then
+			printf '%s\tpgp\t\n' "$fallback_pkg"
+		elif [[ "$seg" == *"A failure occurred in build()"* || "$seg" == *"A failure occurred in package()"* || "$seg" == *"A failure occurred in check()"* || "$seg" == *"exit status 4"* ]]; then
+			printf '%s\tbuild\t\n' "$fallback_pkg"
+		else
+			printf '%s\tunknown\t\n' "$fallback_pkg"
+		fi
+	fi
+	return 0
+}
+
 # v2.2.0 — Resilient AUR rebuild pipeline.
 rebuild_aur_packages() {
 	local -a pkgs=("$@")
@@ -1166,12 +1360,27 @@ rebuild_aur_packages() {
 
 	# Per-package isolation: one bad PKGBUILD or key no longer aborts the fleet.
 	local -a retry_pkgs=() still_failing=() pkg
+	local -i pkg_log_start=0
+	local scan_pkg scan_mode scan_glob
 	for pkg in "${pkgs[@]}"; do
+		pkg_log_start="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" wc -l <"${LOGFILE}" 2>/dev/null || printf '0')"
 		if run_yay -S --rebuild --noconfirm "$pkg"; then
 			continue
 		fi
 		log_message "ERROR" "AUR rebuild failed for package '${pkg}' — deferring to final report."
 		retry_pkgs+=("$pkg")
+		# v2.3.2: classify WHY this package failed (conflict / pgp / build /
+		# unknown) from its captured output, so the final report can give
+		# per-class remediation instead of echoing the command that just
+		# failed (field evidence: peerflix and textlint fail every retry on
+		# 'exists in filesystem'; kirigami2 and python-pywal on missing PGP
+		# keys; pacaur and sortphotos inside broken PKGBUILDs).
+		while IFS=$'\t' read -r scan_pkg scan_mode scan_glob; do
+			[[ -n "$scan_pkg" ]] || continue
+			HEAL_AUR_FAIL_PKGS+=("$scan_pkg")
+			HEAL_AUR_FAIL_MODES+=("$scan_mode")
+			HEAL_AUR_FAIL_GLOBS+=("${scan_glob:-}")
+		done < <(scan_install_failure_segment "$pkg_log_start" "$pkg")
 	done
 
 	# Interactive-only PGP bypass, per failed package, explicitly authorized.
@@ -1356,6 +1565,13 @@ _heal_package_batch() {
 			# v2.2.0: record the attempted set so verify_heal_outcomes() can
 			# re-check these packages with pacman -Qk afterwards.
 			HEAL_ATTEMPTED_OFFICIAL_PKGS+=("${official_pkgs[@]}")
+			# v2.3.2: remember which attempted officials came from the
+			# stale-python-dir batch — pacman -Qk (file presence) cannot verify
+			# them; verify_heal_outcomes() re-checks their pacman -Qql file
+			# list against the retired interpreter directories instead.
+			if [[ "$label" == "stale-python-dir" ]]; then
+				HEAL_ATTEMPTED_STALE_PKGS+=("${official_pkgs[@]}")
+			fi
 			# v2.2.0: heal reinstallation deliberately omits pacman's --needed:
 			# --needed skips any target already at its installed version, which
 			# turns a file-restoration reinstall into a silent no-op ('... is up
@@ -1364,14 +1580,27 @@ _heal_package_batch() {
 			log_message "INFO" "Executing chunked reinstallation of ${#official_pkgs[@]} official packages (forced reinstall — --needed intentionally omitted for file restoration)..."
 			local -i offset=0 chunk_seq=0
 			local -i total_chunks=$(((${#official_pkgs[@]} + REINSTALL_CHUNK_SIZE - 1) / REINSTALL_CHUNK_SIZE))
+			local -i chunk_log_start=0
+			local scan_pkg scan_mode scan_glob
 			while ((offset < ${#official_pkgs[@]})); do
 				local -a chunk=("${official_pkgs[@]:offset:REINSTALL_CHUNK_SIZE}")
 				chunk_seq=$((chunk_seq + 1))
 				# v2.2.0: the v2.1.x label logged the cumulative end index, which
 				# overshot the total on the final partial chunk ('250/223', '50/1').
 				log_message "INFO" "Installing batch chunk ${chunk_seq}/${total_chunks} (packages $((offset + 1))-$((offset + ${#chunk[@]})) of ${#official_pkgs[@]}): ${chunk[*]}"
+				chunk_log_start="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" wc -l <"${LOGFILE}" 2>/dev/null || printf '0')"
 				if ! run_pacman_install pacman -S --noconfirm "${chunk[@]}"; then
 					log_message "ERROR" "Failed to reinstall official chunk ${chunk_seq}/${total_chunks}: ${chunk[*]}"
+					# v2.3.2: classify the chunk failure from the captured
+					# transaction output — 'exists in filesystem' conflicts
+					# identify exactly which chunk packages are un-retryable
+					# as-is and need a scoped --overwrite instead of another
+					# identical reinstall.
+					while IFS=$'\t' read -r scan_pkg scan_mode scan_glob; do
+						[[ -n "$scan_pkg" ]] || continue
+						HEAL_OFFICIAL_FAIL_CONFLICT_PKGS+=("$scan_pkg")
+						HEAL_OFFICIAL_FAIL_CONFLICT_GLOBS+=("${scan_glob:-}")
+					done < <(scan_install_failure_segment "$chunk_log_start")
 				fi
 				offset=$((offset + REINSTALL_CHUNK_SIZE))
 			done
@@ -1465,6 +1694,46 @@ verify_heal_outcomes() {
 		log_message "OK" "Heal verification: all ${HEAL_VERIFIED_CHECKED_COUNT} attempted package(s) now pass pacman -Qk."
 	else
 		log_message "ERROR" "Heal verification: ${#HEAL_STILL_BROKEN_PKGS[@]} of ${HEAL_VERIFIED_CHECKED_COUNT} attempted package(s) still have missing files: ${HEAL_STILL_BROKEN_PKGS[*]}"
+	fi
+
+	# v2.3.2: stale-python heals cannot be verified with pacman -Qk — file
+	# PRESENCE is not the defect; the file LIST targets a retired
+	# interpreter directory (field evidence: python-thefuzz reinstalled from
+	# a repository build still shipping /usr/lib/python3.13 files, flagged
+	# again by pacman's own post-transaction hook during the heal
+	# transaction, while the run reported it restored). Re-check each
+	# attempted stale-only package's pacman -Qql list against the retired
+	# directories; a reinstall cannot fix these — only a repository or
+	# source rebuild targeting the current interpreter can.
+	HEAL_STALE_UNRESOLVED_PKGS=()
+	if (( ${#HEAL_ATTEMPTED_STALE_PKGS[@]} > 0 )) && command -v python3 >/dev/null 2>&1; then
+		local verify_py verify_dir verify_list verify_pkg
+		local -a verify_stale_dirs=() stale_unresolved=()
+		local -A stale_seen=()
+		verify_py="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" python3 -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+		if [[ -n "$verify_py" ]]; then
+			for verify_dir in /usr/lib/python3.*; do
+				[[ -d "$verify_dir" && "${verify_dir##*/}" != "$verify_py" ]] && verify_stale_dirs+=("$verify_dir")
+			done
+			if (( ${#verify_stale_dirs[@]} > 0 )); then
+				for verify_pkg in "${HEAL_ATTEMPTED_STALE_PKGS[@]}"; do
+					[[ -n "${stale_seen[$verify_pkg]:-}" ]] && continue
+					stale_seen["$verify_pkg"]=1
+					verify_list="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" pacman -Qql -- "$verify_pkg" 2>/dev/null || true)"
+					[[ -n "$verify_list" ]] || continue
+					for verify_dir in "${verify_stale_dirs[@]}"; do
+						if [[ "$verify_list" == *"$verify_dir"/* ]]; then
+							stale_unresolved+=("$verify_pkg")
+							break
+						fi
+					done
+				done
+				if (( ${#stale_unresolved[@]} > 0 )); then
+					HEAL_STALE_UNRESOLVED_PKGS=("${stale_unresolved[@]}")
+					log_message "WARN" "Stale-python verification: ${#stale_unresolved[@]} reinstalled package(s) still install into a retired interpreter directory (repository build predates the '${verify_py}' transition): ${stale_unresolved[*]}"
+				fi
+			fi
+		fi
 	fi
 	return 0
 }
@@ -2088,6 +2357,11 @@ detect_pending_upgrades() {
 	local line pkg_name
 	PENDING_UPGRADES_COUNT=0
 	PENDING_PYTHON_UPGRADE=false
+	# v2.3.2: record the pending package names too — the sync preflight and
+	# the final note need to name held-back packages, not just count them
+	# (a count cannot distinguish 'python held by IgnorePkg' from any other
+	# pending upgrade).
+	PENDING_UPGRADE_PKGS=()
 
 	if LC_ALL=C run_command pacman -Qu; then
 		:
@@ -2098,6 +2372,9 @@ detect_pending_upgrades() {
 		[[ -z "$line" ]] && continue
 		PENDING_UPGRADES_COUNT=$((PENDING_UPGRADES_COUNT + 1))
 		pkg_name="${line%% *}"
+		if [[ "$pkg_name" =~ ^[a-z0-9@._+-]+$ ]]; then
+			PENDING_UPGRADE_PKGS+=("$pkg_name")
+		fi
 		if [[ "$pkg_name" == "python" ]]; then
 			PENDING_PYTHON_UPGRADE=true
 		fi
@@ -2170,6 +2447,20 @@ report_orphans() {
 	return 0
 }
 
+# v2.3.2 — Stale-python heal verdict block, shared by both exits of
+# report_heal_outcome() (all-restored and still-broken): pacman -Qk file
+# presence cannot verify this defect class, so it is reported as its own
+# dimension with remediation a reinstall cannot deliver.
+report_stale_python_outcome() {
+	[[ ${#HEAL_STALE_UNRESOLVED_PKGS[@]} -gt 0 ]] || return 0
+	printf '%sStale-Python unresolved — %d reinstalled package(s) still install into a retired interpreter directory (pacman -Qql verified):%s\n' "$WARN" "${#HEAL_STALE_UNRESOLVED_PKGS[@]}" "$RESET"
+	printf '  %s\n' "${HEAL_STALE_UNRESOLVED_PKGS[@]}"
+	printf '%sRemediation (stale-python — a reinstall cannot fix these):%s\n' "$GREEN" "$RESET"
+	printf '  %sWait for a repository rebuild targeting the current interpreter, or rebuild from source, or remove:%s\n' "$CAT" "$RESET"
+	printf '  %syay -S --rebuild --noconfirm %s   (or: sudo pacman -R %s)%s\n' "$CAT" "${HEAL_STALE_UNRESOLVED_PKGS[*]}" "${HEAL_STALE_UNRESOLVED_PKGS[*]}" "$RESET"
+	return 0
+}
+
 report_heal_outcome() {
 	# v2.3.1: outstanding-debt reporting runs first. Heals that never ran
 	# (unattended ceiling refusal, operator decline, sync-preflight refusal,
@@ -2210,7 +2501,18 @@ report_heal_outcome() {
 		return 0
 	fi
 	if [[ ${#HEAL_STILL_BROKEN_PKGS[@]} -eq 0 ]]; then
-		printf '%sIntegrity heal verified: %d/%d attempted package(s) restored (re-checked with pacman -Qk).%s\n' "$OK" "$HEAL_VERIFIED_RESTORED_COUNT" "$HEAL_VERIFIED_CHECKED_COUNT" "$RESET"
+		if [[ ${#HEAL_STALE_UNRESOLVED_PKGS[@]} -eq 0 ]]; then
+			printf '%sIntegrity heal verified: %d/%d attempted package(s) restored (re-checked with pacman -Qk).%s\n' "$OK" "$HEAL_VERIFIED_RESTORED_COUNT" "$HEAL_VERIFIED_CHECKED_COUNT" "$RESET"
+		else
+			# v2.3.2: file presence is verified but the stale-python dimension
+			# is not — a 'restored' verdict over a stale-directory package is
+			# exactly the false success the 2026-09-26 field run exposed
+			# (python-thefuzz reported restored while pacman's own hook still
+			# flagged it during the heal transaction).
+			printf '%sIntegrity heal verified for missing files: %d/%d attempted package(s) pass pacman -Qk — but see the stale-python status below.%s\n' "$OK" "$HEAL_VERIFIED_RESTORED_COUNT" "$HEAL_VERIFIED_CHECKED_COUNT" "$RESET"
+			report_stale_python_outcome
+			printf "\n"
+		fi
 		return 0
 	fi
 	local -a official_broken=() aur_broken=()
@@ -2231,6 +2533,9 @@ report_heal_outcome() {
 		printf '%sAUR (rebuild failed):%s\n' "$MAGENTA" "$RESET"
 		printf '  %s\n' "${aur_broken[@]}"
 	}
+	# v2.3.2: the stale-python dimension is reported on the INCOMPLETE path
+	# too — it is independent of missing-file breakage.
+	report_stale_python_outcome
 	if [[ ${#HEAL_AUR_PGP_KEYS[@]} -gt 0 && ${#aur_broken[@]} -gt 0 ]]; then
 		printf '%sPGP keys that blocked AUR rebuilds (import manually as the build user):%s\n' "$WARN" "$RESET"
 		local -i k
@@ -2242,11 +2547,79 @@ report_heal_outcome() {
 	fi
 	if [[ ${#official_broken[@]} -gt 0 ]]; then
 		printf '%sRemediation (official):%s\n' "$GREEN" "$RESET"
-		printf '  %s%s pacman -S --noconfirm %s%s\n' "$CAT" "sudo" "${official_broken[*]}" "$RESET"
+		# v2.3.2: split the guidance by captured failure cause — the plain
+		# reinstall already ran once inside the heal, so packages caught in a
+		# chunk 'exists in filesystem' conflict need a scoped --overwrite,
+		# and every still-broken official gains a -Qkk diagnosis line, not a
+		# verbatim repeat of the failed command.
+		local pkg glob
+		local -a official_plain=() official_conflict=()
+		local -A official_conflict_set=()
+		local -i oi
+		for ((oi = 0; oi < ${#HEAL_OFFICIAL_FAIL_CONFLICT_PKGS[@]}; oi++)); do
+			official_conflict_set["${HEAL_OFFICIAL_FAIL_CONFLICT_PKGS[$oi]}"]="${HEAL_OFFICIAL_FAIL_CONFLICT_GLOBS[$oi]:-}"
+		done
+		for pkg in "${official_broken[@]}"; do
+			if [[ -n "${official_conflict_set[$pkg]:-}" ]]; then
+				official_conflict+=("$pkg")
+			else
+				official_plain+=("$pkg")
+			fi
+		done
+		if [[ ${#official_plain[@]} -gt 0 ]]; then
+			printf '  %s%s pacman -S --noconfirm %s%s\n' "$CAT" "sudo" "${official_plain[*]}" "$RESET"
+		fi
+		for pkg in "${official_conflict[@]}"; do
+			glob="${official_conflict_set[$pkg]:-}"
+			if [[ -n "$glob" ]]; then
+				printf "  %s%s pacman -S --noconfirm --overwrite '%s' %s%s\n" "$CAT" "sudo" "$glob" "$pkg" "$RESET"
+			else
+				printf '  %sconflicting files (no safe overwrite scope derived) — diagnose owners with pacman -Qo <path>, then: %s pacman -S --noconfirm %s%s\n' "$CAT" "sudo" "$pkg" "$RESET"
+			fi
+		done
+		printf '  %sIf reinstalling does not clear them, list every missing path: pacman -Qkk %s%s\n' "$CAT" "${official_broken[*]}" "$RESET"
 	fi
 	if [[ ${#aur_broken[@]} -gt 0 ]]; then
 		printf '%sRemediation (AUR):%s\n' "$GREEN" "$RESET"
-		printf '  %syay -S --rebuild --noconfirm %s%s\n' "$CAT" "${aur_broken[*]}" "$RESET"
+		# v2.3.2: per-failure-class guidance. The v2.3.1 remediation echoed
+		# 'yay -S --rebuild' for packages that had just failed it —
+		# file-conflict failures (peerflix/textlint) re-fail on the same
+		# unowned files, PGP-blocked failures (kirigami2/python-pywal)
+		# re-fail until the key is imported, and broken PKGBUILDs
+		# (pacaur/sortphotos) are not retryable at all.
+		local cglob
+		local -a aur_pgp=() aur_build=() aur_unknown=() aur_conflict=()
+		local -A aur_mode_map=() aur_glob_map=()
+		local -i ai
+		for ((ai = 0; ai < ${#HEAL_AUR_FAIL_PKGS[@]}; ai++)); do
+			aur_mode_map["${HEAL_AUR_FAIL_PKGS[$ai]}"]="${HEAL_AUR_FAIL_MODES[$ai]:-unknown}"
+			aur_glob_map["${HEAL_AUR_FAIL_PKGS[$ai]}"]="${HEAL_AUR_FAIL_GLOBS[$ai]:-}"
+		done
+		for pkg in "${aur_broken[@]}"; do
+			case "${aur_mode_map[$pkg]:-unknown}" in
+				conflict) aur_conflict+=("$pkg") ;;
+				pgp) aur_pgp+=("$pkg") ;;
+				build) aur_build+=("$pkg") ;;
+				*) aur_unknown+=("$pkg") ;;
+			esac
+		done
+		if [[ ${#aur_pgp[@]} -gt 0 ]]; then
+			printf '  %sPGP-blocked — import the key(s) listed above as the build user, then: yay -S --rebuild --noconfirm %s%s\n' "$CAT" "${aur_pgp[*]}" "$RESET"
+		fi
+		for pkg in "${aur_conflict[@]}"; do
+			cglob="${aur_glob_map[$pkg]:-}"
+			if [[ -n "$cglob" ]]; then
+				printf "  %sFile conflicts — reinstall over the unowned leftovers: yay -S --rebuild --noconfirm --overwrite '%s' %s%s\n" "$CAT" "$cglob" "$pkg" "$RESET"
+			else
+				printf '  %sFile conflicts (no safe overwrite scope derived) — diagnose owners with pacman -Qo <path>, then: yay -S --rebuild --noconfirm %s%s\n' "$CAT" "$pkg" "$RESET"
+			fi
+		done
+		if [[ ${#aur_build[@]} -gt 0 ]]; then
+			printf '  %sBuild failed — PKGBUILD/upstream defect, not auto-retryable (see the AUR page): %s%s\n' "$CAT" "${aur_build[*]}" "$RESET"
+		fi
+		if [[ ${#aur_unknown[@]} -gt 0 ]]; then
+			printf '  %sRetry manually: yay -S --rebuild --noconfirm %s%s\n' "$CAT" "${aur_unknown[*]}" "$RESET"
+		fi
 	fi
 	printf "\n"
 	return 0
@@ -2560,15 +2933,27 @@ main() {
 		# heals) now suppresses the 'no further action needed' verdict exactly
 		# as still-broken attempted heals do (field evidence: the 2026-09-26
 		# run printed 'no further action needed' over 241 unhealed packages).
-		if [[ ${#HEAL_STILL_BROKEN_PKGS[@]} -eq 0 && $((${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]})) -eq 0 ]]; then
+		# v2.3.2: stale-python-unresolved heals count as outstanding too —
+		# a reinstall that cannot fix the defect is not 'no further action'.
+		if [[ ${#HEAL_STILL_BROKEN_PKGS[@]} -eq 0 && $((${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]} + ${#HEAL_STALE_UNRESOLVED_PKGS[@]})) -eq 0 ]]; then
 			printf '%s All dependencies satisfied — no further action needed.%s\n' "$OK" "$RESET"
 		else
 			printf '%s All dependencies satisfied (see integrity-heal status below).%s\n' "$OK" "$RESET"
 		fi
 		if ((PENDING_UPGRADES_COUNT > 0)); then
-			printf '%sNote: %d package upgrade(s) pending%s — run "pacman -Syu" to sync.%s\n' \
-				"$BLUE" "$PENDING_UPGRADES_COUNT" \
-				"${PENDING_PYTHON_UPGRADE:+ (including 'python')}" "$RESET"
+			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
+				# v2.3.2: the preflight already ran 'pacman -Syu' this run and
+				# could not clear these — they are held back (IgnorePkg/
+				# IgnoreGroup or repository usage policy). Advising another
+				# 'pacman -Syu' (the v2.3.1 note) sends the operator in a
+				# circle the run itself has proven is a no-op.
+				printf '%sNote: %d upgrade(s) still pending after the preflight sync — held back by IgnorePkg/IgnoreGroup or repository policy: %s. Review the pacman.conf ignore lists to allow the transition.%s\n' \
+					"$BLUE" "$PENDING_UPGRADES_COUNT" "${PREFLIGHT_RESIDUAL_PKGS[*]}" "$RESET"
+			else
+				printf '%sNote: %d package upgrade(s) pending%s — run "pacman -Syu" to sync.%s\n' \
+					"$BLUE" "$PENDING_UPGRADES_COUNT" \
+					"${PENDING_PYTHON_UPGRADE:+ (including 'python')}" "$RESET"
+			fi
 		fi
 		report_heal_outcome
 		report_deep_integrity_findings
