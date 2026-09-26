@@ -86,6 +86,8 @@ command cat >"$CASE1" <<'EOF'
 set -euo pipefail
 log_info(){ :; }; log_warn(){ :; }; log_error(){ :; }; log_success(){ :; }
 XDG_CONFIG_HOME=/tmp XDG_DATA_HOME=/tmp XDG_CACHE_HOME=/tmp
+_AUDITD_RULES_FILE="$TMP/rules/4ndr0service.rules"
+mkdir -p "$TMP/rules"
 command(){
     if [[ "$1" == "-v" ]]; then shift; [[ "$1" == "auditctl" ]]; return 0; fi
     builtin command "$@"
