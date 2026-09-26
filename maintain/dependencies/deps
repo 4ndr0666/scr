@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 # File: dependency-checker.sh
-# Version: 2.3.3 (GUP v5.3 field-run gap mitigation on the v2.3.2 golden unit)
+# Version: 2.3.4 (GUP v5.3 field-run gap mitigation on the v2.3.3 golden unit)
+#
+# Changelog (v2.3.4 — field evidence, 2026-09-26 21:15, -Ix run: the
+# verified-missing-files heal batch's preflight 'pacman -Syu' failed on an
+# 'asar ... exists in filesystem' conflict against a 55-package pending set;
+# ~14s later the stale-python-dir batch, in the SAME run, against the SAME
+# unchanged 55-package pending set, re-ran the identical 'pacman -Syu' and
+# failed the identical way. The v2.3.2 dedup guard only remembers a
+# preflight that SUCCEEDED — PREFLIGHT_SYNC_DONE is set solely in the
+# success branch — so a failed attempt is retried by every later heal
+# category in the run with no memory of the prior identical failure. No
+# baseline capability removed):
+#   - Added: PREFLIGHT_SYNC_FAILED / PREFLIGHT_SYNC_FAILED_PKGS, set in the
+#     preflight's existing failure branch (previously only logged and
+#     returned 1). sync_system_preflight() now checks this FIRST, symmetric
+#     to the existing PREFLIGHT_SYNC_DONE success-path check: if the
+#     current pending-upgrade set is byte-identical to the set a prior
+#     attempt this run already failed against, it declines immediately
+#     instead of repeating a doomed sync. A pending set that has changed
+#     since (e.g. narrowed by a partial resolution) still takes the full
+#     retry path, exactly as the success-path guard already does for its
+#     case.
 #
 # Changelog (v2.3.3 — mitigation of the two blind spots exposed by the
 # 2026-09-26 07:29 production field run (-a -x -I, ALL_SYSTEM heal): the
@@ -217,7 +238,7 @@ set -E
 
 # ── Global variables ───────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-declare -r APP_VERSION="2.3.3"
+declare -r APP_VERSION="2.3.4"
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
@@ -255,6 +276,13 @@ declare -a PENDING_UPGRADE_PKGS=()
 # in this run (a second heal category then elides the redundant re-sync).
 declare -a PREFLIGHT_RESIDUAL_PKGS=()
 declare PREFLIGHT_SYNC_DONE=false
+# v2.3.4: symmetric failure-path memory for sync_system_preflight() — set
+# only in the preflight's failure branch, so a second heal category in the
+# same run can decline to repeat an identical doomed sync (field evidence:
+# an 'asar' file-conflict preflight failure re-ran unchanged ~14s later
+# against the same pending set and failed the same way).
+declare PREFLIGHT_SYNC_FAILED=false
+declare -a PREFLIGHT_SYNC_FAILED_PKGS=()
 # Populated by deep_integrity_audit() when -e is given; report-only.
 declare -a DEEP_INTEGRITY_FINDINGS=()
 # Populated by report_orphans() when -o is given; report-only.
@@ -1101,6 +1129,19 @@ sync_system_preflight() {
 		log_message "WARN" "Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal."
 	fi
 
+	# v2.3.4: symmetric to the v2.3.2 success-path dedup below, but for a
+	# preflight that already FAILED this run — checked first, since a set
+	# that matches a known-failed attempt should decline before ever
+	# consulting PREFLIGHT_SYNC_DONE (which a failure never sets true).
+	if [[ "$PREFLIGHT_SYNC_FAILED" = true ]]; then
+		detect_pending_upgrades
+		if [[ "${PENDING_UPGRADE_PKGS[*]:-}" == "${PREFLIGHT_SYNC_FAILED_PKGS[*]:-}" ]]; then
+			log_message "ERROR" "Preflight sync already failed this run against the identical pending set — declining to repeat a doomed upgrade attempt."
+			return 1
+		fi
+		log_message "WARN" "Pending upgrade set changed since this run's failed preflight — re-running the sync gate."
+	fi
+
 	# v2.3.2: a second heal category in the same run must not repeat a full
 	# preflight cycle that just completed (field evidence: the stale-python
 	# batch re-ran 'pacman -Syu' + a database re-cache four minutes after an
@@ -1142,6 +1183,8 @@ sync_system_preflight() {
 		return 0
 	else
 		log_message "ERROR" "Preflight system upgrade failed."
+		PREFLIGHT_SYNC_FAILED=true
+		PREFLIGHT_SYNC_FAILED_PKGS=("${PENDING_UPGRADE_PKGS[@]}")
 		return 1
 	fi
 }
