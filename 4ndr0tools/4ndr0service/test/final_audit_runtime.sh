@@ -16,6 +16,7 @@ else
 fi
 SOURCE="$SUITE_DIR/test/final_audit.sh"
 TMP="$(mktemp -d)"
+export TMP
 trap 'rm -rf -- "$TMP"' EXIT
 
 command bash -n "$SOURCE"
