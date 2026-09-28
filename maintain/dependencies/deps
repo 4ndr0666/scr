@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
 # File: dependency-checker.sh
-# Version: 2.4.0 (human-in-the-loop transaction-recovery gap mitigation on
-#          the v2.3.4 golden unit)
+# Version: 2.4.1 (GUP v5.3 audit fix on the v2.4.0 golden unit)
+#
+# Changelog (v2.4.1 — found by executing rebuild_aur_packages end to end,
+# which no earlier verification pass had done; the defect is unchanged code
+# inherited from v2.2.0, no baseline capability removed):
+#   - Fixed: the PGP-fingerprint recovery pipeline in rebuild_aur_packages()
+#     ('sed | grep -E "required by:" | sed' inside a process substitution)
+#     had no '|| true'. When a failed AUR batch's output contains no
+#     'required by:' lines (any conflict-only or build-failure-only batch,
+#     e.g. peerflix/textlint/pacaur), grep legitimately exits 1; under
+#     'set -o pipefail' plus 'set -E' the ERR trap fires inside the
+#     process-substitution subshell, logging a spurious FATAL entry and
+#     printing 'FATAL: Unexpected error' to the operator even though the
+#     flow (correctly) continues with zero keys parsed. Guarded with
+#     '|| true', matching the idiom already used by the two IgnorePkg /
+#     IgnoreGroup process substitutions in main().
+#
+# Changelog (v2.4.0 — human-in-the-loop transaction-recovery gap mitigation
+#          on the v2.3.4 golden unit)
 #
 # Changelog (v2.4.0 — mitigation of the three 2026-09-26/27 field findings
 # on the v2.3.4 golden unit; no baseline capability removed):
@@ -315,7 +332,7 @@ set -E
 
 # ── Global variables ──────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-declare -r APP_VERSION="2.4.0"
+declare -r APP_VERSION="2.4.1"
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
@@ -1261,7 +1278,7 @@ sync_system_preflight() {
 		detect_pending_upgrades
 		if [[ "${PENDING_UPGRADE_PKGS[*]:-}" == "${PREFLIGHT_RESIDUAL_PKGS[*]:-}" ]]; then
 			log_message "INFO" "Preflight sync already completed this run and the pending set is unchanged — skipping the redundant upgrade and database refresh."
-			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
+			if ((${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0)); then
 				log_message "WARN" "Pending upgrades remain held back (IgnorePkg/IgnoreGroup or repository usage policy): ${PREFLIGHT_RESIDUAL_PKGS[*]}"
 			fi
 			return 0
@@ -1289,7 +1306,7 @@ sync_system_preflight() {
 		# the operator knows the heal ran out-of-sync through a HELD
 		# transition, not an unsynced one.
 		PREFLIGHT_RESIDUAL_PKGS=()
-		if (( ${#PENDING_UPGRADE_PKGS[@]} > 0 )); then
+		if ((${#PENDING_UPGRADE_PKGS[@]} > 0)); then
 			PREFLIGHT_RESIDUAL_PKGS=("${PENDING_UPGRADE_PKGS[@]}")
 			log_message "WARN" "Preflight upgrade did not clear ${#PREFLIGHT_RESIDUAL_PKGS[@]} pending upgrade(s) — held back by IgnorePkg/IgnoreGroup or repository usage policy: ${PREFLIGHT_RESIDUAL_PKGS[*]}"
 		fi
@@ -1510,7 +1527,7 @@ scan_install_failure_segment() {
 		while IFS= read -r cpath; do
 			[[ -n "$cpath" ]] || continue
 			dir="${cpath%/*}"
-			if (( first )); then
+			if ((first)); then
 				common="$dir"
 				first=0
 				continue
@@ -1518,7 +1535,7 @@ scan_install_failure_segment() {
 			while [[ "$common" != "/" && "$dir" != "$common" && "$dir" != "$common"/* ]]; do
 				common="${common%/*}"
 			done
-			if [[ -z "$common" || ( "$dir" != "$common" && "$dir" != "$common"/* ) ]]; then
+			if [[ -z "$common" || ("$dir" != "$common" && "$dir" != "$common"/*) ]]; then
 				common=""
 				break
 			fi
@@ -1664,7 +1681,7 @@ extract_transaction_blockers() {
 		#          ':: removing X breaks dependency 'D' required by B',
 		#          ':: unable to satisfy dependency 'D' required by B'.
 		#          The installed package B is the recovery target.
-		if [[ "$line" == *" required by "* && ( "$line" == *"breaks dependency"* || "$line" == *"unable to satisfy dependency"* ) ]]; then
+		if [[ "$line" == *" required by "* && ("$line" == *"breaks dependency"* || "$line" == *"unable to satisfy dependency"*) ]]; then
 			tail="${line##* required by }"
 			name="${tail%% *}"
 			[[ "$name" =~ ^[a-z0-9@._+-]+$ ]] || continue
@@ -1864,7 +1881,7 @@ attempt_blocker_removal_chain() {
 
 	# Budget clamp.
 	local -i remaining=$((RECOVERY_RDD_MAX_PKGS - RECOVERY_RDD_PKGS_USED))
-	if (( ${#actionable[@]} > remaining )); then
+	if ((${#actionable[@]} > remaining)); then
 		log_message "WARN" "Recovery blocker list (${#actionable[@]}) exceeds the remaining per-run budget (${remaining}) — clamping."
 		actionable=("${actionable[@]:0:remaining}")
 	fi
@@ -2033,7 +2050,7 @@ rebuild_aur_packages() {
 		fi
 	done < <(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n "$((log_line_start + 1)),\$p" "${LOGFILE}" 2>/dev/null |
 		bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" grep -E 'required by:' 2>/dev/null |
-		bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n 's/^.*>[[:space:]]*\([0-9A-F]\{16,\}\),[[:space:]]*required by:[[:space:]]*\(.\{1,\}\)$/\1 \2/p')
+		bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n 's/^.*>[[:space:]]*\([0-9A-F]\{16,\}\),[[:space:]]*required by:[[:space:]]*\(.\{1,\}\)$/\1 \2/p' || true)
 
 	local -i keys_recovered=0
 	if [[ ${#failed_keys[@]} -gt 0 ]]; then
@@ -2448,7 +2465,7 @@ verify_heal_outcomes() {
 	# directories; a reinstall cannot fix these — only a repository or
 	# source rebuild targeting the current interpreter can.
 	HEAL_STALE_UNRESOLVED_PKGS=()
-	if (( ${#HEAL_ATTEMPTED_STALE_PKGS[@]} > 0 )) && command -v python3 >/dev/null 2>&1; then
+	if ((${#HEAL_ATTEMPTED_STALE_PKGS[@]} > 0)) && command -v python3 >/dev/null 2>&1; then
 		local verify_py verify_dir verify_list verify_pkg
 		local -a verify_stale_dirs=() stale_unresolved=()
 		local -A stale_seen=()
@@ -2457,7 +2474,7 @@ verify_heal_outcomes() {
 			for verify_dir in /usr/lib/python3.*; do
 				[[ -d "$verify_dir" && "${verify_dir##*/}" != "$verify_py" ]] && verify_stale_dirs+=("$verify_dir")
 			done
-			if (( ${#verify_stale_dirs[@]} > 0 )); then
+			if ((${#verify_stale_dirs[@]} > 0)); then
 				for verify_pkg in "${HEAL_ATTEMPTED_STALE_PKGS[@]}"; do
 					[[ -n "${stale_seen[$verify_pkg]:-}" ]] && continue
 					stale_seen["$verify_pkg"]=1
@@ -2470,7 +2487,7 @@ verify_heal_outcomes() {
 						fi
 					done
 				done
-				if (( ${#stale_unresolved[@]} > 0 )); then
+				if ((${#stale_unresolved[@]} > 0)); then
 					HEAL_STALE_UNRESOLVED_PKGS=("${stale_unresolved[@]}")
 					log_message "WARN" "Stale-python verification: ${#stale_unresolved[@]} reinstalled package(s) still install into a retired interpreter directory (repository build predates the '${verify_py}' transition): ${stale_unresolved[*]}"
 				fi
@@ -3353,7 +3370,7 @@ diagnose_persistent_breakage() {
 		path="${path% (No such file or directory)}"
 		[[ "$path" == /* ]] || continue
 		missing_paths+=("$path")
-		(( ${#missing_paths[@]} >= 8 )) && break
+		((${#missing_paths[@]} >= 8)) && break
 	done <<<"$CMD_OUTPUT"
 
 	if [[ ${#missing_paths[@]} -eq 0 ]]; then
@@ -3448,8 +3465,8 @@ report_heal_outcome() {
 	# evidence: 241 ceiling-refused packages, 2026-09-26). Ordering: debt is
 	# reported before attempted-heal outcomes so a partial run reads "what
 	# was never tried" ahead of "what was tried and how it ended".
-	local -i unhealed_total=$(( ${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]} ))
-	if (( unhealed_total > 0 )); then
+	local -i unhealed_total=$((${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]}))
+	if ((unhealed_total > 0)); then
 		printf '%sIntegrity heal OUTSTANDING — %d package(s) with missing files were never healed:%s\n' "$WARN" "$unhealed_total" "$RESET"
 		local -A reason_seen=()
 		local reason
@@ -3585,10 +3602,10 @@ report_heal_outcome() {
 		done
 		for pkg in "${aur_broken[@]}"; do
 			case "${aur_mode_map[$pkg]:-unknown}" in
-				conflict) aur_conflict+=("$pkg") ;;
-				pgp) aur_pgp+=("$pkg") ;;
-				build) aur_build+=("$pkg") ;;
-				*) aur_unknown+=("$pkg") ;;
+			conflict) aur_conflict+=("$pkg") ;;
+			pgp) aur_pgp+=("$pkg") ;;
+			build) aur_build+=("$pkg") ;;
+			*) aur_unknown+=("$pkg") ;;
 			esac
 		done
 		if [[ ${#aur_pgp[@]} -gt 0 ]]; then
@@ -3706,7 +3723,7 @@ parse_arguments() {
 				print_version
 				exit 0
 				;;
-			--|*)
+			-- | *)
 				[[ "$pre_arg" == "--" ]] && long_scan=false
 				forward_args+=("$pre_arg")
 				;;
@@ -3981,7 +3998,7 @@ main() {
 			printf '%s All dependencies satisfied (see integrity-heal status below).%s\n' "$OK" "$RESET"
 		fi
 		if ((PENDING_UPGRADES_COUNT > 0)); then
-			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
+			if ((${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0)); then
 				# v2.3.2: the preflight already ran 'pacman -Syu' this run and
 				# could not clear these — they are held back (IgnorePkg/
 				# IgnoreGroup or repository usage policy). Advising another
