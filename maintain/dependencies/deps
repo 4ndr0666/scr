@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 # File: dependency-checker.sh
-# Version: 2.4.1 (GUP v5.3 audit fix on the v2.4.0 golden unit)
+# Version: 2.4.2 (GUP v5.3 field-run gap mitigation on the v2.4.1 golden unit)
+#
+# Changelog (v2.4.2 — field evidence, 2026-09-28: 'filesystem' was flagged
+# by the pacman -Qk audit on every run, could not be cleared by any
+# reinstall or --overwrite, and was eventually put on the ignore list by
+# the operator. Two gaps made it look "unmitigated": (1) a broken package
+# on the ignore list was logged once and then recorded nowhere — the same
+# vanish-from-the-report defect v2.3.1 fixed for unresolvable packages —
+# so the final report showed no trace of it; (2) diagnose_persistent_breakage
+# concluded 'local-database drift' for any missing path the package itself
+# owns, which is wrong when the package DID extract the file and a
+# post-transaction hook removed it afterwards (the earlier reinstall log
+# showed pacman unable to stat usr/share/pixmaps/archlinux-logo*, then a
+# 'Updating Archcraft Pixmaps' hook run). No baseline capability removed):
+#   - Added: HEAL_IGNORED_BROKEN_PKGS / HEAL_IGNORED_BROKEN_LABELS, filled
+#     at the ignore-list skip in _heal_package_batch(), and
+#     report_ignored_broken_findings(), wired at both main() exits. The
+#     final verdict wording is deliberately unchanged: the operator has
+#     explicitly taken responsibility for these packages, so they do not
+#     count as outstanding debt, but they are no longer invisible.
+#   - Added: find_referencing_hooks() and the HOOK_DIRS array — a bounded,
+#     read-only search of the pacman hook directories (and the scripts the
+#     hooks Exec) for a missing path or its parent directory.
+#     diagnose_persistent_breakage() now prints the matching hooks as an
+#     additional note under its existing self-owned-path finding, and takes
+#     an optional second argument so the report header no longer claims a
+#     heal was attempted when the package was ignored.
 #
 # Changelog (v2.4.1 — found by executing rebuild_aur_packages end to end,
 # which no earlier verification pass had done; the defect is unchanged code
@@ -332,7 +358,7 @@ set -E
 
 # ── Global variables ──────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-declare -r APP_VERSION="2.4.1"
+declare -r APP_VERSION="2.4.2"
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
@@ -453,6 +479,12 @@ declare -a HEAL_OFFICIAL_FAIL_CONFLICT_GLOBS=()
 # pacman -Qk's file-presence check — or any prior report — surfaced).
 declare -a HEAL_PACNEW_FILES=()
 declare -a HEAL_PERM_DIFF_DIRS=()
+# v2.4.2: packages the integrity audit flagged as broken but which sit on
+# the ignore list, with the audit class that flagged them (parallel arrays).
+declare -a HEAL_IGNORED_BROKEN_PKGS=()
+declare -a HEAL_IGNORED_BROKEN_LABELS=()
+# v2.4.2: pacman hook locations searched by find_referencing_hooks().
+declare -a HOOK_DIRS=(/usr/share/libalpm/hooks /etc/pacman.d/hooks)
 
 # v2.4.0: transaction conflict & blocker recovery state (field findings
 # 2026-09-26/27: an 'asar' exists-in-filesystem conflict aborted the heal
@@ -2187,6 +2219,11 @@ _heal_package_batch() {
 		fi
 		if is_ignored "$pkg"; then
 			log_message "INFO" "Broken package '$pkg' is on the ignore list — skipping automated heal."
+			# v2.4.2: keep the finding — previously the package was recorded
+			# nowhere and vanished from the final report (same defect class
+			# v2.3.1 fixed for the unresolvable-provider branch below).
+			HEAL_IGNORED_BROKEN_PKGS+=("$pkg")
+			HEAL_IGNORED_BROKEN_LABELS+=("$label")
 			continue
 		fi
 		if [[ -n "${OFFICIAL_PKGS[$pkg]:-}" ]]; then
@@ -3341,12 +3378,54 @@ report_stale_python_outcome() {
 #   - the installed-vs-repository version state: differing versions mean
 #     the local file list being verified is not the one the repository
 #     ships (partial upgrade / mirror lag / held downgrade).
+# v2.4.2 — read-only, bounded search of the pacman hook directories for a
+# path (or, when it is deep enough to be specific, its parent directory).
+# Two passes per hook: the hook file itself, then the first token of its
+# Exec line when that is an absolute path to a readable text file (distro
+# hooks usually delegate to a script, so the path lives there, not in the
+# .hook file). Prints at most three matching files, one per line. A
+# parent-directory match needs three or more path components so that a
+# file directly under /usr/lib or /etc does not match every script that
+# happens to mention them.
+find_referencing_hooks() {
+	local path="$1"
+	local base="${path##*/}" dir="${path%/*}"
+	local hook exec_line exec_tok
+	local -i hits=0 scanned=0
+	local -a patterns=(-e "$base")
+	local slashes="${dir//[^\/]/}"
+	((${#slashes} >= 3)) && patterns+=(-e "$dir")
+
+	while IFS= read -r hook; do
+		[[ -n "$hook" ]] || continue
+		((++scanned > 200)) && break
+		if bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" grep -qsiIF "${patterns[@]}" -- "$hook"; then
+			printf '%s\n' "$hook"
+			((++hits >= 3)) && break
+			continue
+		fi
+		exec_line="$(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" grep -m1 -i '^[[:space:]]*Exec[[:space:]]*=' -- "$hook" 2>/dev/null || true)"
+		exec_tok="${exec_line#*=}"
+		exec_tok="${exec_tok#"${exec_tok%%[![:space:]]*}"}"
+		exec_tok="${exec_tok%%[[:space:]]*}"
+		[[ "$exec_tok" == /* ]] || continue
+		if bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" grep -qsiIF "${patterns[@]}" -- "$exec_tok"; then
+			printf '%s (via %s)\n' "$exec_tok" "$hook"
+			((++hits >= 3)) && break
+		fi
+	done < <(bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" find "${HOOK_DIRS[@]}" -maxdepth 1 -name '*.hook' 2>/dev/null || true)
+	return 0
+}
+
 diagnose_persistent_breakage() {
 	local pkg="$1"
-	local line path inst_ver repo_ver owner_pkg
+	# v2.4.2: optional context for the header; the default preserves the
+	# original wording for the existing post-heal caller.
+	local context="${2:-still failing pacman -Qk after an attempted heal}"
+	local line path inst_ver repo_ver owner_pkg hook_hit
 	local -a missing_paths=()
 
-	printf '%sDiagnosis for "%s" (still failing pacman -Qk after an attempted heal):%s\n' "$NOTE" "$pkg" "$RESET"
+	printf '%sDiagnosis for "%s" (%s):%s\n' "$NOTE" "$pkg" "$context" "$RESET"
 
 	inst_ver=""
 	if LC_ALL=C run_command pacman -Qi -- "$pkg"; then
@@ -3388,6 +3467,13 @@ diagnose_persistent_breakage() {
 			done <<<"$CMD_OUTPUT"
 			if [[ "$owner_pkg" == "$pkg" ]]; then
 				printf '  %s: listed by the package but absent from the payload — local-database drift (dbonly install or newer local entry); inspect the full list: pacman -Qkk %s%s\n' "$path" "$pkg" "$RESET"
+				# v2.4.2: the line above assumes the file was never extracted. If
+				# a pacman hook references this path, it may instead be removed
+				# or rewritten AFTER extraction, which no reinstall can undo.
+				while IFS= read -r hook_hit; do
+					[[ -n "$hook_hit" ]] || continue
+					printf '    %snote: hook/script references this path — if the reinstall did extract it, this is the likely remover: %s%s\n' "$NOTE" "$hook_hit" "$RESET"
+				done < <(find_referencing_hooks "$path")
 			elif [[ -n "$owner_pkg" ]]; then
 				printf '  %s: owned by %s — an inter-package conflict a reinstall cannot remove; restore with: sudo pacman -S --noconfirm --overwrite %s %s (or remove %s)%s\n' "$path" "$owner_pkg" "$path" "$pkg" "$owner_pkg" "$RESET"
 			else
@@ -3428,6 +3514,35 @@ report_unresolvable_findings() {
 # reinstall failed (field evidence: python-thefuzz removed to unblock the
 # 3.13->3.14 transition, its reinstall impossible until the repository
 # rebuilds for the new interpreter) must all survive into the summary.
+# v2.4.2: surfaces broken packages the operator has put on the ignore list.
+# They are informational, not outstanding debt (the operator took explicit
+# responsibility), so this does not touch the final verdict wording — it
+# only ends their silent disappearance from the report. Diagnosis is run for
+# the pacman -Qk class only (it is meaningless for the stale-python class)
+# and bounded to five packages.
+report_ignored_broken_findings() {
+	if [[ ${#HEAL_IGNORED_BROKEN_PKGS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	local -A seen=()
+	local -i ri diagnosed=0
+	local rpkg rlabel
+	printf '%sKnown-broken packages skipped because they are on the ignore list — nothing was attempted; the integrity audit still flags them:%s\n' "$NOTE" "$RESET"
+	for ((ri = 0; ri < ${#HEAL_IGNORED_BROKEN_PKGS[@]}; ri++)); do
+		rpkg="${HEAL_IGNORED_BROKEN_PKGS[$ri]}"
+		rlabel="${HEAL_IGNORED_BROKEN_LABELS[$ri]:-unknown}"
+		[[ -z "${seen[$rpkg]:-}" ]] || continue
+		seen["$rpkg"]=1
+		printf '  %s (%s)\n' "$rpkg" "$rlabel"
+		if [[ "$rlabel" == "verified-missing-files" ]] && ((diagnosed < 5)); then
+			diagnosed=$((diagnosed + 1))
+			diagnose_persistent_breakage "$rpkg" "ignored — no heal attempted; diagnosis only"
+		fi
+	done
+	printf "\n"
+	return 0
+}
+
 report_recovery_outcome() {
 	if [[ ${#RECOVERY_OVERWRITE_APPLIED[@]} -eq 0 && ${#RECOVERY_RDD_REMOVED_PKGS[@]} -eq 0 ]]; then
 		return 0
@@ -4015,6 +4130,7 @@ main() {
 		report_heal_outcome
 		report_pacnew_findings
 		report_recovery_outcome
+		report_ignored_broken_findings
 		report_deep_integrity_findings
 		report_orphan_findings
 		log_message "INFO" "Script finished successfully — no missing deps."
@@ -4089,6 +4205,7 @@ main() {
 	report_heal_outcome
 	report_pacnew_findings
 	report_recovery_outcome
+	report_ignored_broken_findings
 	report_deep_integrity_findings
 	report_orphan_findings
 	log_message "INFO" "Script finished."
