@@ -23,8 +23,8 @@ check_gap \
     'fixed delay used as NTP lifecycle synchronization'
 
 check_gap \
-    'SigLevel[[:space:]]*=[[:space:]]*Never' \
-    'temporary global pacman signature disablement exists in repair path'
+    'pacman\\.conf\\.backup|sed[[:space:]]+-i[^[:cntrl:]]*SigLevel' \
+    'live /etc/pacman.conf signature-policy mutation exists in repair path'
 
 if (( FAILURES > 0 )); then
     printf 'GUP GAP SCAN: %d unresolved backend gap(s).\n' "$FAILURES"
