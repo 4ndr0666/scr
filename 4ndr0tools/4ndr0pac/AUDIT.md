@@ -54,3 +54,28 @@ The registered backend gaps G2 and G3 were remediated on `gup/4ndr0pac-gap-mitig
 - Local verification recorded for this remediation: Bash syntax check, `git diff --check`, fixed-sleep scan, and G3 invariant scan completed without findings.
 
 The evidence boundary remains unchanged: these checks do not constitute authorization or proof for uncontrolled live package-manager operations.
+
+## Superset semantic review
+
+The remediation was reviewed against the preceding stable 4ndr0pac v1.6.0 backend and frontend feature inventory.
+
+- All 36 backend functions present in the stable backend remain present.
+- The one-shot backend dispatch aliases are unchanged.
+- The frontend directive inventory remains intact, including all confirmation-gated operations.
+- The v1.6.0 fixes for Topgrade dispatch, dependency-tree aliases, flag forwarding, stale database-lock handling, guarded cache tooling, pamac translation, and read-only analysis remain present.
+- No fixed lifecycle sleep was reintroduced.
+- The recovery path remains isolated from the live /etc/pacman.conf.
+
+### Semantic hardening completed
+
+- Recovery configuration generation now replaces every active SigLevel directive in the copied configuration with SigLevel = Never, including the normal [options] directive and repository-local overrides. If [options] is absent, the isolated configuration receives an explicit [options] section.
+- Keyring package names are normalized from package names ending in -keyring to the keyring basenames expected by pacman-key --populate.
+- Broken pacman keyring deletion is fail-closed; a failed destructive cleanup aborts keyring repair rather than being masked.
+- Desktop-environment removal retains user configuration when package removal fails.
+- Cleanup and optional subsystem failures are reported explicitly instead of being presented as successful completion.
+- Mirror fallback and orphan-query failures now have explicit fallback states.
+- The mirror-repair package-database cleanup uses xargs -r so an empty match cannot invoke sed without targets.
+
+Current Arch documentation confirms that pacman --config selects an alternate configuration, SigLevel = Never suppresses signature checking, repository-specific SigLevel settings override the global default, and pacman-key --populate accepts keyring basenames from /usr/share/pacman/keyrings. [Arch pacman(8), pacman.conf(5), pacman-key(8)]
+
+These semantic checks are supplemental to the Golden Unit and backend gap scanner; neither constitutes authorization for uncontrolled live package-manager execution.
