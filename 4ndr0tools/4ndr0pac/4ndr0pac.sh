@@ -1448,7 +1448,14 @@ func_cleanup() {
 	sudo pacman -Sc --noconfirm
 
 	local orphans=()
-	mapfile -t orphans < <(pacman -Qtdq 2>/dev/null) || return 1
+	local orphan_output
+	if ! orphan_output="$(pacman -Qtdq 2>/dev/null)"; then
+		echo -e " ${BRED}Unable to query orphaned packages; cleanup aborted.${RESET}"
+		return 1
+	fi
+	if [[ -n "$orphan_output" ]]; then
+		mapfile -t orphans <<<"$orphan_output"
+	fi
 	if [[ ${#orphans[@]} -gt 0 ]]; then
 		echo -e " ${BRED}The following orphaned packages will be removed:${RESET}"
 		printf '  %s\n' "${orphans[@]}"
