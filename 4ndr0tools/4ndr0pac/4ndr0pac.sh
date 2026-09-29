@@ -214,10 +214,16 @@ func_m() {
 		fi
 	else
 		local mirror_server_list
-		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
+		if ! mirror_server_list="$(curl --fail --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on')"; then
+				echo -e " ${BRED}Mirror list download failed.${RESET}"
+				mirror_server_list=""
+			fi
 		if [[ -n "$mirror_server_list" ]]; then
 			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
-			mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose - || true)"
+			if ! mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose -)"; then
+				echo -e " ${BRED}Mirror ranking failed.${RESET}"
+				mirror_server_list=""
+			fi
 			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
 				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
 				sudo pacman -Syyuu --noconfirm
@@ -248,7 +254,10 @@ func_m() {
 	paru) paru -c ;;
 	*)
 		local orphans=()
-		mapfile -t orphans < <(pacman -Qqdt 2>/dev/null || true)
+		if ! mapfile -t orphans < <(pacman -Qqdt 2>/dev/null); then
+			echo -e " ${BRED}Unable to query orphaned packages; skipping orphan removal.${RESET}"
+			orphans=()
+		fi
 		if [[ ${#orphans[@]} -gt 0 ]]; then
 			pacman -Qdt --color always
 			echo -e " ${BRED}Do you want to remove these orphaned packages? [Y/n] ${RESET}"
