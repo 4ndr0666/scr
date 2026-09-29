@@ -1423,11 +1423,14 @@ func_cleanup() {
 	sudo pacman -Sc --noconfirm
 
 	local orphans=()
-	mapfile -t orphans < <(pacman -Qtdq 2>/dev/null || true)
+	mapfile -t orphans < <(pacman -Qtdq 2>/dev/null) || return 1
 	if [[ ${#orphans[@]} -gt 0 ]]; then
 		echo -e " ${BRED}The following orphaned packages will be removed:${RESET}"
 		printf '  %s\n' "${orphans[@]}"
-		sudo pacman -Rns "${orphans[@]}" --noconfirm || true
+		if ! sudo pacman -Rns "${orphans[@]}" --noconfirm; then
+			echo -e " ${BRED}Orphan removal failed; cleanup was not completed.${RESET}"
+			return 1
+		fi
 	else
 		echo " no orphaned packages found."
 	fi
@@ -1517,12 +1520,18 @@ func_remove_de() {
 	echo -n -e " Purge ${BOLD}$selected${RESET} and configurations permanently? [y/N]: "
 	read -r -n 1 -e confirm
 	if [[ "$confirm" =~ ^[yY] ]]; then
-		sudo pacman -Rns "${packages[@]}" --noconfirm || true
+		if ! sudo pacman -Rns "${packages[@]}" --noconfirm; then
+			echo -e " ${BRED}Failed to remove $selected. Configuration files were retained.${RESET}"
+			return 1
+		fi
 		local _dir
 		for _dir in "${config_dirs[@]}"; do
 			if [[ -e "$_dir" ]]; then rm -rf "$_dir"; fi
 		done
-		sudo paccache -rk0 2>/dev/null || true
+		if ! sudo paccache -rk0 2>/dev/null; then
+			echo -e " ${BRED}Final package-cache purge failed.${RESET}"
+			return 1
+		fi
 	fi
 }
 
