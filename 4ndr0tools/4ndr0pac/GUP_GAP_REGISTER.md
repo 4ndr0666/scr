@@ -2,11 +2,10 @@
 
 Baseline: `main` after GUP remediation PR #126.
 
-## Open gaps
+## Closed gaps
 
 No registered GUP gaps remain in the M2/M3 backend scope.
 
-## Closed semantic gaps
 
 ### G4 — Recovery configuration precedence
 
