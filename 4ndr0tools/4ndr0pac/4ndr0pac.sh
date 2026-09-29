@@ -949,8 +949,8 @@ func_fix() {
 				echo ""
 				echo " sudo systemctl stop ntpd.service ..."
 				if ! sudo systemctl stop ntpd.service &>/dev/null; then
-				echo -e " ${BRED}Could not stop ntpd.service; continuing may leave another time-sync process active.${RESET}"
-			fi
+					echo -e " ${BRED}Could not stop ntpd.service; continuing may leave another time-sync process active.${RESET}"
+				fi
 				echo ""
 				echo " installing ntp ..."
 				sudo pacman -S ntp --noconfirm
