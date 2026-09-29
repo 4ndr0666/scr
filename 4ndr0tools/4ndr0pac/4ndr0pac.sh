@@ -1545,7 +1545,7 @@ func_topgrade() {
 # ==============================================================================
 func_remove_de() {
 	_need fzf "Install 'fzf' (community repo) for interactive DE selection." || return 1
-	local de_table=("GNOME|gnome-shell" "KDE Plasma|startplasma-x11" "XFCE|xfce4-session" "Cinnamon|cinnamon-session" "MATE|mate-session" "Budgie|budgie-desktop" "LXQt|lxqt-session" "LXDE|lxsession" "i3|i3" "Sway|sway" "DWM|dwm" "Awesome|awesome" "BSPWM|bspwm" "Openbox|openbox" "Fluxbox|fluxbox" "niri|niri" "river|river" "hyde|Hyprland" "miracle-wm|miracle-wm")
+	local de_table=("GNOME|gnome-shell" "KDE Plasma|startplasma-x11" "XFCE|xfce4-session" "Cinnamon|cinnamon-session" "MATE|mate-session" "Budgie|budgie-desktop" "LXQt|lxqt-session" "LXDE|lxsession" "i3|i3" "Sway|sway" "DWM|dwm" "Awesome|awesome" "BSPWM|bspwm" "Openbox|openbox" "Fluxbox|fluxbox" "niri|niri" "river|river" "Hyprland|Hyprland" "miracle-wm|miracle-wm")
 	local installed_names=()
 	for entry in "${de_table[@]}"; do
 		if command -v "${entry##*|}" &>/dev/null; then installed_names+=("${entry%%|*}"); fi
@@ -1569,6 +1569,7 @@ func_remove_de() {
 	"XFCE") packages=(xfce4 xfce4-goodies); config_dirs=("$HOME/.config/xfce4" "$HOME/.local/share/xfce4") ;;
 	"Cinnamon") packages=(cinnamon); config_dirs=("$HOME/.cinnamon" "$HOME/.config/cinnamon") ;;
 	"MATE") packages=(mate mate-extra); config_dirs=("$HOME/.config/mate" "$HOME/.local/share/mate") ;;
+	"Hyprland") packages=(hyprland); config_dirs=("$HOME/.config/hypr") ;;
 	*) packages=("${selected,,}"); config_dirs=("$HOME/.config/${selected,,}") ;;
 	esac
 
