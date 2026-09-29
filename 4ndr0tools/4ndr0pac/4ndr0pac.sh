@@ -606,7 +606,7 @@ func_b() {
 
 	pacui_cache_packages="$(tail -8000 "$logpath" |
 		grep "] installed\|removed\|upgraded\|downgraded" |
-		awk -F '[\\[\\]]' '{ print $2 " " $5 }' |
+		awk -F '[\[\]]' '{ print $2 " " $5 }' |
 		awk '{ $1=$1 ":"; $2="  " $2; $3="\t\033[1m" $3 " \033[0m"; print }' |
 		fzf -i --multi --exact --no-sort --select-1 --ansi \
 			--query="$argument_input" --cycle --tac --layout=reverse \
@@ -814,14 +814,14 @@ func_fix() {
 			trap 'rm -f -- "$recovery_conf"' EXIT
 			chmod 600 "$recovery_conf" || exit 1
 
-			if grep -Eq '^[[:space:]]*\\[[[:space:]]*options[[:space:]]*\\][[:space:]]*$' /etc/pacman.conf; then
+			if grep -Eq '^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$' /etc/pacman.conf; then
 				awk '
 					BEGIN {
 						in_options = 0
 					}
 
-					/^[[:space:]]*\\[/ {
-						in_options = ($0 ~ /^[[:space:]]*\\[[[:space:]]*options[[:space:]]*\\][[:space:]]*$/)
+					/^[[:space:]]*\[/ {
+						in_options = ($0 ~ /^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$/)
 						print
 						if (in_options) {
 							print "SigLevel = Never"
@@ -840,7 +840,7 @@ func_fix() {
 				' /etc/pacman.conf > "$recovery_conf" || exit 1
 			else
 				{
-					printf '%s\\n' '[options]' 'SigLevel = Never'
+					printf '%s\n' '[options]' 'SigLevel = Never'
 					cat /etc/pacman.conf
 				} > "$recovery_conf" || exit 1
 			fi
