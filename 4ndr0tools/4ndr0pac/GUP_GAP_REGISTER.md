@@ -4,6 +4,22 @@ Baseline: `main` after GUP remediation PR #126.
 
 ## Open gaps
 
+No registered GUP gaps remain in the M2/M3 backend scope.
+
+## Closed semantic gaps
+
+### G4 — Recovery configuration precedence
+
+The isolated recovery configuration previously inserted `SigLevel = Never` before the first section. Because pacman processes configuration top-to-bottom and repository-specific settings override the global default, that construction could leave the normal `[options]` setting or repository-local `SigLevel` effective. The remediation now rewrites active `SigLevel` directives in the isolated copy and ensures `[options]` contains `SigLevel = Never`.
+
+### G5 — Keyring population target normalization
+
+The prior `${keyrings[@]/#/-keyring}` expansion prepended `-keyring` to package names. The remediation strips the package suffix with `${keyrings[@]%-keyring}`, matching pacman-key keyring basenames.
+
+### G6 — Destructive failure propagation
+
+Broken keyring removal, orphan removal, desktop-environment removal, cleanup operations, and optional subsystem refreshes no longer silently convert actionable failures into success states.
+
 ### G2 — Fixed-delay lifecycle synchronization
 
 The Bash backend contains fixed sleeps coupled to system lifecycle operations:
