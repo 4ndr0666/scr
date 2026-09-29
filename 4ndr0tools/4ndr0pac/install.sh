@@ -285,7 +285,11 @@ else
 fi
 
 log_step "Normalizing executable permissions."
-find "$INSTALL_LOCATION" -type f \( -name '*.sh' -o -name '4ndr0pac' \) -exec chmod 0755 {} +
+if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
+    find "$INSTALL_LOCATION" -type f \( -name '*.sh' -o -name '4ndr0pac' \) -exec chmod 0755 {} +
+fi
+
+_ROLLBACK_NEEDED=true
 
 log_step "Installing invocation symlink: $SYMLINK_PATH -> $INSTALL_LOCATION/4ndr0pac"
 if [[ -L "$SYMLINK_PATH" ]]; then
