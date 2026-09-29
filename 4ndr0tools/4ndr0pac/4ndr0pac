@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import difflib
-import os
 import shlex
 import subprocess
 import sys
@@ -192,9 +191,12 @@ def interactive(backend: Path) -> int:
         print_directives()
         try:
             raw = input("[name/number/q]> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
-            return EXIT_ABORT if isinstance(sys.exc_info()[1], KeyboardInterrupt) else EXIT_OK
+            return EXIT_OK
+        except KeyboardInterrupt:
+            print()
+            return EXIT_ABORT
 
         got = resolve_menu(raw)
         if got == "quit":
