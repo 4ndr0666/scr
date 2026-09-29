@@ -23,7 +23,11 @@ check_gap \
     'fixed delay used as NTP lifecycle synchronization'
 
 check_gap \
-    'pacman\\.conf\\.backup|sed[[:space:]]+-i[^[:cntrl:]]*SigLevel' \
+    'pacman[.]conf[.]backup' \
+    'live /etc/pacman.conf backup lifecycle exists in repair path'
+
+check_gap \
+    'sed[[:space:]]+-i.*SigLevel' \
     'live /etc/pacman.conf signature-policy mutation exists in repair path'
 
 if (( FAILURES > 0 )); then
