@@ -783,7 +783,9 @@ func_fix() {
 	if ! sudo dirmngr </dev/null 2>/dev/null; then
 		echo ""
 		echo -e " ${BRED}The following dirmngr errors have occurred:${RESET}"
-		sudo dirmngr </dev/null || true
+		if ! sudo dirmngr </dev/null; then
+			echo -e " ${BRED}dirmngr diagnostic retry failed; keyserver diagnostics remain unavailable.${RESET}"
+		fi
 	fi
 	echo ""
 
@@ -931,7 +933,9 @@ func_fix() {
 			if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
 				echo ""
 				echo " sudo systemctl stop ntpd.service ..."
-				sudo systemctl stop ntpd.service &>/dev/null || true
+				if ! sudo systemctl stop ntpd.service &>/dev/null; then
+				echo -e " ${BRED}Could not stop ntpd.service; continuing may leave another time-sync process active.${RESET}"
+			fi
 				echo ""
 				echo " installing ntp ..."
 				sudo pacman -S ntp --noconfirm
