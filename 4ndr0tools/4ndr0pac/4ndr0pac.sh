@@ -375,9 +375,15 @@ func_m() {
 
 	if command -v fwupdmgr &>/dev/null; then
 		echo " checking for firmware update(s) ..."
-		fwupdmgr refresh --force || true
+		if ! fwupdmgr refresh --force; then
+			echo -e " ${BRED}fwupd metadata refresh failed; continuing with the current firmware state.${RESET}"
+		fi
 		local fw_out
-		fw_out="$(LC_ALL=C fwupdmgr get-updates 2>&1 || true)"
+		if ! fw_out="$(LC_ALL=C fwupdmgr get-updates 2>&1)"; then
+			echo -e " ${BRED}fwupd update check failed:${RESET}"
+			echo "$fw_out"
+			return 1
+		fi
 		if echo "$fw_out" | grep -qE 'No updatable devices|No updates available|updated successfully'; then
 			:
 		else
