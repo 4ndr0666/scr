@@ -281,27 +281,27 @@ func_m() {
 	yay)
 		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/"; then echo -e " ${BRED}yay cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	pikaur)
 		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/"; then echo -e " ${BRED}pikaur cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	paru)
 		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/"; then echo -e " ${BRED}paru cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	pamac)
 		echo " cleaning pamac package cache ..."
-		pamac clean --keep 2 || true
+		if ! pamac clean --keep 2; then echo -e " ${BRED}pamac cache cleanup failed; continuing.${RESET}"; fi
 		echo ""
 		;;
 	esac
@@ -341,7 +341,7 @@ func_m() {
 		echo " checking AUR package(s) (which can take a while) ..."
 		if curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
 			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null; then
-			gunzip -f "/tmp/4ndr0pac-aur/packages.gz" || true
+			if ! gunzip -f "/tmp/4ndr0pac-aur/packages.gz"; then echo -e " ${BRED}AUR package index decompression failed; AUR orphan analysis skipped.${RESET}"; fi
 		fi
 		if [[ -f /tmp/4ndr0pac-aur/packages ]]; then
 			local aur_orphans
@@ -1156,21 +1156,21 @@ func_e() {
 		sudo pacman-mirrors -f 0 && sudo pacman "${argument_flag[@]}" -Syyu
 		;;
 	/etc/pamac.conf)
-		pamac "${argument_flag[@]}" update --force-refresh || true
+		if ! pamac "${argument_flag[@]}" update --force-refresh; then echo -e " ${BRED}Pamac refresh failed after editing /etc/pamac.conf.${RESET}"; fi
 		;;
 	/etc/fstab | /etc/crypttab)
-		sudo mount -a || true
+		if ! sudo mount -a; then echo -e " ${BRED}mount -a reported an error after editing the mount configuration.${RESET}"; fi
 		;;
 	/boot/loader/*)
-		sudo bootctl list || true
+		if ! sudo bootctl list; then echo -e " ${BRED}bootctl could not read the current boot entries.${RESET}"; fi
 		;;
 	esac
 
 	if [[ "$target_path" == *"/waybar/"* ]]; then
-		killall -SIGUSR2 waybar 2>/dev/null || true
+		if ! killall -SIGUSR2 waybar 2>/dev/null; then echo -e " ${BRED}Waybar reload failed or Waybar is not running.${RESET}"; fi
 	fi
 	if [[ "$target_path" == *"/mako/"* ]]; then
-		makoctl reload 2>/dev/null || true
+		if ! makoctl reload 2>/dev/null; then echo -e " ${BRED}Mako reload failed or mako is not running.${RESET}"; fi
 	fi
 }
 
