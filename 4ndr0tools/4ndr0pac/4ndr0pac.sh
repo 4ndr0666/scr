@@ -209,7 +209,7 @@ func_m() {
 	elif command -v reflector &>/dev/null; then
 		if sudo reflector --verbose --protocol https --age 6 --delay 6 --sort rate \
 			--connection-timeout 2 --score 30 --fastest 10 --save /etc/pacman.d/mirrorlist; then
-			sleep 3 && sudo pacman -Syyuu --noconfirm
+			sudo pacman -Syyuu --noconfirm
 			connection_error=false
 		fi
 	else
