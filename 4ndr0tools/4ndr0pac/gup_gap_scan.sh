@@ -38,9 +38,22 @@ check_gap \
     'rm[[:space:]]+-r[[:space:]]+/etc/pacman[.]d/gnupg.*\|\|[[:space:]]*true' \
     'broken pacman keyring cleanup failure is suppressed'
 
-check_gap \
-    'pacman --config[[:space:]]+"\$recovery_conf"' \
+require_gap_invariant() {
+    local pattern="$1"
+    local description="$2"
+    if ! grep -Eq "$pattern" "$BACKEND"; then
+        printf 'GUP GAP: %s\n' "$description"
+        FAILURES=$((FAILURES + 1))
+    fi
+}
+
+require_gap_invariant \
+    'pacman[[:space:]]+--config[[:space:]]+"\$recovery_conf"[[:space:]]+-Syu' \
     'isolated recovery pacman invocation is missing --config binding'
+
+require_gap_invariant \
+    '\$\{keyrings\[@\]%?-keyring\}' \
+    'keyring restoration does not normalize package names to pacman-key keyring basenames'
 
 if (( FAILURES > 0 )); then
     printf 'GUP GAP SCAN: %d unresolved backend gap(s).\n' "$FAILURES"
