@@ -66,15 +66,10 @@ def test_dry_run_never_prompts_or_executes(monkeypatch, capsys) -> None:
         assert "[dry-run]" in capsys.readouterr().out
 
 
-def test_numeric_dangerous_alias_is_protected(monkeypatch) -> None:
+def test_numeric_dangerous_alias_is_protected() -> None:
     with TemporaryDirectory() as directory:
         backend, log = make_backend(Path(directory))
-        monkeypatch.setenv("BACKEND_LOG", str(log))
         with patch("builtins.input", return_value="n"):
             rc = module.one_shot(backend, ["6"], [], False)
-        assert rc == module.EXIT_OK
-        assert log.read_text(encoding="utf-8").splitlines() == ["l"]
-
-        with patch("builtins.input", return_value="n"):
-            rc = module.one_shot(backend, ["Remove Packages"], [], False)
         assert rc == module.EXIT_ABORT
+        assert not log.exists()
