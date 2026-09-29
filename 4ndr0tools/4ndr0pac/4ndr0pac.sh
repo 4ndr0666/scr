@@ -42,16 +42,16 @@ aur_exec() {
 	pamac)
 		# v1.6: translate pacman-style flags — pamac has its own subcommands
 		# (the old code sent 'pamac -S pkg', which always fails).
-		local sub="install"
+		local sub=(install)
 		case "$1" in
-		-Syu | -Syuu) sub="update -a" ;;
-		-Ss*) sub="search" ;;
-		-Si*) sub="info" ;;
-		-S*) sub="install" ;;
-		-R*) sub="remove" ;;
-		*) sub="$1" ;;
+		-Syu | -Syuu) sub=(update -a) ;;
+		-Ss*) sub=(search) ;;
+		-Si*) sub=(info) ;;
+		-S*) sub=(install) ;;
+		-R*) sub=(remove) ;;
+		*) sub=("$1") ;;
 		esac
-		cmd=("$AUR_Helper" "${argument_flag[@]}" $sub "${@:2}")
+		cmd=("$AUR_Helper" "${argument_flag[@]}" "${sub[@]}" "${@:2}")
 		;;
 	pacman) cmd=(sudo pacman "${argument_flag[@]}" "$@" --color always) ;;
 	*) cmd=("$AUR_Helper" "${argument_flag[@]}" "$@" --color always) ;;
@@ -280,17 +280,23 @@ func_m() {
 	case "$AUR_Helper" in
 	yay)
 		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		fi
 		echo ""
 		;;
 	pikaur)
 		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		fi
 		echo ""
 		;;
 	paru)
 		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		fi
 		echo ""
 		;;
 	pamac)
@@ -333,9 +339,10 @@ func_m() {
 
 	if [[ -n "$AUR_Helper" ]] && [[ "$AUR_Helper" != "pacman" ]]; then
 		echo " checking AUR package(s) (which can take a while) ..."
-		curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
-			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null &&
+		if curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
+			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null; then
 			gunzip -f "/tmp/4ndr0pac-aur/packages.gz" || true
+		fi
 		if [[ -f /tmp/4ndr0pac-aur/packages ]]; then
 			local aur_orphans
 			aur_orphans="$(comm -23 <(pacman -Qqm | sort) <(sort -u /tmp/4ndr0pac-aur/packages) || true)"
@@ -878,9 +885,14 @@ func_fix() {
 
 				echo ""
 				echo " initializing and populating keyring ..."
-				sudo pacman-key --init && echo "" &&
-					sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null ||
+				if sudo pacman-key --init; then
+					echo ""
+					if ! sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null; then
+						sudo pacman-key --populate
+					fi
+				else
 					sudo pacman-key --populate
+				fi
 
 				echo ""
 				echo " updating file database ..."
