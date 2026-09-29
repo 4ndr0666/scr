@@ -214,10 +214,16 @@ func_m() {
 		fi
 	else
 		local mirror_server_list
-		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
+		if ! mirror_server_list="$(curl --fail --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on')"; then
+			echo -e " ${BRED}Mirror list download failed.${RESET}"
+			mirror_server_list=""
+		fi
 		if [[ -n "$mirror_server_list" ]]; then
 			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
-			mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose - || true)"
+			if ! mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose -)"; then
+				echo -e " ${BRED}Mirror ranking failed.${RESET}"
+				mirror_server_list=""
+			fi
 			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
 				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
 				sudo pacman -Syyuu --noconfirm
@@ -248,7 +254,10 @@ func_m() {
 	paru) paru -c ;;
 	*)
 		local orphans=()
-		mapfile -t orphans < <(pacman -Qqdt 2>/dev/null || true)
+		if ! mapfile -t orphans < <(pacman -Qqdt 2>/dev/null); then
+			echo -e " ${BRED}Unable to query orphaned packages; skipping orphan removal.${RESET}"
+			orphans=()
+		fi
 		if [[ ${#orphans[@]} -gt 0 ]]; then
 			pacman -Qdt --color always
 			echo -e " ${BRED}Do you want to remove these orphaned packages? [Y/n] ${RESET}"
@@ -281,27 +290,27 @@ func_m() {
 	yay)
 		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/"; then echo -e " ${BRED}yay cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	pikaur)
 		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/"; then echo -e " ${BRED}pikaur cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	paru)
 		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
 		if command -v paccache &>/dev/null; then
-			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+			if ! paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/"; then echo -e " ${BRED}paru cache cleanup failed; continuing.${RESET}"; fi
 		fi
 		echo ""
 		;;
 	pamac)
 		echo " cleaning pamac package cache ..."
-		pamac clean --keep 2 || true
+		if ! pamac clean --keep 2; then echo -e " ${BRED}pamac cache cleanup failed; continuing.${RESET}"; fi
 		echo ""
 		;;
 	esac
@@ -341,7 +350,7 @@ func_m() {
 		echo " checking AUR package(s) (which can take a while) ..."
 		if curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
 			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null; then
-			gunzip -f "/tmp/4ndr0pac-aur/packages.gz" || true
+			if ! gunzip -f "/tmp/4ndr0pac-aur/packages.gz"; then echo -e " ${BRED}AUR package index decompression failed; AUR orphan analysis skipped.${RESET}"; fi
 		fi
 		if [[ -f /tmp/4ndr0pac-aur/packages ]]; then
 			local aur_orphans
@@ -375,9 +384,15 @@ func_m() {
 
 	if command -v fwupdmgr &>/dev/null; then
 		echo " checking for firmware update(s) ..."
-		fwupdmgr refresh --force || true
+		if ! fwupdmgr refresh --force; then
+			echo -e " ${BRED}fwupd metadata refresh failed; continuing with the current firmware state.${RESET}"
+		fi
 		local fw_out
-		fw_out="$(LC_ALL=C fwupdmgr get-updates 2>&1 || true)"
+		if ! fw_out="$(LC_ALL=C fwupdmgr get-updates 2>&1)"; then
+			echo -e " ${BRED}fwupd update check failed:${RESET}"
+			echo "$fw_out"
+			return 1
+		fi
 		if echo "$fw_out" | grep -qE 'No updatable devices|No updates available|updated successfully'; then
 			:
 		else
@@ -739,7 +754,7 @@ func_fix() {
 
 	_remove_db_lock
 
-	sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} + | xargs sudo sed -i '/^%INSTALLED_DB%$/{N;d;}' 2>/dev/null || true
+	sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} + | xargs -r sudo sed -i '/^%INSTALLED_DB%$/{N;d;}' 2>/dev/null || true
 
 	echo " fixing mirrors (which can take a while) ..."
 	if command -v pacman-mirrors &>/dev/null; then
@@ -749,10 +764,16 @@ func_fix() {
 			--save /etc/pacman.d/mirrorlist && sudo pacman -Syy
 	else
 		local mirror_server_list
-		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
+		if ! mirror_server_list="$(curl --fail --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on')"; then
+			echo -e " ${BRED}Mirror list download failed.${RESET}"
+			mirror_server_list=""
+		fi
 		if [[ -n "$mirror_server_list" ]]; then
 			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
-			mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose - || true)"
+			if ! mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose -)"; then
+				echo -e " ${BRED}Mirror ranking failed.${RESET}"
+				mirror_server_list=""
+			fi
 			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
 				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
 				sudo pacman -Syy
@@ -777,7 +798,9 @@ func_fix() {
 	if ! sudo dirmngr </dev/null 2>/dev/null; then
 		echo ""
 		echo -e " ${BRED}The following dirmngr errors have occurred:${RESET}"
-		sudo dirmngr </dev/null || true
+		if ! sudo dirmngr </dev/null; then
+			echo -e " ${BRED}dirmngr diagnostic retry failed; keyserver diagnostics remain unavailable.${RESET}"
+		fi
 	fi
 	echo ""
 
@@ -814,37 +837,36 @@ func_fix() {
 			trap 'rm -f -- "$recovery_conf"' EXIT
 			chmod 600 "$recovery_conf" || exit 1
 
-			awk '
-				BEGIN {
-					in_section = 0
-					inserted = 0
-				}
-
-				/^[[:space:]]*\[/ {
-					if (!inserted) {
-						print "SigLevel = Never"
-						inserted = 1
+			if grep -Eq '^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$' /etc/pacman.conf; then
+				awk '
+					BEGIN {
+						in_options = 0
 					}
-					in_section = 1
-				}
 
-				!in_section && /^[[:space:]]*SigLevel[[:space:]]*=/ {
-					if (!inserted) {
-						print "SigLevel = Never"
-						inserted = 1
+					/^[[:space:]]*\[/ {
+						in_options = ($0 ~ /^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$/)
+						print
+						if (in_options) {
+							print "SigLevel = Never"
+						}
+						next
 					}
-					next
-				}
 
+					/^[[:space:]]*SigLevel[[:space:]]*=/ {
+						print "SigLevel = Never"
+						next
+					}
+
+					{
+						print
+					}
+				' /etc/pacman.conf > "$recovery_conf" || exit 1
+			else
 				{
-					print
-				}
-
-				END {
-					if (!inserted)
-						print "SigLevel = Never"
-				}
-			' /etc/pacman.conf > "$recovery_conf" || exit 1
+					printf '%s\n' '[options]' 'SigLevel = Never'
+					cat /etc/pacman.conf
+				} > "$recovery_conf" || exit 1
+			fi
 
 			echo ""
 			echo " trying to update system manually without checking keys ..."
@@ -865,7 +887,10 @@ func_fix() {
 				if [[ -d /etc/pacman.d/gnupg ]]; then
 					echo ""
 					echo " removing broken gnupg keyring ..."
-					sudo rm -r /etc/pacman.d/gnupg &>/dev/null || true
+					if ! sudo rm -rf -- /etc/pacman.d/gnupg; then
+						echo -e " ${BRED}Failed to remove the broken pacman keyring. Aborting keyring repair.${RESET}"
+						exit 1
+					fi
 				fi
 
 				echo ""
@@ -887,7 +912,7 @@ func_fix() {
 				echo " initializing and populating keyring ..."
 				if sudo pacman-key --init; then
 					echo ""
-					if ! sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null; then
+					if ! sudo pacman-key --populate "${keyrings[@]%-keyring}" 2>/dev/null; then
 						sudo pacman-key --populate
 					fi
 				else
@@ -923,7 +948,9 @@ func_fix() {
 			if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
 				echo ""
 				echo " sudo systemctl stop ntpd.service ..."
-				sudo systemctl stop ntpd.service &>/dev/null || true
+				if ! sudo systemctl stop ntpd.service &>/dev/null; then
+					echo -e " ${BRED}Could not stop ntpd.service; continuing may leave another time-sync process active.${RESET}"
+				fi
 				echo ""
 				echo " installing ntp ..."
 				sudo pacman -S ntp --noconfirm
@@ -1144,21 +1171,21 @@ func_e() {
 		sudo pacman-mirrors -f 0 && sudo pacman "${argument_flag[@]}" -Syyu
 		;;
 	/etc/pamac.conf)
-		pamac "${argument_flag[@]}" update --force-refresh || true
+		if ! pamac "${argument_flag[@]}" update --force-refresh; then echo -e " ${BRED}Pamac refresh failed after editing /etc/pamac.conf.${RESET}"; fi
 		;;
 	/etc/fstab | /etc/crypttab)
-		sudo mount -a || true
+		if ! sudo mount -a; then echo -e " ${BRED}mount -a reported an error after editing the mount configuration.${RESET}"; fi
 		;;
 	/boot/loader/*)
-		sudo bootctl list || true
+		if ! sudo bootctl list; then echo -e " ${BRED}bootctl could not read the current boot entries.${RESET}"; fi
 		;;
 	esac
 
 	if [[ "$target_path" == *"/waybar/"* ]]; then
-		killall -SIGUSR2 waybar 2>/dev/null || true
+		if ! killall -SIGUSR2 waybar 2>/dev/null; then echo -e " ${BRED}Waybar reload failed or Waybar is not running.${RESET}"; fi
 	fi
 	if [[ "$target_path" == *"/mako/"* ]]; then
-		makoctl reload 2>/dev/null || true
+		if ! makoctl reload 2>/dev/null; then echo -e " ${BRED}Mako reload failed or mako is not running.${RESET}"; fi
 	fi
 }
 
@@ -1421,11 +1448,21 @@ func_cleanup() {
 	sudo pacman -Sc --noconfirm
 
 	local orphans=()
-	mapfile -t orphans < <(pacman -Qtdq 2>/dev/null || true)
+	local orphan_output
+	if ! orphan_output="$(pacman -Qtdq 2>/dev/null)"; then
+		echo -e " ${BRED}Unable to query orphaned packages; cleanup aborted.${RESET}"
+		return 1
+	fi
+	if [[ -n "$orphan_output" ]]; then
+		mapfile -t orphans <<<"$orphan_output"
+	fi
 	if [[ ${#orphans[@]} -gt 0 ]]; then
 		echo -e " ${BRED}The following orphaned packages will be removed:${RESET}"
 		printf '  %s\n' "${orphans[@]}"
-		sudo pacman -Rns "${orphans[@]}" --noconfirm || true
+		if ! sudo pacman -Rns "${orphans[@]}" --noconfirm; then
+			echo -e " ${BRED}Orphan removal failed; cleanup was not completed.${RESET}"
+			return 1
+		fi
 	else
 		echo " no orphaned packages found."
 	fi
@@ -1433,13 +1470,25 @@ func_cleanup() {
 	# v1.6: destructive step now requires confirmation and preserves pacman.log
 	# (Roll Back depends on it). The old code truncated every log silently.
 	echo -n -e " Purge /tmp & /var/tmp files unused 5+ days and truncate system logs (pacman.log preserved)? [y/N]: "
+	local cleanup_failed=false
 	read -r -n 1 -e log_response
 	case "${log_response:-n}" in
 	y | Y)
-		if [[ -d /var/tmp ]]; then sudo find /var/tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /tmp ]]; then sudo find /tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /var/log ]]; then sudo find /var/log -type f -name "*.log" ! -name "pacman.log" -exec truncate -s 0 {} + 2>/dev/null || true; fi
-		echo -e "\n ${BOLD}Temp and log cleanup completed (pacman.log preserved).${RESET}"
+		if [[ -d /var/tmp ]] && ! sudo find /var/tmp -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale /var/tmp files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d /tmp ]] && ! sudo find /tmp -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale /tmp files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d /var/log ]] && ! sudo find /var/log -type f -name "*.log" ! -name "pacman.log" -exec truncate -s 0 {} +; then
+			echo -e " ${BRED}Failed to truncate one or more system logs.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ "$cleanup_failed" == false ]]; then
+			echo -e "\n ${BOLD}Temp and log cleanup completed (pacman.log preserved).${RESET}"
+		fi
 		;;
 	*) echo -e "\n ${BOLD}Skipping temp/log cleanup.${RESET}" ;;
 	esac
@@ -1452,12 +1501,23 @@ func_cleanup() {
 	read -r -n 1 -e clean_response
 	case "${clean_response:-n}" in
 	y | Y)
-		if [[ -d "$HOME/.cache" ]]; then find "$HOME/.cache/" -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d "$HOME/.local/share/Trash" ]]; then find "$HOME/.local/share/Trash" -mindepth 1 -delete 2>/dev/null || true; fi
-		echo -e "\n ${BOLD}Cache and trash cleanup completed.${RESET}"
+		if [[ -d "$HOME/.cache" ]] && ! find "$HOME/.cache/" -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale user cache files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d "$HOME/.local/share/Trash" ]] && ! find "$HOME/.local/share/Trash" -mindepth 1 -delete; then
+			echo -e " ${BRED}Failed to empty user trash.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ "$cleanup_failed" == false ]]; then
+			echo -e "\n ${BOLD}Cache and trash cleanup completed.${RESET}"
+		fi
 		;;
 	*) echo -e "\n ${BOLD}Skipping user cache clean operations.${RESET}" ;;
 	esac
+	if [[ "$cleanup_failed" == true ]]; then
+		return 1
+	fi
 }
 
 # ==============================================================================
@@ -1485,7 +1545,7 @@ func_topgrade() {
 # ==============================================================================
 func_remove_de() {
 	_need fzf "Install 'fzf' (community repo) for interactive DE selection." || return 1
-	local de_table=("GNOME|gnome-shell" "KDE Plasma|startplasma-x11" "XFCE|xfce4-session" "Cinnamon|cinnamon-session" "MATE|mate-session" "Budgie|budgie-desktop" "LXQt|lxqt-session" "LXDE|lxsession" "i3|i3" "Sway|sway" "DWM|dwm" "Awesome|awesome" "BSPWM|bspwm" "Openbox|openbox" "Fluxbox|fluxbox" "niri|niri" "river|river" "hyde|Hyprland" "miracle-wm|miracle-wm")
+	local de_table=("GNOME|gnome-shell" "KDE Plasma|startplasma-x11" "XFCE|xfce4-session" "Cinnamon|cinnamon-session" "MATE|mate-session" "Budgie|budgie-desktop" "LXQt|lxqt-session" "LXDE|lxsession" "i3|i3" "Sway|sway" "DWM|dwm" "Awesome|awesome" "BSPWM|bspwm" "Openbox|openbox" "Fluxbox|fluxbox" "niri|niri" "river|river" "Hyprland|Hyprland" "miracle-wm|miracle-wm")
 	local installed_names=()
 	for entry in "${de_table[@]}"; do
 		if command -v "${entry##*|}" &>/dev/null; then installed_names+=("${entry%%|*}"); fi
@@ -1509,18 +1569,25 @@ func_remove_de() {
 	"XFCE") packages=(xfce4 xfce4-goodies); config_dirs=("$HOME/.config/xfce4" "$HOME/.local/share/xfce4") ;;
 	"Cinnamon") packages=(cinnamon); config_dirs=("$HOME/.cinnamon" "$HOME/.config/cinnamon") ;;
 	"MATE") packages=(mate mate-extra); config_dirs=("$HOME/.config/mate" "$HOME/.local/share/mate") ;;
+	"Hyprland") packages=(hyprland); config_dirs=("$HOME/.config/hypr") ;;
 	*) packages=("${selected,,}"); config_dirs=("$HOME/.config/${selected,,}") ;;
 	esac
 
 	echo -n -e " Purge ${BOLD}$selected${RESET} and configurations permanently? [y/N]: "
 	read -r -n 1 -e confirm
 	if [[ "$confirm" =~ ^[yY] ]]; then
-		sudo pacman -Rns "${packages[@]}" --noconfirm || true
+		if ! sudo pacman -Rns "${packages[@]}" --noconfirm; then
+			echo -e " ${BRED}Failed to remove $selected. Configuration files were retained.${RESET}"
+			return 1
+		fi
 		local _dir
 		for _dir in "${config_dirs[@]}"; do
 			if [[ -e "$_dir" ]]; then rm -rf "$_dir"; fi
 		done
-		sudo paccache -rk0 2>/dev/null || true
+		if ! sudo paccache -rk0 2>/dev/null; then
+			echo -e " ${BRED}Final package-cache purge failed.${RESET}"
+			return 1
+		fi
 	fi
 }
 

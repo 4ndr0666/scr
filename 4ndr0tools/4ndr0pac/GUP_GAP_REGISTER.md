@@ -2,11 +2,26 @@
 
 Baseline: `main` after GUP remediation PR #126.
 
-## Open gaps
+## Closed gaps
+
+No registered GUP gaps remain in the M2/M3 backend scope.
+
+
+### G4 — Recovery configuration precedence
+
+The isolated recovery configuration previously inserted `SigLevel = Never` before the first section. Because pacman processes configuration top-to-bottom and repository-specific settings override the global default, that construction could leave the normal `[options]` setting or repository-local `SigLevel` effective. The remediation now rewrites active `SigLevel` directives in the isolated copy and ensures `[options]` contains `SigLevel = Never`.
+
+### G5 — Keyring population target normalization
+
+The prior `${keyrings[@]/#/-keyring}` expansion prepended `-keyring` to package names. The remediation strips the package suffix with `${keyrings[@]%-keyring}`, matching pacman-key keyring basenames.
+
+### G6 — Destructive failure propagation
+
+Broken keyring removal, orphan removal, desktop-environment removal, cleanup operations, and optional subsystem refreshes no longer silently convert actionable failures into success states.
 
 ### G2 — Fixed-delay lifecycle synchronization
 
-The Bash backend contains fixed sleeps coupled to system lifecycle operations:
+The Bash backend previously contained fixed sleeps coupled to system lifecycle operations:
 
 - reflector completion followed by `sleep 10` before `pacman -Syy` in `func_fix`;
 - reflector completion followed by `sleep 3` before `pacman -Syyuu` in `func_m`;
@@ -16,7 +31,7 @@ These delays do not establish a state predicate. The remediation is to remove th
 
 ### G3 — Temporary global signature-policy weakening
 
-`func_fix` temporarily rewrites `/etc/pacman.conf` to `SigLevel = Never` and relies on an EXIT trap plus normal-path restoration. This is not equivalent to an atomic scoped configuration override: an uncatchable process termination can leave the system in a weakened verification state.
+`func_fix` previously rewrote `/etc/pacman.conf` to `SigLevel = Never` and relied on an EXIT trap plus normal-path restoration. This is not equivalent to an atomic scoped configuration override: an uncatchable process termination can leave the system in a weakened verification state.
 
 The remediation is to stop editing the live global configuration for this recovery path. Use a temporary, isolated pacman configuration/keyring context or another scoped mechanism that cannot persist a weaker global signature policy.
 

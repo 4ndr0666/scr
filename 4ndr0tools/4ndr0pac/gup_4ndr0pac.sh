@@ -35,6 +35,8 @@ run_expect() {
 python3 -m py_compile "$FRONTEND" || fail "frontend does not compile"
 bash -n "$FRONTEND.sh" || fail "backend shell syntax check failed"
 bash -n "$0" || fail "Golden Unit harness syntax check failed"
+bash -n "$ROOT_DIR/gup_gap_scan.sh" || fail "backend gap scanner syntax check failed"
+bash -n "$ROOT_DIR/gup_semantic_test.sh" || fail "backend semantic test syntax check failed"
 
 LIST_OUTPUT="$(python3 "$FRONTEND" --backend "$BACKEND" --list)"
 [[ "$(grep -c '\[confirm\]' <<<"$LIST_OUTPUT")" -eq 5 ]] || fail "dangerous directive inventory changed"
