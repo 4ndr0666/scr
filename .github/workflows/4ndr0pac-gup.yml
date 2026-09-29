@@ -1,0 +1,22 @@
+name: 4ndr0pac GUP
+
+on:
+  push:
+    paths:
+      - '4ndr0tools/4ndr0pac/**'
+      - '.github/workflows/4ndr0pac-gup.yml'
+  pull_request:
+    paths:
+      - '4ndr0tools/4ndr0pac/**'
+      - '.github/workflows/4ndr0pac-gup.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  golden-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Golden Unit
+        run: bash 4ndr0tools/4ndr0pac/gup_4ndr0pac.sh
