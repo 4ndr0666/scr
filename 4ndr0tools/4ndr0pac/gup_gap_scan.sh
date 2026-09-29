@@ -30,6 +30,18 @@ check_gap \
     'sed[[:space:]]+-i.*SigLevel' \
     'live /etc/pacman.conf signature-policy mutation exists in repair path'
 
+check_gap \
+    '\$\{keyrings\[@\]/#/-keyring\}' \
+    'pacman-key population prepends -keyring instead of using the keyring basename'
+
+check_gap \
+    'rm[[:space:]]+-r[[:space:]]+/etc/pacman[.]d/gnupg.*\|\|[[:space:]]*true' \
+    'broken pacman keyring cleanup failure is suppressed'
+
+check_gap \
+    'pacman --config[[:space:]]+"\$recovery_conf"' \
+    'isolated recovery pacman invocation is missing --config binding'
+
 if (( FAILURES > 0 )); then
     printf 'GUP GAP SCAN: %d unresolved backend gap(s).\n' "$FAILURES"
     exit 1
