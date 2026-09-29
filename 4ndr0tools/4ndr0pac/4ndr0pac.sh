@@ -814,37 +814,36 @@ func_fix() {
 			trap 'rm -f -- "$recovery_conf"' EXIT
 			chmod 600 "$recovery_conf" || exit 1
 
-			awk '
-				BEGIN {
-					in_section = 0
-					inserted = 0
-				}
-
-				/^[[:space:]]*\[/ {
-					if (!inserted) {
-						print "SigLevel = Never"
-						inserted = 1
+			if grep -Eq '^[[:space:]]*\\[[[:space:]]*options[[:space:]]*\\][[:space:]]*$' /etc/pacman.conf; then
+				awk '
+					BEGIN {
+						in_options = 0
 					}
-					in_section = 1
-				}
 
-				!in_section && /^[[:space:]]*SigLevel[[:space:]]*=/ {
-					if (!inserted) {
-						print "SigLevel = Never"
-						inserted = 1
+					/^[[:space:]]*\\[/ {
+						in_options = ($0 ~ /^[[:space:]]*\\[[[:space:]]*options[[:space:]]*\\][[:space:]]*$/)
+						print
+						if (in_options) {
+							print "SigLevel = Never"
+						}
+						next
 					}
-					next
-				}
 
+					/^[[:space:]]*SigLevel[[:space:]]*=/ {
+						print "SigLevel = Never"
+						next
+					}
+
+					{
+						print
+					}
+				' /etc/pacman.conf > "$recovery_conf" || exit 1
+			else
 				{
-					print
-				}
-
-				END {
-					if (!inserted)
-						print "SigLevel = Never"
-				}
-			' /etc/pacman.conf > "$recovery_conf" || exit 1
+					printf '%s\\n' '[options]' 'SigLevel = Never'
+					cat /etc/pacman.conf
+				} > "$recovery_conf" || exit 1
+			fi
 
 			echo ""
 			echo " trying to update system manually without checking keys ..."
@@ -865,7 +864,10 @@ func_fix() {
 				if [[ -d /etc/pacman.d/gnupg ]]; then
 					echo ""
 					echo " removing broken gnupg keyring ..."
-					sudo rm -r /etc/pacman.d/gnupg &>/dev/null || true
+					if ! sudo rm -rf -- /etc/pacman.d/gnupg; then
+						echo -e " ${BRED}Failed to remove the broken pacman keyring. Aborting keyring repair.${RESET}"
+						exit 1
+					fi
 				fi
 
 				echo ""
@@ -887,7 +889,7 @@ func_fix() {
 				echo " initializing and populating keyring ..."
 				if sudo pacman-key --init; then
 					echo ""
-					if ! sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null; then
+					if ! sudo pacman-key --populate "${keyrings[@]%-keyring}" 2>/dev/null; then
 						sudo pacman-key --populate
 					fi
 				else
