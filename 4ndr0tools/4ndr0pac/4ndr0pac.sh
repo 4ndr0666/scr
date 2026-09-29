@@ -1438,13 +1438,25 @@ func_cleanup() {
 	# v1.6: destructive step now requires confirmation and preserves pacman.log
 	# (Roll Back depends on it). The old code truncated every log silently.
 	echo -n -e " Purge /tmp & /var/tmp files unused 5+ days and truncate system logs (pacman.log preserved)? [y/N]: "
+	local cleanup_failed=false
 	read -r -n 1 -e log_response
 	case "${log_response:-n}" in
 	y | Y)
-		if [[ -d /var/tmp ]]; then sudo find /var/tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /tmp ]]; then sudo find /tmp -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d /var/log ]]; then sudo find /var/log -type f -name "*.log" ! -name "pacman.log" -exec truncate -s 0 {} + 2>/dev/null || true; fi
-		echo -e "\n ${BOLD}Temp and log cleanup completed (pacman.log preserved).${RESET}"
+		if [[ -d /var/tmp ]] && ! sudo find /var/tmp -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale /var/tmp files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d /tmp ]] && ! sudo find /tmp -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale /tmp files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d /var/log ]] && ! sudo find /var/log -type f -name "*.log" ! -name "pacman.log" -exec truncate -s 0 {} +; then
+			echo -e " ${BRED}Failed to truncate one or more system logs.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ "$cleanup_failed" == false ]]; then
+			echo -e "\n ${BOLD}Temp and log cleanup completed (pacman.log preserved).${RESET}"
+		fi
 		;;
 	*) echo -e "\n ${BOLD}Skipping temp/log cleanup.${RESET}" ;;
 	esac
@@ -1457,12 +1469,23 @@ func_cleanup() {
 	read -r -n 1 -e clean_response
 	case "${clean_response:-n}" in
 	y | Y)
-		if [[ -d "$HOME/.cache" ]]; then find "$HOME/.cache/" -type f -atime +5 -delete 2>/dev/null || true; fi
-		if [[ -d "$HOME/.local/share/Trash" ]]; then find "$HOME/.local/share/Trash" -mindepth 1 -delete 2>/dev/null || true; fi
-		echo -e "\n ${BOLD}Cache and trash cleanup completed.${RESET}"
+		if [[ -d "$HOME/.cache" ]] && ! find "$HOME/.cache/" -type f -atime +5 -delete; then
+			echo -e " ${BRED}Failed to purge stale user cache files.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ -d "$HOME/.local/share/Trash" ]] && ! find "$HOME/.local/share/Trash" -mindepth 1 -delete; then
+			echo -e " ${BRED}Failed to empty user trash.${RESET}"
+			cleanup_failed=true
+		fi
+		if [[ "$cleanup_failed" == false ]]; then
+			echo -e "\n ${BOLD}Cache and trash cleanup completed.${RESET}"
+		fi
 		;;
 	*) echo -e "\n ${BOLD}Skipping user cache clean operations.${RESET}" ;;
 	esac
+	if [[ "$cleanup_failed" == true ]]; then
+		return 1
+	fi
 }
 
 # ==============================================================================
