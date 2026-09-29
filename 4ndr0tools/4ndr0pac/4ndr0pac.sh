@@ -215,9 +215,9 @@ func_m() {
 	else
 		local mirror_server_list
 		if ! mirror_server_list="$(curl --fail --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on')"; then
-				echo -e " ${BRED}Mirror list download failed.${RESET}"
-				mirror_server_list=""
-			fi
+			echo -e " ${BRED}Mirror list download failed.${RESET}"
+			mirror_server_list=""
+		fi
 		if [[ -n "$mirror_server_list" ]]; then
 			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
 			if ! mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose -)"; then
@@ -621,7 +621,7 @@ func_b() {
 
 	pacui_cache_packages="$(tail -8000 "$logpath" |
 		grep "] installed\|removed\|upgraded\|downgraded" |
-		awk -F '[\[\]]' '{ print $2 " " $5 }' |
+		awk -F '[\\[\\]]' '{ print $2 " " $5 }' |
 		awk '{ $1=$1 ":"; $2="  " $2; $3="\t\033[1m" $3 " \033[0m"; print }' |
 		fzf -i --multi --exact --no-sort --select-1 --ansi \
 			--query="$argument_input" --cycle --tac --layout=reverse \
@@ -772,8 +772,8 @@ func_fix() {
 			mirror_server_list="$(echo "$mirror_server_list" | sed -e 's/^#Server/Server/' -e '/^#/d')"
 			if ! mirror_server_list="$(echo "$mirror_server_list" | sudo rankmirrors -n 10 --max-time 2 --verbose -)"; then
 				echo -e " ${BRED}Mirror ranking failed.${RESET}"
-			mirror_server_list=""
-		fi
+				mirror_server_list=""
+			fi
 			if [[ -n "$(echo "$mirror_server_list" | awk '/ ... /')" ]]; then
 				echo "$mirror_server_list" | sudo tee /etc/pacman.d/mirrorlist
 				sudo pacman -Syy
