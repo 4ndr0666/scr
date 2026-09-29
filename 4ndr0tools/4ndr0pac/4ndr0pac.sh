@@ -42,16 +42,16 @@ aur_exec() {
 	pamac)
 		# v1.6: translate pacman-style flags — pamac has its own subcommands
 		# (the old code sent 'pamac -S pkg', which always fails).
-		local sub="install"
+		local sub=(install)
 		case "$1" in
-		-Syu | -Syuu) sub="update -a" ;;
-		-Ss*) sub="search" ;;
-		-Si*) sub="info" ;;
-		-S*) sub="install" ;;
-		-R*) sub="remove" ;;
-		*) sub="$1" ;;
+		-Syu | -Syuu) sub=(update -a) ;;
+		-Ss*) sub=(search) ;;
+		-Si*) sub=(info) ;;
+		-S*) sub=(install) ;;
+		-R*) sub=(remove) ;;
+		*) sub=("$1") ;;
 		esac
-		cmd=("$AUR_Helper" "${argument_flag[@]}" $sub "${@:2}")
+		cmd=("$AUR_Helper" "${argument_flag[@]}" "${sub[@]}" "${@:2}")
 		;;
 	pacman) cmd=(sudo pacman "${argument_flag[@]}" "$@" --color always) ;;
 	*) cmd=("$AUR_Helper" "${argument_flag[@]}" "$@" --color always) ;;
@@ -209,7 +209,7 @@ func_m() {
 	elif command -v reflector &>/dev/null; then
 		if sudo reflector --verbose --protocol https --age 6 --delay 6 --sort rate \
 			--connection-timeout 2 --score 30 --fastest 10 --save /etc/pacman.d/mirrorlist; then
-			sleep 3 && sudo pacman -Syyuu --noconfirm
+			sudo pacman -Syyuu --noconfirm
 			connection_error=false
 		fi
 	else
@@ -280,17 +280,23 @@ func_m() {
 	case "$AUR_Helper" in
 	yay)
 		echo " cleaning yay package cache '$HOME/.cache/yay/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/yay/" || true
+		fi
 		echo ""
 		;;
 	pikaur)
 		echo " cleaning pikaur package cache '$HOME/.cache/pikaur/pkg/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/pikaur/pkg/" || true
+		fi
 		echo ""
 		;;
 	paru)
 		echo " cleaning paru package cache '$HOME/.cache/paru/' ..."
-		command -v paccache &>/dev/null && paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		if command -v paccache &>/dev/null; then
+			paccache --verbose --remove --keep 2 --cachedir "$HOME/.cache/paru/" || true
+		fi
 		echo ""
 		;;
 	pamac)
@@ -333,9 +339,10 @@ func_m() {
 
 	if [[ -n "$AUR_Helper" ]] && [[ "$AUR_Helper" != "pacman" ]]; then
 		echo " checking AUR package(s) (which can take a while) ..."
-		curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
-			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null &&
+		if curl --url 'https://aur.archlinux.org/packages.gz' --create-dirs \
+			--output "/tmp/4ndr0pac-aur/packages.gz" &>/dev/null; then
 			gunzip -f "/tmp/4ndr0pac-aur/packages.gz" || true
+		fi
 		if [[ -f /tmp/4ndr0pac-aur/packages ]]; then
 			local aur_orphans
 			aur_orphans="$(comm -23 <(pacman -Qqm | sort) <(sort -u /tmp/4ndr0pac-aur/packages) || true)"
@@ -724,12 +731,6 @@ func_b() {
 # FUNC_FIX — Fix Pacman Errors
 # ==============================================================================
 func_fix() {
-	# v1.6: self-heal an interrupted repair that left SigLevel=Never in place.
-	if [[ -f /etc/pacman.conf.backup ]]; then
-		echo -e " ${BRED}Found a leftover /etc/pacman.conf.backup from an interrupted repair — restoring it now.${RESET}"
-		sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf
-		sudo rm -f /etc/pacman.conf.backup
-	fi
 	if sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
 		echo " deleting 4ndr0pac cache ..."
 		sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -exec rm -rf {} +
@@ -745,7 +746,7 @@ func_fix() {
 		sudo pacman-mirrors -f 0 && sudo pacman -Syy
 	elif command -v reflector &>/dev/null; then
 		sudo reflector --verbose --protocol https,ftps --age 5 --sort rate \
-			--save /etc/pacman.d/mirrorlist && sleep 10 && sudo pacman -Syy
+			--save /etc/pacman.d/mirrorlist && sudo pacman -Syy
 	else
 		local mirror_server_list
 		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
@@ -806,89 +807,117 @@ func_fix() {
 		case "${answer:-n}" in
 		y | Y | yes | YES | Yes)
 			echo ""
-			echo " Lowering pacman securities (in case keyring is broken) ..."
-			echo -e " ${BRED}WARNING: Do NOT kill this script (Ctrl+C) until securities are restored.${RESET}"
-			sudo cp --preserve=all -f /etc/pacman.conf /etc/pacman.conf.backup &&
-				# v1.6: anchored so LocalFileSigLevel can never be rewritten.
-				sudo sed -i 's/^SigLevel[[:space:]]*=.*/SigLevel = Never/' /etc/pacman.conf
-			trap "sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf && sudo rm -f /etc/pacman.conf.backup" EXIT
+			echo " Lowering pacman securities only inside an isolated temporary pacman configuration ..."
+
+		(
+			recovery_conf="$(mktemp "${TMPDIR:-/tmp}/4ndr0pac-pacman.conf.XXXXXXXX")" || exit 1
+			trap 'rm -f -- "$recovery_conf"' EXIT
+			chmod 600 "$recovery_conf" || exit 1
+
+			awk '
+				BEGIN {
+					in_section = 0
+					inserted = 0
+				}
+
+				/^[[:space:]]*\[/ {
+					if (!inserted) {
+						print "SigLevel = Never"
+						inserted = 1
+					}
+					in_section = 1
+				}
+
+				!in_section && /^[[:space:]]*SigLevel[[:space:]]*=/ {
+					if (!inserted) {
+						print "SigLevel = Never"
+						inserted = 1
+					}
+					next
+				}
+
+				{
+					print
+				}
+
+				END {
+					if (!inserted)
+						print "SigLevel = Never"
+				}
+			' /etc/pacman.conf > "$recovery_conf" || exit 1
+
 			echo ""
-
 			echo " trying to update system manually without checking keys ..."
-			if ! sudo pacman -Syu; then
+			if ! sudo pacman --config "$recovery_conf" -Syu; then
 				echo ""
-				echo -e " ${BRED}Update still not successful. 4ndr0pac is unable to fix the system automatically.${RESET}"
-				echo -e " ${BRED}Read all error messages carefully and try to fix them yourself.${RESET}"
+				echo -e " ${BRED}Manual update failed.${RESET}"
 				echo ""
-				echo " raising pacman securities back ..."
-				sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
-					sudo rm -f /etc/pacman.conf.backup
-				trap - EXIT
-				echo ""
-			else
-				echo ""
-				echo -e " ${BRED}Update succeeded despite the temporary lack of key checks.${RESET}"
-				echo -e " ${BRED}Should 4ndr0pac prevent all future key / keyring errors? [y/N]${RESET}"
-				read -r -n 1 -e answer2
-
-				case "${answer2:-n}" in
-				y | Y | yes | YES | Yes)
-					if [[ -d /etc/pacman.d/gnupg ]]; then
-						echo ""
-						echo " sudo rm -r /etc/pacman.d/gnupg ..."
-						sudo rm -r /etc/pacman.d/gnupg &>/dev/null || true
-					fi
-					echo ""
-					echo " reinstalling gnupg ..."
-					sudo pacman -Syu gnupg --noconfirm
-					echo ""
-					echo " installing all necessary keyrings ..."
-					local keyrings=()
-					mapfile -t keyrings < <(pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)')
-					if [[ ${#keyrings[@]} -gt 0 ]]; then
-						sudo pacman -Syu "${keyrings[@]}" --noconfirm
-					fi
-					echo ""
-					echo " raising pacman securities back ..."
-					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
-						sudo rm -f /etc/pacman.conf.backup
-					trap - EXIT
-					echo ""
-					echo " initializing and populating keyring ..."
-					sudo pacman-key --init && echo "" &&
-						sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null ||
-						sudo pacman-key --populate
-					echo ""
-					echo " updating file database ..."
-					sudo pacman -Fyy
-					echo ""
-					;;
-				n | N | no | NO | No)
-					echo ""
-					echo " do not fix keyring(s) ..."
-					echo ""
-					echo " raising pacman securities back ..."
-					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
-						sudo rm -f /etc/pacman.conf.backup
-					trap - EXIT
-					echo ""
-					echo " updating file database ..."
-					sudo pacman -Fyy
-					echo ""
-					;;
-				*)
-					echo ""
-					echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
-					echo ""
-					echo " raising pacman securities back ..."
-					sudo cp --preserve=all -f /etc/pacman.conf.backup /etc/pacman.conf &&
-						sudo rm -f /etc/pacman.conf.backup
-					trap - EXIT
-					echo ""
-					;;
-				esac
+				exit 1
 			fi
+
+			echo ""
+			echo -e " ${BRED}Update succeeded despite the temporary lack of key checks.${RESET}"
+			echo -e " ${BRED}Should 4ndr0pac prevent all future key / keyring errors? [y/N]${RESET}"
+			read -r -n 1 -e answer2
+
+			case "${answer2:-n}" in
+			y | Y | yes | YES | Yes)
+				if [[ -d /etc/pacman.d/gnupg ]]; then
+					echo ""
+					echo " removing broken gnupg keyring ..."
+					sudo rm -r /etc/pacman.d/gnupg &>/dev/null || true
+				fi
+
+				echo ""
+				echo " reinstalling gnupg ..."
+				sudo pacman --config "$recovery_conf" -Syu gnupg --noconfirm
+
+				echo ""
+				echo " installing all necessary keyrings ..."
+				local keyrings=()
+				mapfile -t keyrings < <(
+					pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)'
+				)
+
+				if [[ ${#keyrings[@]} -gt 0 ]]; then
+					sudo pacman --config "$recovery_conf" -Syu "${keyrings[@]}" --noconfirm
+				fi
+
+				echo ""
+				echo " initializing and populating keyring ..."
+				if sudo pacman-key --init; then
+					echo ""
+					if ! sudo pacman-key --populate "${keyrings[@]/#/-keyring}" 2>/dev/null; then
+						sudo pacman-key --populate
+					fi
+				else
+					sudo pacman-key --populate
+				fi
+
+				echo ""
+				echo " updating file database ..."
+				sudo pacman -Fyy
+				echo ""
+				;;
+
+			n | N | no | NO | No)
+				echo ""
+				echo " do not fix keyring(s) ..."
+				echo ""
+				echo " updating file database ..."
+				sudo pacman -Fyy
+				echo ""
+				;;
+
+			*)
+				echo ""
+				echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
+				echo ""
+				;;
+			esac
+		)
 			;;
+
 
 		n | N | no | NO | No)
 			if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
@@ -900,7 +929,7 @@ func_fix() {
 				sudo pacman -S ntp --noconfirm
 				echo ""
 				echo " setting clock (which can take a while) ..."
-				sudo ntpd -qg && sleep 10 && sudo hwclock -w
+				sudo ntpd -qg && sudo hwclock -w
 				echo ""
 			fi
 

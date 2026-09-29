@@ -42,3 +42,15 @@ A successful Golden Unit run proves the frontend control boundary only. It is
 not evidence that package-manager operations are safe to execute on a live
 Arch Linux installation. Live backend operations require a separate controlled
 system test environment.
+
+## M2 backend gap closure
+
+The registered backend gaps G2 and G3 were remediated on `gup/4ndr0pac-gap-mitigation-2`.
+
+- G2: fixed lifecycle sleeps were removed from the reflector and NTP recovery paths; the remaining one-second delay is only interactive invalid-option UI pacing.
+- G3: the recovery path no longer edits `/etc/pacman.conf` or creates `/etc/pacman.conf.backup`. It derives an isolated temporary pacman configuration, restricts it to mode 0600, passes it explicitly with `--config`, and removes it with a subshell EXIT trap.
+- Backend gap scanner: `gup_gap_scan.sh` is part of the CI workflow and fails closed on the registered G2/G3 patterns.
+- Golden Unit: `gup_4ndr0pac.sh` remains the frontend safety-boundary test and is executed by the same CI workflow.
+- Local verification recorded for this remediation: Bash syntax check, `git diff --check`, fixed-sleep scan, and G3 invariant scan completed without findings.
+
+The evidence boundary remains unchanged: these checks do not constitute authorization or proof for uncontrolled live package-manager operations.
