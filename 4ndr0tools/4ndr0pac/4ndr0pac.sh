@@ -900,7 +900,7 @@ func_fix() {
 				sudo pacman -S ntp --noconfirm
 				echo ""
 				echo " setting clock (which can take a while) ..."
-				sudo ntpd -qg && sleep 10 && sudo hwclock -w
+				sudo ntpd -qg && sudo hwclock -w
 				echo ""
 			fi
 
