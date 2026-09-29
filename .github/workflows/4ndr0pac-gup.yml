@@ -22,3 +22,5 @@ jobs:
         run: bash 4ndr0tools/4ndr0pac/gup_4ndr0pac.sh
       - name: Run backend gap scan
         run: bash 4ndr0tools/4ndr0pac/gup_gap_scan.sh
+      - name: Run backend semantic recovery test
+        run: bash 4ndr0tools/4ndr0pac/gup_semantic_test.sh
