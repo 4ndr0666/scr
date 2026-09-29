@@ -739,7 +739,7 @@ func_fix() {
 		sudo pacman-mirrors -f 0 && sudo pacman -Syy
 	elif command -v reflector &>/dev/null; then
 		sudo reflector --verbose --protocol https,ftps --age 5 --sort rate \
-			--save /etc/pacman.d/mirrorlist && sleep 10 && sudo pacman -Syy
+			--save /etc/pacman.d/mirrorlist && sudo pacman -Syy
 	else
 		local mirror_server_list
 		mirror_server_list="$(curl --silent 'https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on' || true)"
