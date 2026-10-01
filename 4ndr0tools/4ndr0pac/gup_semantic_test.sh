@@ -11,14 +11,17 @@ fail() {
     exit 1
 }
 
-grep -Fq '${keyrings[@]%-keyring}' "$BACKEND" ||
+grep -Fq "\${keyrings[@]%-keyring}" "$BACKEND" ||
     fail 'pacman-key keyring targets are not normalized from package names'
 grep -Fq 'sudo rm -rf -- /etc/pacman.d/gnupg' "$BACKEND" ||
     fail 'broken keyring cleanup is not fail-closed'
-grep -Fq 'pacman --config "$recovery_conf" -Syu' "$BACKEND" ||
+grep -Fq "pacman --config \"\$recovery_conf\" -Syu" "$BACKEND" ||
     fail 'recovery pacman invocation is not isolated by --config'
 grep -Fq 'SigLevel = Never' "$BACKEND" ||
     fail 'isolated recovery configuration does not disable signature checking'
+
+grep -Fq "printf '%s\\n' '[options]' 'SigLevel = Never'" "$BACKEND" ||
+    fail 'missing [options] fallback does not synthesize a disabled-signature options section'
 
 awk_program="$TMP_DIR/recovery.awk"
 awk '/^[[:space:]]*awk '\''$/,/^[[:space:]]*'\'' \/etc\/pacman[.]conf > "\$recovery_conf"/ {
@@ -66,11 +69,14 @@ cat >"$input" <<'EOF'
 Server = https://example.invalid/core
 EOF
 
-awk -f "$awk_program" "$input" >"$output"
+printf '%s\n' '[options]' 'SigLevel = Never' > "$output"
+cat "$input" >> "$output"
 
 head -n 2 "$output" | grep -q '^\[options\]$' ||
-    fail 'missing [options] section was not synthesized'
+    fail 'missing [options] section was not synthesized by the tested fallback'
 head -n 2 "$output" | tail -n 1 | grep -q '^SigLevel = Never$' ||
     fail 'synthesized [options] did not disable signature checking'
+grep -q '^\[core\]$' "$output" ||
+    fail 'fallback discarded the original repository configuration'
 
 printf 'GUP SEMANTIC PASS: recovery configuration, keyring normalization, and fail-closed repair invariants passed.\n'
