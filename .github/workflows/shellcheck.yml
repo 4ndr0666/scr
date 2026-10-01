@@ -43,6 +43,4 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.changed-sh-files.outputs.all_changed_files }}
         run: |
-          shellcheck -x ${{ steps.changed-sh-files.outputs.all_changed_files }}
-
-
+          echo "$CHANGED_FILES" | xargs -r shellcheck -x || exit 1
