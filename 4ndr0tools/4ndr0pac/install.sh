@@ -52,7 +52,8 @@ normalize_path() {
     [[ "$p" == "~"* ]] && p="${HOME}${p#~}"
     [[ "$p" != /* ]] && p="$(pwd -P)/$p"
     p="$(readlink -f "$p" 2>/dev/null || printf '%s' "$p")"
-    printf '%s' "${p%/}"
+    [[ "$p" != "/" ]] && p="${p%/}"
+    printf '%s' "$p"
 }
 
 usage() {
@@ -75,26 +76,15 @@ USAGE
 
 while (($#)); do
     case "$1" in
-        -n|--dry-run)
-            DRY_RUN=true
-            ;;
-        -u|--uninstall)
-            UNINSTALL=true
-            ;;
+        -n|--dry-run) DRY_RUN=true ;;
+        -u|--uninstall) UNINSTALL=true ;;
         -p|--path)
             (($# >= 2)) || { log_error "--path requires a value"; exit 2; }
             INSTALL_LOCATION="$2"
             shift
             ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            usage
-            exit 2
-            ;;
+        -h|--help) usage; exit 0 ;;
+        *) log_error "Unknown option: $1"; usage; exit 2 ;;
     esac
     shift
 done
@@ -104,43 +94,35 @@ INSTALL_LOCATION="$(normalize_path "${INSTALL_LOCATION:-$DEFAULT_INSTALL_LOCATIO
 _rollback() {
     local rc=$?
     set +e
-
     if [[ "$DRY_RUN" == true || "$rc" -eq 0 || "$_ROLLBACK_NEEDED" != true ]]; then
         [[ -n "$_STAGE" && -d "$_STAGE" ]] && rm -rf -- "$_STAGE"
         [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
         [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
         return "$rc"
     fi
-
     log_error "Install aborted (exit $rc). Rolling back committed filesystem changes..."
-
     if [[ "$_LINK_INSTALLED" == true || "$_LINK_MOVED" == true ]]; then
         [[ "$_LINK_INSTALLED" == true ]] && rm -f -- "$SYMLINK_PATH"
         if [[ "$_LINK_MOVED" == true && -L "$_LINK_BACKUP/link" ]]; then
             mv -- "$_LINK_BACKUP/link" "$SYMLINK_PATH"
         fi
     fi
-
     if [[ "$_TARGET_INSTALLED" == true ]]; then
         rm -rf -- "$INSTALL_LOCATION"
         if [[ "$_TARGET_MOVED" == true && -d "$_TARGET_BACKUP/payload" ]]; then
             mv -- "$_TARGET_BACKUP/payload" "$INSTALL_LOCATION"
         fi
     fi
-
     [[ -n "$_STAGE" && -d "$_STAGE" ]] && rm -rf -- "$_STAGE"
     [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
     [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
-
     return "$rc"
 }
 trap '_rollback' EXIT
 
 _validate_source() {
     local root="$1"
-    local required
-    local missing=0
-
+    local required missing=0
     for required in \
         "$root/4ndr0pac" \
         "$root/4ndr0pac.sh" \
@@ -153,12 +135,10 @@ _validate_source() {
         fi
     done
     ((missing == 0)) || return 1
-
     log_step "Validating every shipped shell payload."
     while IFS= read -r -d '' file; do
         bash -n "$file"
     done < <(find "$root" -type f -name '*.sh' -not -path '*/.git/*' -print0)
-
     log_step "Validating every shipped Python payload."
     if find "$root" -type f -name '*.py' -not -path '*/.git/*' -print -quit | grep -q .; then
         command -v python3 >/dev/null || { log_error "python3 is required to validate Python payloads."; return 1; }
@@ -166,10 +146,8 @@ _validate_source() {
             python3 -c 'from pathlib import Path; import sys; compile(Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' "$file"
         done < <(find "$root" -type f -name '*.py' -not -path '*/.git/*' -print0)
     fi
-
     [[ -x "$root/4ndr0pac" ]] || log_warn "Frontend is not executable in source; deployment will normalize permissions."
     [[ -x "$root/4ndr0pac.sh" ]] || log_warn "Backend is not executable in source; deployment will normalize permissions."
-    return 0
 }
 
 _validate_deployed() {
@@ -182,7 +160,6 @@ _validate_deployed() {
 
 if [[ "$UNINSTALL" == true ]]; then
     [[ $EUID -eq 0 ]] || { log_error "Run uninstall with sudo."; exit 1; }
-
     log_step "Initiating 4ndr0pac teardown."
     if [[ -L "$SYMLINK_PATH" ]]; then
         local_link_target="$(readlink "$SYMLINK_PATH" || true)"
@@ -195,31 +172,20 @@ if [[ "$UNINSTALL" == true ]]; then
         log_error "$SYMLINK_PATH exists and is not a symlink; refusing to remove it."
         exit 1
     fi
-
     case "$INSTALL_LOCATION" in
         /opt/*|/usr/local/*|/home/*|/tmp/*)
-            if [[ -d "$INSTALL_LOCATION" ]]; then
-                run rm -rf -- "$INSTALL_LOCATION"
-            fi
+            [[ -d "$INSTALL_LOCATION" ]] && run rm -rf -- "$INSTALL_LOCATION"
             ;;
-        *)
-            log_error "Refusing unsafe uninstall path: $INSTALL_LOCATION"
-            exit 1
-            ;;
+        *) log_error "Refusing unsafe uninstall path: $INSTALL_LOCATION"; exit 1 ;;
     esac
-
     log_ok "4ndr0pac uninstalled."
     exit 0
 fi
 
 [[ $EUID -eq 0 ]] || { log_error "Run the installer with sudo."; exit 1; }
-
 log_step "Source: $SOURCE_DIR"
 log_step "Target: $INSTALL_LOCATION"
-if [[ "$DRY_RUN" == true ]]; then
-    log_info "DRY-RUN mode active — no filesystem changes will be made."
-fi
-
+[[ "$DRY_RUN" == true ]] && log_info "DRY-RUN mode active — no filesystem changes will be made."
 _validate_source "$SOURCE_DIR"
 
 if [[ "$DRY_RUN" == true ]]; then
@@ -242,7 +208,6 @@ fi
 PARENT_DIR="$(dirname -- "$INSTALL_LOCATION")"
 run mkdir -p -- "$PARENT_DIR"
 run mkdir -p -- "$BIN_DIR"
-
 if [[ -e "$SYMLINK_PATH" && ! -L "$SYMLINK_PATH" ]]; then
     log_error "$SYMLINK_PATH exists and is not a symlink; refusing to overwrite it."
     exit 1
@@ -252,14 +217,10 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     log_step "Building isolated deployment stage."
     _STAGE="$(mktemp -d "$PARENT_DIR/.4ndr0pac-install.XXXXXXXX")"
     chmod 0755 "$_STAGE"
-
     if command -v rsync >/dev/null 2>&1; then
         rsync -a --delete \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude '.gemini/' \
-            --exclude '__pycache__/' \
-            --exclude '*.bak' \
+            --exclude '.git/' --exclude '.github/' --exclude '.gemini/' \
+            --exclude '__pycache__/' --exclude '*.bak' \
             "$SOURCE_DIR/" "$_STAGE/"
     else
         cp -a "$SOURCE_DIR/." "$_STAGE/"
@@ -267,9 +228,7 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
         find "$_STAGE" -type d -name '__pycache__' -prune -exec rm -rf -- {} +
         find "$_STAGE" -type f -name '*.bak' -delete
     fi
-
     _validate_source "$_STAGE"
-
     log_step "Committing payload atomically."
     _ROLLBACK_NEEDED=true
     _TARGET_BACKUP="$(mktemp -d "$PARENT_DIR/.4ndr0pac-rollback.XXXXXXXX")"
@@ -288,7 +247,6 @@ log_step "Normalizing executable permissions."
 if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     find "$INSTALL_LOCATION" -type f \( -name '*.sh' -o -name '4ndr0pac' \) -exec chmod 0755 {} +
 fi
-
 _ROLLBACK_NEEDED=true
 
 log_step "Installing invocation symlink: $SYMLINK_PATH -> $INSTALL_LOCATION/4ndr0pac"
@@ -302,16 +260,13 @@ _LINK_INSTALLED=true
 
 log_step "Validating committed deployment."
 _validate_deployed "$INSTALL_LOCATION"
-
 log_step "Verifying installed invocation path."
 "$SYMLINK_PATH" --version >/dev/null
 find "$INSTALL_LOCATION" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 
 _ROLLBACK_NEEDED=false
-
 [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
 [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
-
 log_ok "Deployment complete. 4ndr0pac is installed at $INSTALL_LOCATION."
 log_info "Invoke with: 4ndr0pac --help"
 exit 0
