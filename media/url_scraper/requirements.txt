@@ -1,7 +1,11 @@
 # requirements.txt
 httpx
-beautifulsoup4==4.12.3
+beautifulsoup4
 lxml
-certifi==2023.11.17
-platformdirs==3.11.0
-gallery-dl>=1.26.0
+certifi
+platformdirs
+gallery-dl
+h2
+asyncio
+async-timeout
+requests
