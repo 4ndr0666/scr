@@ -44,5 +44,5 @@ cacheStorageCompressionThreshold 65536
                    uiPopupConfig -captions
                         uiStyles font family: noto sans
    updateAssetBypassBrowserCache false
-           userResourcesLocation https://gist.github.com/4ndr0666/fc0b493a03a71d409bd8fc3aace3550d/raw/cf389e7580a9dcc211ab7a5837535ba8fc862a1a/uBo_scriptlets.js
+           userResourcesLocation https://gist.githubusercontent.com/4ndr0666/fc0b493a03a71d409bd8fc3aace3550d/raw/uBo_scriptlets.js
                  cacheStorageAPI unset
