@@ -11,11 +11,11 @@ fail() {
     exit 1
 }
 
-grep -Fq '${keyrings[@]%-keyring}' "$BACKEND" ||
+grep -Fq "\${keyrings[@]%-keyring}" "$BACKEND" ||
     fail 'pacman-key keyring targets are not normalized from package names'
 grep -Fq 'sudo rm -rf -- /etc/pacman.d/gnupg' "$BACKEND" ||
     fail 'broken keyring cleanup is not fail-closed'
-grep -Fq 'pacman --config "$recovery_conf" -Syu' "$BACKEND" ||
+grep -Fq "pacman --config \"\$recovery_conf\" -Syu" "$BACKEND" ||
     fail 'recovery pacman invocation is not isolated by --config'
 grep -Fq 'SigLevel = Never' "$BACKEND" ||
     fail 'isolated recovery configuration does not disable signature checking'
