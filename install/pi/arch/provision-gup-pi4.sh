@@ -37,6 +37,10 @@ cleanup() {
 		losetup -d "$LOOPDEV" 2>/dev/null || true
 	fi
 
+	if [[ -n "${WORK:-}" ]] && [[ -d "$WORK" ]]; then
+		\rm -rf "$WORK"
+	fi
+
 	if ((rc != 0)); then
 		printf '[FATAL] provisioning failed; mounts were cleaned\n' >&2
 	fi
@@ -47,37 +51,39 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 require_root() {
-	((EUID == 0)) || die "run as root: sudo $SCRIPT_NAME /dev/sdX"
+	((EUID == 0)) || die "run as root: sudo $SCRIPT_NAME /dev/sdX [SSID] [PASSWORD]"
 }
 
 usage() {
-	cat >&2 <<'EOF'
+	\cat >&2 <<'EOF'
 Usage:
-  sudo ./provision-gup-pi4.sh /dev/sdX
+  sudo ./provision-gup-pi4.sh <TARGET_DEVICE> [WIFI_SSID] [WIFI_PASSWORD]
 
 The target device is COMPLETELY ERASED.
 
 Examples:
   sudo ./provision-gup-pi4.sh /dev/sdb
-  sudo ./provision-gup-pi4.sh /dev/mmcblk0
+  sudo ./provision-gup-pi4.sh /dev/mmcblk0 "MyNetwork" "SecretPass123"
 EOF
 	exit 2
 }
 
-(($# == 1)) || usage
+(($# >= 1)) || usage
 
 require_root
 
 TARGET="$1"
+WIFI_SSID="${2:-}"
+WIFI_PASS="${3:-}"
 
 [[ -b "$TARGET" ]] || die "not a block device: $TARGET"
 
 for cmd in \
-	lsblk blkdiscard blockdev sfdisk \
+	\lsblk blkdiscard blockdev sfdisk \
 	mkfs.vfat mkfs.ext4 mount umount mountpoint \
 	curl bsdtar sha256sum \
 	losetup findmnt chroot systemctl \
-	sed awk grep git; do
+	sed awk \grep git; do
 	command -v "$cmd" >/dev/null 2>&1 ||
 		die "required host command missing: $cmd"
 done
@@ -91,7 +97,7 @@ TARGET_REAL="$(readlink -f "$TARGET")"
 }
 
 printf '\n===== TARGET DEVICE =====\n'
-lsblk -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL,SERIAL "$TARGET_REAL"
+\lsblk -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL,SERIAL "$TARGET_REAL"
 
 printf '\n'
 printf '%s\n' \
@@ -109,20 +115,20 @@ done < <(lsblk -nrpo MOUNTPOINT "$TARGET_REAL" | sed '/^$/d')
 
 info "installing Arch Linux ARM AArch64 to $TARGET_REAL"
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d /var/tmp/gup-pi4.XXXXXX)"
 ARCHIVE="$WORK/ArchLinuxARM-rpi-aarch64-latest.tar.gz"
 ROOT_MNT="$WORK/root"
 BOOT_MNT="$WORK/boot"
 
-mkdir -p "$ROOT_MNT" "$BOOT_MNT"
+\mkdir -p "$ROOT_MNT" "$BOOT_MNT"
 
 info "downloading current Arch Linux ARM Raspberry Pi 4 AArch64 root filesystem"
 
-curl \
+\curl \
 	--fail \
 	--location \
-	--proto '=https' \
-	--tlsv1.2 \
+	--proto '=http,https' \
+	--proto-redir '=http,https' \
 	--retry 5 \
 	--retry-all-errors \
 	--output "$ARCHIVE" \
@@ -130,7 +136,7 @@ curl \
 
 info "validating archive"
 
-tar -tzf "$ARCHIVE" >/dev/null
+\tar -tzf "$ARCHIVE" >/dev/null
 
 info "destroying old partition table"
 
@@ -152,7 +158,6 @@ sfdisk --wipe always "$TARGET_REAL" <<'EOF'
 label: gpt
 size=1024M, type=U
 type=L
-size=0, type=L
 EOF
 
 partprobe "$TARGET_REAL" 2>/dev/null || true
@@ -169,7 +174,7 @@ mkfs.ext4 -F -L ROOT "$P2"
 info "mounting filesystems"
 
 mount "$P2" "$ROOT_MNT"
-mkdir -p "$BOOT_MNT"
+\mkdir -p "$BOOT_MNT"
 mount "$P1" "$BOOT_MNT"
 
 info "extracting Arch Linux ARM root filesystem"
@@ -198,14 +203,14 @@ BOOT_UUID="$(blkid -s UUID -o value "$P1")"
 [[ "$BOOT_UUID" =~ ^[[:xdigit:]-]+$ ]] ||
 	die "invalid boot UUID: $BOOT_UUID"
 
-cat >"$ROOT_MNT/etc/fstab" <<EOF
+\cat >"$ROOT_MNT/etc/fstab" <<EOF
 UUID=$BOOT_UUID /boot vfat defaults 0 2
 UUID=$ROOT_UUID / ext4 defaults,noatime 0 1
 EOF
 
 printf '%s\n' "$TARGET_HOSTNAME" >"$ROOT_MNT/etc/hostname"
 
-cat >"$ROOT_MNT/etc/hosts" <<EOF
+\cat >"$ROOT_MNT/etc/hosts" <<EOF
 127.0.0.1 localhost
 ::1 localhost
 127.0.1.1 $TARGET_HOSTNAME.localdomain $TARGET_HOSTNAME
@@ -213,9 +218,9 @@ EOF
 
 info "configuring deterministic network bootstrap"
 
-mkdir -p "$ROOT_MNT/etc/systemd/network"
+\mkdir -p "$ROOT_MNT/etc/systemd/network"
 
-cat >"$ROOT_MNT/etc/systemd/network/20-gup-ethernet.network" <<'EOF'
+\cat >"$ROOT_MNT/etc/systemd/network/20-gup-ethernet.network" <<'EOF'
 [Match]
 Name=en*
 
@@ -224,12 +229,38 @@ DHCP=yes
 IPv6AcceptRA=yes
 EOF
 
-cat >"$ROOT_MNT/etc/systemd/network/20-gup-ethernet.network" \
-	>/dev/null
+if [[ -n "$WIFI_SSID" ]] && [[ -n "$WIFI_PASS" ]]; then
+	info "configuring Wi-Fi (wlan0) bootstrap for SSID: $WIFI_SSID"
 
-mkdir -p "$ROOT_MNT/etc/systemd/system/getty@tty1.service.d"
+	\cat >"$ROOT_MNT/etc/systemd/network/25-gup-wlan0.network" <<'EOF'
+[Match]
+Name=wlan*
 
-cat >"$ROOT_MNT/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+EOF
+
+	\mkdir -p "$ROOT_MNT/etc/wpa_supplicant"
+	\cat >"$ROOT_MNT/etc/wpa_supplicant/wpa_supplicant-wlan0.conf" <<EOF
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=wheel
+update_config=1
+
+network={
+	ssid="$WIFI_SSID"
+	psk="$WIFI_PASS"
+}
+EOF
+
+	\mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
+	\ln -sf \
+		/usr/lib/systemd/system/wpa_supplicant@.service \
+		"$ROOT_MNT/etc/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service"
+fi
+
+\mkdir -p "$ROOT_MNT/etc/systemd/system/getty@tty1.service.d"
+
+\cat >"$ROOT_MNT/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin alarm --noclear %I $TERM
@@ -237,9 +268,9 @@ EOF
 
 info "configuring SSH"
 
-mkdir -p "$ROOT_MNT/etc/ssh/sshd_config.d"
+\mkdir -p "$ROOT_MNT/etc/ssh/sshd_config.d"
 
-cat >"$ROOT_MNT/etc/ssh/sshd_config.d/20-gup-certification.conf" <<'EOF'
+\cat >"$ROOT_MNT/etc/ssh/sshd_config.d/20-gup-certification.conf" <<'EOF'
 PasswordAuthentication yes
 PermitRootLogin no
 KbdInteractiveAuthentication yes
@@ -248,9 +279,9 @@ EOF
 
 info "installing first-boot GUP bootstrap"
 
-mkdir -p "$ROOT_MNT$WORKDIR"
+\mkdir -p "$ROOT_MNT$WORKDIR"
 
-cat >"$ROOT_MNT$WORKDIR/bootstrap-gup.sh" <<'EOF'
+\cat >"$ROOT_MNT$WORKDIR/bootstrap-gup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -278,7 +309,7 @@ sudo pacman -S --needed --noconfirm \
     curl \
     findutils \
     git \
-    grep \
+    \grep \
     iproute2 \
     pciutils \
     util-linux \
@@ -286,8 +317,8 @@ sudo pacman -S --needed --noconfirm \
     procps-ng \
     coreutils
 
-rm -rf -- "$REPO_DIR"
-mkdir -p "$(dirname "$REPO_DIR")"
+\rm -rf -- "$REPO_DIR"
+\mkdir -p "$(dirname "$REPO_DIR")"
 
 printf '[GUP] cloning repository\n'
 git clone "$REPO_URL" "$REPO_DIR"
@@ -330,7 +361,7 @@ EOF
 
 chmod 0755 "$ROOT_MNT$WORKDIR/bootstrap-gup.sh"
 
-cat >"$ROOT_MNT/etc/systemd/system/gup-bootstrap.service" <<EOF
+\cat >"$ROOT_MNT/etc/systemd/system/gup-bootstrap.service" <<EOF
 [Unit]
 Description=GUP Raspberry Pi bootstrap
 After=network-online.target
@@ -350,33 +381,33 @@ EOF
 
 info "enabling first-boot GUP bootstrap"
 
-ln -sf \
+\ln -sf \
 	/usr/lib/systemd/system/sshd.service \
 	"$ROOT_MNT/etc/systemd/system/multi-user.target.wants/sshd.service"
 
-mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
+\mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
 
-ln -sf \
+\ln -sf \
 	/etc/systemd/system/gup-bootstrap.service \
 	"$ROOT_MNT/etc/systemd/system/multi-user.target.wants/gup-bootstrap.service"
 
 info "enabling systemd-networkd"
 
-mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
+\mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
 
-ln -sf \
+\ln -sf \
 	/usr/lib/systemd/system/systemd-networkd.service \
 	"$ROOT_MNT/etc/systemd/system/multi-user.target.wants/systemd-networkd.service"
 
-ln -sf \
+\ln -sf \
 	/usr/lib/systemd/system/systemd-networkd-wait-online.service \
 	"$ROOT_MNT/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"
 
 info "configuring SSH host-key generation"
 
-mkdir -p "$ROOT_MNT/etc/systemd/system/sshd.service.d"
+\mkdir -p "$ROOT_MNT/etc/systemd/system/sshd.service.d"
 
-cat >"$ROOT_MNT/etc/systemd/system/sshd.service.d/10-gup.conf" <<'EOF'
+\cat >"$ROOT_MNT/etc/systemd/system/sshd.service.d/10-gup.conf" <<'EOF'
 [Unit]
 After=network.target
 EOF
@@ -398,7 +429,7 @@ fi
 
 info "writing provisioning manifest"
 
-cat >"$ROOT_MNT$WORKDIR/provisioning-manifest.txt" <<EOF
+\cat >"$ROOT_MNT$WORKDIR/provisioning-manifest.txt" <<EOF
 platform=Raspberry Pi 4
 architecture=aarch64
 distribution=Arch Linux ARM
@@ -446,7 +477,7 @@ printf 'Repository: %s\n' "$REPO_URL"
 printf 'Bootstrap:  %s\n' "$BOOTSTRAP_REF"
 printf '\n'
 printf '%s\n' \
-	'Insert the SD card into the Raspberry Pi 4 and connect Ethernet.' \
+	'Insert the SD card into the Raspberry Pi 4 and connect Ethernet/Wi-Fi.' \
 	'Use the official 5V/3A-class Pi 4 power supply.' \
 	'The Arch Linux ARM image uses the default alarm/alarm credentials.' \
 	'The first boot runs the GUP bootstrap automatically.'
@@ -457,7 +488,7 @@ printf '  ssh alarm@<PI-DHCP-IP>\n'
 printf '\n'
 printf '%s\n' \
 	'Then inspect:'
-printf '  cat ~/gup/provisioning-manifest.txt\n'
+printf '  \cat ~/gup/provisioning-manifest.txt\n'
 printf '  cd ~/gup/4ndr0666_hyprland\n'
 printf '  git rev-parse HEAD\n'
-printf '  ls -lt oma-evidence/oma1-*.txt\n'
+printf '  \ls -lt oma-evidence/oma1-*.txt\n'
