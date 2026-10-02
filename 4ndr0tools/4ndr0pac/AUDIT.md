@@ -36,6 +36,12 @@ The harness proves, against an isolated fake backend:
 6. `--dry-run` prints the command without invoking the backend.
 7. Numeric alias `6` remains protected by the same danger gate.
 
+## M14 enterprise installer payload gate
+
+The installer gate uses an isolated copy of the shipped payload. It injects generated Python bytecode, requires the installer dry-run to reject the contaminated payload, verifies that no target is created, removes the injected artifacts, and then requires a clean dry-run to succeed without creating a target. This converts the M14-R1 manual oracle into a repository-resident GUP regression gate.
+
+The gate does not execute a real deployment and therefore does not establish proof for live package-manager or filesystem operations beyond the dry-run boundary.
+
 ## Evidence boundary
 
 A successful Golden Unit run proves the frontend control boundary only. It is
