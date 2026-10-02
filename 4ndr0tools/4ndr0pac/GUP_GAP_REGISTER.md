@@ -35,6 +35,10 @@ These delays do not establish a state predicate. The remediation is to remove th
 
 The remediation is to stop editing the live global configuration for this recovery path. Use a temporary, isolated pacman configuration/keyring context or another scoped mechanism that cannot persist a weaker global signature policy.
 
+### G7 — Enterprise installer payload integrity
+
+The enterprise installer must reject generated or transient artifacts before deployment and prove that a rejected dry-run cannot create an installation target. The M14 remediation adds a dedicated installer gate that contaminates an isolated payload copy with Python bytecode, verifies fail-closed rejection, then verifies a clean payload dry-run succeeds without filesystem mutation. The gate is executed by the GUP CI workflow.
+
 ## Evidence boundary
 
 The existing Golden Unit proves the Python frontend safety boundary with a fake backend. This register extends the proof surface to backend static invariants, but it intentionally does not execute pacman, sudo, firmware updates, bootloader operations, repository installers, or live filesystem mutations.
