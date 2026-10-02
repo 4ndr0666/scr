@@ -123,23 +123,38 @@ trap '_rollback' EXIT
 _assert_clean_payload() {
     local root="$1"
     local generated
-    while IFS= read -r -d '' generated; do
-        log_error "Generated or transient artifact present in payload tree: $generated"
-        return 1
-    done < <(
+
+    if ! generated="$(
         find "$root" -type f \(
             -name '*.pyc' -o
             -name '*.pyo' -o
             -name '*.bak' -o
             -name '.coverage'
-        \) -not -path '*/.git/*' -print0
+        \) -not -path '*/.git/*' -print -quit
+    )"; then
+        log_error "Unable to inspect payload files for generated artifacts."
+        return 1
+    fi
+    if [[ -n "$generated" ]]; then
+        log_error "Generated or transient artifact present in payload tree: $generated"
+        return 1
+    fi
+
+    if ! generated="$(
         find "$root" -type d \(
             -name '__pycache__' -o
             -name '.pytest_cache' -o
             -name '.mypy_cache' -o
             -name '.ruff_cache'
-        \) -not -path '*/.git/*' -print0
-    )
+        \) -not -path '*/.git/*' -print -quit
+    )"; then
+        log_error "Unable to inspect payload directories for generated artifacts."
+        return 1
+    fi
+    if [[ -n "$generated" ]]; then
+        log_error "Generated or transient directory present in payload tree: $generated"
+        return 1
+    fi
 }
 
 _validate_source() {
