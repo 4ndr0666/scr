@@ -123,23 +123,24 @@ trap '_rollback' EXIT
 _assert_clean_payload() {
     local root="$1"
     local generated
-    while IFS= read -r -d '' generated; do
+
+    if ! generated="$(find "$root" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.bak' -o -name '.coverage' \) -not -path '*/.git/*' -print -quit)"; then
+        log_error "Unable to inspect payload files for generated artifacts."
+        return 1
+    fi
+    if [[ -n "$generated" ]]; then
         log_error "Generated or transient artifact present in payload tree: $generated"
         return 1
-    done < <(
-        find "$root" -type f \(
-            -name '*.pyc' -o
-            -name '*.pyo' -o
-            -name '*.bak' -o
-            -name '.coverage'
-        \) -not -path '*/.git/*' -print0
-        find "$root" -type d \(
-            -name '__pycache__' -o
-            -name '.pytest_cache' -o
-            -name '.mypy_cache' -o
-            -name '.ruff_cache'
-        \) -not -path '*/.git/*' -print0
-    )
+    fi
+
+    if ! generated="$(find "$root" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' -o -name '.ruff_cache' \) -not -path '*/.git/*' -print -quit)"; then
+        log_error "Unable to inspect payload directories for generated artifacts."
+        return 1
+    fi
+    if [[ -n "$generated" ]]; then
+        log_error "Generated or transient directory present in payload tree: $generated"
+        return 1
+    fi
 }
 
 _validate_source() {
@@ -159,15 +160,11 @@ _validate_source() {
     ((missing == 0)) || return 1
     _assert_clean_payload "$root"
     log_step "Validating every shipped shell payload."
-    while IFS= read -r -d '' file; do
-        bash -n "$file"
-    done < <(find "$root" -type f -name '*.sh' -not -path '*/.git/*' -print0)
+    find "$root" -type f -name '*.sh' -not -path '*/.git/*' -exec bash -n {} +
     log_step "Validating every shipped Python payload."
     if find "$root" -type f -name '*.py' -not -path '*/.git/*' -print -quit | grep -q .; then
         command -v python3 >/dev/null || { log_error "python3 is required to validate Python payloads."; return 1; }
-        while IFS= read -r -d '' file; do
-            python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' "$file"
-        done < <(find "$root" -type f -name '*.py' -not -path '*/.git/*' -print0)
+        find "$root" -type f -name '*.py' -not -path '*/.git/*' -exec             python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' {} +
     fi
     [[ -x "$root/4ndr0pac" ]] || log_warn "Frontend is not executable in source; deployment will normalize permissions."
     [[ -x "$root/4ndr0pac.sh" ]] || log_warn "Backend is not executable in source; deployment will normalize permissions."
@@ -250,18 +247,8 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     else
         cp -a "$SOURCE_DIR/." "$_STAGE/"
         rm -rf -- "$_STAGE/.git" "$_STAGE/.github" "$_STAGE/.gemini"
-        find "$_STAGE" -type d \(
-            -name '__pycache__' -o
-            -name '.pytest_cache' -o
-            -name '.mypy_cache' -o
-            -name '.ruff_cache'
-        \) -prune -exec rm -rf -- {} +
-        find "$_STAGE" -type f \(
-            -name '*.pyc' -o
-            -name '*.pyo' -o
-            -name '.coverage' -o
-            -name '*.bak'
-        \) -delete
+        find "$_STAGE" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' -o -name '.ruff_cache' \) -prune -exec rm -rf -- {} +
+        find "$_STAGE" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '.coverage' -o -name '*.bak' \) -delete
     fi
     _assert_clean_payload "$_STAGE"
     _validate_source "$_STAGE"
@@ -298,8 +285,6 @@ log_step "Validating committed deployment."
 _validate_deployed "$INSTALL_LOCATION"
 log_step "Verifying installed invocation path."
 "$SYMLINK_PATH" --version >/dev/null
-find "$INSTALL_LOCATION" -type d -name __pycache__ -prune -exec rm -rf -- {} +
-
 _ROLLBACK_NEEDED=false
 [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
 [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
