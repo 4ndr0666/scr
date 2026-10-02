@@ -59,7 +59,8 @@ THREAD_COUNT=8
 RETRY_COUNT=5
 # D7 FIX: TMP_DIR scoped under XDG_CACHE_HOME with PID isolation.
 # /s4/tmp/ was a system-specific hardcode with no portability guarantee.
-TMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
+TMP_DIR="/sto2/tmp"
+#${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl/$$"
 # D16 FIX: Stray '$' before the leading slash made this a literal relative
 # path "$/s1/streamdir" — bash does not expand a bare '$' with no identifier
 # following it, so it passed through as a literal character. mkdir -p then
@@ -77,8 +78,8 @@ AUTO_SELECT="True"
 SKIP_MERGE="False"
 DEL_AFTER_DONE="True"
 USE_FFMPEG_CONCAT="False"
-LIVE_REAL_TIME_MERGE="False"
-LIVE_PERFORM_AS_VOD="False"
+LIVE_REAL_TIME_MERGE="True"
+LIVE_PERFORM_AS_VOD="True"
 
 # Execution Target
 TARGET_URL=""
@@ -97,7 +98,8 @@ BIN_M3U8=""
 # -----------------------------------------------------------------------------
 C_RED='\033[1;31m'
 C_GREEN='\033[1;32m'
-C_CYAN='\033[1;36m'
+C_CYAN='\033[38;2;21;255;255m'
+#\033[1;36m'
 C_YELLOW='\033[1;33m'
 C_RESET='\033[0m'
 
@@ -355,20 +357,23 @@ interactive_menu() {
 	# unnecessary dependency on awk for a pure-Bash operation.
 	declare -A preset_urls
 	declare -A preset_labels
-	preset_urls["1"]="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-	preset_urls["2"]="https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8"
-	preset_labels["1"]="Test Stream 1 (mux.dev HLS)"
-	preset_labels["2"]="Test Stream 2 (Akamai HLS Live)"
+	preset_urls["1"]="https://s10-z20.97bf1.com/hls/FfTJ8YSlD4sLONWUSfWacES2FeRLcV0p/index_1920x1080.m3u8?token=49e8f1b8676670ec49b698dbdb427049-1790960159-107.208.126.130-9e7da9c940760e2800db54b6ae37c00e9d3aa4dc9fb06c64f55986871f092c86"
+	preset_urls["2"]="https://s10-z20.97bf1.com/hls/If4POwEQc2aCaYLNVdchNvaXDjaKeeV2/index_1920x1080.m3u8?token=774c7ebe5a2194f7f6faa4651e08e426-1790958633-107.208.126.130-dff3704f1ad12944e8e87ddb7ea7956428c62a17de697000e9b75e8deb1275a3"
+
+	preset_labels["1"]="Tits 1"
+	preset_labels["2"]="Tits 2"
 
 	while true; do
-		echo -e "\n${C_CYAN}==== Ψ-4NDR0666 STREAM EXTRACTOR ====${C_RESET}"
-		echo "1. Execute Preset 1: ${preset_labels[1]}"
-		echo "2. Execute Preset 2: ${preset_labels[2]}"
-		echo "3. Input Custom Target URL"
-		echo "4. Access Advanced Configuration"
-		echo "5. Save Current State to Config"
-		echo "6. Terminate Connection"
-		echo -n "> "
+		echo -e "\n     === //${C_CYAN} M3${C_RESET} //"
+		echo ""
+		echo "1. Execute ${preset_labels[1]}"
+		echo "2. Execute ${preset_labels[2]}"
+		echo "3. Input URL"
+		echo "4. Configuration"
+		echo "5. Save Config"
+		echo "q. Quit"
+		echo ""
+		echo -n "Ψ "
 
 		read -r choice
 		case "$choice" in
@@ -395,8 +400,8 @@ interactive_menu() {
 		5)
 			save_config
 			;;
-		6)
-			print_info "Terminating matrix. Goodbye."
+		q)
+			print_info "─── ⊰ 💀 • - ⦑4NDR0666OS⦒ - • 💀 ⊱ ───"
 			exit 0
 			;;
 		*)
