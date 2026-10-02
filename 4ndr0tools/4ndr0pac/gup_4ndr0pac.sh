@@ -32,7 +32,7 @@ run_expect() {
     [[ "$actual" -eq "$expected" ]] || fail "expected exit $expected, got $actual: $*"
 }
 
-python3 -m py_compile "$FRONTEND" || fail "frontend does not compile"
+python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' "$FRONTEND" || fail "frontend does not parse"
 bash -n "$FRONTEND.sh" || fail "backend shell syntax check failed"
 bash -n "$0" || fail "Golden Unit harness syntax check failed"
 bash -n "$ROOT_DIR/gup_gap_scan.sh" || fail "backend gap scanner syntax check failed"
