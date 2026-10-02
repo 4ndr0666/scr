@@ -120,6 +120,28 @@ _rollback() {
 }
 trap '_rollback' EXIT
 
+_assert_clean_payload() {
+    local root="$1"
+    local generated
+    while IFS= read -r -d '' generated; do
+        log_error "Generated or transient artifact present in payload tree: $generated"
+        return 1
+    done < <(
+        find "$root" -type f \(
+            -name '*.pyc' -o
+            -name '*.pyo' -o
+            -name '*.bak' -o
+            -name '.coverage'
+        \) -not -path '*/.git/*' -print0
+        find "$root" -type d \(
+            -name '__pycache__' -o
+            -name '.pytest_cache' -o
+            -name '.mypy_cache' -o
+            -name '.ruff_cache'
+        \) -not -path '*/.git/*' -print0
+    )
+}
+
 _validate_source() {
     local root="$1"
     local required missing=0
@@ -135,6 +157,7 @@ _validate_source() {
         fi
     done
     ((missing == 0)) || return 1
+    _assert_clean_payload "$root"
     log_step "Validating every shipped shell payload."
     while IFS= read -r -d '' file; do
         bash -n "$file"
@@ -143,7 +166,7 @@ _validate_source() {
     if find "$root" -type f -name '*.py' -not -path '*/.git/*' -print -quit | grep -q .; then
         command -v python3 >/dev/null || { log_error "python3 is required to validate Python payloads."; return 1; }
         while IFS= read -r -d '' file; do
-            python3 -c 'from pathlib import Path; import sys; compile(Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' "$file"
+            python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' "$file"
         done < <(find "$root" -type f -name '*.py' -not -path '*/.git/*' -print0)
     fi
     [[ -x "$root/4ndr0pac" ]] || log_warn "Frontend is not executable in source; deployment will normalize permissions."
@@ -220,14 +243,27 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     if command -v rsync >/dev/null 2>&1; then
         rsync -a --delete \
             --exclude '.git/' --exclude '.github/' --exclude '.gemini/' \
-            --exclude '__pycache__/' --exclude '*.bak' \
+            --exclude '__pycache__/' --exclude '*.pyc' --exclude '*.pyo' \
+            --exclude '.pytest_cache/' --exclude '.mypy_cache/' --exclude '.ruff_cache/' \
+            --exclude '.coverage' --exclude '*.bak' \
             "$SOURCE_DIR/" "$_STAGE/"
     else
         cp -a "$SOURCE_DIR/." "$_STAGE/"
         rm -rf -- "$_STAGE/.git" "$_STAGE/.github" "$_STAGE/.gemini"
-        find "$_STAGE" -type d -name '__pycache__' -prune -exec rm -rf -- {} +
-        find "$_STAGE" -type f -name '*.bak' -delete
+        find "$_STAGE" -type d \(
+            -name '__pycache__' -o
+            -name '.pytest_cache' -o
+            -name '.mypy_cache' -o
+            -name '.ruff_cache'
+        \) -prune -exec rm -rf -- {} +
+        find "$_STAGE" -type f \(
+            -name '*.pyc' -o
+            -name '*.pyo' -o
+            -name '.coverage' -o
+            -name '*.bak'
+        \) -delete
     fi
+    _assert_clean_payload "$_STAGE"
     _validate_source "$_STAGE"
     log_step "Committing payload atomically."
     _ROLLBACK_NEEDED=true
