@@ -173,6 +173,46 @@ sudo test -e "$POSTCOMMIT_BACKUP/payload/sentinel" || fail "post-commit recovery
 [[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
 printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
 
+
+UNINSTALL_TARGET="$TEST_ROOT/uninstall-target"
+sudo "$PAYLOAD/install.sh" --path "$UNINSTALL_TARGET" 2>&1 |
+    tee "$TEST_ROOT/uninstall-install.log" >/dev/null ||
+    fail "controlled uninstall fixture installation failed"
+[[ -f "$UNINSTALL_TARGET/4ndr0pac" ]] || fail "uninstall fixture installation is incomplete"
+[[ -L /usr/local/bin/4ndr0pac ]] || fail "managed invocation link was not installed"
+
+UNINSTALL_SHIM="$TEST_ROOT/uninstall-shim"
+mkdir -p "$UNINSTALL_SHIM"
+cat > "$UNINSTALL_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+TARGET="\${@: -1}"
+if [[ "\${TARGET##*/}" == .4ndr0pac-uninstall.* ]]; then
+    printf 'GUP INJECT: refusing uninstall recovery-backup cleanup of %s\n' "$TARGET" >&2
+    exit 77
+fi
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 0755 "$UNINSTALL_SHIM/rm"
+UNINSTALL_LOG="$TEST_ROOT/uninstall-fault.log"
+set +e
+sudo env PATH="$UNINSTALL_SHIM:$PATH" \
+    "$PAYLOAD/install.sh" --uninstall --path "$UNINSTALL_TARGET" 2>&1 |
+    tee "$UNINSTALL_LOG" >/dev/null
+UNINSTALL_RC=$?
+set -e
+[[ "$UNINSTALL_RC" -ne 0 ]] || fail "uninstall recovery-backup cleanup fault was not propagated"
+grep -Fq 'GUP INJECT: refusing uninstall recovery-backup cleanup of ' "$UNINSTALL_LOG" ||
+    fail "uninstall cleanup fault injection did not execute"
+grep -Fq 'Uninstall cleanup could not remove the installation backup; retained at ' "$UNINSTALL_LOG" ||
+    fail "uninstall cleanup failure was not reported"
+[[ ! -e "$UNINSTALL_TARGET" ]] || fail "uninstall left the installation target after commit"
+[[ ! -e /usr/local/bin/4ndr0pac ]] || fail "uninstall left the managed invocation link after commit"
+UNINSTALL_BACKUP="\$(sudo find "\$(dirname -- "$UNINSTALL_TARGET")" -maxdepth 1 -type d -name '.4ndr0pac-uninstall.*' -print -quit)"
+[[ -n "$UNINSTALL_BACKUP" ]] || fail "uninstall recovery backup was not retained"
+sudo test -e "$UNINSTALL_BACKUP/payload/4ndr0pac" || fail "uninstall recovery backup payload was not retained"
+printf 'GUP PASS: uninstall cleanup failure is fail-closed and retains recovery artifacts after commit.\n'
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
