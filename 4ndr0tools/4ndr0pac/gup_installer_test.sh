@@ -7,7 +7,7 @@ INSTALLER="$ROOT_DIR/install.sh"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/4ndr0pac-installer-gup.XXXXXXXX")"
 
 cleanup() {
-    rm -rf -- "$TEST_ROOT"
+    sudo rm -rf -- "$TEST_ROOT"
 }
 trap cleanup EXIT
 
@@ -133,9 +133,11 @@ sudo env PATH="$FAIL_CLOSED_SHIM:$PATH" GUP_FAIL_TARGET="$FAIL_CLOSED_TARGET" GU
 FAIL_CLOSED_RC=$?
 set -e
 [[ "$FAIL_CLOSED_RC" -ne 0 ]] || fail "rollback-restoration failure was not propagated"
+grep -Fq 'GUP INJECT: refusing rollback restoration into ' "$FAIL_CLOSED_LOG" || fail "rollback restoration fault injection did not execute"
 grep -Fq 'Rollback could not restore the previous installation; backup retained at ' "$FAIL_CLOSED_LOG" || fail "rollback restoration failure was not reported"
-BACKUP_PATH="$(sed -n 's/.*backup retained at //p' "$FAIL_CLOSED_LOG" | tail -n 1)"
-[[ -n "$BACKUP_PATH" && -e "$BACKUP_PATH/payload/sentinel" ]] || fail "rollback backup was not retained after restoration failure"
+[[ "$(cat "$FAIL_CLOSED_COUNT")" -ge 2 ]] || fail "rollback restoration fault injection did not reach the restoration attempt"
+BACKUP_SENTINEL="$(find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
+[[ -n "$BACKUP_SENTINEL" ]] || fail "rollback backup was not retained after restoration failure"
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
 
