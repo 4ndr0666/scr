@@ -236,7 +236,7 @@ POSTCOMMIT_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*'
 sudo test -e "$POSTCOMMIT_BACKUP/payload/sentinel" || fail "post-commit recovery backup contents were not retained"
 [[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
 printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
-
+sudo rm -f -- /usr/local/bin/4ndr0pac
 
 UNINSTALL_TARGET="$TEST_ROOT/uninstall-target"
 sudo "$PAYLOAD/install.sh" --path "$UNINSTALL_TARGET" 2>&1 |
