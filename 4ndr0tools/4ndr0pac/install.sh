@@ -101,21 +101,41 @@ _rollback() {
         return "$rc"
     fi
     log_error "Install aborted (exit $rc). Rolling back committed filesystem changes..."
+    local rollback_failure=false
     if [[ "$_LINK_INSTALLED" == true || "$_LINK_MOVED" == true ]]; then
-        [[ "$_LINK_INSTALLED" == true ]] && rm -f -- "$SYMLINK_PATH"
+        if [[ "$_LINK_INSTALLED" == true ]] && ! rm -f -- "$SYMLINK_PATH"; then
+            log_error "Rollback could not remove the newly installed invocation link."
+            rollback_failure=true
+        fi
         if [[ "$_LINK_MOVED" == true && -L "$_LINK_BACKUP/link" ]]; then
-            mv -- "$_LINK_BACKUP/link" "$SYMLINK_PATH"
+            if ! mv -- "$_LINK_BACKUP/link" "$SYMLINK_PATH"; then
+                log_error "Rollback could not restore the previous invocation link; backup retained at $_LINK_BACKUP."
+                rollback_failure=true
+            fi
         fi
     fi
     if [[ "$_TARGET_INSTALLED" == true ]]; then
-        rm -rf -- "$INSTALL_LOCATION"
+        if ! rm -rf -- "$INSTALL_LOCATION"; then
+            log_error "Rollback could not remove the failed deployment target; backup retained at $_TARGET_BACKUP."
+            rollback_failure=true
+        fi
     fi
     if [[ "$_TARGET_MOVED" == true && -e "$_TARGET_BACKUP/payload" ]]; then
-        mv -- "$_TARGET_BACKUP/payload" "$INSTALL_LOCATION"
+        if ! mv -- "$_TARGET_BACKUP/payload" "$INSTALL_LOCATION"; then
+            log_error "Rollback could not restore the previous installation; backup retained at $_TARGET_BACKUP."
+            rollback_failure=true
+        fi
     fi
-    [[ -n "$_STAGE" && -d "$_STAGE" ]] && rm -rf -- "$_STAGE"
-    [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
-    [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
+    if [[ -n "$_STAGE" && -d "$_STAGE" ]] && ! rm -rf -- "$_STAGE"; then
+        log_error "Rollback could not remove the staging directory: $_STAGE"
+        rollback_failure=true
+    fi
+    if [[ "$rollback_failure" == false ]]; then
+        [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
+        [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
+    else
+        log_error "Rollback was incomplete; recovery artifacts were retained for manual recovery."
+    fi
     return "$rc"
 }
 trap '_rollback' EXIT

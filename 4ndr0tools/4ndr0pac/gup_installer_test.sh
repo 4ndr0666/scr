@@ -7,7 +7,7 @@ INSTALLER="$ROOT_DIR/install.sh"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/4ndr0pac-installer-gup.XXXXXXXX")"
 
 cleanup() {
-    rm -rf -- "$TEST_ROOT"
+    sudo rm -rf -- "$TEST_ROOT"
 }
 trap cleanup EXIT
 
@@ -93,6 +93,54 @@ grep -Fq 'Rolling back committed filesystem changes' "$ROLLBACK_LOG" || fail "ro
 [[ -d "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
 grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET/sentinel" || fail "restored target contents do not match the preexisting installation"
 [[ ! -e "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "failed deployment payload remained at the target"
+
+FAIL_CLOSED_TARGET="$TEST_ROOT/fail-closed-target"
+mkdir -p "$FAIL_CLOSED_TARGET"
+printf '%s\n' 'preserve-me' > "$FAIL_CLOSED_TARGET/sentinel"
+FAIL_CLOSED_SHIM="$TEST_ROOT/fail-closed-shim"
+mkdir -p "$FAIL_CLOSED_SHIM"
+cat > "$FAIL_CLOSED_SHIM/mv" <<'MVSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+FAIL_TARGET="${GUP_FAIL_TARGET:?}"
+COUNT_FILE="${GUP_FAIL_COUNT:?}"
+DEST="${@: -1}"
+count=0
+[[ -f "$COUNT_FILE" ]] && count="$(<"$COUNT_FILE")"
+if [[ "$DEST" == "$FAIL_TARGET" ]]; then
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$COUNT_FILE"
+    if ((count >= 2)); then
+        printf 'GUP INJECT: refusing rollback restoration into %s\n' "$DEST" >&2
+        exit 74
+    fi
+fi
+exec /usr/bin/mv "$@"
+MVSHIM
+cat > "$FAIL_CLOSED_SHIM/ln" <<'LNSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf 'GUP INJECT: refusing invocation-link creation\n' >&2
+exit 75
+LNSHIM
+chmod 0755 "$FAIL_CLOSED_SHIM/mv" "$FAIL_CLOSED_SHIM/ln"
+FAIL_CLOSED_LOG="$TEST_ROOT/fail-closed.log"
+FAIL_CLOSED_COUNT="$TEST_ROOT/fail-closed-count"
+set +e
+sudo env PATH="$FAIL_CLOSED_SHIM:$PATH" GUP_FAIL_TARGET="$FAIL_CLOSED_TARGET" GUP_FAIL_COUNT="$FAIL_CLOSED_COUNT" \
+    "$PAYLOAD/install.sh" --path "$FAIL_CLOSED_TARGET" 2>&1 |
+    tee "$FAIL_CLOSED_LOG" >/dev/null
+FAIL_CLOSED_RC=$?
+set -e
+[[ "$FAIL_CLOSED_RC" -ne 0 ]] || fail "rollback-restoration failure was not propagated"
+grep -Fq 'GUP INJECT: refusing rollback restoration into ' "$FAIL_CLOSED_LOG" || fail "rollback restoration fault injection did not execute"
+grep -Fq 'Rollback could not restore the previous installation; backup retained at ' "$FAIL_CLOSED_LOG" || fail "rollback restoration failure was not reported"
+[[ "$(cat "$FAIL_CLOSED_COUNT")" -ge 2 ]] || fail "rollback restoration fault injection did not reach the restoration attempt"
+BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
+[[ -n "$BACKUP_SENTINEL" ]] || fail "rollback backup was not retained after restoration failure"
+[[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
+printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'

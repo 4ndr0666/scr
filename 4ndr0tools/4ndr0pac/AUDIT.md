@@ -93,3 +93,11 @@ A transaction edge was identified in the enterprise installer rollback path: if 
 The remediation restores the prior target whenever `_TARGET_MOVED` is true, independently of whether `_TARGET_INSTALLED` was set. The installer GUP gate now injects one controlled failure at the stage-to-target rename, verifies the failure propagates with exit 73, verifies rollback executes, and verifies the preexisting target and sentinel contents are restored without leaving the failed payload at the target.
 
 The evidence boundary remains the installer transaction harness; it does not authorize uncontrolled live installation or package-manager operations.
+
+## M16 installer rollback failure preservation
+
+A second transaction-boundary defect was identified after M15: the rollback trap continued to remove rollback storage after a restoration `mv` failed. That could destroy the only surviving copy of a preexisting installation.
+
+The remediation tracks rollback failures explicitly. Recovery backups are removed only when restoration and staging cleanup complete successfully; otherwise the relevant recovery artifacts are retained and an explicit incomplete-rollback diagnostic is emitted. The installer GUP gate injects a controlled restoration failure after a post-deployment link failure and verifies that the original payload remains in rollback storage while the failed target is absent.
+
+This is fail-closed recovery behavior, not a claim that an unresolvable rollback failure can be made atomic.
