@@ -159,7 +159,9 @@ printf 'GUP PASS: unmanaged invocation-link collisions are rejected without targ
 
 ROLLBACK_TARGET="$TEST_ROOT/rollback-target"
 mkdir -p "$ROLLBACK_TARGET"
+cp -a "$PAYLOAD/." "$ROLLBACK_TARGET/"
 printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET/sentinel"
+sudo ln -s "$ROLLBACK_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 SHIM_DIR="$TEST_ROOT/mv-shim"
 mkdir -p "$SHIM_DIR"
 cat > "$SHIM_DIR/mv" <<'MVSHIM'
@@ -188,7 +190,8 @@ set -e
 grep -Fq 'Rolling back committed filesystem changes' "$ROLLBACK_LOG" || fail "rollback was not entered"
 [[ -d "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
 grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET/sentinel" || fail "restored target contents do not match the preexisting installation"
-[[ ! -e "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "failed deployment payload remained at the target"
+[[ -f "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "restored managed payload did not remain at the target"
+sudo rm -f -- /usr/local/bin/4ndr0pac
 
 FAIL_CLOSED_TARGET="$TEST_ROOT/fail-closed-target"
 mkdir -p "$FAIL_CLOSED_TARGET"
