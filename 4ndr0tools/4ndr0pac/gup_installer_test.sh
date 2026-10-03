@@ -94,6 +94,38 @@ grep -Fq 'points elsewhere; refusing to overwrite an unmanaged invocation link.'
 sudo rm -f -- /usr/local/bin/4ndr0pac
 printf 'GUP PASS: unmanaged invocation-link collisions are rejected without install mutation.\n'
 
+EXISTING_TARGET="$TEST_ROOT/existing-unmanaged-target"
+mkdir -p "$EXISTING_TARGET"
+printf '%s\n' 'do-not-overwrite-target' > "$EXISTING_TARGET/sentinel"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target ownership test requires an unused invocation path"
+
+EXISTING_TARGET_LOG="$TEST_ROOT/existing-target.log"
+set +e
+sudo "$PAYLOAD/install.sh" --dry-run --path "$EXISTING_TARGET" 2>&1 |
+    tee "$EXISTING_TARGET_LOG" >/dev/null
+EXISTING_TARGET_DRY_RC=$?
+set -e
+[[ "$EXISTING_TARGET_DRY_RC" -ne 0 ]] || fail "unmanaged existing install target was accepted during dry-run"
+grep -Fq 'already exists without its managed invocation link; refusing to overwrite it.' "$EXISTING_TARGET_LOG" ||
+    fail "existing-target dry-run ownership rejection was not reported"
+[[ -f "$EXISTING_TARGET/sentinel" ]] || fail "existing-target dry-run mutated the target"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target dry-run created an invocation link"
+
+set +e
+sudo "$PAYLOAD/install.sh" --path "$EXISTING_TARGET" 2>&1 |
+    tee "$EXISTING_TARGET_LOG" >/dev/null
+EXISTING_TARGET_RC=$?
+set -e
+[[ "$EXISTING_TARGET_RC" -ne 0 ]] || fail "unmanaged existing install target was accepted"
+grep -Fq 'already exists without its managed invocation link; refusing to overwrite it.' "$EXISTING_TARGET_LOG" ||
+    fail "existing-target ownership rejection was not reported"
+[[ -f "$EXISTING_TARGET/sentinel" ]] || fail "existing-target install mutated the target"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target install created an invocation link"
+printf 'GUP PASS: unmanaged existing install targets are rejected without target or invocation-link mutation.\n'
+
 UNMANAGED_TARGET="$TEST_ROOT/unmanaged-target"
 mkdir -p "$UNMANAGED_TARGET"
 printf '%s\n' 'do-not-remove' > "$UNMANAGED_TARGET/sentinel"
