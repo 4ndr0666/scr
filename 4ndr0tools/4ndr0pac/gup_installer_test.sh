@@ -90,8 +90,8 @@ ROLLBACK_RC=$?
 set -e
 [[ "$ROLLBACK_RC" -eq 73 ]] || fail "controlled stage-commit failure did not propagate as exit 73"
 grep -Fq 'Rolling back committed filesystem changes' "$ROLLBACK_LOG" || fail "rollback was not entered"
-[[ -f "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
-grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET" || fail "restored target contents do not match the preexisting installation"
+[[ -d "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
+grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET/sentinel" || fail "restored target contents do not match the preexisting installation"
 [[ ! -e "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "failed deployment payload remained at the target"
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
