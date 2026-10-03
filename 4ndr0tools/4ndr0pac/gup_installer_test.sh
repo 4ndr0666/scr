@@ -186,8 +186,8 @@ mkdir -p "$UNINSTALL_SHIM"
 cat > "$UNINSTALL_SHIM/rm" <<'RMSHIM'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-TARGET="\${@: -1}"
-if [[ "\${TARGET##*/}" == .4ndr0pac-uninstall.* ]]; then
+TARGET="${@: -1}"
+if [[ "${TARGET##*/}" == .4ndr0pac-uninstall.* ]]; then
     printf 'GUP INJECT: refusing uninstall recovery-backup cleanup of %s\n' "$TARGET" >&2
     exit 77
 fi
@@ -208,7 +208,7 @@ grep -Fq 'Uninstall cleanup could not remove the installation backup; retained a
     fail "uninstall cleanup failure was not reported"
 [[ ! -e "$UNINSTALL_TARGET" ]] || fail "uninstall left the installation target after commit"
 [[ ! -e /usr/local/bin/4ndr0pac ]] || fail "uninstall left the managed invocation link after commit"
-UNINSTALL_BACKUP="\$(sudo find "\$(dirname -- "$UNINSTALL_TARGET")" -maxdepth 1 -type d -name '.4ndr0pac-uninstall.*' -print -quit)"
+UNINSTALL_BACKUP="$(sudo find "$(dirname -- "$UNINSTALL_TARGET")" -maxdepth 1 -type d -name '.4ndr0pac-uninstall.*' -print -quit)"
 [[ -n "$UNINSTALL_BACKUP" ]] || fail "uninstall recovery backup was not retained"
 sudo test -e "$UNINSTALL_BACKUP/payload/4ndr0pac" || fail "uninstall recovery backup payload was not retained"
 printf 'GUP PASS: uninstall cleanup failure is fail-closed and retains recovery artifacts after commit.\n'
