@@ -335,9 +335,19 @@ log_step "Validating committed deployment."
 _validate_deployed "$INSTALL_LOCATION"
 log_step "Verifying installed invocation path."
 "$SYMLINK_PATH" --version >/dev/null
+if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
+    if ! rm -rf -- "$_TARGET_BACKUP"; then
+        log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
+        exit 1
+    fi
+fi
+if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
+    if ! rm -rf -- "$_LINK_BACKUP"; then
+        log_error "Cleanup could not remove invocation-link recovery backup; retained at $_LINK_BACKUP."
+        exit 1
+    fi
+fi
 _ROLLBACK_NEEDED=false
-[[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
-[[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
 log_ok "Deployment complete. 4ndr0pac is installed at $INSTALL_LOCATION."
 log_info "Invoke with: 4ndr0pac --help"
 exit 0
