@@ -52,3 +52,7 @@ M2 is complete when G2 and G3 are both eliminated, the gap scanner passes, the e
 ### G8 — Enterprise installer stage-commit rollback boundary
 
 The installer must restore an existing installation if the atomic stage-to-target rename fails after the previous target has already been moved into rollback storage. The remediation restores the prior target whenever `_TARGET_MOVED` is true, independently of `_TARGET_INSTALLED`, and the installer GUP gate injects a single controlled stage-commit `mv` failure to prove the preexisting target is restored with its original contents.
+
+### G9 — Enterprise installer rollback failure preservation
+
+Rollback must fail closed when restoration or cleanup operations fail. A failed restoration must not be followed by deletion of the only rollback backup. The remediation reports rollback failure, retains recovery artifacts, and the installer GUP gate injects a controlled restoration failure to verify the backup remains available while the failed target is not silently accepted.
