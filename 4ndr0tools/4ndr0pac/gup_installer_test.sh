@@ -62,7 +62,8 @@ fi
 
 
 ROLLBACK_TARGET="$TEST_ROOT/rollback-target"
-printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET"
+mkdir -p "$ROLLBACK_TARGET"
+printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET/sentinel"
 SHIM_DIR="$TEST_ROOT/mv-shim"
 mkdir -p "$SHIM_DIR"
 cat > "$SHIM_DIR/mv" <<'MVSHIM'
