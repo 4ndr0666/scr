@@ -181,6 +181,14 @@ sudo "$PAYLOAD/install.sh" --path "$UNINSTALL_TARGET" 2>&1 |
 [[ -f "$UNINSTALL_TARGET/4ndr0pac" ]] || fail "uninstall fixture installation is incomplete"
 [[ -L /usr/local/bin/4ndr0pac ]] || fail "managed invocation link was not installed"
 
+sudo "$PAYLOAD/install.sh" --uninstall --dry-run --path "$UNINSTALL_TARGET" 2>&1 |
+    tee "$TEST_ROOT/uninstall-dry-run.log" >/dev/null ||
+    fail "uninstall dry-run failed"
+grep -Fq 'Uninstall dry-run complete. No filesystem changes were made.' "$TEST_ROOT/uninstall-dry-run.log" ||
+    fail "uninstall dry-run completion was not reported"
+[[ -f "$UNINSTALL_TARGET/4ndr0pac" ]] || fail "uninstall dry-run mutated the installation target"
+[[ -L /usr/local/bin/4ndr0pac ]] || fail "uninstall dry-run removed the managed invocation link"
+
 UNINSTALL_SHIM="$TEST_ROOT/uninstall-shim"
 mkdir -p "$UNINSTALL_SHIM"
 cat > "$UNINSTALL_SHIM/rm" <<'RMSHIM'
