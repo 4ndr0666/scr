@@ -136,7 +136,7 @@ set -e
 grep -Fq 'GUP INJECT: refusing rollback restoration into ' "$FAIL_CLOSED_LOG" || fail "rollback restoration fault injection did not execute"
 grep -Fq 'Rollback could not restore the previous installation; backup retained at ' "$FAIL_CLOSED_LOG" || fail "rollback restoration failure was not reported"
 [[ "$(cat "$FAIL_CLOSED_COUNT")" -ge 2 ]] || fail "rollback restoration fault injection did not reach the restoration attempt"
-BACKUP_SENTINEL="$(find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
+BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
 [[ -n "$BACKUP_SENTINEL" ]] || fail "rollback backup was not retained after restoration failure"
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
