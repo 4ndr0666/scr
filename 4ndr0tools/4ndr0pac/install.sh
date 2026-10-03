@@ -269,14 +269,14 @@ if [[ "$UNINSTALL" == true ]]; then
     log_step "Finalizing uninstall transaction."
     if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
         if ! rm -rf -- "$_TARGET_BACKUP"; then
-            log_error "Uninstall cleanup could not remove the installation backup; rollback will restore it."
+            log_error "Uninstall cleanup could not remove the installation backup; retained at $_TARGET_BACKUP."
             exit 1
         fi
         _TARGET_BACKUP=""
     fi
     if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
         if ! rm -rf -- "$_LINK_BACKUP"; then
-            log_error "Uninstall cleanup could not remove the invocation-link backup; rollback will restore it."
+            log_error "Uninstall cleanup could not remove the invocation-link backup; retained at $_LINK_BACKUP."
             exit 1
         fi
         _LINK_BACKUP=""
