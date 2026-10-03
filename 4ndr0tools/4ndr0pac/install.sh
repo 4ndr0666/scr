@@ -109,9 +109,9 @@ _rollback() {
     fi
     if [[ "$_TARGET_INSTALLED" == true ]]; then
         rm -rf -- "$INSTALL_LOCATION"
-        if [[ "$_TARGET_MOVED" == true && -d "$_TARGET_BACKUP/payload" ]]; then
-            mv -- "$_TARGET_BACKUP/payload" "$INSTALL_LOCATION"
-        fi
+    fi
+    if [[ "$_TARGET_MOVED" == true && -e "$_TARGET_BACKUP/payload" ]]; then
+        mv -- "$_TARGET_BACKUP/payload" "$INSTALL_LOCATION"
     fi
     [[ -n "$_STAGE" && -d "$_STAGE" ]] && rm -rf -- "$_STAGE"
     [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
