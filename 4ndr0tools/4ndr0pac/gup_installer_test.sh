@@ -34,7 +34,8 @@ printf '%s\n' 'generated' > "$PAYLOAD/__pycache__/sentinel.pyc"
 
 CONTAMINATED_LOG="$TEST_ROOT/contaminated.log"
 set +e
-sudo "$PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/target" >"$CONTAMINATED_LOG" 2>&1
+sudo "$PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/target" 2>&1 |
+    tee "$CONTAMINATED_LOG" >/dev/null
 CONTAMINATED_RC=$?
 set -e
 
@@ -47,7 +48,8 @@ rm -f -- "$PAYLOAD/__generated_sentinel.pyc" "$PAYLOAD/__pycache__/sentinel.pyc"
 rm -rf -- "$PAYLOAD/__pycache__"
 
 CLEAN_LOG="$TEST_ROOT/clean.log"
-sudo "$PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/target" >"$CLEAN_LOG" 2>&1 ||
+sudo "$PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/target" 2>&1 |
+    tee "$CLEAN_LOG" >/dev/null ||
     fail "clean payload dry-run failed"
 [[ ! -e "$TEST_ROOT/target" ]] || fail "clean dry-run created an installation target"
 
