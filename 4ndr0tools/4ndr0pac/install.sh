@@ -237,6 +237,17 @@ if [[ "$UNINSTALL" == true ]]; then
         SYMLINK_PATH=""
     fi
 
+    if [[ "$DRY_RUN" == true ]]; then
+        if [[ -n "$SYMLINK_PATH" ]]; then
+            log_dry "Would remove managed invocation link: $SYMLINK_PATH"
+        fi
+        if [[ -d "$INSTALL_LOCATION" ]]; then
+            log_dry "Would remove managed installation: $INSTALL_LOCATION"
+        fi
+        log_dry "Uninstall dry-run complete. No filesystem changes were made."
+        exit 0
+    fi
+
     if [[ ! -d "$INSTALL_LOCATION" && -z "$SYMLINK_PATH" ]]; then
         log_info "4ndr0pac is already absent."
         exit 0
