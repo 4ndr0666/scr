@@ -143,43 +143,34 @@ printf 'GUP PASS: rollback restoration failure is fail-closed and preserves reco
 
 POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
 mkdir -p "$POSTCOMMIT_TARGET"
-printf '%s\n' 'preexisting-postcommit' > "$POSTCOMMIT_TARGET/sentinel"
+printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
 POSTCOMMIT_SHIM="$TEST_ROOT/postcommit-shim"
 mkdir -p "$POSTCOMMIT_SHIM"
 cat > "$POSTCOMMIT_SHIM/rm" <<'RMSHIM'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-FAIL_RM_PATH="${GUP_FAIL_RM_PATH:?}"
 TARGET="${@: -1}"
-if [[ "$TARGET" == "$FAIL_RM_PATH" ]]; then
+if [[ "$TARGET" == *"/.4ndr0pac-rollback."* ]]; then
     printf 'GUP INJECT: refusing recovery-backup cleanup of %s\n' "$TARGET" >&2
     exit 76
 fi
 exec /usr/bin/rm "$@"
 RMSHIM
 chmod 0755 "$POSTCOMMIT_SHIM/rm"
-POSTCOMMIT_LOG="$TEST_ROOT/postcommit.log"
-set +e
-sudo env PATH="$POSTCOMMIT_SHIM:$PATH" GUP_FAIL_RM_PATH="$TEST_ROOT/POSTCOMMIT_BACKUP_PATH_UNSET" \
-    "$PAYLOAD/install.sh" --path "$POSTCOMMIT_TARGET" 2>&1 |
-    tee "$POSTCOMMIT_LOG" >/dev/null
-POSTCOMMIT_RC=$?
-set -e
-[[ "$POSTCOMMIT_RC" -eq 0 ]] || fail "normal post-commit installation unexpectedly failed"
-BACKUP_CANDIDATE="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
-[[ -z "$BACKUP_CANDIDATE" ]] || fail "successful installation retained an unexpected rollback backup"
-
-POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target-fault"
-mkdir -p "$POSTCOMMIT_TARGET"
-printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
 POSTCOMMIT_LOG="$TEST_ROOT/postcommit-fault.log"
 set +e
-sudo env PATH="$POSTCOMMIT_SHIM:$PATH" GUP_FAIL_RM_PATH="$TEST_ROOT/POSTCOMMIT_BACKUP_PATH_UNSET" \
+sudo env PATH="$POSTCOMMIT_SHIM:$PATH" \
     "$PAYLOAD/install.sh" --path "$POSTCOMMIT_TARGET" 2>&1 |
     tee "$POSTCOMMIT_LOG" >/dev/null
 POSTCOMMIT_RC=$?
 set -e
-[[ "$POSTCOMMIT_RC" -eq 0 ]] || fail "post-commit cleanup fault was not isolated for injection"
+[[ "$POSTCOMMIT_RC" -ne 0 ]] || fail "post-commit cleanup fault was not propagated"
+grep -Fq 'GUP INJECT: refusing recovery-backup cleanup of ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup fault injection did not execute"
+grep -Fq 'Cleanup could not remove deployment recovery backup; retained at ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup failure was not reported"
+POSTCOMMIT_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
+[[ -n "$POSTCOMMIT_BACKUP" && -e "$POSTCOMMIT_BACKUP/payload/sentinel" ]] || fail "post-commit recovery backup was not retained"
+[[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
+printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
 
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
