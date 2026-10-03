@@ -85,3 +85,11 @@ The remediation was reviewed against the preceding stable 4ndr0pac v1.6.0 backen
 Current Arch documentation confirms that pacman --config selects an alternate configuration, SigLevel = Never suppresses signature checking, repository-specific SigLevel settings override the global default, and pacman-key --populate accepts keyring basenames from /usr/share/pacman/keyrings. [Arch pacman(8), pacman.conf(5), pacman-key(8)]
 
 These semantic checks are supplemental to the Golden Unit and backend gap scanner; neither constitutes authorization for uncontrolled live package-manager execution.
+
+## M15 installer transaction-boundary hardening
+
+A transaction edge was identified in the enterprise installer rollback path: if the existing target had been moved to rollback storage but the stage-to-target rename failed, restoration was conditional on `_TARGET_INSTALLED` and therefore could be skipped.
+
+The remediation restores the prior target whenever `_TARGET_MOVED` is true, independently of whether `_TARGET_INSTALLED` was set. The installer GUP gate now injects one controlled failure at the stage-to-target rename, verifies the failure propagates with exit 73, verifies rollback executes, and verifies the preexisting target and sentinel contents are restored without leaving the failed payload at the target.
+
+The evidence boundary remains the installer transaction harness; it does not authorize uncontrolled live installation or package-manager operations.
