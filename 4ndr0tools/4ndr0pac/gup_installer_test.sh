@@ -195,7 +195,9 @@ sudo rm -f -- /usr/local/bin/4ndr0pac
 
 FAIL_CLOSED_TARGET="$TEST_ROOT/fail-closed-target"
 mkdir -p "$FAIL_CLOSED_TARGET"
+cp -a "$PAYLOAD/." "$FAIL_CLOSED_TARGET/"
 printf '%s\n' 'preserve-me' > "$FAIL_CLOSED_TARGET/sentinel"
+sudo ln -s "$FAIL_CLOSED_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 FAIL_CLOSED_SHIM="$TEST_ROOT/fail-closed-shim"
 mkdir -p "$FAIL_CLOSED_SHIM"
 cat > "$FAIL_CLOSED_SHIM/mv" <<'MVSHIM'
@@ -238,6 +240,7 @@ grep -Fq 'Rollback could not restore the previous installation; backup retained 
 BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
 [[ -n "$BACKUP_SENTINEL" ]] || fail "rollback backup was not retained after restoration failure"
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
+sudo rm -f -- /usr/local/bin/4ndr0pac
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
 
 POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
