@@ -109,3 +109,11 @@ A post-commit transaction edge was identified after M16: once a deployment had p
 The remediation makes post-commit recovery cleanup explicit. A failed backup removal propagates as an installation failure, the validated deployment remains in place, and the EXIT trap retains the recovery backup when the committed deployment has already left the rollback state. The installer GUP gate injects a targeted rollback-backup removal failure and verifies failure propagation, backup retention, and preservation of the validated deployment.
 
 The evidence remains isolated to the installer transaction harness; it does not execute package-manager operations.
+
+## M18 installer uninstall transaction hardening
+
+A transaction gap was identified in the enterprise uninstall path: the managed invocation link and installation target were removed directly, so a later filesystem failure could leave a partially uninstalled state.
+
+The remediation stages both managed objects into rollback storage before committing the uninstall. The rollback boundary closes only after both moves succeed; recovery-backup deletion then becomes post-commit cleanup. A cleanup failure propagates while the uninstalled state remains intact and the recovery backup is retained for retry.
+
+The repository installer gate installs an isolated fixture, injects a targeted failure while removing the uninstall recovery backup, verifies that the installation target and managed invocation link remain absent, and verifies that the recovery payload remains available. The gate does not execute package-manager operations.

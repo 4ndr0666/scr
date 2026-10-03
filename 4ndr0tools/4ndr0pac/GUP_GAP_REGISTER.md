@@ -60,3 +60,7 @@ Rollback must fail closed when restoration or cleanup operations fail. A failed 
 ### G10 — Enterprise installer post-commit recovery cleanup
 
 After a deployment has been validated, deletion of the previous-installation recovery backup is itself a transaction boundary. If that cleanup fails, the validated deployment must remain installed, the cleanup failure must propagate, and the recovery backup must be retained rather than being deleted by the EXIT trap. The installer GUP gate injects a controlled rollback-backup removal failure and verifies all three invariants.
+
+### G11 — Enterprise installer uninstall transaction
+
+Uninstall must not delete the managed installation and invocation link as independent live-path operations. The remediation moves each managed object into rollback storage before committing the uninstall, closes the rollback boundary only after both moves succeed, and treats recovery-backup disposal as post-commit cleanup. If backup disposal fails, the installed objects remain absent and the recovery backup is retained so cleanup can be retried without losing the prior installation.
