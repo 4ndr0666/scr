@@ -69,3 +69,8 @@ Uninstall must not delete the managed installation and invocation link as indepe
 ### G12 — Enterprise installer uninstall staging rollback coverage
 
 The uninstall transaction stages the installation before the invocation link. A failure while staging the link must restore the already-staged installation and the original managed link. This gate verifies that intermediate transaction state is recoverable and that uninstall does not leave a partially removed installation.
+
+
+### G13 — Enterprise installer uninstall ownership boundary
+
+An unmanaged invocation link previously caused the uninstall path to ignore the collision and continue deleting the requested installation target. That allowed an explicit uninstall path to remove a directory without proving that its invocation link belonged to 4ndr0pac. The remediation now fails closed when /usr/local/bin/4ndr0pac is a symlink to another target, and the installer GUP gate verifies that both dry-run and real uninstall leave the unrelated target unchanged.

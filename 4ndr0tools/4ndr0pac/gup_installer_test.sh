@@ -61,6 +61,37 @@ if find "$PAYLOAD" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -n
 fi
 
 
+UNMANAGED_TARGET="$TEST_ROOT/unmanaged-target"
+mkdir -p "$UNMANAGED_TARGET"
+printf '%s\n' 'do-not-remove' > "$UNMANAGED_TARGET/sentinel"
+UNMANAGED_LINK_TARGET="$TEST_ROOT/unmanaged-link-target"
+mkdir -p "$UNMANAGED_LINK_TARGET"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] || fail "unmanaged-link test requires an unused invocation path"
+sudo ln -s "$UNMANAGED_LINK_TARGET" /usr/local/bin/4ndr0pac
+
+UNMANAGED_LOG="$TEST_ROOT/unmanaged-link.log"
+set +e
+sudo "$PAYLOAD/install.sh" --uninstall --dry-run --path "$UNMANAGED_TARGET" 2>&1 |
+    tee "$UNMANAGED_LOG" >/dev/null
+UNMANAGED_DRY_RC=$?
+set -e
+[[ "$UNMANAGED_DRY_RC" -ne 0 ]] || fail "unmanaged invocation link was accepted during uninstall dry-run"
+grep -Fq 'points elsewhere; refusing to uninstall an installation without its managed invocation link.' "$UNMANAGED_LOG" ||
+    fail "unmanaged invocation link rejection was not reported during dry-run"
+[[ -f "$UNMANAGED_TARGET/sentinel" ]] || fail "unmanaged-link dry-run mutated the target"
+
+set +e
+sudo "$PAYLOAD/install.sh" --uninstall --path "$UNMANAGED_TARGET" 2>&1 |
+    tee "$UNMANAGED_LOG" >/dev/null
+UNMANAGED_RC=$?
+set -e
+[[ "$UNMANAGED_RC" -ne 0 ]] || fail "unmanaged invocation link was accepted during uninstall"
+grep -Fq 'points elsewhere; refusing to uninstall an installation without its managed invocation link.' "$UNMANAGED_LOG" ||
+    fail "unmanaged invocation link rejection was not reported"
+[[ -f "$UNMANAGED_TARGET/sentinel" ]] || fail "unmanaged-link uninstall mutated the target"
+sudo rm -f -- /usr/local/bin/4ndr0pac
+printf 'GUP PASS: unmanaged invocation-link collisions are rejected without target mutation.\n'
+
 ROLLBACK_TARGET="$TEST_ROOT/rollback-target"
 mkdir -p "$ROLLBACK_TARGET"
 printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET/sentinel"

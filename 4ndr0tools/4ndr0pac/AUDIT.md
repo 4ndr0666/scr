@@ -124,3 +124,12 @@ The repository installer gate installs an isolated fixture, injects a targeted f
 The transactional uninstall path had a coverage gap at the intermediate boundary where the installation had already been moved into rollback storage but the managed invocation link had not yet been staged. G12 adds isolated fault injection at that exact move and verifies restoration of both the installation payload and invocation link.
 
 The test is repository-resident and does not execute package-manager operations.
+
+
+## M20 uninstall ownership boundary
+
+The transactional uninstall path had an ownership gap: when /usr/local/bin/4ndr0pac was a symlink to another target, the installer warned and then continued with target removal. That could delete an unrelated directory supplied through --path while an unmanaged invocation link was present.
+
+The remediation changes the collision from a warning-and-continue condition to a fail-closed refusal. G13 adds an isolated gate covering both uninstall dry-run and real uninstall, verifies the rejection diagnostic, and verifies that the unrelated target remains unchanged.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.

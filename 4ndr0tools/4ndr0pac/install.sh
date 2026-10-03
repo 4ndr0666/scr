@@ -227,8 +227,8 @@ if [[ "$UNINSTALL" == true ]]; then
     if [[ -L "$SYMLINK_PATH" ]]; then
         local_link_target="$(readlink "$SYMLINK_PATH" || true)"
         if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
-            log_warn "$SYMLINK_PATH points elsewhere; refusing to remove an unmanaged link."
-            SYMLINK_PATH=""
+            log_error "$SYMLINK_PATH points elsewhere; refusing to uninstall an installation without its managed invocation link."
+            exit 1
         fi
     elif [[ -e "$SYMLINK_PATH" ]]; then
         log_error "$SYMLINK_PATH exists and is not a symlink; refusing to remove it."
