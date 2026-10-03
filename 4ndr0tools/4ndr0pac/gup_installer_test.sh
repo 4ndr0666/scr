@@ -141,6 +141,46 @@ BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
 
+POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
+mkdir -p "$POSTCOMMIT_TARGET"
+printf '%s\n' 'preexisting-postcommit' > "$POSTCOMMIT_TARGET/sentinel"
+POSTCOMMIT_SHIM="$TEST_ROOT/postcommit-shim"
+mkdir -p "$POSTCOMMIT_SHIM"
+cat > "$POSTCOMMIT_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+FAIL_RM_PATH="${GUP_FAIL_RM_PATH:?}"
+TARGET="${@: -1}"
+if [[ "$TARGET" == "$FAIL_RM_PATH" ]]; then
+    printf 'GUP INJECT: refusing recovery-backup cleanup of %s\n' "$TARGET" >&2
+    exit 76
+fi
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 0755 "$POSTCOMMIT_SHIM/rm"
+POSTCOMMIT_LOG="$TEST_ROOT/postcommit.log"
+set +e
+sudo env PATH="$POSTCOMMIT_SHIM:$PATH" GUP_FAIL_RM_PATH="$TEST_ROOT/POSTCOMMIT_BACKUP_PATH_UNSET" \
+    "$PAYLOAD/install.sh" --path "$POSTCOMMIT_TARGET" 2>&1 |
+    tee "$POSTCOMMIT_LOG" >/dev/null
+POSTCOMMIT_RC=$?
+set -e
+[[ "$POSTCOMMIT_RC" -eq 0 ]] || fail "normal post-commit installation unexpectedly failed"
+BACKUP_CANDIDATE="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
+[[ -z "$BACKUP_CANDIDATE" ]] || fail "successful installation retained an unexpected rollback backup"
+
+POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target-fault"
+mkdir -p "$POSTCOMMIT_TARGET"
+printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
+POSTCOMMIT_LOG="$TEST_ROOT/postcommit-fault.log"
+set +e
+sudo env PATH="$POSTCOMMIT_SHIM:$PATH" GUP_FAIL_RM_PATH="$TEST_ROOT/POSTCOMMIT_BACKUP_PATH_UNSET" \
+    "$PAYLOAD/install.sh" --path "$POSTCOMMIT_TARGET" 2>&1 |
+    tee "$POSTCOMMIT_LOG" >/dev/null
+POSTCOMMIT_RC=$?
+set -e
+[[ "$POSTCOMMIT_RC" -eq 0 ]] || fail "post-commit cleanup fault was not isolated for injection"
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
