@@ -60,4 +60,37 @@ if find "$PAYLOAD" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -n
     fail "generated directory remained after validation"
 fi
 
+
+ROLLBACK_TARGET="$TEST_ROOT/rollback-target"
+printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET"
+SHIM_DIR="$TEST_ROOT/mv-shim"
+mkdir -p "$SHIM_DIR"
+cat > "$SHIM_DIR/mv" <<'MVSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+FAIL_TARGET="${GUP_FAIL_TARGET:?}"
+STATE_FILE="${GUP_FAIL_STATE:?}"
+DEST="${@: -1}"
+if [[ "$DEST" == "$FAIL_TARGET" && ! -e "$STATE_FILE" ]]; then
+    : > "$STATE_FILE"
+    printf 'GUP INJECT: refusing stage commit into %s\n' "$DEST" >&2
+    exit 73
+fi
+exec /usr/bin/mv "$@"
+MVSHIM
+chmod 0755 "$SHIM_DIR/mv"
+ROLLBACK_LOG="$TEST_ROOT/rollback.log"
+ROLLBACK_STATE="$TEST_ROOT/mv-failed"
+set +e
+sudo env PATH="$SHIM_DIR:$PATH" GUP_FAIL_TARGET="$ROLLBACK_TARGET" GUP_FAIL_STATE="$ROLLBACK_STATE" \
+    "$PAYLOAD/install.sh" --path "$ROLLBACK_TARGET" >"$ROLLBACK_LOG" 2>&1
+ROLLBACK_RC=$?
+set -e
+[[ "$ROLLBACK_RC" -eq 73 ]] || fail "controlled stage-commit failure did not propagate as exit 73"
+grep -Fq 'Rolling back committed filesystem changes' "$ROLLBACK_LOG" || fail "rollback was not entered"
+[[ -f "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
+grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET" || fail "restored target contents do not match the preexisting installation"
+[[ ! -e "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "failed deployment payload remained at the target"
+printf 'GUP PASS: target restoration survives stage-commit failure.\n'
+
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
