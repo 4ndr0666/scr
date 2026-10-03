@@ -48,3 +48,7 @@ The existing Golden Unit proves the Python frontend safety boundary with a fake 
 ## Milestone M2
 
 M2 is complete when G2 and G3 are both eliminated, the gap scanner passes, the existing Golden Unit passes, shell syntax checks pass, and the resulting evidence is recorded in `AUDIT.md`.
+
+### G8 — Enterprise installer stage-commit rollback boundary
+
+The installer must restore an existing installation if the atomic stage-to-target rename fails after the previous target has already been moved into rollback storage. The remediation restores the prior target whenever `_TARGET_MOVED` is true, independently of `_TARGET_INSTALLED`, and the installer GUP gate injects a single controlled stage-commit `mv` failure to prove the preexisting target is restored with its original contents.
