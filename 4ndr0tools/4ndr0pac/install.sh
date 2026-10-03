@@ -254,6 +254,7 @@ if [[ "$UNINSTALL" == true ]]; then
         _LINK_MOVED=true
     fi
 
+    _ROLLBACK_NEEDED=false
     log_step "Finalizing uninstall transaction."
     if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
         if ! rm -rf -- "$_TARGET_BACKUP"; then
