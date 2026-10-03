@@ -24,3 +24,5 @@ jobs:
         run: bash 4ndr0tools/4ndr0pac/gup_gap_scan.sh
       - name: Run backend semantic recovery test
         run: bash 4ndr0tools/4ndr0pac/gup_semantic_test.sh
+      - name: Run enterprise installer payload gate
+        run: bash 4ndr0tools/4ndr0pac/gup_installer_test.sh
