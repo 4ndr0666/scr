@@ -61,6 +61,39 @@ if find "$PAYLOAD" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -n
 fi
 
 
+INSTALL_COLLISION_TARGET="$TEST_ROOT/install-collision-target"
+mkdir -p "$INSTALL_COLLISION_TARGET"
+printf '%s\n' 'do-not-overwrite' > "$INSTALL_COLLISION_TARGET/sentinel"
+INSTALL_COLLISION_LINK_TARGET="$TEST_ROOT/install-collision-link-target"
+mkdir -p "$INSTALL_COLLISION_LINK_TARGET"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] || fail "install-collision test requires an unused invocation path"
+sudo ln -s "$INSTALL_COLLISION_LINK_TARGET" /usr/local/bin/4ndr0pac
+
+INSTALL_COLLISION_LOG="$TEST_ROOT/install-collision.log"
+set +e
+sudo "$PAYLOAD/install.sh" --dry-run --path "$INSTALL_COLLISION_TARGET" 2>&1 |
+    tee "$INSTALL_COLLISION_LOG" >/dev/null
+INSTALL_COLLISION_DRY_RC=$?
+set -e
+[[ "$INSTALL_COLLISION_DRY_RC" -ne 0 ]] || fail "unmanaged invocation link was accepted during install dry-run"
+grep -Fq 'points elsewhere; refusing to overwrite an unmanaged invocation link.' "$INSTALL_COLLISION_LOG" ||
+    fail "install dry-run collision rejection was not reported"
+[[ -f "$INSTALL_COLLISION_TARGET/sentinel" ]] || fail "install dry-run mutated the collision target"
+
+set +e
+sudo "$PAYLOAD/install.sh" --path "$INSTALL_COLLISION_TARGET" 2>&1 |
+    tee "$INSTALL_COLLISION_LOG" >/dev/null
+INSTALL_COLLISION_RC=$?
+set -e
+[[ "$INSTALL_COLLISION_RC" -ne 0 ]] || fail "unmanaged invocation link was accepted during install"
+grep -Fq 'points elsewhere; refusing to overwrite an unmanaged invocation link.' "$INSTALL_COLLISION_LOG" ||
+    fail "install collision rejection was not reported"
+[[ -f "$INSTALL_COLLISION_TARGET/sentinel" ]] || fail "install collision mutated the target"
+[[ "$(readlink /usr/local/bin/4ndr0pac)" == "$INSTALL_COLLISION_LINK_TARGET" ]] ||
+    fail "install collision mutated the unmanaged invocation link"
+sudo rm -f -- /usr/local/bin/4ndr0pac
+printf 'GUP PASS: unmanaged invocation-link collisions are rejected without install mutation.\n'
+
 UNMANAGED_TARGET="$TEST_ROOT/unmanaged-target"
 mkdir -p "$UNMANAGED_TARGET"
 printf '%s\n' 'do-not-remove' > "$UNMANAGED_TARGET/sentinel"
