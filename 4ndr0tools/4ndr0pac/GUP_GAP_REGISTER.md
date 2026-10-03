@@ -74,3 +74,8 @@ The uninstall transaction stages the installation before the invocation link. A 
 ### G13 — Enterprise installer uninstall ownership boundary
 
 An unmanaged invocation link previously caused the uninstall path to ignore the collision and continue deleting the requested installation target. That allowed an explicit uninstall path to remove a directory without proving that its invocation link belonged to 4ndr0pac. The remediation now fails closed when /usr/local/bin/4ndr0pac is a symlink to another target, and the installer GUP gate verifies that both dry-run and real uninstall leave the unrelated target unchanged.
+
+
+### G14 — Enterprise installer install ownership boundary
+
+The installation path previously refused to overwrite a regular-file invocation collision but would move and replace an unmanaged /usr/local/bin/4ndr0pac symlink. The remediation now verifies an existing symlink resolves to the requested installation before permitting replacement; an unrelated target is rejected in both dry-run and real installation. The installer GUP gate verifies the collision is rejected and neither the unrelated target nor invocation link is mutated.

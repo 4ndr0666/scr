@@ -133,3 +133,12 @@ The transactional uninstall path had an ownership gap: when /usr/local/bin/4ndr0
 The remediation changes the collision from a warning-and-continue condition to a fail-closed refusal. G13 adds an isolated gate covering both uninstall dry-run and real uninstall, verifies the rejection diagnostic, and verifies that the unrelated target remains unchanged.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+## M21 install ownership boundary
+
+The enterprise installer had an asymmetric invocation-link collision rule: a regular file at /usr/local/bin/4ndr0pac was rejected, but an unmanaged symlink could be moved into rollback storage and replaced. That could overwrite an unrelated invocation path during installation.
+
+The remediation changes the installation preflight to fail closed when an existing invocation symlink does not resolve to the requested installation. G14 adds isolated coverage for both dry-run and real installation, verifies the rejection diagnostic, and verifies that neither the unrelated target nor the unmanaged symlink is mutated.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
