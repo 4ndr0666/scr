@@ -335,6 +335,7 @@ log_step "Validating committed deployment."
 _validate_deployed "$INSTALL_LOCATION"
 log_step "Verifying installed invocation path."
 "$SYMLINK_PATH" --version >/dev/null
+_ROLLBACK_NEEDED=false
 if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
     if ! rm -rf -- "$_TARGET_BACKUP"; then
         log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
