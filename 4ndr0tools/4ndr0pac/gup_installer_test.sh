@@ -180,7 +180,7 @@ printf '%s\n' 'do-not-remove' > "$UNMANAGED_TARGET/sentinel"
 UNMANAGED_LINK_TARGET="$TEST_ROOT/unmanaged-link-target"
 mkdir -p "$UNMANAGED_LINK_TARGET"
 [[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] || fail "unmanaged-link test requires an unused invocation path"
-ln -s "$UNMANAGED_LINK_TARGET" /usr/local/bin/4ndr0pac
+sudo ln -s "$UNMANAGED_LINK_TARGET" /usr/local/bin/4ndr0pac
 
 UNMANAGED_LOG="$TEST_ROOT/unmanaged-link.log"
 set +e
