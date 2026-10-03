@@ -219,36 +219,58 @@ _validate_deployed() {
 if [[ "$UNINSTALL" == true ]]; then
     [[ $EUID -eq 0 ]] || { log_error "Run uninstall with sudo."; exit 1; }
     log_step "Initiating 4ndr0pac teardown."
+    case "$INSTALL_LOCATION" in
+        /opt/*|/usr/local/*|/home/*|/tmp/*) ;;
+        *) log_error "Refusing unsafe uninstall path: $INSTALL_LOCATION"; exit 1 ;;
+    esac
+
     if [[ -L "$SYMLINK_PATH" ]]; then
         local_link_target="$(readlink "$SYMLINK_PATH" || true)"
-        if [[ "$local_link_target" == "$INSTALL_LOCATION/4ndr0pac" ]]; then
-            run rm -f -- "$SYMLINK_PATH"
-        else
+        if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
             log_warn "$SYMLINK_PATH points elsewhere; refusing to remove an unmanaged link."
+            SYMLINK_PATH=""
         fi
     elif [[ -e "$SYMLINK_PATH" ]]; then
         log_error "$SYMLINK_PATH exists and is not a symlink; refusing to remove it."
         exit 1
+    else
+        SYMLINK_PATH=""
     fi
-    case "$INSTALL_LOCATION" in
-        /opt/*|/usr/local/*|/home/*|/tmp/*)
-            [[ -d "$INSTALL_LOCATION" ]] && run rm -rf -- "$INSTALL_LOCATION"
-            ;;
-        *) log_error "Refusing unsafe uninstall path: $INSTALL_LOCATION"; exit 1 ;;
-    esac
-    log_ok "4ndr0pac uninstalled."
+
+    if [[ ! -d "$INSTALL_LOCATION" && -z "$SYMLINK_PATH" ]]; then
+        log_info "4ndr0pac is already absent."
+        exit 0
+    fi
+
+    _ROLLBACK_NEEDED=true
+    if [[ -d "$INSTALL_LOCATION" ]]; then
+        _TARGET_BACKUP="$(mktemp -d "$(dirname -- "$INSTALL_LOCATION")/.4ndr0pac-uninstall.XXXXXXXX")"
+        mv -- "$INSTALL_LOCATION" "$_TARGET_BACKUP/payload"
+        _TARGET_MOVED=true
+    fi
+    if [[ -n "$SYMLINK_PATH" ]]; then
+        _LINK_BACKUP="$(mktemp -d "${BIN_DIR}/.4ndr0pac-uninstall-link.XXXXXXXX")"
+        mv -- "$SYMLINK_PATH" "$_LINK_BACKUP/link"
+        _LINK_MOVED=true
+    fi
+
+    log_step "Finalizing uninstall transaction."
     if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
         if ! rm -rf -- "$_TARGET_BACKUP"; then
-            log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
+            log_error "Uninstall cleanup could not remove the installation backup; rollback will restore it."
             exit 1
         fi
+        _TARGET_BACKUP=""
     fi
     if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
         if ! rm -rf -- "$_LINK_BACKUP"; then
-            log_error "Cleanup could not remove invocation-link recovery backup; retained at $_LINK_BACKUP."
+            log_error "Uninstall cleanup could not remove the invocation-link backup; rollback will restore it."
             exit 1
         fi
+        _LINK_BACKUP=""
     fi
+    _ROLLBACK_NEEDED=false
+    log_ok "4ndr0pac uninstalled."
     exit 0
 fi
 
