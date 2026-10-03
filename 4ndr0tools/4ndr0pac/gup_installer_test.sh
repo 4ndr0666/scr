@@ -83,7 +83,8 @@ ROLLBACK_LOG="$TEST_ROOT/rollback.log"
 ROLLBACK_STATE="$TEST_ROOT/mv-failed"
 set +e
 sudo env PATH="$SHIM_DIR:$PATH" GUP_FAIL_TARGET="$ROLLBACK_TARGET" GUP_FAIL_STATE="$ROLLBACK_STATE" \
-    "$PAYLOAD/install.sh" --path "$ROLLBACK_TARGET" >"$ROLLBACK_LOG" 2>&1
+    "$PAYLOAD/install.sh" --path "$ROLLBACK_TARGET" 2>&1 |
+    tee "$ROLLBACK_LOG" >/dev/null
 ROLLBACK_RC=$?
 set -e
 [[ "$ROLLBACK_RC" -eq 73 ]] || fail "controlled stage-commit failure did not propagate as exit 73"
