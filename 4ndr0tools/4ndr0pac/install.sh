@@ -94,10 +94,28 @@ INSTALL_LOCATION="$(normalize_path "${INSTALL_LOCATION:-$DEFAULT_INSTALL_LOCATIO
 _rollback() {
     local rc=$?
     set +e
-    if [[ "$DRY_RUN" == true || "$rc" -eq 0 || "$_ROLLBACK_NEEDED" != true ]]; then
-        [[ -n "$_STAGE" && -d "$_STAGE" ]] && rm -rf -- "$_STAGE"
-        [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
-        [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
+    if [[ "$DRY_RUN" == true || "$_ROLLBACK_NEEDED" != true ]]; then
+        if [[ -n "$_STAGE" && -d "$_STAGE" ]] && ! rm -rf -- "$_STAGE"; then
+            log_error "Cleanup could not remove staging directory: $_STAGE"
+        fi
+        if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
+            if [[ "$rc" -eq 0 ]]; then
+                if ! rm -rf -- "$_TARGET_BACKUP"; then
+                    log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
+                fi
+            else
+                log_error "Deployment failed after commit; retaining recovery backup at $_TARGET_BACKUP."
+            fi
+        fi
+        if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
+            if [[ "$rc" -eq 0 ]]; then
+                if ! rm -rf -- "$_LINK_BACKUP"; then
+                    log_error "Cleanup could not remove invocation-link recovery backup; retained at $_LINK_BACKUP."
+                fi
+            else
+                log_error "Deployment failed after commit; retaining invocation-link recovery backup at $_LINK_BACKUP."
+            fi
+        fi
         return "$rc"
     fi
     log_error "Install aborted (exit $rc). Rolling back committed filesystem changes..."
@@ -219,6 +237,18 @@ if [[ "$UNINSTALL" == true ]]; then
         *) log_error "Refusing unsafe uninstall path: $INSTALL_LOCATION"; exit 1 ;;
     esac
     log_ok "4ndr0pac uninstalled."
+    if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
+        if ! rm -rf -- "$_TARGET_BACKUP"; then
+            log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
+            exit 1
+        fi
+    fi
+    if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
+        if ! rm -rf -- "$_LINK_BACKUP"; then
+            log_error "Cleanup could not remove invocation-link recovery backup; retained at $_LINK_BACKUP."
+            exit 1
+        fi
+    fi
     exit 0
 fi
 
@@ -306,8 +336,19 @@ _validate_deployed "$INSTALL_LOCATION"
 log_step "Verifying installed invocation path."
 "$SYMLINK_PATH" --version >/dev/null
 _ROLLBACK_NEEDED=false
-[[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
-[[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
+if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
+    if ! rm -rf -- "$_TARGET_BACKUP"; then
+        log_error "Cleanup could not remove deployment recovery backup; retained at $_TARGET_BACKUP."
+        exit 1
+    fi
+fi
+if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
+    if ! rm -rf -- "$_LINK_BACKUP"; then
+        log_error "Cleanup could not remove invocation-link recovery backup; retained at $_LINK_BACKUP."
+        exit 1
+    fi
+fi
+_ROLLBACK_NEEDED=false
 log_ok "Deployment complete. 4ndr0pac is installed at $INSTALL_LOCATION."
 log_info "Invoke with: 4ndr0pac --help"
 exit 0

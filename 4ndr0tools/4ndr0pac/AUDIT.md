@@ -101,3 +101,11 @@ A second transaction-boundary defect was identified after M15: the rollback trap
 The remediation tracks rollback failures explicitly. Recovery backups are removed only when restoration and staging cleanup complete successfully; otherwise the relevant recovery artifacts are retained and an explicit incomplete-rollback diagnostic is emitted. The installer GUP gate injects a controlled restoration failure after a post-deployment link failure and verifies that the original payload remains in rollback storage while the failed target is absent.
 
 This is fail-closed recovery behavior, not a claim that an unresolvable rollback failure can be made atomic.
+
+## M17 installer post-commit cleanup hardening
+
+A post-commit transaction edge was identified after M16: once a deployment had passed validation, recovery-backup deletion was performed as a compound conditional and the EXIT trap could subsequently remove the same backup after cleanup failed. That could turn a cleanup failure into loss of the only recovery copy.
+
+The remediation makes post-commit recovery cleanup explicit. A failed backup removal propagates as an installation failure, the validated deployment remains in place, and the EXIT trap retains the recovery backup when the committed deployment has already left the rollback state. The installer GUP gate injects a targeted rollback-backup removal failure and verifies failure propagation, backup retention, and preservation of the validated deployment.
+
+The evidence remains isolated to the installer transaction harness; it does not execute package-manager operations.

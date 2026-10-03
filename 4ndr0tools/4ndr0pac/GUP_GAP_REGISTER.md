@@ -56,3 +56,7 @@ The installer must restore an existing installation if the atomic stage-to-targe
 ### G9 — Enterprise installer rollback failure preservation
 
 Rollback must fail closed when restoration or cleanup operations fail. A failed restoration must not be followed by deletion of the only rollback backup. The remediation reports rollback failure, retains recovery artifacts, and the installer GUP gate injects a controlled restoration failure to verify the backup remains available while the failed target is not silently accepted.
+
+### G10 — Enterprise installer post-commit recovery cleanup
+
+After a deployment has been validated, deletion of the previous-installation recovery backup is itself a transaction boundary. If that cleanup fails, the validated deployment must remain installed, the cleanup failure must propagate, and the recovery backup must be retained rather than being deleted by the EXIT trap. The installer GUP gate injects a controlled rollback-backup removal failure and verifies all three invariants.

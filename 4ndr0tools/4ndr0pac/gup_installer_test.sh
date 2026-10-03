@@ -141,6 +141,38 @@ BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
 
+POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
+mkdir -p "$POSTCOMMIT_TARGET"
+printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
+POSTCOMMIT_SHIM="$TEST_ROOT/postcommit-shim"
+mkdir -p "$POSTCOMMIT_SHIM"
+cat > "$POSTCOMMIT_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+TARGET="${@: -1}"
+if [[ "${TARGET##*/}" == .4ndr0pac-rollback.* ]]; then
+    printf 'GUP INJECT: refusing recovery-backup cleanup of %s\n' "$TARGET" >&2
+    exit 76
+fi
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 0755 "$POSTCOMMIT_SHIM/rm"
+POSTCOMMIT_LOG="$TEST_ROOT/postcommit-fault.log"
+set +e
+sudo env PATH="$POSTCOMMIT_SHIM:$PATH" \
+    "$PAYLOAD/install.sh" --path "$POSTCOMMIT_TARGET" 2>&1 |
+    tee "$POSTCOMMIT_LOG" >/dev/null
+POSTCOMMIT_RC=$?
+set -e
+[[ "$POSTCOMMIT_RC" -ne 0 ]] || fail "post-commit cleanup fault was not propagated"
+grep -Fq 'GUP INJECT: refusing recovery-backup cleanup of ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup fault injection did not execute"
+grep -Fq 'Cleanup could not remove deployment recovery backup; retained at ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup failure was not reported"
+POSTCOMMIT_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
+[[ -n "$POSTCOMMIT_BACKUP" ]] || fail "post-commit recovery backup was not retained"
+sudo test -e "$POSTCOMMIT_BACKUP/payload/sentinel" || fail "post-commit recovery backup contents were not retained"
+[[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
+printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
