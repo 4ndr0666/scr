@@ -292,6 +292,17 @@ log_step "Target: $INSTALL_LOCATION"
 [[ "$DRY_RUN" == true ]] && log_info "DRY-RUN mode active — no filesystem changes will be made."
 _validate_source "$SOURCE_DIR"
 
+if [[ -L "$SYMLINK_PATH" ]]; then
+    local_link_target="$(readlink "$SYMLINK_PATH" || true)"
+    if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
+        log_error "$SYMLINK_PATH points elsewhere; refusing to overwrite an unmanaged invocation link."
+        exit 1
+    fi
+elif [[ -e "$SYMLINK_PATH" ]]; then
+    log_error "$SYMLINK_PATH exists and is not a symlink; installation would refuse to overwrite it."
+    exit 1
+fi
+
 if [[ "$DRY_RUN" == true ]]; then
     log_step "Simulating deployment transaction."
     if [[ "$SOURCE_DIR" == "$INSTALL_LOCATION" ]]; then
@@ -312,11 +323,6 @@ fi
 PARENT_DIR="$(dirname -- "$INSTALL_LOCATION")"
 run mkdir -p -- "$PARENT_DIR"
 run mkdir -p -- "$BIN_DIR"
-if [[ -e "$SYMLINK_PATH" && ! -L "$SYMLINK_PATH" ]]; then
-    log_error "$SYMLINK_PATH exists and is not a symlink; refusing to overwrite it."
-    exit 1
-fi
-
 if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     log_step "Building isolated deployment stage."
     _STAGE="$(mktemp -d "$PARENT_DIR/.4ndr0pac-install.XXXXXXXX")"
