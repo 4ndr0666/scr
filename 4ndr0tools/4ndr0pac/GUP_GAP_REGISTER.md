@@ -64,3 +64,8 @@ After a deployment has been validated, deletion of the previous-installation rec
 ### G11 — Enterprise installer uninstall transaction
 
 Uninstall must not delete the managed installation and invocation link as independent live-path operations. The remediation moves each managed object into rollback storage before committing the uninstall, closes the rollback boundary only after both moves succeed, and treats recovery-backup disposal as post-commit cleanup. If backup disposal fails, the installed objects remain absent and the recovery backup is retained so cleanup can be retried without losing the prior installation.
+
+
+### G12 — Enterprise installer uninstall staging rollback coverage
+
+The uninstall transaction stages the installation before the invocation link. A failure while staging the link must restore the already-staged installation and the original managed link. This gate verifies that intermediate transaction state is recoverable and that uninstall does not leave a partially removed installation.

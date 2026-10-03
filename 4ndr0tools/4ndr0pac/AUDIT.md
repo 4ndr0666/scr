@@ -117,3 +117,10 @@ A transaction gap was identified in the enterprise uninstall path: the managed i
 The remediation stages both managed objects into rollback storage before committing the uninstall. The rollback boundary closes only after both moves succeed; recovery-backup deletion then becomes post-commit cleanup. A cleanup failure propagates while the uninstalled state remains intact and the recovery backup is retained for retry.
 
 The repository installer gate installs an isolated fixture, injects a targeted failure while removing the uninstall recovery backup, verifies that the installation target and managed invocation link remain absent, and verifies that the recovery payload remains available. The gate does not execute package-manager operations.
+
+
+## M19 uninstall staging rollback coverage
+
+The transactional uninstall path had a coverage gap at the intermediate boundary where the installation had already been moved into rollback storage but the managed invocation link had not yet been staged. G12 adds isolated fault injection at that exact move and verifies restoration of both the installation payload and invocation link.
+
+The test is repository-resident and does not execute package-manager operations.

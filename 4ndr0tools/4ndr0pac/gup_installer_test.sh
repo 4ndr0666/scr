@@ -221,6 +221,43 @@ UNINSTALL_BACKUP="$(sudo find "$(dirname -- "$UNINSTALL_TARGET")" -maxdepth 1 -t
 sudo test -e "$UNINSTALL_BACKUP/payload/4ndr0pac" || fail "uninstall recovery backup payload was not retained"
 printf 'GUP PASS: uninstall cleanup failure is fail-closed and retains recovery artifacts after commit.\n'
 
+UNINSTALL_STAGE_TARGET="$TEST_ROOT/uninstall-stage-target"
+mkdir -p "$UNINSTALL_STAGE_TARGET"
+printf '%s\n' 'preexisting-uninstall-installation' > "$UNINSTALL_STAGE_TARGET/sentinel"
+ln -s "$UNINSTALL_STAGE_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
+UNINSTALL_STAGE_SHIM="$TEST_ROOT/uninstall-stage-shim"
+mkdir -p "$UNINSTALL_STAGE_SHIM"
+cat > "$UNINSTALL_STAGE_SHIM/mv" <<'MVSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+DEST="${@: -1}"
+if [[ "${DEST##*/}" == link ]]; then
+    printf 'GUP INJECT: refusing invocation-link staging into %s\n' "$DEST" >&2
+    exit 78
+fi
+exec /usr/bin/mv "$@"
+MVSHIM
+chmod 0755 "$UNINSTALL_STAGE_SHIM/mv"
+UNINSTALL_STAGE_LOG="$TEST_ROOT/uninstall-stage-fault.log"
+set +e
+sudo env PATH="$UNINSTALL_STAGE_SHIM:$PATH" \
+    "$PAYLOAD/install.sh" --uninstall --path "$UNINSTALL_STAGE_TARGET" 2>&1 |
+    tee "$UNINSTALL_STAGE_LOG" >/dev/null
+UNINSTALL_STAGE_RC=$?
+set -e
+[[ "$UNINSTALL_STAGE_RC" -ne 0 ]] || fail "uninstall link-staging fault was not propagated"
+grep -Fq 'GUP INJECT: refusing invocation-link staging into ' "$UNINSTALL_STAGE_LOG" ||
+    fail "uninstall link-staging fault injection did not execute"
+grep -Fq 'Install aborted (exit ' "$UNINSTALL_STAGE_LOG" ||
+    fail "uninstall staging failure did not enter rollback"
+[[ -d "$UNINSTALL_STAGE_TARGET" ]] || fail "uninstall staging failure did not restore the installation target"
+grep -Fq 'preexisting-uninstall-installation' "$UNINSTALL_STAGE_TARGET/sentinel" ||
+    fail "restored uninstall target contents do not match the preexisting installation"
+[[ -L /usr/local/bin/4ndr0pac ]] || fail "uninstall staging failure did not restore the managed invocation link"
+[[ "$(readlink /usr/local/bin/4ndr0pac)" == "$UNINSTALL_STAGE_TARGET/4ndr0pac" ]] ||
+    fail "restored invocation link target does not match the managed installation"
+printf 'GUP PASS: uninstall link-staging failure restores the installation and invocation link.\n'
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
