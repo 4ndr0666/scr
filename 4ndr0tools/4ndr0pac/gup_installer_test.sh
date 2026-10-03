@@ -245,7 +245,9 @@ printf 'GUP PASS: rollback restoration failure is fail-closed and preserves reco
 
 POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
 mkdir -p "$POSTCOMMIT_TARGET"
+cp -a "$PAYLOAD/." "$POSTCOMMIT_TARGET/"
 printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
+sudo ln -s "$POSTCOMMIT_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 POSTCOMMIT_SHIM="$TEST_ROOT/postcommit-shim"
 mkdir -p "$POSTCOMMIT_SHIM"
 cat > "$POSTCOMMIT_SHIM/rm" <<'RMSHIM'
