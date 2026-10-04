@@ -81,6 +81,10 @@ An unmanaged invocation link previously caused the uninstall path to ignore the 
 The installation path previously refused to overwrite a regular-file invocation collision but would move and replace an unmanaged /usr/local/bin/4ndr0pac symlink. The remediation now verifies an existing symlink resolves to the requested installation before permitting replacement; an unrelated target is rejected in both dry-run and real installation. The installer GUP gate verifies the collision is rejected and neither the unrelated target nor invocation link is mutated.
 
 
+### G16 — Enterprise installer filesystem-boundary ownership
+
+The installer could still accept an existing reserved filesystem directory as the requested installation target when the ownership checks happened to be satisfiable. The remediation rejects filesystem roots and reserved system directories before installation or uninstall transaction processing. The installer GUP gate exercises the reserved-boundary set in dry-run mode and requires fail-closed rejection without filesystem mutation.
+
 ### G15 — Enterprise installer target ownership boundary
 
 The installation path previously protected the invocation link from unmanaged replacement but did not prove that an existing installation target belonged to 4ndr0pac. An arbitrary existing directory supplied through `--path` could therefore be moved into rollback storage and replaced.
