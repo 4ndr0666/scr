@@ -260,3 +260,12 @@ The destructive maintenance path previously masked failure while reading CacheDi
 The remediation makes the CacheDir read fail closed. A successful parse retains the existing default only when CacheDir is absent; a failed read emits a dedicated diagnostic and returns before cache cleanup. The backend gap scanner records the masked CacheDir parsing form as a regression invariant.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G29 pacman LogFile configuration-read hardening
+
+The rollback and read-only analysis paths previously masked failure while reading LogFile from /etc/pacman.conf with `|| true`. That allowed an unreadable configuration to fall through to /var/log/pacman.log and continue log inspection against an unverified path.
+
+The remediation makes both LogFile reads fail closed. A successful parse retains the existing default only when LogFile is absent; a failed read emits a dedicated diagnostic and returns before log inspection. The GUP scanner records the masked LogFile parsing form as a regression invariant.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
