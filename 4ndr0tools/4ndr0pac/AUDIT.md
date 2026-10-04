@@ -144,6 +144,14 @@ The remediation changes the installation preflight to fail closed when an existi
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
 
 
+## M23 installer filesystem-boundary hardening
+
+The enterprise installer had a remaining target-boundary gap after M22: ownership checks proved the relationship between an existing target and invocation link, but did not independently reject reserved filesystem directories as installation targets. A caller-supplied path such as /opt or /usr must never become the transaction target merely because filesystem contents happen to satisfy later checks.
+
+The remediation rejects the filesystem root and reserved system directories before any installation or uninstall transaction processing. G16 adds isolated dry-run coverage for the reserved-boundary set and verifies fail-closed rejection without filesystem mutation.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
 ## M22 install target ownership boundary
 
 The enterprise installer had a target-ownership asymmetry after M21: the invocation path was protected against unmanaged collisions, but an arbitrary preexisting directory supplied through `--path` could still be moved aside and replaced.
