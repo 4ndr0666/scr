@@ -103,3 +103,12 @@ The uninstall path previously accepted an existing installation target when the 
 The remediation now fails closed when an existing uninstall target lacks the managed invocation link. G18 adds isolated dry-run and real-uninstall coverage and verifies that the unrelated target remains unchanged and no invocation link is created.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+### G19 — Enterprise installer path canonicalization
+
+The installer previously masked `readlink -f` failure during installation-path normalization and continued with the uncanonicalized input. Although later filesystem checks could reject some malformed paths, canonicalization failure itself was not a fail-closed validation boundary.
+
+The remediation treats canonicalization as an explicit transaction precondition. A failed `readlink -f` now aborts before installation or uninstall processing, reports the path-validation failure, and leaves the supplied path unchanged. The G19 gate uses an isolated symlink-loop path to force canonicalization failure and verifies explicit rejection without filesystem mutation.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
