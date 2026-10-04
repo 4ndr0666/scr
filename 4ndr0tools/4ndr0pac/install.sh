@@ -51,7 +51,10 @@ normalize_path() {
     local p="$1"
     [[ "$p" == "~"* ]] && p="${HOME}${p#~}"
     [[ "$p" != /* ]] && p="$(pwd -P)/$p"
-    p="$(readlink -f "$p" 2>/dev/null || printf '%s' "$p")"
+    if ! p="$(readlink -f -- "$p")"; then
+        log_error "Unable to canonicalize installation path: $p"
+        return 1
+    fi
     [[ "$p" != "/" ]] && p="${p%/}"
     printf '%s' "$p"
 }
