@@ -210,3 +210,12 @@ The evidence remains limited to the installer transaction harness; it does not e
 The frontend EXIT cleanup helper previously masked temporary-artifact removal failure with `|| true`. The remediation makes cleanup failure explicit and fail-closed. The Golden Unit injects a controlled `rm` failure for the managed temporary-artifact namespace and verifies exit-status propagation and the dedicated diagnostic.
 
 The evidence remains limited to the isolated frontend harness; it does not execute package-manager operations.
+
+
+## G23 backend cleanup existence-probe hardening
+
+The backend previously used `find -print -quit | grep -q` to decide whether temporary-artifact and package-cache cleanup was needed. This is an LBYL pipe boundary: with `pipefail`, `grep -q` may close the pipe early and cause `find` to report SIGPIPE, while the actual cleanup operation remains unchecked.
+
+The remediation removes the probes and executes cleanup directly. Empty result sets are naturally successful no-ops, and cleanup failures now emit explicit diagnostics and return failure from the active directive. The backend gap scanner contains a fail-closed invariant against reintroducing the probe pattern.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
