@@ -756,7 +756,25 @@ func_fix() {
 
 	_remove_db_lock
 
-	sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} + | xargs -r sudo sed -i '/^%INSTALLED_DB%$/{N;d;}' 2>/dev/null || true
+	local installed_db_desc=""
+	local scan_rc=0
+	if installed_db_desc="$(sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} +)"; then
+		scan_rc=0
+	else
+		scan_rc=$?
+	fi
+	if (( scan_rc != 0 && scan_rc != 1 )); then
+		echo -e " ${BRED}Failed to inspect pacman local database descriptors.${RESET}"
+		return "$scan_rc"
+	fi
+	if [[ -n "$installed_db_desc" ]]; then
+		while IFS= read -r desc_file; do
+			if ! sudo sed -i '/^%INSTALLED_DB%$/{N;d;}' "$desc_file"; then
+				echo -e " ${BRED}Failed to repair pacman local database descriptor: $desc_file${RESET}"
+				return 1
+			fi
+		done <<< "$installed_db_desc"
+	fi
 
 	echo " fixing mirrors (which can take a while) ..."
 	if command -v pacman-mirrors &>/dev/null; then

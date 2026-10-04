@@ -166,3 +166,12 @@ The maintenance directive executed `pacman -Dk` once to detect repository incons
 The remediation executes `pacman -Dk` once, captures its output, and renders that captured result when the consistency check fails. The backend gap scanner rejects reintroduction of the masked `pacman -Dk || true` form.
 
 The evidence remains limited to static backend invariants; it does not execute package-manager operations.
+
+
+### G26 — Pacman local database repair failure suppression
+
+The maintenance repair directive piped pacman-local descriptor discovery through xargs sed -i and suppressed the entire inspection and mutation boundary with || true. A descriptor inspection failure or a failed database rewrite could therefore be reported as successful repair.
+
+The remediation captures descriptor discovery, distinguishes the normal no-match status from inspection failure, and applies the rewrite to each discovered descriptor with explicit failure propagation. The backend gap scanner rejects reintroduction of the masked find/grep/xargs/sed form.
+
+The evidence remains limited to static backend invariants; it does not execute package-manager operations.

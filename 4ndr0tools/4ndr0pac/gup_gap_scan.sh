@@ -50,6 +50,10 @@ check_gap \
     'pacman[[:space:]]+-Dk[[:space:]]*[|][|][[:space:]]*true' \
     'pacman consistency diagnostic failure is suppressed'
 
+check_gap \
+    'find[[:space:]]+/var/lib/pacman/local[[:space:]]+-name[[:space:]]+desc[[:space:]]+-exec[[:space:]]+grep[[:space:]]+-l[^|]*[|][[:space:]]*xargs[[:space:]]+[^|]*sed[[:space:]]+-i[^|]*[|][|][[:space:]]*true' \
+    'pacman local database repair mutation failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
