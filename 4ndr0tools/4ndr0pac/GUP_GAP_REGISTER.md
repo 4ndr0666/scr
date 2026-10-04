@@ -148,3 +148,12 @@ The backend used `find -print -quit | grep -q` probes before removing temporary 
 The remediation executes each cleanup directly. An empty match remains a successful no-op, while a cleanup failure is reported and propagated from the maintenance or repair directive. The backend gap scanner rejects reintroduction of the pipe-based existence probe.
 
 The evidence remains limited to static backend invariants and does not execute package-manager operations.
+
+
+### G24 — Broken-symlink inspection existence probe
+
+The maintenance directive used `find -print -quit | grep -q` to probe for broken symlinks before performing a second `find`. Under `pipefail`, the short-circuit probe is an unnecessary LBYL boundary and can expose SIGPIPE status from `find` rather than the state being inspected.
+
+The remediation executes the broken-symlink inspection once, treats an inspection failure as an explicit fail-closed error, and renders the captured result without a second probe. The backend gap scanner now detects both the generic cleanup probe and this broken-symlink-specific form.
+
+The evidence remains limited to the maintenance source and static GUP invariants; it does not execute package-manager operations.

@@ -328,9 +328,14 @@ func_m() {
 	echo ""
 
 	echo " checking symlink(s) ..."
-	if sudo find /usr/bin /usr/lib /etc -xtype l -print -quit 2>/dev/null | grep -q .; then
+	local broken_symlinks
+	if ! broken_symlinks="$(sudo find /usr/bin /usr/lib /etc -xtype l)"; then
+		echo -e " ${BRED}Failed to inspect broken symlinks.${RESET}"
+		return 1
+	fi
+	if [[ -n "$broken_symlinks" ]]; then
 		echo " broken symlink(s) found. Try fixing them manually:"
-		sudo find /usr/bin /usr/lib /etc -xtype l
+		printf '%s\n' "$broken_symlinks"
 	else
 		echo " no broken symlinks found in /usr/bin, /usr/lib, /etc."
 	fi
