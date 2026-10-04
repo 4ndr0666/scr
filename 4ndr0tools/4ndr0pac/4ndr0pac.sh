@@ -1773,7 +1773,10 @@ func_menu() {
 # ==============================================================================
 4ndr0pac_clean() {
 	# v1.6: the old glob '4ndr0pac_*' matched nothing (mktemp files use hyphens).
-	rm -rf /tmp/4ndr0pac* 2>/dev/null || true
+	if ! rm -rf /tmp/4ndr0pac* 2>/dev/null; then
+		echo -e " ${BRED}Failed to remove temporary 4ndr0pac artifacts.${RESET}" >&2
+		return 1
+	fi
 	4ndr0pac_tty_clean
 }
 
