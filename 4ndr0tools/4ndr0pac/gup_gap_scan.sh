@@ -46,6 +46,10 @@ check_gap \
     'find[[:space:]]+/usr/bin[[:space:]]+/usr/lib[[:space:]]+/etc[[:space:]]+-xtype[[:space:]]+l[[:space:]]+-print[[:space:]]+-quit' \
     'broken-symlink existence probe uses LBYL find short-circuit'
 
+check_gap \
+    'pacman[[:space:]]+-Dk[[:space:]]*\\|\\|[[:space:]]*true' \
+    'pacman consistency diagnostic failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
