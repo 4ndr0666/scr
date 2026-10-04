@@ -157,3 +157,12 @@ The maintenance directive used `find -print -quit | grep -q` to probe for broken
 The remediation executes the broken-symlink inspection once, treats an inspection failure as an explicit fail-closed error, and renders the captured result without a second probe. The backend gap scanner now detects both the generic cleanup probe and this broken-symlink-specific form.
 
 The evidence remains limited to the maintenance source and static GUP invariants; it does not execute package-manager operations.
+
+
+### G25 — Pacman consistency diagnostic failure suppression
+
+The maintenance directive executed `pacman -Dk` once to detect repository inconsistencies, then executed it a second time to render diagnostics while suppressing the second invocation with `|| true`. A diagnostic execution failure could therefore be hidden at the error-reporting boundary.
+
+The remediation executes `pacman -Dk` once, captures its output, and renders that captured result when the consistency check fails. The backend gap scanner rejects reintroduction of the masked `pacman -Dk || true` form.
+
+The evidence remains limited to static backend invariants; it does not execute package-manager operations.
