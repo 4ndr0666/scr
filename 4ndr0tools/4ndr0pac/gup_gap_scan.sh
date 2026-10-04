@@ -47,7 +47,7 @@ check_gap \
     'broken-symlink existence probe uses LBYL find short-circuit'
 
 check_gap \
-    'pacman[[:space:]]+-Dk[[:space:]]*\\|\\|[[:space:]]*true' \
+    'pacman[[:space:]]+-Dk[[:space:]]*[|][|][[:space:]]*true' \
     'pacman consistency diagnostic failure is suppressed'
 
 require_gap_invariant() {
