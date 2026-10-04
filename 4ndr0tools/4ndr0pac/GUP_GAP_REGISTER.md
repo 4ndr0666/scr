@@ -121,3 +121,12 @@ The installer previously suppressed `readlink` failure while proving ownership o
 The remediation makes invocation-link inspection an explicit precondition. A failed `readlink` now emits a dedicated diagnostic and aborts before installation or uninstall processing. The G20 gate injects an isolated `readlink` failure for the managed invocation path and verifies explicit rejection without mutation for both install and uninstall dry-runs.
 
 The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
+
+
+### G21 — Enterprise installer Python payload validation
+
+The installer previously used a `find ... -print -quit | grep -q .` probe under `set -o pipefail` to decide whether Python payload validation was necessary. Because `grep -q` can terminate the pipe before `find` completes, a normal Python-containing payload can produce a SIGPIPE status and cause the conditional to skip validation. This is an avoidable LBYL probe at the payload-validation boundary.
+
+The remediation removes the probe and directly executes Python AST validation through `find -exec`. Python syntax failures now become an explicit validation failure, while a payload containing no Python files requires no Python invocation. The G21 installer gate injects invalid Python into an isolated payload and verifies fail-closed rejection without creating a target.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
