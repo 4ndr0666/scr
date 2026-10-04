@@ -80,6 +80,23 @@ set -e
 grep -Fq 'Unable to canonicalize installation path:' "$BROKEN_PATH_LOG" ||
     fail "path canonicalization failure was not reported explicitly"
 [[ -L "$BROKEN_PATH" ]] || fail "path canonicalization test fixture was mutated"
+
+PYTHON_SYNTAX_PAYLOAD="$TEST_ROOT/python-syntax-payload"
+cp -a "$PAYLOAD" "$PYTHON_SYNTAX_PAYLOAD"
+printf '%s\n' 'def broken(:' > "$PYTHON_SYNTAX_PAYLOAD/invalid_payload.py"
+PYTHON_SYNTAX_LOG="$TEST_ROOT/python-syntax.log"
+set +e
+sudo "$PYTHON_SYNTAX_PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/python-syntax-target" 2>&1 |
+    tee "$PYTHON_SYNTAX_LOG" >/dev/null
+PYTHON_SYNTAX_RC=$?
+set -e
+[[ "$PYTHON_SYNTAX_RC" -ne 0 ]] || fail "invalid Python payload was accepted by installer validation"
+grep -Fq 'Python payload validation failed.' "$PYTHON_SYNTAX_LOG" ||
+    fail "invalid Python payload was not rejected by the Python validation gate"
+[[ ! -e "$TEST_ROOT/python-syntax-target" ]] || fail "invalid Python payload created an installation target"
+rm -rf -- "$PYTHON_SYNTAX_PAYLOAD"
+printf 'GUP PASS: invalid Python payloads fail closed without target mutation.\n'
+
 printf 'GUP PASS: installation path canonicalization fails closed without mutation.\n'
 
 if find "$PAYLOAD" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.bak' -o -name '.coverage' \) -print -quit | grep -q .; then
