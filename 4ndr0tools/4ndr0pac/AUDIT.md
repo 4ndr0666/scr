@@ -228,3 +228,10 @@ The maintenance path previously used `find -print -quit | grep -q` to decide whe
 The remediation captures the result of a single `find` invocation. A failed inspection is reported and propagated; an empty result is a normal no-op; a non-empty result is displayed directly. The gap scanner now explicitly rejects the old broken-symlink probe pattern.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G25 pacman consistency diagnostic hardening
+
+The maintenance path previously reran `pacman -Dk` after a failed consistency check and masked the diagnostic invocation with `|| true`. The remediation captures the single consistency-check result and renders the captured diagnostic without a second execution or suppressed failure. The backend gap scanner now rejects the masked form.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
