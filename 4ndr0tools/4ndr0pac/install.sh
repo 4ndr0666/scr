@@ -264,6 +264,11 @@ if [[ "$UNINSTALL" == true ]]; then
         SYMLINK_PATH=""
     fi
 
+    if [[ -d "$INSTALL_LOCATION" && -z "$SYMLINK_PATH" ]]; then
+        log_error "Installation target $INSTALL_LOCATION exists without its managed invocation link; refusing to uninstall an installation that is not proven to be owned by 4ndr0pac."
+        exit 1
+    fi
+
     if [[ "$DRY_RUN" == true ]]; then
         if [[ -n "$SYMLINK_PATH" ]]; then
             log_dry "Would remove managed invocation link: $SYMLINK_PATH"
