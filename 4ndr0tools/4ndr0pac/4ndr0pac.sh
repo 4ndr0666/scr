@@ -185,7 +185,10 @@ func_m() {
 	_remove_db_lock
 
 	local cache
-	cache="$(awk -F '=' '/^CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	if ! cache="$(awk -F '=' '/^CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read CacheDir from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	cache="${cache:-/var/cache/pacman/pkg/}"
 
 	if ! sudo find "$cache" -type f -iname "*.part" -delete; then
