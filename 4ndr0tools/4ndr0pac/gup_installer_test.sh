@@ -134,6 +134,11 @@ fi
 exec /usr/bin/readlink "$@"
 READLINKSHIM
 chmod 0755 "$SYMLINK_PROOF_SHIM/readlink"
+set +e
+sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" readlink /usr/local/bin/4ndr0pac >/dev/null 2>&1
+SYMLINK_PROOF_PROBE_RC=$?
+set -e
+[[ "$SYMLINK_PROOF_PROBE_RC" -eq 79 ]] || fail "invocation-link readlink fault injection was not reachable under sudo"
 
 SYMLINK_PROOF_TARGET="$TEST_ROOT/symlink-proof-target"
 mkdir -p "$SYMLINK_PROOF_TARGET"
