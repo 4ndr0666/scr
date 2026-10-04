@@ -628,11 +628,16 @@ compaudit() {
 
 # ---- // DISPLAY HELP:
 # shellcheck disable=SC2088  # the help table prints a literal "~/" on purpose
+# Menu mode (argument "menu") clears the screen and waits for a key; -h / --help / error paths print
+# straight through so the output can be piped, paged or redirected without blocking on stdin.
 display_help() {
+    local mode="${1:-}"
     local bold="" underline="" reset="" blue="" yellow="" green="" magenta="" ncolors=""
 
     if [[ -t 1 ]]; then
-        clear || true
+        if [[ "$mode" == "menu" ]]; then
+            clear || true
+        fi
         ncolors=$(tput colors 2>/dev/null || echo 0)
         if [[ -n "$ncolors" && "$ncolors" -ge 8 ]]; then
             bold=$(tput bold)
@@ -728,8 +733,10 @@ display_help() {
     echo " 5. ${bold}Backup Before Changes${reset}: Always backup important configurations before modifying permissions."
     echo ""
 
-    echo -e "${blue}Press any key to return to the main menu.${reset}"
-    read -rn 1 || true
+    if [[ "$mode" == "menu" ]]; then
+        echo -e "${blue}Press any key to return to the main menu.${reset}"
+        read -rn 1 || true
+    fi
 }
 
 # ---- // SPINNER:
@@ -902,7 +909,7 @@ main() {
                 get_directory_acl "$target_path" || true
                 ;;
             4)
-                display_help
+                display_help menu
                 ;;
             5)
                 compaudit || true

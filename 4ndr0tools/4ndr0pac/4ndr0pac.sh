@@ -124,8 +124,8 @@ func_diff() {
 		return 1
 	fi
 	cols=$(tput cols)
-	half_width=$(( (cols / 2) - ${#file1} - ${#file2} ))
-	half_width=$(( half_width > 1 ? half_width : 1 ))
+	half_width=$(((cols / 2) - ${#file1} - ${#file2}))
+	half_width=$((half_width > 1 ? half_width : 1))
 
 	echo -n -e "${RED}${BOLD}$file1"
 	printf "%*s\n" "$half_width" "$file2"
@@ -832,13 +832,13 @@ func_fix() {
 			echo ""
 			echo " Lowering pacman securities only inside an isolated temporary pacman configuration ..."
 
-		(
-			recovery_conf="$(mktemp "${TMPDIR:-/tmp}/4ndr0pac-pacman.conf.XXXXXXXX")" || exit 1
-			trap 'rm -f -- "$recovery_conf"' EXIT
-			chmod 600 "$recovery_conf" || exit 1
+			(
+				recovery_conf="$(mktemp "${TMPDIR:-/tmp}/4ndr0pac-pacman.conf.XXXXXXXX")" || exit 1
+				trap 'rm -f -- "$recovery_conf"' EXIT
+				chmod 600 "$recovery_conf" || exit 1
 
-			if grep -Eq '^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$' /etc/pacman.conf; then
-				awk '
+				if grep -Eq '^[[:space:]]*\[[[:space:]]*options[[:space:]]*\][[:space:]]*$' /etc/pacman.conf; then
+					awk '
 					BEGIN {
 						in_options = 0
 					}
@@ -860,89 +860,88 @@ func_fix() {
 					{
 						print
 					}
-				' /etc/pacman.conf > "$recovery_conf" || exit 1
-			else
-				{
-					printf '%s\n' '[options]' 'SigLevel = Never'
-					cat /etc/pacman.conf
-				} > "$recovery_conf" || exit 1
-			fi
+				' /etc/pacman.conf >"$recovery_conf" || exit 1
+				else
+					{
+						printf '%s\n' '[options]' 'SigLevel = Never'
+						cat /etc/pacman.conf
+					} >"$recovery_conf" || exit 1
+				fi
 
-			echo ""
-			echo " trying to update system manually without checking keys ..."
-			if ! sudo pacman --config "$recovery_conf" -Syu; then
 				echo ""
-				echo -e " ${BRED}Manual update failed.${RESET}"
-				echo ""
-				exit 1
-			fi
-
-			echo ""
-			echo -e " ${BRED}Update succeeded despite the temporary lack of key checks.${RESET}"
-			echo -e " ${BRED}Should 4ndr0pac prevent all future key / keyring errors? [y/N]${RESET}"
-			read -r -n 1 -e answer2
-
-			case "${answer2:-n}" in
-			y | Y | yes | YES | Yes)
-				if [[ -d /etc/pacman.d/gnupg ]]; then
+				echo " trying to update system manually without checking keys ..."
+				if ! sudo pacman --config "$recovery_conf" -Syu; then
 					echo ""
-					echo " removing broken gnupg keyring ..."
-					if ! sudo rm -rf -- /etc/pacman.d/gnupg; then
-						echo -e " ${BRED}Failed to remove the broken pacman keyring. Aborting keyring repair.${RESET}"
-						exit 1
+					echo -e " ${BRED}Manual update failed.${RESET}"
+					echo ""
+					exit 1
+				fi
+
+				echo ""
+				echo -e " ${BRED}Update succeeded despite the temporary lack of key checks.${RESET}"
+				echo -e " ${BRED}Should 4ndr0pac prevent all future key / keyring errors? [y/N]${RESET}"
+				read -r -n 1 -e answer2
+
+				case "${answer2:-n}" in
+				y | Y | yes | YES | Yes)
+					if [[ -d /etc/pacman.d/gnupg ]]; then
+						echo ""
+						echo " removing broken gnupg keyring ..."
+						if ! sudo rm -rf -- /etc/pacman.d/gnupg; then
+							echo -e " ${BRED}Failed to remove the broken pacman keyring. Aborting keyring repair.${RESET}"
+							exit 1
+						fi
 					fi
-				fi
 
-				echo ""
-				echo " reinstalling gnupg ..."
-				sudo pacman --config "$recovery_conf" -Syu gnupg --noconfirm
-
-				echo ""
-				echo " installing all necessary keyrings ..."
-				local keyrings=()
-				mapfile -t keyrings < <(
-					pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)'
-				)
-
-				if [[ ${#keyrings[@]} -gt 0 ]]; then
-					sudo pacman --config "$recovery_conf" -Syu "${keyrings[@]}" --noconfirm
-				fi
-
-				echo ""
-				echo " initializing and populating keyring ..."
-				if sudo pacman-key --init; then
 					echo ""
-					if ! sudo pacman-key --populate "${keyrings[@]%-keyring}" 2>/dev/null; then
+					echo " reinstalling gnupg ..."
+					sudo pacman --config "$recovery_conf" -Syu gnupg --noconfirm
+
+					echo ""
+					echo " installing all necessary keyrings ..."
+					local keyrings=()
+					mapfile -t keyrings < <(
+						pacman -Qsq '(-keyring)' | grep -v -i -E '(gnome|python|debian)'
+					)
+
+					if [[ ${#keyrings[@]} -gt 0 ]]; then
+						sudo pacman --config "$recovery_conf" -Syu "${keyrings[@]}" --noconfirm
+					fi
+
+					echo ""
+					echo " initializing and populating keyring ..."
+					if sudo pacman-key --init; then
+						echo ""
+						if ! sudo pacman-key --populate "${keyrings[@]%-keyring}" 2>/dev/null; then
+							sudo pacman-key --populate
+						fi
+					else
 						sudo pacman-key --populate
 					fi
-				else
-					sudo pacman-key --populate
-				fi
 
-				echo ""
-				echo " updating file database ..."
-				sudo pacman -Fyy
-				echo ""
-				;;
+					echo ""
+					echo " updating file database ..."
+					sudo pacman -Fyy
+					echo ""
+					;;
 
-			n | N | no | NO | No)
-				echo ""
-				echo " do not fix keyring(s) ..."
-				echo ""
-				echo " updating file database ..."
-				sudo pacman -Fyy
-				echo ""
-				;;
+				n | N | no | NO | No)
+					echo ""
+					echo " do not fix keyring(s) ..."
+					echo ""
+					echo " updating file database ..."
+					sudo pacman -Fyy
+					echo ""
+					;;
 
-			*)
-				echo ""
-				echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
-				echo ""
-				;;
-			esac
-		)
+				*)
+					echo ""
+					echo -e " ${BRED}Answer not recognized. All attempts to fix your system were stopped.${RESET}"
+					echo ""
+					;;
+				esac
+			)
 			;;
-
 
 		n | N | no | NO | No)
 			if [[ "$(cat /proc/1/comm)" == "systemd" ]]; then
@@ -1427,13 +1426,25 @@ func_chaotic() {
 	echo -e " ${CYAN}Installing Chaotic-AUR repository...${RESET}"
 	# v1.6: fail fast with a clean message instead of a confusing cascade.
 	sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com ||
-		{ echo -e " ${BRED}Failed to fetch the Chaotic-AUR signing key (keyserver unreachable?). Aborting — nothing was changed.${RESET}"; return 1; }
+		{
+			echo -e " ${BRED}Failed to fetch the Chaotic-AUR signing key (keyserver unreachable?). Aborting — nothing was changed.${RESET}"
+			return 1
+		}
 	sudo pacman-key --lsign-key 3056513887B78AEB ||
-		{ echo -e " ${BRED}Failed to locally sign the Chaotic-AUR key. Aborting — nothing was changed.${RESET}"; return 1; }
+		{
+			echo -e " ${BRED}Failed to locally sign the Chaotic-AUR key. Aborting — nothing was changed.${RESET}"
+			return 1
+		}
 	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' ||
-		{ echo -e " ${BRED}Failed to install chaotic-keyring. Aborting — /etc/pacman.conf was NOT modified.${RESET}"; return 1; }
+		{
+			echo -e " ${BRED}Failed to install chaotic-keyring. Aborting — /etc/pacman.conf was NOT modified.${RESET}"
+			return 1
+		}
 	sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' ||
-		{ echo -e " ${BRED}Failed to install chaotic-mirrorlist. Aborting — /etc/pacman.conf was NOT modified.${RESET}"; return 1; }
+		{
+			echo -e " ${BRED}Failed to install chaotic-mirrorlist. Aborting — /etc/pacman.conf was NOT modified.${RESET}"
+			return 1
+		}
 	printf "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n" | sudo tee -a /etc/pacman.conf >/dev/null
 	sudo pacman -Syu --noconfirm
 	echo -e " ${BOLD}Chaotic-AUR repository installed and enabled.${RESET}"
@@ -1564,13 +1575,34 @@ func_remove_de() {
 	# (and could mis-target rm -rf) when $HOME contains spaces.
 	local packages=() config_dirs=()
 	case "$selected" in
-	"GNOME") packages=(gnome gnome-extra); config_dirs=("$HOME/.config/gnome-shell" "$HOME/.local/share/gnome-shell" "$HOME/.config/dconf") ;;
-	"KDE Plasma") packages=(plasma kde-applications); config_dirs=("$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" "$HOME/.config/plasmarc" "$HOME/.kde") ;;
-	"XFCE") packages=(xfce4 xfce4-goodies); config_dirs=("$HOME/.config/xfce4" "$HOME/.local/share/xfce4") ;;
-	"Cinnamon") packages=(cinnamon); config_dirs=("$HOME/.cinnamon" "$HOME/.config/cinnamon") ;;
-	"MATE") packages=(mate mate-extra); config_dirs=("$HOME/.config/mate" "$HOME/.local/share/mate") ;;
-	"Hyprland") packages=(hyprland); config_dirs=("$HOME/.config/hypr") ;;
-	*) packages=("${selected,,}"); config_dirs=("$HOME/.config/${selected,,}") ;;
+	"GNOME")
+		packages=(gnome gnome-extra)
+		config_dirs=("$HOME/.config/gnome-shell" "$HOME/.local/share/gnome-shell" "$HOME/.config/dconf")
+		;;
+	"KDE Plasma")
+		packages=(plasma kde-applications)
+		config_dirs=("$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" "$HOME/.config/plasmarc" "$HOME/.kde")
+		;;
+	"XFCE")
+		packages=(xfce4 xfce4-goodies)
+		config_dirs=("$HOME/.config/xfce4" "$HOME/.local/share/xfce4")
+		;;
+	"Cinnamon")
+		packages=(cinnamon)
+		config_dirs=("$HOME/.cinnamon" "$HOME/.config/cinnamon")
+		;;
+	"MATE")
+		packages=(mate mate-extra)
+		config_dirs=("$HOME/.config/mate" "$HOME/.local/share/mate")
+		;;
+	"Hyprland")
+		packages=(hyprland)
+		config_dirs=("$HOME/.config/hypr")
+		;;
+	*)
+		packages=("${selected,,}")
+		config_dirs=("$HOME/.config/${selected,,}")
+		;;
 	esac
 
 	echo -n -e " Purge ${BOLD}$selected${RESET} and configurations permanently? [y/N]: "
@@ -1613,7 +1645,7 @@ func_analyze() {
 		echo -e " AUR/foreign packages:  $(pacman -Qqm 2>/dev/null | wc -l || true)"
 		local orphan_count
 		orphan_count="$(pacman -Qqdt 2>/dev/null | wc -l || true)"
-		if (( orphan_count > 0 )); then
+		if ((orphan_count > 0)); then
 			echo -e " Orphaned packages:     ${BRED}${orphan_count}${RESET} (removable via Maintain/Cleanup)"
 		else
 			echo -e " Orphaned packages:     0"
@@ -1630,7 +1662,7 @@ func_analyze() {
 	if command -v systemctl &>/dev/null; then
 		local failed_count
 		failed_count="$(LC_ALL=C systemctl list-units --state=failed --no-legend 2>/dev/null | wc -l || true)"
-		if (( failed_count > 0 )); then
+		if ((failed_count > 0)); then
 			echo -e " Failed systemd units:  ${BRED}${failed_count}${RESET}"
 			LC_ALL=C systemctl list-units --state=failed --no-legend 2>/dev/null | head -n 10
 		else
@@ -1775,33 +1807,33 @@ if [[ $# -gt 0 ]]; then
 	argument_input="${*:-}"
 
 	case "$key" in
-	1 | u | update)         func_u ;;
-	2 | m | maintain)       func_m ;;
-	3 | i | install)        func_i ;;
-	4 | a | aur)            func_a ;;
-	5 | r | remove)         func_r ;;
-	6 | l | list)           func_l ;;
-	7 | tree | tree-of)     func_t ;;
+	1 | u | update) func_u ;;
+	2 | m | maintain) func_m ;;
+	3 | i | install) func_i ;;
+	4 | a | aur) func_a ;;
+	5 | r | remove) func_r ;;
+	6 | l | list) func_l ;;
+	7 | tree | tree-of) func_t ;;
 	8 | v | rtree | rev-tree) func_v ;;
-	9 | e | edit)           func_e ;;
-	b | rollback)           func_b ;;
-	z | fix)                func_fix ;;
-	x | ls | listsize)      func_ls ;;
-	w | ua | force-aur)     func_ua ;;
-	n | la | list-aur)      func_la ;;
-	d | down | downgrade)   func_d ;;
-	p | info)               func_info ;;
-	f | find | find-file)   func_f ;;
-	o | fo | files-in-pkg)  func_fo ;;
-	c | cachyos)            func_cachyos ;;
-	g | chaotic)            func_chaotic ;;
-	k | cleanup | clean)    func_cleanup ;;
-	t | topgrade)           func_topgrade ;;
-	y | remove-de | de)     func_remove_de ;;
-	h | help)               func_help ;;
-	s | analyze | health)  func_analyze ;;
-	version)               echo -e " 4ndr0pac backend v1.6.0 (bash) — frontend: 4ndr0pac (python) v1.6.0" ;;
-	diff)                   func_diff ;;
+	9 | e | edit) func_e ;;
+	b | rollback) func_b ;;
+	z | fix) func_fix ;;
+	x | ls | listsize) func_ls ;;
+	w | ua | force-aur) func_ua ;;
+	n | la | list-aur) func_la ;;
+	d | down | downgrade) func_d ;;
+	p | info) func_info ;;
+	f | find | find-file) func_f ;;
+	o | fo | files-in-pkg) func_fo ;;
+	c | cachyos) func_cachyos ;;
+	g | chaotic) func_chaotic ;;
+	k | cleanup | clean) func_cleanup ;;
+	t | topgrade) func_topgrade ;;
+	y | remove-de | de) func_remove_de ;;
+	h | help) func_help ;;
+	s | analyze | health) func_analyze ;;
+	version) echo -e " 4ndr0pac backend v1.6.0 (bash) — frontend: 4ndr0pac (python) v1.6.0" ;;
+	diff) func_diff ;;
 	*)
 		echo -e " ${BRED}Unknown option: $key. Press ENTER to start 4ndr0pac UI.${RESET}"
 		read -r || true
@@ -1818,7 +1850,7 @@ main_loop() {
 	while true; do
 		4ndr0pac_tty_clean
 		func_menu
-		read -r choice || exit $(( $? > 128 ? $? : 0 ))
+		read -r choice || exit $(($? > 128 ? $? : 0))
 
 		# v1.6: a failing directive no longer kills the interactive session
 		# (the one-shot CLI path used by the frontend stays fail-fast).
@@ -1829,25 +1861,25 @@ main_loop() {
 		4 | a | A) func_a ;;
 		5 | r | R) func_r ;;
 		6 | l | L) func_l ;;
-		7 | tree)  func_t ;;
+		7 | tree) func_t ;;
 		8 | v | V) func_v ;;
 		9 | e | E) func_e ;;
-		b | B)     func_b ;;
-		z | Z)     func_fix ;;
-		x | X)     func_ls ;;
-		w | W)     func_ua ;;
-		n | N)     func_la ;;
-		d | D)     func_d ;;
-		p | P)     func_info ;;
-		f | F)     func_f ;;
-		o | O)     func_fo ;;
-		c | C)     func_cachyos ;;
-		g | G)     func_chaotic ;;
-		k | K)     func_cleanup ;;
-		t | T)     func_topgrade ;;
-		y | Y)     func_remove_de ;;
-		h | H)     func_help ;;
-		s | S)     func_analyze ;;
+		b | B) func_b ;;
+		z | Z) func_fix ;;
+		x | X) func_ls ;;
+		w | W) func_ua ;;
+		n | N) func_la ;;
+		d | D) func_d ;;
+		p | P) func_info ;;
+		f | F) func_f ;;
+		o | O) func_fo ;;
+		c | C) func_cachyos ;;
+		g | G) func_chaotic ;;
+		k | K) func_cleanup ;;
+		t | T) func_topgrade ;;
+		y | Y) func_remove_de ;;
+		h | H) func_help ;;
+		s | S) func_analyze ;;
 		0 | q | Q) exit 0 ;;
 		*)
 			echo -e " ${BRED} Invalid Option ${RESET}"
