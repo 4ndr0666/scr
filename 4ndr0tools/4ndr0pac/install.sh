@@ -58,7 +58,7 @@ normalize_path() {
 
 _validate_install_location_boundary() {
     case "$INSTALL_LOCATION" in
-        /|/opt|/usr|/usr/local|/usr/local/bin|/home|/tmp|/var|/etc|/bin|/sbin|/lib|/lib64|/boot|/root|/srv|/run|/mnt|/media|/proc|/sys|/dev)
+        /|/opt|/usr|/usr/local|/usr/local/bin|/home|/tmp|/var|/etc|/bin|/sbin|/lib|/lib64|/usr/bin|/usr/sbin|/usr/lib|/usr/lib64|/boot|/root|/srv|/run|/mnt|/media|/proc|/sys|/dev)
             log_error "Refusing installation target at reserved filesystem boundary: $INSTALL_LOCATION"
             return 1
             ;;
