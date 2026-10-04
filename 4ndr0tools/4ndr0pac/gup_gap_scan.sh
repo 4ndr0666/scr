@@ -52,7 +52,7 @@ require_gap_invariant() {
 }
 
 require_gap_invariant \
-    'pacman[[:space:]]+--config[[:space:]]+"\$recovery_conf"[[:space:]]+-Syu' \
+    'pacman[[:space:]]+--config[[:space:]]+"[$]recovery_conf"[[:space:]]+-Syu' \
     'isolated recovery pacman invocation is missing --config binding'
 
 require_gap_invariant \
