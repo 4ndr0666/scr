@@ -112,3 +112,12 @@ The installer previously masked `readlink -f` failure during installation-path n
 The remediation treats canonicalization as an explicit transaction precondition. A failed `readlink -f` now aborts before installation or uninstall processing, reports the path-validation failure, and leaves the supplied path unchanged. The G19 gate uses an isolated symlink-loop path to force canonicalization failure and verifies explicit rejection without filesystem mutation.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+### G20 — Enterprise installer invocation-link proof failure
+
+The installer previously suppressed `readlink` failure while proving ownership of an existing `/usr/local/bin/4ndr0pac` symlink. The comparison still failed closed when inspection returned an empty value, but the ownership-proof dependency failure was masked as an ordinary collision.
+
+The remediation makes invocation-link inspection an explicit precondition. A failed `readlink` now emits a dedicated diagnostic and aborts before installation or uninstall processing. The G20 gate injects an isolated `readlink` failure for the managed invocation path and verifies explicit rejection without mutation for both install and uninstall dry-runs.
+
+The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
