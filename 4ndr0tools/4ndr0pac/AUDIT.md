@@ -185,3 +185,12 @@ The enterprise installer previously used a fallback value when `readlink -f` fai
 The remediation makes canonicalization failure explicit and fail-closed. The installer GUP gate injects a symlink-loop path that causes `readlink -f` to fail and verifies the installer rejects it without mutating the fixture.
 
 The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
+
+
+## G20 installer invocation-link proof hardening
+
+The enterprise installer previously used `readlink "$SYMLINK_PATH" || true` in three ownership-proof locations. This did not permit an unsafe replacement or deletion because the resulting empty target failed the ownership comparison, but it masked an infrastructure failure as a normal ownership mismatch.
+
+The remediation makes symlink inspection fail closed with an explicit diagnostic. The G20 installer gate injects a controlled `readlink` failure and verifies install and uninstall dry-runs reject the state without changing the target or invocation link.
+
+The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.

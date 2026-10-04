@@ -121,6 +121,59 @@ grep -Fq 'points elsewhere; refusing to overwrite an unmanaged invocation link.'
 [[ "$(readlink /usr/local/bin/4ndr0pac)" == "$INSTALL_COLLISION_LINK_TARGET" ]] ||
     fail "install collision mutated the unmanaged invocation link"
 sudo rm -f -- /usr/local/bin/4ndr0pac
+
+SYMLINK_PROOF_SHIM="$TEST_ROOT/symlink-proof-shim"
+mkdir -p "$SYMLINK_PROOF_SHIM"
+cat > "$SYMLINK_PROOF_SHIM/readlink" <<'READLINKSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+COUNT_FILE="${GUP_READLINK_COUNT:?}"
+count=0
+[[ -f "$COUNT_FILE" ]] && count="$(<"$COUNT_FILE")"
+count=$((count + 1))
+printf '%s\n' "$count" > "$COUNT_FILE"
+if ((count >= 3)); then
+    printf 'GUP INJECT: refusing invocation-link inspection on readlink call %s\n' "$count" >&2
+    exit 79
+fi
+exec /usr/bin/readlink "$@"
+READLINKSHIM
+chmod 0755 "$SYMLINK_PROOF_SHIM/readlink"
+
+SYMLINK_PROOF_TARGET="$TEST_ROOT/symlink-proof-target"
+mkdir -p "$SYMLINK_PROOF_TARGET"
+printf '%s\n' 'symlink-proof-preserve' > "$SYMLINK_PROOF_TARGET/sentinel"
+sudo ln -s "$SYMLINK_PROOF_TARGET" /usr/local/bin/4ndr0pac
+SYMLINK_PROOF_LOG="$TEST_ROOT/symlink-proof-install.log"
+set +e
+sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" GUP_READLINK_COUNT="$TEST_ROOT/symlink-proof-install-count" "$PAYLOAD/install.sh" --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
+    tee "$SYMLINK_PROOF_LOG" >/dev/null
+SYMLINK_PROOF_RC=$?
+set -e
+printf 'GUP DEBUG: install readlink calls=%s\n' "$(<"$TEST_ROOT/symlink-proof-install-count")" >&2
+[[ "$SYMLINK_PROOF_RC" -ne 0 ]] || fail "invocation-link inspection failure was accepted during install"
+cat "$SYMLINK_PROOF_LOG" >&2
+grep -Fq 'Unable to inspect managed invocation link /usr/local/bin/4ndr0pac; refusing to continue.' "$SYMLINK_PROOF_LOG" ||
+    fail "install invocation-link inspection failure was not reported explicitly"
+[[ -f "$SYMLINK_PROOF_TARGET/sentinel" ]] || fail "install invocation-link inspection failure mutated the target"
+[[ "$(readlink /usr/local/bin/4ndr0pac)" == "$SYMLINK_PROOF_TARGET" ]] || fail "install invocation-link inspection failure mutated the link"
+sudo rm -f -- /usr/local/bin/4ndr0pac
+
+sudo ln -s "$SYMLINK_PROOF_TARGET" /usr/local/bin/4ndr0pac
+SYMLINK_PROOF_UNINSTALL_LOG="$TEST_ROOT/symlink-proof-uninstall.log"
+set +e
+sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" GUP_READLINK_COUNT="$TEST_ROOT/symlink-proof-uninstall-count" "$PAYLOAD/install.sh" --uninstall --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
+    tee "$SYMLINK_PROOF_UNINSTALL_LOG" >/dev/null
+SYMLINK_PROOF_UNINSTALL_RC=$?
+set -e
+[[ "$SYMLINK_PROOF_UNINSTALL_RC" -ne 0 ]] || fail "invocation-link inspection failure was accepted during uninstall"
+grep -Fq 'Unable to inspect managed invocation link /usr/local/bin/4ndr0pac; refusing to continue.' "$SYMLINK_PROOF_UNINSTALL_LOG" ||
+    fail "uninstall invocation-link inspection failure was not reported explicitly"
+[[ -f "$SYMLINK_PROOF_TARGET/sentinel" ]] || fail "uninstall invocation-link inspection failure mutated the target"
+[[ "$(readlink /usr/local/bin/4ndr0pac)" == "$SYMLINK_PROOF_TARGET" ]] || fail "uninstall invocation-link inspection failure mutated the link"
+sudo rm -f -- /usr/local/bin/4ndr0pac
+printf 'GUP PASS: invocation-link proof failures are explicit and non-mutating.\n'
+
 printf 'GUP PASS: unmanaged invocation-link collisions are rejected without install mutation.\n'
 
 EXISTING_TARGET="$TEST_ROOT/existing-unmanaged-target"

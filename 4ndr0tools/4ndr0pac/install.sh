@@ -255,7 +255,10 @@ if [[ "$UNINSTALL" == true ]]; then
     esac
 
     if [[ -L "$SYMLINK_PATH" ]]; then
-        local_link_target="$(readlink "$SYMLINK_PATH" || true)"
+        if ! local_link_target="$(readlink "$SYMLINK_PATH")"; then
+            log_error "Unable to inspect managed invocation link $SYMLINK_PATH; refusing to continue."
+            exit 1
+        fi
         if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
             log_error "$SYMLINK_PATH points elsewhere; refusing to uninstall an installation without its managed invocation link."
             exit 1
@@ -328,7 +331,10 @@ log_step "Target: $INSTALL_LOCATION"
 _validate_source "$SOURCE_DIR"
 
 if [[ -L "$SYMLINK_PATH" ]]; then
-    local_link_target="$(readlink "$SYMLINK_PATH" || true)"
+    if ! local_link_target="$(readlink "$SYMLINK_PATH")"; then
+        log_error "Unable to inspect managed invocation link $SYMLINK_PATH; refusing to continue."
+        exit 1
+    fi
     if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
         log_error "$SYMLINK_PATH points elsewhere; refusing to overwrite an unmanaged invocation link."
         exit 1
@@ -347,7 +353,10 @@ if [[ -e "$INSTALL_LOCATION" || -L "$INSTALL_LOCATION" ]]; then
         log_error "Installation target $INSTALL_LOCATION already exists without its managed invocation link; refusing to overwrite it."
         exit 1
     fi
-    local_link_target="$(readlink "$SYMLINK_PATH" || true)"
+    if ! local_link_target="$(readlink "$SYMLINK_PATH")"; then
+        log_error "Unable to inspect managed invocation link $SYMLINK_PATH; refusing to continue."
+        exit 1
+    fi
     if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
         log_error "Installation target $INSTALL_LOCATION is not owned by 4ndr0pac; refusing to overwrite it."
         exit 1
