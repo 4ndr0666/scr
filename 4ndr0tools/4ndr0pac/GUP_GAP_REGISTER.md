@@ -94,3 +94,12 @@ The installer could still accept an existing reserved filesystem directory as th
 The installation path previously protected the invocation link from unmanaged replacement but did not prove that an existing installation target belonged to 4ndr0pac. An arbitrary existing directory supplied through `--path` could therefore be moved into rollback storage and replaced.
 
 The remediation now fails closed when an existing target is not a managed 4ndr0pac directory: it must be a real directory, its invocation link must resolve to the requested target, and the managed runtime/GUP payload files must be present. The installer GUP gate verifies both dry-run and real installation reject an unmanaged existing target without mutating the target or creating an invocation link.
+
+
+### G18 — Enterprise installer uninstall target ownership
+
+The uninstall path previously accepted an existing installation target when the managed invocation link was absent. Because uninstall then moved that target into recovery storage and removed it, a caller-supplied arbitrary directory could be deleted without proving that 4ndr0pac owned it.
+
+The remediation now fails closed when an existing uninstall target lacks the managed invocation link. G18 adds isolated dry-run and real-uninstall coverage and verifies that the unrelated target remains unchanged and no invocation link is created.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
