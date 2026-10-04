@@ -139,3 +139,12 @@ The frontend EXIT cleanup helper previously suppressed failure from its temporar
 The remediation makes the cleanup operation an explicit fail-closed boundary: removal failure emits a dedicated diagnostic and returns nonzero from the EXIT trap. The Golden Unit injects a targeted `rm` failure and requires the frontend to return the injected status while reporting the cleanup failure.
 
 The evidence remains limited to the isolated frontend harness; it does not execute package-manager operations.
+
+
+### G23 — Backend cleanup existence probes
+
+The backend used `find -print -quit | grep -q` probes before removing temporary 4ndr0pac artifacts and package-cache transient files. Under `pipefail`, the short-circuit probe can turn a successful match into a SIGPIPE status and is an unnecessary LBYL boundary before the destructive operation.
+
+The remediation executes each cleanup directly. An empty match remains a successful no-op, while a cleanup failure is reported and propagated from the maintenance or repair directive. The backend gap scanner rejects reintroduction of the pipe-based existence probe.
+
+The evidence remains limited to static backend invariants and does not execute package-manager operations.
