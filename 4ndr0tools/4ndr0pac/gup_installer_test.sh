@@ -427,6 +427,8 @@ grep -Fq 'preexisting-uninstall-installation' "$UNINSTALL_STAGE_TARGET/sentinel"
     fail "restored invocation link target does not match the managed installation"
 printf 'GUP PASS: uninstall link-staging failure restores the installation and invocation link.\n'
 
+sudo rm -f -- /usr/local/bin/4ndr0pac
+
 UNMANAGED_UNINSTALL_TARGET="$TEST_ROOT/unmanaged-uninstall-target"
 mkdir -p "$UNMANAGED_UNINSTALL_TARGET"
 printf '%s\n' 'unmanaged-uninstall-target' > "$UNMANAGED_UNINSTALL_TARGET/sentinel"
