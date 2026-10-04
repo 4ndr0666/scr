@@ -66,6 +66,10 @@ check_gap \
     'awk[[:space:]]+-F[[:space:]]*=[[:space:]]+[^|]*LogFile[^|]*[/]etc[/]pacman[.]conf[^|]*[|][|][[:space:]]*true' \
     'pacman LogFile configuration-read failure is suppressed'
 
+check_gap \
+    'pacui_cache_packages=.*tail[[:space:]]+-8000.*fzf.*|[[:space:]]*sed.*|[[:space:]]*awk.*[|][|][[:space:]]*true' \
+    'rollback package selection pipeline failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
