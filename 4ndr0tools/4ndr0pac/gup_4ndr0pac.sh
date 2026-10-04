@@ -32,6 +32,12 @@ run_expect() {
     [[ "$actual" -eq "$expected" ]] || fail "expected exit $expected, got $actual: $*"
 }
 
+run_with_confirmation() {
+    local answer="$1"
+    shift
+    printf '%s\n' "$answer" | python3 "$FRONTEND" --backend "$BACKEND" "$@"
+}
+
 python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' "$FRONTEND" || fail "frontend does not parse"
 bash -n "$FRONTEND.sh" || fail "backend shell syntax check failed"
 bash -n "$0" || fail "Golden Unit harness syntax check failed"
@@ -41,10 +47,10 @@ bash -n "$ROOT_DIR/gup_semantic_test.sh" || fail "backend semantic test syntax c
 LIST_OUTPUT="$(python3 "$FRONTEND" --backend "$BACKEND" --list)"
 [[ "$(grep -c '\[confirm\]' <<<"$LIST_OUTPUT")" -eq 5 ]] || fail "dangerous directive inventory changed"
 
-run_expect 130 bash -c 'printf "n\\n" | python3 "$1" --backend "$2" "Remove Packages"' _ "$FRONTEND" "$BACKEND"
+run_expect 130 run_with_confirmation n "Remove Packages"
 [[ ! -s "$LOG" ]] || fail "backend executed after confirmation denial"
 
-run_expect 7 bash -c 'printf "yes\\n" | python3 "$1" --backend "$2" "Remove Packages" pkg-a' _ "$FRONTEND" "$BACKEND"
+run_expect 7 run_with_confirmation yes "Remove Packages" pkg-a
 [[ "$(tail -n 1 "$LOG")" == "r pkg-a" ]] || fail "confirmed dangerous directive reached backend incorrectly"
 
 run_expect 7 python3 "$FRONTEND" --backend "$BACKEND" "Package Info" pkg-a
@@ -55,6 +61,35 @@ DRY_OUTPUT="$(python3 "$FRONTEND" --backend "$BACKEND" --dry-run "Remove Package
 [[ "$DRY_OUTPUT" == *"[dry-run]"* ]] || fail "dry-run did not report the command"
 [[ "$(wc -l <"$LOG")" -eq "$LINES_BEFORE" ]] || fail "dry-run executed backend"
 
-run_expect 130 bash -c 'printf "n\\n" | python3 "$1" --backend "$2" 6' _ "$FRONTEND" "$BACKEND"
+run_expect 130 run_with_confirmation n 6
 
-printf 'GUP PASS: 4ndr0pac safety boundary, argument propagation, dry-run, and syntax gates passed.\n'
+CLEANUP_SENTINEL="/tmp/4ndr0pac-gup-cleanup-sentinel"
+CLEANUP_FIXTURE="/tmp/gup-cleanup-fixture.$RANDOM.$RANDOM"
+CLEANUP_SHIM="$CLEANUP_FIXTURE/shim"
+CLEANUP_LOG="$CLEANUP_FIXTURE/cleanup.log"
+mkdir -p "$CLEANUP_SHIM"
+printf '%s\n' 'cleanup-sentinel' >"$CLEANUP_SENTINEL"
+cat >"$CLEANUP_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+for arg in "$@"; do
+    if [[ "$arg" == /tmp/4ndr0pac* ]]; then
+        printf 'GUP INJECT: refusing temporary 4ndr0pac cleanup\n' >&2
+        exit 79
+    fi
+done
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 700 "$CLEANUP_SHIM/rm"
+set +e
+PATH="$CLEANUP_SHIM:$PATH" "$FRONTEND.sh" version >/dev/null 2>"$CLEANUP_LOG"
+CLEANUP_RC=$?
+set -e
+/usr/bin/rm -f -- "$CLEANUP_SENTINEL"
+[[ "$CLEANUP_RC" -eq 79 ]] || fail "cleanup failure did not propagate as exit 79"
+grep -Fq 'Failed to remove temporary 4ndr0pac artifacts.' "$CLEANUP_LOG" ||
+    fail "cleanup failure was not reported explicitly"
+printf 'GUP PASS: temporary-artifact cleanup failure is fail-closed and reported.\n'
+/usr/bin/rm -rf -- "$CLEANUP_FIXTURE"
+
+printf 'GUP PASS: 4ndr0pac safety boundary, argument propagation, dry-run, syntax, and cleanup gates passed.\n'

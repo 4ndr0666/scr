@@ -203,3 +203,10 @@ The enterprise installer used a pipe-based existence probe before validating Pyt
 The remediation directly runs Python AST validation through `find -exec`, eliminating the probe and its pipe-status ambiguity. The G21 gate injects invalid Python into an isolated payload and requires explicit rejection without target mutation.
 
 The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
+
+
+## G22 frontend cleanup failure hardening
+
+The frontend EXIT cleanup helper previously masked temporary-artifact removal failure with `|| true`. The remediation makes cleanup failure explicit and fail-closed. The Golden Unit injects a controlled `rm` failure for the managed temporary-artifact namespace and verifies exit-status propagation and the dedicated diagnostic.
+
+The evidence remains limited to the isolated frontend harness; it does not execute package-manager operations.

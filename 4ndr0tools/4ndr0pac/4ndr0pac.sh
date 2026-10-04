@@ -1773,9 +1773,19 @@ func_menu() {
 # ==============================================================================
 4ndr0pac_clean() {
 	# v1.6: the old glob '4ndr0pac_*' matched nothing (mktemp files use hyphens).
-	rm -rf /tmp/4ndr0pac* 2>/dev/null || true
-	4ndr0pac_tty_clean
+	local cleanup_rc=0
+	if rm -rf /tmp/4ndr0pac* 2>/dev/null; then
+		4ndr0pac_tty_clean
+	else
+		cleanup_rc=$?
+		echo -e " ${BRED}Failed to remove temporary 4ndr0pac artifacts.${RESET}" >&2
+	fi
+	return "$cleanup_rc"
 }
+
+original_rc=0
+cleanup_rc=0
+trap 'original_rc=$?; if 4ndr0pac_clean; then exit "$original_rc"; else cleanup_rc=$?; exit "$cleanup_rc"; fi' EXIT
 
 # ==============================================================================
 # CLI ARGUMENT DISPATCH
@@ -1846,7 +1856,6 @@ fi
 # MAIN LOOP — Interactive UI
 # ==============================================================================
 main_loop() {
-	trap 4ndr0pac_clean EXIT
 	while true; do
 		4ndr0pac_tty_clean
 		func_menu
