@@ -38,6 +38,10 @@ check_gap \
     'rm[[:space:]]+-r[[:space:]]+/etc/pacman[.]d/gnupg.*\|\|[[:space:]]*true' \
     'broken pacman keyring cleanup failure is suppressed'
 
+check_gap \
+    'find[[:space:]]+[^\n]*-print[[:space:]]+-quit[^\n]*\|[[:space:]]*grep[[:space:]]+-q' \
+    'find existence probe uses LBYL pipe short-circuit before cleanup'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
