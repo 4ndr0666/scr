@@ -335,9 +335,10 @@ set -e
 [[ "$POSTCOMMIT_RC" -ne 0 ]] || fail "post-commit cleanup fault was not propagated"
 grep -Fq 'GUP INJECT: refusing recovery-backup cleanup of ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup fault injection did not execute"
 grep -Fq 'Cleanup could not remove deployment recovery backup; retained at ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup failure was not reported"
-POSTCOMMIT_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
-[[ -n "$POSTCOMMIT_BACKUP" ]] || fail "post-commit recovery backup was not retained"
-sudo test -e "$POSTCOMMIT_BACKUP/payload/sentinel" || fail "post-commit recovery backup contents were not retained"
+POSTCOMMIT_BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
+[[ -n "$POSTCOMMIT_BACKUP_SENTINEL" ]] || fail "post-commit recovery backup contents were not retained"
+POSTCOMMIT_BACKUP="$(dirname -- "$(dirname -- "$POSTCOMMIT_BACKUP_SENTINEL")")"
+[[ -d "$POSTCOMMIT_BACKUP" ]] || fail "post-commit recovery backup directory was not retained"
 [[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
 printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
 sudo rm -f -- /usr/local/bin/4ndr0pac
