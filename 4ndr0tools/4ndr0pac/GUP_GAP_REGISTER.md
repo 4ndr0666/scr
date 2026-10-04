@@ -130,3 +130,12 @@ The installer previously used a `find ... -print -quit | grep -q .` probe under 
 The remediation removes the probe and directly executes Python AST validation through `find -exec`. Python syntax failures now become an explicit validation failure, while a payload containing no Python files requires no Python invocation. The G21 installer gate injects invalid Python into an isolated payload and verifies fail-closed rejection without creating a target.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+### G22 — Frontend temporary-artifact cleanup failure
+
+The frontend EXIT cleanup helper previously suppressed failure from its temporary-artifact removal with `|| true`. A cleanup failure could therefore leave temporary artifacts while the process retained its prior success status.
+
+The remediation makes the cleanup operation an explicit fail-closed boundary: removal failure emits a dedicated diagnostic and returns nonzero from the EXIT trap. The Golden Unit injects a targeted `rm` failure and requires the frontend to return the injected status while reporting the cleanup failure.
+
+The evidence remains limited to the isolated frontend harness; it does not execute package-manager operations.
