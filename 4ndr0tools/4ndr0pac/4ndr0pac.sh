@@ -757,12 +757,15 @@ func_fix() {
 	_remove_db_lock
 
 	local installed_db_desc=""
-	if ! installed_db_desc="$(sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} + 2>/dev/null)"; then
-		local scan_rc=$?
-		if (( scan_rc != 1 )); then
-			echo -e " ${BRED}Failed to inspect pacman local database descriptors.${RESET}"
-			return "$scan_rc"
-		fi
+	local scan_rc=0
+	if installed_db_desc="$(sudo find /var/lib/pacman/local -name 'desc' -exec grep -l '%INSTALLED_DB%' {} +)"; then
+		scan_rc=0
+	else
+		scan_rc=$?
+	fi
+	if (( scan_rc != 0 && scan_rc != 1 )); then
+		echo -e " ${BRED}Failed to inspect pacman local database descriptors.${RESET}"
+		return "$scan_rc"
 	fi
 	if [[ -n "$installed_db_desc" ]]; then
 		while IFS= read -r desc_file; do
