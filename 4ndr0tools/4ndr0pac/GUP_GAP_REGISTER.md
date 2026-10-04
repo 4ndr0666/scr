@@ -193,3 +193,12 @@ The destructive maintenance path parsed CacheDir from /etc/pacman.conf with an u
 The remediation makes the CacheDir configuration read an explicit fail-closed boundary. A successful read still permits the existing default only when CacheDir is absent; a failed read emits a dedicated diagnostic and aborts before cache cleanup. The backend gap scanner rejects reintroduction of the masked CacheDir parsing form.
 
 The evidence remains limited to static backend invariants and does not execute package-manager operations.
+
+
+### G29 — Pacman LogFile configuration-read failure suppression
+
+The rollback path and read-only system analysis path parsed LogFile from /etc/pacman.conf with an unconditional `|| true`. If the configuration could not be read, the failure was converted into the default /var/log/pacman.log path, allowing log inspection to continue against an unverified location.
+
+The remediation makes both LogFile configuration reads explicit fail-closed boundaries. A successful read still permits the existing default only when LogFile is absent; a failed read emits a dedicated diagnostic and returns before log inspection. The backend gap scanner rejects reintroduction of the masked LogFile parsing form.
+
+The evidence remains limited to static backend invariants and does not execute package-manager operations.
