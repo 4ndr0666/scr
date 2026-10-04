@@ -56,6 +56,15 @@ normalize_path() {
     printf '%s' "$p"
 }
 
+_validate_install_location_boundary() {
+    case "$INSTALL_LOCATION" in
+        /|/opt|/usr|/usr/local|/usr/local/bin|/home|/tmp|/var|/etc|/bin|/sbin|/lib|/lib64|/boot|/root|/srv|/run|/mnt|/media|/proc|/sys|/dev)
+            log_error "Refusing installation target at reserved filesystem boundary: $INSTALL_LOCATION"
+            return 1
+            ;;
+    esac
+}
+
 usage() {
     cat <<USAGE
 Usage: $(basename "$0") [OPTIONS]
@@ -90,6 +99,7 @@ while (($#)); do
 done
 
 INSTALL_LOCATION="$(normalize_path "${INSTALL_LOCATION:-$DEFAULT_INSTALL_LOCATION}")"
+_validate_install_location_boundary
 
 _rollback() {
     local rc=$?
