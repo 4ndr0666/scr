@@ -39,8 +39,12 @@ check_gap \
     'broken pacman keyring cleanup failure is suppressed'
 
 check_gap \
-    'find[[:space:]]+[^\n]*-print[[:space:]]+-quit[^\n]*\|[[:space:]]*grep[[:space:]]+-q' \
+    'find[[:space:]]+[^|]*-print[[:space:]]+-quit[[:space:]]*\|[[:space:]]*grep[[:space:]]+-q' \
     'find existence probe uses LBYL pipe short-circuit before cleanup'
+
+check_gap \
+    'find[[:space:]]+/usr/bin[[:space:]]+/usr/lib[[:space:]]+/etc[[:space:]]+-xtype[[:space:]]+l[[:space:]]+-print[[:space:]]+-quit' \
+    'broken-symlink existence probe uses LBYL find short-circuit'
 
 require_gap_invariant() {
     local pattern="$1"
