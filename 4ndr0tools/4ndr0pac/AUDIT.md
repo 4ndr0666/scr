@@ -144,6 +144,14 @@ The remediation changes the installation preflight to fail closed when an existi
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
 
 
+## M24 installer rollback cleanup hardening
+
+The enterprise installer had a remaining rollback transaction edge after M23: successful restoration of the prior installation was followed by unchecked recovery-backup deletion. A cleanup failure could therefore be silently ignored while the caller saw only the original transaction error.
+
+The remediation makes rollback-backup deletion explicit and fail-closed. A cleanup failure is reported, the recovery artifact is retained, and the original transaction exit status is preserved. G17 adds isolated fault injection for this exact boundary and verifies that the restored installation remains intact.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
 ## M23 installer filesystem-boundary hardening
 
 The enterprise installer had a remaining target-boundary gap after M22: ownership checks proved the relationship between an existing target and invocation link, but did not independently reject reserved filesystem directories as installation targets. A caller-supplied path such as /opt or /usr must never become the transaction target merely because filesystem contents happen to satisfy later checks.
