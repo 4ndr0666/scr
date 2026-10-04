@@ -235,3 +235,10 @@ The evidence remains limited to static backend checks and does not execute packa
 The maintenance path previously reran `pacman -Dk` after a failed consistency check and masked the diagnostic invocation with `|| true`. The remediation captures the single consistency-check result and renders the captured diagnostic without a second execution or suppressed failure. The backend gap scanner now rejects the masked form.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G26 pacman local database repair hardening
+
+The maintenance repair path previously masked both descriptor discovery and the destructive sed -i rewrite with || true. The remediation makes descriptor inspection explicit, treats unexpected inspection status as failure, and propagates each descriptor rewrite failure. The GUP scanner records the prohibited masked form as a regression invariant.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
