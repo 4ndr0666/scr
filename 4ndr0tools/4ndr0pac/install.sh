@@ -230,9 +230,7 @@ _validate_source() {
     log_step "Validating every shipped shell payload."
     find "$root" -type f -name '*.sh' -not -path '*/.git/*' -exec bash -n {} +
     log_step "Validating every shipped Python payload."
-    if ! find "$root" -type f -name '*.py' -not -path '*/.git/*' -exec
-        python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' {} +
-    then
+    if ! find "$root" -type f -name '*.py' -not -path '*/.git/*' -exec python3 -c 'from pathlib import Path; import ast, sys; [ast.parse(Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' {} +; then
         log_error "Python payload validation failed."
         return 1
     fi
