@@ -622,7 +622,10 @@ func_b() {
 		return 1
 	fi
 	cache="${cache:-/var/cache/pacman/pkg/}"
-	logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	if ! logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read LogFile from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	logpath="${logpath:-/var/log/pacman.log}"
 
 	if [[ "$AUR_Helper" == "pacaur" ]]; then
@@ -1716,7 +1719,10 @@ func_analyze() {
 	fi
 
 	local logpath
-	logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf 2>/dev/null || true)"
+	if ! logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read LogFile from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	logpath="${logpath:-/var/log/pacman.log}"
 	if [[ -f "$logpath" ]]; then
 		echo ""

@@ -62,6 +62,10 @@ check_gap \
     'awk[[:space:]]+-F[[:space:]]*=[[:space:]]+[^|]*CacheDir[^|]*[/]etc[/]pacman[.]conf[^|]*[|][|][[:space:]]*true' \
     'pacman CacheDir configuration-read failure is suppressed'
 
+check_gap \
+    'awk[[:space:]]+-F[[:space:]]*=[[:space:]]+[^|]*LogFile[^|]*[/]etc[/]pacman[.]conf[^|]*[|][|][[:space:]]*true' \
+    'pacman LogFile configuration-read failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
