@@ -1783,6 +1783,8 @@ func_menu() {
 	return "$cleanup_rc"
 }
 
+trap 'original_rc=$?; if 4ndr0pac_clean; then exit "$original_rc"; else cleanup_rc=$?; exit "$cleanup_rc"; fi' EXIT
+
 # ==============================================================================
 # CLI ARGUMENT DISPATCH
 # ==============================================================================
@@ -1852,7 +1854,6 @@ fi
 # MAIN LOOP — Interactive UI
 # ==============================================================================
 main_loop() {
-	trap 'original_rc=$?; if 4ndr0pac_clean; then exit "$original_rc"; else cleanup_rc=$?; exit "$cleanup_rc"; fi' EXIT
 	while true; do
 		4ndr0pac_tty_clean
 		func_menu
