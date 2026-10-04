@@ -159,8 +159,25 @@ _rollback() {
         rollback_failure=true
     fi
     if [[ "$rollback_failure" == false ]]; then
-        [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]] && rm -rf -- "$_TARGET_BACKUP"
-        [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]] && rm -rf -- "$_LINK_BACKUP"
+        if [[ -n "$_TARGET_BACKUP" && -d "$_TARGET_BACKUP" ]]; then
+            if ! rm -rf -- "$_TARGET_BACKUP"; then
+                log_error "Rollback succeeded but deployment recovery cleanup failed; retained at $_TARGET_BACKUP."
+                rollback_failure=true
+            else
+                _TARGET_BACKUP=""
+            fi
+        fi
+        if [[ -n "$_LINK_BACKUP" && -d "$_LINK_BACKUP" ]]; then
+            if ! rm -rf -- "$_LINK_BACKUP"; then
+                log_error "Rollback succeeded but invocation-link recovery cleanup failed; retained at $_LINK_BACKUP."
+                rollback_failure=true
+            else
+                _LINK_BACKUP=""
+            fi
+        fi
+        if [[ "$rollback_failure" == true ]]; then
+            log_error "Rollback completed but recovery artifacts could not be fully cleaned; retained for manual recovery."
+        fi
     else
         log_error "Rollback was incomplete; recovery artifacts were retained for manual recovery."
     fi

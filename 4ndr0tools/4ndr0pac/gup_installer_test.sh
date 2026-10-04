@@ -208,6 +208,55 @@ grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET/sentinel" || fail "restore
 [[ -f "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "restored managed payload did not remain at the target"
 sudo rm -f -- /usr/local/bin/4ndr0pac
 
+ROLLBACK_CLEANUP_TARGET="$TEST_ROOT/rollback-cleanup-target"
+mkdir -p "$ROLLBACK_CLEANUP_TARGET"
+cp -a "$PAYLOAD/." "$ROLLBACK_CLEANUP_TARGET/"
+printf '%s\n' 'rollback-cleanup-preserve' > "$ROLLBACK_CLEANUP_TARGET/sentinel"
+sudo ln -s "$ROLLBACK_CLEANUP_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
+ROLLBACK_CLEANUP_SHIM="$TEST_ROOT/rollback-cleanup-shim"
+mkdir -p "$ROLLBACK_CLEANUP_SHIM"
+cat > "$ROLLBACK_CLEANUP_SHIM/mv" <<'MVSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+FAIL_TARGET="${GUP_FAIL_TARGET:?}"
+STATE_FILE="${GUP_FAIL_STATE:?}"
+DEST="${@: -1}"
+if [[ "$DEST" == "$FAIL_TARGET" && ! -e "$STATE_FILE" ]]; then
+    : > "$STATE_FILE"
+    printf 'GUP INJECT: refusing stage commit into %s\n' "$DEST" >&2
+    exit 77
+fi
+exec /usr/bin/mv "$@"
+MVSHIM
+cat > "$ROLLBACK_CLEANUP_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+TARGET="${@: -1}"
+if [[ "${TARGET##*/}" == .4ndr0pac-rollback.* ]]; then
+    printf 'GUP INJECT: refusing rollback recovery-backup cleanup of %s\n' "$TARGET" >&2
+    exit 78
+fi
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 0755 "$ROLLBACK_CLEANUP_SHIM/mv" "$ROLLBACK_CLEANUP_SHIM/rm"
+ROLLBACK_CLEANUP_LOG="$TEST_ROOT/rollback-cleanup.log"
+ROLLBACK_CLEANUP_STATE="$TEST_ROOT/rollback-cleanup-state"
+set +e
+sudo env PATH="$ROLLBACK_CLEANUP_SHIM:$PATH" GUP_FAIL_TARGET="$ROLLBACK_CLEANUP_TARGET" GUP_FAIL_STATE="$ROLLBACK_CLEANUP_STATE" \
+    "$PAYLOAD/install.sh" --path "$ROLLBACK_CLEANUP_TARGET" 2>&1 |
+    tee "$ROLLBACK_CLEANUP_LOG" >/dev/null
+ROLLBACK_CLEANUP_RC=$?
+set -e
+[[ "$ROLLBACK_CLEANUP_RC" -eq 77 ]] || fail "rollback cleanup fault did not preserve the original transaction exit"
+grep -Fq 'GUP INJECT: refusing rollback recovery-backup cleanup of ' "$ROLLBACK_CLEANUP_LOG" || fail "rollback cleanup fault injection did not execute"
+grep -Fq 'Rollback succeeded but deployment recovery cleanup failed; retained at ' "$ROLLBACK_CLEANUP_LOG" || fail "rollback cleanup failure was not reported"
+[[ -d "$ROLLBACK_CLEANUP_TARGET" ]] || fail "target was not restored before rollback cleanup failure"
+grep -Fq 'rollback-cleanup-preserve' "$ROLLBACK_CLEANUP_TARGET/sentinel" || fail "restored target was corrupted by rollback cleanup failure"
+ROLLBACK_CLEANUP_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
+[[ -n "$ROLLBACK_CLEANUP_BACKUP" ]] || fail "rollback recovery backup was not retained after cleanup failure"
+sudo rm -f -- /usr/local/bin/4ndr0pac
+printf 'GUP PASS: rollback recovery cleanup failure is fail-closed and retains recovery artifacts.\n'
+
 FAIL_CLOSED_TARGET="$TEST_ROOT/fail-closed-target"
 mkdir -p "$FAIL_CLOSED_TARGET"
 cp -a "$PAYLOAD/." "$FAIL_CLOSED_TARGET/"
@@ -286,9 +335,10 @@ set -e
 [[ "$POSTCOMMIT_RC" -ne 0 ]] || fail "post-commit cleanup fault was not propagated"
 grep -Fq 'GUP INJECT: refusing recovery-backup cleanup of ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup fault injection did not execute"
 grep -Fq 'Cleanup could not remove deployment recovery backup; retained at ' "$POSTCOMMIT_LOG" || fail "post-commit cleanup failure was not reported"
-POSTCOMMIT_BACKUP="$(sudo find "$TEST_ROOT" -type d -name '.4ndr0pac-rollback.*' -print -quit)"
-[[ -n "$POSTCOMMIT_BACKUP" ]] || fail "post-commit recovery backup was not retained"
-sudo test -e "$POSTCOMMIT_BACKUP/payload/sentinel" || fail "post-commit recovery backup contents were not retained"
+POSTCOMMIT_BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
+[[ -n "$POSTCOMMIT_BACKUP_SENTINEL" ]] || fail "post-commit recovery backup contents were not retained"
+POSTCOMMIT_BACKUP="$(dirname -- "$(dirname -- "$POSTCOMMIT_BACKUP_SENTINEL")")"
+[[ -d "$POSTCOMMIT_BACKUP" ]] || fail "post-commit recovery backup directory was not retained"
 [[ -f "$POSTCOMMIT_TARGET/4ndr0pac" ]] || fail "validated deployment was lost after recovery-backup cleanup failure"
 printf 'GUP PASS: post-commit recovery cleanup failure is fail-closed and retains the backup.\n'
 sudo rm -f -- /usr/local/bin/4ndr0pac

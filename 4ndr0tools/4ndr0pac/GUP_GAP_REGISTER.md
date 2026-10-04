@@ -81,6 +81,10 @@ An unmanaged invocation link previously caused the uninstall path to ignore the 
 The installation path previously refused to overwrite a regular-file invocation collision but would move and replace an unmanaged /usr/local/bin/4ndr0pac symlink. The remediation now verifies an existing symlink resolves to the requested installation before permitting replacement; an unrelated target is rejected in both dry-run and real installation. The installer GUP gate verifies the collision is rejected and neither the unrelated target nor invocation link is mutated.
 
 
+### G17 — Enterprise installer rollback cleanup failure
+
+The rollback trap previously attempted recovery-backup deletion with an unchecked rm -rf. If that cleanup failed after the original installation had been restored, the transaction returned the original failure without reporting the cleanup failure or retaining an explicit recovery state. The remediation treats rollback-backup cleanup as a checked operation, retains the recovery artifact on failure, and reports the incomplete cleanup while preserving the original transaction status. The installer GUP gate injects a controlled rollback cleanup failure and verifies target restoration, failure reporting, and recovery-artifact retention.
+
 ### G16 — Enterprise installer filesystem-boundary ownership
 
 The installer could still accept an existing reserved filesystem directory as the requested installation target when the ownership checks happened to be satisfiable. The remediation rejects filesystem roots and reserved system directories before installation or uninstall transaction processing. The installer GUP gate exercises the reserved-boundary set in dry-run mode and requires fail-closed rejection without filesystem mutation.
