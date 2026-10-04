@@ -342,9 +342,10 @@ func_m() {
 	echo ""
 
 	echo " checking consistency of local repository ..."
-	if ! pacman -Dk &>/dev/null; then
+	local pacman_db_check
+	if ! pacman_db_check="$(pacman -Dk 2>&1)"; then
 		echo -e " ${BRED}The following inconsistencies have been found in your local packages:${RESET}"
-		pacman -Dk || true
+		printf "%s\n" "$pacman_db_check"
 	fi
 	echo ""
 
