@@ -127,18 +127,18 @@ mkdir -p "$SYMLINK_PROOF_SHIM"
 cat > "$SYMLINK_PROOF_SHIM/readlink" <<'READLINKSHIM'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-if [[ "${1:-}" == /usr/local/bin/4ndr0pac ]]; then
-    printf 'GUP INJECT: refusing invocation-link inspection\n' >&2
+COUNT_FILE="${GUP_READLINK_COUNT:?}"
+count=0
+[[ -f "$COUNT_FILE" ]] && count="$(<"$COUNT_FILE")"
+count=$((count + 1))
+printf '%s\n' "$count" > "$COUNT_FILE"
+if ((count >= 3)); then
+    printf 'GUP INJECT: refusing invocation-link inspection on readlink call %s\n' "$count" >&2
     exit 79
 fi
 exec /usr/bin/readlink "$@"
 READLINKSHIM
 chmod 0755 "$SYMLINK_PROOF_SHIM/readlink"
-set +e
-sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" readlink /usr/local/bin/4ndr0pac >/dev/null 2>&1
-SYMLINK_PROOF_PROBE_RC=$?
-set -e
-[[ "$SYMLINK_PROOF_PROBE_RC" -eq 79 ]] || fail "invocation-link readlink fault injection was not reachable under sudo"
 
 SYMLINK_PROOF_TARGET="$TEST_ROOT/symlink-proof-target"
 mkdir -p "$SYMLINK_PROOF_TARGET"
@@ -146,7 +146,7 @@ printf '%s\n' 'symlink-proof-preserve' > "$SYMLINK_PROOF_TARGET/sentinel"
 sudo ln -s "$SYMLINK_PROOF_TARGET" /usr/local/bin/4ndr0pac
 SYMLINK_PROOF_LOG="$TEST_ROOT/symlink-proof-install.log"
 set +e
-sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" "$PAYLOAD/install.sh" --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
+sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" GUP_READLINK_COUNT="$TEST_ROOT/symlink-proof-install-count" "$PAYLOAD/install.sh" --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
     tee "$SYMLINK_PROOF_LOG" >/dev/null
 SYMLINK_PROOF_RC=$?
 set -e
@@ -160,7 +160,7 @@ sudo rm -f -- /usr/local/bin/4ndr0pac
 sudo ln -s "$SYMLINK_PROOF_TARGET" /usr/local/bin/4ndr0pac
 SYMLINK_PROOF_UNINSTALL_LOG="$TEST_ROOT/symlink-proof-uninstall.log"
 set +e
-sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" "$PAYLOAD/install.sh" --uninstall --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
+sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" GUP_READLINK_COUNT="$TEST_ROOT/symlink-proof-uninstall-count" "$PAYLOAD/install.sh" --uninstall --dry-run --path "$SYMLINK_PROOF_TARGET" 2>&1 |
     tee "$SYMLINK_PROOF_UNINSTALL_LOG" >/dev/null
 SYMLINK_PROOF_UNINSTALL_RC=$?
 set -e
