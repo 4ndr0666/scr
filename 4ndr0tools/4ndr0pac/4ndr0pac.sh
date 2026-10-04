@@ -330,7 +330,7 @@ func_m() {
 	echo " checking symlink(s) ..."
 	local broken_symlinks
 	if ! broken_symlinks="$(sudo find /usr/bin /usr/lib /etc -xtype l)"; then
-		echo -e " " + "$" + "{BRED}Failed to inspect broken symlinks." + "$" + "{RESET}"
+		echo -e " ${BRED}Failed to inspect broken symlinks.${RESET}"
 		return 1
 	fi
 	if [[ -n "$broken_symlinks" ]]; then
