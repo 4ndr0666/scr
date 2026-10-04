@@ -184,3 +184,12 @@ The stale database-lock maintenance path parsed DBPath from /etc/pacman.conf wit
 The remediation makes the configuration read an explicit fail-closed boundary. A successful read still permits the existing default only when DBPath is absent; an awk/read failure now emits a diagnostic and aborts before lock inspection or removal. The backend gap scanner rejects reintroduction of the masked pacman.conf parsing form.
 
 The evidence remains limited to static backend invariants and does not execute package-manager operations.
+
+
+### G28 — Pacman CacheDir configuration-read failure suppression
+
+The destructive maintenance path parsed CacheDir from /etc/pacman.conf with an unconditional || true. If the configuration could not be read, the failure was converted into the default cache path and package-cache cleanup could proceed against an unverified location.
+
+The remediation makes the CacheDir configuration read an explicit fail-closed boundary. A successful read still permits the existing default only when CacheDir is absent; a failed read emits a dedicated diagnostic and aborts before cache cleanup. The backend gap scanner rejects reintroduction of the masked CacheDir parsing form.
+
+The evidence remains limited to static backend invariants and does not execute package-manager operations.
