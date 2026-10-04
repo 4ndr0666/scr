@@ -1783,6 +1783,8 @@ func_menu() {
 	return "$cleanup_rc"
 }
 
+original_rc=0
+cleanup_rc=0
 trap 'original_rc=$?; if 4ndr0pac_clean; then exit "$original_rc"; else cleanup_rc=$?; exit "$cleanup_rc"; fi' EXIT
 
 # ==============================================================================
