@@ -176,3 +176,12 @@ The enterprise installer had an uninstall ownership gap: an existing directory s
 The remediation now fails closed when an existing uninstall target has no managed invocation link. The installer GUP gate covers both dry-run and real uninstall and verifies that the unrelated target remains unchanged and no invocation link is created.
 
 The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
+
+
+## M26 installer path canonicalization hardening
+
+The enterprise installer previously used a fallback value when `readlink -f` failed while normalizing `--path`. This allowed an unverified path to proceed to later validation rather than failing at the canonicalization boundary.
+
+The remediation makes canonicalization failure explicit and fail-closed. The installer GUP gate injects a symlink-loop path that causes `readlink -f` to fail and verifies the installer rejects it without mutating the fixture.
+
+The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
