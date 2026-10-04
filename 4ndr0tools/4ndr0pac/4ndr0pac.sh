@@ -1676,7 +1676,10 @@ func_analyze() {
 	fi
 
 	local dbpath
-	dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf 2>/dev/null || true)"
+	if ! dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read DBPath from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	dbpath="${dbpath:-/var/lib/pacman/}"
 	if [[ -f "${dbpath}db.lck" ]]; then
 		echo -e " Pacman db lock:        ${BRED}present${RESET} ${CYAN}(only remove it when pacman is not running)${RESET}"
