@@ -175,3 +175,12 @@ The maintenance repair directive piped pacman-local descriptor discovery through
 The remediation captures descriptor discovery, distinguishes the normal no-match status from inspection failure, and applies the rewrite to each discovered descriptor with explicit failure propagation. The backend gap scanner rejects reintroduction of the masked find/grep/xargs/sed form.
 
 The evidence remains limited to static backend invariants; it does not execute package-manager operations.
+
+
+### G27 — Pacman DBPath configuration-read failure suppression
+
+The stale database-lock maintenance path parsed DBPath from /etc/pacman.conf with an unconditional || true. If the configuration could not be read or parsed, the failure was converted into the default database path and the maintenance operation could proceed against an unverified location.
+
+The remediation makes the configuration read an explicit fail-closed boundary. A successful read still permits the existing default only when DBPath is absent; an awk/read failure now emits a diagnostic and aborts before lock inspection or removal. The backend gap scanner rejects reintroduction of the masked pacman.conf parsing form.
+
+The evidence remains limited to static backend invariants and does not execute package-manager operations.

@@ -242,3 +242,12 @@ The evidence remains limited to static backend checks and does not execute packa
 The maintenance repair path previously masked both descriptor discovery and the destructive sed -i rewrite with || true. The remediation makes descriptor inspection explicit, treats unexpected inspection status as failure, and propagates each descriptor rewrite failure. The GUP scanner records the prohibited masked form as a regression invariant.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G27 pacman DBPath configuration-read hardening
+
+The stale pacman database-lock maintenance path previously masked failure while reading DBPath from /etc/pacman.conf with || true. That allowed an unreadable or otherwise failed configuration read to fall through to /var/lib/pacman/ and continue lock handling against an unverified path.
+
+The remediation makes the DBPath read fail closed. A successful parse retains the existing default only when DBPath is absent; a failed read emits a dedicated diagnostic and returns before any lock inspection or removal. The backend gap scanner records the masked pacman.conf parsing form as a regression invariant.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
