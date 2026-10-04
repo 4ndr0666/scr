@@ -68,6 +68,20 @@ for reserved_target in / /opt /usr /usr/local /usr/local/bin /home /tmp /var /et
 done
 printf 'GUP PASS: reserved filesystem installation boundaries are rejected without mutation.\n'
 
+BROKEN_PATH="$TEST_ROOT/broken-path"
+ln -s "$BROKEN_PATH" "$BROKEN_PATH"
+BROKEN_PATH_LOG="$TEST_ROOT/broken-path.log"
+set +e
+sudo "$PAYLOAD/install.sh" --dry-run --path "$BROKEN_PATH" 2>&1 |
+    tee "$BROKEN_PATH_LOG" >/dev/null
+BROKEN_PATH_RC=$?
+set -e
+[[ "$BROKEN_PATH_RC" -ne 0 ]] || fail "path canonicalization failure was accepted"
+grep -Fq 'Unable to canonicalize installation path:' "$BROKEN_PATH_LOG" ||
+    fail "path canonicalization failure was not reported explicitly"
+[[ -L "$BROKEN_PATH" ]] || fail "path canonicalization test fixture was mutated"
+printf 'GUP PASS: installation path canonicalization fails closed without mutation.\n'
+
 if find "$PAYLOAD" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.bak' -o -name '.coverage' \) -print -quit | grep -q .; then
     fail "generated file remained after validation"
 fi
