@@ -71,7 +71,10 @@ _need() {
 
 _remove_db_lock() {
 	local dbpath
-	dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	if ! dbpath="$(awk -F '=' '/^DBPath/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read DBPath from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	dbpath="${dbpath:-/var/lib/pacman/}"
 	if [[ -f "${dbpath}db.lck" ]]; then
 		# v1.6: never remove the lock while pacman is running (corruption risk).
