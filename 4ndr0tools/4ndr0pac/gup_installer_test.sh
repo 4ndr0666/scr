@@ -427,6 +427,35 @@ grep -Fq 'preexisting-uninstall-installation' "$UNINSTALL_STAGE_TARGET/sentinel"
     fail "restored invocation link target does not match the managed installation"
 printf 'GUP PASS: uninstall link-staging failure restores the installation and invocation link.\n'
 
+UNMANAGED_UNINSTALL_TARGET="$TEST_ROOT/unmanaged-uninstall-target"
+mkdir -p "$UNMANAGED_UNINSTALL_TARGET"
+printf '%s\n' 'unmanaged-uninstall-target' > "$UNMANAGED_UNINSTALL_TARGET/sentinel"
+
+UNMANAGED_UNINSTALL_DRY_LOG="$TEST_ROOT/unmanaged-uninstall-dry.log"
+set +e
+sudo "$PAYLOAD/install.sh" --uninstall --dry-run --path "$UNMANAGED_UNINSTALL_TARGET" 2>&1 |
+    tee "$UNMANAGED_UNINSTALL_DRY_LOG" >/dev/null
+UNMANAGED_UNINSTALL_DRY_RC=$?
+set -e
+[[ "$UNMANAGED_UNINSTALL_DRY_RC" -ne 0 ]] || fail "unmanaged uninstall dry-run was accepted"
+grep -Fq 'exists without its managed invocation link; refusing to uninstall' "$UNMANAGED_UNINSTALL_DRY_LOG" ||
+    fail "unmanaged uninstall dry-run rejection was not reported"
+[[ -f "$UNMANAGED_UNINSTALL_TARGET/sentinel" ]] || fail "unmanaged uninstall dry-run mutated the target"
+
+UNMANAGED_UNINSTALL_LOG="$TEST_ROOT/unmanaged-uninstall.log"
+set +e
+sudo "$PAYLOAD/install.sh" --uninstall --path "$UNMANAGED_UNINSTALL_TARGET" 2>&1 |
+    tee "$UNMANAGED_UNINSTALL_LOG" >/dev/null
+UNMANAGED_UNINSTALL_RC=$?
+set -e
+[[ "$UNMANAGED_UNINSTALL_RC" -ne 0 ]] || fail "unmanaged uninstall was accepted"
+grep -Fq 'exists without its managed invocation link; refusing to uninstall' "$UNMANAGED_UNINSTALL_LOG" ||
+    fail "unmanaged uninstall rejection was not reported"
+[[ -f "$UNMANAGED_UNINSTALL_TARGET/sentinel" ]] || fail "unmanaged uninstall mutated the target"
+[[ ! -e /usr/local/bin/4ndr0pac ]] || fail "unmanaged uninstall created or removed an invocation link"
+
+printf 'GUP PASS: uninstall rejects an existing target without its managed invocation link.\n'
+
 printf 'GUP PASS: target restoration survives stage-commit failure.\n'
 
 printf 'GUP PASS: installer syntax, fail-closed payload rejection, clean dry-run, and non-mutation gates passed.\n'
