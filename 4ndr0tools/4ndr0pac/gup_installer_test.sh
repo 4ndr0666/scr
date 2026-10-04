@@ -53,6 +53,20 @@ sudo "$PAYLOAD/install.sh" --dry-run --path "$TEST_ROOT/target" 2>&1 |
     fail "clean payload dry-run failed"
 [[ ! -e "$TEST_ROOT/target" ]] || fail "clean dry-run created an installation target"
 
+RESERVED_TARGET_LOG="$TEST_ROOT/reserved-target.log"
+for reserved_target in / /opt /usr /usr/local /usr/local/bin /home /tmp /var /etc /bin /sbin /lib /lib64 /boot /root /srv /run /mnt /media /proc /sys /dev; do
+    set +e
+    sudo "$PAYLOAD/install.sh" --dry-run --path "$reserved_target" 2>&1 |
+        tee "$RESERVED_TARGET_LOG" >/dev/null
+    RESERVED_TARGET_RC=$?
+    set -e
+    [[ "$RESERVED_TARGET_RC" -ne 0 ]] ||
+        fail "reserved installation boundary was accepted: $reserved_target"
+    grep -Fq "Refusing installation target at reserved filesystem boundary: $reserved_target" "$RESERVED_TARGET_LOG" ||
+        fail "reserved installation boundary rejection was not reported: $reserved_target"
+done
+printf 'GUP PASS: reserved filesystem installation boundaries are rejected without mutation.\n'
+
 if find "$PAYLOAD" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.bak' -o -name '.coverage' \) -print -quit | grep -q .; then
     fail "generated file remained after validation"
 fi
