@@ -94,6 +94,38 @@ grep -Fq 'points elsewhere; refusing to overwrite an unmanaged invocation link.'
 sudo rm -f -- /usr/local/bin/4ndr0pac
 printf 'GUP PASS: unmanaged invocation-link collisions are rejected without install mutation.\n'
 
+EXISTING_TARGET="$TEST_ROOT/existing-unmanaged-target"
+mkdir -p "$EXISTING_TARGET"
+printf '%s\n' 'do-not-overwrite-target' > "$EXISTING_TARGET/sentinel"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target ownership test requires an unused invocation path"
+
+EXISTING_TARGET_LOG="$TEST_ROOT/existing-target.log"
+set +e
+sudo "$PAYLOAD/install.sh" --dry-run --path "$EXISTING_TARGET" 2>&1 |
+    tee "$EXISTING_TARGET_LOG" >/dev/null
+EXISTING_TARGET_DRY_RC=$?
+set -e
+[[ "$EXISTING_TARGET_DRY_RC" -ne 0 ]] || fail "unmanaged existing install target was accepted during dry-run"
+grep -Fq 'already exists without its managed invocation link; refusing to overwrite it.' "$EXISTING_TARGET_LOG" ||
+    fail "existing-target dry-run ownership rejection was not reported"
+[[ -f "$EXISTING_TARGET/sentinel" ]] || fail "existing-target dry-run mutated the target"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target dry-run created an invocation link"
+
+set +e
+sudo "$PAYLOAD/install.sh" --path "$EXISTING_TARGET" 2>&1 |
+    tee "$EXISTING_TARGET_LOG" >/dev/null
+EXISTING_TARGET_RC=$?
+set -e
+[[ "$EXISTING_TARGET_RC" -ne 0 ]] || fail "unmanaged existing install target was accepted"
+grep -Fq 'already exists without its managed invocation link; refusing to overwrite it.' "$EXISTING_TARGET_LOG" ||
+    fail "existing-target ownership rejection was not reported"
+[[ -f "$EXISTING_TARGET/sentinel" ]] || fail "existing-target install mutated the target"
+[[ ! -e /usr/local/bin/4ndr0pac && ! -L /usr/local/bin/4ndr0pac ]] ||
+    fail "existing-target install created an invocation link"
+printf 'GUP PASS: unmanaged existing install targets are rejected without target or invocation-link mutation.\n'
+
 UNMANAGED_TARGET="$TEST_ROOT/unmanaged-target"
 mkdir -p "$UNMANAGED_TARGET"
 printf '%s\n' 'do-not-remove' > "$UNMANAGED_TARGET/sentinel"
@@ -127,7 +159,9 @@ printf 'GUP PASS: unmanaged invocation-link collisions are rejected without targ
 
 ROLLBACK_TARGET="$TEST_ROOT/rollback-target"
 mkdir -p "$ROLLBACK_TARGET"
+cp -a "$PAYLOAD/." "$ROLLBACK_TARGET/"
 printf '%s\n' 'preexisting-installation' > "$ROLLBACK_TARGET/sentinel"
+sudo ln -s "$ROLLBACK_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 SHIM_DIR="$TEST_ROOT/mv-shim"
 mkdir -p "$SHIM_DIR"
 cat > "$SHIM_DIR/mv" <<'MVSHIM'
@@ -156,11 +190,14 @@ set -e
 grep -Fq 'Rolling back committed filesystem changes' "$ROLLBACK_LOG" || fail "rollback was not entered"
 [[ -d "$ROLLBACK_TARGET" ]] || fail "preexisting target was not restored after stage-commit failure"
 grep -Fq 'preexisting-installation' "$ROLLBACK_TARGET/sentinel" || fail "restored target contents do not match the preexisting installation"
-[[ ! -e "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "failed deployment payload remained at the target"
+[[ -f "$ROLLBACK_TARGET/4ndr0pac" ]] || fail "restored managed payload did not remain at the target"
+sudo rm -f -- /usr/local/bin/4ndr0pac
 
 FAIL_CLOSED_TARGET="$TEST_ROOT/fail-closed-target"
 mkdir -p "$FAIL_CLOSED_TARGET"
+cp -a "$PAYLOAD/." "$FAIL_CLOSED_TARGET/"
 printf '%s\n' 'preserve-me' > "$FAIL_CLOSED_TARGET/sentinel"
+sudo ln -s "$FAIL_CLOSED_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 FAIL_CLOSED_SHIM="$TEST_ROOT/fail-closed-shim"
 mkdir -p "$FAIL_CLOSED_SHIM"
 cat > "$FAIL_CLOSED_SHIM/mv" <<'MVSHIM'
@@ -203,11 +240,14 @@ grep -Fq 'Rollback could not restore the previous installation; backup retained 
 BACKUP_SENTINEL="$(sudo find "$TEST_ROOT" -type f -path '*/.4ndr0pac-rollback.*/payload/sentinel' -print -quit)"
 [[ -n "$BACKUP_SENTINEL" ]] || fail "rollback backup was not retained after restoration failure"
 [[ ! -e "$FAIL_CLOSED_TARGET" ]] || fail "failed target remained after rollback restoration failure"
+sudo rm -f -- /usr/local/bin/4ndr0pac
 printf 'GUP PASS: rollback restoration failure is fail-closed and preserves recovery artifacts.\n'
 
 POSTCOMMIT_TARGET="$TEST_ROOT/postcommit-target"
 mkdir -p "$POSTCOMMIT_TARGET"
+cp -a "$PAYLOAD/." "$POSTCOMMIT_TARGET/"
 printf '%s\n' 'preexisting-postcommit-fault' > "$POSTCOMMIT_TARGET/sentinel"
+sudo ln -s "$POSTCOMMIT_TARGET/4ndr0pac" /usr/local/bin/4ndr0pac
 POSTCOMMIT_SHIM="$TEST_ROOT/postcommit-shim"
 mkdir -p "$POSTCOMMIT_SHIM"
 cat > "$POSTCOMMIT_SHIM/rm" <<'RMSHIM'

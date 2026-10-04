@@ -142,3 +142,12 @@ The enterprise installer had an asymmetric invocation-link collision rule: a reg
 The remediation changes the installation preflight to fail closed when an existing invocation symlink does not resolve to the requested installation. G14 adds isolated coverage for both dry-run and real installation, verifies the rejection diagnostic, and verifies that neither the unrelated target nor the unmanaged symlink is mutated.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+## M22 install target ownership boundary
+
+The enterprise installer had a target-ownership asymmetry after M21: the invocation path was protected against unmanaged collisions, but an arbitrary preexisting directory supplied through `--path` could still be moved aside and replaced.
+
+The remediation makes an existing installation target fail closed unless it is demonstrably managed by 4ndr0pac: the target must be a directory, the invocation link must point to that target, and the expected runtime/GUP payload must exist. G15 adds isolated coverage for dry-run and real installation and verifies that an unmanaged target remains unchanged and no invocation link is created.
+
+The evidence remains limited to the installer transaction harness and does not execute package-manager operations.

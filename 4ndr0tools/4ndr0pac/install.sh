@@ -303,6 +303,28 @@ elif [[ -e "$SYMLINK_PATH" ]]; then
     exit 1
 fi
 
+if [[ -e "$INSTALL_LOCATION" || -L "$INSTALL_LOCATION" ]]; then
+    if [[ ! -d "$INSTALL_LOCATION" || -L "$INSTALL_LOCATION" ]]; then
+        log_error "Installation target $INSTALL_LOCATION exists and is not a managed directory; refusing to overwrite it."
+        exit 1
+    fi
+    if [[ ! -L "$SYMLINK_PATH" ]]; then
+        log_error "Installation target $INSTALL_LOCATION already exists without its managed invocation link; refusing to overwrite it."
+        exit 1
+    fi
+    local_link_target="$(readlink "$SYMLINK_PATH" || true)"
+    if [[ "$local_link_target" != "$INSTALL_LOCATION/4ndr0pac" ]]; then
+        log_error "Installation target $INSTALL_LOCATION is not owned by 4ndr0pac; refusing to overwrite it."
+        exit 1
+    fi
+    for required in 4ndr0pac 4ndr0pac.sh gup_gap_scan.sh gup_semantic_test.sh; do
+        if [[ ! -f "$INSTALL_LOCATION/$required" ]]; then
+            log_error "Existing installation target $INSTALL_LOCATION is missing managed payload $required; refusing to overwrite it."
+            exit 1
+        fi
+    done
+fi
+
 if [[ "$DRY_RUN" == true ]]; then
     log_step "Simulating deployment transaction."
     if [[ "$SOURCE_DIR" == "$INSTALL_LOCATION" ]]; then
