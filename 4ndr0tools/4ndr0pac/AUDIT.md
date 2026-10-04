@@ -219,3 +219,12 @@ The backend previously used `find -print -quit | grep -q` to decide whether temp
 The remediation removes the probes and executes cleanup directly. Empty result sets are naturally successful no-ops, and cleanup failures now emit explicit diagnostics and return failure from the active directive. The backend gap scanner contains a fail-closed invariant against reintroducing the probe pattern.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G24 broken-symlink inspection hardening
+
+The maintenance path previously used `find -print -quit | grep -q` to decide whether broken symlinks existed, then repeated the `find` operation to display them. This duplicated the state inspection and introduced an LBYL pipe boundary under `pipefail`.
+
+The remediation captures the result of a single `find` invocation. A failed inspection is reported and propagated; an empty result is a normal no-op; a non-empty result is displayed directly. The gap scanner now explicitly rejects the old broken-symlink probe pattern.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.
