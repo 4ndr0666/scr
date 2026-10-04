@@ -617,7 +617,10 @@ func_b() {
 	local pacui_cache_upgrade pacui_cache_upgrade_counted pacui_tmp_upgrade
 	local pacui_upgrade
 
-	cache="$(awk -F '=' '/CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
+	if ! cache="$(awk -F '=' '/CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf)"; then
+		echo -e " ${BRED}Failed to read CacheDir from /etc/pacman.conf.${RESET}"
+		return 1
+	fi
 	cache="${cache:-/var/cache/pacman/pkg/}"
 	logpath="$(awk -F '=' '/^LogFile/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
 	logpath="${logpath:-/var/log/pacman.log}"
