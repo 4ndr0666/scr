@@ -57,4 +57,29 @@ DRY_OUTPUT="$(python3 "$FRONTEND" --backend "$BACKEND" --dry-run "Remove Package
 
 run_expect 130 bash -c 'printf "n\\n" | python3 "$1" --backend "$2" 6' _ "$FRONTEND" "$BACKEND"
 
-printf 'GUP PASS: 4ndr0pac safety boundary, argument propagation, dry-run, and syntax gates passed.\n'
+CLEANUP_SENTINEL="/tmp/4ndr0pac-gup-cleanup-sentinel"
+CLEANUP_SHIM="$TMP_DIR/cleanup-shim"
+printf '%s\n' 'cleanup-sentinel' >"$CLEANUP_SENTINEL"
+cat >"$CLEANUP_SHIM/rm" <<'RMSHIM'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+for arg in "$@"; do
+    if [[ "$arg" == /tmp/4ndr0pac* ]]; then
+        printf 'GUP INJECT: refusing temporary 4ndr0pac cleanup\n' >&2
+        exit 79
+    fi
+done
+exec /usr/bin/rm "$@"
+RMSHIM
+chmod 700 "$CLEANUP_SHIM/rm"
+set +e
+PATH="$CLEANUP_SHIM:$PATH" "$FRONTEND.sh" version >/dev/null 2>"$TMP_DIR/cleanup.log"
+CLEANUP_RC=$?
+set -e
+/usr/bin/rm -f -- "$CLEANUP_SENTINEL"
+[[ "$CLEANUP_RC" -eq 79 ]] || fail "cleanup failure did not propagate as exit 79"
+grep -Fq 'Failed to remove temporary 4ndr0pac artifacts.' "$TMP_DIR/cleanup.log" ||
+    fail "cleanup failure was not reported explicitly"
+printf 'GUP PASS: temporary-artifact cleanup failure is fail-closed and reported.\n'
+
+printf 'GUP PASS: 4ndr0pac safety boundary, argument propagation, dry-run, syntax, and cleanup gates passed.\n'
