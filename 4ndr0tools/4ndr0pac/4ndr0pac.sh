@@ -174,10 +174,9 @@ func_u() {
 # FUNC_M — Maintain System
 # ==============================================================================
 func_m() {
-	if sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
-		echo " deleting 4ndr0pac cache ..."
-		sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -exec rm -rf {} +
-		echo ""
+	if ! sudo find /tmp -maxdepth 1 -name '4ndr0pac*' -exec rm -rf -- {} +; then
+		echo -e " ${BRED}Failed to remove 4ndr0pac temporary artifacts.${RESET}"
+		return 1
 	fi
 
 	_remove_db_lock
@@ -186,16 +185,14 @@ func_m() {
 	cache="$(awk -F '=' '/^CacheDir/ {gsub(" ","",$2); print $2}' /etc/pacman.conf || true)"
 	cache="${cache:-/var/cache/pacman/pkg/}"
 
-	if sudo find "$cache" -type f -iname "*.part" -print -quit 2>/dev/null | grep -q .; then
-		echo " deleting partially downloaded packages from cache ..."
-		sudo find "$cache" -type f -iname "*.part" -delete
-		echo ""
+	if ! sudo find "$cache" -type f -iname "*.part" -delete; then
+		echo -e " ${BRED}Failed to remove partially downloaded packages from cache.${RESET}"
+		return 1
 	fi
 
-	if sudo find "$cache" -maxdepth 1 -name 'download-*' -print -quit 2>/dev/null | grep -q .; then
-		echo " purging orphaned transient download descriptors from package cache..."
-		sudo find "$cache" -maxdepth 1 -name 'download-*' -delete
-		echo ""
+	if ! sudo find "$cache" -maxdepth 1 -name 'download-*' -delete; then
+		echo -e " ${BRED}Failed to remove transient download descriptors from package cache.${RESET}"
+		return 1
 	fi
 
 	local connection_error=true
@@ -746,10 +743,9 @@ func_b() {
 # FUNC_FIX — Fix Pacman Errors
 # ==============================================================================
 func_fix() {
-	if sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -print -quit 2>/dev/null | grep -q .; then
-		echo " deleting 4ndr0pac cache ..."
-		sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -exec rm -rf {} +
-		echo ""
+	if ! sudo find /tmp/ -maxdepth 1 -iname '4ndr0pac*' -exec rm -rf -- {} +; then
+		echo -e " ${BRED}Failed to remove 4ndr0pac temporary artifacts.${RESET}"
+		return 1
 	fi
 
 	_remove_db_lock

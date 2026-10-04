@@ -38,6 +38,10 @@ check_gap \
     'rm[[:space:]]+-r[[:space:]]+/etc/pacman[.]d/gnupg.*\|\|[[:space:]]*true' \
     'broken pacman keyring cleanup failure is suppressed'
 
+check_gap \
+    'find[[:space:]]+[^\n]*-print[[:space:]]+-quit[^\n]*\|[[:space:]]*grep[[:space:]]+-q' \
+    'find existence probe uses LBYL pipe short-circuit before cleanup'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
@@ -48,7 +52,7 @@ require_gap_invariant() {
 }
 
 require_gap_invariant \
-    'pacman[[:space:]]+--config[[:space:]]+"\$recovery_conf"[[:space:]]+-Syu' \
+    'pacman[[:space:]]+--config[[:space:]]+"[$]recovery_conf"[[:space:]]+-Syu' \
     'isolated recovery pacman invocation is missing --config binding'
 
 require_gap_invariant \
