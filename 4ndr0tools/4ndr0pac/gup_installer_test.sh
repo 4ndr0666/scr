@@ -150,6 +150,7 @@ sudo env PATH="$SYMLINK_PROOF_SHIM:$PATH" GUP_READLINK_COUNT="$TEST_ROOT/symlink
     tee "$SYMLINK_PROOF_LOG" >/dev/null
 SYMLINK_PROOF_RC=$?
 set -e
+printf 'GUP DEBUG: install readlink calls=%s\n' "$(<"$TEST_ROOT/symlink-proof-install-count")" >&2
 [[ "$SYMLINK_PROOF_RC" -ne 0 ]] || fail "invocation-link inspection failure was accepted during install"
 grep -Fq 'Unable to inspect managed invocation link /usr/local/bin/4ndr0pac; refusing to continue.' "$SYMLINK_PROOF_LOG" ||
     fail "install invocation-link inspection failure was not reported explicitly"
