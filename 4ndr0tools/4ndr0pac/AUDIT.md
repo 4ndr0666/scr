@@ -167,3 +167,12 @@ The enterprise installer had a target-ownership asymmetry after M21: the invocat
 The remediation makes an existing installation target fail closed unless it is demonstrably managed by 4ndr0pac: the target must be a directory, the invocation link must point to that target, and the expected runtime/GUP payload must exist. G15 adds isolated coverage for dry-run and real installation and verifies that an unmanaged target remains unchanged and no invocation link is created.
 
 The evidence remains limited to the installer transaction harness and does not execute package-manager operations.
+
+
+## M25 installer uninstall target ownership hardening
+
+The enterprise installer had an uninstall ownership gap: an existing directory supplied through `--path` could be removed when `/usr/local/bin/4ndr0pac` was absent. The uninstall path only validated ownership when an invocation link existed.
+
+The remediation now fails closed when an existing uninstall target has no managed invocation link. The installer GUP gate covers both dry-run and real uninstall and verifies that the unrelated target remains unchanged and no invocation link is created.
+
+The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
