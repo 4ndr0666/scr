@@ -194,3 +194,12 @@ The enterprise installer previously used `readlink "$SYMLINK_PATH" || true` in t
 The remediation makes symlink inspection fail closed with an explicit diagnostic. The G20 installer gate injects a controlled `readlink` failure and verifies install and uninstall dry-runs reject the state without changing the target or invocation link.
 
 The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.
+
+
+## G21 installer Python validation hardening
+
+The enterprise installer used a pipe-based existence probe before validating Python payloads. Under `pipefail`, the `grep -q` short-circuit could make `find` report SIGPIPE and cause the conditional to skip the AST validation block.
+
+The remediation directly runs Python AST validation through `find -exec`, eliminating the probe and its pipe-status ambiguity. The G21 gate injects invalid Python into an isolated payload and requires explicit rejection without target mutation.
+
+The evidence remains limited to the installer transaction harness; it does not execute package-manager operations.

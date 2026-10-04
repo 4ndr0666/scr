@@ -230,9 +230,9 @@ _validate_source() {
     log_step "Validating every shipped shell payload."
     find "$root" -type f -name '*.sh' -not -path '*/.git/*' -exec bash -n {} +
     log_step "Validating every shipped Python payload."
-    if find "$root" -type f -name '*.py' -not -path '*/.git/*' -print -quit | grep -q .; then
-        command -v python3 >/dev/null || { log_error "python3 is required to validate Python payloads."; return 1; }
-        find "$root" -type f -name '*.py' -not -path '*/.git/*' -exec             python3 -c 'from pathlib import Path; import ast, sys; ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])' {} +
+    if ! find "$root" -type f -name '*.py' -not -path '*/.git/*' -exec python3 -c 'from pathlib import Path; import ast, sys; [ast.parse(Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' {} +; then
+        log_error "Python payload validation failed."
+        return 1
     fi
     [[ -x "$root/4ndr0pac" ]] || log_warn "Frontend is not executable in source; deployment will normalize permissions."
     [[ -x "$root/4ndr0pac.sh" ]] || log_warn "Backend is not executable in source; deployment will normalize permissions."
