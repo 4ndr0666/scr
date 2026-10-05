@@ -278,3 +278,12 @@ The rollback path previously masked failure of the tail/grep/awk/fzf/sed/awk pac
 The remediation captures the pipeline status explicitly. fzf cancellation status 130 is treated as a normal no-op; any other failure emits a diagnostic and returns before package-manager mutation. The GUP scanner records the masked rollback-selection pipeline as a regression invariant.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G31 rollback package derivation hardening
+
+The rollback path previously masked failures while deriving installed, upgraded, and downgraded package names from the selected rollback state with `|| true`. Those derived package lists directly control subsequent package removal or cached-package installation.
+
+The remediation makes each derivation explicit and fail-closed. A derivation failure emits a dedicated diagnostic and returns before package-manager mutation. The backend GUP scanner rejects the masked package-derivation form as a regression invariant.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.

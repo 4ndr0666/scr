@@ -668,7 +668,13 @@ func_b() {
 		sudo pacman "${argument_flag[@]}" -R "${pkgR_arr[@]}" --color always
 	fi
 
-	pacui_cache_install="$(echo "${pacui_cache_packages}" | awk '/removed/ {print $2}' || true)"
+	if pacui_cache_install="$(echo "${pacui_cache_packages}" | awk '/removed/ {print $2}')"; then
+		:
+	else
+		local rc=$?
+		echo -e " ${BRED}Failed to derive packages removed by the selected rollback.${RESET}"
+		return "$rc"
+	fi
 	if [[ -n "$pacui_cache_install" ]]; then
 		if [[ "$AUR_Helper" == "pacaur" ]]; then
 			pacui_aur_install="$(
@@ -698,7 +704,13 @@ func_b() {
 		fi
 	fi
 
-	pacui_cache_downgrade="$(echo "${pacui_cache_packages}" | awk '/upgraded/ {print $2}' || true)"
+	if pacui_cache_downgrade="$(echo "${pacui_cache_packages}" | awk '/upgraded/ {print $2}')"; then
+		:
+	else
+		local rc=$?
+		echo -e " ${BRED}Failed to derive packages upgraded by the selected rollback.${RESET}"
+		return "$rc"
+	fi
 	if [[ -n "$pacui_cache_downgrade" ]]; then
 		pacui_tmp_downgrade="$(mktemp /tmp/4ndr0pac-tmp-downgrade.XXXXXXXX)"
 		trap 'rm -f "${pacui_tmp_downgrade}"' RETURN
@@ -733,7 +745,13 @@ func_b() {
 		fi
 	fi
 
-	pacui_cache_upgrade="$(echo "${pacui_cache_packages}" | awk '/downgraded/ {print $2}' || true)"
+	if pacui_cache_upgrade="$(echo "${pacui_cache_packages}" | awk '/downgraded/ {print $2}')"; then
+		:
+	else
+		local rc=$?
+		echo -e " ${BRED}Failed to derive packages downgraded by the selected rollback.${RESET}"
+		return "$rc"
+	fi
 	if [[ -n "$pacui_cache_upgrade" ]]; then
 		pacui_tmp_upgrade="$(mktemp /tmp/4ndr0pac-tmp-upgrade.XXXXXXXX)"
 		trap 'rm -f "${pacui_tmp_upgrade}"' RETURN
