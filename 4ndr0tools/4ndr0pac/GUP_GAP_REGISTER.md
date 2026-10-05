@@ -202,3 +202,12 @@ The rollback path and read-only system analysis path parsed LogFile from /etc/pa
 The remediation makes both LogFile configuration reads explicit fail-closed boundaries. A successful read still permits the existing default only when LogFile is absent; a failed read emits a dedicated diagnostic and returns before log inspection. The backend gap scanner rejects reintroduction of the masked LogFile parsing form.
 
 The evidence remains limited to static backend invariants and does not execute package-manager operations.
+
+
+### G30 — Rollback package-selection pipeline failure suppression
+
+The rollback directive built the package-selection set through a tail/grep/awk/fzf/sed/awk pipeline and unconditionally suppressed the pipeline status with `|| true`. A failure while reading the pacman log, rendering or selecting entries, or transforming the selected records could therefore be converted into a successful selection state before package removal or archive installation actions.
+
+The remediation captures the pipeline status explicitly. User cancellation through fzf exit status 130 remains a normal no-op; all other selection failures emit a diagnostic and abort the rollback directive before package-manager mutations. The backend gap scanner rejects reintroduction of the masked rollback-selection pipeline.
+
+The evidence remains limited to static backend invariants and does not execute package-manager operations.

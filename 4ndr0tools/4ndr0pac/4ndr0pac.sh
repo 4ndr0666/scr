@@ -634,10 +634,11 @@ func_b() {
 
 	4ndr0pac_tty_clean
 
-	pacui_cache_packages="$(tail -8000 "$logpath" |
-		grep "] installed\|removed\|upgraded\|downgraded" |
-		awk -F '[\\[\\]]' '{ print $2 " " $5 }' |
-		awk '{ $1=$1 ":"; $2="  " $2; $3="\t\033[1m" $3 " \033[0m"; print }' |
+	local selection_rc=0
+	if pacui_cache_packages="$(tail -8000 "$logpath" |
+		grep "] installed\\|removed\\|upgraded\\|downgraded" |
+		awk -F '[\\\\[\\\\]]' '{ print $2 " " $5 }' |
+		awk '{ $1=$1 ":"; $2="  " $2; $3="\\t\\033[1m" $3 " \\033[0m"; print }' |
 		fzf -i --multi --exact --no-sort --select-1 --ansi \
 			--query="$argument_input" --cycle --tac --layout=reverse \
 			--bind='pgdn:half-page-down,pgup:half-page-up' \
@@ -645,7 +646,18 @@ func_b() {
 			--header="Press TAB key to (un)select. ENTER to roll back. ESC to quit." \
 			--prompt='Enter string to filter displayed list of recent Pacman changes > ' |
 		sed 's/ ([^)]*)//g' |
-		awk '{ print $(NF-1) " " $NF }' || true)"
+		awk '{ print $(NF-1) " " $NF }')"; then
+		selection_rc=0
+	else
+		selection_rc=$?
+	fi
+	if (( selection_rc != 0 )); then
+		if (( selection_rc == 130 )); then
+			return 0
+		fi
+		echo -e " ${BRED}Failed to build the rollback package selection.${RESET}"
+		return "$selection_rc"
+	fi
 
 	4ndr0pac_tty_clean
 	[[ -z "$pacui_cache_packages" ]] && return 0

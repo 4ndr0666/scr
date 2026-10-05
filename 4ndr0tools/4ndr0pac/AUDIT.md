@@ -269,3 +269,12 @@ The rollback and read-only analysis paths previously masked failure while readin
 The remediation makes both LogFile reads fail closed. A successful parse retains the existing default only when LogFile is absent; a failed read emits a dedicated diagnostic and returns before log inspection. The GUP scanner records the masked LogFile parsing form as a regression invariant.
 
 The evidence remains limited to static backend checks and does not execute package-manager operations.
+
+
+## G30 rollback package-selection pipeline hardening
+
+The rollback path previously masked failure of the tail/grep/awk/fzf/sed/awk package-selection pipeline with `|| true`. That allowed a failed log read or selection transformation to fall through into rollback processing and potentially reach package removal or archive installation with incomplete selection state.
+
+The remediation captures the pipeline status explicitly. fzf cancellation status 130 is treated as a normal no-op; any other failure emits a diagnostic and returns before package-manager mutation. The GUP scanner records the masked rollback-selection pipeline as a regression invariant.
+
+The evidence remains limited to static backend checks and does not execute package-manager operations.

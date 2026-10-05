@@ -66,6 +66,10 @@ check_gap \
     'awk[[:space:]]+-F[[:space:]]*=[[:space:]]+[^|]*LogFile[^|]*[/]etc[/]pacman[.]conf[^|]*[|][|][[:space:]]*true' \
     'pacman LogFile configuration-read failure is suppressed'
 
+check_gap \
+    'awk[[:space:]]+[{][[:space:]]+print[[:space:]]+[$][(]NF-1[)][[:space:]]+" "[[:space:]]+[$]NF[[:space:]]+[}][[:space:]]*[|][|][[:space:]]*true' \
+    'rollback package selection transformation failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
