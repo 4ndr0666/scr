@@ -1,0 +1,16 @@
+# /etc/systemd/system/mem-police.service
+# Manages the mem-police daemon using its canonical path.
+
+[Unit]
+Description=Memory Policing Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mem-police --foreground
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

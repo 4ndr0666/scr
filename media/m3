@@ -226,7 +226,7 @@ execute_extraction() {
 	ensure_writable_dir "$TMP_DIR" || return 1
 
 	# Construct the command array safely.
-	local cmd=("$BIN_M3U8" "$TARGET_URL")
+	local cmd=("$BIN_M3U8" --log-file-path "${XDG_DATA_HOME:-$HOME}/.local/share/logs/n-m3u8dl-re.log" "$TARGET_URL")
 
 	cmd+=(--thread-count "$THREAD_COUNT")
 	cmd+=(--download-retry-count "$RETRY_COUNT")
