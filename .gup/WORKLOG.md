@@ -89,3 +89,12 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Updated `.gup/scripts/audit_deleted_blob_matches.py` to write a same-directory temporary file, flush and `fsync` it, atomically replace the target, `fsync` the directory, and clean up temporary residue on success or failure.
 - Added a regression test proving repeated output generation is byte-stable and leaves no temporary files.
 - This is a tooling-only correction; no service runtime files or historical dispositions changed. PR CI must validate the final commit before merge.
+
+
+## 2026-10-20 — final-head GUP validation
+
+- Final code head at validation: `85d2a017a95463cbef4005dcf60cf4332f305c46`.
+- GUP run [39512139716](https://github.com/4ndr0666/scr/actions/runs/39512139716) passed: source/candidate inventory and parity, history audit (2/2), blob analysis (4/4, including atomic/idempotent output), artifact upload, and service runtime gate (19/19).
+- Final-head history artifact ID `12305948676`, SHA-256 `2cb0c798c6fe1e52840c9bb4d81f72436e64d962bb6a0eec38d296151fd3fd82`, seven-day retention.
+- CodeQL Advanced remains in progress at this entry. Do not treat PR #166 as fully cleared until CodeQL completes and all required checks for the final head are successful.
+- Findings remain unchanged: 52 rename-aware historical deletions unresolved; 55 no-renames raw candidates, 2 exact-blob leads; canonical baseline unset; all nine integration surfaces PARTIAL; no GUP/SUK certification.
