@@ -144,6 +144,10 @@ jobs:
           print(f"GUP service subtree parity verified: {expected} at both recorded commits")
           PY
 
+      - name: Verify recorded service subtree parity
+        shell: bash
+        run: python3 .gup/scripts/verify_scope_parity.py
+
       - name: Run service Golden Unit runtime gate
         shell: bash
         run: bash 4ndr0tools/4ndr0service/test/gup_runtime_gate.sh
