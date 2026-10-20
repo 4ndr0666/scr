@@ -55,7 +55,7 @@ This is a semantic classification pass over the 48-file scope inventory and sele
 | Source safety proof | `test/source_safety_runtime.sh` | Sourcing/side-effect safety. | In runtime gate |
 | Environment verifier runtime proof | `test/verify_environment_runtime.sh` | Environment verifier behavior. | In runtime gate |
 | Environment verifier implementation | `test/verify_environment.sh` | Environment audit and provisioning helpers; runs only when executed directly but is also sourced by production orchestration. | Production dependency hidden under `test/`; must remain until callers/migration are proven |
-| Error mitigation helpers | `test/tools/error_mitigations.sh` | Error mitigation test/helper suite. | Not in the 19-test runtime gate; entry/caller and independent test invocation status pending |
+| Historical migration-path rename candidate | `test/tools/error_mitigations.sh` | Exact Git blob match for deleted `test/tools/4ndr0service_env_migrate.sh` at commit `0ed45470d981c426a08730b66b7abeacb4a30391`; GitHub commit metadata marks it renamed with zero content changes. Current file content is an installer implementation (header says `install.sh`), not an error-mitigation helper suite. | `UNRESOLVED_ROLE_MISMATCH`: trace callers, determine intended ownership, and prove whether this older installer snapshot is independently invoked before classifying or moving it |
 | Installer | `install.sh` | Installs suite under `/opt/4ndr0service`, links `/usr/local/bin/4ndr0service`, supports dry-run/uninstall, migration and optional systemd. | Critical deployment path; full rollback/upgrade behavior review pending |
 
 ## Preserved historical defect classes

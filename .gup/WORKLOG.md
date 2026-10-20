@@ -62,3 +62,39 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Validation: `python -m unittest discover -s /tmp/gup-v7.0.1-reconciled/tests -v` passed 7/7 tests; `golden_unit_hash.py --selftest` passed 23/23 assertions.
 - Evidence: `.gup/evidence/tooling-version-reconciliation.json`.
 - Status: `VERSION_METADATA_RECONCILED_ARTIFACT_VALIDATED_NOT_VENDORED`. The out-of-band artifact pin must be compared against the separately delivered digest. This does not close service integration surfaces or establish a canonical baseline; GUP/SUK certification is not claimed.
+
+
+## 2026-10-20 — exact-blob leads for historical deletions
+
+- Added `.gup/scripts/audit_deleted_blob_matches.py` to compare each historical deleted path's last pre-deletion Git blob identity against the current candidate tree. The output distinguishes byte-identical candidate paths from paths with no exact blob match.
+- Added isolated synthetic Git tests at `.gup/tests/test_deleted_blob_matches.py`: exact-blob lead, no-match behavior, and invalid-ref fail-closed behavior.
+- Integrated the analysis and tests into `.github/workflows/4ndr0service-gup.yml`; both history reports are uploaded as the `gup-service-history-audit` artifact.
+- Safety rule: exact blob identity is only a review lead. It does not prove caller/interface/configuration/runtime equivalence. All 52 historical deletions remain `UNRESOLVED`; no deletion is authorized for retirement.
+- Validation status at authoring time: awaiting PR CI execution. No GUP/SUK certification is claimed.
+
+
+## 2026-10-20 — exact-blob review and CI validation
+
+- PR #166 workflow run [39511741964](https://github.com/4ndr0666/scr/actions/runs/39511741964) passed the scope inventory, subtree parity, existing history audit (2/2 tests), exact-blob scanner (3/3 tests), artifact upload, and service runtime gate (19/19).
+- Uploaded artifact ID `12305498141`, SHA-256 `354bd498efa79ae92d67fea61ab9bf34f3af3c6fdeca3633204df282bfb33725`; the repository policy shortened retention to seven days.
+- Rename-aware audit: 52 historical deleted paths, all `UNRESOLVED`. No-renames blob scan: 55 raw deleted-path candidates; 2 exact current-blob matches, 53 without exact matches. Three additional raw candidates appear only when rename detection is disabled; counts are deliberately kept distinct.
+- Exact-blob review identified `systemd/user/env_maintenance.timer` → `systemd/env_maintenance.timer` (blob `d0b43b5b4a7f5b3077bbe2723883c87007cc9262`) and `test/tools/4ndr0service_env_migrate.sh` → `test/tools/error_mitigations.sh` (blob `ee5c386727db0e7eb8768b5fb84dd9cae37187af`). GitHub commit metadata marks both as zero-content-change renames.
+- Semantic finding: current `test/tools/error_mitigations.sh` contains an installer implementation (header says `install.sh`), not an error-mitigation helper suite. The capability ledger was corrected to `UNRESOLVED_ROLE_MISMATCH`; no file was removed or relocated.
+- Evidence: `.gup/evidence/deletion-blob-review.md`. Exact blob identity remains non-semantic evidence. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL; GUP/SUK certification is not claimed.
+
+
+## 2026-10-20 — evidence-output durability hardening
+
+- GUP review found the new blob scanner wrote report output directly, unlike the existing history auditor's atomic evidence write contract.
+- Updated `.gup/scripts/audit_deleted_blob_matches.py` to write a same-directory temporary file, flush and `fsync` it, atomically replace the target, `fsync` the directory, and clean up temporary residue on success or failure.
+- Added a regression test proving repeated output generation is byte-stable and leaves no temporary files.
+- This is a tooling-only correction; no service runtime files or historical dispositions changed. PR CI must validate the final commit before merge.
+
+
+## 2026-10-20 — final-head GUP validation
+
+- Final code head at validation: `85d2a017a95463cbef4005dcf60cf4332f305c46`.
+- GUP run [39512139716](https://github.com/4ndr0666/scr/actions/runs/39512139716) passed: source/candidate inventory and parity, history audit (2/2), blob analysis (4/4, including atomic/idempotent output), artifact upload, and service runtime gate (19/19).
+- Final-head history artifact ID `12305948676`, SHA-256 `2cb0c798c6fe1e52840c9bb4d81f72436e64d962bb6a0eec38d296151fd3fd82`, seven-day retention.
+- CodeQL Advanced remains in progress at this entry. Do not treat PR #166 as fully cleared until CodeQL completes and all required checks for the final head are successful.
+- Findings remain unchanged: 52 rename-aware historical deletions unresolved; 55 no-renames raw candidates, 2 exact-blob leads; canonical baseline unset; all nine integration surfaces PARTIAL; no GUP/SUK certification.

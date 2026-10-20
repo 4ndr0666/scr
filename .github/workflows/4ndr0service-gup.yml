@@ -113,14 +113,27 @@ jobs:
             --output /tmp/gup-service-history-audit.json
           python3 .gup/tests/test_history_audit.py
 
-      - name: Upload Git-derived history audit
+      - name: Analyze exact-blob leads for historical deletions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .gup/scripts/audit_deleted_blob_matches.py \
+            --root . \
+            --scope 4ndr0tools/4ndr0service \
+            --candidate-commit HEAD \
+            --output /tmp/gup-deleted-blob-matches.json
+          python3 .gup/tests/test_deleted_blob_matches.py
+
+      - name: Upload Git-derived history audits
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gup-service-history-audit
-          path: /tmp/gup-service-history-audit.json
+          path: |
+            /tmp/gup-service-history-audit.json
+            /tmp/gup-deleted-blob-matches.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Run service Golden Unit runtime gate
         shell: bash
