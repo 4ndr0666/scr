@@ -5,7 +5,7 @@
   "repository": "4ndr0666/scr",
   "scope_root": "4ndr0tools/4ndr0service",
   "observed_source_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
-  "observed_source_tree": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+  "observed_source_tree": "bcc1e9652ca6a45d1f8e6bbc246e01885125e305",
   "inventory_status": "PATHS_CAPTURED_SEMANTIC_CLASSIFICATION_PENDING",
   "canonical_baseline": null,
   "baseline_status": "BLOCKED_BASELINE_NOT_ESTABLISHED",
