@@ -62,3 +62,12 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Validation: `python -m unittest discover -s /tmp/gup-v7.0.1-reconciled/tests -v` passed 7/7 tests; `golden_unit_hash.py --selftest` passed 23/23 assertions.
 - Evidence: `.gup/evidence/tooling-version-reconciliation.json`.
 - Status: `VERSION_METADATA_RECONCILED_ARTIFACT_VALIDATED_NOT_VENDORED`. The out-of-band artifact pin must be compared against the separately delivered digest. This does not close service integration surfaces or establish a canonical baseline; GUP/SUK certification is not claimed.
+
+
+## 2026-10-20 — exact-blob leads for historical deletions
+
+- Added `.gup/scripts/audit_deleted_blob_matches.py` to compare each historical deleted path's last pre-deletion Git blob identity against the current candidate tree. The output distinguishes byte-identical candidate paths from paths with no exact blob match.
+- Added isolated synthetic Git tests at `.gup/tests/test_deleted_blob_matches.py`: exact-blob lead, no-match behavior, and invalid-ref fail-closed behavior.
+- Integrated the analysis and tests into `.github/workflows/4ndr0service-gup.yml`; both history reports are uploaded as the `gup-service-history-audit` artifact.
+- Safety rule: exact blob identity is only a review lead. It does not prove caller/interface/configuration/runtime equivalence. All 52 historical deletions remain `UNRESOLVED`; no deletion is authorized for retirement.
+- Validation status at authoring time: awaiting PR CI execution. No GUP/SUK certification is claimed.
