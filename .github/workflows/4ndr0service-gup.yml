@@ -44,7 +44,6 @@ jobs:
           done
           printf 'Bash syntax passed for %d scripts.\n' "${#scripts[@]}"
 
-
       - name: Validate GUP service scope inventory
         shell: bash
         run: |
@@ -97,6 +96,52 @@ jobs:
           if manifest.get("file_count") != len(actual):
               raise SystemExit("GUP file_count does not match the source Git tree")
           print(f"GUP scope inventory verified: {len(actual)} files at {source_commit}")
+          PY
+
+      - name: Verify recorded service subtree parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          evidence = json.loads(Path(".gup/evidence/scope-tree-parity.json").read_text(encoding="utf-8"))
+          scope = evidence.get("scope_root")
+          if scope != "4ndr0tools/4ndr0service":
+              raise SystemExit("Unexpected service scope in parity evidence")
+          baseline = evidence.get("baseline_candidate_commit")
+          candidate = evidence.get("compared_candidate_commit")
+          expected = evidence.get("baseline_scope_tree_sha")
+          if evidence.get("candidate_scope_tree_sha") != expected:
+              raise SystemExit("Recorded service subtree hashes differ")
+          if evidence.get("result") != "EXACT_PATH_MODE_BLOB_PARITY":
+              raise SystemExit("Parity evidence does not record exact equality")
+          summary = evidence.get("summary", {})
+          if summary != {
+              "baseline_entries": 54,
+              "candidate_entries": 54,
+              "baseline_files": 48,
+              "candidate_files": 48,
+              "added_paths": 0,
+              "missing_paths": 0,
+              "changed_mode_or_blob": 0,
+          }:
+              raise SystemExit("Parity evidence summary is incomplete or unexpected")
+          actual_baseline = subprocess.run(
+              ["git", "rev-parse", f"{baseline}:{scope}"],
+              check=True, text=True, stdout=subprocess.PIPE
+          ).stdout.strip()
+          actual_candidate = subprocess.run(
+              ["git", "rev-parse", f"{candidate}:{scope}"],
+              check=True, text=True, stdout=subprocess.PIPE
+          ).stdout.strip()
+          if actual_baseline != expected or actual_candidate != expected:
+              raise SystemExit(
+                  f"Subtree parity verification failed: baseline={actual_baseline}, candidate={actual_candidate}, expected={expected}"
+              )
+          print(f"GUP service subtree parity verified: {expected} at both recorded commits")
           PY
 
       - name: Run service Golden Unit runtime gate
