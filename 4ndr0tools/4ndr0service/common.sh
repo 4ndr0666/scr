@@ -185,6 +185,25 @@ log_error() {
     _log_file_write "$ts" "FAIL" "$*"
 }
 
+pipx_package_is_installed() {
+    local package="${1:-}"
+    local inventory
+
+    if [[ -z "$package" ]]; then
+        log_error "pipx_package_is_installed requires a package name."
+        return 2
+    fi
+
+    # A failed inventory query is not evidence that the package is absent.
+    # Return 2 to distinguish an operational failure from a normal miss (1).
+    if ! inventory="$(pipx list --short 2>/dev/null)"; then
+        log_error "pipx inventory query failed; refusing to assume '$package' is absent."
+        return 2
+    fi
+
+    awk -v package="$package" '$1 == package { found=1 } END { exit !found }' <<< "$inventory"
+}
+
 handle_error() {
     local line_no="$1"
     local command="$2"
