@@ -1,0 +1,361 @@
+{
+  "schema_version": 1,
+  "protocol": "GUP",
+  "protocol_version": "7.0.1",
+  "repository": "4ndr0666/scr",
+  "scope_root": "4ndr0tools/4ndr0service",
+  "observed_source_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+  "observed_source_tree": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+  "inventory_status": "PATHS_CAPTURED_SEMANTIC_CLASSIFICATION_PENDING",
+  "canonical_baseline": null,
+  "baseline_status": "BLOCKED_BASELINE_NOT_ESTABLISHED",
+  "file_count": 48,
+  "directory_count": 6,
+  "directories": [
+    "4ndr0tools/4ndr0service/plugins",
+    "4ndr0tools/4ndr0service/service",
+    "4ndr0tools/4ndr0service/systemd",
+    "4ndr0tools/4ndr0service/test",
+    "4ndr0tools/4ndr0service/test/tools",
+    "4ndr0tools/4ndr0service/view"
+  ],
+  "identity_note": "Git blob IDs identify source objects at the observed commit. They are not SHA-256 file-byte hashes and do not establish semantic preservation.",
+  "files": [
+    {
+      "path": "4ndr0tools/4ndr0service/ascension.sh",
+      "git_blob_sha": "097ca3dff0ca4265f25351e19d0b69bef55e6b27",
+      "mode": "100755",
+      "size_bytes": 16830,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/common.sh",
+      "git_blob_sha": "247797cf743e872eabd3fe69e7b66d3c3b2d45f6",
+      "mode": "100755",
+      "size_bytes": 18313,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/controller.sh",
+      "git_blob_sha": "115da96b545f636fe1d85e4f4cc17e61466cb9e8",
+      "mode": "100755",
+      "size_bytes": 7422,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/install.sh",
+      "git_blob_sha": "9107b1dfe8b930c22bc2527142645ba1a1acbf3a",
+      "mode": "100755",
+      "size_bytes": 12216,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/main.sh",
+      "git_blob_sha": "2261a986bb23dab03c2c2aee638b8895f1774f03",
+      "mode": "100755",
+      "size_bytes": 5567,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/manage_files.sh",
+      "git_blob_sha": "c31fa54fdf7c9c2fd7c87849fe0a0eca121634e0",
+      "mode": "100755",
+      "size_bytes": 3051,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/plugins/scr_alias_gen.sh",
+      "git_blob_sha": "64a17fa648ba32ce101521f44655cad457bdb138",
+      "mode": "100755",
+      "size_bytes": 7603,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/prunesys",
+      "git_blob_sha": "4eb1422e51dba6babb590e4630bbe253dce030b8",
+      "mode": "100755",
+      "size_bytes": 5805,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/purge_matrix.sh",
+      "git_blob_sha": "35346b293837c9f454cb1af902fb95f9e142f10e",
+      "mode": "100755",
+      "size_bytes": 8317,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/README.md",
+      "git_blob_sha": "f5e04470f5cc75891352fa49b338ea2bc7a7d1a2",
+      "mode": "100644",
+      "size_bytes": 25152,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_cargo.sh",
+      "git_blob_sha": "046105bfc55de47f15f04a55f0d137522cfba253",
+      "mode": "100755",
+      "size_bytes": 6580,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_electron.sh",
+      "git_blob_sha": "0e3ba7c55936701fbf0e168bfa104aba07cffef4",
+      "mode": "100755",
+      "size_bytes": 5874,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_go.sh",
+      "git_blob_sha": "5b0c9a79c220f557ef0bc386d6d2c186d9ed217b",
+      "mode": "100755",
+      "size_bytes": 5222,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_meson.sh",
+      "git_blob_sha": "20e3e27e6eaabb2614e766c6c8da85bbfdcc071f",
+      "mode": "100755",
+      "size_bytes": 4342,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_node.sh",
+      "git_blob_sha": "d7536ad6532eff2e028a7a23f294129a0b26e2c7",
+      "mode": "100755",
+      "size_bytes": 7288,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_nvm.sh",
+      "git_blob_sha": "b7c72fda9f07cee80545a21e8ba6e862eeecf5c9",
+      "mode": "100755",
+      "size_bytes": 7681,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_python.sh",
+      "git_blob_sha": "8dd8acc12a6639462435480ce5b1f6fcc3d2472a",
+      "mode": "100755",
+      "size_bytes": 15563,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_ruby.sh",
+      "git_blob_sha": "2c7d12ea77192df34711ad8b0b670f7f8e2691e5",
+      "mode": "100755",
+      "size_bytes": 5361,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_venv.sh",
+      "git_blob_sha": "fb6aa800974aa633e33a246c1d3629a3777df7a1",
+      "mode": "100755",
+      "size_bytes": 8823,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/settings_functions.sh",
+      "git_blob_sha": "37a4243e76365b1dc753078d19245c38762a3e3f",
+      "mode": "100755",
+      "size_bytes": 4601,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/systemd/env_maintenance.service",
+      "git_blob_sha": "b7abb74d2301bc07e954fa43ad8ef1de7a6bd22b",
+      "mode": "100644",
+      "size_bytes": 752,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/systemd/env_maintenance.timer",
+      "git_blob_sha": "d0b43b5b4a7f5b3077bbe2723883c87007cc9262",
+      "mode": "100644",
+      "size_bytes": 161,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/systemd/install_env_maintenance.sh",
+      "git_blob_sha": "aa6dd9666d9b17269f117ae6032fe76db4fec3bd",
+      "mode": "100755",
+      "size_bytes": 6479,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/ascension_runtime.sh",
+      "git_blob_sha": "4bf49de3d060ab04e8d23ada55a0e39b722cf73f",
+      "mode": "100755",
+      "size_bytes": 6551,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/controller_plugin_runtime.sh",
+      "git_blob_sha": "9c20a9a772e25902601b8afbe53654b36a8e5d5d",
+      "mode": "100755",
+      "size_bytes": 1826,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/controller_runtime.sh",
+      "git_blob_sha": "a3bc70b2e52762ffd9e039f2dca7395b71ba5131",
+      "mode": "100755",
+      "size_bytes": 2722,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/final_audit_runtime_v2.sh",
+      "git_blob_sha": "ed7dffef66170d7958f10980e8dbede03c06802f",
+      "mode": "100755",
+      "size_bytes": 2907,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/final_audit_runtime.sh",
+      "git_blob_sha": "11805fee1961acbcd7484266b62e02d722313abb",
+      "mode": "100755",
+      "size_bytes": 4190,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/final_audit.sh",
+      "git_blob_sha": "9c309823ad89225a0cdc6713cb313c381eb7a498",
+      "mode": "100755",
+      "size_bytes": 6679,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/ghost_removal_runtime.sh",
+      "git_blob_sha": "a20045c19227ac7dd2beb1c6836879e321f3fe32",
+      "mode": "100755",
+      "size_bytes": 4551,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/go_runtime.sh",
+      "git_blob_sha": "ddd56c6488a0daafa1d48bfdcdc186c634fd5df4",
+      "mode": "100755",
+      "size_bytes": 1978,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/gup_runtime_gate.sh",
+      "git_blob_sha": "5ab7f65d251163220bf5ce0f9133c37a899fcd28",
+      "mode": "100755",
+      "size_bytes": 1519,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/installer_runtime_v2.sh",
+      "git_blob_sha": "766e57f9180f19a011cc2da4abfa371662a32cb7",
+      "mode": "100755",
+      "size_bytes": 1244,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/installer_runtime.sh",
+      "git_blob_sha": "11dba2c87aaed8e4072c8c0b209955d9344df173",
+      "mode": "100755",
+      "size_bytes": 2053,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/node_nvm_runtime.sh",
+      "git_blob_sha": "848331b6c974dc7d5cfe6cc84ea9e43fb2283492",
+      "mode": "100755",
+      "size_bytes": 1750,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/parallel_runtime.sh",
+      "git_blob_sha": "a34f6719233e18a375fff627f346533b15f812fb",
+      "mode": "100755",
+      "size_bytes": 2468,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/path_resolution_runtime.sh",
+      "git_blob_sha": "7aa0c1f5792e2888ff3feab16abbdffb3098147a",
+      "mode": "100755",
+      "size_bytes": 12161,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/pipx_inventory_runtime.sh",
+      "git_blob_sha": "c736235ddc4d765418f7f83329e954282ecf4170",
+      "mode": "100755",
+      "size_bytes": 3983,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/prunesys_runtime.sh",
+      "git_blob_sha": "99eed68654a0a1da0b1cf02895780c40ff8b58be",
+      "mode": "100755",
+      "size_bytes": 1779,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/purge_runtime.sh",
+      "git_blob_sha": "1f5ece3511f7cb592ea0a1ac589a92c9e1dfe8cb",
+      "mode": "100755",
+      "size_bytes": 2699,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/run_bounded_runtime.sh",
+      "git_blob_sha": "6efbc9e329bd925716bded57f77bac3b428fe0d9",
+      "mode": "100755",
+      "size_bytes": 3991,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/settings_runtime.sh",
+      "git_blob_sha": "a394404c0f0a41d3784e4a706913721870666075",
+      "mode": "100755",
+      "size_bytes": 2290,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/source_safety_runtime.sh",
+      "git_blob_sha": "d76c504699683d1cf945d69a2292d9ae326af139",
+      "mode": "100755",
+      "size_bytes": 6116,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/tools/error_mitigations.sh",
+      "git_blob_sha": "ee5c386727db0e7eb8768b5fb84dd9cae37187af",
+      "mode": "100755",
+      "size_bytes": 18086,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/verify_environment_runtime.sh",
+      "git_blob_sha": "5d37e3cf2e4c998fb740721a2c2e2b3caad0955a",
+      "mode": "100755",
+      "size_bytes": 3196,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/verify_environment.sh",
+      "git_blob_sha": "293f1451c4be8e3b035eaacef5c066673d198968",
+      "mode": "100755",
+      "size_bytes": 10399,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/view/cli.sh",
+      "git_blob_sha": "c788ff79fd83f98d0abb8e62ace47d84d61cfb65",
+      "mode": "100755",
+      "size_bytes": 12553,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/view/dialog.sh",
+      "git_blob_sha": "83489ecdcc07bf4cae966333ffd41ba401fb9ffe",
+      "mode": "100755",
+      "size_bytes": 12883,
+      "classification": "DISCOVERED_UNCLASSIFIED"
+    }
+  ]
+}
