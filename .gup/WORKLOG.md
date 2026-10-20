@@ -33,3 +33,11 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Evidence limit: Git tree parity proves exact object-level equality for this scope at these commits; it does not establish semantic correctness, historical completeness, or independent SHA-256 inventory.
 - GUP tooling integration is still pending. Package v7.0.1 identity vs v7.0.0 executable metadata remains a known compatibility defect to resolve under isolated regression tests.
 - Canonical baseline remains unset; all nine integration surfaces remain PARTIAL.
+
+## 2026-10-20 — exact service subtree parity
+
+- PR #162 merged as `34f1b65fe671cec1cd8c62667c41eaa73770d840`.
+- Compared `4ndr0tools/4ndr0service` at baseline candidate `e00d2ca39ca4b5dd7bf9e5c96d0130e042521360` and post-PR #162 commit. Both resolve to subtree `354d670544905ef12622023ded9c561b2b99afa1`.
+- Tree comparison reports 54 entries (48 files and 6 directories), zero added paths, zero missing paths, and zero mode/blob changes. Evidence is stored in `.gup/evidence/scope-tree-parity.json`.
+- This proves exact object-level equality for the service scope at those commits; it does not prove semantic correctness, complete historical continuity, or an independent SHA-256 inventory.
+- GUP tooling integration and v7.0.1/v7.0.0 package-version reconciliation remain outstanding. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL.
