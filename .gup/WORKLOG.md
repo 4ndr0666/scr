@@ -52,3 +52,13 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - CI artifact `gup-service-history-audit`, artifact ID `12236705122`, SHA-256 `c43b1e478b6e420945bea2f1163d6967905bbacef34b937b13732d01f44cea5a`; retention is 30 days from creation.
 - The workflow now emits each unresolved deletion record to its logs for review. The report records path history/rename observations and explicitly states that Git history does not prove semantic capability preservation.
 - Canonical baseline remains unset. Historical deletion dispositions and semantic preservation review remain blockers; GUP/SUK certification is not claimed.
+
+
+## 2026-10-20 — GUP v7.0.1 tooling metadata reconciliation
+
+- Finding: uploaded GUP bundle declared v7.0.1 in `SKILL.md` and the v7.0.1 changelog, while `gup_init.py`, `gup_validate.py`, the evidence schema, README, docs, and test fixture still used v7.0.0.
+- Reconciled artifact: `gup-v7.0.1-reconciled.zip`, SHA-256 `416dbb20c953808ef15a4ed2dbd14e6c2d782411ed1025be71f1396fe1720cff`. The artifact is delivered separately from this repository commit; it is not claimed to be vendored.
+- Changed only version declarations, evidence-contract values, documentation paths/headings, the test evidence fixture, and an added version-consistency regression. Gate logic and historical contract sections were not changed.
+- Validation: `python -m unittest discover -s /tmp/gup-v7.0.1-reconciled/tests -v` passed 7/7 tests; `golden_unit_hash.py --selftest` passed 23/23 assertions.
+- Evidence: `.gup/evidence/tooling-version-reconciliation.json`.
+- Status: `VERSION_METADATA_RECONCILED_ARTIFACT_VALIDATED_NOT_VENDORED`. The out-of-band artifact pin must be compared against the separately delivered digest. This does not close service integration surfaces or establish a canonical baseline; GUP/SUK certification is not claimed.
