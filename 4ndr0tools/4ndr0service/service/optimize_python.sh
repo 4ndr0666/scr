@@ -266,9 +266,12 @@ optimize_python_service() {
         log_warn "pipx interpreter broken (stale pyenv path in shebang). Reinstalling..."
         rm -f "${PIPX_BIN_DIR:-$HOME/.local/bin}/pipx" 2>/dev/null || true
         if command -v pacman &>/dev/null; then
-            run_bounded 600 "pacman python-pipx reinstall" sudo pacman -S --needed --noconfirm python-pipx \
-                && log_success "pipx reinstalled via pacman." \
-                || { log_error "pacman reinstall of pipx failed — reinstall manually."; return 1; }
+            if run_bounded 600 "pacman python-pipx reinstall" sudo pacman -S --needed --noconfirm python-pipx; then
+                log_success "pipx reinstalled via pacman."
+            else
+                log_error "pacman reinstall of pipx failed — reinstall manually."
+                return 1
+            fi
         fi
         if ! pipx --version &>/dev/null 2>&1; then
             log_error "pipx still broken after reinstall. Skipping tool injection."

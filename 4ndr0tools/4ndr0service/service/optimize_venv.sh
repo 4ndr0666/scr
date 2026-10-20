@@ -64,7 +64,14 @@ optimize_venv_service() {
         log_warn "Active Python $py_ver is pre-release. Falling back to latest stable pyenv version."
         local stable
         stable=$(pyenv versions --bare | grep -E '^3\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-        [[ -n "$stable" ]] && pyenv shell "$stable" || { log_error "No stable pyenv version found."; return 1; }
+        if [[ -z "$stable" ]]; then
+            log_error "No stable pyenv version found."
+            return 1
+        fi
+        if ! pyenv shell "$stable"; then
+            log_error "Failed to select stable pyenv version: $stable"
+            return 1
+        fi
     fi
 
     # 1. Global Hive Maintenance

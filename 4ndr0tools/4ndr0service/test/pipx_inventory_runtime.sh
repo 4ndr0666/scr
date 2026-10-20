@@ -30,6 +30,7 @@ chmod 700 "$tmpdir/bin/pipx"
 PATH="$tmpdir/bin:$PATH"
 export PATH
 log_error() { printf 'ERROR: %s\n' "$*" >&2; }
+# shellcheck disable=SC1091 # helper.sh is generated from the production function above.
 source "$tmpdir/helper.sh"
 
 pass=0
@@ -67,8 +68,8 @@ else
     fi
 fi
 
-if grep -q 'pipx_package_is_installed "\$tool"' "$SUITE_DIR/service/optimize_python.sh" &&
-   grep -q 'pipx_package_is_installed "\$p"' "$SUITE_DIR/service/optimize_venv.sh"; then
+if grep -Fq "pipx_package_is_installed \"\$tool\"" "$SUITE_DIR/service/optimize_python.sh" &&
+   grep -Fq "pipx_package_is_installed \"\$p\"" "$SUITE_DIR/service/optimize_venv.sh"; then
     pass_case 'both production synchronization paths use the shared inventory contract'
 else
     fail_case 'a production synchronization path bypasses the shared inventory contract'
