@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +73,29 @@ def deletion_events(root: Path, commit: str, scope: str) -> list[dict[str, str]]
     return [records[path] for path in sorted(records)]
 
 
+def atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", prefix=f".{path.name}.", suffix=".tmp",
+            dir=path.parent, delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".")
@@ -121,13 +146,11 @@ def main() -> int:
                 "No exact blob match does not prove capability loss; semantic replacements may differ in content.",
             ],
         }
-        encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
+        encoded = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if args.output:
-            output = Path(args.output)
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(encoded, encoding="utf-8")
+            atomic_write(Path(args.output), encoded)
         else:
-            sys.stdout.write(encoded)
+            sys.stdout.buffer.write(encoded)
         print(
             f"GUP deletion blob continuity: deleted={len(deleted)} exact_blob_matches={matched} "
             f"unmatched={len(deleted) - matched}; all dispositions UNRESOLVED",
