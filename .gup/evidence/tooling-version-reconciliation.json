@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "protocol": "GUP",
+  "protocol_version": "7.0.1",
+  "finding": "VERSION_METADATA_SKEW",
+  "source_package": "uploaded Golden Unit Protocol standard package",
+  "reconciled_artifact": {
+    "filename": "gup-v7.0.1-reconciled.zip",
+    "sha256": "416dbb20c953808ef15a4ed2dbd14e6c2d782411ed1025be71f1396fe1720cff",
+    "delivery": "separate conversation attachment; not vendored into this repository"
+  },
+  "metadata_changes": [
+    "README.md: package heading, protocol text, and command paths",
+    "scripts/gup_init.py: VERSION constant",
+    "scripts/gup_validate.py: VERSION constant",
+    "schemas/gup-evidence.schema.json: title and protocol_version const",
+    "docs/EVIDENCE-CONTRACT.md: version heading and protocol_version requirement",
+    "docs/OPERATING-PROCEDURE.md: version heading",
+    "tests/test_gup_tools.py: evidence fixture and version-consistency regression"
+  ],
+  "compatibility": {
+    "declared_change_class": "metadata_and_contract_alignment_only",
+    "behavioral_gate_logic_changed": false,
+    "historical_contract_sections_retained": true,
+    "v7_0_1_addendum_retained": true
+  },
+  "validation": {
+    "command": "python -m unittest discover -s /tmp/gup-v7.0.1-reconciled/tests -v",
+    "result": "PASS",
+    "tests_passed": 7,
+    "tests_failed": 0,
+    "hash_atomizer_selftest": "PASS",
+    "hash_atomizer_assertions_passed": 23,
+    "other_v7_0_0_metadata_references": "none outside explicitly historical SKILL.md/CHANGELOG.md references"
+  },
+  "limitations": [
+    "This report records validation of a separate reconciled package artifact; the package itself is not vendored into this repository.",
+    "The zip digest is recorded here for reproducibility, but the GUP out-of-band pin rule requires comparing it against the separately delivered digest in the accompanying review text.",
+    "This package reconciliation does not establish a canonical project baseline or close any of the nine service integration surfaces.",
+    "GUP and SUK certification are not claimed."
+  ],
+  "status": "VERSION_METADATA_RECONCILED_ARTIFACT_VALIDATED_NOT_VENDORED"
+}
