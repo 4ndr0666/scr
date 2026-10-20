@@ -24,7 +24,7 @@ make_fixture() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
-if [[ "${*: -2}" == "list-unit-files env_maintenance.timer" ]]; then
+if [[ "${1:-}" == "--user" && "${2:-}" == "list-unit-files" && "${3:-}" == "env_maintenance.timer" ]]; then
     exit 0
 fi
 exit 0
