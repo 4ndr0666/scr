@@ -1,0 +1,45 @@
+name: 4ndr0service GUP
+
+on:
+  push:
+    paths:
+      - '4ndr0tools/4ndr0service/**'
+      - '.github/workflows/4ndr0service-gup.yml'
+  pull_request:
+    paths:
+      - '4ndr0tools/4ndr0service/**'
+      - '.github/workflows/4ndr0service-gup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: 4ndr0service-gup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' scripts < <(find 4ndr0tools/4ndr0service -type f -name '*.sh' -print0)
+          if (( ${#scripts[@]} == 0 )); then
+            echo "No Bash scripts found under 4ndr0tools/4ndr0service" >&2
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            bash -n "$script"
+          done
+          printf 'Bash syntax passed for %d scripts.\n' "${#scripts[@]}"
+
+      - name: Run service Golden Unit runtime gate
+        shell: bash
+        run: bash 4ndr0tools/4ndr0service/test/gup_runtime_gate.sh
