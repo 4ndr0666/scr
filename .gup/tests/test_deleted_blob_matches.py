@@ -61,6 +61,26 @@ class DeletedBlobMatchTests(unittest.TestCase):
             self.assertEqual(row["match_interpretation"], "NO_EXACT_BLOB_MATCH_FOUND")
             self.assertEqual(row["disposition"], "UNRESOLVED")
 
+    def test_output_is_atomically_replaced_and_reruns_are_byte_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_repo(Path(td))
+            (root / "service" / "legacy.sh").unlink()
+            (root / "service" / "replacement.sh").write_text("different payload\\n", encoding="utf-8")
+            run("git", "-C", str(root), "add", "-A")
+            self.assertEqual(run("git", "-C", str(root), "commit", "-qm", "replace content").returncode, 0)
+            output = root / "reports" / "continuity.json"
+            command = [
+                sys.executable, str(SCRIPT), "--root", str(root),
+                "--scope", "service", "--output", str(output),
+            ]
+            first = run(*command)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            first_bytes = output.read_bytes()
+            second = run(*command)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(output.read_bytes(), first_bytes)
+            self.assertEqual(list(output.parent.glob(".continuity.json.*.tmp")), [])
+
     def test_invalid_commit_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = self.make_repo(Path(td))
