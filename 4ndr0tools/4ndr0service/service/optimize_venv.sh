@@ -138,7 +138,14 @@ optimize_venv_service() {
             # per installed tool; matching the package-name field with -x is
             # an exact lookup, mirroring how optimize_node.sh uses npm directly
             # rather than scraping free text.
-            if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$p"; then
+            if pipx_package_is_installed "$p"; then
+                :
+            else
+                local pipx_status=$?
+                if (( pipx_status == 2 )); then
+                    log_error "Cannot synchronize virtualenv tools because pipx inventory is unavailable."
+                    return 1
+                fi
                 log_info "Deploying: $p"
                 run_bounded 900 "pipx install $p" pipx install "$p" || log_warn "Deployment failed: $p"
             fi

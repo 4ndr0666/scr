@@ -288,12 +288,17 @@ optimize_python_service() {
                 # for the full rationale. Exact-match against the package-name
                 # field of `pipx list --short` instead of substring-matching
                 # pipx's free-text listing.
-                if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$tool"; then
-                    log_info "Deploying tool to Hive sector: $tool"
-                    run_bounded 900 "pipx install $tool" pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
-                else
+                if pipx_package_is_installed "$tool"; then
                     log_info "Verifying tool integrity: $tool"
                     run_bounded 900 "pipx upgrade $tool" pipx upgrade "$tool" >/dev/null 2>&1 || log_warn "Pipx upgrade failed for: $tool"
+                else
+                    local pipx_status=$?
+                    if (( pipx_status == 2 )); then
+                        log_error "Cannot synchronize Python tools because pipx inventory is unavailable."
+                        return 1
+                    fi
+                    log_info "Deploying tool to Hive sector: $tool"
+                    run_bounded 900 "pipx install $tool" pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
                 fi
             done
         else
