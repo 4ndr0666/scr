@@ -41,3 +41,14 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Tree comparison reports 54 entries (48 files and 6 directories), zero added paths, zero missing paths, and zero mode/blob changes. Evidence is stored in `.gup/evidence/scope-tree-parity.json`.
 - This proves exact object-level equality for the service scope at those commits; it does not prove semantic correctness, complete historical continuity, or an independent SHA-256 inventory.
 - GUP tooling integration and v7.0.1/v7.0.0 package-version reconciliation remain outstanding. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL.
+
+
+## 2026-10-20 — Git-derived historical path audit
+
+- Audit implementation: `.gup/scripts/audit_history_continuity.py`; isolated regression tests: `.gup/tests/test_history_audit.py`.
+- Source inventory commit: `e00d2ca39ca4b5dd7bf9e5c96d0130e042521360`; PR branch base/main observation: `b25fc1e53a8c94f7f6f5a5730e1b571bad81f2a4`.
+- CI run `39358222503` completed successfully for audit execution, the two synthetic history-disposition tests, the existing scope inventory/parity checks, and the service runtime gate.
+- Audit observation: 48 source files and 48 candidate files; 52 historical deleted paths were found under the service scope and all 52 are `UNRESOLVED`. No deletion is treated as authorized retirement.
+- CI artifact `gup-service-history-audit`, artifact ID `12236705122`, SHA-256 `c43b1e478b6e420945bea2f1163d6967905bbacef34b937b13732d01f44cea5a`; retention is 30 days from creation.
+- The workflow now emits each unresolved deletion record to its logs for review. The report records path history/rename observations and explicitly states that Git history does not prove semantic capability preservation.
+- Canonical baseline remains unset. Historical deletion dispositions and semantic preservation review remain blockers; GUP/SUK certification is not claimed.

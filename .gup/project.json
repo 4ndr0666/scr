@@ -8,8 +8,8 @@
   "canonical_baseline": null,
   "candidate_commit": null,
   "state": "BLOCKED_BASELINE_NOT_ESTABLISHED",
-  "observed_main_commit": "34f1b65fe671cec1cd8c62667c41eaa73770d840",
-  "observed_main_tree": "1ce118b3158caf9b29b555b9e12c97ae9daebf1d",
+  "observed_main_commit": "b25fc1e53a8c94f7f6f5a5730e1b571bad81f2a4",
+  "observed_main_tree": "f89fe314033fb99c3278b42545ac3c1324058f1a",
   "scope_inventory_source_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
   "scope_inventory_source_tree": "bcc1e9652ca6a45d1f8e6bbc246e01885125e305",
   "required_integration_surfaces": [
@@ -36,7 +36,8 @@
     "All nine integration surfaces have initial observations but remain PARTIAL; closure evidence is incomplete.",
     "No complete local Git checkout inventory/status/tracked-file SHA-256 or named-unit baseline/candidate comparison exists.",
     "GUP package version skew remains unresolved: skill identity is 7.0.1 while some included executable metadata says 7.0.0.",
-    "No candidate comparison, final evidence bundle, or SUK P0-P8 battery exists yet."
+    "No candidate comparison, final evidence bundle, or SUK P0-P8 battery exists yet.",
+    "Git-derived history audit found 52 historical deleted paths under the service scope; each remains UNRESOLVED pending evidence-backed disposition review."
   ],
   "service_scope_tree_parity": {
     "status": "EXACT_PATH_MODE_BLOB_PARITY",
