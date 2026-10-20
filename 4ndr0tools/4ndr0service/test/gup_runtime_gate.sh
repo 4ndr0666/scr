@@ -31,6 +31,7 @@ runtime_tests=(
     source_safety_runtime.sh
     verify_environment_runtime.sh
     pipx_inventory_runtime.sh
+    systemd_installer_runtime.sh
 )
 
 printf 'GUP current-iteration runtime gate\n'
