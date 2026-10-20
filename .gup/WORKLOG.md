@@ -71,3 +71,13 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Integrated the analysis and tests into `.github/workflows/4ndr0service-gup.yml`; both history reports are uploaded as the `gup-service-history-audit` artifact.
 - Safety rule: exact blob identity is only a review lead. It does not prove caller/interface/configuration/runtime equivalence. All 52 historical deletions remain `UNRESOLVED`; no deletion is authorized for retirement.
 - Validation status at authoring time: awaiting PR CI execution. No GUP/SUK certification is claimed.
+
+
+## 2026-10-20 — exact-blob review and CI validation
+
+- PR #166 workflow run [39511741964](https://github.com/4ndr0666/scr/actions/runs/39511741964) passed the scope inventory, subtree parity, existing history audit (2/2 tests), exact-blob scanner (3/3 tests), artifact upload, and service runtime gate (19/19).
+- Uploaded artifact ID `12305498141`, SHA-256 `354bd498efa79ae92d67fea61ab9bf34f3af3c6fdeca3633204df282bfb33725`; the repository policy shortened retention to seven days.
+- Rename-aware audit: 52 historical deleted paths, all `UNRESOLVED`. No-renames blob scan: 55 raw deleted-path candidates; 2 exact current-blob matches, 53 without exact matches. Three additional raw candidates appear only when rename detection is disabled; counts are deliberately kept distinct.
+- Exact-blob review identified `systemd/user/env_maintenance.timer` → `systemd/env_maintenance.timer` (blob `d0b43b5b4a7f5b3077bbe2723883c87007cc9262`) and `test/tools/4ndr0service_env_migrate.sh` → `test/tools/error_mitigations.sh` (blob `ee5c386727db0e7eb8768b5fb84dd9cae37187af`). GitHub commit metadata marks both as zero-content-change renames.
+- Semantic finding: current `test/tools/error_mitigations.sh` contains an installer implementation (header says `install.sh`), not an error-mitigation helper suite. The capability ledger was corrected to `UNRESOLVED_ROLE_MISMATCH`; no file was removed or relocated.
+- Evidence: `.gup/evidence/deletion-blob-review.md`. Exact blob identity remains non-semantic evidence. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL; GUP/SUK certification is not claimed.
