@@ -1,0 +1,37 @@
+{
+  "protocol": "GUP",
+  "protocol_version": "7.0.1",
+  "repository_root": ".",
+  "scope_roots": [
+    "4ndr0tools/4ndr0service"
+  ],
+  "canonical_baseline": null,
+  "candidate_commit": null,
+  "state": "BLOCKED_BASELINE_NOT_ESTABLISHED",
+  "observed_main_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+  "observed_main_tree": "bcc1e9652ca6a45d1f8e6bbc246e01885125e305",
+  "required_integration_surfaces": [
+    "entry_points",
+    "loaders",
+    "callers",
+    "providers",
+    "consumers",
+    "configuration_paths",
+    "install_migration_paths",
+    "tests",
+    "runtime_dependencies"
+  ],
+  "policy": {
+    "git_is_authority": true,
+    "uncommitted_state_can_never_be_certified": true,
+    "capability_loss_requires_explicit_user_authorization": true,
+    "hashes_are_not_semantic_proof": true,
+    "incomplete_ref_history_blocks_certification": true
+  },
+  "blockers": [
+    "Canonical baseline not approved: complete refs/tags/history and semantic feature inventory remain to be reconciled.",
+    "Scope path inventory is captured from the observed main tree, but every file is not yet semantically classified.",
+    "Bidirectional dependency/capability alignment and nine-surface integration closure are not yet evidenced.",
+    "No candidate comparison, GUP evidence bundle, or SUK battery exists yet."
+  ]
+}
