@@ -188,6 +188,12 @@ def main() -> int:
             f"historical_deleted={len(deleted)} unresolved={len(set(unresolved))}",
             file=sys.stderr,
         )
+        for row in deleted:
+            print(
+                "GUP historical deletion UNRESOLVED: "
+                + json.dumps(row, sort_keys=True, ensure_ascii=True),
+                file=sys.stderr,
+            )
         return 0
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
         print(f"GUP history audit failed closed: {exc}", file=sys.stderr)
