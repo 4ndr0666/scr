@@ -68,6 +68,17 @@ else
     fi
 fi
 
+if pipx_package_is_installed "" 2>"$tmpdir/empty-package.log"; then
+    fail_case 'empty package name was accepted'
+else
+    rc=$?
+    if (( rc == 2 )) && grep -q 'requires a package name' "$tmpdir/empty-package.log"; then
+        pass_case 'empty package name is rejected as invalid input'
+    else
+        fail_case "empty package name returned $rc without the required diagnostic"
+    fi
+fi
+
 if grep -Fq "pipx_package_is_installed \"\$tool\"" "$SUITE_DIR/service/optimize_python.sh" &&
    grep -Fq "pipx_package_is_installed \"\$p\"" "$SUITE_DIR/service/optimize_venv.sh"; then
     pass_case 'both production synchronization paths use the shared inventory contract'
@@ -79,6 +90,15 @@ if grep -Fq '(pipx list --short 2>/dev/null || true)' "$SUITE_DIR/service/optimi
     fail_case 'a fail-open pipx inventory pipeline remains'
 else
     pass_case 'fail-open pipx inventory pipelines are absent from both consumers'
+fi
+
+if grep -Fq 'if (( pipx_status == 2 )); then' "$SUITE_DIR/service/optimize_python.sh" &&
+   grep -Fq 'if (( pipx_status == 2 )); then' "$SUITE_DIR/service/optimize_venv.sh" &&
+   grep -Fq 'Cannot synchronize Python tools because pipx inventory is unavailable.' "$SUITE_DIR/service/optimize_python.sh" &&
+   grep -Fq 'Cannot synchronize virtualenv tools because pipx inventory is unavailable.' "$SUITE_DIR/service/optimize_venv.sh"; then
+    pass_case 'both consumers abort synchronization on inventory operational errors'
+else
+    fail_case 'a consumer can treat inventory operational errors as package misses'
 fi
 
 printf '\nGUP pipx inventory runtime proof: %d passed, %d failed\n' "$pass" "$fail"

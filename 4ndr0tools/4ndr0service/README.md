@@ -1032,7 +1032,7 @@ Use the failure output to locate the specific problem, correct the problem, then
 
 # 17. Testing the Installation
 
-The suite contains 18 runtime proof scripts.
+The suite contains 19 runtime proof scripts.
 
 ## 17.1 Run the complete gate
 
@@ -1048,7 +1048,7 @@ bash "$ROOT/4ndr0tools/4ndr0service/test/gup_runtime_gate.sh"
 A clean run ends with:
 
 ```text
-GUP current-iteration runtime gate: 18/18 passed
+GUP current-iteration runtime gate: 19/19 passed
 [PASS] Current repository iteration is runtime-gate clean
 ```
 
@@ -1075,6 +1075,7 @@ bash test/run_bounded_runtime.sh
 bash test/settings_runtime.sh
 bash test/source_safety_runtime.sh
 bash test/verify_environment_runtime.sh
+bash test/pipx_inventory_runtime.sh
 ```
 
 ## 17.3 Shell syntax checks
