@@ -44,7 +44,6 @@ jobs:
           done
           printf 'Bash syntax passed for %d scripts.\n' "${#scripts[@]}"
 
-
       - name: Validate GUP service scope inventory
         shell: bash
         run: |
@@ -98,6 +97,10 @@ jobs:
               raise SystemExit("GUP file_count does not match the source Git tree")
           print(f"GUP scope inventory verified: {len(actual)} files at {source_commit}")
           PY
+
+      - name: Verify recorded service subtree parity
+        shell: bash
+        run: python3 .gup/scripts/verify_scope_parity.py
 
       - name: Run service Golden Unit runtime gate
         shell: bash

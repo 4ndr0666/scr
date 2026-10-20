@@ -23,3 +23,21 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Source observations include production sourcing of `test/verify_environment.sh`, a possible `controller.sh` / `manage_files.sh` load-order interaction, dynamically discovered service/plugin/view files, config-key writers/readers, systemd path rewriting and duplicated versioned runtime tests. These are investigation targets, not authorization to delete or refactor.
 - Existing CI evidence on PR #161: 44 shell scripts syntax-checked; service runtime gate 19/19; pipx inventory regression proof 8 passed / 0 failed; ShellCheck passed. These narrow gates do not establish GUP certification.
 - Baseline decision remains `BLOCKED_BASELINE_NOT_ESTABLISHED`. No complete local checkout inventory/status/SHA-256 evidence or all-path semantic comparison exists yet.
+
+## 2026-10-20 — exact service subtree parity
+
+- PR #162 merged as `34f1b65fe671cec1cd8c62667c41eaa73770d840`.
+- Compared the service subtree at candidate baseline `e00d2ca39ca4b5dd7bf9e5c96d0130e042521360` with the post-PR #162 commit. Both resolve `4ndr0tools/4ndr0service` to tree `354d670544905ef12622023ded9c561b2b99afa1`.
+- The tree comparison reports 54 entries (48 blobs and 6 directories) at each point, with zero added, missing, or changed path/mode/blob entries. Evidence is stored in `.gup/evidence/scope-tree-parity.json`.
+- Added a CI step to recompute both subtree identities from the Git object database and verify the recorded parity evidence. This is an immutable historical comparison, not a rule that future service changes must match the baseline.
+- Evidence limit: Git tree parity proves exact object-level equality for this scope at these commits; it does not establish semantic correctness, historical completeness, or independent SHA-256 inventory.
+- GUP tooling integration is still pending. Package v7.0.1 identity vs v7.0.0 executable metadata remains a known compatibility defect to resolve under isolated regression tests.
+- Canonical baseline remains unset; all nine integration surfaces remain PARTIAL.
+
+## 2026-10-20 — exact service subtree parity
+
+- PR #162 merged as `34f1b65fe671cec1cd8c62667c41eaa73770d840`.
+- Compared `4ndr0tools/4ndr0service` at baseline candidate `e00d2ca39ca4b5dd7bf9e5c96d0130e042521360` and post-PR #162 commit. Both resolve to subtree `354d670544905ef12622023ded9c561b2b99afa1`.
+- Tree comparison reports 54 entries (48 files and 6 directories), zero added paths, zero missing paths, and zero mode/blob changes. Evidence is stored in `.gup/evidence/scope-tree-parity.json`.
+- This proves exact object-level equality for the service scope at those commits; it does not prove semantic correctness, complete historical continuity, or an independent SHA-256 inventory.
+- GUP tooling integration and v7.0.1/v7.0.0 package-version reconciliation remain outstanding. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL.
