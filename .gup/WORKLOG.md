@@ -81,3 +81,11 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Exact-blob review identified `systemd/user/env_maintenance.timer` → `systemd/env_maintenance.timer` (blob `d0b43b5b4a7f5b3077bbe2723883c87007cc9262`) and `test/tools/4ndr0service_env_migrate.sh` → `test/tools/error_mitigations.sh` (blob `ee5c386727db0e7eb8768b5fb84dd9cae37187af`). GitHub commit metadata marks both as zero-content-change renames.
 - Semantic finding: current `test/tools/error_mitigations.sh` contains an installer implementation (header says `install.sh`), not an error-mitigation helper suite. The capability ledger was corrected to `UNRESOLVED_ROLE_MISMATCH`; no file was removed or relocated.
 - Evidence: `.gup/evidence/deletion-blob-review.md`. Exact blob identity remains non-semantic evidence. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL; GUP/SUK certification is not claimed.
+
+
+## 2026-10-20 — evidence-output durability hardening
+
+- GUP review found the new blob scanner wrote report output directly, unlike the existing history auditor's atomic evidence write contract.
+- Updated `.gup/scripts/audit_deleted_blob_matches.py` to write a same-directory temporary file, flush and `fsync` it, atomically replace the target, `fsync` the directory, and clean up temporary residue on success or failure.
+- Added a regression test proving repeated output generation is byte-stable and leaves no temporary files.
+- This is a tooling-only correction; no service runtime files or historical dispositions changed. PR CI must validate the final commit before merge.
