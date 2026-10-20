@@ -11,3 +11,15 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Source package: uploaded Golden Unit Protocol skill bundle; its six synthetic Git-repository tests passed locally (6/6).
 - Scope limit: path/blob inventory only; no claim of semantic baseline, history completeness, or GUP certification.
 - State: `BLOCKED_BASELINE_NOT_ESTABLISHED` until refs/history, feature matrix, integration graph, and behavior-preservation evidence are reconciled.
+
+## 2026-10-20 — refs/history observation and broad-radius integration pass
+
+- Main after PR #161 merge: commit `5c6ff8734052e633638325b657c3e29cb48105ed`, tree `98c8f9d5bd30d87b1c50476d88d1cd870fb4fbb2`.
+- Git matching-refs observation: 10 branches, zero tags. Full observed branch heads and limitations are recorded in `.gup/evidence/history-observation.json`.
+- Compared the retained service-related branches with current main. The service CI-gap branch was 16 commits behind / 0 ahead; pipx fix was 13 behind / 0 ahead; pipx contract tests were 10 behind / 0 ahead; inventory bootstrap branch was 1 behind / 0 ahead. The merged changes are therefore present in main according to the comparison endpoint; stale refs are not evidence of unmerged functionality.
+- Observed path history: 42 commits returned for `common.sh` (from 2025-01-17 through 2026-10-20) and 27 for `main.sh` (from 2024-12-03 through 2026-09-26). This is not yet a per-path history/rename/disposition audit for all 48 scope files.
+- Added `.gup/evidence/capability-ledger.md` with an initial semantic map, previously fixed defect classes and explicit open findings.
+- Added `.gup/evidence/integration-closure-initial.md` with all nine required integration surfaces and a first-pass entry/loading/deployment graph. Every surface remains PARTIAL.
+- Source observations include production sourcing of `test/verify_environment.sh`, a possible `controller.sh` / `manage_files.sh` load-order interaction, dynamically discovered service/plugin/view files, config-key writers/readers, systemd path rewriting and duplicated versioned runtime tests. These are investigation targets, not authorization to delete or refactor.
+- Existing CI evidence on PR #161: 44 shell scripts syntax-checked; service runtime gate 19/19; pipx inventory regression proof 8 passed / 0 failed; ShellCheck passed. These narrow gates do not establish GUP certification.
+- Baseline decision remains `BLOCKED_BASELINE_NOT_ESTABLISHED`. No complete local checkout inventory/status/SHA-256 evidence or all-path semantic comparison exists yet.
