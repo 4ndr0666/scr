@@ -98,3 +98,14 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Final-head history artifact ID `12305948676`, SHA-256 `2cb0c798c6fe1e52840c9bb4d81f72436e64d962bb6a0eec38d296151fd3fd82`, seven-day retention.
 - CodeQL Advanced remains in progress at this entry. Do not treat PR #166 as fully cleared until CodeQL completes and all required checks for the final head are successful.
 - Findings remain unchanged: 52 rename-aware historical deletions unresolved; 55 no-renames raw candidates, 2 exact-blob leads; canonical baseline unset; all nine integration surfaces PARTIAL; no GUP/SUK certification.
+
+
+## 2026-10-20 — systemd deployment path integration proof
+
+- Added `test/systemd_installer_runtime.sh` and included it in `test/gup_runtime_gate.sh`; the runtime gate now enumerates 20 named tests.
+- GUP run [39518240154](https://github.com/4ndr0666/scr/actions/runs/39518240154) passed at code head `6ffa9a92ec7647279640554691151116ddaab605`, including syntax, source inventory, subtree parity, history audit, exact-blob audit, and runtime gate.
+- The isolated systemd test passed with a mocked `systemctl`: flat service/timer discovery, custom root containing spaces, deployed path rewrites, activation command sequence, unchanged source templates, byte-stable rerun, and missing-service generation. It did not touch host systemd.
+- Evidence: `.gup/evidence/systemd-installation-closure.md`; capability ledger updated to distinguish mocked runtime proof from host-level behavior.
+- Historical timer path `systemd/user/env_maintenance.timer` remains `UNRESOLVED` pending final disposition review despite exact blob identity, Git rename metadata and the targeted path test.
+- `test/tools/error_mitigations.sh` remains `UNRESOLVED_ROLE_MISMATCH`: it is an executable installer snapshot, not a helper suite. No explicit invocation was found in GitHub code search, but search absence does not establish unreachability; no execution, move or deletion was performed.
+- Canonical baseline unset; 52 rename-aware historical deletions remain unresolved; all nine integration surfaces remain PARTIAL; no GUP/SUK certification.
