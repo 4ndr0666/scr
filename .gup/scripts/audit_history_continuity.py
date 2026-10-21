@@ -98,7 +98,7 @@ def deleted_paths(root: Path, commit: str, scope: str, current: set[str]) -> lis
 
 
 
-DISPOSITION_STATUSES = {"PRESERVED", "TRANSLATED", "AUTHORIZED_RETIRED", "UNRESOLVED"}
+DISPOSITION_STATUSES = {"preserved", "translated", "authorized-retired", "unresolved"}
 
 
 def load_disposition_register(path: Path, scope: str, source_commit: str,
@@ -146,19 +146,21 @@ def load_disposition_register(path: Path, scope: str, source_commit: str,
             raise RuntimeError(f"disposition for {path_value} needs non-empty evidence references")
         if path_value in deleted_by_path and row.get("deletion_commit") != deleted_by_path[path_value]["deletion_commit"]:
             raise RuntimeError(f"deletion commit mismatch for {path_value}")
-        if status == "PRESERVED":
+        if status == "preserved":
             target = row.get("target", path_value)
             if not isinstance(target, str) or target not in candidate_paths:
-                raise RuntimeError(f"PRESERVED disposition for {path_value} needs a current target path")
-        elif status == "TRANSLATED":
+                raise RuntimeError(f"preserved disposition for {path_value} needs a current target path")
+        elif status == "translated":
             target, tests = row.get("target"), row.get("behavior_tests")
             if not isinstance(target, str) or target not in candidate_paths:
-                raise RuntimeError(f"TRANSLATED disposition for {path_value} needs a current target path")
+                raise RuntimeError(f"translated disposition for {path_value} needs a current target path")
             if not isinstance(tests, list) or not tests or any(
-                not isinstance(item, str) or not item.strip() for item in tests
+                not isinstance(item, str) or not item.strip()
+                or (item not in candidate_paths and not item.startswith("https://github.com/"))
+                for item in tests
             ):
-                raise RuntimeError(f"TRANSLATED disposition for {path_value} needs behavior-level test evidence")
-        elif status == "AUTHORIZED_RETIRED":
+                raise RuntimeError(f"translated disposition for {path_value} needs reproducible behavior-level test evidence")
+        elif status == "authorized-retired":
             if row.get("user_authorization") is not True:
                 raise RuntimeError(f"retirement of {path_value} requires user_authorization=true")
             authorization = row.get("authorization_reference")
@@ -251,7 +253,7 @@ def main() -> int:
                     unresolved.append(record["path"])
             elif str(record["disposition"]).startswith("UNRESOLVED"):
                 unresolved.append(record["path"])
-        unresolved.extend(r["path"] for r in deleted if r["disposition"] == "UNRESOLVED")
+        unresolved.extend(r["path"] for r in deleted if r["disposition"] == "unresolved")
         report = {
             "schema_version": 1,
             "protocol": "GUP",
@@ -288,7 +290,7 @@ def main() -> int:
         )
         for row in deleted:
             print(
-                "GUP historical deletion UNRESOLVED: "
+                "GUP historical deletion disposition: "
                 + json.dumps(row, sort_keys=True, ensure_ascii=True),
                 file=sys.stderr,
             )
