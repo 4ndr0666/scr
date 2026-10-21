@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GUP historical disposition register",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol",
+    "protocol_version",
+    "scope_root",
+    "source_commit",
+    "records"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "protocol": {
+      "const": "GUP"
+    },
+    "protocol_version": {
+      "const": "7.0.1"
+    },
+    "scope_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "generated_from_candidate_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "deletion_commit",
+          "deletion_date",
+          "deletion_subject",
+          "disposition",
+          "rationale",
+          "evidence",
+          "review_evidence"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deletion_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "deletion_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "deletion_subject": {
+            "type": "string"
+          },
+          "disposition": {
+            "enum": [
+              "preserved",
+              "translated",
+              "authorized-retired",
+              "unresolved"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "review_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "behavior_tests": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "user_authorization": {
+            "type": "boolean"
+          },
+          "authorization_reference": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

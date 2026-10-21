@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from datetime import date
 import subprocess
 import sys
 import tempfile
@@ -92,9 +94,128 @@ def deleted_paths(root: Path, commit: str, scope: str, current: set[str]) -> lis
                     "deletion_commit": commit_meta[0],
                     "deletion_date": commit_meta[1],
                     "deletion_subject": commit_meta[2],
-                    "disposition": "UNRESOLVED",
+                    "disposition": "unresolved",
                 }
     return [records[path] for path in sorted(records)]
+
+
+
+DISPOSITION_STATUSES = {"preserved", "translated", "authorized-retired", "unresolved"}
+
+
+def load_disposition_register(path: Path, scope: str, source_commit: str,
+                              historical_deleted: list[dict[str, str]],
+                              missing_source_paths: set[str],
+                              candidate_paths: set[str], root: Path,
+                              head: str) -> dict[str, dict[str, object]]:
+    """Validate exact path coverage and evidence-backed disposition semantics."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read disposition register {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("disposition register root must be an object")
+    allowed_root = {"schema_version", "protocol", "protocol_version", "scope_root",
+                    "source_commit", "generated_from_candidate_commit", "records"}
+    extra_root = sorted(set(data) - allowed_root)
+    if extra_root:
+        raise RuntimeError(f"unexpected disposition register fields: {extra_root}")
+    identity = {"schema_version": 1, "protocol": "GUP", "protocol_version": "7.0.1",
+                "scope_root": scope, "source_commit": source_commit}
+    for key, expected in identity.items():
+        if data.get(key) != expected:
+            raise RuntimeError(f"disposition register {key} mismatch: expected {expected!r}")
+    generated = data.get("generated_from_candidate_commit")
+    if generated is not None:
+        if not isinstance(generated, str) or not re.fullmatch(r"[0-9a-f]{40}", generated):
+            raise RuntimeError("generated_from_candidate_commit must be a full lowercase Git commit ID")
+        git(root, "cat-file", "-e", f"{generated}^{{commit}}")
+        git(root, "merge-base", "--is-ancestor", generated, head)
+    rows = data.get("records")
+    if not isinstance(rows, list):
+        raise RuntimeError("disposition register records must be an array")
+    by_path: dict[str, dict[str, object]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise RuntimeError("each disposition record must be an object")
+        allowed_record = {"path", "deletion_commit", "deletion_date", "deletion_subject",
+                          "disposition", "rationale", "evidence", "review_evidence",
+                          "target", "behavior_tests", "user_authorization", "authorization_reference"}
+        extra_record = sorted(set(row) - allowed_record)
+        if extra_record:
+            raise RuntimeError(f"unexpected disposition fields for {row.get('path')!r}: {extra_record}")
+        required_record = {"path", "deletion_commit", "deletion_date", "deletion_subject",
+                           "disposition", "rationale", "evidence", "review_evidence"}
+        missing_record = sorted(required_record - set(row))
+        if missing_record:
+            raise RuntimeError(f"disposition record {row.get('path')!r} missing fields: {missing_record}")
+        path_value = row.get("path")
+        if not isinstance(path_value, str) or not path_value or path_value in by_path:
+            raise RuntimeError(f"invalid or duplicate disposition path: {path_value!r}")
+        by_path[path_value] = row
+    deleted_by_path = {row["path"]: row for row in historical_deleted}
+    expected_paths = set(deleted_by_path) | missing_source_paths
+    actual_paths = set(by_path)
+    missing, stale = sorted(expected_paths - actual_paths), sorted(actual_paths - expected_paths)
+    if missing or stale:
+        raise RuntimeError(f"disposition register coverage mismatch: missing={missing}, stale_or_extra={stale}")
+    for path_value, row in by_path.items():
+        status, rationale, evidence = row.get("disposition"), row.get("rationale"), row.get("evidence")
+        if not isinstance(status, str) or status not in DISPOSITION_STATUSES:
+            raise RuntimeError(f"invalid disposition for {path_value}: {status!r}")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise RuntimeError(f"disposition for {path_value} needs a non-empty rationale")
+        if not isinstance(evidence, list) or not evidence or any(
+            not isinstance(item, str) or not item.strip() for item in evidence
+        ):
+            raise RuntimeError(f"disposition for {path_value} needs non-empty evidence references")
+        deletion_commit = row.get("deletion_commit")
+        if not isinstance(deletion_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", deletion_commit):
+            raise RuntimeError(f"disposition for {path_value} needs a full lowercase deletion commit ID")
+        if not isinstance(row.get("deletion_subject"), str):
+            raise RuntimeError(f"disposition for {path_value} needs a deletion subject")
+        deletion_date = row.get("deletion_date")
+        if not isinstance(deletion_date, str):
+            raise RuntimeError(f"disposition for {path_value} needs an ISO deletion date")
+        try:
+            date.fromisoformat(deletion_date)
+        except ValueError as exc:
+            raise RuntimeError(f"invalid deletion date for {path_value}: {deletion_date!r}") from exc
+        review_evidence = row.get("review_evidence")
+        if not isinstance(review_evidence, list) or any(
+            not isinstance(item, str) or not item.strip() for item in review_evidence
+        ):
+            raise RuntimeError(f"review_evidence for {path_value} must be an array of non-empty references")
+        if path_value in missing_source_paths:
+            latest_deletion = git(root, "log", "--diff-filter=D", "--no-renames", "-1",
+                                  "--format=%H", head, "--", path_value).decode().strip()
+            if not latest_deletion or deletion_commit != latest_deletion:
+                raise RuntimeError(f"candidate deletion commit mismatch for {path_value}")
+        elif path_value in deleted_by_path and deletion_commit != deleted_by_path[path_value]["deletion_commit"]:
+            raise RuntimeError(f"deletion commit mismatch for {path_value}")
+        else:
+            git(root, "cat-file", "-e", f"{deletion_commit}^{{commit}}")
+        if status == "preserved":
+            target = row.get("target", path_value)
+            if not isinstance(target, str) or target not in candidate_paths:
+                raise RuntimeError(f"preserved disposition for {path_value} needs a current target path")
+        elif status == "translated":
+            target, tests = row.get("target"), row.get("behavior_tests")
+            if not isinstance(target, str) or target not in candidate_paths:
+                raise RuntimeError(f"translated disposition for {path_value} needs a current target path")
+            if not isinstance(tests, list) or not tests or any(
+                not isinstance(item, str) or not item.strip()
+                or (item not in candidate_paths and not item.startswith("https://github.com/"))
+                for item in tests
+            ):
+                raise RuntimeError(f"translated disposition for {path_value} needs reproducible behavior-level test evidence")
+        elif status == "authorized-retired":
+            if row.get("user_authorization") is not True:
+                raise RuntimeError(f"retirement of {path_value} requires user_authorization=true")
+            authorization = row.get("authorization_reference")
+            if not isinstance(authorization, str) or not authorization.strip():
+                raise RuntimeError(f"retirement of {path_value} needs an authorization reference")
+    return by_path
 
 
 def atomic_write(path: Path, payload: bytes) -> None:
@@ -124,6 +245,7 @@ def main() -> int:
     parser.add_argument("--scope", default="4ndr0tools/4ndr0service")
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output")
+    parser.add_argument("--dispositions", help="validate and apply a machine-readable GUP disposition register")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     try:
@@ -152,8 +274,35 @@ def main() -> int:
             record["history"] = path_history(root, args.source_commit if path in source else head, path)
             records.append(record)
         deleted = deleted_paths(root, args.source_commit, args.scope, candidate_paths)
-        unresolved = [r["path"] for r in records if str(r["disposition"]).startswith("UNRESOLVED")]
-        unresolved.extend(r["path"] for r in deleted)
+        missing_source_paths = source_paths - candidate_paths
+        dispositions = {}
+        if args.dispositions:
+            disposition_path = Path(args.dispositions)
+            if not disposition_path.is_absolute():
+                disposition_path = root / disposition_path
+            dispositions = load_disposition_register(
+                disposition_path, args.scope, args.source_commit, deleted,
+                missing_source_paths, candidate_paths, root, head,
+            )
+            for row in deleted:
+                reviewed = dispositions[row["path"]]
+                row["disposition"] = reviewed["disposition"]
+                row["rationale"] = reviewed["rationale"]
+                row["evidence"] = reviewed["evidence"]
+            for record in records:
+                if record["path"] in missing_source_paths:
+                    reviewed = dispositions[record["path"]]
+                    record["reviewed_disposition"] = reviewed["disposition"]
+                    record["disposition_evidence"] = reviewed["evidence"]
+                    record["disposition_rationale"] = reviewed["rationale"]
+        unresolved = []
+        for record in records:
+            if record["path"] in missing_source_paths and args.dispositions:
+                if record.get("reviewed_disposition") == "UNRESOLVED":
+                    unresolved.append(record["path"])
+            elif str(record["disposition"]).startswith("UNRESOLVED"):
+                unresolved.append(record["path"])
+        unresolved.extend(r["path"] for r in deleted if r["disposition"] == "unresolved")
         report = {
             "schema_version": 1,
             "protocol": "GUP",
@@ -173,7 +322,7 @@ def main() -> int:
             "records": records,
             "limitations": [
                 "Git path and rename observations do not prove semantic capability preservation.",
-                "Historical deletions are UNRESOLVED until each receives an evidence-backed disposition.",
+                "When --dispositions is supplied, historical dispositions are validated against exact path coverage and Git deletion identities; UNRESOLVED entries remain blockers.",
                 "No deleted path is authorized for retirement by this report.",
                 "The source commit is an inventory candidate, not an approved canonical baseline.",
             ],
@@ -190,7 +339,7 @@ def main() -> int:
         )
         for row in deleted:
             print(
-                "GUP historical deletion UNRESOLVED: "
+                "GUP historical deletion disposition: "
                 + json.dumps(row, sort_keys=True, ensure_ascii=True),
                 file=sys.stderr,
             )
