@@ -45,7 +45,7 @@ class HistoryAuditTests(unittest.TestCase):
             report = json.loads(result.stdout)
             deleted = {row["path"]: row for row in report["historical_deleted_paths"]}
             self.assertIn("service/retired.sh", deleted)
-            self.assertEqual(deleted["service/retired.sh"]["disposition"], "UNRESOLVED")
+            self.assertEqual(deleted["service/retired.sh"]["disposition"], "unresolved")
             self.assertEqual(report["baseline_status"], "BLOCKED_UNRESOLVED_HISTORY")
 
     def test_source_paths_missing_from_candidate_are_blocking(self) -> None:
