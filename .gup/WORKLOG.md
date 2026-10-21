@@ -119,3 +119,23 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - No service runtime files or historical path dispositions changed. The neutral CodeQL check is resolved on the recorded head; the runner deprecation and `ubuntu-latest` migration warnings are addressed in this workflow.
 - Canonical baseline remains unset; 52 rename-aware historical deletions remain unresolved; all nine integration surfaces remain PARTIAL. No GUP/SUK certification is claimed.
 
+
+
+## 2026-10-21 — post-merge validation after PR #167
+
+- PR #167 merged as `407924afb16cd97803f88198de8e6e2217618854`; GitHub default branch `main` points to this commit. Commit tree: `61ccd4d50e74ba986bf237bdb80d23ccc90fbfdf`.
+- Post-merge GUP workflow [39522409058](https://github.com/4ndr0666/scr/actions/runs/39522409058) completed with conclusion `success`. All seven steps succeeded: Bash syntax, service scope inventory, recorded subtree parity, historical path audit, exact-blob analysis, audit artifact upload, and the service runtime gate.
+- Updated `.gup/project.json` to record the observed main commit/tree and bounded post-merge CI evidence. The project remains `BLOCKED_BASELINE_NOT_ESTABLISHED`; candidate and canonical baseline remain null.
+- Corrected a stale blocker: the GUP v7.0.1 metadata-reconciled artifact passed its separate local tests and is not vendored here. Repository-level complete-checkout inventory and tool integration remain unproven.
+- The successful workflow reran the observational audits only; it does not assign semantic dispositions to historical deletions, prove all nine integration surfaces closed, or establish GUP/SUK certification.
+- Next review: inspect the systemd timer path translation and installer-snapshot role mismatch using Git history, current source/caller references, installation copy rules and the new isolated installer test. Preserve `UNRESOLVED` unless the evidence supports a documented disposition; no path is deleted, moved or invoked as part of this review.
+
+
+## 2026-10-21 — targeted historical path review after PR #167
+
+- Reviewed the two exact-blob historical deletion leads against candidate source, installer copy/dispatch behavior, Git rename metadata, and the post-merge runtime evidence. Added `.gup/evidence/historical-path-review-2026-10-21.md`.
+- Timer path: historical `systemd/user/env_maintenance.timer` and current `systemd/env_maintenance.timer` share blob `d0b43b5b4a7f5b3077bbe2723883c87007cc9262`; Git rename metadata reports no content change. Current systemd installer discovers flat `systemd/*.timer`, and `install.sh` points to `systemd/install_env_maintenance.sh`. PR #167's isolated mocked-systemctl test passed post-merge. Historical disposition remains `UNRESOLVED` until complete install/migration and host-runtime boundaries are reviewed and an auditable disposition mechanism exists.
+- Installer snapshot: Git commit `0ed45470d981c426a08730b66b7abeacb4a30391` records `test/tools/4ndr0service_env_migrate.sh` → `test/tools/error_mitigations.sh` as a zero-content-change rename. Current file content is an installer, and top-level install syncs the source tree then marks all `.sh` files executable. No explicit in-repository invocation was found in code search; this does not exclude external callers. State remains `UNRESOLVED_ROLE_MISMATCH`; file was not executed, moved, consolidated, or deleted.
+- Updated capability ledger with post-merge GUP evidence and corrected stale runtime-gate count/tooling-version blocker wording. The initial integration-closure document remains a historical first-pass record; all nine surfaces remain PARTIAL.
+- Post-merge GUP run [39522409058](https://github.com/4ndr0666/scr/actions/runs/39522409058) passed. The rename-aware report still has 52 unresolved historical deletions; the no-renames report still has 55 raw candidates (2 exact-blob leads, 53 without exact matches). Counts remain separate.
+- No baseline approval or certification is claimed. The next engineering gap is to make reviewed dispositions machine-readable and validator-enforced, then continue the per-path audit and nine-surface closure without weakening the fail-closed behavior.
