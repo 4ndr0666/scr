@@ -84,6 +84,13 @@ class DispositionRegisterTests(unittest.TestCase):
         self.assertEqual(report["historical_deleted_paths"][0]["disposition"], "translated")
         self.assertEqual(report["baseline_status"], "HISTORY_REVIEW_REQUIRED")
 
+    def test_invalid_record_schema_fails_closed(self) -> None:
+        row = dict(self.row, deletion_date="not-a-date")
+        self.write_register([row])
+        result = self.audit()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid deletion date", result.stderr)
+
     def test_wrong_deletion_commit_fails_closed(self) -> None:
         self.write_register([dict(self.row, deletion_commit="0" * 40)])
         result = self.audit(); self.assertNotEqual(result.returncode, 0)
