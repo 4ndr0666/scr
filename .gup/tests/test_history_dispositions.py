@@ -24,7 +24,7 @@ class DispositionRegisterTests(unittest.TestCase):
         self.commit("add old path")
         self.deletion_commit = self.commit("delete old path", delete="old.sh")
         self.source_commit = self.commit("source inventory")
-        (self.root / SCOPE / "test_runtime.sh").write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        (self.root / SCOPE / "test_runtime.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.commit("candidate adds runtime test")
         self.register_path = self.root / "register.json"; self.audit_path = self.root / "audit.json"
         self.row = {"path": f"{SCOPE}/old.sh", "deletion_commit": self.deletion_commit,
