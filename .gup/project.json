@@ -37,7 +37,7 @@
     "No complete local Git checkout inventory/status/tracked-file SHA-256 or named-unit baseline/candidate comparison exists.",
     "The reconciled GUP v7.0.1 tooling artifact was validated separately but is not vendored into this repository; complete local-checkout inventory, tool integration, and candidate comparison remain unproven.",
     "No candidate comparison, final evidence bundle, or SUK P0-P8 battery exists yet.",
-    "Machine-readable historical-disposition register records one bounded translated path and 51 unresolved historical deletions; semantic review of remaining paths is incomplete."
+    "Machine-readable historical-disposition register records all 52 observed historical deletions as unresolved; the timer path has multiple content episodes and requires further semantic review."
   ],
   "service_scope_tree_parity": {
     "status": "EXACT_PATH_MODE_BLOB_PARITY",
