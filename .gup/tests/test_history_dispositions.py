@@ -35,7 +35,7 @@ class DispositionRegisterTests(unittest.TestCase):
     def commit(self, message: str, delete: str | None = None) -> str:
         if delete: (self.root / SCOPE / delete).unlink()
         run("git", "-C", str(self.root), "add", "-A")
-        result = run("git", "-C", str(self.root), "commit", "-qm", message)
+        result = run("git", "-C", str(self.root), "commit", "--allow-empty", "-qm", message)
         self.assertEqual(result.returncode, 0, result.stderr)
         return run("git", "-C", str(self.root), "rev-parse", "HEAD").stdout.strip()
 
