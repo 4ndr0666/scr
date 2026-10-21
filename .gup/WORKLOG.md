@@ -119,3 +119,13 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - No service runtime files or historical path dispositions changed. The neutral CodeQL check is resolved on the recorded head; the runner deprecation and `ubuntu-latest` migration warnings are addressed in this workflow.
 - Canonical baseline remains unset; 52 rename-aware historical deletions remain unresolved; all nine integration surfaces remain PARTIAL. No GUP/SUK certification is claimed.
 
+
+
+## 2026-10-21 — post-merge validation after PR #167
+
+- PR #167 merged as `407924afb16cd97803f88198de8e6e2217618854`; GitHub default branch `main` points to this commit. Commit tree: `61ccd4d50e74ba986bf237bdb80d23ccc90fbfdf`.
+- Post-merge GUP workflow [39522409058](https://github.com/4ndr0666/scr/actions/runs/39522409058) completed with conclusion `success`. All seven steps succeeded: Bash syntax, service scope inventory, recorded subtree parity, historical path audit, exact-blob analysis, audit artifact upload, and the service runtime gate.
+- Updated `.gup/project.json` to record the observed main commit/tree and bounded post-merge CI evidence. The project remains `BLOCKED_BASELINE_NOT_ESTABLISHED`; candidate and canonical baseline remain null.
+- Corrected a stale blocker: the GUP v7.0.1 metadata-reconciled artifact passed its separate local tests and is not vendored here. Repository-level complete-checkout inventory and tool integration remain unproven.
+- The successful workflow reran the observational audits only; it does not assign semantic dispositions to historical deletions, prove all nine integration surfaces closed, or establish GUP/SUK certification.
+- Next review: inspect the systemd timer path translation and installer-snapshot role mismatch using Git history, current source/caller references, installation copy rules and the new isolated installer test. Preserve `UNRESOLVED` unless the evidence supports a documented disposition; no path is deleted, moved or invoked as part of this review.
