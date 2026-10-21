@@ -149,3 +149,12 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - The history audit now optionally consumes a disposition register and validates protocol identity, source commit, exact path coverage, duplicate/stale entries, deletion-commit identity, rationale/evidence, and status-specific requirements for `PRESERVED`, `TRANSLATED`, and `AUTHORIZED_RETIRED`. CI supplies the register, so missing or malformed entries fail closed.
 - Added a JSON Schema and isolated synthetic-Git regression tests for valid unresolved records, missing/stale coverage, unauthorized retirement, translation without a live target or behavior-level test evidence, and mismatched deletion identity.
 - The register is a review-tracking control, not closure evidence: 52 paths remain unresolved, canonical baseline remains unset, all nine integration surfaces remain PARTIAL, and no GUP/SUK certification is claimed.
+
+
+## 2026-10-21 — final-head validation for historical-disposition register
+
+- Final code head before this evidence append: `538b06aeb9237446712db8514951c53ebdd7168c`.
+- GUP run [39524287798](https://github.com/4ndr0666/scr/actions/runs/39524287798) passed. The audit reported 48 source files, 49 candidate files, 52 historical deleted paths and 52 unresolved dispositions. Existing history tests passed 2/2; disposition-register tests passed 7/7; exact-blob tests passed 4/4; service runtime gate passed 20/20.
+- CodeQL Advanced run [39524292855](https://github.com/4ndr0666/scr/actions/runs/39524292855) passed all six configured language jobs. The GitHub CodeQL status check is success. ShellCheck status is success; the changed-shell-file scan was skipped because this change did not modify service shell files.
+- Intermediate CI runs exposed a shell continuation typo, a synthetic test fixture requiring empty commits, and legacy assertions using the old uppercase disposition spelling. Each was corrected; the final recorded head passed the complete GUP and CodeQL suites.
+- The register is complete as an inventory, not as semantic closure. All 52 statuses remain `unresolved`; no user-authorized retirement is recorded. Canonical baseline remains unset, all nine integration surfaces remain PARTIAL, and no GUP/SUK certification is claimed.
