@@ -178,3 +178,13 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Static review of the installer snapshot found exact identity between its historical blob `ee5c386727db0e7eb8768b5fb84dd9cae37187af` and current `test/tools/error_mitigations.sh`. It is 339 lines and mode `100755`. Current `install.sh` is 294 lines, blob `9107b1dfe8b930c22bc2527142645ba1a1acbf3a`. The snapshot is copied by the top-level source-tree sync and made executable, but code search found no explicit in-repository invocation. External/manual callers remain possible.
 - Material static behavior differences are recorded in `.gup/evidence/installer-snapshot-delta-2026-10-21.md`: uninstall/auditd cleanup, `SUDO_USER` home resolution, fatal-vs-warning policies for jq install, symlink, systemd activation and report verification, and dry-run completion exit behavior. No script was executed. No file was moved, edited, consolidated, or deleted.
 - Historical register remains 52 `unresolved` records; the timer path has multiple distinct content episodes and remains unresolved. Canonical baseline remains unset; all nine integration surfaces remain PARTIAL; no GUP/SUK certification is claimed.
+
+
+## 2026-10-21 — installer snapshot audit PR validation
+
+- PR #171 initial reviewed head: `1e7d02093f8fbf1a893f092a7ecc716987940059`.
+- GUP pull-request workflow [39528494305](https://github.com/4ndr0666/scr/actions/runs/39528494305) passed. The push-triggered GUP run [39528467771](https://github.com/4ndr0666/scr/actions/runs/39528467771) also passed.
+- ShellCheck workflow [39528494347](https://github.com/4ndr0666/scr/actions/runs/39528494347) passed.
+- CodeQL Advanced [39528494327](https://github.com/4ndr0666/scr/actions/runs/39528494327) passed all six language jobs; the CodeQL status check is success.
+- These checks validate the cited commit before this append-only evidence entry. The resulting worklog commit is a new candidate head and must receive its own final-head checks before PR #171 is presented as merge-ready.
+- The snapshot delta is static-only; neither installer was executed. All 52 historical deletion records remain unresolved; canonical baseline unset; all nine integration surfaces PARTIAL; no GUP/SUK certification claimed.
