@@ -98,3 +98,24 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Final-head history artifact ID `12305948676`, SHA-256 `2cb0c798c6fe1e52840c9bb4d81f72436e64d962bb6a0eec38d296151fd3fd82`, seven-day retention.
 - CodeQL Advanced remains in progress at this entry. Do not treat PR #166 as fully cleared until CodeQL completes and all required checks for the final head are successful.
 - Findings remain unchanged: 52 rename-aware historical deletions unresolved; 55 no-renames raw candidates, 2 exact-blob leads; canonical baseline unset; all nine integration surfaces PARTIAL; no GUP/SUK certification.
+
+
+## 2026-10-20 — systemd deployment path integration proof
+
+- Added `test/systemd_installer_runtime.sh` and included it in `test/gup_runtime_gate.sh`; the runtime gate now enumerates 20 named tests.
+- GUP run [39518240154](https://github.com/4ndr0666/scr/actions/runs/39518240154) passed at code head `6ffa9a92ec7647279640554691151116ddaab605`, including syntax, source inventory, subtree parity, history audit, exact-blob audit, and runtime gate.
+- The isolated systemd test passed with a mocked `systemctl`: flat service/timer discovery, custom root containing spaces, deployed path rewrites, activation command sequence, unchanged source templates, byte-stable rerun, and missing-service generation. It did not touch host systemd.
+- Evidence: `.gup/evidence/systemd-installation-closure.md`; capability ledger updated to distinguish mocked runtime proof from host-level behavior.
+- Historical timer path `systemd/user/env_maintenance.timer` remains `UNRESOLVED` pending final disposition review despite exact blob identity, Git rename metadata and the targeted path test.
+- `test/tools/error_mitigations.sh` remains `UNRESOLVED_ROLE_MISMATCH`: it is an executable installer snapshot, not a helper suite. No explicit invocation was found in GitHub code search, but search absence does not establish unreachability; no execution, move or deletion was performed.
+- Canonical baseline unset; 52 rename-aware historical deletions remain unresolved; all nine integration surfaces remain PARTIAL; no GUP/SUK certification.
+
+## 2026-10-21 — CodeQL status-check and runner maintenance
+
+- PR #167 head before this entry: `5a36dc21b93074f50d6d58e394cc9de5c81a9a49`.
+- Updated `.github/workflows/codeql.yml` to use `actions/checkout@v5` (Node.js 24-compatible action runtime), pin Linux analysis jobs to `ubuntu-24.04`, and expose `workflow_dispatch` so the default-branch CodeQL baseline can be explicitly refreshed after merge.
+- The CodeQL check initially reported `1 configuration not found` for `/language:rust` while the Rust analysis job was still running. After all six language-analysis jobs completed successfully, the same head's CodeQL check updated to success: “No new alerts in code changed by this pull request.” This is observed timing evidence, not a claim that the warning annotations were security findings.
+- CodeQL workflow run [39521599718](https://github.com/4ndr0666/scr/actions/runs/39521599718): all six configured language jobs passed. GUP run [39521599757](https://github.com/4ndr0666/scr/actions/runs/39521599757): passed. ShellCheck run [39521599714](https://github.com/4ndr0666/scr/actions/runs/39521599714): passed.
+- No service runtime files or historical path dispositions changed. The neutral CodeQL check is resolved on the recorded head; the runner deprecation and `ubuntu-latest` migration warnings are addressed in this workflow.
+- Canonical baseline remains unset; 52 rename-aware historical deletions remain unresolved; all nine integration surfaces remain PARTIAL. No GUP/SUK certification is claimed.
+
