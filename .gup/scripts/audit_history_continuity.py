@@ -92,7 +92,7 @@ def deleted_paths(root: Path, commit: str, scope: str, current: set[str]) -> lis
                     "deletion_commit": commit_meta[0],
                     "deletion_date": commit_meta[1],
                     "deletion_subject": commit_meta[2],
-                    "disposition": "UNRESOLVED",
+                    "disposition": "unresolved",
                 }
     return [records[path] for path in sorted(records)]
 
