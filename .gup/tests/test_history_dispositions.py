@@ -24,11 +24,12 @@ class DispositionRegisterTests(unittest.TestCase):
         self.commit("add old path")
         self.deletion_commit = self.commit("delete old path", delete="old.sh")
         self.source_commit = self.commit("source inventory")
-        self.commit("candidate no-op")
+        (self.root / SCOPE / "test_runtime.sh").write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        self.commit("candidate adds runtime test")
         self.register_path = self.root / "register.json"; self.audit_path = self.root / "audit.json"
         self.row = {"path": f"{SCOPE}/old.sh", "deletion_commit": self.deletion_commit,
                     "deletion_date": "2026-01-01", "deletion_subject": "delete old path",
-                    "disposition": "UNRESOLVED", "rationale": "Historical behavior has not been semantically reconciled.",
+                    "disposition": "unresolved", "rationale": "Historical behavior has not been semantically reconciled.",
                     "evidence": [f"https://github.com/example/repo/commit/{self.deletion_commit}"], "review_evidence": []}
         self.write_register([self.row])
 
@@ -50,7 +51,7 @@ class DispositionRegisterTests(unittest.TestCase):
         result = self.audit(); self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(self.audit_path.read_text(encoding="utf-8"))
         deleted = {row["path"]: row for row in report["historical_deleted_paths"]}
-        self.assertEqual(deleted[f"{SCOPE}/old.sh"]["disposition"], "UNRESOLVED")
+        self.assertEqual(deleted[f"{SCOPE}/old.sh"]["disposition"], "unresolved")
         self.assertEqual(report["baseline_status"], "BLOCKED_UNRESOLVED_HISTORY")
 
     def test_missing_or_stale_register_entries_fail_closed(self) -> None:
@@ -61,17 +62,27 @@ class DispositionRegisterTests(unittest.TestCase):
         self.assertNotEqual(stale.returncode, 0); self.assertIn("coverage mismatch", stale.stderr)
 
     def test_unauthorized_retirement_fails_closed(self) -> None:
-        self.write_register([dict(self.row, disposition="AUTHORIZED_RETIRED")])
+        self.write_register([dict(self.row, disposition="authorized-retired")])
         result = self.audit(); self.assertNotEqual(result.returncode, 0)
         self.assertIn("user_authorization=true", result.stderr)
 
     def test_translation_requires_current_target_and_behavior_test(self) -> None:
-        row = dict(self.row, disposition="TRANSLATED", target=f"{SCOPE}/missing-target.sh", behavior_tests=["test/test_runtime.sh"])
+        row = dict(self.row, disposition="translated", target=f"{SCOPE}/missing-target.sh", behavior_tests=["test/test_runtime.sh"])
         self.write_register([row]); missing_target = self.audit()
         self.assertNotEqual(missing_target.returncode, 0); self.assertIn("current target path", missing_target.stderr)
         row["target"] = f"{SCOPE}/kept.sh"; row["behavior_tests"] = []
         self.write_register([row]); missing_test = self.audit()
         self.assertNotEqual(missing_test.returncode, 0); self.assertIn("behavior-level test evidence", missing_test.stderr)
+
+    def test_valid_translation_is_accepted_without_certifying_baseline(self) -> None:
+        row = dict(self.row, disposition="translated", target=f"{SCOPE}/kept.sh",
+                   behavior_tests=[f"{SCOPE}/test_runtime.sh"])
+        self.write_register([row])
+        result = self.audit()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.audit_path.read_text(encoding="utf-8"))
+        self.assertEqual(report["historical_deleted_paths"][0]["disposition"], "translated")
+        self.assertEqual(report["baseline_status"], "HISTORY_REVIEW_REQUIRED")
 
     def test_wrong_deletion_commit_fails_closed(self) -> None:
         self.write_register([dict(self.row, deletion_commit="0" * 40)])
