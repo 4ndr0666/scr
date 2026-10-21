@@ -8,8 +8,8 @@
   "canonical_baseline": null,
   "candidate_commit": null,
   "state": "BLOCKED_BASELINE_NOT_ESTABLISHED",
-  "observed_main_commit": "407924afb16cd97803f88198de8e6e2217618854",
-  "observed_main_tree": "61ccd4d50e74ba986bf237bdb80d23ccc90fbfdf",
+  "observed_main_commit": "92b4c86c1010f4581790f2b4a94472059723809a",
+  "observed_main_tree": "8362e5694ccb6e4d25fb4aa21b6055831b182021",
   "scope_inventory_source_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
   "scope_inventory_source_tree": "bcc1e9652ca6a45d1f8e6bbc246e01885125e305",
   "required_integration_surfaces": [
@@ -37,7 +37,7 @@
     "No complete local Git checkout inventory/status/tracked-file SHA-256 or named-unit baseline/candidate comparison exists.",
     "The reconciled GUP v7.0.1 tooling artifact was validated separately but is not vendored into this repository; complete local-checkout inventory, tool integration, and candidate comparison remain unproven.",
     "No candidate comparison, final evidence bundle, or SUK P0-P8 battery exists yet.",
-    "Git-derived history audit found 52 historical deleted paths under the service scope; each remains UNRESOLVED pending evidence-backed disposition review."
+    "Machine-readable historical-disposition register records all 52 observed historical deletions as UNRESOLVED; per-path semantic review remains incomplete."
   ],
   "service_scope_tree_parity": {
     "status": "EXACT_PATH_MODE_BLOB_PARITY",
@@ -49,18 +49,18 @@
     "changed_mode_or_blob": 0
   },
   "post_merge_validation": {
-    "commit": "407924afb16cd97803f88198de8e6e2217618854",
-    "workflow": "https://github.com/4ndr0666/scr/actions/runs/39522409058",
+    "commit": "92b4c86c1010f4581790f2b4a94472059723809a",
+    "workflow": "https://github.com/4ndr0666/scr/actions/runs/39523204937",
     "conclusion": "success",
     "checks": [
-      "Validate Bash syntax",
-      "Validate GUP service scope inventory",
-      "Verify recorded service subtree parity",
-      "Audit service path history and dispositions",
-      "Analyze exact-blob leads for historical deletions",
-      "Upload Git-derived history audits",
-      "Run service Golden Unit runtime gate"
+      "Bash syntax",
+      "scope inventory",
+      "subtree parity",
+      "history audit",
+      "exact-blob audit",
+      "artifact upload",
+      "service runtime gate"
     ],
-    "scope": "Post-merge GUP workflow only; does not establish canonical baseline or certify nine-surface closure."
+    "scope": "Post-PR #168 default-branch GUP run; audit was observational before disposition-register integration."
   }
 }
