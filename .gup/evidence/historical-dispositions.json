@@ -1,0 +1,636 @@
+{
+  "schema_version": 1,
+  "protocol": "GUP",
+  "protocol_version": "7.0.1",
+  "scope_root": "4ndr0tools/4ndr0service",
+  "source_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+  "generated_from_candidate_commit": "92b4c86c1010f4581790f2b4a94472059723809a",
+  "records": [
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/common.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/controller.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/install.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/main.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/plugins__scr_alias_gen.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/purge_matrix.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/service__optimize_cargo.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/service__optimize_node.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/service__optimize_python.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/service__optimize_venv.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/systemd__env_maintenance.service",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/.remediation_backups/20260504_162039/test__verify_environment.sh",
+      "deletion_commit": "a445230d0eb716120365b52ab93e44466b5474d5",
+      "deletion_date": "2026-05-05",
+      "deletion_subject": "remediated common.sh for 4ndr0service with 4ndr0remediator",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/a445230d0eb716120365b52ab93e44466b5474d5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/CHANGELOG.md",
+      "deletion_commit": "4c3a4a9960aeed0f6fb500fe2e20fd2653e34bc2",
+      "deletion_date": "2025-10-02",
+      "deletion_subject": "updated 4ndr0service JQ error",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/4c3a4a9960aeed0f6fb500fe2e20fd2653e34bc2"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/GEMINI.md",
+      "deletion_commit": "bb245cb37005c26b464eba59431e9de75ef403a5",
+      "deletion_date": "2025-10-19",
+      "deletion_subject": "Mitigated JQ array iteration. Corrected paths and integrated self-fixing audit.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/bb245cb37005c26b464eba59431e9de75ef403a5"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/cli.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/config.json",
+      "deletion_commit": "ef0e0bd4ca18aeb508ec49fe15bbe2005da88191",
+      "deletion_date": "2025-01-11",
+      "deletion_subject": "Auto-commit: 0 added, 19 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/ef0e0bd4ca18aeb508ec49fe15bbe2005da88191"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/dialog.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/final_audit.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/install_env_maintenance.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_cargo.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_electron.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_go.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_meson.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_node.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_nvm.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_python.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_ruby.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/optimize_venv.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/package-lock.json",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/package.json",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/plugins/sample_check.sh",
+      "deletion_commit": "b8c44aa137ff0da17616308b3e2bbec6471ce66a",
+      "deletion_date": "2026-04-08",
+      "deletion_subject": "finalized 4ndr0service. New ffxc and individual composite modules for testing. Allowed tar.gz and .zip",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/b8c44aa137ff0da17616308b3e2bbec6471ce66a"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/sample_check.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/cargo",
+      "deletion_commit": "876b19ba1b97764d6d1aff9b0704c7769debd363",
+      "deletion_date": "2025-06-09",
+      "deletion_subject": "Remove obsolete cargo service script",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/876b19ba1b97764d6d1aff9b0704c7769debd363"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_db_tools.sh",
+      "deletion_commit": "d2c0409ee0e81de2522e32c3d9d454b6340acbce",
+      "deletion_date": "2025-01-01",
+      "deletion_subject": "Auto-commit: 0 added, 4 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/d2c0409ee0e81de2522e32c3d9d454b6340acbce"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_mysql.sh",
+      "deletion_commit": "d2c0409ee0e81de2522e32c3d9d454b6340acbce",
+      "deletion_date": "2025-01-01",
+      "deletion_subject": "Auto-commit: 0 added, 4 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/d2c0409ee0e81de2522e32c3d9d454b6340acbce"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/optimize_rust_tooling.sh",
+      "deletion_commit": "d2c0409ee0e81de2522e32c3d9d454b6340acbce",
+      "deletion_date": "2025-01-01",
+      "deletion_subject": "Auto-commit: 0 added, 4 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/d2c0409ee0e81de2522e32c3d9d454b6340acbce"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/service/remaining_files.txt",
+      "deletion_commit": "f4b1205c6f856afa3d6218ba8bc01bc02c7f31c6",
+      "deletion_date": "2025-05-19",
+      "deletion_subject": "Auto-commit: 0 added, 0 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/f4b1205c6f856afa3d6218ba8bc01bc02c7f31c6"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/settings.sh",
+      "deletion_commit": "d2c0409ee0e81de2522e32c3d9d454b6340acbce",
+      "deletion_date": "2025-01-01",
+      "deletion_subject": "Auto-commit: 0 added, 4 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/d2c0409ee0e81de2522e32c3d9d454b6340acbce"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/systemd/user/env_maintenance.service",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/systemd/user/env_maintenance.timer",
+      "deletion_commit": "932754cadc7ded1724422cc30b5efa0051ab3391",
+      "deletion_date": "2026-01-11",
+      "deletion_subject": "updated 4ndr0service suite. Created acension.sh for ruby pkgs. updated ignore paths for betas with ~b~ and bak files.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Exact-blob match and rename metadata support path translation, but real host scheduling and complete install/migration/rollback behavior are not proven.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/932754cadc7ded1724422cc30b5efa0051ab3391"
+      ],
+      "review_evidence": [
+        "https://github.com/4ndr0666/scr/blob/main/.gup/evidence/historical-path-review-2026-10-21.md"
+      ]
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/bats/test_lib.bats",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/bats/test_main.bats",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/clamav_install.sh",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/install_env_maintenance.sh",
+      "deletion_commit": "240655852b5b09580578be21c7ff62ee0b99e3b2",
+      "deletion_date": "2024-12-07",
+      "deletion_subject": "Auto-commit: 0 added, 0 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/240655852b5b09580578be21c7ff62ee0b99e3b2"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/lint_quotes.py",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/src/config.yaml",
+      "deletion_commit": "d2c0409ee0e81de2522e32c3d9d454b6340acbce",
+      "deletion_date": "2025-01-01",
+      "deletion_subject": "Auto-commit: 0 added, 4 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/d2c0409ee0e81de2522e32c3d9d454b6340acbce"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/src/install_env_maintenance.sh",
+      "deletion_commit": "c2a617e2d06584be51dbd6cd4c30706cde8856b8",
+      "deletion_date": "2026-04-17",
+      "deletion_subject": "archived arco scripts and moved into scripts. finalized new makex. updated 4ndr0service optimize_node scripts and integrated acension and purge.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/src/verify_environment.old",
+      "deletion_commit": "4ae4f60bf8ae80ab0156df3ef23d51d66f9c58bc",
+      "deletion_date": "2025-05-19",
+      "deletion_subject": "Auto-commit: 0 added, 5 modified, 0 deleted",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/4ae4f60bf8ae80ab0156df3ef23d51d66f9c58bc"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test/src/verify_environment.sh",
+      "deletion_commit": "932754cadc7ded1724422cc30b5efa0051ab3391",
+      "deletion_date": "2026-01-11",
+      "deletion_subject": "updated 4ndr0service suite. Created acension.sh for ruby pkgs. updated ignore paths for betas with ~b~ and bak files.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/932754cadc7ded1724422cc30b5efa0051ab3391"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/test_main.bats",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/verify_environment.sh",
+      "deletion_commit": "0e8304a2a2058095b6805d522d44a51536e49d83",
+      "deletion_date": "2026-01-12",
+      "deletion_subject": "restructed beta 4ndr0service file tree to reflect original. created ascension.sh.",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/0e8304a2a2058095b6805d522d44a51536e49d83"
+      ],
+      "review_evidence": []
+    },
+    {
+      "path": "4ndr0tools/4ndr0service/view/wl-copy",
+      "deletion_commit": "b8c44aa137ff0da17616308b3e2bbec6471ce66a",
+      "deletion_date": "2026-04-08",
+      "deletion_subject": "finalized 4ndr0service. New ffxc and individual composite modules for testing. Allowed tar.gz and .zip",
+      "disposition": "UNRESOLVED",
+      "rationale": "Historical deletion is observed in Git history; semantic capability preservation, translation, or authorized retirement has not yet been established.",
+      "evidence": [
+        "https://github.com/4ndr0666/scr/commit/b8c44aa137ff0da17616308b3e2bbec6471ce66a"
+      ],
+      "review_evidence": []
+    }
+  ]
+}
