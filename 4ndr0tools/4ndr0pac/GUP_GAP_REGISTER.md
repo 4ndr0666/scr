@@ -211,3 +211,8 @@ The rollback directive built the package-selection set through a tail/grep/awk/f
 The remediation captures the pipeline status explicitly. User cancellation through fzf exit status 130 remains a normal no-op; all other selection failures emit a diagnostic and abort the rollback directive before package-manager mutations. The backend gap scanner rejects reintroduction of the masked rollback-selection pipeline.
 
 The evidence remains limited to static backend invariants and does not execute package-manager operations.
+
+
+### G31 — Rollback package derivation failure suppression
+
+The rollback path previously masked failures while deriving installed, upgraded, and downgraded package names from the selected rollback state with `|| true`. Those derived package lists directly control subsequent package removal or cached-package installation. The remediation makes each derivation fail closed with an explicit diagnostic and returns before package-manager mutation. The GUP scanner records the masked derivation form as a regression invariant.
