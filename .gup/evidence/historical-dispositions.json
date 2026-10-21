@@ -479,20 +479,16 @@
       "deletion_commit": "932754cadc7ded1724422cc30b5efa0051ab3391",
       "deletion_date": "2026-01-11",
       "deletion_subject": "updated 4ndr0service suite. Created acension.sh for ruby pkgs. updated ignore paths for betas with ~b~ and bak files.",
-      "disposition": "translated",
-      "rationale": "Translated at the repository source-tree and installer-discovery boundary: Git commit c2a617e2d06584be51dbd6cd4c30706cde8856b8 records a zero-content-change rename from systemd/user/env_maintenance.timer to systemd/env_maintenance.timer (same blob d0b43b5b4a7f5b3077bbe2723883c87007cc9262); the current installer discovers flat systemd/*.timer templates, top-level install.sh syncs the suite and invokes that installer, and the isolated installer runtime test verifies flat-path discovery, deployment, schedule content, source preservation and idempotent rerun. This does not certify real host systemd scheduling, permissions, or complete rollback/uninstall behavior.",
+      "disposition": "unresolved",
+      "rationale": "Historical path has multiple distinct content episodes. Deletion commit 932754cadc7ded1724422cc30b5efa0051ab3391 removed a timer blob 005bc0db2c357c5ac099bbac0e00d8ab5414881e; that same commit added a different root-level env_maintenance.timer blob 9aa13700327dad487613dee2620c6a93e2b9d617. Later commit c2a617e2d06584be51dbd6cd4c30706cde8856b8 records a zero-content-change rename from systemd/user/env_maintenance.timer to systemd/env_maintenance.timer using blob d0b43b5b4a7f5b3077bbe2723883c87007cc9262, which is not the blob deleted by 932754. Current installer and runtime tests establish the later flat-path deployment contract but do not establish semantic continuity from the earlier deleted timer episode. Keep unresolved pending review of the intermediate path history and service/timer pairing.",
       "evidence": [
+        "https://github.com/4ndr0666/scr/commit/932754cadc7ded1724422cc30b5efa0051ab3391",
         "https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8",
-        "https://github.com/4ndr0666/scr/blob/main/4ndr0tools/4ndr0service/systemd/install_env_maintenance.sh",
-        "https://github.com/4ndr0666/scr/blob/main/4ndr0tools/4ndr0service/install.sh"
+        "https://github.com/4ndr0666/scr/blob/main/4ndr0tools/4ndr0service/systemd/env_maintenance.timer"
       ],
       "review_evidence": [
         "https://github.com/4ndr0666/scr/blob/main/.gup/evidence/historical-path-review-2026-10-21.md",
         "https://github.com/4ndr0666/scr/actions/runs/39526042800"
-      ],
-      "target": "4ndr0tools/4ndr0service/systemd/env_maintenance.timer",
-      "behavior_tests": [
-        "4ndr0tools/4ndr0service/test/systemd_installer_runtime.sh"
       ]
     },
     {
