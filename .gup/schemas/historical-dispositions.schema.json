@@ -66,10 +66,10 @@
           },
           "disposition": {
             "enum": [
-              "PRESERVED",
-              "TRANSLATED",
-              "AUTHORIZED_RETIRED",
-              "UNRESOLVED"
+              "preserved",
+              "translated",
+              "authorized-retired",
+              "unresolved"
             ]
           },
           "rationale": {
