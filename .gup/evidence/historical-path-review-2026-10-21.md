@@ -37,20 +37,6 @@ This review distinguishes Git object identity and rename metadata from semantic 
 - Canonical baseline remains unset. All nine integration surfaces remain `PARTIAL`. No GUP or SUK certification is claimed.
 
 
-## 2026-10-21 — bounded disposition decision for historical timer path
-
-**Disposition:** `translated`, scoped to repository source-tree placement and installer discovery. This is not a claim of end-to-end host runtime closure.
-
-- Historical path: `4ndr0tools/4ndr0service/systemd/user/env_maintenance.timer`.
-- Current target: `4ndr0tools/4ndr0service/systemd/env_maintenance.timer`.
-- Git commit [c2a617e2d06584be51dbd6cd4c30706cde8856b8](https://github.com/4ndr0666/scr/commit/c2a617e2d06584be51dbd6cd4c30706cde8856b8) records the path as a rename with zero additions/deletions and blob `d0b43b5b4a7f5b3077bbe2723883c87007cc9262`. This establishes exact content continuity for the template at that transition.
-- The current `systemd/install_env_maintenance.sh` resolves its source directory from its own location and discovers `*.service` and `*.timer` in the flat `systemd/` directory. Top-level `install.sh` mirrors the suite source tree and invokes that installer unless `--skip-systemd` is selected.
-- `test/systemd_installer_runtime.sh` runs in a disposable tree with mocked `systemctl`. It verifies flat template discovery, deployment to the user unit directory, custom suite-root rewrites, daily schedule content, source-template preservation, activation command ordering, and byte-stable repeated deployment. The post-merge GUP run [39526042800](https://github.com/4ndr0666/scr/actions/runs/39526042800) passed this test through the 20-test runtime gate.
-- The register now marks this historical source path `translated` and binds it to the live target and behavior test, satisfying the validator's minimum translation-evidence contract.
-
-**Explicit limits remain:** no real systemd daemon was invoked; host user/session permissions, actual scheduled execution, full top-level install transaction, rollback/uninstall, and migration of pre-existing deployed trees are not proven by the isolated test. Those remain integration-closure work and are not implied by this path-level disposition. No service file was changed, moved, deleted, or executed during the review.
-
-
 ## 2026-10-21 — correction: timer path has multiple content episodes
 
 A deeper inspection of deletion commit [932754cadc7ded1724422cc30b5efa0051ab3391](https://github.com/4ndr0666/scr/commit/932754cadc7ded1724422cc30b5efa0051ab3391) invalidates the assumption that the current flat timer is an exact-blob successor to the historical deletion recorded in the register.
