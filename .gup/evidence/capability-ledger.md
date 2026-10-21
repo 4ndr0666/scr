@@ -35,7 +35,7 @@ This is a semantic classification pass over the 48-file scope inventory and sele
 | Scheduled maintenance unit | `systemd/env_maintenance.service` | Isolated runtime test confirms `Environment=PKG_PATH` and `ExecStart` are rewritten to a suite root containing spaces, and source template remains unchanged. | Template-to-installer contract PASS in mocked runtime; host systemd behavior remains unverified |
 | Scheduled maintenance timer | `systemd/env_maintenance.timer` | Isolated runtime test confirms flat `systemd/*.timer` discovery, deployed daily schedule, activation commands, and byte-stable repeated deployment. | Template-to-installer contract PASS in mocked runtime; actual timer scheduling remains unverified |
 | Operator documentation | `README.md` | Documents install, modes, service capabilities, configuration, systemd, troubleshooting, recovery and tests. | Documentation-to-implementation parity pending |
-| Scope/integration runtime gate | `test/gup_runtime_gate.sh` | Runs 20 named shell runtime proofs and stops at first failing test, including systemd installer lifecycle. | 20/20 passed in PR #167 run 39518240154; other integration surfaces remain PARTIAL |
+| Scope/integration runtime gate | `test/gup_runtime_gate.sh` | Runs 20 named shell runtime proofs and stops at first failing test, including systemd installer lifecycle. | 20/20 passed in post-merge GUP run 39522409058 at merge commit 407924afb16cd97803f88198de8e6e2217618854; other integration surfaces remain PARTIAL |
 | Ascension runtime proof | `test/ascension_runtime.sh` | Regression coverage for Python hive/ascension behavior. | In runtime gate |
 | Plugin runtime proof | `test/controller_plugin_runtime.sh` | Controller/plugin loading contract. | In runtime gate |
 | Controller runtime proof | `test/controller_runtime.sh` | Controller orchestration contract. | In runtime gate |
@@ -88,4 +88,4 @@ These are established by repository history and existing test source; do not rem
 3. Install, migration, systemd deployment, rollback and uninstall path proof.
 4. Nine-surface closure dispositions, including explicit `NOT_APPLICABLE` with rationale where warranted.
 5. Baseline/candidate tracked-file SHA-256 inventories and named-unit comparison from a real full Git checkout.
-6. GUP executable-tool version reconciliation before vendoring: the uploaded skill identifies itself as 7.0.1 while some included executable package metadata still says 7.0.0. Do not silently normalize that mismatch.
+6. The reconciled GUP v7.0.1 tooling artifact was validated separately and is not vendored here; complete local-checkout inventory, tool integration, and candidate comparison remain outstanding.
