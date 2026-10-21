@@ -64,7 +64,14 @@ optimize_venv_service() {
         log_warn "Active Python $py_ver is pre-release. Falling back to latest stable pyenv version."
         local stable
         stable=$(pyenv versions --bare | grep -E '^3\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-        [[ -n "$stable" ]] && pyenv shell "$stable" || { log_error "No stable pyenv version found."; return 1; }
+        if [[ -z "$stable" ]]; then
+            log_error "No stable pyenv version found."
+            return 1
+        fi
+        if ! pyenv shell "$stable"; then
+            log_error "Failed to select stable pyenv version: $stable"
+            return 1
+        fi
     fi
 
     # 1. Global Hive Maintenance
@@ -138,7 +145,14 @@ optimize_venv_service() {
             # per installed tool; matching the package-name field with -x is
             # an exact lookup, mirroring how optimize_node.sh uses npm directly
             # rather than scraping free text.
-            if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$p"; then
+            if pipx_package_is_installed "$p"; then
+                :
+            else
+                local pipx_status=$?
+                if (( pipx_status == 2 )); then
+                    log_error "Cannot synchronize virtualenv tools because pipx inventory is unavailable."
+                    return 1
+                fi
                 log_info "Deploying: $p"
                 run_bounded 900 "pipx install $p" pipx install "$p" || log_warn "Deployment failed: $p"
             fi

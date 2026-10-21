@@ -30,6 +30,7 @@ runtime_tests=(
     settings_runtime.sh
     source_safety_runtime.sh
     verify_environment_runtime.sh
+    pipx_inventory_runtime.sh
 )
 
 printf 'GUP current-iteration runtime gate\n'

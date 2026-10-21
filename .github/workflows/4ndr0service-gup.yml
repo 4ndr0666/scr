@@ -1,0 +1,140 @@
+name: 4ndr0service GUP
+
+on:
+  push:
+    paths:
+      - '4ndr0tools/4ndr0service/**'
+      - '.gup/**'
+      - '.github/workflows/4ndr0service-gup.yml'
+  pull_request:
+    paths:
+      - '4ndr0tools/4ndr0service/**'
+      - '.gup/**'
+      - '.github/workflows/4ndr0service-gup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: 4ndr0service-gup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' scripts < <(find 4ndr0tools/4ndr0service -type f -name '*.sh' -print0)
+          if (( ${#scripts[@]} == 0 )); then
+            echo "No Bash scripts found under 4ndr0tools/4ndr0service" >&2
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            bash -n "$script"
+          done
+          printf 'Bash syntax passed for %d scripts.\n' "${#scripts[@]}"
+
+      - name: Validate GUP service scope inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest_path = Path(".gup/inventory/4ndr0service-scope.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if manifest.get("protocol") != "GUP" or manifest.get("protocol_version") != "7.0.1":
+              raise SystemExit("GUP scope manifest has an unexpected protocol identity")
+          if manifest.get("baseline_status") != "BLOCKED_BASELINE_NOT_ESTABLISHED":
+              raise SystemExit("Baseline must remain blocked until semantic review is complete")
+          source_commit = manifest.get("observed_source_commit", "")
+          subprocess.run(["git", "cat-file", "-e", f"{source_commit}^{{commit}}"], check=True)
+          scope = manifest.get("scope_root", "")
+          if scope != "4ndr0tools/4ndr0service":
+              raise SystemExit(f"Unexpected GUP scope root: {scope!r}")
+
+          raw = subprocess.run(
+              ["git", "ls-tree", "-r", "-z", source_commit, "--", scope],
+              check=True, stdout=subprocess.PIPE
+          ).stdout
+          actual = {}
+          for record in raw.split(bytes([0])):
+              if not record:
+                  continue
+              metadata, raw_path = record.split(bytes([9]), 1)
+              mode, kind, blob = metadata.decode("ascii").split()
+              path = raw_path.decode("utf-8", "surrogateescape")
+              if kind == "blob":
+                  actual[path] = {"git_blob_sha": blob, "mode": mode}
+
+          rows = manifest.get("files")
+          if not isinstance(rows, list):
+              raise SystemExit("GUP scope manifest files must be an array")
+          expected = {}
+          for row in rows:
+              path = row.get("path")
+              if not isinstance(path, str) or path in expected:
+                  raise SystemExit(f"Invalid or duplicate manifest path: {path!r}")
+              expected[path] = {"git_blob_sha": row.get("git_blob_sha"), "mode": row.get("mode")}
+          if expected != actual:
+              missing = sorted(set(actual) - set(expected))
+              extra = sorted(set(expected) - set(actual))
+              mismatched = sorted(p for p in set(expected) & set(actual) if expected[p] != actual[p])
+              raise SystemExit(f"GUP inventory mismatch: missing={missing}, extra={extra}, changed={mismatched}")
+          if manifest.get("file_count") != len(actual):
+              raise SystemExit("GUP file_count does not match the source Git tree")
+          print(f"GUP scope inventory verified: {len(actual)} files at {source_commit}")
+          PY
+
+      - name: Verify recorded service subtree parity
+        shell: bash
+        run: python3 .gup/scripts/verify_scope_parity.py
+
+      - name: Audit service path history and dispositions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .gup/scripts/audit_history_continuity.py \
+            --root . \
+            --scope 4ndr0tools/4ndr0service \
+            --source-commit e00d2ca39ca4b5dd7bf9e5c96d0130e042521360 \
+            --output /tmp/gup-service-history-audit.json
+          python3 .gup/tests/test_history_audit.py
+
+      - name: Analyze exact-blob leads for historical deletions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .gup/scripts/audit_deleted_blob_matches.py \
+            --root . \
+            --scope 4ndr0tools/4ndr0service \
+            --candidate-commit HEAD \
+            --output /tmp/gup-deleted-blob-matches.json
+          python3 .gup/tests/test_deleted_blob_matches.py
+
+      - name: Upload Git-derived history audits
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gup-service-history-audit
+          path: |
+            /tmp/gup-service-history-audit.json
+            /tmp/gup-deleted-blob-matches.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Run service Golden Unit runtime gate
+        shell: bash
+        run: bash 4ndr0tools/4ndr0service/test/gup_runtime_gate.sh

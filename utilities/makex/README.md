@@ -1,25 +1,20 @@
 # makex
 
-Bulk-fix executable bits across a directory tree: shell scripts become executable, non-scripts (docs, images, configs) stop being executable. One command, batched `chmod`, no guessing.
+Fixes executable bits across a directory tree **by looking at what files actually are**, not just what they are called. Scripts become executable; documents, media, data and archives do not. Native binaries are left alone.
 
-**Version:** 2.2.0 · **Author:** 4ndr0666 · **Requires:** bash 4+ (tested on 5.2), GNU findutils (`find` with `-perm /mode` and `-iname`), coreutils. `sudo` is optional and only used as a fallback.
+**Version:** 2.3.0 · **Author:** 4ndr0666 · **Requires:** bash 4+ (tested on 5.2), GNU findutils (`find` with `-perm /mode`), coreutils. `sudo` is optional and only used as a fallback.
 
 ---
 
 ## Quick start
 
 ```bash
-# Preview first: shows what would change, modifies nothing
-makex -n .
-
-# Apply to the current directory
-makex
-
-# Apply to several directories, quietly
+makex -n .          # preview: shows what would change, modifies nothing
+makex               # apply to the current directory
 makex -q ~/bin ~/projects/tools
 ```
 
-Install by putting the script on your `PATH`:
+Install:
 
 ```bash
 install -m 755 makex ~/.local/bin/makex
@@ -27,39 +22,42 @@ install -m 755 makex ~/.local/bin/makex
 
 ---
 
-## What it does
+## Modes
 
-makex runs two phases over every regular file under the target directories.
-
-| Phase | Default mode | Reverse mode (`-r`) |
+| Mode | Scripts | Everything else |
 |---|---|---|
-| **1. Scripts** | Adds `u+x` to shell scripts that lack it | Removes `u-x` from shell scripts that have it |
-| **2. Non-scripts** | Removes all exec bits (`a-x`) from files matching the safe patterns | Adds `u+x` to files matching the safe patterns that lack it |
+| **Default** | Gain `u+x` if they lack it | Files detected as non-executable types **lose all exec bits** |
+| **`-r` (reverse)** | **Lose all exec bits** (`a-x`) | Same as default: non-executable types lose exec |
 
-### How a file is judged a "script"
-A file is a script if **either**:
-1. its name ends in `.sh`, or
-2. its first line (read up to 256 bytes) is a shell shebang for `bash`, `sh`, `zsh`, `dash`, `ksh` or `ash`.
+Reverse mode **never grants** exec to anything. Its job is to make sure scripts are not executable while documents and data stay non-executable.
 
-Recognized shebangs include:
+---
+
+## How detection works
+
+For every file makex reads at most 4 KiB once (no subprocesses per file) and applies these layers in order. The first conclusive layer wins.
+
+| # | Layer | Result |
+|---|---|---|
+| 1 | **Name / extension** is a non-executable type: documents, markup, config/data, images, audio, video, archives, fonts, keys, lock/backup files, compiled-language source (`.md .txt .html .json .toml .mp4 .zip .c .rs` and ~130 more), or a name like `README`, `LICENSE`, `Makefile`, or a shell dotfile such as `.bashrc` | **non-executable**, even if it contains a shebang |
+| 2 | **Shebang**: first line is `#!/…` for *any* interpreter (shell, Python, Perl, Ruby, Node, awk…) | **script** |
+| 3 | **Native executable** magic bytes: ELF, Mach-O, PE | **never touched** |
+| 4 | **`.sh` name**: a strong hint, but content can overrule it (binary data, or clearly Python/Perl/Ruby/Node source, is not a shell script) | **script** |
+| 5 | **Known data magic bytes** (PNG, JPEG, GIF, PDF, ZIP, gzip, xz, zstd, 7z, SQLite, Ogg, FLAC, MP3/ID3, RIFF, WOFF, RAR, bzip2), so a file with no or a wrong extension is still recognized | **non-executable** |
+| 6 | **Interpreted-language extension with no shebang** (`.py .rb .js .pl .php .lua …`): the kernel can't execute it meaningfully, so the exec bit is meaningless | **non-executable** |
+| 7 | **Unknown binary** | **never touched** |
+| 8 | **Unknown text with no shebang**: scored for shell-script content (see below) | **script** if conclusive, otherwise never touched |
+
+### Shebang-less shell scripts
+A file with no shebang and no helpful extension is treated as a shell script only on strong evidence: at least one block closer (`fi`, `done`, `esac`, `set -e…`, `if [ … ]`) plus at least three distinct shell signals (functions, positional parameters like `$1`/`$@`, `export`/`local`, `echo`/`printf`, `exit N`), and no Python markers. This keeps prose and data files from being flagged.
+
+### Scripts in other languages without a shebang
+A shebang-less Python, Perl, Ruby or Node script with an unrecognized name (for example an extensionless `deploy`) **is detected, but not chmod'd**. Running it directly would feed Python source to `sh`, so `chmod +x` alone would make it worse. makex reports these as advisories at the end of the run so you can add the shebang line:
 
 ```
-#!/bin/sh
-#!/bin/bash
-#!/usr/bin/bash
-#!/usr/bin/env bash
-#!/usr/bin/env -S bash -e
-#!/usr/bin/env VAR=1 zsh
+! [CAUTION] :: 1 shebang-less file(s) look like scripts; chmod +x cannot make them runnable (add a shebang line):
+! [CAUTION] ::   [python] './bin/deploy'
 ```
-
-Not matched: `#!/usr/bin/env python3`, `#!/bin/shellfoo`, and any file with no shebang and no `.sh` extension. Other interpreters (Python, Perl, Node) are deliberately left alone.
-
-### Safe (non-script) patterns
-Matched case-insensitively, so `photo.JPG` counts:
-
-`*.md *.markdown *.txt *.pdf *.jpg *.jpeg *.png *.gif *.svg *.json *.yml *.yaml *.csv *.html *.css *.rst *.webp *.ico *.toml *.xml *.ini *.log README`
-
-Files matching these are never treated as scripts in Phase 1. Edit `SAFE_NOEXEC_PATTERNS` near the top of the script to change the list.
 
 ---
 
@@ -75,62 +73,60 @@ makex [-r] [--hidden] [-n] [-q] [-h|--help] [--] [DIR...]
 | `--hidden` | Include hidden files and directories (default skips dotfiles). `.git` is always pruned |
 | `-rh`, `-hr` | Shorthand for `-r --hidden` |
 | `-n`, `--dry-run` | Report planned changes; modify nothing |
-| `-q`, `--quiet` | Suppress per-file success lines; errors and the summary still print |
+| `-q`, `--quiet` | Suppress per-file success lines and the advisory file list (errors and summary remain) |
 | `-V`, `--version` | Print the version |
 | `-h`, `--help` | Show help |
-| `--` | End of options (lets you pass a directory that starts with `-`) |
+| `--` | End of options (allows directories starting with `-`) |
 | `DIR...` | One or more target directories (default `.`) |
 
-Note that `-h` is help, but `-rh` is the reverse-plus-hidden shorthand.
+`-h` is help, but `-rh` is the reverse-plus-hidden shorthand.
 
 ---
 
 ## Behavior worth knowing
 
-- **Symlinks:** symlinks inside the tree are skipped (only regular files are touched). A symlink passed *as* a target directory is followed.
-- **Privileges:** makex tries a plain `chmod` first. Only if the kernel refuses (and you are not root) does it retry through `sudo`. Files you own never trigger a password prompt. If `sudo` is missing, you get a warning and files owned by others will fail.
-- **Failure isolation:** if a batch of up to 1000 files is refused, makex retries each file on its own, so one bad path doesn't hide the rest. Each failure is reported with the `chmod` error.
-- **Unreadable directories:** these are skipped, reported in a warning, and counted in the summary. They do not change the exit code on their own.
-- **Idempotent:** running it twice changes nothing the second time.
+- **Symlinks:** links inside the tree are skipped (only regular files are touched). A symlink passed *as* a target directory is followed.
+- **Privileges:** a plain `chmod` is tried first. Only if the kernel refuses (and you are not root) does makex retry through `sudo`. Files you own never trigger a password prompt. Without `sudo` you get a warning and files owned by others fail.
+- **Failure isolation:** if a batch of up to 1000 files is refused, each file is retried on its own, so one bad path can't hide the rest. Every failure is reported with the `chmod` error.
+- **Unreadable directories:** skipped, reported in a warning, and counted in the summary. They do not change the exit code on their own.
+- **Idempotent:** a second run changes nothing.
 - **Safe output:** control characters and backslashes in filenames are neutralized before printing, so a hostile filename can't inject terminal escape sequences.
-- **Colors:** disabled automatically when output isn't a terminal, or when `NO_COLOR` is set. The screen is cleared only on a terminal.
+- **Colors:** disabled when output isn't a terminal or `NO_COLOR` is set. The screen is cleared only on a terminal.
+- **Speed:** classification is fork-free. On an 8,000-file test tree v2.3.0 took about 5 s against about 32 s for v2.1.1.
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Success (including a dry run and a run with nothing to change) |
+| `0` | Success (including dry runs and runs with nothing to change) |
 | `1` | Invalid directory, unknown flag, or at least one file could not be modified |
 | `130` / `143` | Interrupted by Ctrl-C / SIGTERM (temp files are still cleaned up) |
 
 ---
 
-## Examples
+## Tuning
 
-```bash
-# Preview a reverse-mode sweep of everything, hidden files included
-makex -n -rh ~/archive
+All classification data lives in variables near the top of the script:
 
-# Normalize a repo checkout (skips .git, skips dotfiles)
-makex ~/src/myrepo
-
-# Directory whose name starts with a dash
-makex -- -weird-dir
-
-# Quiet run for scripts; check the exit code
-makex -q /srv/deploy || echo "some files could not be changed"
-```
+| Variable | Purpose |
+|---|---|
+| `DATA_EXTS` | Extensions that are never executable (layer 1) |
+| `DATA_NAMES` | Exact file names that are never executable (layer 1) |
+| `SCRIPTY_EXTS` | Interpreted-language extensions that are not executable without a shebang (layer 6) |
+| `SNIFF_BYTES`, `SNIFF_LINES` | How much of each file is inspected |
+| `BATCH_LIMIT` | Files per `chmod` call |
 
 ---
 
 ## Caveats
 
-- Run `makex -n` before the first real run on an existing tree. Version 2.2.0 recognizes extensionless shell scripts that earlier versions silently missed, so it may change more files than you expect.
-- Phase 2 in default mode strips execute permission from *every* file matching the safe patterns, including any that really are scripts with a `.md` or `.log` name.
-- Designed for Linux with GNU `find`. BSD/macOS `find` does not support `-perm /mode` and is untested.
+- Run `makex -n` before the first real run on an existing tree. Earlier versions recognized only `*.sh` files, so this version may change more files than you expect.
+- Layer 1 wins over content: a `notes.md` that starts with `#!/bin/sh` is treated as a document and loses its exec bit. Remove `md` from `DATA_EXTS` if that is wrong for you.
+- Shebang-less shell detection is a heuristic. Unusual files can be missed (left untouched) but ambiguous files are never de-executed.
+- Designed for Linux with GNU `find`. BSD/macOS `find` lacks `-perm /mode` and is untested.
 
 ---
 
 ## Development notes
 
-Built to the Golden Unit Protocol (v5.3): every function was hashed and compared against the previous version, and removed or changed behavior was reviewed explicitly. The only removal in 2.2.0 was `build_name_filter`, an unused function. The script passes `shellcheck` cleanly.
+Built to the Golden Unit Protocol (v5.3): each function was hashed and compared against v2.1.1, and every changed or new unit has a recorded review. The only removal was `build_name_filter`, an unused function. The script passes `shellcheck` cleanly.

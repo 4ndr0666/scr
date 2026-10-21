@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
 # Re-Architected by: Ψ-4ndr0666 (Superset Batch Optimization)
-# Version: 2.2.0
-# Paradigm: Strict Bash Utility — find(1) -print0 stream orchestrator; batched chmod
-#           with EAFP privilege escalation and per-file failure isolation; zero
-#           dependencies beyond bash/findutils/coreutils (sudo only on EPERM fallback).
+# Version: 2.3.0
+# Paradigm: Strict Bash Utility — find(1) -print0 stream orchestrator; content-aware
+#           classifier (shebang > magic bytes > extension > text heuristics) feeding
+#           batched chmod with EAFP privilege escalation and per-file failure isolation;
+#           zero dependencies beyond bash 4+/findutils/coreutils (sudo only on EPERM fallback).
 # shellcheck disable=SC2016
 set -euo pipefail
 
@@ -51,24 +52,61 @@ log_banner() {
 # ==============================================================================
 # CONFIGURATION ENGINE
 # ==============================================================================
-MAKEX_VERSION="2.2.0"
+MAKEX_VERSION="2.3.0"
 DEFAULT_DIR="."
 BATCH_LIMIT=1000
+ADVISORY_SHOW_LIMIT=20
+SNIFF_BYTES=4096
+SNIFF_LINES=80
 
-# Matches: #!/bin/sh  #!/usr/bin/bash  #!/usr/bin/env bash  #!/usr/bin/env -S bash -e
-#          #!/usr/bin/env VAR=1 zsh   — and rejects #!/bin/shellfoo, #!/usr/bin/env python3
-SHEBANG_PATTERN='^#![[:space:]]*/([^[:space:]]*/)?(env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*)?(bash|sh|zsh|dash|ksh|ash)([[:space:]]|$)'
+# Any shebang is a script: the kernel will exec it through the named interpreter.
+SHEBANG_PATTERN='^#![[:space:]]*/[^[:space:]]+'
 
-SAFE_NOEXEC_PATTERNS=(
-    "*.md" "*.MD" "*.markdown"
-    "*.txt" "*.TXT"
-    "*.pdf" "*.PDF"
-    "*.jpg" "*.jpeg" "*.png" "*.gif" "*.svg"
-    "*.json" "*.yml" "*.yaml"
-    "*.csv" "*.html" "*.css" "*.rst"
-    "README" "README.md" "README.MD"
-    "*.webp" "*.ico" "*.toml" "*.xml" "*.ini" "*.log"
-)
+# Extensions that are non-executable by nature (documents, markup, data, media,
+# archives, fonts, keys, compiled-language sources). An extension in this list wins
+# over content, matching the original safe-pattern behavior.
+DATA_EXTS="md markdown mdx txt text rst adoc org tex rtf doc docx odt ppt pptx odp xls xlsx ods pdf epub mobi djvu log
+json jsonl ndjson yml yaml toml ini cfg conf xml csv tsv html htm xhtml css scss sass less svg
+jpg jpeg png gif bmp tiff tif webp ico heic heif avif psd xcf
+mp3 flac wav ogg oga opus m4a aac wma aiff mid midi
+mp4 m4v mkv webm avi mov wmv flv mpg mpeg 3gp m2ts vob srt ass vtt
+zip tar gz tgz bz2 xz zst 7z rar iso dmg cab deb rpm jar war whl
+ttf otf woff woff2 eot sqlite sqlite3 db mdb sql pem crt cer key pub csr gpg asc sig
+lock bak orig rej swp tmp patch diff map c h cc cpp cxx hpp hh rs go java kt swift cs"
+
+# Exact (case-insensitive) file names that are never executable.
+DATA_NAMES="readme license licence copying authors contributors changelog changes news notice todo makefile dockerfile"
+
+# Interpreted-language extensions: executable only when a shebang makes them
+# runnable. Without a shebang the exec bit is meaningless (the kernel returns ENOEXEC
+# and the shell would feed Python/JS/etc. source to sh), so they count as non-executable.
+SCRIPTY_EXTS="py pyw pl pm rb js mjs cjs ts tsx jsx php lua awk tcl r jl fish bash zsh ksh csh tcsh dash ash groovy ex exs"
+
+# Collapse the multi-line lists above into single-space-separated words so the
+# " $LIST " == *" $word "* membership tests below are exact.
+DATA_EXTS="${DATA_EXTS//$'\n'/ }"
+DATA_NAMES="${DATA_NAMES//$'\n'/ }"
+SCRIPTY_EXTS="${SCRIPTY_EXTS//$'\n'/ }"
+
+# Text-heuristic signatures (shebang-less files only).
+RE_SH_FI='^[[:space:]]*fi[[:space:]]*(;|$)'
+RE_SH_DONE='^[[:space:]]*done[[:space:]]*($|[<|;])'
+RE_SH_ESAC='^[[:space:]]*esac[[:space:]]*($|;)'
+RE_SH_SET='^[[:space:]]*set[[:space:]]+-[A-Za-z]*[euxo]'
+RE_SH_IF='^[[:space:]]*(if|elif|while|until)[[:space:]]+(\[|test[[:space:]])'
+RE_SH_FUNC='^[[:space:]]*(function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\))'
+RE_SH_POS='\$([0-9]|[@#?*]|\{[0-9@#])'
+RE_SH_EXP='^[[:space:]]*(export|local|readonly)[[:space:]]+[A-Za-z_]'
+RE_SH_ECHO='^[[:space:]]*(echo|printf)[[:space:]]'
+RE_SH_EXIT='^[[:space:]]*exit([[:space:]]+[0-9$]|[[:space:]]*$)'
+RE_PY_MAIN='^if[[:space:]]+__name__[[:space:]]*=='
+RE_PY_IMP='^(import|from)[[:space:]]+[A-Za-z_.]+'
+RE_PY_DEF='^def[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\('
+RE_PL_USE='^use[[:space:]]+(strict|warnings)'
+RE_RB_REQ='^require[[:space:]]+['"'"'"]'
+RE_RB_END='^end[[:space:]]*$'
+RE_JS_REQ='require\([[:space:]]*['"'"'"]'
+RE_JS_OUT='(console\.log|module\.exports|process\.argv)'
 
 # ==============================================================================
 # ARGUMENT PARSING
@@ -82,7 +120,10 @@ TARGETS=()
 usage() {
     log_header "MAKEX : HELP"
     echo -e " Usage: makex [-r] [--hidden] [-n] [-q] [-h|--help] [--] [DIR...]\n"
-    echo -e "  -r        : Reverse Mode — strip exec from scripts, add to non-scripts"
+    echo -e "  Default   : Scripts (any shebang, or detected by content) gain u+x;"
+    echo -e "              non-executable types (docs, media, data, archives...) lose all exec bits"
+    echo -e "  -r        : Reverse Mode — scripts lose u+x; non-executable types still lose exec."
+    echo -e "              Reverse mode never grants exec to anything"
     echo -e "  --hidden  : Include hidden files/directories (default: skip dotfiles)"
     echo -e "  -rh|-hr   : Shorthand for -r --hidden"
     echo -e "  -n|--dry-run : Report planned changes; modify nothing"
@@ -184,26 +225,24 @@ declare SCRIPT_CHMOD_OP SCRIPT_ACTION_VERB SCRIPT_PAST_TENSE_VERB
 declare NON_SCRIPT_CHMOD_OP NON_SCRIPT_ACTION_VERB NON_SCRIPT_PAST_TENSE_VERB
 declare -a SCRIPT_PERM_CHECK_ARGS NON_SCRIPT_PERM_CHECK_ARGS
 
+# Non-executable types are hardened identically in both modes: -r never grants exec.
+NON_SCRIPT_PERM_CHECK_ARGS=("-perm" "/a=x")
+NON_SCRIPT_CHMOD_OP="a-x"
+NON_SCRIPT_ACTION_VERB="non-executable"
+NON_SCRIPT_PAST_TENSE_VERB="Removed executable bit from"
+
 if [[ "$REVERSE_MODE" -eq 1 ]]; then
     MODE_NAME="Reverse"
-    SCRIPT_PERM_CHECK_ARGS=("-perm" "/u=x")
-    SCRIPT_CHMOD_OP="u-x"
+    SCRIPT_PERM_CHECK_ARGS=("-perm" "/a=x")
+    SCRIPT_CHMOD_OP="a-x"
     SCRIPT_ACTION_VERB="non-executable"
     SCRIPT_PAST_TENSE_VERB="Removed executable bit from"
-    NON_SCRIPT_PERM_CHECK_ARGS=("!" "-perm" "-u=x")
-    NON_SCRIPT_CHMOD_OP="u+x"
-    NON_SCRIPT_ACTION_VERB="executable"
-    NON_SCRIPT_PAST_TENSE_VERB="Injected executable bit to"
 else
     MODE_NAME="Default"
     SCRIPT_PERM_CHECK_ARGS=("!" "-perm" "-u=x")
     SCRIPT_CHMOD_OP="u+x"
     SCRIPT_ACTION_VERB="executable"
     SCRIPT_PAST_TENSE_VERB="Injected executable bit to"
-    NON_SCRIPT_PERM_CHECK_ARGS=("-perm" "/a=x")
-    NON_SCRIPT_CHMOD_OP="a-x"
-    NON_SCRIPT_ACTION_VERB="non-executable"
-    NON_SCRIPT_PAST_TENSE_VERB="Removed executable bit from"
 fi
 
 # ==============================================================================
@@ -223,6 +262,9 @@ files_changed_phase1=0
 files_changed_phase2=0
 total_failures=0
 scan_warnings=0
+declare -a ADVISORIES=()
+advisory_total=0
+RECORD_ADVISORIES=0
 
 # ==============================================================================
 # UI BOOTSTRAP
@@ -245,16 +287,183 @@ fi
 # HELPERS
 # ==============================================================================
 
-check_is_script() {
-    local target="$1"
-    [[ "${target##*/}" == *.sh ]] && return 0
+# Scores the first SNIFF_LINES lines of a shebang-less text chunk. Sets TEXT_KIND to
+# "shell" (strong evidence of a runnable shell script) or, as an advisory only,
+# "python" | "perl" | "ruby" | "node"; empty when nothing is conclusive.
+scan_text() {
+    local chunk="$1" line n=0
+    local s_fi=0 s_done=0 s_esac=0 s_set=0 s_if=0 s_func=0 s_pos=0 s_exp=0 s_echo=0 s_exit=0
+    local p_main=0 p_imp=0 p_def=0 pl_use=0 rb_req=0 rb_end=0 js_req=0 js_out=0
+    TEXT_KIND=""
 
-    # Fork-free, NUL-safe, bounded (256 byte) first-line read. The stderr redirect is
-    # ordered first so an unreadable file is silenced at the failure site (EAFP).
-    local first_line=""
-    LC_ALL=C IFS= read -r -n 256 first_line 2>/dev/null <"$target" || true
-    [[ "$first_line" =~ $SHEBANG_PATTERN ]] && return 0
-    return 1
+    while IFS= read -r line; do
+        if (( ++n > SNIFF_LINES )); then
+            break
+        fi
+        [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+        [[ "$line" =~ $RE_SH_FI ]]    && s_fi=1
+        [[ "$line" =~ $RE_SH_DONE ]]  && s_done=1
+        [[ "$line" =~ $RE_SH_ESAC ]]  && s_esac=1
+        [[ "$line" =~ $RE_SH_SET ]]   && s_set=1
+        [[ "$line" =~ $RE_SH_IF ]]    && s_if=1
+        [[ "$line" =~ $RE_SH_FUNC ]]  && s_func=1
+        [[ "$line" =~ $RE_SH_POS ]]   && s_pos=1
+        [[ "$line" =~ $RE_SH_EXP ]]   && s_exp=1
+        [[ "$line" =~ $RE_SH_ECHO ]]  && s_echo=1
+        [[ "$line" =~ $RE_SH_EXIT ]]  && s_exit=1
+        [[ "$line" =~ $RE_PY_MAIN ]]  && p_main=1
+        [[ "$line" =~ $RE_PY_IMP ]]   && p_imp=1
+        [[ "$line" =~ $RE_PY_DEF ]]   && p_def=1
+        [[ "$line" =~ $RE_PL_USE ]]   && pl_use=1
+        [[ "$line" =~ $RE_RB_REQ ]]   && rb_req=1
+        [[ "$line" =~ $RE_RB_END ]]   && rb_end=1
+        [[ "$line" =~ $RE_JS_REQ ]]   && js_req=1
+        [[ "$line" =~ $RE_JS_OUT ]]   && js_out=1
+    done <<<"$chunk"
+
+    local closers=$(( s_fi + s_done + s_esac + s_set + s_if ))
+    local total=$(( closers + s_func + s_pos + s_exp + s_echo + s_exit ))
+    if (( p_main + p_imp + p_def == 0 && closers >= 1 && total >= 3 )); then
+        TEXT_KIND="shell"
+    elif (( p_main || (p_imp && p_def) )); then
+        TEXT_KIND="python"
+    elif (( pl_use )); then
+        TEXT_KIND="perl"
+    elif (( rb_req && rb_end )); then
+        TEXT_KIND="ruby"
+    elif (( js_req && js_out )); then
+        TEXT_KIND="node"
+    fi
+    return 0
+}
+
+# Layered, content-first classification. Sets CLASS to one of:
+#   script - will be (or should stay) runnable: any shebang, .sh, or strong shell content
+#   data   - non-executable by nature: data extension/name, known non-exec magic bytes,
+#            or an interpreted-language source file that has no shebang
+#   native - compiled executable (ELF, Mach-O, PE): never touched
+#   other  - inconclusive: never touched
+# Sets ADVISORY to a language name when a shebang-less file looks like a non-shell script.
+CLASS="other"
+ADVISORY=""
+TEXT_KIND=""
+classify() {
+    local target="$1"
+    local LC_ALL=C
+    local name lname ext="" chunk="" rc=0 has_nul=0 first
+
+    CLASS="other"
+    ADVISORY=""
+    name="${target##*/}"
+    lname="${name,,}"
+
+    # 1. Name and extension: unconditional non-executable types.
+    if [[ " $DATA_NAMES " == *" $lname "* ]]; then
+        CLASS="data"
+        return 0
+    fi
+    case "$lname" in
+        .*rc|.profile|.bash_*|.zsh*|.env|.env.*|.git*|.editorconfig)
+            CLASS="data"
+            return 0
+            ;;
+    esac
+    if [[ "$lname" == *.* ]]; then
+        ext="${lname##*.}"
+        if [[ "$ext" != *[[:space:]]* && " $DATA_EXTS " == *" $ext "* ]]; then
+            CLASS="data"
+            return 0
+        fi
+    fi
+
+    # 2. Content sniff: one bounded builtin read. read -d '' stops at the first NUL,
+    # so (status 0 and short chunk) means a NUL arrived early, i.e. a binary file.
+    IFS= read -r -d '' -n "$SNIFF_BYTES" chunk 2>/dev/null <"$target" || rc=$?
+    if [[ "$rc" -eq 0 && ${#chunk} -lt "$SNIFF_BYTES" ]]; then
+        has_nul=1
+    fi
+
+    # 3. Shebang: any interpreter makes the file a script.
+    if [[ "$chunk" == '#!'* ]]; then
+        first="${chunk%%$'\n'*}"
+        if [[ "$first" =~ $SHEBANG_PATTERN ]]; then
+            CLASS="script"
+            return 0
+        fi
+    fi
+
+    # 4. Native executables are never touched.
+    case "$chunk" in
+        $'\x7f'ELF*|$'\xcf\xfa\xed\xfe'*|$'\xce\xfa\xed\xfe'*|$'\xfe\xed\xfa\xce'*|$'\xfe\xed\xfa\xcf'*|$'\xca\xfe\xba\xbe'*)
+            CLASS="native"
+            return 0
+            ;;
+        MZ*)
+            if [[ "$has_nul" -eq 1 ]]; then
+                CLASS="native"
+                return 0
+            fi
+            ;;
+    esac
+
+    # 5. A .sh name is a strong hint (original behavior), but content can overrule it:
+    # binary data or clearly non-shell source (Python/Perl/Ruby/Node) is not a shell script.
+    if [[ "$ext" == "sh" ]]; then
+        if [[ "$has_nul" -eq 1 ]]; then
+            return 0
+        fi
+        scan_text "$chunk"
+        if [[ -n "$TEXT_KIND" && "$TEXT_KIND" != "shell" ]]; then
+            ADVISORY="$TEXT_KIND"
+            return 0
+        fi
+        CLASS="script"
+        return 0
+    fi
+
+    # 6. Known non-executable formats by magic bytes (works with no/wrong extension).
+    case "$chunk" in
+        $'\x89PNG'*|$'\xff\xd8\xff'*|GIF87a*|GIF89a*|'%PDF-'*|$'PK\x03\x04'*|$'\x1f\x8b'*|$'\xfd7zXZ'*|$'7z\xbc\xaf'*|$'\x28\xb5\x2f\xfd'*|'SQLite format 3'*)
+            CLASS="data"
+            return 0
+            ;;
+        BZh*|RIFF*|OggS*|fLaC*|ID3*|wOFF*|wOF2*|Rar!*)
+            if [[ "$has_nul" -eq 1 ]]; then
+                CLASS="data"
+                return 0
+            fi
+            ;;
+    esac
+
+    # 7. Interpreted-language sources without a shebang cannot be exec'd meaningfully.
+    if [[ -n "$ext" && "$ext" != *[[:space:]]* && " $SCRIPTY_EXTS " == *" $ext "* ]]; then
+        CLASS="data"
+        return 0
+    fi
+
+    # 8. Unknown binary: leave alone. Unknown text: sniff for shell-script content.
+    if [[ "$has_nul" -eq 1 ]]; then
+        return 0
+    fi
+    scan_text "$chunk"
+    if [[ "$TEXT_KIND" == "shell" ]]; then
+        CLASS="script"
+    else
+        ADVISORY="$TEXT_KIND"
+    fi
+    return 0
+}
+
+check_is_script() {
+    classify "$1"
+    [[ "$CLASS" == "script" ]] || return 1
+    return 0
+}
+
+check_is_data() {
+    classify "$1"
+    [[ "$CLASS" == "data" ]] || return 1
+    return 0
 }
 
 # Unprivileged chmod first; escalate through sudo only when the kernel refuses.
@@ -342,17 +551,51 @@ flush_batch() {
     (( total_failures += bad_count )) || true
 }
 
+report_advisories() {
+    [[ "$advisory_total" -gt 0 ]] || return 0
+    local entry lang path shown=0
+    log_warn "$advisory_total shebang-less file(s) look like scripts; chmod +x cannot make them runnable (add a shebang line):"
+    if [[ "$QUIET" -eq 0 ]]; then
+        for entry in "${ADVISORIES[@]}"; do
+            if (( shown >= ADVISORY_SHOW_LIMIT )); then
+                break
+            fi
+            lang="${entry%%|*}"
+            path="${entry#*|}"
+            sanitize "$path"
+            log_warn "  [${lang}] '${SAFE_DISPLAY}'"
+            (( shown += 1 )) || true
+        done
+        if (( advisory_total > shown )); then
+            log_warn "  ... and $(( advisory_total - shown )) more"
+        fi
+    fi
+    return 0
+}
+
 # ==============================================================================
-# PHASE 1: NATIVE SCRIPT HEURISTICS
+# PHASE 1: SCRIPT DETECTION (content-aware)
 # ==============================================================================
 log_op "PHASE 1: Engaging $SCRIPT_ACTION_VERB script directives..."
 
+# Find-level pre-filter derived from the same lists classify() uses; classify()
+# remains the authority, this only avoids reading files that cannot be scripts.
 declare -a find_exclusion_args=()
-for pattern in "${SAFE_NOEXEC_PATTERNS[@]}"; do
+declare -a _data_words=()
+read -r -a _data_words <<<"$DATA_EXTS"
+for pattern in "${_data_words[@]}"; do
+    find_exclusion_args+=("!" "-iname" "*.${pattern}")
+done
+read -r -a _data_words <<<"$DATA_NAMES"
+for pattern in "${_data_words[@]}"; do
     find_exclusion_args+=("!" "-iname" "$pattern")
 done
 
 declare -a target_batch=()
+
+if [[ "$REVERSE_MODE" -eq 0 ]]; then
+    RECORD_ADVISORIES=1
+fi
 
 while IFS= read -r -d '' file; do
     if check_is_script "$file"; then
@@ -360,6 +603,11 @@ while IFS= read -r -d '' file; do
         if [[ ${#target_batch[@]} -ge $BATCH_LIMIT ]]; then
             flush_batch "$SCRIPT_CHMOD_OP" "1" "${target_batch[@]}"
             target_batch=()
+        fi
+    elif [[ "$RECORD_ADVISORIES" -eq 1 && -n "$ADVISORY" ]]; then
+        (( advisory_total += 1 )) || true
+        if (( ${#ADVISORIES[@]} < ADVISORY_SHOW_LIMIT )); then
+            ADVISORIES+=("${ADVISORY}|${file}")
         fi
     fi
 done < <(
@@ -370,6 +618,7 @@ done < <(
             "${SCRIPT_PERM_CHECK_ARGS[@]}" \
         ")" -print0 2>>"$SCAN_ERR"
 )
+RECORD_ADVISORIES=0
 
 if [[ ${#target_batch[@]} -gt 0 ]]; then
     flush_batch "$SCRIPT_CHMOD_OP" "1" "${target_batch[@]}"
@@ -380,32 +629,23 @@ report_scan_errors "1"
 echo -e "${CYAN}------------------------------------------------------------${RESET}"
 
 # ==============================================================================
-# PHASE 2: NON-SCRIPT HARDENING
+# PHASE 2: NON-SCRIPT HARDENING (same in both modes: never grants exec)
 # ==============================================================================
 log_op "PHASE 2: Engaging $NON_SCRIPT_ACTION_VERB non-script directives..."
 
-declare -a find_non_exec_args=()
-if [[ ${#SAFE_NOEXEC_PATTERNS[@]} -gt 0 ]]; then
-    find_non_exec_args+=("(")
-    find_non_exec_args+=("-iname" "${SAFE_NOEXEC_PATTERNS[0]}")
-    for (( i=1; i<${#SAFE_NOEXEC_PATTERNS[@]}; i++ )); do
-        find_non_exec_args+=("-o" "-iname" "${SAFE_NOEXEC_PATTERNS[$i]}")
-    done
-    find_non_exec_args+=(")")
-fi
-
 while IFS= read -r -d '' file; do
-    target_batch+=("$file")
-    if [[ ${#target_batch[@]} -ge $BATCH_LIMIT ]]; then
-        flush_batch "$NON_SCRIPT_CHMOD_OP" "2" "${target_batch[@]}"
-        target_batch=()
+    if check_is_data "$file"; then
+        target_batch+=("$file")
+        if [[ ${#target_batch[@]} -ge $BATCH_LIMIT ]]; then
+            flush_batch "$NON_SCRIPT_CHMOD_OP" "2" "${target_batch[@]}"
+            target_batch=()
+        fi
     fi
 done < <(
     find -H "${TARGETS[@]}" \
         "${prune_args[@]}" \
         "(" -type f \
             "${NON_SCRIPT_PERM_CHECK_ARGS[@]}" \
-            "${find_non_exec_args[@]}" \
         ")" -print0 2>>"$SCAN_ERR"
 )
 
@@ -424,6 +664,8 @@ count_note=""
 if [[ "$DRY_RUN" -eq 1 ]]; then
     count_note=" (planned, dry-run)"
 fi
+
+report_advisories
 
 if [[ "$total_failures" -gt 0 ]]; then
     log_err "EXECUTION CONCLUDED WITH CRITICAL FAULTS: $total_failures file(s) unmodified."

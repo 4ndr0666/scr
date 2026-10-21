@@ -1,6 +1,6 @@
 # Ψ-4ndr0666 Production Build System
 # Artifact: braveclean (Browser Sanitizer)
-# Version: 2.1.4 (Superset Release)
+# Version: 2.2.2 (Superset Release, hardened)
 
 CC = cc
 CFLAGS = -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=500 -O3 -march=native

@@ -1,29 +1,51 @@
 /*
  * braveclean.c — High-performance browser sanitizer
- * Version: 2.2.0 (Bash Superset Integration)
+ * Version: 2.2.2 (Bash Superset Integration, hardened)
  *
- * COHESION REPORT (2.1.4 → 2.2.0):
- * - PORTED: Graceful SIGTERM→SIGKILL process termination with user prompt
- *   and configurable wait, replacing fire-and-forget pkill.
- * - PORTED: --deep-clean / -d flag. Opt-in removal of GPUCache, Code Cache,
- *   Service Worker, DawnCache, GraphiteDawnCache, component_crx_cache,
- *   extensions_crx_cache, Crash Reports, Greaselion, Local Traces.
- * - PORTED: Guest Profile directory clear (keep dir, wipe contents).
- * - PORTED: -h / --help flag with usage output.
- * - PORTED: EUID==0 root warning + confirmation gate.
- * - PORTED: Per-database space-reclaimed delta reporting (KB).
- * - PORTED: Aggregate space summary across all profiles.
- * - PORTED: WAL/SHM sidecar pre-deletion before sqlite3_open.
- * - PORTED: notify-send completion notification with graceful fallback.
- * - PORTED: Extensible browser path table covering Brave stable/beta/dev,
- *   Chromium variants, Chrome variants, Firefox, Icecat, Seamonkey, Aurora.
- * - PORTED: XDG ~/.cache wipe via clean_xdg_caches().
- * - RETAINED: All V2.1.4 validated logic (xnanosleep, isatty color guard,
- *   safe_path_join, nftw nuke_dir, strict *.sqlite targeting,
- *   canonical deep-clean array, profiles.ini IsRelative handling).
+ * CHANGELOG (2.2.1 → 2.2.2) — each item verified by test_braveclean.py:
+ * - FIXED: proc_running() failed OPEN. A missing/broken pgrep (shell exit 127)
+ *   was read as "browser not running", so cleaning proceeded under a live
+ *   browser. Now only pgrep exit 1 means "not running"; any other non-zero
+ *   status aborts the run.
+ * - FIXED: WAL data loss. optimize_db() deleted *.sqlite-wal BEFORE opening
+ *   the database, destroying committed transactions that had not been
+ *   checkpointed. The WAL is now checkpointed by SQLite itself
+ *   (wal_checkpoint(TRUNCATE) + journal_mode=DELETE); leftover sidecars are
+ *   removed only AFTER a successful run.
+ * - FIXED: Chromium databases carry no file extension (History, Cookies,
+ *   Web Data, ...), so strict *.sqlite targeting never touched them. A fixed
+ *   allow-list of known Chromium databases is now vacuumed as well.
+ *   *.sqlite targeting is RETAINED unchanged for Firefox and others.
+ * - FIXED: Guest Profile lives at <user-data-root>/Guest Profile in Chromium.
+ *   The root-level directory is now cleared; the per-profile location is
+ *   RETAINED (superset).
+ * - FIXED: documentation. GPUCache, Code Cache, Service Worker, ShaderCache
+ *   and GrShaderCache are the always-on standard set (as in 2.1.4); only the
+ *   DEEP_TRASH list is gated behind --deep-clean. Help text and this report
+ *   previously listed the standard caches as opt-in.
+ * - FIXED: every external command (pgrep, pkill, notify-send) now runs under
+ *   timeout(1) so a hung helper cannot hang the run.
+ * - FIXED: xnanosleep() resumes after EINTR; its comment is now accurate.
+ * - FIXED: unused headers (errno.h, signal.h) removed; system() results are
+ *   no longer ignored; build line matches the Makefile.
  *
- * Build: gcc -O2 braveclean.c -o braveclean -lsqlite3
+ * RETAINED (2.2.1): Thorium support, graceful SIGTERM→SIGKILL termination,
+ * --deep-clean / -d, Guest Profile clearing, -h / --help, EUID==0 gate,
+ * per-database and aggregate space reporting, notify-send with fallback,
+ * XDG cache wipe, profiles.ini IsRelative handling, nftw nuke_dir,
+ * isatty color guard, safe_path_join.
+ *
+ * Dependencies: libsqlite3; external commands pgrep, pkill, timeout (all
+ * required, run aborts if pgrep is unusable) and notify-send (optional).
+ *
+ * Build: make    (or: cc -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE \
+ *                     -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=500 -O3 \
+ *                     braveclean.c -o braveclean -lsqlite3)
  */
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,9 +57,8 @@
 #include <sys/wait.h>
 #include <ftw.h>
 #include <sqlite3.h>
-#include <errno.h>
-#include <signal.h>
 #include <time.h>
+#include <errno.h>
 #include <limits.h>
 
 #ifndef PATH_MAX
@@ -82,17 +103,20 @@ log_warn(const char *msg, const char *detail)
 }
 
 /*
- * xnanosleep — precision sleep immune to SIGCHLD truncation.
- * Accepts total nanoseconds; splits into tv_sec + tv_nsec correctly
- * for values >= 1,000,000,000 ns.
+ * xnanosleep — precision sleep.
+ * Accepts total nanoseconds; splits into tv_sec + tv_nsec correctly for
+ * values >= 1,000,000,000 ns. nanosleep(2) returns early with EINTR when a
+ * signal (e.g. SIGCHLD from a finished child) arrives, so the loop resumes
+ * with the remaining time until the full interval has elapsed.
  */
 static void
 xnanosleep(long nsec)
 {
-    struct timespec req;
+    struct timespec req, rem;
     req.tv_sec  = nsec / 1000000000L;
     req.tv_nsec = nsec % 1000000000L;
-    nanosleep(&req, NULL);
+    while (nanosleep(&req, &rem) == -1 && errno == EINTR)
+        req = rem;
 }
 
 /*
@@ -112,19 +136,34 @@ safe_path_join(char *dst, size_t size, const char *dir, const char *file)
     return (n < 0 || (size_t)n >= size) ? -1 : 0;
 }
 
+/*
+ * run_shell — run a command via system(3) and return its exit code.
+ * Returns -1 if the shell could not be run or the command did not exit
+ * normally (killed by a signal), so callers can fail closed.
+ */
+static int
+run_shell(const char *cmd)
+{
+    int st = system(cmd);
+    if (st == -1 || !WIFEXITED(st))
+        return -1;
+    return WEXITSTATUS(st);
+}
+
 /* ─── USAGE ───────────────────────────────────────────────────────────────── */
 
 static void
 usage(const char *argv0)
 {
     printf("Usage: %s [-d|--deep-clean] [-h|--help]\n\n", argv0);
-    printf("  -d, --deep-clean    Remove additional caches (GPUCache, Code Cache,\n");
-    printf("                      Service Worker, DawnCache, GraphiteDawnCache,\n");
+    printf("  Always removed per profile: GPUCache, Code Cache, Service Worker,\n");
+    printf("  ShaderCache, GrShaderCache, plus ~/.cache entries.\n\n");
+    printf("  -d, --deep-clean    Also remove: DawnCache, GraphiteDawnCache,\n");
     printf("                      component_crx_cache, extensions_crx_cache,\n");
-    printf("                      Crash Reports, Greaselion, Local Traces).\n");
+    printf("                      Crash Reports, Greaselion, Local Traces.\n");
     printf("  -h, --help          Display this help message and exit.\n\n");
     printf("Cleans browser SQLite databases and cache directories for Brave,\n");
-    printf("Chromium, Chrome, Firefox, Icecat, Seamonkey, and Aurora.\n");
+    printf("Chromium, Chrome, Thorium, Firefox, Icecat, Seamonkey, and Aurora.\n");
 }
 
 /* ─── ROOT GUARD ──────────────────────────────────────────────────────────── */
@@ -203,23 +242,22 @@ clear_dir_contents(const char *path)
 /*
  * optimize_db — vacuum a single SQLite database.
  *
- * Pre-deletion of WAL/SHM sidecars (ported from Bash vacuum_db):
- *   Removes *.sqlite-wal and *.sqlite-shm before opening so that a
- *   crashed writer's unfinished WAL cannot block PRAGMA journal_mode=DELETE.
+ * WAL handling: committed transactions may exist ONLY in the -wal file.
+ * The sidecars are therefore never deleted before SQLite has read them.
+ * wal_checkpoint(TRUNCATE) folds the WAL into the main file, and
+ * journal_mode=DELETE leaves the database in rollback-journal mode. Any
+ * sidecar still present after a successful run is then removed.
  *
  * Returns net KB reclaimed (positive = freed, negative = grew, 0 = no change).
  */
 static long
 optimize_db(const char *dbpath)
 {
-    /* --- WAL/SHM sidecar pre-deletion ---
-     * Buffers are PATH_MAX + 4 so the "-wal" / "-shm" suffixes (4 bytes each)
+    /* Buffers are PATH_MAX + 4 so the "-wal" / "-shm" suffixes (4 bytes each)
      * plus the NUL terminator never overflow a PATH_MAX-length dbpath. */
     char wal_path[PATH_MAX + 4], shm_path[PATH_MAX + 4];
     snprintf(wal_path, sizeof(wal_path), "%s-wal", dbpath);
     snprintf(shm_path, sizeof(shm_path), "%s-shm", dbpath);
-    remove(wal_path);   /* EAFP: silent on ENOENT */
-    remove(shm_path);
 
     /* --- Size before --- */
     struct stat st_before, st_after;
@@ -228,7 +266,7 @@ optimize_db(const char *dbpath)
         before = (long)st_before.st_size;
 
     /* --- Open and optimize --- */
-    sqlite3 *db;
+    sqlite3 *db = NULL;
     char *err_msg = NULL;
     int rc = sqlite3_open(dbpath, &db);
 
@@ -239,13 +277,15 @@ optimize_db(const char *dbpath)
     }
 
     /*
-     * PRAGMA chain (canonical, restored from V1):
-     *   journal_mode=DELETE  — collapses open WAL back to rollback journal.
-     *   VACUUM               — defragments and rewrites the database file.
-     *   REINDEX              — rebuilds all indices for optimal page layout.
-     *   optimize             — runs SQLite's internal statistics pass.
+     * PRAGMA chain:
+     *   wal_checkpoint(TRUNCATE) — folds committed WAL frames into the file.
+     *   journal_mode=DELETE      — collapses WAL back to rollback journal.
+     *   VACUUM                   — defragments and rewrites the database file.
+     *   REINDEX                  — rebuilds all indices.
+     *   optimize                 — runs SQLite's internal statistics pass.
      */
     const char *sql =
+        "PRAGMA wal_checkpoint(TRUNCATE);"
         "PRAGMA journal_mode=DELETE;"
         "VACUUM;"
         "REINDEX;"
@@ -254,11 +294,17 @@ optimize_db(const char *dbpath)
     rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
 
     if (rc != SQLITE_OK) {
-        log_warn("PRAGMA chain failed", dbpath);
+        log_warn("PRAGMA chain failed", err_msg ? err_msg : dbpath);
         sqlite3_free(err_msg);
     }
 
     sqlite3_close(db);
+
+    /* Sidecars are safe to drop only once SQLite has consumed them. */
+    if (rc == SQLITE_OK) {
+        remove(wal_path);   /* EAFP: silent on ENOENT */
+        remove(shm_path);
+    }
 
     /* --- Size after --- */
     if (stat(dbpath, &st_after) == 0)
@@ -266,7 +312,7 @@ optimize_db(const char *dbpath)
 
     long saved_kb = (before - after) / 1024;
 
-    /* --- Per-database delta report (ported from Bash run_cleaner) --- */
+    /* --- Per-database delta report --- */
     const char *fname = strrchr(dbpath, '/');
     fname = fname ? fname + 1 : dbpath;
 
@@ -285,7 +331,7 @@ optimize_db(const char *dbpath)
 
 /*
  * scan_and_vacuum — walk a directory and optimize every *.sqlite file.
- * Strict *.sqlite-only targeting (V1 canonical protocol).
+ * Strict *.sqlite targeting (V1 canonical protocol).
  * Accumulates saved KB into g_total_saved_kb.
  */
 static void
@@ -320,17 +366,38 @@ scan_and_vacuum(const char *dir)
  *   2. Send SIGTERM; poll every POLL_MS ms for up to WAIT_CYCLES iterations.
  *   3. After grace period, prompt user: kill now or abort cleanly.
  *   4. On confirmation send SIGKILL; on refusal exit(1).
+ * Exit codes: 1 = user declined / usage / HOME unset, 2 = EXIT_UNSAFE
+ * (process state cannot be determined or a signal cannot be sent).
  */
 #define POLL_MS      200    /* poll interval in milliseconds         */
 #define WAIT_CYCLES   10    /* 10 × 200 ms = 2 s SIGTERM grace period */
+#define CMD_TIMEOUT   10    /* seconds before a helper command is killed */
+#define EXIT_UNSAFE    2    /* exit code: cannot safely proceed, nothing modified */
 
+/*
+ * proc_running — returns 1 if a user-owned process named `name` exists,
+ * 0 if pgrep reports no match (exit 1). Any other outcome (pgrep missing,
+ * timeout, bad syntax, killed) is NOT evidence that the browser is gone, so
+ * the run aborts with EXIT_UNSAFE instead of cleaning profiles under a live
+ * browser.
+ */
 static int
 proc_running(const char *name)
 {
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
-             "pgrep -u %d -x %s > /dev/null 2>&1", (int)getuid(), name);
-    return system(cmd) == 0;
+             "timeout %d pgrep -u %d -x %s > /dev/null 2>&1",
+             CMD_TIMEOUT, (int)getuid(), name);
+
+    int code = run_shell(cmd);
+    if (code == 0) return 1;
+    if (code == 1) return 0;
+
+    fprintf(stderr,
+            "%s[!] Cannot determine whether '%s' is running "
+            "(pgrep/timeout status %d). Aborting; nothing was modified.%s\n",
+            YELLOW, name, code, RESET);
+    exit(EXIT_UNSAFE);
 }
 
 static void
@@ -340,11 +407,17 @@ terminate_proc(const char *name)
 
     printf("%s[~] Terminating:%s %s\n", YELLOW, RESET, name);
 
-    /* SIGTERM */
+    /* SIGTERM (pkill exit 1 = nothing left to signal, which is fine) */
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
-             "pkill -TERM -u %d -x %s > /dev/null 2>&1", (int)getuid(), name);
-    system(cmd);
+             "timeout %d pkill -TERM -u %d -x %s > /dev/null 2>&1",
+             CMD_TIMEOUT, (int)getuid(), name);
+    if (run_shell(cmd) > 1) {
+        fprintf(stderr,
+                "%s[!] Cannot terminate '%s' (pkill unavailable or failed). "
+                "Aborting; nothing was modified.%s\n", YELLOW, name, RESET);
+        exit(EXIT_UNSAFE);
+    }
 
     /* Poll for graceful exit */
     int cycles = 0;
@@ -362,9 +435,14 @@ terminate_proc(const char *name)
             }
 
             snprintf(cmd, sizeof(cmd),
-                     "pkill -KILL -u %d -x %s > /dev/null 2>&1",
-                     (int)getuid(), name);
-            system(cmd);
+                     "timeout %d pkill -KILL -u %d -x %s > /dev/null 2>&1",
+                     CMD_TIMEOUT, (int)getuid(), name);
+            if (run_shell(cmd) > 1) {
+                fprintf(stderr,
+                        "%s[!] pkill -KILL failed for '%s'. Aborting; "
+                        "nothing was modified.%s\n", YELLOW, name, RESET);
+                exit(EXIT_UNSAFE);
+            }
             break;
         }
         printf(".");
@@ -436,8 +514,8 @@ handle_firefox(const char *home, const char *rel_path, const char *label)
 /* ─── CHROMIUM ENGINE ─────────────────────────────────────────────────────── */
 
 /*
- * Standard deep-clean targets present in every Chromium profile.
- * Applied unconditionally — these are the V1 canonical always-safe set.
+ * Standard cache targets present in every Chromium profile.
+ * Applied unconditionally on every run (as in 2.1.4).
  */
 static const char *STANDARD_TRASH[] = {
     "GPUCache",
@@ -464,14 +542,52 @@ static const char *DEEP_TRASH[] = {
 };
 
 /*
+ * Chromium stores its SQLite databases WITHOUT a file extension, so the
+ * strict *.sqlite scan cannot see them. These names (relative to a profile
+ * directory) are vacuumed explicitly; files that are absent are skipped and
+ * files that are not valid databases are reported by optimize_db and left
+ * untouched.
+ */
+static const char *CHROMIUM_DBS[] = {
+    "History",
+    "Favicons",
+    "Top Sites",
+    "Shortcuts",
+    "Web Data",
+    "Login Data",
+    "Affiliation Database",
+    "Network Action Predictor",
+    "Network/Cookies",
+    NULL
+};
+
+/*
+ * vacuum_chromium_dbs — optimize each present CHROMIUM_DBS entry in a profile.
+ */
+static void
+vacuum_chromium_dbs(const char *prof_path)
+{
+    for (int i = 0; CHROMIUM_DBS[i]; i++) {
+        char db[PATH_MAX];
+        struct stat st;
+        if (safe_path_join(db, sizeof(db), prof_path, CHROMIUM_DBS[i]) != 0)
+            continue;
+        if (stat(db, &st) == 0 && S_ISREG(st.st_mode))
+            g_total_saved_kb += optimize_db(db);
+    }
+}
+
+/*
  * handle_chromium_variant — clean a Chromium-family browser installation.
  *
  * Processes "Default" and all "Profile N" sub-directories found under
  * the browser's user-data root.  For each profile:
- *   1. Vacuum all *.sqlite databases.
- *   2. Incinerate the canonical V1 standard cache/shader directory set.
+ *   1. Vacuum all *.sqlite databases and the known extensionless databases.
+ *   2. Incinerate the standard cache/shader directory set.
  *   3. If --deep-clean: incinerate the extended opt-in target set.
  *   4. If is_brave: clear Guest Profile directory contents.
+ * Once per installation, if is_brave: clear <root>/Guest Profile, where
+ * Chromium keeps the guest profile.
  */
 static void
 handle_chromium_variant(const char *home, const char *name,
@@ -497,8 +613,9 @@ handle_chromium_variant(const char *home, const char *name,
 
         log_info("Processing Profile", e->d_name);
         scan_and_vacuum(prof_path);
+        vacuum_chromium_dbs(prof_path);
 
-        /* Always-deep standard cache targets (V1 canonical) */
+        /* Standard cache targets (always) */
         for (int i = 0; STANDARD_TRASH[i]; i++) {
             char garbage[PATH_MAX];
             if (safe_path_join(garbage, sizeof(garbage),
@@ -516,7 +633,7 @@ handle_chromium_variant(const char *home, const char *name,
             }
         }
 
-        /* Brave-specific: clear Guest Profile contents (keep the directory) */
+        /* Brave-specific: per-profile Guest Profile (legacy location) */
         if (is_brave) {
             char guest[PATH_MAX];
             if (safe_path_join(guest, sizeof(guest),
@@ -528,6 +645,16 @@ handle_chromium_variant(const char *home, const char *name,
         }
     }
     closedir(dp);
+
+    /* Brave-specific: Guest Profile at the user-data root (keep the dir) */
+    if (is_brave) {
+        char guest[PATH_MAX];
+        if (safe_path_join(guest, sizeof(guest), root, "Guest Profile") == 0) {
+            struct stat st;
+            if (stat(guest, &st) == 0 && S_ISDIR(st.st_mode))
+                clear_dir_contents(guest);
+        }
+    }
 }
 
 /* ─── XDG CACHE WIPE ──────────────────────────────────────────────────────── */
@@ -545,6 +672,7 @@ clean_xdg_caches(const char *home)
         ".cache/google-chrome",
         ".cache/BraveSoftware",
         ".cache/brave-cache",   /* --disk-cache-dir override observed in env */
+        ".cache/thorium",
         NULL
     };
 
@@ -566,11 +694,16 @@ clean_xdg_caches(const char *home)
 static void
 notify_done(void)
 {
-    if (system("command -v notify-send > /dev/null 2>&1") == 0)
-        system("notify-send 'BraveClean' 'Your browser profiles have been cleaned!'");
-    else
-        printf("\n%sCleanup complete! Your browser profiles are now cleaner.%s\n",
-               GREEN, RESET);
+    int have = run_shell("command -v notify-send > /dev/null 2>&1");
+
+    if (have == 0 &&
+        run_shell("timeout 5 notify-send 'BraveClean' "
+                  "'Your browser profiles have been cleaned!' "
+                  "> /dev/null 2>&1") == 0)
+        return;
+
+    printf("\n%sCleanup complete! Your browser profiles are now cleaner.%s\n",
+           GREEN, RESET);
 }
 
 /* ─── ENTRY POINT ─────────────────────────────────────────────────────────── */
@@ -611,7 +744,7 @@ main(int argc, char *argv[])
     /* --- Phase 1: Terminate browser processes (graceful SIGTERM→SIGKILL) --- */
     const char *procs[] = {
         "firefox", "icecat", "seamonkey", "aurora",
-        "chrome", "chromium", "brave",
+        "chrome", "chromium", "brave", "thorium",
         NULL
     };
     for (int i = 0; procs[i]; i++)
@@ -620,10 +753,9 @@ main(int argc, char *argv[])
     /* --- Phase 2: WAL flush window (2 s precision sleep) ---
      *
      * xnanosleep(2,000,000,000 ns):
-     *   Allows the OS to release file locks and SQLite WAL journals to be
-     *   checkpointed before PRAGMA journal_mode=DELETE is attempted.
-     *   Precision nanosleep avoids silent truncation by SIGCHLD from the
-     *   pkill subshells completing. */
+     *   Allows the OS to release file locks before the databases are opened.
+     *   xnanosleep resumes after EINTR, so SIGCHLD from the finished
+     *   pkill/pgrep children cannot shorten the window. */
     xnanosleep(2000000000L);
 
     /* --- Phase 3: Chromium-family browsers ---
@@ -646,6 +778,8 @@ main(int argc, char *argv[])
         ".config/google-chrome-beta",               0);
     handle_chromium_variant(home, "Google Chrome Unstable",
         ".config/google-chrome-unstable",           0);
+    handle_chromium_variant(home, "Thorium",
+        ".config/thorium",                          0);
 
     /* --- Phase 4: Firefox-family browsers --- */
     handle_firefox(home, ".mozilla/firefox",   "Firefox");

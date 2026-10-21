@@ -266,9 +266,12 @@ optimize_python_service() {
         log_warn "pipx interpreter broken (stale pyenv path in shebang). Reinstalling..."
         rm -f "${PIPX_BIN_DIR:-$HOME/.local/bin}/pipx" 2>/dev/null || true
         if command -v pacman &>/dev/null; then
-            run_bounded 600 "pacman python-pipx reinstall" sudo pacman -S --needed --noconfirm python-pipx \
-                && log_success "pipx reinstalled via pacman." \
-                || { log_error "pacman reinstall of pipx failed — reinstall manually."; return 1; }
+            if run_bounded 600 "pacman python-pipx reinstall" sudo pacman -S --needed --noconfirm python-pipx; then
+                log_success "pipx reinstalled via pacman."
+            else
+                log_error "pacman reinstall of pipx failed — reinstall manually."
+                return 1
+            fi
         fi
         if ! pipx --version &>/dev/null 2>&1; then
             log_error "pipx still broken after reinstall. Skipping tool injection."
@@ -288,12 +291,17 @@ optimize_python_service() {
                 # for the full rationale. Exact-match against the package-name
                 # field of `pipx list --short` instead of substring-matching
                 # pipx's free-text listing.
-                if ! (pipx list --short 2>/dev/null || true) | awk '{print $1}' | grep -qx "$tool"; then
-                    log_info "Deploying tool to Hive sector: $tool"
-                    run_bounded 900 "pipx install $tool" pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
-                else
+                if pipx_package_is_installed "$tool"; then
                     log_info "Verifying tool integrity: $tool"
                     run_bounded 900 "pipx upgrade $tool" pipx upgrade "$tool" >/dev/null 2>&1 || log_warn "Pipx upgrade failed for: $tool"
+                else
+                    local pipx_status=$?
+                    if (( pipx_status == 2 )); then
+                        log_error "Cannot synchronize Python tools because pipx inventory is unavailable."
+                        return 1
+                    fi
+                    log_info "Deploying tool to Hive sector: $tool"
+                    run_bounded 900 "pipx install $tool" pipx install "$tool" || log_warn "Pipx failed to deploy: $tool"
                 fi
             done
         else

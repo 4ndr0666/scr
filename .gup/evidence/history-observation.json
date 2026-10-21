@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "protocol": "GUP",
+  "protocol_version": "7.0.1",
+  "repository": "4ndr0666/scr",
+  "scope_root": "4ndr0tools/4ndr0service",
+  "observed_at": "2026-10-20T01:40:33Z",
+  "main_ref": {
+    "name": "refs/heads/main",
+    "commit": "5c6ff8734052e633638325b657c3e29cb48105ed",
+    "tree": "98c8f9d5bd30d87b1c50476d88d1cd870fb4fbb2"
+  },
+  "scope_source_candidate": {
+    "commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+    "tree": "bcc1e9652ca6a45d1f8e6bbc246e01885125e305",
+    "reason": "Last observed service-code commit before GUP metadata/bootstrap-only changes; service inventory is pinned to this commit. Candidate only; not yet approved as canonical baseline."
+  },
+  "refs_observation": {
+    "source": "GitHub Git matching-refs API",
+    "branch_count": 10,
+    "tag_count": 0,
+    "branches": [
+      {"name":"refs/heads/main","commit":"5c6ff8734052e633638325b657c3e29cb48105ed"},
+      {"name":"refs/heads/gup/4ndr0pac-cache-dir-eafp","commit":"14917945104f7f356312999a84eb35940a317049"},
+      {"name":"refs/heads/gup/4ndr0pac-logfile-eafp","commit":"a7890cf689fd26b60df355d08d91d415d1a059a8"},
+      {"name":"refs/heads/gup/4ndr0pac-pacman-config-lock-eafp","commit":"cae0d9702c825d2df4752c0cd27cdf0466e2856c"},
+      {"name":"refs/heads/gup/4ndr0pac-rollback-artifact-eafp","commit":"0af4d4b5ae394455df83b39941e28a9da3147e2c"},
+      {"name":"refs/heads/gup/4ndr0pac-rollback-selection-eafp","commit":"fa7320319676dbc690e89f25b8bae0dbb0afae5a"},
+      {"name":"refs/heads/gup/4ndr0service-ci-gap-mitigation","commit":"a6f223c353cda23815943f8094034bc8d4966212"},
+      {"name":"refs/heads/gup/4ndr0service-gup-inventory-bootstrap","commit":"169849c4b6225d1910027e8cb940580d12b27da6"},
+      {"name":"refs/heads/gup/4ndr0service-pipx-consumer-contract-tests","commit":"eb36f84449216b0c4a9a7c07d3837788c98d4f96"},
+      {"name":"refs/heads/gup/4ndr0service-pipx-inventory-fail-closed","commit":"ff302d41a2f64363bf7356328100493611894a61"}
+    ],
+    "tags": [],
+    "limitations": [
+      "The observed refs are a point-in-time API view, not a local git clone's independently captured refs/status.",
+      "Remote branches are retained even when fully merged; their presence alone does not mean they contain unmerged functionality.",
+      "No tags were returned by the tags ref endpoint at observation time."
+    ]
+  },
+  "history_observation": {
+    "common_sh": {
+      "path": "4ndr0tools/4ndr0service/common.sh",
+      "returned_commit_count": 42,
+      "oldest_returned": {"commit":"12abb4d20c9ecc35fc64026bf0d54cd499ef1bc7","date":"2025-01-17T06:20:56Z","subject":"Auto-commit: 0 added, 10 modified, 0 deleted"},
+      "newest_returned": {"commit":"e0ae158e3e7fcca1dc81385a63a1af3c50fb6692","date":"2026-10-20T00:09:21Z","subject":"fix(gup): fail closed on pipx inventory errors"},
+      "continuity_notes": [
+        "History includes XDG path alignment, mutex-lock introduction, PKG_PATH/path-resolution repairs, bounded execution and error-propagation repairs, and the recent pipx inventory fail-closed fix.",
+        "A full per-path rename/deletion disposition ledger has not yet been generated."
+      ]
+    },
+    "main_sh": {
+      "path": "4ndr0tools/4ndr0service/main.sh",
+      "returned_commit_count": 27,
+      "oldest_returned": {"commit":"b459b9d1d3c02f6cf8e8415afc75ed17516898b2","date":"2024-12-03T05:33:39Z","subject":"Auto-commit: 0 added, 5 modified, 0 deleted"},
+      "newest_returned": {"commit":"3835eb419f977a13a1ebc8035564d8ad76c67b7a","date":"2026-09-26T01:06:08Z","subject":"pushed 4ndr0service version bump"},
+      "continuity_notes": [
+        "History includes earlier path-detection/default fixes, missing config handlers and parallel support, centralized PKG_PATH detection, and multiple suite restructures.",
+        "A full per-path rename/deletion disposition ledger has not yet been generated."
+      ]
+    },
+    "related_regression_history": [
+      {"commit":"36b4fbb8ed93385f67dfd76ac468532e5bc01601","subject":"gup: establish bounded EAFP execution primitive","date":"2026-09-18T03:33:06Z"},
+      {"commit":"d05f370989f570cc2b7e8768a33991e8d3a0bc0b","subject":"gup: repair bounded execution status propagation","date":"2026-09-18T09:51:34Z"},
+      {"commit":"8dbb2541bfa41b4e4f0cf65f6627ca0a94302f62","subject":"gup: repair bounded execution under set -e","date":"2026-09-19T01:33:40Z"},
+      {"commit":"97c8d9caeeed61ecb92cd4d81963071ae147c9de","subject":"fix: propagate missing parallel worker as failure","date":"2026-09-21T00:32:44Z"},
+      {"commit":"e0ae158e3e7fcca1dc81385a63a1af3c50fb6692","subject":"fix(gup): fail closed on pipx inventory errors","date":"2026-10-20T00:09:21Z"}
+    ]
+  },
+  "stale_branch_comparisons": [
+    {
+      "branch": "gup/4ndr0service-ci-gap-mitigation",
+      "tip": "a6f223c353cda23815943f8094034bc8d4966212",
+      "comparison_to_main": {"status":"behind","ahead_by":0,"behind_by":16},
+      "disposition": "No unique commits relative to current main according to compare API; branch tip retained as historical reference only."
+    },
+    {
+      "branch": "gup/4ndr0service-pipx-inventory-fail-closed",
+      "tip": "ff302d41a2f64363bf7356328100493611894a61",
+      "comparison_to_main": {"status":"behind","ahead_by":0,"behind_by":13},
+      "disposition": "Fix is present in main history; branch has no unique commits relative to current main."
+    },
+    {
+      "branch": "gup/4ndr0service-pipx-consumer-contract-tests",
+      "tip": "eb36f84449216b0c4a9a7c07d3837788c98d4f96",
+      "comparison_to_main": {"status":"behind","ahead_by":0,"behind_by":10},
+      "disposition": "Regression tests are present in main history; branch has no unique commits relative to current main."
+    },
+    {
+      "branch": "gup/4ndr0service-gup-inventory-bootstrap",
+      "tip": "169849c4b6225d1910027e8cb940580d12b27da6",
+      "comparison_to_main": {"status":"behind","ahead_by":0,"behind_by":1},
+      "disposition": "PR #161 is merged; branch tip is the first parent-side feature commit and is behind the merge commit."
+    }
+  ],
+  "baseline_decision": {
+    "status": "BLOCKED_BASELINE_NOT_ESTABLISHED",
+    "candidate_commit": "e00d2ca39ca4b5dd7bf9e5c96d0130e042521360",
+    "blockers": [
+      "History/ref observations are not yet reconciled against every path in the 48-file scope inventory.",
+      "Semantic capability inventory and per-path preservation/disposition records remain incomplete.",
+      "The nine integration surfaces have initial observations but do not yet have closure proof.",
+      "No complete local Git inventory/status/SHA-256 evidence was captured in a repository checkout."
+    ]
+  }
+}
