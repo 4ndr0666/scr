@@ -139,3 +139,13 @@ Append-only record. Entries must cite Git identities and bounded evidence; conve
 - Updated capability ledger with post-merge GUP evidence and corrected stale runtime-gate count/tooling-version blocker wording. The initial integration-closure document remains a historical first-pass record; all nine surfaces remain PARTIAL.
 - Post-merge GUP run [39522409058](https://github.com/4ndr0666/scr/actions/runs/39522409058) passed. The rename-aware report still has 52 unresolved historical deletions; the no-renames report still has 55 raw candidates (2 exact-blob leads, 53 without exact matches). Counts remain separate.
 - No baseline approval or certification is claimed. The next engineering gap is to make reviewed dispositions machine-readable and validator-enforced, then continue the per-path audit and nine-surface closure without weakening the fail-closed behavior.
+
+
+## 2026-10-21 — machine-readable historical-disposition register
+
+- PR #168 merged as `92b4c86c1010f4581790f2b4a94472059723809a`; default-branch GUP run [39523204937](https://github.com/4ndr0666/scr/actions/runs/39523204937) passed at this commit. Tree: `8362e5694ccb6e4d25fb4aa21b6055831b182021`.
+- Added `.gup/evidence/historical-dispositions.json` with one record for each of the 52 historical deletion paths observed by that run. All 52 remain `UNRESOLVED`; no authorization to retire any path is inferred.
+- Each record is tied to the observed deletion commit, contains explicit rationale and a Git commit evidence reference, and preserves the two targeted path reviews as unresolved.
+- The history audit now optionally consumes a disposition register and validates protocol identity, source commit, exact path coverage, duplicate/stale entries, deletion-commit identity, rationale/evidence, and status-specific requirements for `PRESERVED`, `TRANSLATED`, and `AUTHORIZED_RETIRED`. CI supplies the register, so missing or malformed entries fail closed.
+- Added a JSON Schema and isolated synthetic-Git regression tests for valid unresolved records, missing/stale coverage, unauthorized retirement, translation without a live target or behavior-level test evidence, and mismatched deletion identity.
+- The register is a review-tracking control, not closure evidence: 52 paths remain unresolved, canonical baseline remains unset, all nine integration surfaces remain PARTIAL, and no GUP/SUK certification is claimed.
