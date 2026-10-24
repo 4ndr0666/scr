@@ -1,20 +1,28 @@
-#!/bin/bash
+#!/bin/sh
+# === MKPLAYLIST === (c) 2026 - 4ndr0666
+# Usage: mkplaylist <dir>
 
-# Prompt user for the directory to search
-echo "Which dir?"
-read -r search_dir
-
-# Check if the directory exists
-if [ ! -d "$search_dir" ]; then
-	echo "Error: Directory not found."
+die() {
+	printf '%s\n' "$*" >&2
 	exit 1
-fi
+}
 
-# Create a new playlist file in your home directory
-playlist_file="$HOME/mpv_playlist.txt"
-echo "" >$playlist_file
+[ -n "$1" ] || die "usage: ${0##*/} <path>"
+[ -e "$1" ] || die "${0##*/}: $1: no such file or directory"
 
-# Find files with specified extensions and append them to the playlist file
-find "$search_dir" -type f \( -iname "*.mp4" -o -iname "*.gif" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" \) >>$playlist_file
+[ -d "$1" ] && dir=$1 || dir=$(dirname -- "$1")
+cd -- "$dir" || exit 1
 
-echo "Playlist created: $playlist_file"
+out="$PWD/playlist.m3u"
+
+{
+	printf '#EXTM3U\n'
+	find . -maxdepth 3 -type f \( \
+		-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
+		-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
+		-iname '*.m4v' -o -iname '*.gif' -o -iname '*.webm' -o \
+		-iname '*.mp3' -o -iname '*.flac' -o -iname '*.ts' \) \
+		| sed 's|^\./||' | sort
+} > "$out"
+
+printf '%s\n' "$out"

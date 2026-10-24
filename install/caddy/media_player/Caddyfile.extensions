@@ -1,0 +1,30 @@
+:3000 {
+    bind 192.168.1.219 127.0.0.1
+    root * /s4/s4Downloads
+
+    handle /playlist.m3u {
+        header Content-Type "audio/x-mpegurl; charset=utf-8"
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        templates {
+            mime audio/x-mpegurl
+        }
+        respond "#EXTM3U
+{{- range listFiles \"/\" }}
+{{- $lower := lower . }}
+{{- if or (hasSuffix \".mp4\" $lower) (hasSuffix \".mkv\" $lower) (hasSuffix \".mp3\" $lower) (hasSuffix \".flac\" $lower) (hasSuffix \".ts\" $lower) (hasSuffix \".avi\" $lower) (hasSuffix \".webm\" $lower) (hasSuffix \".m4v\" $lower) (hasSuffix \".mov\" $lower) }}
+{{- $safe := replace \"%\" \"%25\" . }}
+{{- $safe = replace \" \" \"%20\" $safe }}
+{{- $safe = replace \"\x23\" \"%23\" $safe }}
+{{- $safe = replace \"?\" \"%3F\" $safe }}
+{{- $safe = replace \"[\" \"%5B\" $safe }}
+{{- $safe = replace \"]\" \"%5D\" $safe }}
+http://{{ $.Req.Host }}/{{ $safe }}
+{{- end }}
+{{- end }}
+" 200
+    }
+
+    handle {
+        file_server
+    }
+}

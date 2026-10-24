@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hailuo AI • Hip-Hop MV Prompt Vault</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            charcoal: {
+              950: '#121212',
+              900: '#1A1A1A',
+              850: '#222222',
+              800: '#2D2D2D',
+              750: '#353535',
+              700: '#404040',
+            },
+            cyan: {
+              350: '#26E5FF',
+              450: '#00D0F5',
+              DEFAULT: '#00E5FF',
+            },
+            punk: {
+              magenta: '#FF1493',
+              pink: '#FF2A85',
+              purple: '#A855F7',
+              lime: '#39FF14',
+            }
+          },
+          boxShadow: {
+            'cyan-glow': '0 0 25px -5px rgba(0, 229, 255, 0.25)',
+            'cyan-glow-lg': '0 0 45px -5px rgba(0, 229, 255, 0.35)',
+            'punk-glow': '0 0 25px -5px rgba(255, 42, 133, 0.3)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1A1A1A;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #404040;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #00E5FF;
+    }
+
+    .glass-card {
+      background: linear-gradient(135deg, rgba(45, 45, 45, 0.88) 0%, rgba(30, 30, 30, 0.95) 100%);
+      backdrop-filter: blur(12px);
+    }
+    .glass-header {
+      background: rgba(26, 26, 26, 0.9);
+      backdrop-filter: blur(16px);
+    }
+    .neon-border-glow:hover {
+      border-color: rgba(0, 229, 255, 0.6);
+      box-shadow: 0 10px 30px -10px rgba(0, 229, 255, 0.25);
+    }
+    .prompt-text-mask {
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body class="bg-charcoal-900 text-slate-100 font-sans min-h-screen selection:bg-cyan-500 selection:text-black">
+
+  <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+    <div class="absolute -top-40 -left-40 w-96 h-96 bg-cyan-500/10 rounded-full blur-[140px]"></div>
+    <div class="absolute top-1/3 -right-40 w-[30rem] h-[30rem] bg-punk-magenta/10 rounded-full blur-[160px]"></div>
+    <div class="absolute bottom-10 left-1/4 w-[28rem] h-[28rem] bg-cyan-400/5 rounded-full blur-[140px]"></div>
+  </div>
+
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="glass-card border border-cyan-400/50 shadow-cyan-glow-lg text-slate-100 px-5 py-3.5 rounded-xl flex items-center space-x-3.5">
+      <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center flex-shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+      </div>
+      <div>
+        <p class="font-bold text-sm text-white" id="toast-title">Prompt Copied!</p>
+        <p class="text-xs text-cyan-300/80 font-mono" id="toast-desc">Ready to paste into hailuo.video</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="relative z-10 flex flex-col min-h-screen">
+    
+    <header class="glass-header sticky top-0 z-40 border-b border-charcoal-800 transition-all">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 py-3.5 flex items-center justify-between">
+        
+        <div class="flex items-center space-x-3.5">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-punk-magenta flex items-center justify-center text-white font-black shadow-cyan-glow">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="font-black text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-300 bg-clip-text text-transparent">HAILUO AI</span>
+              <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-punk-purple/20 text-punk-purple border border-punk-purple/50">hailuo.video</span>
+            </div>
+            <p class="text-xs text-slate-400">Hip-Hop Music Video • Cinematic Choreography (16:9)</p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <button onclick="copyAllPrompts()" class="relative group flex items-center space-x-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-cyan-500 to-cyan-400 text-charcoal-900 hover:shadow-cyan-glow transition-all duration-200">
+            <svg class="w-4 h-4 text-charcoal-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+            <span class="font-bold">Copy Master List</span>
+          </button>
+        </div>
+
+      </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      
+      <section class="glass-card rounded-2xl border border-charcoal-700/80 p-6 md:p-8 relative overflow-hidden shadow-2xl">
+        <div class="absolute -right-16 -bottom-16 w-64 h-64 bg-punk-purple/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div class="space-y-3 max-w-3xl">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-punk-purple/20 text-punk-purple border border-punk-purple/30">Music Video</span>
+              <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-700">Film • 16:9 MV</span>
+              <span class="px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">Hip-Hop / Dance</span>
+              <span class="px-2.5 py-1 rounded-md text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800">Hailuo Character Lock</span>
+            </div>
+            
+            <h1 class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+              All-Female Hip-Hop MV <span class="bg-gradient-to-r from-cyan-400 to-punk-pink bg-clip-text text-transparent">• Advanced Cinematography</span>
+            </h1>
+
+            <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+              Complete prompt suite optimized for <strong class="text-cyan-300">Hailuo AI (hailuo.video)</strong>. High-energy music video footage utilizing specific cinematic camera rigs (SnorriCam, Bolt arm, Probe lens) to capture complex choreography. Every prompt explicitly dictates <strong class="text-white font-bold">"the same woman in the exact same outfit"</strong> to guarantee character consistency when using your reference image. Includes modern/contemporary, twerk, and TikTok dance styles with an all-female background crew.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3 flex-shrink-0">
+            <div class="bg-charcoal-900/90 border border-charcoal-750 p-3.5 rounded-xl text-center">
+              <div class="text-2xl font-black text-cyan-400 font-mono" id="stat-count">16</div>
+              <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hailuo Prompts</div>
+            </div>
+            <div class="bg-charcoal-900/90 border border-charcoal-750 p-3.5 rounded-xl text-center">
+              <div class="text-2xl font-black text-white font-mono">16:9</div>
+              <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Cinematic Ratio</div>
+            </div>
+            <div class="bg-charcoal-900/90 border border-charcoal-750 p-3.5 rounded-xl text-center">
+              <div class="text-2xl font-black text-punk-pink font-mono">4</div>
+              <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Categories</div>
+            </div>
+            <div class="bg-charcoal-900/90 border border-charcoal-750 p-3.5 rounded-xl text-center">
+              <div class="text-2xl font-black text-emerald-400 font-mono">100%</div>
+              <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Ref-Matched</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          
+          <div class="relative flex-grow max-w-lg">
+            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            <input 
+              type="text" 
+              id="search-input" 
+              placeholder="Search by camera rig (e.g., SnorriCam, Fisheye) or dance style..." 
+              class="w-full bg-charcoal-800 border border-charcoal-700 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition"
+              oninput="handleFilter()"
+            >
+            <button id="clear-search" onclick="clearSearch()" class="hidden absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+          </div>
+
+          <div class="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap mr-1">Detail:</span>
+            <button onclick="setDifficultyFilter('all')" class="diff-btn active-pill px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-cyan-500 text-charcoal-900" data-diff="all">All</button>
+            <button onclick="setDifficultyFilter('Complex Camera')" class="diff-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/50" data-diff="Complex Camera">
+              <span class="w-2 h-2 inline-block rounded-full bg-cyan-400 mr-1.5"></span>Complex Camera
+            </button>
+            <button onclick="setDifficultyFilter('Standard Rig')" class="diff-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-amber-500/50" data-diff="Standard Rig">
+              <span class="w-2 h-2 inline-block rounded-full bg-amber-400 mr-1.5"></span>Standard Rig
+            </button>
+          </div>
+
+        </div>
+
+        <div class="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none">
+          <button onclick="setCategoryFilter('all')" class="cat-btn active-pill px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-cyan-500 text-charcoal-900 shadow-cyan-glow" data-cat="all">
+            All Categories (<span id="count-all">16</span>)
+          </button>
+          <button onclick="setCategoryFilter('Hero Performance')" class="cat-btn px-4 py-2 rounded-xl text-xs font-semibold bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/40 hover:text-white transition whitespace-nowrap" data-cat="Hero Performance">
+            🎤 Hero Performance (<span id="count-hero">4</span>)
+          </button>
+          <button onclick="setCategoryFilter('High-Speed & Isolation')" class="cat-btn px-4 py-2 rounded-xl text-xs font-semibold bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/40 hover:text-white transition whitespace-nowrap" data-cat="High-Speed & Isolation">
+            ⚡ High-Speed / Isolation (<span id="count-action">4</span>)
+          </button>
+          <button onclick="setCategoryFilter('Choreography & Crew')" class="cat-btn px-4 py-2 rounded-xl text-xs font-semibold bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/40 hover:text-white transition whitespace-nowrap" data-cat="Choreography & Crew">
+            👯‍♀️ Choreography & Crew (<span id="count-split">4</span>)
+          </button>
+          <button onclick="setCategoryFilter('Vibe & Atmosphere')" class="cat-btn px-4 py-2 rounded-xl text-xs font-semibold bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/40 hover:text-white transition whitespace-nowrap" data-cat="Vibe & Atmosphere">
+            🎥 Vibe & Atmosphere (<span id="count-lifestyle">4</span>)
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <div id="prompts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <!-- Cards injected via JavaScript -->
+        </div>
+
+        <div id="empty-state" class="hidden text-center py-20 bg-charcoal-850/40 rounded-2xl border border-charcoal-800">
+          <div class="w-16 h-16 mx-auto rounded-2xl bg-charcoal-800 flex items-center justify-center text-slate-500 mb-4">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">No matching Hailuo prompts found</h3>
+          <p class="text-sm text-slate-400 mb-4">Try tweaking your search term or clearing filters</p>
+          <button onclick="resetFilters()" class="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-500 text-charcoal-900">Reset All Filters</button>
+        </div>
+      </section>
+
+      <section class="glass-card rounded-2xl border border-cyan-500/30 p-6 md:p-8 relative overflow-hidden shadow-cyan-glow">
+        <div class="flex items-center space-x-3 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+          </div>
+          <div>
+            <h2 class="text-xl font-extrabold text-white">Hailuo MV Customizer</h2>
+            <p class="text-xs text-slate-400">Assemble a brand-new custom music video prompt for hailuo.video</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Camera Rig</label>
+            <select id="remix-camera" onchange="generateRemixPrompt()" class="w-full bg-charcoal-800 border border-charcoal-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400">
+              <option value="SnorriCam body-mount rig locked onto the main artist">SnorriCam Body-Mount</option>
+              <option value="low-angle 8mm fisheye lens pushing aggressively in">Low-Angle Fisheye</option>
+              <option value="high-speed robotic Bolt motion control arm">Bolt Motion Control Arm</option>
+              <option value="smooth 360-degree steadicam orbit">360-Degree Steadicam Orbit</option>
+              <option value="dramatic crane drop transitioning into a whip-pan">Crane Drop to Whip-Pan</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Choreography / Action</label>
+            <select id="remix-action" onchange="generateRemixPrompt()" class="w-full bg-charcoal-800 border border-charcoal-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400">
+              <option value="executing highly-kinetic modern twerk and get-low choreography">Twerk / Get Low Choreo</option>
+              <option value="hitting sharp, vibrating pop-and-lock hip-hop isolations">Vibrating Hip-Hop Isolations</option>
+              <option value="performing a synchronized, viral TikTok style dance routine">Viral TikTok Style Routine</option>
+              <option value="delivering aggressive, charismatic rap performance directly to camera">Aggressive Rap to Camera</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Crew Setup</label>
+            <select id="remix-crew" onchange="generateRemixPrompt()" class="w-full bg-charcoal-800 border border-charcoal-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400">
+              <option value="flanked by an all-female backup crew in geometric formation">Symmetrical Backup Crew</option>
+              <option value="surrounded by dancers forming a tight, energetic cypher circle">Tight Cypher Circle</option>
+              <option value="leading a massive V-formation of modern contemporary dancers">V-Formation Crew</option>
+              <option value="performing an intense solo routine with abstract silhouettes behind her">Solo + Silhouettes</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Environment & Lighting</label>
+            <select id="remix-lighting" onchange="generateRemixPrompt()" class="w-full bg-charcoal-800 border border-charcoal-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400">
+              <option value="a neon-lit industrial warehouse with pulsing cyber-purple and toxic green strobes">Industrial Neon Warehouse</option>
+              <option value="a massive LED virtual production volume displaying abstract kinetic typography">LED Abstract Typography</option>
+              <option value="a flooded concrete underpass reflecting heavy cinematic rim lighting">Flooded Cinematic Underpass</option>
+              <option value="a stark white infinity cyc studio with harsh, high-contrast fashion flashes">White Infinity Studio Flashes</option>
+            </select>
+          </div>
+
+        </div>
+
+        <div class="bg-charcoal-950 border border-charcoal-800 rounded-xl p-4.5 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono font-bold text-cyan-400 flex items-center space-x-1.5">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span>LIVE COMPILED MV PROMPT FOR HAILUO AI</span>
+            </span>
+            <span class="text-[11px] font-mono text-slate-400" id="remix-word-count">~160 words</span>
+          </div>
+
+          <p id="remix-output" class="text-sm text-slate-200 leading-relaxed font-mono selection:bg-cyan-500 selection:text-black">
+            <!-- Remix text dynamically generated -->
+          </p>
+
+          <div class="flex items-center justify-between pt-2 border-t border-charcoal-800">
+            <span class="text-xs text-slate-400">16:9 Music Video • Cinematic Motion Simulation</span>
+            <button onclick="copyRemixPrompt()" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold bg-cyan-500 text-charcoal-900 hover:bg-cyan-400 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+              <span>Copy Custom Prompt</span>
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div class="bg-charcoal-800/80 border border-charcoal-700 rounded-2xl p-6 space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-cyan-950 text-cyan-400 flex items-center justify-center border border-cyan-800">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          </div>
+          <h3 class="font-bold text-white text-base">Hailuo Cinematic Physics</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Hailuo (Minimax) excels at understanding physics and camera weight. Prompts explicitly specify rigs like <em>"SnorriCam body-mount"</em> or <em>"Bolt motion control arm"</em> to force the AI into rendering professional music video camera behaviors rather than floating drone shots.
+          </p>
+        </div>
+
+        <div class="bg-charcoal-800/80 border border-charcoal-700 rounded-2xl p-6 space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-punk-purple/20 text-punk-purple flex items-center justify-center border border-punk-purple/30">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          </div>
+          <h3 class="font-bold text-white text-base">Perfect Character Locking</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            To ensure your reference image translates flawlessly, every prompt hard-codes the phrase <strong>"the same woman in the exact same outfit"</strong>. By tying this directly to an action verb, Hailuo locks the character visually throughout extreme dance movements.
+          </p>
+        </div>
+
+        <div class="bg-charcoal-800/80 border border-charcoal-700 rounded-2xl p-6 space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-950 text-emerald-400 flex items-center justify-center border border-emerald-800">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+          </div>
+          <h3 class="font-bold text-white text-base">Choreography Terminology</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Hailuo responds accurately to specific dance vocabulary. We use terms like <em>"vibrating isolations," "low-center twerk,"</em> and <em>"TikTok sync"</em> rather than just "dancing," giving you highly accurate physical performances from both the subject and the crew.
+          </p>
+        </div>
+
+      </section>
+
+    </main>
+
+    <footer class="border-t border-charcoal-800 py-6 text-center text-xs text-slate-400">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <p>Interactive Prompt Dashboard • Tailored for <strong>Hailuo AI (hailuo.video)</strong></p>
+        <p class="font-mono text-cyan-400">Project: All-Female Hip-Hop MV • 16:9 Format</p>
+      </div>
+    </footer>
+
+  </div>
+
+  <div id="modal-container" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-charcoal-950/80 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+    <div id="modal-content" class="glass-card border border-cyan-500/40 w-full max-w-2xl rounded-2xl p-6 sm:p-8 space-y-6 shadow-cyan-glow-lg transform scale-95 transition-all duration-300">
+      
+      <div class="flex items-start justify-between border-b border-charcoal-700 pb-4">
+        <div>
+          <div class="flex items-center space-x-2 mb-1.5" id="modal-badges"></div>
+          <h3 class="text-xl font-extrabold text-white" id="modal-title">Prompt Title</h3>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-charcoal-800 transition">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider mb-2">Full Hailuo MV Video Prompt Text</label>
+          <div class="bg-charcoal-950 border border-charcoal-800 rounded-xl p-4 text-sm text-slate-200 leading-relaxed font-mono select-all" id="modal-prompt-text"></div>
+        </div>
+
+        <div class="bg-cyan-950/40 border border-cyan-800/60 rounded-xl p-3.5 flex items-start space-x-3">
+          <span class="text-cyan-400 text-lg flex-shrink-0">🎬</span>
+          <div>
+            <span class="block text-xs font-bold text-cyan-300 uppercase">Visual Output Preview Suggestion</span>
+            <p class="text-xs text-slate-300 mt-0.5" id="modal-preview-text"></p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-xs font-mono">
+          <div class="bg-charcoal-900 p-2.5 rounded-lg border border-charcoal-700">
+            <span class="text-slate-400 block text-[10px]">FORMAT</span>
+            <span class="text-white font-bold">16:9 MV Film</span>
+          </div>
+          <div class="bg-charcoal-900 p-2.5 rounded-lg border border-charcoal-700">
+            <span class="text-slate-400 block text-[10px]">WORD COUNT</span>
+            <span class="text-cyan-400 font-bold" id="modal-word-count">175w</span>
+          </div>
+          <div class="bg-charcoal-900 p-2.5 rounded-lg border border-charcoal-700">
+            <span class="text-slate-400 block text-[10px]">AI ENGINE</span>
+            <span class="text-emerald-400 font-bold">Hailuo / Minimax</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-3 pt-2">
+        <button onclick="closeModal()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-charcoal-800 transition">Close</button>
+        <button id="modal-copy-btn" onclick="copyModalPrompt()" class="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-cyan-500 text-charcoal-900 hover:bg-cyan-400 transition shadow-cyan-glow">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+          <span>Copy Clean Prompt</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Master Database of 16 Detailed Prompts for Hailuo AI
+    const promptsData = [
+      {
+        id: 1,
+        title: "Hero Performance #1 - The SnorriCam Tunnel",
+        category: "Hero Performance",
+        difficulty: "Complex Camera",
+        promptText: "Create an intense, hyper-kinetic hip-hop music video sequence utilizing a SnorriCam body-mount camera rig locked perfectly onto the face and torso of the same woman in the exact same outfit. She is aggressively rapping and vibrating to the beat, staying completely stabilized in the dead center of the frame. Because the camera is physically attached to her body, the background—a long, graffiti-covered underground tunnel—spins, shakes, and blurs violently around her with her movements. Flanking her in the blurred background are female dancers performing synchronized, low-center modern contemporary hip-hop choreo. The lighting is an aggressive mix of pulsing neon cyber-purple and toxic green strobes that flash to the rhythm. Shot in 16:9 widescreen format. Technical parameters feature a deep f/4.0 depth of field to catch the background crew, fast 1/1000s shutter speed to eliminate motion blur on her face, and a bold, high-contrast colorful aesthetic optimized for Hailuo AI video generation.",
+        previewText: "The artist stays perfectly still in the center of the frame while rapping, as the neon tunnel background and dancers spin wildly behind her.",
+        wordCount: 161
+      },
+      {
+        id: 2,
+        title: "Hero Performance #2 - 90s Low-Angle Fisheye",
+        category: "Hero Performance",
+        difficulty: "Complex Camera",
+        promptText: "Create a bold, larger-than-life 90s style hip-hop music video shot featuring the same woman in the exact same outfit performing dynamic rap hand gestures directly into an ultra-wide 8mm fisheye lens. The camera is positioned extremely low to the ground, pointing sharply upward, drastically distorting perspective and making her look massive and imposing. She is getting low to the floor, interacting aggressively with the camera lens. Surrounding her in a tight circle, an all-female background crew executes fast-paced TikTok style dance routines, their bodies bending along the curved edges of the fisheye distortion. The environment is an empty concrete reservoir flooded with shallow water, reflecting the intense overhead stadium lighting. Color palette features deep slate, crisp whites, and piercing neon pink accents. Formatted in 16:9 widescreen. Technical specs include heavy barrel distortion, stark rim lighting to separate subjects from the background, and gritty cinematic contrast. A powerful, dominant, and colorful hip-hop aesthetic.",
+        previewText: "Low-angle upward shot with heavy fisheye distortion, making the artist look giant as she raps over the lens, surrounded by dancers.",
+        wordCount: 167
+      },
+      {
+        id: 3,
+        title: "Hero Performance #3 - Infinite Dolly Zoom",
+        category: "Hero Performance",
+        difficulty: "Complex Camera",
+        promptText: "Create a visually mind-bending music video sequence utilizing a dramatic 'Vertigo' dolly-zoom effect centered entirely on the same woman in the exact same outfit. She is standing dead center in a vibrant neon-lit warehouse, hitting sharp, vibrating pop-and-lock hip-hop isolations. As she isolates her movements, the camera rapidly pulls back while zooming in simultaneously, causing the background to warp and compress violently around her while her size remains identical in the frame. Behind her, a crew of background dancers in modern contemporary wear are frozen in mid-air in dynamic poses. The lighting is highly theatrical, with a massive circular halo light behind the dancers casting long, dramatic shadows forward. Color palette consists of deep abyssal blacks, electric cyan, and hot magenta. 16:9 horizontal aspect ratio. Technical parameters include an f/2.8 lens simulation, intense focal compression shift, and high-gloss commercial grading. Hypnotic, modern, and highly technical cinematography optimized for Hailuo AI.",
+        previewText: "The artist locks a pose while the background violently warps and compresses behind her via a dramatic Dolly Zoom effect.",
+        wordCount: 168
+      },
+      {
+        id: 4,
+        title: "Hero Performance #4 - Ring Light Cypher",
+        category: "Hero Performance",
+        difficulty: "Standard Rig",
+        promptText: "Create an intimate, high-energy cypher circle hip-hop music video shot featuring the same woman in the exact same outfit delivering a charismatic, fast-paced vocal performance. The camera is a handheld, continuously panning rig moving fluidly around the inside of a tight circle of female background dancers who are hyping her up. She looks directly into the lens, illuminated perfectly by a large, reflections-catching LED ring light attached to the camera, which casts a distinct circular catchlight in her eyes. The background dancers are getting low and executing aggressive twerk isolations, naturally falling in and out of the shallow focus plane as the camera orbits. The environment is dark and moody, lit primarily by the harsh, flattering glow of the moving ring light. Bold color palette with deep obsidian shadows and vibrant skin tones. Formatted for 16:9 broadcast. Technical specs include f/1.8 shallow depth of field, natural handheld sway, and premium modern pop-rap aesthetics.",
+        previewText: "Handheld panning shot moving around a cypher circle, lit by a bright ring light tracking the main artist as she performs.",
+        wordCount: 172
+      },
+      {
+        id: 5,
+        title: "High-Speed / Isolation #1 - The Bolt Robot Arm",
+        category: "High-Speed & Isolation",
+        difficulty: "Complex Camera",
+        promptText: "Create an ultra-precise, high-budget music video sequence using a high-speed Bolt motion control robotic camera arm tracking the same woman in the exact same outfit. She is performing extremely fast, aggressive twerk choreography and sharp hip-hop isolations. The robotic camera whips dynamically from a wide shot down to an extreme low-angle close-up of her footwork, then instantly rockets back up to her face, seamlessly ramping from real-time speed into ultra-smooth 1000fps slow-motion exactly as she hits a dramatic pose. Flanking her, a crew of female dancers execute identical modern hip-hop floor work. The set is an infinite black soundstage lit by perfectly timed, rhythmic neon laser grids in cyan and hot pink that slice through thick atmospheric haze. Shot in a 16:9 aspect ratio. Technical parameters demand hyper-fluid speed ramping, flawless motion-blur management, stark cinematic contrast, and highly saturated neon highlights. Flawless, mechanical, and explosive Hailuo video generation.",
+        previewText: "Robotic camera whips rapidly around the dancer, suddenly dropping into ultra-slow-motion as she hits a sharp pose in a laser-filled room.",
+        wordCount: 167
+      },
+      {
+        id: 6,
+        title: "High-Speed / Isolation #2 - Split-Focus Diopter",
+        category: "High-Speed & Isolation",
+        difficulty: "Complex Camera",
+        promptText: "Create a highly stylized, cinematic music video composition utilizing a specialized split-focus diopter lens effect, anchoring the same woman in the exact same outfit on the extreme right foreground of the 16:9 frame. Her profile is razor-sharp as she confidently lipsyncs the lyrics to the camera. On the extreme left background, equally razor-sharp due to the diopter, an organized crew of female dancers performs a synchronized, heavy-hitting 'get low' hip-hop dance routine. The middle depth between them is heavily blurred, creating an unnatural, dreamlike juxtaposition of two different focal planes. The environment is an outdoor nighttime basketball court lit by massive, colorful LED floodlights casting bold cyberpunk hues of electric violet and acid green. Technical specifications require strict adherence to the visual split-screen focal trick, cinematic f/2.0 background blur in the center, and a rich, bold color grade. A classic, high-end hip-hop storytelling shot.",
+        previewText: "A split-focus shot where the artist's face is sharp in the right foreground, while dancers are simultaneously sharp in the left background.",
+        wordCount: 165
+      },
+      {
+        id: 7,
+        title: "High-Speed / Isolation #3 - Probe Lens Push-Through",
+        category: "High-Speed & Isolation",
+        difficulty: "Complex Camera",
+        promptText: "Create a highly technical macro-to-wide cinematography sequence using a tubular probe lens pushing dynamically through a scene to reveal the same woman in the exact same outfit. The camera starts inches away from the colorful, neon-painted sneakers of the background dancers who are actively stepping and bouncing to a hip-hop beat. The lens smoothly glides directly between the legs of the foreground dancers, emerging seamlessly into a wide shot of the main artist aggressively performing a modern contemporary hip-hop routine in the center of the cypher. She is bathed in dramatic, pulsing gold and magenta club lighting. The transition from extreme, distorted macro to a clean, wide performance shot must be perfectly fluid. Formatted in horizontal 16:9. Technical parameters feature deep infinite focus typical of probe lenses, intense color saturation, dynamic proximity tracking, and high-energy music video pacing.",
+        previewText: "Camera pushes smoothly between the legs of background dancers to dramatically reveal the main artist performing in the center.",
+        wordCount: 157
+      },
+      {
+        id: 8,
+        title: "High-Speed / Isolation #4 - Dutch Angle Whip-Pan",
+        category: "High-Speed & Isolation",
+        difficulty: "Standard Rig",
+        promptText: "Create an electrifying, disorienting music video transition shot featuring the same woman in the exact same outfit performing high-energy TikTok style dance combinations. The camera is aggressively tilted on a sharp 45-degree Dutch angle, creating a feeling of chaotic momentum. She hits a heavy beat drop, throwing her arms outward, which motivates the camera to execute a violent, motion-blurred whip-pan to the right. The blur clears instantly to reveal her and her all-female crew seamlessly continuing the twerk choreography in a completely new, identically angled composition. The environment features bright, flashing LED tube lights suspended from the ceiling in geometric patterns. Color palette highlights electric blues, jarring yellows, and deep charcoal shadows. 16:9 widescreen ratio. Technical specs include heavy horizontal motion blur during the pan, sharp f/5.6 focus during the locked performance, and vivid, punchy commercial color science. Fast, trendy, and incredibly dynamic.",
+        previewText: "Camera is tilted sharply sideways, capturing a dance move before violently whipping to the side in a blur of color.",
+        wordCount: 167
+      },
+      {
+        id: 9,
+        title: "Choreography & Crew #1 - God's Eye Geometric",
+        category: "Choreography & Crew",
+        difficulty: "Standard Rig",
+        promptText: "Create a breathtaking, perfectly symmetrical top-down overhead 'God's eye' view music video shot featuring the same woman in the exact same outfit at the exact center of the frame. Surrounding her is a massive crew of twenty female background dancers arranged in complex geometric mandala formations. They are all executing perfectly synchronized modern contemporary hip-hop choreography, characterized by fluid floor work and rhythmic pulsating movements. The camera slowly rotates 360 degrees on its z-axis while looking straight down. The floor beneath them is a glossy, highly reflective black LED surface displaying pulsing ripples of electric cyan and neon pink that react to their dance steps. 16:9 horizontal format. Technical specifications emphasize flawless geometric symmetry, deep focus to capture all dancers sharply, even, shadowless top-lighting, and vibrant, saturated color contrast. Visually hypnotic and grand in scale, perfect for Hailuo AI generation.",
+        previewText: "Looking straight down from the ceiling, the artist and dancers form a rotating, synchronized human mandala on a glowing floor.",
+        wordCount: 164
+      },
+      {
+        id: 10,
+        title: "Choreography & Crew #2 - Russian Arm Tracking",
+        category: "Choreography & Crew",
+        difficulty: "Complex Camera",
+        promptText: "Create a high-momentum cinematic tracking shot using a vehicle-mounted Russian Arm crane following the same woman in the exact same outfit as she struts aggressively down a wet, neon-lit city street at night. She is leading a tight-knit crew of female dancers in an intimidating, synchronized hip-hop walking formation. The camera smoothly glides backwards just inches ahead of them, occasionally swinging wide to profile the entire squad, capturing their effortless swagger and spontaneous dance isolations. Heavy atmospheric rain slick on the asphalt reflects the vibrant, chaotic glow of cyberpunk street signs in hot magenta and acid lime. Shot in 16:9 anamorphic widescreen. Technical specs include classic anamorphic lens flares stretching horizontally across the frame, a smooth f/2.8 shallow depth of field isolating the crew from the deep urban background, and a gritty, high-contrast bold color grade. Unstoppable, powerful squad aesthetic.",
+        previewText: "Smooth reverse tracking shot moving backward down a wet street as the artist and her crew swagger and dance forward together.",
+        wordCount: 165
+      },
+      {
+        id: 11,
+        title: "Choreography & Crew #3 - Low-Slung Gimbal",
+        category: "Choreography & Crew",
+        difficulty: "Standard Rig",
+        promptText: "Create a highly kinetic choreography sequence filmed with a low-slung, ground-level stabilized gimbal tracking the same woman in the exact same outfit. The camera hovers mere inches above the reflective floor, following her complex, rapid-fire hip-hop footwork and aggressive 'get low' twerk mechanics. Behind her, a massive V-formation of female background dancers perfectly mirrors her choreography. The low angle emphasizes the power and grounded nature of the dance style. The environment is an expansive industrial airplane hangar lit by banks of massive stadium lights punching through thick theatrical fog, creating long, dramatic silhouettes. Color palette is restricted to bold, high-contrast monochrome with singular, shocking pops of neon cyan highlighting the dancers' apparel. 16:9 aspect ratio. Technical parameters highlight ultra-smooth multi-axis stabilization, a wide 14mm lens for exaggerated depth, and high dynamic range lighting. Raw, athletic, and visually imposing.",
+        previewText: "Camera hovers inches above the floor, capturing complex footwork and low choreography of the artist leading a massive V-formation.",
+        wordCount: 162
+      },
+      {
+        id: 12,
+        title: "Choreography & Crew #4 - The Crane Drop",
+        category: "Choreography & Crew",
+        difficulty: "Complex Camera",
+        promptText: "Create a spectacular, high-energy establishing music video shot featuring the same woman in the exact same outfit. The shot begins from a massive 50-foot camera crane looking down at a giant warehouse party. The camera goes into a rapid, exhilarating free-fall drop, plunging directly toward the floor and decelerating perfectly at eye level into the absolute center of an all-female twerk cypher. The main artist is in the middle, looking straight up into the dropping lens before exploding into a dynamic modern hip-hop routine the moment the camera levels out. The surrounding crew hypes her up, matching her chaotic, joyful energy. The room is bathed in warm, pulsing golden club lights with harsh magenta strobe accents. Formatted for horizontal 16:9 broadcast. Technical specs demand a flawless z-axis altitude drop transition, 60fps fluid motion, and vibrant, energetic party cinematography. Epic and explosive.",
+        previewText: "Camera plummets rapidly from the ceiling directly into the center of a dance circle, leveling out just as the artist starts dancing.",
+        wordCount: 164
+      },
+      {
+        id: 13,
+        title: "Vibe & Atmosphere #1 - LED Volume Silhouette",
+        category: "Vibe & Atmosphere",
+        difficulty: "Standard Rig",
+        promptText: "Create a visually striking, high-tech music video performance shot featuring the same woman in the exact same outfit dancing in front of a massive, curved LED virtual production screen. The LED wall behind her displays hyper-kinetic, abstract, pulsing neon typography and geometric shapes in electric cyan and toxic green. She is totally silhouetted by the intense light of the screen, highlighting only the sharp outlines of her vibrating hip-hop isolations and fluid body rolls. Two female backup dancers mirror her silhouette in the background. The camera holds a locked-off, perfectly symmetrical wide shot, allowing the digital background graphics to synchronize visually with their sharp dance movements. 16:9 widescreen format. Technical specs feature infinite depth of field, absolute high-contrast silhouette exposure, no front lighting whatsoever, and incredibly vibrant, emissive digital background colors. Modern, graphic, and highly stylized.",
+        previewText: "The artist is a pure black silhouette dancing aggressively against a massive, bright LED screen displaying moving neon graphics.",
+        wordCount: 161
+      },
+      {
+        id: 14,
+        title: "Vibe & Atmosphere #2 - Slow Shutter Drag",
+        category: "Vibe & Atmosphere",
+        difficulty: "Complex Camera",
+        promptText: "Create an artistic, experimental music video sequence using a purposeful slow shutter speed 'drag' effect on the same woman in the exact same outfit. She is performing a fluid, continuous modern contemporary hip-hop routine. Because of the slow 1/12s shutter speed, every rapid movement of her arms and body leaves gorgeous, ghost-like motion blur trails through the air, painting the frame with kinetic energy. Whenever she hits a hard, locked pose, a powerful off-camera strobe flashes, burning a crystal-clear, sharp image of her directly over the blurred trails. Her all-female crew dances in the background, dissolving into beautiful streaks of color. The set is pitch black, illuminated only by these rhythmic flashes in deep punk magenta and neon blue. 16:9 aspect ratio. Technical parameters require precise blending of long-exposure motion blur with sharp strobe-frozen frames. Ethereal, moody, and highly rhythmic.",
+        previewText: "Dreamy motion blur trails follow the artist's movements, punctuated by sharp, bright strobe flashes locking her in pose.",
+        wordCount: 165
+      },
+      {
+        id: 15,
+        title: "Vibe & Atmosphere #3 - VHS Camcorder Grime",
+        category: "Vibe & Atmosphere",
+        difficulty: "Standard Rig",
+        promptText: "Create a gritty, nostalgic, highly stylized hip-hop music video sequence featuring the same woman in the exact same outfit, simulated to look like it was shot on a vintage 1990s VHS camcorder. The footage features distinct analog artifacts: scanlines, tracking errors, chromatic aberration, and blown-out highlights. She is in a cramped, graffiti-covered elevator with her all-female crew, getting low and performing high-energy, raw hip-hop choreography right into the lens. The camera is handheld, bouncy, and completely reactive to the music. The harsh on-camera video light washes out their faces slightly, creating deep, hard shadows on the walls behind them. Color palette is heavily saturated but distorted, with bleeding reds and glowing neon yellows. Framed within a 16:9 widescreen aspect ratio but retaining the lo-fi texture of analog tape. Technical execution strictly mimics raw camcorder aesthetics. Authentic, underground, and aggressively cool.",
+        previewText: "Gritty, analog VHS camcorder style footage of the artist and crew dancing energetically in a cramped elevator.",
+        wordCount: 160
+      },
+      {
+        id: 16,
+        title: "Vibe & Atmosphere #4 - Refraction Prism Glass",
+        category: "Vibe & Atmosphere",
+        difficulty: "Complex Camera",
+        promptText: "Create a mesmerizing, kaleidoscope-style music video shot featuring the same woman in the exact same outfit filmed entirely through a thick, multi-faceted crystal glass prism held directly in front of the lens. As she performs intricate, fast-paced TikTok style hand choreography and body isolations, the prism fractures her image into multiple, overlapping, shimmering reflections across the 16:9 frame. Her all-female background crew multiplies infinitely in the refracted edges. Light leaks and vibrant chromatic rainbows—in hot pink, electric cyan, and golden yellow—spill organically across the glass as studio spotlights hit the prism. The central focal point remains sharply on her eyes as she delivers the lyrics. Technical specifications involve practical optical refraction simulation, incredibly shallow f/1.4 depth of field on the edges, and ethereal, dreamy commercial color grading. Beautiful, abstract, and highly engaging visual eye-candy.",
+        previewText: "Optical glass prism fractures the image, multiplying the artist and creating beautiful rainbow light leaks as she dances.",
+        wordCount: 161
+      }
+    ];
+
+    // State Variables
+    let currentCategory = 'all';
+    let currentDifficulty = 'all';
+    let searchQuery = '';
+    let currentModalPrompt = null;
+
+    function fallbackCopyTextToClipboard(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      // Avoid scrolling to bottom
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      // Prevent rendering
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      let successful = false;
+      try {
+        successful = document.execCommand('copy');
+      } catch (err) {
+        console.error('Fallback: Oops, unable to copy', err);
+      }
+      document.body.removeChild(textArea);
+      return successful;
+    }
+
+    function copyToClipboard(text) {
+      return new Promise((resolve) => {
+        // Try modern API first if available and permitted
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            resolve(true);
+          }).catch(() => {
+            // If it fails (e.g. iframe policy block), use fallback
+            resolve(fallbackCopyTextToClipboard(text));
+          });
+        } else {
+          // If no modern API, use fallback
+          resolve(fallbackCopyTextToClipboard(text));
+        }
+      });
+    }
+
+    // Manual copy fallback modal for extreme browser restrictions
+    function showManualCopyModal(text) {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm';
+      modal.innerHTML = `
+        <div class="bg-charcoal-900 border border-cyan-500 rounded-xl p-6 max-w-lg w-full shadow-2xl">
+          <h3 class="text-white font-bold mb-2">Manual Copy Required</h3>
+          <p class="text-xs text-slate-400 mb-4">Your browser's security settings blocked automatic clipboard access. Press Ctrl+C (or Cmd+C) to copy the text below.</p>
+          <textarea id="manual-copy-area" class="w-full h-48 bg-charcoal-950 text-slate-200 text-sm font-mono p-3 rounded border border-charcoal-700 mb-4" readonly>${text}</textarea>
+          <button onclick="this.parentElement.parentElement.remove()" class="w-full py-2 bg-cyan-500 text-black font-bold rounded hover:bg-cyan-400 transition">Close</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      const ta = document.getElementById('manual-copy-area');
+      ta.focus();
+      ta.select();
+    }
+
+    function showToast(title, desc) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-title').innerText = title;
+      document.getElementById('toast-desc').innerText = desc;
+      toast.classList.remove('translate-y-24', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.add('translate-y-24', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2600);
+    }
+
+    function getDifficultyBadge(diff) {
+      if (diff === 'Complex Camera') {
+        return `<span class="inline-flex items-center text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mr-1.5 animate-pulse"></span>Complex</span>`;
+      } else {
+        return `<span class="inline-flex items-center text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span>Standard</span>`;
+      }
+    }
+
+    function getCategoryBadge(cat) {
+      return `<span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-charcoal-700 text-slate-300 border border-charcoal-600">${cat}</span>`;
+    }
+
+    function renderCards() {
+      const grid = document.getElementById('prompts-grid');
+      const emptyState = document.getElementById('empty-state');
+      
+      const filtered = promptsData.filter(item => {
+        const matchCategory = (currentCategory === 'all' || item.category === currentCategory);
+        const matchDifficulty = (currentDifficulty === 'all' || item.difficulty === currentDifficulty);
+        const matchQuery = searchQuery === '' || 
+          item.title.toLowerCase().includes(searchQuery) ||
+          item.promptText.toLowerCase().includes(searchQuery) ||
+          item.category.toLowerCase().includes(searchQuery);
+        return matchCategory && matchDifficulty && matchQuery;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      grid.innerHTML = filtered.map(item => `
+        <div onclick="openModal(${item.id})" class="glass-card cursor-pointer rounded-2xl border border-charcoal-700 hover:border-cyan-400/60 p-5 flex flex-col justify-between transition-all duration-300 neon-border-glow group relative">
+          
+          <div class="space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center space-x-1.5">
+                ${getCategoryBadge(item.category)}
+                ${getDifficultyBadge(item.difficulty)}
+              </div>
+              <span class="text-[11px] font-mono text-slate-400 font-bold">#${item.id < 10 ? '0' + item.id : item.id}</span>
+            </div>
+
+            <h3 class="font-bold text-white text-base tracking-tight group-hover:text-cyan-300 transition-colors flex items-center justify-between">
+              <span>${item.title}</span>
+            </h3>
+
+            <div class="relative bg-charcoal-900/95 rounded-xl p-3.5 border border-charcoal-750 group-hover:border-charcoal-700 transition">
+              <p class="text-xs text-slate-300 leading-relaxed font-mono prompt-text-mask select-all">
+                ${item.promptText}
+              </p>
+              <div class="mt-2 text-[11px] font-mono text-cyan-400 group-hover:text-cyan-300 flex items-center space-x-1">
+                <span>Click card to inspect full prompt (${item.wordCount} words)</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+              </div>
+            </div>
+
+            <div class="bg-cyan-950/30 border border-cyan-800/50 rounded-lg p-2.5 flex items-start space-x-2">
+              <span class="text-xs text-cyan-400 flex-shrink-0">🎬</span>
+              <p class="text-[11px] text-cyan-200/90 leading-tight">
+                <strong class="text-cyan-300">Look:</strong> ${item.previewText}
+              </p>
+            </div>
+          </div>
+
+          <div class="pt-4 mt-4 border-t border-charcoal-750 flex items-center justify-between gap-2">
+            <div class="flex items-center space-x-1.5 text-[11px] font-mono text-slate-400">
+              <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+              <span>16:9 Hailuo Format</span>
+            </div>
+
+            <button 
+              id="btn-copy-${item.id}"
+              onclick="event.stopPropagation(); copySinglePrompt(${item.id})" 
+              class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-charcoal-750 hover:bg-cyan-500 hover:text-charcoal-900 text-cyan-300 border border-charcoal-700 hover:border-cyan-400 transition-all duration-200"
+              title="Copy ONLY the exact prompt text"
+            >
+              <svg class="w-3.5 h-3.5 copy-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+              <span>Copy Prompt</span>
+            </button>
+          </div>
+
+        </div>
+      `).join('');
+    }
+
+    function copySinglePrompt(id) {
+      const item = promptsData.find(p => p.id === id);
+      if (!item) return;
+
+      copyToClipboard(item.promptText).then((success) => {
+        if(success) {
+          showToast(`Copied ${item.title}!`, `${item.wordCount} words ready for Hailuo.`);
+          const btn = document.getElementById(`btn-copy-${id}`);
+          if (btn) {
+            const originalHTML = btn.innerHTML;
+            btn.classList.add('bg-cyan-500', 'text-charcoal-900', 'border-cyan-400');
+            btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Copied!</span>`;
+            setTimeout(() => {
+              btn.innerHTML = originalHTML;
+              btn.classList.remove('bg-cyan-500', 'text-charcoal-900', 'border-cyan-400');
+            }, 1800);
+          }
+        } else {
+          showManualCopyModal(item.promptText);
+        }
+      }).catch(() => showManualCopyModal(item.promptText));
+    }
+
+    function copyAllPrompts() {
+      const fullList = promptsData.map((p, idx) => {
+        return `PROMPT #${idx + 1}: ${p.title.toUpperCase()}\n` +
+               `Category: ${p.category} | Rig: ${p.difficulty} | Engine: Hailuo AI\n` +
+               `Output Preview: ${p.previewText}\n\n` +
+               `${p.promptText}\n\n` +
+               `--------------------------------------------------------------------------------\n`;
+      }).join('\n');
+
+      const masterHeader = `================================================================================\n` +
+                           `HAILUO AI VIDEO PROMPTS MASTER SUITE\n` +
+                           `Campaign: All-Female Hip-Hop Music Video\n` +
+                           `Aspect Ratio: Horizontal 16:9 | Total Prompts: 16\n` +
+                           `================================================================================\n\n` +
+                           fullList;
+
+      copyToClipboard(masterHeader).then((success) => {
+        if(success) {
+          showToast("Master Suite Copied!", "All 16 full Hailuo prompts copied as list.");
+        } else {
+          showManualCopyModal(masterHeader);
+        }
+      }).catch(() => showManualCopyModal(masterHeader));
+    }
+
+    function setCategoryFilter(cat) {
+      currentCategory = cat;
+      document.querySelectorAll('.cat-btn').forEach(btn => {
+        if (btn.dataset.cat === cat) {
+          btn.className = 'cat-btn active-pill px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-cyan-500 text-charcoal-900 shadow-cyan-glow';
+        } else {
+          btn.className = 'cat-btn px-4 py-2 rounded-xl text-xs font-semibold bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/40 hover:text-white transition whitespace-nowrap';
+        }
+      });
+      renderCards();
+    }
+
+    function setDifficultyFilter(diff) {
+      currentDifficulty = diff;
+      document.querySelectorAll('.diff-btn').forEach(btn => {
+        if (btn.dataset.diff === diff) {
+          btn.className = 'diff-btn active-pill px-3 py-1.5 rounded-lg text-xs font-bold transition bg-cyan-500 text-charcoal-900';
+        } else {
+          btn.className = 'diff-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-charcoal-800 border border-charcoal-700 text-slate-300 hover:border-cyan-500/50';
+        }
+      });
+      renderCards();
+    }
+
+    function handleFilter() {
+      const input = document.getElementById('search-input');
+      const clearBtn = document.getElementById('clear-search');
+      searchQuery = input.value.trim().toLowerCase();
+      if (searchQuery.length > 0) clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+      renderCards();
+    }
+
+    function clearSearch() {
+      document.getElementById('search-input').value = '';
+      searchQuery = '';
+      document.getElementById('clear-search').classList.add('hidden');
+      renderCards();
+    }
+
+    function resetFilters() {
+      clearSearch();
+      setCategoryFilter('all');
+      setDifficultyFilter('all');
+    }
+
+    function openModal(id) {
+      const item = promptsData.find(p => p.id === id);
+      if (!item) return;
+
+      currentModalPrompt = item;
+      document.getElementById('modal-title').innerText = item.title;
+      document.getElementById('modal-badges').innerHTML = `${getCategoryBadge(item.category)} ${getDifficultyBadge(item.difficulty)}`;
+      document.getElementById('modal-prompt-text').innerText = item.promptText;
+      document.getElementById('modal-preview-text').innerText = item.previewText;
+      document.getElementById('modal-word-count').innerText = `${item.wordCount}w`;
+
+      const modal = document.getElementById('modal-container');
+      const content = document.getElementById('modal-content');
+      modal.classList.remove('opacity-0', 'pointer-events-none');
+      content.classList.remove('scale-95');
+      content.classList.add('scale-100');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('modal-container');
+      const content = document.getElementById('modal-content');
+      modal.classList.add('opacity-0', 'pointer-events-none');
+      content.classList.remove('scale-100');
+      content.classList.add('scale-95');
+    }
+
+    function copyModalPrompt() {
+      if (!currentModalPrompt) return;
+      copyToClipboard(currentModalPrompt.promptText).then((success) => {
+        if(success){
+          showToast("Copied from Inspector!", "Ready to paste into hailuo.video");
+          const btn = document.getElementById('modal-copy-btn');
+          const origHtml = btn.innerHTML;
+          btn.classList.add('bg-emerald-400');
+          btn.innerText = "Copied to Clipboard!";
+          setTimeout(() => {
+            btn.classList.remove('bg-emerald-400');
+            btn.innerHTML = origHtml;
+          }, 1500);
+        } else {
+          showManualCopyModal(currentModalPrompt.promptText);
+        }
+      }).catch(() => showManualCopyModal(currentModalPrompt.promptText));
+    }
+
+    document.getElementById('modal-container').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-container') closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    function generateRemixPrompt() {
+      const camera = document.getElementById('remix-camera').value;
+      const action = document.getElementById('remix-action').value;
+      const crew = document.getElementById('remix-crew').value;
+      const lighting = document.getElementById('remix-lighting').value;
+
+      const remixPrompt = `Create an intense, hyper-kinetic hip-hop music video sequence utilizing a ${camera}. The focus is entirely on the same woman in the exact same outfit. She is ${action}, completely commanding the scene. She is ${crew}, performing flawlessly. The environment is ${lighting}, casting dramatic, moody shadows and vibrant highlights. Formatted specifically for a 16:9 widescreen aspect ratio. Technical parameters emphasize flawless camera motion tracking, deep dynamic range, ultra-sharp rendering of complex choreographic details, and bold, high-contrast commercial color grading. Visually spectacular, fast-paced, and highly cinematic cinematography optimized for Hailuo AI video generation.`;
+
+      document.getElementById('remix-output').innerText = remixPrompt;
+      const words = remixPrompt.trim().split(/\s+/).length;
+      document.getElementById('remix-word-count').innerText = `${words} words`;
+    }
+
+    function copyRemixPrompt() {
+      const text = document.getElementById('remix-output').innerText;
+      copyToClipboard(text).then((success) => {
+        if(success){
+          showToast("Custom Prompt Copied!", "Customized MV prompt ready for Hailuo.");
+        } else {
+          showManualCopyModal(text);
+        }
+      }).catch(() => showManualCopyModal(text));
+    }
+
+    window.onload = function() {
+      renderCards();
+      generateRemixPrompt();
+    };
+  </script>
+</body>
+</html>

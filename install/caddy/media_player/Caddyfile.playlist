@@ -1,0 +1,34 @@
+:3000 {
+	bind 192.168.1.219 127.0.0.1
+	root * /s4
+
+	handle /playlist.m3u {
+		header Content-Type "audio/x-mpegurl; charset=utf-8"
+		header Cache-Control "no-cache, no-store, must-revalidate"
+		templates {
+			mime audio/x-mpegurl
+		}
+		respond "#EXTM3U
+{{ if fileExists \"/playlist.m3u\" -}}
+{{ range splitList \"\n\" (include \"/playlist.m3u\") -}}
+{{ $line := trim . -}}
+{{ if and (ne $line \"\") (not (hasPrefix \"#\" $line)) -}}
+{{ $rel := trimPrefix \"/s4/merge/\" $line -}}
+{{ $rel = trimPrefix \"./\" $rel -}}
+{{ $safe := replace \"%\" \"%25\" $rel -}}
+{{ $safe = replace \" \" \"%20\" $safe -}}
+{{ $safe = replace \"\x23\" \"%23\" $safe -}}
+{{ $safe = replace \"?\" \"%3F\" $safe -}}
+{{ $safe = replace \"[\" \"%5B\" $safe -}}
+{{ $safe = replace \"]\" \"%5D\" $safe -}}
+http://{{ $.Req.Host }}/{{ $safe }}
+{{ end -}}
+{{ end -}}
+{{ end -}}
+" 200
+	}
+
+	handle {
+		file_server
+	}
+}
