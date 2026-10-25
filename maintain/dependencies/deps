@@ -1,6 +1,37 @@
 #!/usr/bin/env bash
 # File: dependency-checker.sh
-# Version: 2.4.2 (GUP v5.3 field-run gap mitigation on the v2.4.1 golden unit)
+# Version: 2.4.3 (GUP v7 stepwise gap mitigation on the v2.4.2 golden unit)
+#
+# Changelog (v2.4.3 — first end-to-end execution of main() on a stateful fake
+# pacman/yay toolchain (tests/sim) plus a large-radius pass. Seven defects,
+# each reproduced RED on v2.4.2 before the fix; no baseline capability removed):
+#   - Fixed (G2): alternative-dependency probing read '$?' after 'if ...; fi'
+#     (always 0), so any unsatisfied 'a|b' alternative aborted the audit as
+#     "unrecognized exit code: 0". v2.0.0 structure restored.
+#   - Fixed (G3): 'printf %s X | tr | while read' dropped the LAST token at
+#     five sites (provides index, alternative probing/resolution, closure
+#     retarget). Streams are now newline-terminated.
+#   - Fixed (G4): reverse_dependants_of() split on '|' only, so the -Rdd
+#     confirmation prompt said "no installed package depends on it" for any
+#     owner with two or more dependencies.
+#   - Added (G5): recoveries that were NOT applied (unattended without -I,
+#     operator decline, protected/ignored blocker, ambiguous pair, failed
+#     removal/retry) are recorded and reported with the exact scoped
+#     remediation or the -I authorization path. A blanket --overwrite="*" is
+#     never suggested. report_recovery_outcome() is split into
+#     report_recovery_applied() (unchanged body) + report_recovery_declined().
+#   - Fixed (G6, SAFETY): 'base' and 'base-devel' are meta-packages on current
+#     Arch, not groups, so the "never -Rdd a base member" guard protected
+#     nothing and -I could issue 'pacman -Rdd bash'. The meta-packages and
+#     their Depends On entries are now protected too (group query kept).
+#   - Fixed (G7): an empty "PGP keys that blocked AUR rebuilds" header is no
+#     longer printed when the blocked packages have since healed.
+#   - Fixed (G1): orphaned function name in a comment.
+#   - Fixed (G9): the declined-recovery report expanded each overwrite glob
+#     against the live filesystem (one --overwrite per matched file); the glob
+#     is now printed verbatim.
+#   - Added (G8, tests only): tests/run_all.sh, golden transcripts, 20-check
+#     e2e suite. Not proven against a real pacman/Arch host.
 #
 # Changelog (v2.4.2 — field evidence, 2026-09-28: 'filesystem' was flagged
 # by the pacman -Qk audit on every run, could not be cleared by any
@@ -358,7 +389,7 @@ set -E
 
 # ── Global variables ──────────────────────────────────────────────────────────
 declare -r APP_NAME="dependency-checker"
-declare -r APP_VERSION="2.4.2"
+declare -r APP_VERSION="2.4.3"
 declare -r SYSTEM_LOG_DIR="/var/log/${APP_NAME}"
 declare DEFAULT_LOGFILE="${SYSTEM_LOG_DIR}/${APP_NAME}.log"
 declare LOGFILE="${DEFAULT_LOGFILE}"
@@ -426,7 +457,7 @@ declare -a BROKEN_INTEGRITY_PKGS=()
 declare -a STALE_PYTHON_ONLY_PKGS=()
 # v2.2.0: heal-outcome tracking. Populated by _heal_package_batch() and
 # rebuild_aur_packages(); verified by verify_heal_outcomes(); consumed by
-# report_heal_outcomes() in the final report so an incomplete or no-op
+# report_heal_outcome() in the final report so an incomplete or no-op
 # heal can never masquerade as a clean run.
 declare -a HEAL_ATTEMPTED_OFFICIAL_PKGS=()
 declare -a HEAL_ATTEMPTED_AUR_PKGS=()
@@ -500,6 +531,16 @@ declare -a RECOVERY_OVERWRITE_APPLIED=()
 declare -a RECOVERY_RDD_REMOVED_PKGS=()
 declare -a RECOVERY_RDD_REINSTALLED_PKGS=()
 declare -a RECOVERY_RDD_FAILED_PKGS=()
+# v2.4.3 — recoveries that were NOT applied, recorded so the final report can
+# say exactly why and what would authorize them (previously the log promised
+# "remains for the final report" while nothing was recorded). Rows:
+#   conflicts: pkg SEP space-joined derived globs SEP reason
+#   blockers:  pkg SEP reason      (SEP = RECOVERY_ROW_SEP)
+# Fields are joined with a NON-whitespace separator: a tab is IFS-whitespace,
+# so an empty middle field (no derived glob) would collapse on read.
+declare -r RECOVERY_ROW_SEP=$'\x1f'
+declare -a RECOVERY_DECLINED_CONFLICTS=()
+declare -a RECOVERY_DECLINED_BLOCKERS=()
 # v2.4.0: unresolvable-by-install classification (constraint/provider
 # mismatch on an already-installed package) — populated by
 # install_dependencies(), consulted by the closure stall guard, reported by
@@ -1167,7 +1208,7 @@ cache_package_groups() {
 				else
 					PROVIDES_INDEX["$provide_name"]="$pkg"
 				fi
-			done < <(printf '%s' "$provides" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr ' ' '\n')
+			done < <(printf '%s\n' "$provides" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr ' ' '\n')
 		fi
 	done < <(
 		printf '%s\n' "$CMD_OUTPUT" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" awk '
@@ -1310,7 +1351,7 @@ sync_system_preflight() {
 		detect_pending_upgrades
 		if [[ "${PENDING_UPGRADE_PKGS[*]:-}" == "${PREFLIGHT_RESIDUAL_PKGS[*]:-}" ]]; then
 			log_message "INFO" "Preflight sync already completed this run and the pending set is unchanged — skipping the redundant upgrade and database refresh."
-			if ((${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0)); then
+			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
 				log_message "WARN" "Pending upgrades remain held back (IgnorePkg/IgnoreGroup or repository usage policy): ${PREFLIGHT_RESIDUAL_PKGS[*]}"
 			fi
 			return 0
@@ -1338,7 +1379,7 @@ sync_system_preflight() {
 		# the operator knows the heal ran out-of-sync through a HELD
 		# transition, not an unsynced one.
 		PREFLIGHT_RESIDUAL_PKGS=()
-		if ((${#PENDING_UPGRADE_PKGS[@]} > 0)); then
+		if (( ${#PENDING_UPGRADE_PKGS[@]} > 0 )); then
 			PREFLIGHT_RESIDUAL_PKGS=("${PENDING_UPGRADE_PKGS[@]}")
 			log_message "WARN" "Preflight upgrade did not clear ${#PREFLIGHT_RESIDUAL_PKGS[@]} pending upgrade(s) — held back by IgnorePkg/IgnoreGroup or repository usage policy: ${PREFLIGHT_RESIDUAL_PKGS[*]}"
 		fi
@@ -1559,7 +1600,7 @@ scan_install_failure_segment() {
 		while IFS= read -r cpath; do
 			[[ -n "$cpath" ]] || continue
 			dir="${cpath%/*}"
-			if ((first)); then
+			if (( first )); then
 				common="$dir"
 				first=0
 				continue
@@ -1567,7 +1608,7 @@ scan_install_failure_segment() {
 			while [[ "$common" != "/" && "$dir" != "$common" && "$dir" != "$common"/* ]]; do
 				common="${common%/*}"
 			done
-			if [[ -z "$common" || ("$dir" != "$common" && "$dir" != "$common"/*) ]]; then
+			if [[ -z "$common" || ( "$dir" != "$common" && "$dir" != "$common"/* ) ]]; then
 				common=""
 				break
 			fi
@@ -1657,12 +1698,28 @@ scan_install_side_effects_segment() {
 # _heal_package_batch applies to heal candidates), cached across the run so
 # the recovery ladder spawns at most two pacman -Qgq calls for it.
 is_protected_base_pkg() {
-	local pkg="$1" grp member
+	local pkg="$1" grp member dep_line dep_tok
 	if [[ "${BASE_GROUP_PROTECTED_LOADED}" = false ]]; then
 		for grp in base base-devel; do
 			if LC_ALL=C run_command pacman -Qgq "$grp"; then
 				while IFS= read -r member; do
 					[[ -n "$member" ]] && BASE_GROUP_PROTECTED["$member"]=1
+				done <<<"$CMD_OUTPUT"
+			fi
+			# v2.4.3: on current Arch 'base' (since 2019) and 'base-devel'
+			# (since 2023) are META-PACKAGES, not groups, so the group query
+			# above is empty there and the guard protected nothing (a -I run
+			# would have issued 'pacman -Rdd bash'). Protect the meta-package
+			# itself and every entry of its 'Depends On' list as well.
+			if LC_ALL=C run_command pacman -Qi -- "$grp"; then
+				BASE_GROUP_PROTECTED["$grp"]=1
+				while IFS= read -r dep_line; do
+					[[ "$dep_line" == "Depends On"* ]] || continue
+					dep_line="${dep_line#*:}"
+					for dep_tok in $dep_line; do
+						dep_tok="${dep_tok%%[<>=]*}"
+						[[ -n "$dep_tok" && "$dep_tok" != "None" ]] && BASE_GROUP_PROTECTED["$dep_tok"]=1
+					done
 				done <<<"$CMD_OUTPUT"
 			fi
 		done
@@ -1682,7 +1739,12 @@ reverse_dependants_of() {
 	local owner dep_alt dep_name
 	local -a alt_names=()
 	for owner in "${!PACKAGE_DEPENDS[@]}"; do
-		IFS='|' read -r -a alt_names <<<"${PACKAGE_DEPENDS[$owner]}"
+		# v2.4.3: PACKAGE_DEPENDS holds the whitespace-separated 'Depends On'
+		# list from pacman -Qi (plus any '|' alternates). Splitting on '|'
+		# alone matched only owners with exactly ONE dependency, so the -Rdd
+		# confirmation prompt claimed "no installed package depends on it"
+		# for nearly every real dependant.
+		IFS=$' \t|' read -r -a alt_names <<<"${PACKAGE_DEPENDS[$owner]}"
 		for dep_alt in "${alt_names[@]:-}"; do
 			dep_name="$(dependency_package_name "$(trim_whitespace "$dep_alt")")"
 			if [[ "$dep_name" == "$target" ]]; then
@@ -1713,7 +1775,7 @@ extract_transaction_blockers() {
 		#          ':: removing X breaks dependency 'D' required by B',
 		#          ':: unable to satisfy dependency 'D' required by B'.
 		#          The installed package B is the recovery target.
-		if [[ "$line" == *" required by "* && ("$line" == *"breaks dependency"* || "$line" == *"unable to satisfy dependency"*) ]]; then
+		if [[ "$line" == *" required by "* && ( "$line" == *"breaks dependency"* || "$line" == *"unable to satisfy dependency"* ) ]]; then
 			tail="${line##* required by }"
 			name="${tail%% *}"
 			[[ "$name" =~ ^[a-z0-9@._+-]+$ ]] || continue
@@ -1755,7 +1817,7 @@ attempt_conflict_overwrite_retry() {
 	local start_line="$1"
 	shift
 	local -a cmd=("$@")
-	local r_pkg r_mode r_glob g seen
+	local r_pkg r_mode r_glob g seen decline_reason row_pkg
 	local -a conflict_pkgs=() overwrite_globs=()
 
 	while IFS=$'\t' read -r r_pkg r_mode r_glob; do
@@ -1808,6 +1870,11 @@ attempt_conflict_overwrite_retry() {
 
 	if [[ -z "$recovery_scope" ]]; then
 		log_message "INFO" "Recovery rung 1 declined or not authorized — leaving the transaction failed."
+		decline_reason="unattended"
+		[[ "$INTERACTIVE_MODE" = true ]] && decline_reason="declined"
+		for row_pkg in "${conflict_pkgs[@]}"; do
+			RECOVERY_DECLINED_CONFLICTS+=("${row_pkg}${RECOVERY_ROW_SEP}${overwrite_globs[*]:-}${RECOVERY_ROW_SEP}${decline_reason}")
+		done
 		return 1
 	fi
 
@@ -1818,6 +1885,9 @@ attempt_conflict_overwrite_retry() {
 		return 0
 	fi
 	log_message "ERROR" "--overwrite retry failed — the transaction remains failed."
+	for row_pkg in "${conflict_pkgs[@]}"; do
+		RECOVERY_DECLINED_CONFLICTS+=("${row_pkg}${RECOVERY_ROW_SEP}${overwrite_globs[*]:-}${RECOVERY_ROW_SEP}retry-failed")
+	done
 	return 1
 }
 
@@ -1885,9 +1955,11 @@ attempt_blocker_removal_chain() {
 					blockers+=("$pick")
 				else
 					log_message "INFO" "Conflict-pair disambiguation declined — leaving both packages installed."
+					RECOVERY_DECLINED_BLOCKERS+=("${pair_survivors[0]}${RECOVERY_ROW_SEP}ambiguous" "${pair_survivors[1]}${RECOVERY_ROW_SEP}ambiguous")
 				fi
 			else
 				log_message "WARN" "Ambiguous conflict pair (${pair_survivors[*]}) in an unattended run — interactive disambiguation required; leaving both packages installed."
+				RECOVERY_DECLINED_BLOCKERS+=("${pair_survivors[0]}${RECOVERY_ROW_SEP}ambiguous" "${pair_survivors[1]}${RECOVERY_ROW_SEP}ambiguous")
 			fi
 		fi
 	done < <(extract_transaction_blockers "$start_line")
@@ -1899,10 +1971,12 @@ attempt_blocker_removal_chain() {
 	for cand in "${blockers[@]}"; do
 		if is_protected_base_pkg "$cand"; then
 			protected+=("$cand")
+			RECOVERY_DECLINED_BLOCKERS+=("${cand}${RECOVERY_ROW_SEP}protected")
 			continue
 		fi
 		if is_ignored "$cand"; then
 			ignored_list+=("$cand")
+			RECOVERY_DECLINED_BLOCKERS+=("${cand}${RECOVERY_ROW_SEP}ignored")
 			continue
 		fi
 		actionable+=("$cand")
@@ -1913,7 +1987,7 @@ attempt_blocker_removal_chain() {
 
 	# Budget clamp.
 	local -i remaining=$((RECOVERY_RDD_MAX_PKGS - RECOVERY_RDD_PKGS_USED))
-	if ((${#actionable[@]} > remaining)); then
+	if (( ${#actionable[@]} > remaining )); then
 		log_message "WARN" "Recovery blocker list (${#actionable[@]}) exceeds the remaining per-run budget (${remaining}) — clamping."
 		actionable=("${actionable[@]:0:remaining}")
 	fi
@@ -1940,12 +2014,18 @@ attempt_blocker_removal_chain() {
 		fi
 		if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
 			log_message "INFO" "Operator declined the removal chain — leaving the transaction failed."
+			for cand in "${actionable[@]}"; do
+				RECOVERY_DECLINED_BLOCKERS+=("${cand}${RECOVERY_ROW_SEP}declined")
+			done
 			return 1
 		fi
 	elif [[ "$FORCE_HEAL_ALL" = true ]]; then
 		log_message "WARN" "-I/--force-heal-all authorizes the removal chain: pacman -Rdd ${actionable[*]}"
 	else
 		log_message "INFO" "Unattended run without -I — removal chain not authorized; blockers remain for the final report."
+		for cand in "${actionable[@]}"; do
+			RECOVERY_DECLINED_BLOCKERS+=("${cand}${RECOVERY_ROW_SEP}unattended")
+		done
 		return 1
 	fi
 
@@ -1953,6 +2033,9 @@ attempt_blocker_removal_chain() {
 	wait_for_pacman_lock
 	if ! run_logged_command pacman -Rdd --noconfirm "${actionable[@]}"; then
 		log_message "ERROR" "Recovery removal failed: pacman -Rdd ${actionable[*]}"
+		for cand in "${actionable[@]}"; do
+			RECOVERY_DECLINED_BLOCKERS+=("${cand}${RECOVERY_ROW_SEP}removal-failed")
+		done
 		return 1
 	fi
 	RECOVERY_RDD_REMOVED_PKGS+=("${actionable[@]}")
@@ -2502,7 +2585,7 @@ verify_heal_outcomes() {
 	# directories; a reinstall cannot fix these — only a repository or
 	# source rebuild targeting the current interpreter can.
 	HEAL_STALE_UNRESOLVED_PKGS=()
-	if ((${#HEAL_ATTEMPTED_STALE_PKGS[@]} > 0)) && command -v python3 >/dev/null 2>&1; then
+	if (( ${#HEAL_ATTEMPTED_STALE_PKGS[@]} > 0 )) && command -v python3 >/dev/null 2>&1; then
 		local verify_py verify_dir verify_list verify_pkg
 		local -a verify_stale_dirs=() stale_unresolved=()
 		local -A stale_seen=()
@@ -2511,7 +2594,7 @@ verify_heal_outcomes() {
 			for verify_dir in /usr/lib/python3.*; do
 				[[ -d "$verify_dir" && "${verify_dir##*/}" != "$verify_py" ]] && verify_stale_dirs+=("$verify_dir")
 			done
-			if ((${#verify_stale_dirs[@]} > 0)); then
+			if (( ${#verify_stale_dirs[@]} > 0 )); then
 				for verify_pkg in "${HEAL_ATTEMPTED_STALE_PKGS[@]}"; do
 					[[ -n "${stale_seen[$verify_pkg]:-}" ]] && continue
 					stale_seen["$verify_pkg"]=1
@@ -2524,7 +2607,7 @@ verify_heal_outcomes() {
 						fi
 					done
 				done
-				if ((${#stale_unresolved[@]} > 0)); then
+				if (( ${#stale_unresolved[@]} > 0 )); then
 					HEAL_STALE_UNRESOLVED_PKGS=("${stale_unresolved[@]}")
 					log_message "WARN" "Stale-python verification: ${#stale_unresolved[@]} reinstalled package(s) still install into a retired interpreter directory (repository build predates the '${verify_py}' transition): ${stale_unresolved[*]}"
 				fi
@@ -2786,17 +2869,25 @@ compute_missing_dependencies() {
 			local alt found=false
 			while IFS= read -r alt; do
 				[[ -z "$alt" ]] && continue
+				# v2.4.3: capture the probe's status INSIDE the if/else. The
+				# v2.1.1-v2.4.2 form read '$?' after 'fi', which bash defines as
+				# 0 when no branch ran — so every unsatisfied alternative was
+				# reported as 'unrecognized exit code: 0' and aborted the audit
+				# before the next alternative was tried (v2.0.0 structure).
 				if run_command pacman -T -- "$alt"; then
+					dep_status=0
+				else
+					dep_status=$?
+				fi
+				if [[ $dep_status -eq 0 ]]; then
 					found=true
 					break
-				fi
-				dep_status=$?
-				if [[ $dep_status -ne 1 && $dep_status -ne 127 ]]; then
+				elif [[ $dep_status -ne 1 && $dep_status -ne 127 ]]; then
 					# v2.1.1: restored v2.0.0 semantics for alternate probing.
 					log_message "ERROR" "pacman -T alternative check failed with unrecognized exit code: ${dep_status}."
 					return 1
 				fi
-			done < <(printf '%s' "$dep_name" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+			done < <(printf '%s\n' "$dep_name" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
 			if [[ "$found" = false ]] && ! is_ignored "$dep_name"; then
 				missing_set["$dep_name"]=1
 			fi
@@ -2856,7 +2947,7 @@ install_dependencies() {
 					aur_deps+=("$candidate")
 					break
 				fi
-			done < <(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+			done < <(printf '%s\n' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
 			if [[ -z "$resolved_dep" ]]; then
 				while IFS= read -r candidate; do
 					candidate="$(trim_whitespace "$candidate")"
@@ -2873,7 +2964,7 @@ install_dependencies() {
 							break
 						fi
 					fi
-				done < <(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+				done < <(printf '%s\n' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
 			fi
 			if [[ -z "$resolved_dep" ]]; then
 				if [[ -n "${mismatch_alt:-}" ]]; then
@@ -3163,7 +3254,7 @@ process_dependency_closure() {
 						current_targets+=("$resolved")
 						break
 					fi
-				done < <(printf '%s' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
+				done < <(printf '%s\n' "$dep" | bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" tr '|' '\n')
 			else
 				candidate="$(dependency_package_name "$dep")"
 				if resolved="$(resolve_installed_provider "$candidate")"; then
@@ -3449,7 +3540,7 @@ diagnose_persistent_breakage() {
 		path="${path% (No such file or directory)}"
 		[[ "$path" == /* ]] || continue
 		missing_paths+=("$path")
-		((${#missing_paths[@]} >= 8)) && break
+		(( ${#missing_paths[@]} >= 8 )) && break
 	done <<<"$CMD_OUTPUT"
 
 	if [[ ${#missing_paths[@]} -eq 0 ]]; then
@@ -3544,11 +3635,17 @@ report_ignored_broken_findings() {
 }
 
 report_recovery_outcome() {
-	if [[ ${#RECOVERY_OVERWRITE_APPLIED[@]} -eq 0 && ${#RECOVERY_RDD_REMOVED_PKGS[@]} -eq 0 ]]; then
-		return 0
+	if [[ ${#RECOVERY_OVERWRITE_APPLIED[@]} -gt 0 || ${#RECOVERY_RDD_REMOVED_PKGS[@]} -gt 0 ]]; then
+		report_recovery_applied
 	fi
-	printf '%sTransaction recovery actions this run:%s\n' "$BLUE" "$RESET"
+	report_recovery_declined
+	return 0
+}
+
+# The pre-v2.4.3 body of report_recovery_outcome(), unchanged: what WAS applied.
+report_recovery_applied() {
 	local row
+	printf '%sTransaction recovery actions this run:%s\n' "$BLUE" "$RESET"
 	if [[ ${#RECOVERY_OVERWRITE_APPLIED[@]} -gt 0 ]]; then
 		printf '%s--overwrite retry applied (%d):%s\n' "$OK" "${#RECOVERY_OVERWRITE_APPLIED[@]}" "$RESET"
 		for row in "${RECOVERY_OVERWRITE_APPLIED[@]}"; do
@@ -3570,6 +3667,75 @@ report_recovery_outcome() {
 	return 0
 }
 
+# v2.4.3 — what was NOT applied, why, and the exact action that would apply it.
+# Remediation is always the SCOPED form; a blanket --overwrite="*" is never
+# suggested (it stays an interactive, typed-"yes" decision inside the ladder).
+report_recovery_declined() {
+	if [[ ${#RECOVERY_DECLINED_CONFLICTS[@]} -eq 0 && ${#RECOVERY_DECLINED_BLOCKERS[@]} -eq 0 ]]; then
+		return 0
+	fi
+	local row pkg globs reason glob ow_args dependants
+	local -a glob_arr=()
+	local -A seen=()
+	local -a parents=() rdd_unattended=()
+	local any_scoped_unattended=false
+
+	printf '%sTransaction recovery NOT applied (needs authorization or a manual decision):%s\n' "$WARN" "$RESET"
+	if [[ ${#RECOVERY_DECLINED_CONFLICTS[@]} -gt 0 ]]; then
+		printf '%sFile conflicts — no overwrite was applied:%s\n' "$WARN" "$RESET"
+		for row in "${RECOVERY_DECLINED_CONFLICTS[@]}"; do
+			IFS="$RECOVERY_ROW_SEP" read -r pkg globs reason <<<"$row"
+			[[ -n "${seen[c:$pkg]:-}" ]] && continue
+			seen["c:$pkg"]=1
+			if [[ -n "$globs" ]]; then
+				ow_args=""
+				# read -a never pathname-expands; an unquoted `for glob in $globs`
+				# would expand each '*' glob against the live filesystem.
+				read -r -a glob_arr <<<"$globs"
+				for glob in "${glob_arr[@]}"; do ow_args+=" --overwrite '${glob}'"; done
+				printf '  %s [%s]: %ssudo pacman -S --noconfirm%s %s%s\n' "$pkg" "$reason" "$CAT" "$ow_args" "$pkg" "$RESET"
+				[[ "$reason" == "unattended" ]] && any_scoped_unattended=true
+			else
+				printf '  %s [%s]: no safe overwrite scope could be derived — the conflicting paths are recorded in %s; run interactively (-i) to review them%s\n' "$pkg" "$reason" "$LOGFILE" "$RESET"
+			fi
+		done
+		if [[ "$any_scoped_unattended" = true ]]; then
+			printf '  %sRe-run with -I to authorize the scoped retries above automatically.%s\n' "$CAT" "$RESET"
+		fi
+	fi
+	if [[ ${#RECOVERY_DECLINED_BLOCKERS[@]} -gt 0 ]]; then
+		printf '%sInstalled packages blocking a transaction — pacman -Rdd was NOT run:%s\n' "$WARN" "$RESET"
+		for row in "${RECOVERY_DECLINED_BLOCKERS[@]}"; do
+			IFS="$RECOVERY_ROW_SEP" read -r pkg reason <<<"$row"
+			[[ -n "${seen[b:$pkg]:-}" ]] && continue
+			seen["b:$pkg"]=1
+			case "$reason" in
+				protected) printf '  %s [protected] — base/base-devel member, never removed automatically%s\n' "$pkg" "$RESET" ;;
+				ignored) printf '  %s [ignored] — on the ignore list, never removed automatically%s\n' "$pkg" "$RESET" ;;
+				ambiguous) printf '  %s [ambiguous] — one side of a conflict pair; interactive disambiguation (-i) required%s\n' "$pkg" "$RESET" ;;
+				removal-failed) printf '  %s [removal-failed] — pacman -Rdd failed; see %s%s\n' "$pkg" "$LOGFILE" "$RESET" ;;
+				*)
+					parents=()
+					while IFS= read -r dependants; do
+						[[ -n "$dependants" ]] && parents+=("$dependants")
+					done < <(reverse_dependants_of "$pkg")
+					if [[ ${#parents[@]} -gt 0 ]]; then
+						printf '  %s [%s] — required by: %s%s\n' "$pkg" "$reason" "${parents[*]}" "$RESET"
+					else
+						printf '  %s [%s] — no installed package depends on it%s\n' "$pkg" "$reason" "$RESET"
+					fi
+					[[ "$reason" == "unattended" ]] && rdd_unattended+=("$pkg")
+					;;
+			esac
+		done
+		if [[ ${#rdd_unattended[@]} -gt 0 ]]; then
+			printf '  %sRe-run with -I to authorize the chain: pacman -Rdd %s -> retry the transaction -> reinstall %s%s\n' "$CAT" "${rdd_unattended[*]}" "${rdd_unattended[*]}" "$RESET"
+		fi
+	fi
+	printf "\n"
+	return 0
+}
+
 report_heal_outcome() {
 	# v2.3.1: outstanding-debt reporting runs first. Heals that never ran
 	# (unattended ceiling refusal, operator decline, sync-preflight refusal,
@@ -3580,8 +3746,8 @@ report_heal_outcome() {
 	# evidence: 241 ceiling-refused packages, 2026-09-26). Ordering: debt is
 	# reported before attempted-heal outcomes so a partial run reads "what
 	# was never tried" ahead of "what was tried and how it ended".
-	local -i unhealed_total=$((${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]}))
-	if ((unhealed_total > 0)); then
+	local -i unhealed_total=$(( ${#HEAL_UNHEALED_OFFICIAL_PKGS[@]} + ${#HEAL_UNHEALED_AUR_PKGS[@]} + ${#HEAL_UNHEALED_UNKNOWN_PKGS[@]} ))
+	if (( unhealed_total > 0 )); then
 		printf '%sIntegrity heal OUTSTANDING — %d package(s) with missing files were never healed:%s\n' "$WARN" "$unhealed_total" "$RESET"
 		local -A reason_seen=()
 		local reason
@@ -3646,13 +3812,20 @@ report_heal_outcome() {
 	# too — it is independent of missing-file breakage.
 	report_stale_python_outcome
 	if [[ ${#HEAL_AUR_PGP_KEYS[@]} -gt 0 && ${#aur_broken[@]} -gt 0 ]]; then
-		printf '%sPGP keys that blocked AUR rebuilds (import manually as the build user):%s\n' "$WARN" "$RESET"
+		# v2.4.3: build the rows first and print the header only when at
+		# least one exists — keys recorded for packages that have since
+		# healed used to leave a bare "import manually" header.
+		local -a pgp_rows=()
 		local -i k
 		for ((k = 0; k < ${#HEAL_AUR_PGP_KEYS[@]}; k++)); do
 			if [[ " ${aur_broken[*]} " == *" ${HEAL_AUR_PGP_FAILURE_PKGS[$k]} "* ]]; then
-				printf '  gpg --recv-keys %s  (required by: %s)\n' "${HEAL_AUR_PGP_KEYS[$k]}" "${HEAL_AUR_PGP_FAILURE_PKGS[$k]}"
+				pgp_rows+=("$(printf '  gpg --recv-keys %s  (required by: %s)' "${HEAL_AUR_PGP_KEYS[$k]}" "${HEAL_AUR_PGP_FAILURE_PKGS[$k]}")")
 			fi
 		done
+		if [[ ${#pgp_rows[@]} -gt 0 ]]; then
+			printf '%sPGP keys that blocked AUR rebuilds (import manually as the build user):%s\n' "$WARN" "$RESET"
+			printf '%s\n' "${pgp_rows[@]}"
+		fi
 	fi
 	if [[ ${#official_broken[@]} -gt 0 ]]; then
 		printf '%sRemediation (official):%s\n' "$GREEN" "$RESET"
@@ -3717,10 +3890,10 @@ report_heal_outcome() {
 		done
 		for pkg in "${aur_broken[@]}"; do
 			case "${aur_mode_map[$pkg]:-unknown}" in
-			conflict) aur_conflict+=("$pkg") ;;
-			pgp) aur_pgp+=("$pkg") ;;
-			build) aur_build+=("$pkg") ;;
-			*) aur_unknown+=("$pkg") ;;
+				conflict) aur_conflict+=("$pkg") ;;
+				pgp) aur_pgp+=("$pkg") ;;
+				build) aur_build+=("$pkg") ;;
+				*) aur_unknown+=("$pkg") ;;
 			esac
 		done
 		if [[ ${#aur_pgp[@]} -gt 0 ]]; then
@@ -3838,7 +4011,7 @@ parse_arguments() {
 				print_version
 				exit 0
 				;;
-			-- | *)
+			--|*)
 				[[ "$pre_arg" == "--" ]] && long_scan=false
 				forward_args+=("$pre_arg")
 				;;
@@ -4113,7 +4286,7 @@ main() {
 			printf '%s All dependencies satisfied (see integrity-heal status below).%s\n' "$OK" "$RESET"
 		fi
 		if ((PENDING_UPGRADES_COUNT > 0)); then
-			if ((${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0)); then
+			if (( ${#PREFLIGHT_RESIDUAL_PKGS[@]} > 0 )); then
 				# v2.3.2: the preflight already ran 'pacman -Syu' this run and
 				# could not clear these — they are held back (IgnorePkg/
 				# IgnoreGroup or repository usage policy). Advising another
