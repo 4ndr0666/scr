@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# v8.2.2
+# v8.4.0
 set -euo pipefail
 IFS=$'\n\t'
 #                        === FFX === #
@@ -9,6 +9,20 @@ IFS=$'\n\t'
 # Descripttion: Ffmpeg cli wrapper
 # Install path: /opt/ffx
 # Approved feature manifest: A(v5) + B(beta/v6) + selective C(v7) superset.
+# v8.4.0 (WO-01): merge output now always has the moov atom FIRST (+faststart on
+# the fast concat, the final concat, auto_clean and a post-condition remux via
+# ensure_faststart) and audio is never silently lost: every segment is
+# normalised to one audio layout (FFX_AUDIO_RATE, default 48000 Hz stereo aac;
+# silent track synthesised for audio-less inputs and images) before concat,
+# and finalize_merge_output asserts an audio stream is present unless -an.
+# Also fixed: probe parsing under IFS=$'\n\t', codec-name vs codec-family
+# compare, check_dts_for_file N/A false positive, name-reservation hang and
+# leaked 0-byte outputs, die() used before definition, paths.conf loader for
+# FFX_SCRATCH_DIR/FFX_CACHE_DIR, -o <dir>, --audio-rate, faststart on clean/
+# cleanmeta/fix/looperang/composite, debug_log wiring. Removed (WO-01 "zero
+# dead code", zero call sites): detect_max_res, check_container_first
+# (its only caller, the per-input faststart/webm guard, is superseded by
+# merge_encode_input, whose temp segments are always .mp4).
 # v8.1.0: fixes the single-static-timeout-kills-the-whole-batch defect in
 # run_ffmpeg, adds checkpointed/resumable batch concat for merge and
 # composite, and makes die() able to scrub a partially-written destination file.
@@ -90,31 +104,6 @@ IFS=$'\n\t'
 # flag that actually governs the call that failed.
 
 # =============================================================================
-# XDG & SESSION DIRECTORIES
-# =============================================================================
-: "${XDG_CONFIG_HOME:=$HOME/.config}"
-: "${XDG_DATA_HOME:=$HOME/.local/share}"
-#: "${XDG_CACHE_HOME:=$HOME/.cache}"
-#: "${XDG_RUNTIME_DIR:=${TMPDIR:-/sto2/tmp}}"
-
-FFX_CONFIG_DIR="$XDG_CONFIG_HOME/ffx"
-FFX_LOG_DIR="$XDG_DATA_HOME/ffx"
-FFX_CACHE_DIR="/sto2/tmp/ffx"
-FFX_DEFAULTS="$FFX_CONFIG_DIR/defaults"
-FFX_RUN_DIR="$(mktemp -d -p "/sto2/tmp/" "ffx.XXXXXXXX")"
-LOG_FILE="$FFX_LOG_DIR/ffx.log"
-
-# FFX_CHECKPOINT_DIR persists ACROSS runs (unlike FFX_RUN_DIR, which is wiped on
-# exit). This is what makes large batch jobs resumable: a failed run leaves its
-# per-input checkpoint manifest here, and the next invocation against the same
-# inputs+settings skips everything already completed. Cache-dir scoped so
-# `ffx cache-clean` is also the resumability reset switch — one command, one
-# mental model, no separate "resume state" the user has to learn about.
-FFX_CHECKPOINT_DIR="$FFX_CACHE_DIR/checkpoints"
-
-mkdir -p "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR"
-
-# =============================================================================
 # COLORS & LOGGING
 # =============================================================================
 if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
@@ -155,9 +144,137 @@ die() {
 }
 
 # =============================================================================
+# XDG & SESSION DIRECTORIES
+#
+# CHANGED unit (Golden-Unit §3 — superset, not a behavior break on any
+# invocation that didn't already hit the bug this closes).
+#
+# OLD DIGEST: FFX_CACHE_DIR and the base directory for FFX_RUN_DIR were each
+# either a fixed XDG-derived path or, in one field-edited revision, both
+# hardcoded onto a path whose last component was literally "tmp". Neither
+# form gave an operator any way to point ffx at a different filesystem
+# without editing this file, and the hardcoded form put persistent
+# checkpoint state (read back by the SAME still-running job, potentially
+# long after it was written) on a path pattern that external reapers
+# (systemd-tmpfiles, tmpwatch, an ad-hoc cron `find -mtime +N -delete`) are
+# conventionally pointed at — producing exactly the reported symptom: a
+# batch completes, but a handful of "file does not exist" errors surface
+# for checkpoint artifacts a sweep caught mid-run. Root-caused from the
+# architecture; could not be forced to reproduce live (no external reaper
+# exists in this sandbox to trigger against).
+#
+# NEW DIGEST: both directories are independently configurable via ordinary
+# environment variables (FFX_SCRATCH_DIR, FFX_CACHE_DIR), read with bash's
+# own `:=` default-assignment so an operator's existing exported value is
+# never overridden, only defaulted. Defaults remain the standard,
+# universally-correct XDG locations — this script ships with no assumption
+# about any specific disk layout (e.g. a secondary mount); an operator who
+# wants scratch/cache state on a different filesystem (more free space, a
+# faster disk, one NOT subject to a tmp-reaping policy) sets these two
+# variables — in the environment, or once in $XDG_CONFIG_HOME/ffx/paths.conf
+# (see _load_paths_conf below) — rather than
+# editing this file. Both directory creations now check their own exit
+# status instead of assuming mkdir/mktemp succeeded, so a misconfigured or
+# unwritable override fails immediately with a clear message, before any
+# ffmpeg work starts, instead of surfacing as a confusing mid-batch I/O
+# error.
+#
+# Architectural Gate 4.6 (EAFP over LBYL): mkdir/mktemp are still attempted
+# directly and only checked for failure after the fact — no pre-existence
+# probing was added.
+# =============================================================================
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${XDG_RUNTIME_DIR:=${TMPDIR:-/tmp}}"
+
+FFX_CONFIG_DIR="$XDG_CONFIG_HOME/ffx"
+FFX_LOG_DIR="$XDG_DATA_HOME/ffx"
+FFX_DEFAULTS="$FFX_CONFIG_DIR/defaults"
+
+# _load_paths_conf(): NEW unit. Persistent counterpart to exporting the four
+# environment-level knobs below, so an operator whose scratch/cache must live
+# on a different filesystem sets that ONCE instead of in every shell. The
+# file is PARSED, never sourced (a config file must not be able to execute
+# code), only these four keys are honored, and an already-exported
+# environment value always wins over the file. One KEY=VALUE per line;
+# surrounding quotes and a leading ~ are expanded. Missing file = no-op.
+#   FFX_SCRATCH_DIR=/sto2/tmp
+#   FFX_CACHE_DIR=/sto2/ffx-cache
+FFX_PATHS_CONF="$FFX_CONFIG_DIR/paths.conf"
+_load_paths_conf() {
+    local key value
+    while IFS='=' read -r key value || [[ -n "$key" ]]; do
+        value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+        value="${value/#\~/$HOME}"
+        case "$key" in
+            FFX_SCRATCH_DIR|FFX_CACHE_DIR|FFX_SKIP_SPACE_CHECK|FFX_SPACE_SAFETY_FACTOR)
+                if [[ -n "$value" && -z "${!key:-}" ]]; then printf -v "$key" '%s' "$value"; fi ;;
+        esac
+    done 2>/dev/null < "$FFX_PATHS_CONF" || true
+}
+_load_paths_conf
+
+# FFX_CACHE_DIR: persistent across runs AND across a single run's own
+# lifetime (checkpoint_store_artifact()/checkpoint_get()). Override to move
+# it off the default disk entirely, e.g.:  export FFX_CACHE_DIR=/sto2/ffx-cache
+: "${FFX_CACHE_DIR:=$XDG_CACHE_HOME/ffx}"
+
+# FFX_SCRATCH_DIR: the base directory FFX_RUN_DIR's mktemp creates its
+# ephemeral per-invocation directory under. Wiped on every exit by
+# cleanup_all(), so it is always safe to point at a disk that's also
+# subject to an external tmp-reaping policy. Override for the same reasons
+# as FFX_CACHE_DIR, independently, e.g.:  export FFX_SCRATCH_DIR=/sto2/tmp
+: "${FFX_SCRATCH_DIR:=$XDG_RUNTIME_DIR}"
+
+mkdir -p -- "$FFX_CACHE_DIR" 2>/dev/null \
+    || die "Cannot create FFX_CACHE_DIR '$FFX_CACHE_DIR'. Set FFX_CACHE_DIR to a writable path."
+mkdir -p -- "$FFX_SCRATCH_DIR" 2>/dev/null \
+    || die "Cannot create FFX_SCRATCH_DIR '$FFX_SCRATCH_DIR'. Set FFX_SCRATCH_DIR to a writable path."
+FFX_RUN_DIR="$(mktemp -d -p "$FFX_SCRATCH_DIR" "ffx.XXXXXXXX")" \
+    || die "Cannot create a run directory under FFX_SCRATCH_DIR '$FFX_SCRATCH_DIR'. Set FFX_SCRATCH_DIR to a writable path with free space."
+LOG_FILE="$FFX_LOG_DIR/ffx.log"
+
+# FFX_CHECKPOINT_DIR persists ACROSS runs (unlike FFX_RUN_DIR, which is wiped on
+# exit). This is what makes large batch jobs resumable: a failed run leaves its
+# per-input checkpoint manifest here, and the next invocation against the same
+# inputs+settings skips everything already completed. Cache-dir scoped so
+# `ffx cache-clean` is also the resumability reset switch — one command, one
+# mental model, no separate "resume state" the user has to learn about.
+FFX_CHECKPOINT_DIR="$FFX_CACHE_DIR/checkpoints"
+
+mkdir -p "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR"
+
+# =============================================================================
 # CLEANUP & TRAP
 # =============================================================================
-cleanup_all() { [[ -d "${FFX_RUN_DIR:-}" ]] && rm -rf -- "$FFX_RUN_DIR"; }
+# register_cleanup MODE PATH: records a path OUTSIDE $FFX_RUN_DIR that
+# cleanup_all() must reclaim on every exit (normal, die(), INT/TERM/HUP).
+# File-backed (not an in-memory array) because get_default_filename() and
+# ensure_unique_output() are invoked inside $(...) subshells, where an array
+# append would be lost. MODE:
+#   empty  — remove PATH only if it is still zero bytes (a reserved-but-never-
+#            written output name; a completed output is never touched)
+#   always — remove PATH unconditionally (a sibling temp file that was never
+#            renamed into place)
+register_cleanup() {
+    [[ -d "${FFX_RUN_DIR:-}" ]] || return 0
+    printf '%s\t%s\n' "$1" "$2" >> "$FFX_RUN_DIR/cleanup.list" 2>/dev/null || true
+}
+
+cleanup_all() {
+    local mode path
+    if [[ -f "${FFX_RUN_DIR:-}/cleanup.list" ]]; then
+        while IFS=$'\t' read -r mode path || [[ -n "$mode" ]]; do
+            case "$mode" in
+                always) rm -f -- "$path" 2>/dev/null || true ;;
+                empty)  if [[ -e "$path" && ! -s "$path" ]]; then rm -f -- "$path" 2>/dev/null || true; fi ;;
+            esac
+        done < "$FFX_RUN_DIR/cleanup.list"
+    fi
+    if [[ -d "${FFX_RUN_DIR:-}" ]]; then rm -rf -- "$FFX_RUN_DIR"; fi
+    return 0
+}
 trap 'cleanup_all' EXIT INT TERM HUP
 
 mktemp_ffx() { mktemp -p "$FFX_RUN_DIR" --suffix="${1:-.tmp}"; }
@@ -172,6 +289,8 @@ readonly IMAGE_DURATION=5
 # =============================================================================
 # DEFAULTS & CONFIGURATION
 # =============================================================================
+is_nonneg_int() { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
+
 default_config() {
     ADVANCED_MODE=false
     VERBOSE_MODE=false
@@ -208,6 +327,15 @@ default_config() {
     # pre-validate every condition that could have caused it.
     FFX_RETRY="${FFX_RETRY:-1}"
 
+    # FFX_AUDIO_RATE: the single sample rate every merged segment's audio is
+    # normalised to. The concat demuxer (-f concat -c copy) cannot reconcile
+    # segments whose AAC sample rate/channel count differ: it applies the first
+    # segment's parameters to all of them, so later segments play at the wrong
+    # speed/pitch or are dropped (verified live: 44.1k + 48k segments produced
+    # 14.2s of audio against 13.0s of video). Override only if the whole
+    # library is known to share another rate.
+    FFX_AUDIO_RATE="${FFX_AUDIO_RATE:-48000}"
+
     ADV_CONTAINER="mp4"
     ADV_RES="${CANVAS_W}x${CANVAS_H}"
     ADV_FPS="60"
@@ -221,6 +349,8 @@ default_config() {
 }
 default_config
 REMAINING_ARGS=()
+is_nonneg_int "$FFX_AUDIO_RATE" && (( FFX_AUDIO_RATE > 0 )) \
+    || die "FFX_AUDIO_RATE must be a positive integer sample rate (got '${FFX_AUDIO_RATE}')."
 
 # =============================================================================
 # PERSISTENT CONFIG
@@ -254,7 +384,6 @@ load_defaults() {
 # DEPENDENCY MANAGEMENT
 # =============================================================================
 command_exists() { command -v "$1" >/dev/null 2>&1; }
-is_nonneg_int()  { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
 
 _try_install() {
     local pkg="$1"
@@ -304,6 +433,40 @@ bytes_to_human() {
     }'
 }
 
+# _reserve_unique DIR BASE EXT FIRST: NEW shared core of get_default_filename()
+# and ensure_unique_output(). Atomically reserves the first free name in the
+# sequence FIRST, DIR/BASE_1.EXT, DIR/BASE_2.EXT, ... and prints it.
+#
+# Closes two defects in the loops it replaces. (1) NON-TERMINATION: when the
+# create itself was refused (missing directory, read-only filesystem, no
+# permission, disk full) the old `while ! ( set -C; : > "$candidate" )` loop
+# treated every refusal as "name taken" and counted upward forever, hanging
+# the run on e.g. `-o /no/such/dir/out.mp4`. A failed reservation is a NAME
+# collision only if something already exists at that path; otherwise no
+# later name can succeed and the call dies with the real cause. (2) LEAK: a
+# reserved-but-never-written name (run interrupted, ffmpeg failed before
+# writing) was left behind as a 0-byte file; it is now registered with
+# cleanup_all() in `empty` mode, which only ever removes it while it is still
+# zero bytes. The output directory is created on demand (EAFP: mkdir -p).
+_reserve_unique() {
+    local dir="$1" base="$2" ext="$3" candidate="$4" n=1
+    local suffix=""
+    [[ -n "$ext" ]] && suffix=".${ext}"
+    mkdir -p -- "$dir" 2>/dev/null || die "Cannot create output directory '$dir'."
+    # Atomic reservation: noclobber (set -C) is scoped to the subshell only,
+    # so it never leaks into unrelated redirects (e.g. run_ffmpeg's log
+    # truncation). Two overlapping ffx invocations cannot both win one name.
+    while ! ( set -C; : > "$candidate" ) 2>/dev/null; do
+        if [[ ! -e "$candidate" && ! -L "$candidate" ]]; then
+            die "Cannot create output file '$candidate' (directory not writable, read-only, or filesystem full)."
+        fi
+        candidate="${dir}/${base}_${n}${suffix}"
+        (( n++ )) || true
+    done
+    register_cleanup empty "$candidate"
+    printf '%s' "$candidate"
+}
+
 get_default_filename() {
     local base="${1:-out}" suffix="${2:-tmp}" ext="${3:-mp4}"
     local candidate="${OUTPUT_DIR}/${base}_${suffix}.${ext}" n=1
@@ -334,11 +497,7 @@ get_default_filename() {
     # means the name belongs to this call from that moment on: any
     # concurrent caller's scan will see it already exists and move on to
     # the next candidate instead of colliding with it.
-    while ! ( set -C; : > "$candidate" ) 2>/dev/null; do
-        candidate="${OUTPUT_DIR}/${base}_${suffix}_${n}.${ext}"
-        (( n++ )) || true
-    done
-    printf '%s' "$candidate"
+    _reserve_unique "$OUTPUT_DIR" "${base}_${suffix}" "$ext" "$candidate"
 }
 
 # ensure_unique_output(): the explicit-path counterpart to
@@ -384,15 +543,7 @@ ensure_unique_output() {
         return 0
     fi
 
-    while ! ( set -C; : > "$candidate" ) 2>/dev/null; do
-        if [[ -n "$ext" ]]; then
-            candidate="${dir}/${base}_${n}.${ext}"
-        else
-            candidate="${dir}/${base}_${n}"
-        fi
-        (( n++ )) || true
-    done
-    printf '%s' "$candidate"
+    _reserve_unique "$dir" "$base" "$ext" "$candidate"
 }
 
 fzf_pick() {
@@ -409,21 +560,6 @@ apply_bulk_glob() {
         -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \
         -o -iname '*.avi' -o -iname '*.webm' -o -iname '*.gif' \
         -o -iname '*.ts'  -o -iname '*.m4v' \) -print
-}
-
-detect_max_res() {
-    local max_w=0 max_h=0
-    for _f; do
-        local w=0 h=0
-        read -r w h < <(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=width,height \
-            -of default=nw=1:nk=1 "$_f" 2>/dev/null | xargs) || true
-        [[ "$w" =~ ^[0-9]+$ ]] || w=0
-        [[ "$h" =~ ^[0-9]+$ ]] || h=0
-        (( w > max_w )) && max_w=$w
-        (( h > max_h )) && max_h=$h
-    done
-    printf '%d %d\n' "$max_w" "$max_h"
 }
 
 shuffle_files() {
@@ -536,6 +672,7 @@ run_ffmpeg() {
     fi
 
     local effective_timeout="${override_timeout:-$FFX_TIMEOUT}"
+    debug_log "ffmpeg $(printf '%q ' "$@")"
     local -a base=("ffmpeg" "-nostdin" "-hide_banner")
     local ec=0 use_to=false attempt=0 max_attempts=$(( FFX_RETRY + 1 ))
     command_exists timeout && [[ "${effective_timeout:-0}" -gt 0 ]] && use_to=true
@@ -585,12 +722,150 @@ run_ffmpeg() {
     done
     return 1
 }
+
+# =============================================================================
+# DISK-SPACE PREFLIGHT (NEW unit — orchestrator class)
+#
+# THE FLAW this closes: free space on FFX_RUN_DIR / FFX_CACHE_DIR / the
+# output directory was never checked anywhere. The first symptom of running
+# out was always a generic ffmpeg write error, discovered only after
+# run_ffmpeg had already burned real wall-clock time encoding however many
+# files DID fit — and run_ffmpeg's retry loop would retry the failing write
+# up to FFX_RETRY times, since nothing distinguished "transient failure" from
+# "this filesystem is full and retrying changes nothing." That is exactly
+# the kind of wasted time this script exists to prevent elsewhere (timeouts,
+# checkpointed resume); a space check closes the same hole for disk.
+#
+# THE FIX: one pass, before any ffmpeg invocation for a given job, that (1)
+# sums the input files' sizes, (2) applies a conservative per-operation
+# multiplier for how many copies of that data this specific operation will
+# write, and (3) resolves every directory actually written to onto its
+# backing filesystem and fails closed — via die(), before a single frame is
+# encoded — if that filesystem doesn't have the estimated room.
+#
+# FFX_RUN_DIR, FFX_CACHE_DIR and a job's output directory routinely resolve
+# to the SAME filesystem (same disk, or the operator pointed more than one
+# at the same override). Requirements are accumulated per resolved
+# mountpoint, not per path, so a shared disk is checked against the SUM of
+# what all three need on it, not each in isolation as if it had the whole
+# disk to itself — checking them independently would under-detect a shared
+# disk running out.
+#
+# This is a deliberate, bounded exception to Gate 4.6 (EAFP over LBYL): a
+# multi-minute-to-multi-hour batch encode is expensive enough to redo that
+# failing fast on an answerable precondition is worth more here than it
+# costs elsewhere (a single file write, where EAFP is strictly better). It
+# is one check, run once per job, not a recursive/per-file existence scan.
+# =============================================================================
+FFX_SPACE_SAFETY_FACTOR="${FFX_SPACE_SAFETY_FACTOR:-1.3}"  # 30% headroom over the raw estimate
+FFX_SKIP_SPACE_CHECK="${FFX_SKIP_SPACE_CHECK:-false}"       # escape hatch for filesystems df can't size (e.g. some network mounts)
+
+human_size() {
+    if command_exists numfmt; then
+        numfmt --to=iec --suffix=B -- "$1" 2>/dev/null || printf '%sB' "$1"
+    else
+        printf '%sB' "$1"
+    fi
+}
+
+# fs_mountpoint(): resolves PATH to its backing filesystem's mount target.
+# PATH need not exist yet — df resolves through to the nearest existing
+# ancestor directory on the same filesystem a not-yet-created path would
+# land on.
+fs_mountpoint() {
+    local p="$1"
+    while [[ ! -e "$p" && "$p" != "/" ]]; do p="$(dirname -- "$p")"; done
+    df --output=target -- "$p" 2>/dev/null | tail -n1
+}
+
+fs_avail_bytes() {
+    df -Pk -- "$1" 2>/dev/null | awk 'NR==2 { print $4 * 1024 }'
+}
+
+sum_input_bytes() {
+    local total=0 f sz
+    for f in "$@"; do
+        sz="$(stat -c%s -- "$f" 2>/dev/null)" || continue
+        [[ "$sz" =~ ^[0-9]+$ ]] && total=$(( total + sz ))
+    done
+    printf '%d' "$total"
+}
+
+declare -A _FFX_SPACE_REQUIRED=()
+
+# register_space_requirement PATH BYTES: accumulates BYTES against the
+# mountpoint PATH resolves to. Call once per (directory, estimated-bytes)
+# pair for a job; call verify_space_requirements() once after all of a
+# job's requirements are registered.
+register_space_requirement() {
+    local path="$1" bytes="$2"
+    [[ "$FFX_SKIP_SPACE_CHECK" == true ]] && return 0
+    (( bytes > 0 )) || return 0
+    local mnt; mnt="$(fs_mountpoint "$path")"
+    if [[ -z "$mnt" ]]; then
+        warn "Could not resolve the filesystem backing '$path'; skipping its space check."
+        return 0
+    fi
+    _FFX_SPACE_REQUIRED["$mnt"]=$(( ${_FFX_SPACE_REQUIRED[$mnt]:-0} + bytes ))
+}
+
+# verify_space_requirements(): checks every mountpoint registered since the
+# last call against its current free space, dies with a specific, actionable
+# message on the first shortfall, and always resets the registry — call
+# exactly once per job, after all of that job's register_space_requirement
+# calls, before the first ffmpeg invocation for it.
+verify_space_requirements() {
+    if [[ "$FFX_SKIP_SPACE_CHECK" == true ]]; then
+        _FFX_SPACE_REQUIRED=()
+        return 0
+    fi
+    local mnt required avail
+    for mnt in "${!_FFX_SPACE_REQUIRED[@]}"; do
+        required="${_FFX_SPACE_REQUIRED[$mnt]}"
+        avail="$(fs_avail_bytes "$mnt")"
+        if [[ ! "$avail" =~ ^[0-9]+$ ]]; then
+            warn "Could not determine free space on '$mnt'; proceeding without a space guarantee for it."
+            continue
+        fi
+        if (( avail < required )); then
+            _FFX_SPACE_REQUIRED=()
+            die "Not enough free space on '$mnt': need an estimated $(human_size "$required"), only $(human_size "$avail") free. Free up space on '$mnt', point FFX_CACHE_DIR/FFX_SCRATCH_DIR/-o at a filesystem with more room, or set FFX_SKIP_SPACE_CHECK=true to bypass this check (not recommended)."
+        fi
+        verbose_log "space check: '$mnt' has $(human_size "$avail") free against an estimated $(human_size "$required") requirement."
+    done
+    _FFX_SPACE_REQUIRED=()
+}
+
+# preflight_space(OUT_DIR, MULTIPLIER, FILE...): the one call site every
+# batch command needs. MULTIPLIER is how many full copies of the summed
+# input bytes THIS operation will write in total across RUN_DIR, CACHE_DIR
+# and OUT_DIR combined (e.g. 1 for a stream-copy-only fast path that writes
+# just the final output; 3 for a normalize path that writes one tmp per
+# input into FFX_RUN_DIR, a checkpointed copy of each into FFX_CACHE_DIR,
+# and the final concat into OUT_DIR). The total is split evenly across the
+# three directories' own mountpoints rather than assumed to land entirely on
+# one, which both overstates isolated small disks and understates a job that
+# genuinely touches all three.
+preflight_space() {
+    local out_dir="$1" multiplier="$2"; shift 2
+    [[ "$FFX_SKIP_SPACE_CHECK" == true ]] && return 0
+    local total; total="$(sum_input_bytes "$@")"
+    (( total > 0 )) || return 0
+    local per_dir
+    per_dir="$(awk -v t="$total" -v m="$multiplier" -v f="$FFX_SPACE_SAFETY_FACTOR" \
+        'BEGIN{printf "%d", (t*m*f)/3}')"
+    register_space_requirement "$FFX_RUN_DIR"   "$per_dir"
+    register_space_requirement "$FFX_CACHE_DIR" "$per_dir"
+    register_space_requirement "$out_dir"       "$per_dir"
+    verify_space_requirements
+}
+
 # =============================================================================
 # PROBE HELPERS
 # =============================================================================
 probe_wh() {
     local _w=0 _h=0
-    read -r _w _h < <(
+    IFS=' ' read -r _w _h < <(
         ffprobe -v error -select_streams v:0 \
             -show_entries stream=width,height \
             -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
@@ -603,11 +878,6 @@ probe_wh() {
 probe_duration() {
     ffprobe -v error -show_entries format=duration \
         -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null || echo "60"
-}
-
-check_container_first() {
-    ffprobe -v error -show_entries format=format_name \
-        -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null | awk -F, '{print $1}'
 }
 
 get_fps() {
@@ -638,6 +908,71 @@ is_interlaced() {
 
 get_deinterlace_filter() { is_interlaced "$1" && echo "yadif=deint=interlaced" || echo "null"; }
 
+# probe_video_params FILE: prints "codec width height pix_fmt avg_frame_rate
+# profile" on one line, fields in that FIXED order. Parsed from ffprobe's
+# key=value output BY KEY, never by position: ffprobe emits fields in its own
+# internal order (codec, width, height, pix_fmt, frame rate), not the order
+# they were requested in, so the previous positional parse silently shifted
+# every field. Spaces inside the profile name ("High 4:4:4 Predictive") become
+# underscores so the line stays whitespace-separable.
+probe_video_params() {
+    local k v codec="" w="" h="" pix="" fps="" prof=""
+    while IFS='=' read -r k v; do
+        case "$k" in
+            codec_name)     codec="$v" ;;
+            width)          w="$v" ;;
+            height)         h="$v" ;;
+            pix_fmt)        pix="$v" ;;
+            avg_frame_rate) fps="$v" ;;
+            profile)        prof="${v// /_}" ;;
+        esac
+    done < <(ffprobe -v error -select_streams v:0 \
+        -show_entries stream=codec_name,profile,width,height,pix_fmt,avg_frame_rate \
+        -of default=nw=1 "$1" 2>/dev/null)
+    printf '%s %s %s %s %s %s\n' "${codec:-unknown}" "${w:-0}" "${h:-0}" \
+        "${pix:-unknown}" "${fps:-0/1}" "${prof:-unknown}"
+}
+
+# probe_audio_params FILE: prints "codec sample_rate channels" for the first
+# audio stream, or "none 0 0" when the file has no audio. Same by-key parse.
+probe_audio_params() {
+    local k v codec="" rate="" ch=""
+    while IFS='=' read -r k v; do
+        case "$k" in
+            codec_name)  codec="$v" ;;
+            sample_rate) rate="$v" ;;
+            channels)    ch="$v" ;;
+        esac
+    done < <(ffprobe -v error -select_streams a:0 \
+        -show_entries stream=codec_name,sample_rate,channels \
+        -of default=nw=1 "$1" 2>/dev/null)
+    printf '%s %s %s\n' "${codec:-none}" "${rate:-0}" "${ch:-0}"
+}
+
+# codec_family ENCODER_OR_CODEC: maps an ffmpeg ENCODER name (libx264,
+# hevc_nvenc, ...) to the CODEC name ffprobe reports (h264, hevc, ...). The
+# normalise path compared ffprobe's codec_name ("h264") against ADV_CODEC
+# ("libx264"), which can never be equal, so no input was ever judged
+# conformant.
+codec_family() {
+    case "$1" in
+        libx264|h264|h264_*)                     printf 'h264' ;;
+        libx265|hevc|hevc_*)                     printf 'hevc' ;;
+        libvpx-vp9|vp9|vp9_*)                    printf 'vp9'  ;;
+        libvpx|vp8)                              printf 'vp8'  ;;
+        libaom-av1|libsvtav1|librav1e|av1|av1_*) printf 'av1'  ;;
+        *)                                       printf '%s' "${1#lib}" ;;
+    esac
+}
+
+# fps_equals A B: true when two frame rates ("30000/1001", "25/1", "29.97")
+# agree within 0.01 fps.
+fps_equals() {
+    awk -v a="$1" -v b="$2" '
+        function v(s,  p) { split(s, p, "/"); return (p[2] + 0 > 0) ? p[1] / p[2] : p[1] + 0 }
+        BEGIN { d = v(a) - v(b); exit !(d < 0.01 && d > -0.01) }'
+}
+
 # =============================================================================
 # MOOV ATOM
 #
@@ -658,6 +993,79 @@ check_moov_atom() {
         -of default=noprint_wrappers=1:nokey=1 "$1" >/dev/null 2>&1
 }
 
+# faststart_flags_for OUTPUT: prints "-movflags" "+faststart" (one per line)
+# when OUTPUT's extension is an ISO-BMFF container, nothing otherwise. The
+# flag is a MUXER option of the mov/mp4 family only: passing it to a
+# matroska/webm/avi muxer makes ffmpeg abort with "Unrecognized option".
+# Faststart relocates the moov atom (the index) in front of mdat, which is
+# what lets a browser start playback and seek before the whole file has
+# downloaded (see 4ndr0666 encoding guide, "Index at the end of the file").
+faststart_flags_for() {
+    case "${1##*.}" in
+        mp4|MP4|m4v|M4V|mov|MOV|m4a|M4A|3gp|3g2|f4v) printf '%s\n' "-movflags" "+faststart" ;;
+    esac
+}
+
+# mp4_moov_first FILE: true iff FILE's top-level atom walk reaches 'moov'
+# before 'mdat'. Reads only the 16-byte header of each top-level atom
+# (ftyp, free/skip/wide, then moov or mdat), so cost is constant regardless of
+# file size. Handles the 64-bit "largesize" form (size field == 1).
+mp4_moov_first() {
+    local f="$1" off=0 i hdr size
+    for (( i=0; i<64; i++ )); do
+        hdr="$(dd if="$f" bs=1 skip="$off" count=16 2>/dev/null | od -An -v -tx1 | tr -d ' \n')" || true
+        (( ${#hdr} >= 16 )) || return 1
+        case "${hdr:8:8}" in
+            6d6f6f76) return 0 ;;   # 'moov'
+            6d646174) return 1 ;;   # 'mdat' first -> index is at the end
+        esac
+        size=$(( 16#${hdr:0:8} ))
+        if (( size == 1 )); then
+            (( ${#hdr} >= 32 )) || return 1
+            size=$(( 16#${hdr:16:16} ))
+        fi
+        (( size >= 8 )) || return 1
+        off=$(( off + size ))
+    done
+    return 1
+}
+
+# sibling_tmp FILE: prints a hidden temp path in FILE's OWN directory that
+# keeps FILE's extension (so ffmpeg selects the right muxer) and registers it
+# with cleanup_all(). Same-directory means the final `mv -f` is an atomic
+# rename on one filesystem: a failed or interrupted replace can never leave a
+# truncated file under the real name. (The previous auto_clean built the temp
+# in $FFX_RUN_DIR, so `mv` across filesystems was a non-atomic copy-then-unlink
+# that, on ENOSPC, overwrote the good output with a partial copy.)
+sibling_tmp() {
+    local t; t="$(dirname -- "$1")/.ffx.$$.$(basename -- "$1")"
+    register_cleanup always "$t"
+    printf '%s' "$t"
+}
+
+# ensure_faststart FILE: post-condition + repair. For ISO-BMFF outputs,
+# guarantees the moov atom is in front of mdat, remuxing (-c copy, every
+# video/audio stream kept) only when it is not. Idempotent; a file already
+# in faststart layout is never rewritten. Non-ISO-BMFF containers and
+# --dry-run are no-ops. Returns 1 if the layout could not be established.
+ensure_faststart() {
+    local file="$1"
+    [[ "$DRY_RUN" == true ]] && return 0
+    [[ -n "$(faststart_flags_for "$file")" ]] || return 0
+    [[ -s "$file" ]] || return 1
+    mp4_moov_first "$file" && return 0
+    verbose_log "faststart: moov is not first in '$(basename "$file")'; remuxing."
+    local tmpf; tmpf="$(sibling_tmp "$file")"
+    if run_ffmpeg --ffx-output "$tmpf" -y -i "$file" -map 0:v? -map 0:a? -c copy \
+            -movflags +faststart "$tmpf" \
+        && mp4_moov_first "$tmpf" \
+        && mv -f -- "$tmpf" "$file"; then
+        return 0
+    fi
+    rm -f -- "$tmpf" 2>/dev/null || true
+    return 1
+}
+
 moov_fallback() {
     local in="$1" out="$2"
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
@@ -675,11 +1083,17 @@ moov_fallback() {
 # =============================================================================
 # DTS CORRECTION
 # =============================================================================
+# check_dts_for_file FILE: true when video DTS never decreases. Only NUMERIC
+# values are compared: ffprobe reports the final (decoder-flush) frame's
+# pkt_dts_time as the literal "N/A", which the previous awk coerced to 0 and
+# therefore flagged as a decrease on virtually every file — sending healthy
+# inputs through a needless DTS remux and making merge's stream-copy fast
+# path unreachable.
 check_dts_for_file() {
     ffprobe -v error -select_streams v \
         -show_entries frame=pkt_dts_time \
         -of csv=p=0 "$1" 2>/dev/null |
-    awk 'NR==1{p=$1;next} $1!="" && $1+0 < p+0 {exit 1} $1!=""{p=$1}'
+    awk '$1 ~ /^-?[0-9]/ { v = $1 + 0; if (seen && v < p) exit 1; p = v; seen = 1 }'
 }
 
 fix_dts() {
@@ -714,15 +1128,26 @@ ensure_dts_correct() {
 # =============================================================================
 # METADATA
 # =============================================================================
+# auto_clean FILE: strips container metadata in place (stream copy).
+# CHANGED unit. Superset of the old contract (metadata stripped, original kept
+# on any failure) with three defects closed: (1) the remux dropped
+# -movflags +faststart, so a faststart merge came out of auto_clean with its
+# moov atom back at the END of the file; (2) the temp was always named .mp4
+# whatever FILE's container was, so a .mkv/.mov output became an MP4 body
+# under a foreign extension; (3) the temp lived in $FFX_RUN_DIR, making the
+# final mv a non-atomic cross-filesystem copy (see sibling_tmp). Streams are
+# mapped explicitly (video + audio) so audio is never silently dropped.
 auto_clean() {
     local file="$1"
     [[ -z "$file" || ! -f "$file" ]] && return 0
-    local tmpf; tmpf="$(mktemp_ffx .mp4)"
-    if run_ffmpeg --ffx-output "$tmpf" -y -i "$file" -map_metadata -1 -c copy "$tmpf"; then
-        mv "$tmpf" "$file"
+    local -a fs; mapfile -t fs < <(faststart_flags_for "$file")
+    local tmpf; tmpf="$(sibling_tmp "$file")"
+    if run_ffmpeg --ffx-output "$tmpf" -y -i "$file" -map 0:v? -map 0:a? \
+            -map_metadata -1 -c copy "${fs[@]}" "$tmpf" \
+        && mv -f -- "$tmpf" "$file"; then
         verbose_log "Metadata stripped: '$(basename "$file")'"
     else
-        rm -f "$tmpf" 2>/dev/null || true
+        rm -f -- "$tmpf" 2>/dev/null || true
         verbose_log "Metadata strip skipped — kept original '$(basename "$file")'."
     fi
 }
@@ -756,7 +1181,7 @@ checkpoint_key() {
     abs="$(absolute_path "$input")"
     sz="$(stat -c '%s' "$input" 2>/dev/null || stat -f '%z' "$input" 2>/dev/null || echo 0)"
     mt="$(stat -c '%Y' "$input" 2>/dev/null || stat -f '%m' "$input" 2>/dev/null || echo 0)"
-    local sig="${abs}|${sz}|${mt}|${ADV_CODEC}|${ADV_PIX_FMT}|${geometry_override}|${ADV_FPS}|${ADV_CRF}|${ADV_QUALITY_MODE}|${REMOVE_AUDIO}"
+    local sig="${abs}|${sz}|${mt}|${ADV_CODEC}|${ADV_PIX_FMT}|${geometry_override}|${ADV_FPS}|${ADV_CRF}|${ADV_QUALITY_MODE}|${REMOVE_AUDIO}|norm2|${FFX_AUDIO_RATE}"
     sha256sum <<< "$sig" | awk '{print $1}'
 }
 
@@ -843,7 +1268,7 @@ checkpoint_clear() {
 # =============================================================================
 # SELF-AUDIT ENGINE
 # =============================================================================
-FFX_VERSION="${FFX_VERSION:-8.2.2}"
+FFX_VERSION="${FFX_VERSION:-8.4.0}"
 FFX_SEGMENT_LINES="${FFX_SEGMENT_LINES:-500}"
 FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
 
@@ -1011,7 +1436,6 @@ build_composite() {
     verbose_log "build_composite: ${n} input(s) -> $(basename "$output")"
 
     local cw1=$CANVAS_W          ch1=$CANVAS_H
-    local cw2=$(( CANVAS_W / 2 )) ch2=$CANVAS_H
     local cw3t=$CANVAS_W          ch3t=$(( CANVAS_H / 2 ))
     local cw3b=$(( CANVAS_W / 2 )) ch3b=$(( CANVAS_H / 2 ))
     local cw4=$(( CANVAS_W / 2 )) ch4=$(( CANVAS_H / 2 ))
@@ -1066,11 +1490,11 @@ composite_pair_lossless() {
     local file1="$1" file2="$2"
     local out; out="$(mktemp_ffx .mp4)"
 
-    local w1=0 h1=0 w2=0 h2=0
-    read -r w1 h1 < <(ffprobe -v error -select_streams v:0 \
+    local h1=0 h2=0
+    read -r _ h1 < <(ffprobe -v error -select_streams v:0 \
         -show_entries stream=width,height \
         -of default=nw=1:nk=1 "$file1" 2>/dev/null | xargs) || true
-    read -r w2 h2 < <(ffprobe -v error -select_streams v:0 \
+    read -r _ h2 < <(ffprobe -v error -select_streams v:0 \
         -show_entries stream=width,height \
         -of default=nw=1:nk=1 "$file2" 2>/dev/null | xargs) || true
 
@@ -1195,8 +1619,8 @@ _eval_layout() {
     local -n _ev_whs="$3"
     local -a slots; IFS=' ' read -r -a slots <<< "${L_SLOTS[$cidx]}"
 
-    local f_awk_in="" fi
-    for fi in "${!_ev_whs[@]}"; do f_awk_in+="${fi} ${_ev_whs[$fi]}"$'\n'; done
+    local f_awk_in="" fidx
+    for fidx in "${!_ev_whs[@]}"; do f_awk_in+="${fidx} ${_ev_whs[$fidx]}"$'\n'; done
     local f_order; f_order=$(printf '%s' "$f_awk_in" | awk "$_AWK_SORT_BY_AR") || true
 
     local s_awk_in="" si sw sh
@@ -1214,7 +1638,7 @@ _eval_layout() {
         fi="${fi_arr[$k]}"
         si="${si_arr[$k]}"
         assignment[$si]=$fi
-        read -r fw fh <<< "${_ev_whs[$fi]}"
+        IFS=' ' read -r fw fh <<< "${_ev_whs[$fi]}"
         IFS=':' read -r sw sh <<< "${slots[$si]}"
         local sc; sc=$(ar_score "$fw" "$fh" "$sw" "$sh")
         (( total_score += sc )) || true
@@ -1312,7 +1736,7 @@ composite_batch() {
     local batch_num="$1"; shift
     local -a files=("$@")
     local n="${#files[@]}"
-    local part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$batch_num").mp4"
+    local part_file; part_file="$FFX_RUN_DIR/part_$(printf '%04d' "$batch_num").mp4"
 
     select_layout "${files[@]}"
     local cidx="$_BEST_LAYOUT_IDX"
@@ -1353,11 +1777,9 @@ composite_batch() {
         enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
     fi
 
-    local a_map="0:a?"
     local -a audio_args=()
     if [[ "$REMOVE_AUDIO" == false ]]; then
-        a_map="[aout]"
-        audio_args=("-map" "[aout]" "-c:a" "aac" "-b:a" "192k" "-ac" "2")
+        audio_args=("-map" "[aout]" "-c:a" "aac" "-b:a" "192k" "-ar" "$FFX_AUDIO_RATE" "-ac" "2")
     fi
 
     local fps="${SPECIFIC_FPS:-$ADV_FPS}"
@@ -1443,6 +1865,12 @@ cmd_composite() {
     else
         output="$(ensure_unique_output "$output")"
     fi
+
+    # Composite always re-encodes (layout filters, never a stream-copy fast
+    # path): batch part files land in FFX_RUN_DIR, each checkpointed into
+    # FFX_CACHE_DIR, before the final output — same ~3x multiplier as merge's
+    # normalize path. See preflight_space()'s definition for the reasoning.
+    preflight_space "$(dirname -- "$output")" 3 "${corrected[@]}"
 
     # Job identity covers the full corrected input list (post-DTS-fix paths),
     # the layout mode, and the final output target — so changing any of those
@@ -1572,6 +2000,88 @@ cmd_composite() {
 # still does; every failure path is now resumable rather than total-loss, and
 # the previously-unscaled timeout that caused outright failure on large
 # batches no longer applies.
+
+# merge_encode_input FILE OUT W H FPS HAS_AUDIO AUDIO_OK VIDEO_COPY
+# NEW unit (extracted from cmd_merge's inline normalise branches so the
+# primary pass and the moov re-try run the IDENTICAL command; the old
+# moov_fallback re-encoded at the input's own geometry/fps with `-c:a copy`,
+# producing a segment that could not be concatenated with its siblings).
+# Produces one segment in the common target format:
+#   video  W x H @ FPS, ADV_PIX_FMT (or stream-copied when VIDEO_COPY=true)
+#   audio  first track only, AAC, FFX_AUDIO_RATE Hz, stereo — copied untouched
+#          when AUDIO_OK=true, re-encoded when false, a silent track of the
+#          same format synthesised when the input has none. Audio is NEVER
+#          dropped unless -an/--remove-audio was given for this invocation.
+# Only the first audio track is kept so every segment has the same stream
+# layout, which the concat demuxer requires.
+merge_encode_input() {
+    local f="$1" tmp="$2" w="$3" h="$4" tf="$5" has_aud="$6" aud_ok="$7" vcopy="$8"
+    local -a vargs=() extra_inputs=() acmd=() enc=()
+    if [[ "$vcopy" == true ]]; then
+        vargs=("-map" "0:v:0" "-c:v" "copy")
+    else
+        local scale_vf="scale=${w}:${h}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${w}:${h}:-1:-1:color=black,setsar=1"
+        local deint; deint="$(get_deinterlace_filter "$f")"
+        local full_vf="$scale_vf"
+        if [[ "$deint" != "null" ]]; then full_vf="${deint},${scale_vf}"; fi
+        if [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]]; then
+            enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "ultrafast")
+        else
+            enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "ultrafast")
+        fi
+        vargs=("-vf" "$full_vf" "-r" "$tf" "${enc[@]}" "-pix_fmt" "$ADV_PIX_FMT" "-map" "0:v:0")
+    fi
+    if [[ "$REMOVE_AUDIO" == true ]]; then
+        acmd=("-an")
+    elif [[ "$has_aud" != true ]]; then
+        # anullsrc is a second INPUT: it must be declared before any output
+        # option (-vf/-map/...) or ffmpeg applies those options to it.
+        extra_inputs=("-f" "lavfi" "-i" "anullsrc=r=${FFX_AUDIO_RATE}:cl=stereo")
+        acmd=("-map" "1:a:0" "-c:a" "aac" "-ar" "$FFX_AUDIO_RATE" "-ac" "2" "-shortest")
+    elif [[ "$aud_ok" == true ]]; then
+        acmd=("-map" "0:a:0" "-c:a" "copy")
+    else
+        acmd=("-map" "0:a:0" "-c:a" "aac" "-b:a" "128k" "-ar" "$FFX_AUDIO_RATE" "-ac" "2")
+    fi
+    run_ffmpeg --ffx-output "$tmp" -y -fflags +genpts -i "$f" "${extra_inputs[@]}" \
+        "${vargs[@]}" "${acmd[@]}" -movflags +faststart "$tmp"
+}
+
+# merge_image_input FILE OUT W H FPS: NEW unit (extracted, see above). A still
+# image becomes an IMAGE_DURATION-second segment in the common target format,
+# with a silent AAC track at FFX_AUDIO_RATE so it concatenates with real
+# audio segments (or no track at all under -an).
+merge_image_input() {
+    local f="$1" tmp="$2" w="$3" h="$4" tf="$5"
+    local scale_vf="scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:-1:-1:color=black,setsar=1,fps=${tf},format=${ADV_PIX_FMT}"
+    local -a ain=() aout=("-an")
+    if [[ "$REMOVE_AUDIO" != true ]]; then
+        ain=("-f" "lavfi" "-i" "anullsrc=r=${FFX_AUDIO_RATE}:cl=stereo")
+        aout=("-c:a" "aac" "-ar" "$FFX_AUDIO_RATE" "-ac" "2" "-shortest")
+    fi
+    run_ffmpeg --ffx-output "$tmp" -y -loop 1 -t "$IMAGE_DURATION" -i "$f" \
+        "${ain[@]}" -vf "$scale_vf" \
+        -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset ultrafast \
+        "${aout[@]}" -movflags +faststart "$tmp"
+}
+
+# finalize_merge_output FILE: the single exit gate for every merge result.
+# Strips metadata (auto_clean, faststart-preserving), then asserts the two
+# properties the encoding guide makes non-negotiable and the merge path must
+# never violate: the moov atom is in front of mdat, and the audio survived.
+# Dies (removing the bad output) rather than hand the operator a file that
+# only LOOKS merged.
+finalize_merge_output() {
+    local out="$1"
+    auto_clean "$out"
+    [[ "$DRY_RUN" == true ]] && return 0
+    ensure_faststart "$out" \
+        || die "merge: could not place the moov atom in front of mdat -> $out" "$out"
+    if [[ "$REMOVE_AUDIO" != true ]]; then
+        has_audio "$out" || die "merge: merged output has no audio stream -> $out" "$out"
+    fi
+}
+
 # =============================================================================
 cmd_merge() {
     advanced_prompt
@@ -1616,35 +2126,38 @@ cmd_merge() {
     for f in "${files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
 
     # ── PROBE PHASE ──────────────────────────────────────────────────────────
-    local -a v_codec=() v_res=() v_fps=() v_pix=() a_codec=() has_audio_arr=()
+    # Every field is parsed BY KEY (probe_video_params/probe_audio_params) and
+    # split with an explicit IFS=' ': the global IFS=$'\n\t' hardening makes a
+    # bare `read -r a b c` hand the WHOLE line to the first variable, which
+    # previously left v_res "0x0" for every input (so the target geometry was
+    # always the 1920x1080 fallback) and made every comparison below a
+    # comparison of unparsed strings.
+    local -a v_codec=() v_res=() v_fps=() v_pix=() v_prof=()
+    local -a a_codec=() a_rate=() a_ch=() has_audio_arr=()
     local -a dts_ok=() moov_ok=()
 
     for f in "${files[@]}"; do
         if is_image "$f"; then
-            v_codec+=("image"); v_res+=("0x0"); v_fps+=("0/1"); v_pix+=("unknown")
-            a_codec+=(""); has_audio_arr+=(false)
+            v_codec+=("image"); v_res+=("0x0"); v_fps+=("0/1"); v_pix+=("unknown"); v_prof+=("unknown")
+            a_codec+=("none"); a_rate+=("0"); a_ch+=("0"); has_audio_arr+=(false)
             dts_ok+=(true); moov_ok+=(true)
             continue
         fi
-        local vc="" vres="" vfps="" vpix=""
-        read -r vc vres vfps vpix < <(
-            ffprobe -v error -select_streams v:0 \
-                -show_entries stream=codec_name,width,height,avg_frame_rate,pix_fmt \
-                -of default=nw=1:nk=1 "$f" 2>/dev/null | xargs
-        ) || true
+        local vc="" vw="" vh="" vpix="" vfps="" vprof=""
+        IFS=' ' read -r vc vw vh vpix vfps vprof < <(probe_video_params "$f") || true
         v_codec+=("${vc:-unknown}")
-        v_res+=("${vres:-0x0}")
+        v_res+=("${vw:-0}x${vh:-0}")
         v_fps+=("${vfps:-0/1}")
         v_pix+=("${vpix:-unknown}")
+        v_prof+=("${vprof:-unknown}")
 
-        local ac=""
-        ac="$(ffprobe -v error -select_streams a:0 \
-            -show_entries stream=codec_name -of default=nw=1:nk=1 "$f" 2>/dev/null || true)"
-        a_codec+=("${ac:-}")
-        has_audio "$f" && has_audio_arr+=(true) || has_audio_arr+=(false)
+        local ac="" ar="" ach=""
+        IFS=' ' read -r ac ar ach < <(probe_audio_params "$f") || true
+        a_codec+=("${ac:-none}"); a_rate+=("${ar:-0}"); a_ch+=("${ach:-0}")
+        if has_audio "$f"; then has_audio_arr+=(true); else has_audio_arr+=(false); fi
 
-        check_dts_for_file "$f" && dts_ok+=(true) || dts_ok+=(false)
-        check_moov_atom "$f"    && moov_ok+=(true) || moov_ok+=(false)
+        if check_dts_for_file "$f"; then dts_ok+=(true); else dts_ok+=(false); fi
+        if check_moov_atom "$f";    then moov_ok+=(true); else moov_ok+=(false); fi
     done
 
     # ── UNIFORMITY CHECK ─────────────────────────────────────────────────────
@@ -1655,8 +2168,7 @@ cmd_merge() {
 
     local max_w=0 max_h=0 i
     for (( i=0; i<${#files[@]}; i++ )); do
-        local ww hh
-        read -r ww hh <<< "${v_res[$i]//x/ }" 2>/dev/null || true
+        local ww="${v_res[$i]%x*}" hh="${v_res[$i]#*x}"
         [[ "$ww" =~ ^[0-9]+$ ]] || ww=0
         [[ "$hh" =~ ^[0-9]+$ ]] || hh=0
         (( ww > max_w )) && max_w=$ww
@@ -1667,17 +2179,39 @@ cmd_merge() {
     (( max_w % 2 != 0 )) && (( max_w++ )) || true
     (( max_h % 2 != 0 )) && (( max_h++ )) || true
 
+    # Fast path = stream-copy concat, valid ONLY when every input agrees on
+    # everything the concat demuxer cannot reconcile: video codec, geometry,
+    # frame rate, pixel format and profile AND audio codec, sample rate and
+    # channel count (a mismatch in the audio parameters silently drops or
+    # mis-times every later segment's audio).
+    local target_family; target_family="$(codec_family "$ADV_CODEC")"
     local uniform=true
     for (( i=0; i<${#files[@]}; i++ )); do
-        [[ "${v_codec[$i]}" != "image" ]] || { uniform=false; break; }
-        [[ "${has_audio_arr[$i]}" == "true" ]] || { uniform=false; break; }
-        [[ "${v_codec[$i]}" != "$target_vc" ]] && { uniform=false; break; }
-        [[ "${v_res[$i]}"   != "$target_res" ]] && { uniform=false; break; }
-        [[ "${v_fps[$i]}"   != "$target_fps" ]] && { uniform=false; break; }
-        [[ "${v_pix[$i]}"   != "$target_pix" ]] && { uniform=false; break; }
-        [[ "${dts_ok[$i]}"  != "true" ]]         && { uniform=false; break; }
-        [[ "${moov_ok[$i]}" != "true" ]]         && { uniform=false; break; }
+        [[ "${v_codec[$i]}" != "image" ]]          || { uniform=false; break; }
+        [[ "${has_audio_arr[$i]}" == "true" ]]     || { uniform=false; break; }
+        [[ "${v_codec[$i]}" == "$target_vc" ]]     || { uniform=false; break; }
+        [[ "${v_res[$i]}"   == "$target_res" ]]    || { uniform=false; break; }
+        [[ "${v_fps[$i]}"   == "$target_fps" ]]    || { uniform=false; break; }
+        [[ "${v_pix[$i]}"   == "$target_pix" ]]    || { uniform=false; break; }
+        [[ "${v_prof[$i]}"  == "${v_prof[0]}" ]]   || { uniform=false; break; }
+        [[ "${a_codec[$i]}" == "${a_codec[0]}" ]]  || { uniform=false; break; }
+        [[ "${a_rate[$i]}"  == "${a_rate[0]}" ]]   || { uniform=false; break; }
+        [[ "${a_ch[$i]}"    == "${a_ch[0]}" ]]     || { uniform=false; break; }
+        [[ "${dts_ok[$i]}"  == "true" ]]           || { uniform=false; break; }
+        [[ "${moov_ok[$i]}" == "true" ]]           || { uniform=false; break; }
     done
+
+    # ── SPACE PREFLIGHT ──────────────────────────────────────────────────────
+    # Fast path writes only the final concat output (~1x input bytes, stream
+    # copy). Normalize path additionally writes one tmp per input into
+    # FFX_RUN_DIR and a checkpointed copy of each into FFX_CACHE_DIR before
+    # the final concat (~3x). Checked here, after uniform/fast-vs-normalize
+    # is known and before either branch's first ffmpeg call.
+    if [[ "$uniform" == true && "$REMOVE_AUDIO" != true ]]; then
+        preflight_space "$(dirname -- "$output")" 1 "${files[@]}"
+    else
+        preflight_space "$(dirname -- "$output")" 3 "${files[@]}"
+    fi
 
     # ── FAST PATH ─────────────────────────────────────────────────────────────
     # Timeout now scaled by input count: a 50-file stream-copy concat is cheap
@@ -1692,11 +2226,12 @@ cmd_merge() {
             printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
         done
         local fast_to; fast_to="$(compute_batch_timeout "${#files[@]}")"
+        local -a out_fs; mapfile -t out_fs < <(faststart_flags_for "$output")
         run_ffmpeg --ffx-timeout "$fast_to" --ffx-output "$output" \
             -y -avoid_negative_ts make_zero \
-            -f concat -safe 0 -i "$concat_list" -c copy "$output" \
+            -f concat -safe 0 -i "$concat_list" -c copy "${out_fs[@]}" "$output" \
             || die "merge: fast-path concat failed -> $output" "$output"
-        auto_clean "$output"
+        finalize_merge_output "$output"
         say "Merged [fast]: $output"
         return
     fi
@@ -1743,86 +2278,52 @@ cmd_merge() {
 
         local tmp; tmp="$(mktemp_ffx .mp4)"
         local step_ok=true
+        local aud_ok=false vcopy=false
 
         if is_image "$f"; then
             verbose_log "merge: normalizing image $f"
-            local scale_vf="scale=${max_w}:${max_h}:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1,fps=${tf},format=${ADV_PIX_FMT}"
-            run_ffmpeg --ffx-output "$tmp" \
-                -y -loop 1 -t "$IMAGE_DURATION" -i "$f" \
-                -f lavfi -i anullsrc \
-                -vf "$scale_vf" \
-                -c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset ultrafast \
-                -c:a aac -shortest "$tmp" \
-                || step_ok=false
+            merge_image_input "$f" "$tmp" "$max_w" "$max_h" "$tf" || step_ok=false
         else
-            local needs_encode=false
-            [[ "${dts_ok[$i]}"  != "true" ]]       && needs_encode=true
-            [[ "${moov_ok[$i]}" != "true" ]]       && needs_encode=true
-            [[ "${v_codec[$i]}" != "$ADV_CODEC" ]] && needs_encode=true
-            [[ "${v_pix[$i]}"   != "$ADV_PIX_FMT" ]] && needs_encode=true
-
-            local ww hh
-            read -r ww hh <<< "${v_res[$i]//x/ }" 2>/dev/null || true
-            [[ "$ww" =~ ^[0-9]+$ ]] || ww=0
-            [[ "$hh" =~ ^[0-9]+$ ]] || hh=0
-            (( ww != max_w || hh != max_h )) && needs_encode=true
-
-            [[ "${has_audio_arr[$i]}" == "false" ]] && needs_encode=true
-
-            if [[ "$REMOVE_AUDIO" != true ]]; then
-                [[ "${a_codec[$i]}" != "aac" ]] && needs_encode=true
+            # Audio is already in the common format only when it is AAC at the
+            # target rate in stereo; anything else is re-encoded to it.
+            if [[ "${has_audio_arr[$i]}" == "true" && "${a_codec[$i]}" == "aac" \
+                  && "${a_rate[$i]}" == "$FFX_AUDIO_RATE" && "${a_ch[$i]}" == "2" ]]; then
+                aud_ok=true
             fi
-
-            if [[ "$needs_encode" == false ]]; then
-                verbose_log "merge: input $(basename "$f") conformant — stream copy."
-                run_ffmpeg --ffx-output "$tmp" -y -i "$f" -c copy -movflags +faststart "$tmp" \
-                    || step_ok=false
-            else
-                verbose_log "merge: input $(basename "$f") non-conformant — re-encoding."
-                local scale_vf="scale=${max_w}:${max_h}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${max_w}:${max_h}:-1:-1:color=black,setsar=1"
-                local deint; deint="$(get_deinterlace_filter "$f")"
-                local full_vf
-                [[ "$deint" != "null" ]] && full_vf="${deint},${scale_vf}" || full_vf="$scale_vf"
-
-                local -a enc
-                [[ "${ADV_QUALITY_MODE:-crf}" == "qp0" ]] \
-                    && enc=("-c:v" "$ADV_CODEC" "-qp" "0" "-preset" "ultrafast") \
-                    || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "ultrafast")
-
-                local -a extra_inputs=() acmd=()
-                if [[ "${has_audio_arr[$i]}" == "false" ]]; then
-                    # anullsrc is a second INPUT — it must be declared before
-                    # any output options (-vf/-map/etc.), not interleaved
-                    # after them, or ffmpeg misparses -vf as an option for
-                    # anullsrc and aborts with "cannot be applied to input".
-                    # (Regression carried over verbatim from v8.0.0 into
-                    # v8.1.0's rewrite; fixed here, verified live.)
-                    extra_inputs=("-f" "lavfi" "-i" "anullsrc")
-                    acmd=("-map" "1:a:0" "-c:a" "aac" "-shortest")
-                elif [[ "$REMOVE_AUDIO" == true ]]; then
-                    acmd=("-an")
-                else
-                    acmd=("-map" "0:a?" "-c:a" "aac" "-b:a" "128k" "-ac" "2")
-                fi
-
-                local -a movflags=("-movflags" "+faststart")
-                [[ "$(check_container_first "$f")" == "webm" ]] && movflags=()
-
-                run_ffmpeg --ffx-output "$tmp" -y -fflags +genpts -i "$f" "${extra_inputs[@]}" \
-                    -vf "$full_vf" -r "$tf" \
-                    "${enc[@]}" \
-                    -pix_fmt "$ADV_PIX_FMT" \
-                    -map "0:v:0" \
-                    "${acmd[@]}" \
-                    "${movflags[@]}" \
-                    "$tmp" \
-                    || step_ok=false
+            # Video is stream-copied only when it already IS the target:
+            # same codec family/pixel format/geometry/fps, clean DTS and moov,
+            # and (for H.264) the profile libx264 emits for yuv420p, so the
+            # copied SPS agrees with its re-encoded siblings in the same file.
+            if [[ "${dts_ok[$i]}" == "true" && "${moov_ok[$i]}" == "true" \
+                  && "${v_codec[$i]}" == "$target_family" \
+                  && "${v_pix[$i]}" == "$ADV_PIX_FMT" \
+                  && "${v_res[$i]}" == "${max_w}x${max_h}" ]] \
+               && fps_equals "${v_fps[$i]}" "$tf" \
+               && { [[ "$target_family" != "h264" ]] || [[ "${v_prof[$i]}" == "High" ]]; }; then
+                vcopy=true
             fi
+            verbose_log "merge: input $(basename "$f") video=$([[ "$vcopy" == true ]] && echo copy || echo re-encode) audio=$([[ "$aud_ok" == true ]] && echo copy || echo normalise)"
+            merge_encode_input "$f" "$tmp" "$max_w" "$max_h" "$tf" \
+                "${has_audio_arr[$i]}" "$aud_ok" "$vcopy" || step_ok=false
         fi
 
-        if [[ "$step_ok" == true ]]; then
-            check_moov_atom "$tmp" || moov_fallback "$f" "$tmp"
+        # A segment whose index cannot be read is re-made through the FULL
+        # normalise encode (same geometry/fps/audio as its siblings), never
+        # through a generic re-encode that would break concatenation.
+        if [[ "$step_ok" == true ]] && ! check_moov_atom "$tmp"; then
+            if is_image "$f"; then
+                merge_image_input "$f" "$tmp" "$max_w" "$max_h" "$tf" || step_ok=false
+            else
+                merge_encode_input "$f" "$tmp" "$max_w" "$max_h" "$tf" \
+                    "${has_audio_arr[$i]}" false false || step_ok=false
+            fi
             check_moov_atom "$tmp" || step_ok=false
+        fi
+
+        # Post-condition: a normalised segment must carry audio (unless -an),
+        # or the final concat would silently lose that segment's sound.
+        if [[ "$step_ok" == true && "$REMOVE_AUDIO" != true && "$DRY_RUN" != true ]]; then
+            has_audio "$tmp" || { warn "merge: normalised segment for '$(basename "$f")' has no audio."; step_ok=false; }
         fi
 
         if [[ "$step_ok" != true ]]; then
@@ -1846,12 +2347,13 @@ cmd_merge() {
         printf "file '%s'\n" "$(absolute_path "$f")" >> "$concat_list"
     done
     local final_to; final_to="$(compute_batch_timeout "${#preprocessed[@]}")"
+    local -a final_fs; mapfile -t final_fs < <(faststart_flags_for "$output")
     run_ffmpeg --ffx-timeout "$final_to" --ffx-output "$output" \
         -y -avoid_negative_ts make_zero \
-        -f concat -safe 0 -i "$concat_list" -c copy "$output" \
+        -f concat -safe 0 -i "$concat_list" -c copy "${final_fs[@]}" "$output" \
         || die "merge: concat failed -> $output" "$output"
 
-    auto_clean "$output"
+    finalize_merge_output "$output"
 
     if (( ${#failed_files[@]} > 0 )); then
         # Deliberately skip checkpoint_clear here: the job is NOT fully done,
@@ -2050,7 +2552,7 @@ cmd_looperang() {
     if [[ "$REMOVE_AUDIO" == true ]]; then
         loop_aopts=("-an")
     else
-        loop_aopts=("-c:a" "aac")
+        loop_aopts=("-c:a" "aac" "-ar" "$FFX_AUDIO_RATE" "-ac" "2")
     fi
 
     run_ffmpeg --ffx-output "$tmp_rev" -y -i "$fixed" \
@@ -2077,8 +2579,9 @@ cmd_looperang() {
         concat_aopts=("-c:a" "copy")
     fi
 
+    local -a loop_fs; mapfile -t loop_fs < <(faststart_flags_for "$output")
     run_ffmpeg --ffx-output "$output" -y -f concat -safe 0 -i "$cl" \
-        -c:v copy "${concat_aopts[@]}" "$output" \
+        -c:v copy "${concat_aopts[@]}" "${loop_fs[@]}" "$output" \
         || die "looperang: concat failed." "$output"
 
     check_moov_atom "$output" || moov_fallback "$fixed" "$output"
@@ -2191,6 +2694,7 @@ cmd_fix() {
     else
         cp "$input" "$output"; say "No DTS issues found; copied: $output"
     fi
+    ensure_faststart "$output" || die "fix: could not place moov atom first." "$output"
 }
 
 # =============================================================================
@@ -2225,7 +2729,8 @@ cmd_clean() {
     fi
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
-    run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 -c copy "${aopts[@]}" "$output" \
+    local -a cl_fs; mapfile -t cl_fs < <(faststart_flags_for "$output")
+    run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 -c copy "${aopts[@]}" "${cl_fs[@]}" "$output" \
         || die "clean: metadata strip failed." "$output"
     say "Metadata cleaned: $output"
 }
@@ -2261,9 +2766,10 @@ cmd_cleanmeta() {
     fi
 
     local -a aopts; mapfile -t aopts < <(get_audio_opts_array)
+    local -a cm_fs; mapfile -t cm_fs < <(faststart_flags_for "$output")
 
     if run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 -c:v copy "${aopts[@]}" \
-            -movflags +faststart "$output"; then
+            "${cm_fs[@]}" "$output"; then
         say "Metadata cleaned (stream-copy): $output"
         return
     fi
@@ -2275,7 +2781,7 @@ cmd_cleanmeta() {
         || enc=("-c:v" "$ADV_CODEC" "-crf" "${ADV_CRF:-18}" "-preset" "$ADV_PRESET")
 
     run_ffmpeg --ffx-output "$output" -y -i "$input" -map_metadata -1 \
-        "${enc[@]}" "${aopts[@]}" -movflags +faststart "$output" \
+        "${enc[@]}" "${aopts[@]}" "${cm_fs[@]}" "$output" \
         || die "cleanmeta: both stream-copy and reencode failed." "$output"
     say "Metadata cleaned (reencoded): $output"
 }
@@ -2648,6 +3154,8 @@ Global Options:
                              normalize step inside merge/composite (0 = no
                              limit; default 300). This is the flag to raise if
                              a batch job times out on individual files.
+  --audio-rate <Hz>          Audio sample rate merge/composite/looperang normalise to
+                             (default 48000; env FFX_AUDIO_RATE).
   --timeout-per-file <sec>   Per-input budget that SCALES the timeout for the
                              small set of operations whose ffmpeg work grows
                              with file COUNT, not per-file duration: merge's
@@ -2716,13 +3224,51 @@ Large Batch Jobs (merge / composite):
   that is the single-file budget every normalize call uses regardless of how
   many files are in the batch. If a batch job is interrupted or fails
   partway through, every input successfully processed so far is checkpointed
-  under ~/.cache/ffx/checkpoints/; re-running the exact same command resumes
+  under FFX_CACHE_DIR/checkpoints/; re-running the exact same command resumes
   from the first unprocessed input rather than starting over. Pass
   --no-resume to force a clean restart.
 
-Config:  ~/.config/ffx/defaults
+  Before any ffmpeg call, merge/composite estimate how much disk the job
+  will need (scratch + cache + output combined) and fail immediately if any
+  backing filesystem doesn't have the room — instead of burning time
+  encoding partway through a batch and then failing on a generic ffmpeg
+  write error. See FFX_SKIP_SPACE_CHECK / FFX_SPACE_SAFETY_FACTOR below if
+  this misfires on a filesystem `df` can't size correctly.
+
+Directories (all overridable in the environment or in Config, below):
+  FFX_SCRATCH_DIR          Base dir for the per-run scratch directory, wiped
+                            on every exit (default: $XDG_RUNTIME_DIR, usually
+                            /run/user/<uid> or $TMPDIR).
+  FFX_CACHE_DIR             Persistent cache: resume checkpoints, self-audit
+                            manifests (default: ~/.cache/ffx). Move this
+                            (and/or FFX_SCRATCH_DIR) to a different disk with
+                            more room, e.g.:
+                              export FFX_CACHE_DIR=/bigdisk/ffx-cache
+                              export FFX_SCRATCH_DIR=/bigdisk/tmp
+                            Avoid pointing FFX_CACHE_DIR at a path literally
+                            named/patterned "tmp" — checkpoints must survive
+                            for the lifetime of a single long-running job,
+                            and a path like that is the conventional target
+                            of external tmp-reaping policies (systemd-tmpfiles,
+                            tmpwatch, cron). FFX_SCRATCH_DIR is fine there;
+                            it's wiped by ffx itself on every exit anyway.
+  FFX_SKIP_SPACE_CHECK      Set to "true" to bypass the disk-space preflight
+                            entirely (default: false). Use if `df` can't
+                            size one of your filesystems correctly (some
+                            network mounts).
+  FFX_SPACE_SAFETY_FACTOR   Headroom multiplier applied to the raw space
+                            estimate before checking it against free space
+                            (default: 1.3, i.e. 30% headroom).
+
+Config:  ~/.config/ffx/defaults   (or $XDG_CONFIG_HOME/ffx/defaults)
+Paths:   ~/.config/ffx/paths.conf  KEY=VALUE lines (FFX_SCRATCH_DIR, FFX_CACHE_DIR,
+         FFX_SKIP_SPACE_CHECK, FFX_SPACE_SAFETY_FACTOR); parsed, never sourced;
+         environment variables win.
+Output:  MP4-family outputs (mp4/m4v/mov/m4a/3gp/f4v) always have the moov atom
+         first (+faststart) and keep audio unless -an is given.
 Log:     ~/.local/share/ffx/ffx.log
-Checkpoints: ~/.cache/ffx/checkpoints/
+Cache:   ~/.cache/ffx              (override: FFX_CACHE_DIR)
+Checkpoints: <cache dir>/checkpoints/
 HELPEOF
     exit 0
 }
@@ -2751,7 +3297,13 @@ parse_global_options() {
             NO_RESUME_GLOBAL=true; shift ;;
         -o|--output-dir|--output)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
-            OUTPUT_DIR="$2"; GLOBAL_OUTPUT_FILE="$2"; shift 2 ;;
+            if [[ -d "$2" || "$2" == */ ]]; then
+                OUTPUT_DIR="${2%/}"; [[ -n "$OUTPUT_DIR" ]] || OUTPUT_DIR="/"
+                GLOBAL_OUTPUT_FILE=""
+            else
+                OUTPUT_DIR="$2"; GLOBAL_OUTPUT_FILE="$2"
+            fi
+            shift 2 ;;
         -f|--fps)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--fps requires a numeric value."
@@ -2762,16 +3314,20 @@ parse_global_options() {
             PTS_FACTOR="$2"; shift 2 ;;
         --timeout)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
-            [[ "$2" =~ ^[0-9]+$ ]] || die "--timeout requires a non-negative integer."
+            is_nonneg_int "$2" || die "--timeout requires a non-negative integer."
             FFX_TIMEOUT="$2"; shift 2 ;;
         --timeout-per-file)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
-            [[ "$2" =~ ^[0-9]+$ ]] || die "--timeout-per-file requires a non-negative integer."
+            is_nonneg_int "$2" || die "--timeout-per-file requires a non-negative integer."
             FFX_TIMEOUT_PER_FILE="$2"; shift 2 ;;
         --retry)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
-            [[ "$2" =~ ^[0-9]+$ ]] || die "--retry requires a non-negative integer."
+            is_nonneg_int "$2" || die "--retry requires a non-negative integer."
             FFX_RETRY="$2"; shift 2 ;;
+        --audio-rate)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
+            is_nonneg_int "$2" && (( $2 > 0 )) || die "--audio-rate requires a positive integer (Hz)."
+            FFX_AUDIO_RATE="$2"; shift 2 ;;
         --container)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             ADV_CONTAINER="$2"; shift 2 ;;
