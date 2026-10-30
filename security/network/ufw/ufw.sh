@@ -5,6 +5,9 @@ set -euo pipefail
 # VPN backend: MegaVPN (WireGuard, driven via NetworkManager `nmcli`),
 # DNS backend: resolvconf (openresolv) with a systemd-resolved fallback path
 # retained for hosts that have not migrated.
+# Hardening includes CVE-2026-98432 mitigation (MPTCP disablement, TCP SYN/RCU
+# handshake surface reduction, active MPTCP socket auditing, and dmesg/journal
+# crash inspection for ip_options_build / tcp_v4_syn_recv_sock).
 
 # Use color variables for logging if the terminal supports it.
 if command -v tput >/dev/null 2>&1 && tput colors 2>/dev/null | grep -q '[0-9]'; then
@@ -31,14 +34,27 @@ declare -i SWAPPINESS_VAL=60
 declare -i SWAPPINESS_EXPLICIT=0 # 1 only if --swappiness was actually passed; see configure_sysctl
 declare -i UFW_SUPPORTS_COMMENT=1
 declare -i CLEANUP_RAN=0
+declare -i LOG_INITIALIZED=0
 
 # Separate declaration and assignment for Shellcheck SC2155 compliance.
 SCRIPT_NAME=""
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 
+# Resolve the invoking user's home directory so logs land in the operator's
+# ~/.local/share/logs/ufw.log even when invoked via `sudo ufw.sh`.
+INVOKING_HOME="$HOME"
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]] && command -v getent >/dev/null 2>&1; then
+	sudo_home="$(getent passwd "$SUDO_USER" | awk -F: '{print $6}' || true)"
+	if [[ -n "$sudo_home" && -d "$sudo_home" ]]; then
+		INVOKING_HOME="$sudo_home"
+	fi
+	unset sudo_home
+fi
+readonly INVOKING_HOME
+
 readonly DEFAULT_SWAPPINESS=60
-readonly LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
+readonly LOG_DIR="${XDG_DATA_HOME:-$INVOKING_HOME/.local/share}/logs"
 readonly LOG_FILE="$LOG_DIR/ufw.log"
 readonly SYSCTL_UFW_FILE="/etc/sysctl.d/99-zz-ufw-hardening.conf"
 readonly BACKUP_DIR="/etc/ufw/backups"
@@ -54,10 +70,26 @@ declare -g WG_PROFILE="" # NetworkManager WireGuard connection NAME (MegaVPN pro
 
 # --- Core Functions ---
 
-# Comprehensive cleanup trap to restore DNS on exit/error.
+# Initialize log directory and file before any log() calls occur.
+# Restores ownership to SUDO_UID:SUDO_GID when executed under sudo so the
+# invoking user can inspect ~/.local/share/logs/ufw.log without root.
+init_logging() {
+	mkdir -p "$LOG_DIR" 2>/dev/null || true
+	touch "$LOG_FILE" 2>/dev/null || true
+	chmod 600 "$LOG_FILE" 2>/dev/null || true
+	if [[ -n "${SUDO_UID:-}" && -n "${SUDO_GID:-}" ]]; then
+		chown "$SUDO_UID:$SUDO_GID" "$LOG_DIR" "$LOG_FILE" 2>/dev/null || true
+	fi
+	LOG_INITIALIZED=1
+}
+
+# Comprehensive cleanup trap to restore DNS on abnormal exit/error.
 # Reentrancy-guarded: a second signal arriving while cleanup is already
 # running (e.g. a second Ctrl-C) must not re-enter this function and risk a
 # half-completed restore_resolv_conf or duplicate log writes.
+# NOTE: Only restores resolv.conf automatically when exiting with a non-zero
+# status during a setup run; on a normal (status 0) --vpn exit, the backup at
+# /etc/resolv.conf.ufw-orig must remain intact for a later --disconnect run.
 cleanup() {
 	local status=$?
 	if [[ "$CLEANUP_RAN" -eq 1 ]]; then
@@ -66,13 +98,15 @@ cleanup() {
 	CLEANUP_RAN=1
 	trap - EXIT ERR INT TERM HUP
 
-	if [[ "$RESOLV_BACKUP_CREATED" -eq 1 && "$DISCONNECT_FLAG" -eq 0 ]]; then
+	if [[ "$status" -ne 0 && "$RESOLV_BACKUP_CREATED" -eq 1 && "$DISCONNECT_FLAG" -eq 0 ]]; then
 		restore_resolv_conf || true
 	fi
-	if [[ "$status" -ne 0 ]]; then
-		log ERROR "Exited abnormally (status $status)"
-	else
-		log INFO "Exited normally"
+	if [[ "$LOG_INITIALIZED" -eq 1 ]]; then
+		if [[ "$status" -ne 0 ]]; then
+			log ERROR "Exited abnormally (status $status)"
+		else
+			log INFO "Exited normally"
+		fi
 	fi
 	exit "$status"
 }
@@ -84,7 +118,9 @@ log() {
 	local msg="$2"
 	local ts
 	ts=$(date '+%Y-%m-%d %H:%M:%S')
-	printf '%s [%s] : %s\n' "$ts" "$lv" "$msg" >>"$LOG_FILE"
+	if [[ "$LOG_INITIALIZED" -eq 1 && -w "$LOG_FILE" ]]; then
+		printf '%s [%s] : %s\n' "$ts" "$lv" "$msg" >>"$LOG_FILE"
+	fi
 	if [[ "$SILENT" -eq 0 ]]; then
 		case "$lv" in
 		ERROR) printf '%b %s%b\n' "$ERROR" "$msg" "$RESET" >&2 ;;
@@ -93,7 +129,7 @@ log() {
 		WARN) printf '%b %s%b\n' "$WARN" "$msg" "$RESET" >&2 ;;
 		NOTE) printf '%b %s%b\n' "$NOTE" "$msg" "$RESET" ;;
 		CAT) printf '%b %s%b\n' "$CAT" "$msg" "$RESET" ;;
-		*) printf '%s [%s] : %s\b\n' "$ts" "$lv" "$msg" "$RESET" ;;
+		*) printf '%s [%s] : %s%b\n' "$ts" "$lv" "$msg" "$RESET" ;;
 		esac
 	fi
 }
@@ -157,33 +193,30 @@ usage() {
 	echo "  --backup          : Create backups before modifying config files."
 	echo "  --silent          : Suppress console output (logs only)."
 	echo "  --dry-run         : Simulate actions without making changes."
-	echo "  --status          : Display current firewall/VPN status only."
-	echo "  --swappiness N    : Explicitly set vm.swappiness to N. Opt-in only -- if omitted,"
-	echo "                      ufw.sh does not touch vm.swappiness at all, leaving it to"
-	echo "                      whichever other sysctl.d file owns it (e.g. a zram config)."
+	echo "  --status          : Display current firewall/VPN/MPTCP status only."
+	echo "  --swappiness N    : Explicitly set vm.swappiness to N (0-200). Opt-in only -- if"
+	echo "                      omitted, ufw.sh does not touch vm.swappiness at all, leaving"
+	echo "                      it to whichever other sysctl.d file owns it (e.g. a zram config)."
 	echo "  --help, -h        : Show this help message."
 	echo ""
 	echo "Examples:"
-	echo "  $SCRIPT_NAME --vpn --profile megavpn-us --backup"
-	echo "  $SCRIPT_NAME --vpn --backup    # auto-select if only one WireGuard profile exists"
-	echo "  $SCRIPT_NAME --disconnect"
-	echo "  $SCRIPT_NAME --status"
+	echo "  sudo $SCRIPT_NAME --vpn --profile megavpn-us --backup"
+	echo "  sudo $SCRIPT_NAME --vpn --backup    # auto-select if only one WireGuard profile exists"
+	echo "  sudo $SCRIPT_NAME --disconnect"
+	echo "  sudo $SCRIPT_NAME --status"
 	exit "$exit_status"
 }
 
 # Parse command-line arguments.
 parse_args() {
-	log INFO "Parsing arguments: $*"
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--vpn)
 			VPN_FLAG=1
-			log INFO "Option: --vpn enabled"
 			;;
 		--profile)
-			if [[ -n "${2:-}" ]]; then
+			if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
 				WG_PROFILE="${2}"
-				log INFO "Option: --profile set to $WG_PROFILE"
 				shift
 			else
 				log ERROR "Missing value for --profile"
@@ -192,40 +225,33 @@ parse_args() {
 			;;
 		--disconnect)
 			DISCONNECT_FLAG=1
-			log INFO "Option: --disconnect enabled"
 			;;
 		--jdownloader)
 			JD_FLAG=1
-			log INFO "Option: --jdownloader enabled"
 			;;
 		--backup)
 			BACKUP_FLAG=1
-			log INFO "Option: --backup enabled"
 			;;
 		--silent)
 			SILENT=1
-			log INFO "Option: --silent enabled"
 			;;
 		--dry-run)
 			DRY_RUN=1
-			log INFO "Option: --dry-run enabled"
 			;;
 		--status)
 			STATUS_FLAG=1
-			log INFO "Option: --status enabled"
 			;;
 		--swappiness)
-			if [[ -n "${2:-}" && "${2}" =~ ^[0-9]+$ ]]; then
+			if [[ -n "${2:-}" && "${2}" =~ ^[0-9]+$ ]] && ((${2} >= 0 && ${2} <= 200)); then
 				SWAPPINESS_VAL="${2}"
 				SWAPPINESS_EXPLICIT=1
-				log INFO "Option: --swappiness set to $SWAPPINESS_VAL"
 				shift
 			else
-				log ERROR "Invalid or missing value for --swappiness: ${2:-}"
+				log ERROR "Invalid or missing value for --swappiness (expected integer 0-200): ${2:-}"
 				usage 1
 			fi
 			;;
-		-h | --help) usage ;;
+		-h | --help) usage 0 ;;
 		*)
 			log ERROR "Unknown argument: $1"
 			usage 1
@@ -236,6 +262,19 @@ parse_args() {
 }
 
 # --- System & Dependency Checks ---
+
+# Verify root privileges before attempting privileged firewall/sysctl operations.
+check_root() {
+	if ((EUID != 0)); then
+		if ((DRY_RUN)); then
+			log WARN "Running as non-root user (EUID=$EUID) in --dry-run mode."
+			return 0
+		fi
+		log ERROR "This script must be run as root (use: sudo $SCRIPT_NAME ...)."
+		return 1
+	fi
+	return 0
+}
 
 # Check for required and optional command-line tools.
 check_dependencies() {
@@ -254,7 +293,6 @@ check_dependencies() {
 		return 0
 	else
 		log ERROR "Missing required dependencies: ${miss[*]}"
-		printf '%b Missing required dependencies: %s%b\n' "$ERROR" "${miss[*]}" "$RESET" >&2
 		return 1
 	fi
 }
@@ -302,16 +340,49 @@ set_immutable() {
 
 # --- Network Interface & DNS ---
 
-# Detect the primary (default route) network interface.
+# Detect the primary (physical default route) network interface.
+# Excludes WireGuard, loopback, and virtual tunnel interfaces so re-running
+# `ufw.sh --vpn` while a VPN tunnel is already active never mistakes the
+# tunnel interface for the physical LAN interface.
 detect_primary_interface() {
-	log INFO "Detecting primary network interface"
-	local detected_if
-	detected_if=$(ip -4 route show default | awk '{print $5; exit}' || true)
+	log INFO "Detecting primary physical network interface"
+	local wg_ifaces
+	wg_ifaces=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 || true)
+
+	local detected_if="" candidate
+	while IFS= read -r candidate; do
+		[[ -z "$candidate" ]] && continue
+		[[ "$candidate" == "lo" || "$candidate" =~ ^(tun|tap|wg|ppp)[0-9]* ]] && continue
+		if [[ -n "$wg_ifaces" ]] && printf '%s\n' "$wg_ifaces" | grep -qxF "$candidate"; then
+			continue
+		fi
+		detected_if="$candidate"
+		break
+	done < <(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1)}' || true)
+
 	if [[ -z "$detected_if" ]]; then
-		detected_if=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;++i) if ($i=="dev") print $(i+1); exit}' || true)
+		candidate=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;++i) if ($i=="dev") {print $(i+1); exit}}' || true)
+		if [[ -n "$candidate" && "$candidate" != "lo" && ! "$candidate" =~ ^(tun|tap|wg|ppp)[0-9]* ]]; then
+			if [[ -z "$wg_ifaces" ]] || ! printf '%s\n' "$wg_ifaces" | grep -qxF "$candidate"; then
+				detected_if="$candidate"
+			fi
+		fi
 	fi
+
+	# Final fallback: pick the first UP non-loopback, non-WireGuard interface with an IPv4 address.
 	if [[ -z "$detected_if" ]]; then
-		log ERROR "Unable to detect primary interface."
+		while IFS= read -r candidate; do
+			[[ -z "$candidate" || "$candidate" == "lo" || "$candidate" =~ ^(tun|tap|wg|ppp|docker|br-|veth)[0-9]* ]] && continue
+			if [[ -n "$wg_ifaces" ]] && printf '%s\n' "$wg_ifaces" | grep -qxF "$candidate"; then
+				continue
+			fi
+			detected_if="$candidate"
+			break
+		done < <(ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2}' || true)
+	fi
+
+	if [[ -z "$detected_if" ]]; then
+		log ERROR "Unable to detect primary physical network interface."
 		return 1
 	fi
 	PRIMARY_IF="$detected_if"
@@ -322,8 +393,7 @@ detect_primary_interface() {
 # Detect active MegaVPN (WireGuard) interfaces.
 # Primary path: modern iproute2 supports `ip link show type wireguard`, which
 # identifies WireGuard devices regardless of what NetworkManager or wg-quick
-# named them (baseline matched tun/ppp naming, which is expressvpn-specific
-# and does not apply to a NetworkManager-managed WireGuard device).
+# named them.
 # Fallback path: older iproute2 without wireguard-type filtering resolves the
 # device bound to the active WG_PROFILE connection via nmcli instead.
 detect_vpn_interfaces() {
@@ -357,7 +427,14 @@ cidr_to_network() {
 	fi
 	local -a octets
 	IFS='.' read -r -a octets <<<"$ip"
-	local ip_int=$(((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]))
+	local o
+	for o in "${octets[@]}"; do
+		if ((10#$o < 0 || 10#$o > 255)); then
+			log WARN "cidr_to_network: invalid octet '$o' in '$cidr'"
+			return 1
+		fi
+	done
+	local ip_int=$(((10#${octets[0]} << 24) | (10#${octets[1]} << 16) | (10#${octets[2]} << 8) | 10#${octets[3]}))
 	local mask_int=0
 	if ((prefix > 0)); then
 		mask_int=$(((0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF))
@@ -371,22 +448,11 @@ cidr_to_network() {
 
 # Parse nameservers that traffic should actually be allowed to reach.
 #
-# The user's stack is now NetworkManager + WireGuard (MegaVPN) with the
-# `resolvconf` (openresolv) DNS plugin, not systemd-resolved. Under
-# resolvconf, /etc/resolv.conf is typically a symlink into resolvconf's
-# runtime tree (or a generated file bearing a "# Generated by resolvconf"
-# header) that merges nameservers from every active interface's own record,
-# not just the VPN interface. Trusting it verbatim in that case allowlists
-# whatever interface happens to sort first, which can silently defeat the
-# DNS-leak-blocking rule this function exists to support. This function
-# therefore prefers `resolvconf -l <iface>*` (when present and resolv.conf is
+# Prefers `resolvconf -l <iface>*` (when present and resolv.conf is
 # resolvconf-managed) to recover the real per-interface upstream servers for
 # the WireGuard interface specifically. A systemd-resolved branch is retained
 # for hosts that have not migrated off it, and a literal resolv.conf parse is
-# the final fallback for systems running neither. In every fallback path we
-# preserve, rather than discard, the "this may be a stub/loopback address,
-# not the real upstream" warning so the operator can tell a confident parse
-# from a best-effort one.
+# the final fallback for systems running neither.
 parse_dns_servers() {
 	log INFO "Parsing DNS servers for VPN allowlist"
 	VPN_DNS_SERVERS=()
@@ -501,16 +567,10 @@ backup_file() {
 
 # Backup resolv.conf before modification.
 # Symlink-aware: under either systemd-resolved or resolvconf, /etc/resolv.conf
-# is normally a symlink to a daemon-managed runtime path. Blindly `cp`-ing
-# over it would replace the symlink with a plain file, which can desync from
-# the managing daemon's own state until it is restarted. We record whether it
-# was a symlink and, if so, back up the link target path itself rather than a
-# copy of the (often transient) file contents. This logic is DNS-backend-
-# agnostic and requires no change for the resolvconf migration.
+# is normally a symlink to a daemon-managed runtime path.
 backup_resolv_conf() {
 	if [[ -f "$RESOLV_BACKUP" || -L "$RESOLV_BACKUP" ]]; then
 		log INFO "VPN DNS backup already exists at $RESOLV_BACKUP"
-		RESOLV_BACKUP_CREATED=1
 		return 0
 	fi
 	if [[ -L "$RESOLV_FILE" ]]; then
@@ -545,10 +605,7 @@ backup_resolv_conf() {
 }
 
 # Restore resolv.conf from backup.
-# Symlink-aware counterpart to backup_resolv_conf: if the backup recorded a
-# symlink target, restore the symlink itself rather than writing a plain file
-# over what the DNS-managing daemon (resolvconf or systemd-resolved) expects
-# to own.
+# Symlink-aware counterpart to backup_resolv_conf.
 restore_resolv_conf() {
 	if [[ ! -f "$RESOLV_BACKUP" && ! -L "$RESOLV_BACKUP" ]]; then
 		log INFO "No VPN DNS backup found at $RESOLV_BACKUP to restore."
@@ -593,13 +650,6 @@ restore_resolv_conf() {
 # --- VPN Management ---
 
 # Resolve which NetworkManager WireGuard connection (MegaVPN profile) to use.
-# EAFP-first: if --profile was given, trust it and let `nmcli connection up`
-# surface the failure if it's wrong. Otherwise attempt unambiguous
-# auto-selection (exactly one imported WireGuard connection), then fall back
-# to interactive fzf selection only when fzf is available, output is not
-# silenced, this is not a dry run, AND stdin is an actual TTY -- a
-# non-interactive invocation (cron, systemd unit, CI) must fail fast with an
-# actionable error rather than hang forever on an fzf prompt no one can see.
 select_wg_profile() {
 	if [[ -n "$WG_PROFILE" ]]; then
 		log INFO "Using explicitly specified WireGuard profile: $WG_PROFILE"
@@ -637,9 +687,6 @@ select_wg_profile() {
 }
 
 # Connect to MegaVPN via NetworkManager WireGuard.
-# Bounded with a hard timeout: `nmcli connection up` can stall on handshake
-# negotiation or DNS-plugin setup, and must not be able to hang the
-# orchestrator indefinitely in a non-interactive script context.
 megavpn_connect() {
 	log CAT "Connecting MegaVPN (WireGuard via NetworkManager)"
 	if ! command -v nmcli >/dev/null 2>&1; then
@@ -652,8 +699,7 @@ megavpn_connect() {
 
 	# Bring down any other active WireGuard connections first, scoped strictly
 	# to TYPE=wireguard, to avoid routing/DNS-plugin conflicts between two
-	# simultaneously-active tunnels. This does not touch non-WireGuard
-	# connections (Wi-Fi/Ethernet/etc).
+	# simultaneously-active tunnels.
 	local active_conns
 	active_conns=$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' || true)
 	if [[ -n "$active_conns" ]]; then
@@ -674,9 +720,7 @@ megavpn_connect() {
 		return 0
 	fi
 
-	# Verify the connection actually reports active; a zero exit code from
-	# `connection up` does not guarantee the tunnel is fully established
-	# (e.g. it can race with handshake completion).
+	# Verify the connection actually reports active.
 	local tries=0 max_tries=10
 	while ((tries < max_tries)); do
 		if nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wireguard" {print $1}' | grep -qxF "$WG_PROFILE"; then
@@ -690,11 +734,7 @@ megavpn_connect() {
 	return 1
 }
 
-# Disconnect from MegaVPN. Tears down every active WireGuard connection
-# rather than only WG_PROFILE, since the kill-switch teardown path must
-# leave the host in a known-clean state regardless of which profile ended
-# up active.
-# Also bounded with a hard timeout for the same reason as megavpn_connect.
+# Disconnect from MegaVPN. Tears down every active WireGuard connection.
 megavpn_disconnect() {
 	log CAT "Disconnecting MegaVPN"
 	if ! command -v nmcli >/dev/null 2>&1; then
@@ -727,17 +767,8 @@ apply_ufw_rule() {
 		comment_str="${rule_str##* comment }"
 		rule_str="${rule_str%% comment *}"
 	fi
-	# comment_str at this point still carries the literal quote characters
-	# from the template's "comment 'Text'" syntax (e.g. "'Limit SSH'"), since
-	# rule_str is already a fully-expanded string, not raw shell syntax --
-	# no word-splitting pass is ever going to strip them. Strip exactly one
-	# matching pair explicitly, here, rather than depending on that never-
-	# happening implicit stripping. A comment containing a literal quote
-	# character makes UFW reject the entire rule with "Invalid syntax", not
-	# just the comment -- confirmed in production, this silently dropped
-	# every commented rule (SSH limit + both LAN rules) while still logging
-	# [OK] beneath it, since apply_ufw_rule's non-zero exit was never
-	# propagated by its caller.
+	# Strip outer single quotes around comment text so UFW does not reject
+	# the rule with "Invalid syntax".
 	if [[ "$comment_str" == \'*\' ]]; then
 		comment_str="${comment_str#\'}"
 		comment_str="${comment_str%\'}"
@@ -753,13 +784,6 @@ apply_ufw_rule() {
 # Detect if the installed UFW version supports comments.
 detect_ufw_comment_support() {
 	log INFO "Detecting UFW comment support"
-	# NOTE: comment syntax is documented in `man ufw`, not in `ufw --help`'s
-	# terse usage listing, so grepping --help for the word "comment"
-	# false-negatives on every modern UFW release -- confirmed in production
-	# on an Arch host running a current UFW that fully supports comments.
-	# UFW has supported rule comments since 0.35 (2015); check the actual
-	# version instead of parsing help text that was never guaranteed to
-	# mention the feature.
 	local ver_str major minor
 	ver_str=$(ufw --version 2>&1 | head -n1 | grep -oP '\d+\.\d+(\.\d+)?' | head -n1 || true)
 	if [[ -z "$ver_str" ]]; then
@@ -807,52 +831,99 @@ apply_dns_rules() {
 	return 0
 }
 
+# Allow outbound WireGuard transport UDP packets on the physical interface to
+# the active peer endpoint(s) so that key renegotiations and keepalives survive
+# conntrack flushes or idle expiration under `ufw default deny outgoing`.
+apply_wg_endpoint_rules() {
+	if [[ -z "$PRIMARY_IF" || -z "$VPN_IFACES" ]] || ! command -v wg >/dev/null 2>&1; then
+		return 0
+	fi
+	local vpn_if endpoint ep_ip ep_port
+	for vpn_if in $VPN_IFACES; do
+		while IFS= read -r endpoint; do
+			[[ -z "$endpoint" || "$endpoint" == "(none)" ]] && continue
+			# Handle IPv4 endpoint format a.b.c.d:port
+			if [[ "$endpoint" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)$ ]]; then
+				ep_ip="${BASH_REMATCH[1]}"
+				ep_port="${BASH_REMATCH[2]}"
+				log INFO "Allowing WireGuard transport on $PRIMARY_IF to endpoint ${ep_ip}:${ep_port}/udp"
+				apply_ufw_rule "allow out on $PRIMARY_IF to $ep_ip port $ep_port proto udp comment 'WireGuard Endpoint'"
+			fi
+		done < <(wg show "$vpn_if" endpoints 2>/dev/null | awk '{print $2}' || true)
+	done
+}
+
+# Audit runtime MPTCP state, active MPTCP sockets, and kernel logs for
+# CVE-2026-98432 indicators (`ip_options_build` / `tcp_v4_syn_recv_sock`).
+audit_mptcp_exposure() {
+	log CAT "Auditing CVE-2026-98432 (MPTCP / IPv4 TCP RCU UAF) exposure"
+	if [[ -f /proc/sys/net/mptcp/enabled ]]; then
+		local mptcp_val
+		mptcp_val=$(cat /proc/sys/net/mptcp/enabled 2>/dev/null || echo "unknown")
+		if [[ "$mptcp_val" == "0" ]]; then
+			log OK "Kernel MPTCP state: disabled (net.mptcp.enabled = 0)"
+		else
+			log WARN "Kernel MPTCP state: ENABLED (net.mptcp.enabled = $mptcp_val) -- vulnerable to CVE-2026-98432 MPTCP exploit chain!"
+		fi
+	else
+		log OK "Kernel MPTCP sysctl not present (MPTCP compiled out or module unloaded)."
+	fi
+
+	# Disabling net.mptcp.enabled prevents NEW MPTCP sockets from opening, but
+	# any daemon (e.g. Go >= 1.24 services or mptcpize-wrapped binaries) that
+	# opened a listener prior to the sysctl toggle keeps its existing MPTCP
+	# socket until the service is restarted.
+	local mptcp_sockets
+	mptcp_sockets=$(ss -M -tulnp 2>/dev/null | tail -n +2 || true)
+	if [[ -n "$mptcp_sockets" ]]; then
+		log WARN "Active MPTCP sockets detected! Restart owning services after disabling net.mptcp.enabled:"
+		printf '%s\n' "$mptcp_sockets" | tee -a "$LOG_FILE" >&2
+	else
+		log OK "No active MPTCP sockets/listeners detected (ss -M -tulnp clean)."
+	fi
+
+	# Inspect recent kernel ring buffer / journal for CVE-2026-98432 crash traces.
+	if command -v journalctl >/dev/null 2>&1; then
+		local klog_hits
+		klog_hits=$(journalctl -k -b --no-pager 2>/dev/null | grep -E 'ip_options_build|tcp_v4_syn_recv_sock|tcp_v4_reqsk_destructor' || true)
+		if [[ -n "$klog_hits" ]]; then
+			log WARN "Kernel log contains stack/symbol hits related to CVE-2026-98432 (ip_options_build / tcp_v4_syn_recv_sock):"
+			printf '%s\n' "$klog_hits" | tail -n 10 | tee -a "$LOG_FILE" >&2
+		else
+			log OK "No ip_options_build / tcp_v4_syn_recv_sock crash traces in current boot journal."
+		fi
+	fi
+}
+
 # Configure and apply sysctl hardening settings.
 configure_sysctl() {
 	log CAT "Configuring sysctl settings"
 	local kernel cake bbr
-	# Use mktemp for a secure temporary file.
 	local sysctl_out
 	sysctl_out=$(mktemp)
 
 	kernel=$(uname -r)
-	# Use ls for more direct/efficient module check.
 	cake=$(ls "/lib/modules/$kernel/kernel/net/sched/sch_cake.ko"* 2>/dev/null || true)
 	bbr=$(ls "/lib/modules/$kernel/kernel/net/ipv4/tcp_bbr.ko"* 2>/dev/null || true)
 
 	# NOTE on scope: this file owns only the keys that are specifically part
-	# of the kill-switch / DNS-leak-prevention job of this script, plus TCP
-	# buffer/congestion tuning that no other .d file on this host contests.
-	# The following keys were deliberately REMOVED from here because another,
-	# more specifically-named file already owns them, and this file's "zz"
-	# sort-order previously made it silently overwrite that file's intent on
-	# every run of ufw.sh:
-	#   - kernel.dmesg_restrict      -> owned by 99-4ndr0-hardening.conf (wants 1; this file was forcing 0)
-	#   - net.ipv4.conf.all.log_martians -> owned by /usr/lib/sysctl.d/99-sysctl.conf (wants 1; this file was forcing 0)
-	#   - net.ipv4.icmp_echo_ignore_all  -> owned by 99-4ndr0-stealth.conf (wants 1; this file was forcing 0)
-	#   - vm.swappiness               -> owned by 99-vm-zram-parameters.conf (wants 10; this file was forcing 60)
-	# net.core.somaxconn and net.core.netdev_max_backlog were RAISED to match
-	# /usr/lib/sysctl.d/99-sysctl.conf's higher values (32768 / 16384) rather
-	# than removed -- explicit performance-over-hardening choice, not an
-	# oversight. This file remains the winner for both keys by sort order.
+	# of the kill-switch / DNS-leak-prevention / TCP-stack hardening job of
+	# this script, plus TCP buffer/congestion tuning that no other .d file on
+	# this host contests.
+	# The following keys remain deliberately omitted from here so that their
+	# dedicated sysctl.d files retain ownership:
+	#   - kernel.dmesg_restrict          -> owned by 99-4ndr0-hardening.conf (wants 1)
+	#   - net.ipv4.conf.all.log_martians -> owned by /usr/lib/sysctl.d/99-sysctl.conf (wants 1)
+	#   - net.ipv4.icmp_echo_ignore_all  -> owned by 99-4ndr0-stealth.conf (wants 1)
+	#   - vm.swappiness                  -> owned by 99-vm-zram-parameters.conf (wants 10)
 	#
-	# rp_filter needs THREE lines, not one: sysctl's glob expansion for
-	# net.ipv4.conf.*.X deliberately excludes the "all" and "default"
-	# pseudo-entries, matching only real interface names. .all participates
-	# in an effective = max(all, interface) computation (higher = looser),
-	# so a strict .all can never pull a looser interface value back down --
-	# it only raises a floor. .default seeds the initial rp_filter of any
-	# interface *created after this file applies* (e.g. a WireGuard tunnel
-	# brought up mid-session). The glob is what fixes interfaces that
-	# already existed when this file applied (e.g. a physical NIC present
-	# at boot, which 50-default.conf's own glob already wrote an explicit
-	# loose value into). Confirmed in production: dropping the explicit
-	# .default line and keeping only the glob left net.ipv4.conf.default.rp_filter
-	# stuck at 50-default.conf's loose value, which would silently apply to
-	# any interface created afterward. All three lines are required together.
-	# If you want ufw.sh to reassert one of these again, add it back
-	# explicitly and update this comment so future audits don't re-discover
-	# the same conflict from scratch.
+	# CVE-2026-98432 Mitigation:
+	#   - -net.mptcp.enabled=0 and -net.mptcp.allow_join_initial_addr_port=0
+	#     disable Multipath TCP socket creation and subflow joins (prefixed
+	#     with '-' so sysctl --system does not error on kernels built without
+	#     CONFIG_MPTCP).
+	#   - net.ipv4.tcp_syncookies=1, net.ipv4.tcp_max_syn_backlog=8192, and
+	#     net.ipv4.tcp_rfc1337=1 harden the IPv4 TCP SYN handshake path.
 	cat >"$sysctl_out" <<EOF
 # $SYSCTL_UFW_FILE - Managed by $SCRIPT_NAME.
 net.ipv4.ip_forward=0
@@ -866,6 +937,11 @@ net.ipv4.conf.all.accept_source_route=0
 net.ipv4.icmp_ignore_bogus_error_responses=1
 net.ipv4.icmp_echo_ignore_broadcasts=1
 net.ipv4.tcp_sack=1
+net.ipv4.tcp_syncookies=1
+net.ipv4.tcp_max_syn_backlog=8192
+net.ipv4.tcp_rfc1337=1
+-net.mptcp.enabled=0
+-net.mptcp.allow_join_initial_addr_port=0
 fs.inotify.max_user_instances=1024
 fs.inotify.max_user_watches=524288
 vm.max_map_count=1048576
@@ -909,13 +985,21 @@ EOF
 
 	run_cmd_dry mkdir -p "$(dirname "$SYSCTL_UFW_FILE")" || {
 		log ERROR "Failed to create directory for sysctl file."
-		rm "$sysctl_out"
+		rm -f "$sysctl_out"
 		return 1
 	}
 	remove_immutable "$SYSCTL_UFW_FILE"
 	if run_cmd_dry mv "$sysctl_out" "$SYSCTL_UFW_FILE"; then
+		run_cmd_dry chmod 0644 "$SYSCTL_UFW_FILE" || true
 		log OK "Sysctl configuration written to $SYSCTL_UFW_FILE"
 		set_immutable "$SYSCTL_UFW_FILE"
+		# Explicitly enforce runtime MPTCP disablement if the kernel exposes the sysctl tree.
+		if [[ -e /proc/sys/net/mptcp/enabled ]]; then
+			run_cmd_dry sysctl -w net.mptcp.enabled=0 || log WARN "Failed to set net.mptcp.enabled=0 at runtime."
+		fi
+		if [[ -e /proc/sys/net/mptcp/allow_join_initial_addr_port ]]; then
+			run_cmd_dry sysctl -w net.mptcp.allow_join_initial_addr_port=0 || log WARN "Failed to set net.mptcp.allow_join_initial_addr_port=0 at runtime."
+		fi
 		run_cmd_dry sysctl --system || {
 			log ERROR "Failed to apply sysctl settings."
 			return 1
@@ -924,7 +1008,7 @@ EOF
 		return 0
 	else
 		log ERROR "Failed to move sysctl configuration file."
-		rm "$sysctl_out" 2>/dev/null
+		rm -f "$sysctl_out" 2>/dev/null
 		return 1
 	fi
 }
@@ -934,8 +1018,10 @@ configure_ufw() {
 	log CAT "Configuring UFW firewall"
 	if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
 		backup_file "$UFW_DEFAULTS_FILE" || log WARN "UFW defaults backup failed, proceeding..."
-		#		log INFO "Ensuring IPv6 is enabled in UFW config for complete kill switch"
-		#		run_cmd_dry sed -i 's/IPV6=no/IPV6=yes/' "$UFW_DEFAULTS_FILE"
+		if grep -q '^IPV6=no' "$UFW_DEFAULTS_FILE" 2>/dev/null; then
+			log INFO "Enabling IPv6 in $UFW_DEFAULTS_FILE for complete kill-switch coverage"
+			run_cmd_dry sed -i 's/^IPV6=no/IPV6=yes/' "$UFW_DEFAULTS_FILE" || log WARN "Failed to enable IPv6 in $UFW_DEFAULTS_FILE"
+		fi
 	fi
 	log INFO "Resetting UFW rules"
 	run_cmd_dry ufw --force reset || {
@@ -968,11 +1054,9 @@ configure_ufw() {
 	log INFO "Applying base firewall rules"
 	if [[ -n "$PRIMARY_IF" ]]; then
 		apply_ufw_rule "limit in on $PRIMARY_IF to any port $SSH_PORT proto tcp comment 'Limit SSH'"
-		# Blocks all ipv6 comms.
-		#apply_ufw_rule "deny proto ipv6 from any to any"
 		local primary_ip_cidr
 		# Robustly handle interfaces with multiple IPs by taking the first one.
-		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+' | head -n 1)
+		primary_ip_cidr=$(ip -4 addr show dev "$PRIMARY_IF" | grep -oP 'inet \K[\d.]+/[\d]+' | head -n 1 || true)
 		if [[ -n "$primary_ip_cidr" ]]; then
 			local local_subnet
 			local_subnet=$(cidr_to_network "$primary_ip_cidr" || true)
@@ -999,6 +1083,7 @@ configure_ufw() {
 	if ((VPN_FLAG)); then
 		log INFO "Applying VPN kill switch rules"
 		if [[ ${#vpn_iface_array[@]} -gt 0 ]]; then
+			apply_wg_endpoint_rules
 			for VPN_IF in "${vpn_iface_array[@]}"; do
 				apply_ufw_rule "allow out on $VPN_IF comment 'Allow all outbound on VPN'"
 			done
@@ -1009,7 +1094,7 @@ configure_ufw() {
 	fi
 
 	log INFO "Enabling UFW"
-	run_cmd_dry ufw enable
+	run_cmd_dry ufw --force enable
 	log OK "UFW enabled."
 	return 0
 }
@@ -1030,7 +1115,7 @@ tear_down() {
 	run_cmd_dry ufw default allow outgoing
 	run_cmd_dry ufw default deny routed
 	run_cmd_dry ufw limit "$SSH_PORT"/tcp
-	run_cmd_dry ufw enable
+	run_cmd_dry ufw --force enable
 	log OK "Teardown complete. System is back to default network state."
 	return 0
 }
@@ -1054,6 +1139,8 @@ show_status() {
 	else
 		log NOTE "$SYSCTL_UFW_FILE not found."
 	fi
+	run_status_cmd "Kernel MPTCP Sysctl Parameters (CVE-2026-98432)" sysctl -a --pattern '^net\.mptcp\.'
+	run_status_cmd "Active MPTCP Sockets (ss -M -tulnp)" ss -M -tulnp
 	if command -v resolvconf >/dev/null 2>&1; then
 		run_status_cmd "DNS records (resolvconf -l)" resolvconf -l
 	elif command -v resolvectl >/dev/null 2>&1; then
@@ -1068,6 +1155,7 @@ show_status() {
 # Run a final check and display the resulting state.
 final_verification() {
 	log CAT "Performing final verification"
+	audit_mptcp_exposure
 	echo ""
 	echo "### Listening Ports (ss -tunlp) ###"
 	run_status_cmd "Listening Ports" ss -tunlp
@@ -1078,13 +1166,13 @@ final_verification() {
 
 # --- Main Execution Block ---
 main() {
-	# Initialize logging.
-	run_cmd_dry mkdir -p "$LOG_DIR"
-	run_cmd_dry touch "$LOG_FILE"
-	run_cmd_dry chmod 600 "$LOG_FILE"
-
-	log CAT "Script started"
+	init_logging
 	parse_args "$@"
+	log CAT "Script started (args: ${*:-<none>})"
+
+	if ! check_root; then
+		exit 1
+	fi
 
 	# Handle single-action flags that exit immediately.
 	if ((STATUS_FLAG)); then
