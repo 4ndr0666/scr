@@ -1,5 +1,7 @@
 # permctl: Unified Arch Linux Permissions, ACL, Policy & Recovery Suite
 
+>**Quick Install:** sudo install -Dm755 permctl /usr/local/bin/permctl.
+>
 `permctl` is a comprehensive, production-grade, and strictly POSIX-compliant (`#!/bin/sh`) system administration suite for Arch Linux and systemd-based Linux distributions. It consolidates, modernizes, and supersedes 23 disparate legacy scripts, prototypes, and operational guides into a single, cohesive command-line utility and interactive terminal console.
 
 The suite provides daily-driver conveniences (rapid ownership changes, restrictive lockdown, private directory enforcement, and undo/rollback), deep sysadmin operations (POSIX ACLs, extended attribute locking, multi-format permission snapshots, and user account migration), declarative policy management, package database audits (`pacman -Qkk` / mtree repair), and emergency disaster recovery (guarded `/dev/null` recreation and authentication-path restoration).
