@@ -1,0 +1,70 @@
+{
+ "pkgs": {
+  "bash": {
+   "repo": "core",
+   "version": "5.3-1",
+   "files": [
+    "/usr/bin/bash"
+   ],
+   "deps": [
+    "glibc"
+   ],
+   "required_by": [
+    "base"
+   ]
+  },
+  "glibc": {
+   "repo": "core",
+   "version": "2.42-1",
+   "files": [
+    "/usr/lib/libc.so.6"
+   ],
+   "deps": [],
+   "required_by": [
+    "bash"
+   ]
+  },
+  "base": {
+   "repo": "core",
+   "version": "3-1",
+   "files": [],
+   "deps": [
+    "bash",
+    "glibc",
+    "filesystem"
+   ],
+   "required_by": []
+  },
+  "vim": {
+   "repo": "extra",
+   "version": "9.1-1",
+   "files": [
+    "/usr/bin/vim"
+   ],
+   "deps": [
+    "glibc"
+   ],
+   "required_by": []
+  },
+  "filesystem": {
+   "repo": "core",
+   "version": "2025.10.12-1",
+   "files": [
+    "/etc/fstab",
+    "/usr/share/pixmaps/archlinux-logo.png"
+   ],
+   "deps": [],
+   "required_by": [
+    "base"
+   ]
+  }
+ },
+ "groups": {
+  "base": [],
+  "base-devel": []
+ },
+ "ignorepkg": [],
+ "ignoregroup": [],
+ "upgrades": [],
+ "orphans": []
+}

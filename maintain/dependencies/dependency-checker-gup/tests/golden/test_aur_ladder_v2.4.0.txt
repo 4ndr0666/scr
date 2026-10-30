@@ -1,0 +1,5 @@
+A: -I only, no derivable glob       -> blanket=no scoped=no
+B: -I only, derivable scoped glob   -> blanket=no scoped=YES
+C: no flags, unattended             -> blanket=no scoped=no
+D: interactive, declines all        -> blanket=no scoped=no
+E: interactive, types 'yes'         -> blanket=YES scoped=no

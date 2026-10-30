@@ -1,0 +1,14 @@
+=== TEST 1: GPGCONF_AVAILABLE=true, dirmngr launch fails -> fast-fail, no keyserver attempts ===
+[WARN] Could not start dirmngr for build user 'andro' — keyserver imports would fail identically for every key/server combination; skipping the retry ladder.
+OK: returned failure as expected
+elapsed: Ns (should be near-instant, not ~2x SHORT_EXTERNAL_TIMEOUT_SECONDS for a real keyserver loop)
+HEAL_PGP_DIRMNGR_UNAVAILABLE=true (expect true)
+
+=== TEST 2: GPGCONF_AVAILABLE=false -> old v2.2.0 behavior preserved (falls through to keyserver loop) ===
+[INFO] Importing PGP key DEADBEEF00000000000000000000000000000000 for build user 'andro' (keyserver hkps://keyserver.ubuntu.com)...
+[WARN] gpg --recv-keys DEADBEEF00000000000000000000000000000000 failed via hkps://keyserver.ubuntu.com.
+[INFO] Importing PGP key DEADBEEF00000000000000000000000000000000 for build user 'andro' (keyserver hkps://keys.openpgp.org)...
+[WARN] gpg --recv-keys DEADBEEF00000000000000000000000000000000 failed via hkps://keys.openpgp.org.
+[INFO] PGP key import: 0/1 key(s) imported for build user 'andro'.
+OK: returned failure via old keyserver-loop path
+HEAL_PGP_DIRMNGR_UNAVAILABLE=false (expect false — dirmngr check was skipped entirely)

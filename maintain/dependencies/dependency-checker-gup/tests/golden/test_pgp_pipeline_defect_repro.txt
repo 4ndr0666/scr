@@ -1,0 +1,5 @@
+=== Same pipeline as rebuild_aur_packages, conflict-only output (no 'required by:' lines) ===
+[ERROR] Script error on line 17: 'bounded_exec "${SHORT_EXTERNAL_TIMEOUT_SECONDS}" sed -n 's/^.*>[[:space:]]*\([0-9A-F]\{16,\}\),[[:space:]]*required by:[[:space:]]*\(.\{1,\}\)$/\1 \2/p'' exited with status 1.
+FATAL: Unexpected error. Check log: /tmp/fake_pipeline.log
+parsed keys: 0
+main flow continued past the pipeline: yes

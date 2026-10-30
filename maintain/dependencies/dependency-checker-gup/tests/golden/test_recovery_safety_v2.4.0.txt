@@ -1,0 +1,28 @@
+=== TEST 1: blanket --overwrite="*" is UNREACHABLE under -I alone (no interactive) ===
+[WARN]File-existence conflict(s) detected in the failed transaction: somepkg
+[WARN] Recovery rung 1: 1 conflict-affected package(s): somepkg
+[INFO] Recovery rung 1 declined or not authorized — leaving the transaction failed.
+OK: declined (return 1) -- blanket overwrite never attempted under -I with no scoped glob
+
+=== TEST 2: scoped --overwrite (real glob) IS auto-authorized under -I ===
+[WARN]File-existence conflict(s) detected in the failed transaction: somepkg
+[WARN] Recovery rung 1: 1 conflict-affected package(s): somepkg
+[WARN] -I/--force-heal-all authorizes a scoped --overwrite retry: /usr/lib/node_modules/somepkg/*
+[WARN] Retrying the failed transaction with --overwrite (scoped (/usr/lib/node_modules/somepkg/*)): pacman -S somepkg --overwrite /usr/lib/node_modules/somepkg/*
+[OK] Transaction recovered via --overwrite retry (scoped (/usr/lib/node_modules/somepkg/*)).
+OK: scoped retry succeeded under -I, recorded: somepkg: scoped (/usr/lib/node_modules/somepkg/*)
+
+=== TEST 3: ambiguous conflict pair declines UNATTENDED, even with -I ===
+[WARN] Ambiguous conflict pair (pkgA pkgB) in an unattended run — interactive disambiguation required; leaving both packages installed.
+OK: ambiguous pair declined unattended -- neither pkgA nor pkgB removed
+
+=== TEST 4: the transaction's OWN target is never treated as a removable blocker ===
+OK: declined -- targetpkg (the transaction's own arg) was filtered out, leaving zero blockers
+
+=== TEST 5: a protected base/base-devel package is never in 'actionable' ===
+[WARN] Recovery blockers protected as base/base-devel members (never auto-removed): glibc
+OK: declined -- glibc excluded as protected, zero actionable blockers remain
+
+=== TEST 6: budget exhaustion refuses further chains even under -I ===
+[ERROR] Recovery removal budget (5 packages) exhausted this run — declining further -Rdd chains.
+OK: declined -- budget exhausted

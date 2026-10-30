@@ -1,0 +1,18 @@
+=== Call 1: succeeds, leaves a held-back residual ===
+
+System synchronization required: 1 upgrade(s) pending
+Reinstalling packages during an ABI or runtime transition without full sync causes broken bindings.
+[WARN] Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal.
+[INFO] Executing preflight system upgrade (pacman -Syu --noconfirm)...
+[OK] Preflight system upgrade completed successfully.
+[WARN] Preflight upgrade did not clear 1 pending upgrade(s) — held back by IgnorePkg/IgnoreGroup or repository usage policy: linux-wifi-hotspot
+call_count=1 PREFLIGHT_SYNC_DONE=true PREFLIGHT_RESIDUAL_PKGS=linux-wifi-hotspot
+
+=== Call 2: same residual pending set -> must still skip (v2.3.2 behavior unchanged) ===
+
+System synchronization required: 1 upgrade(s) pending
+Reinstalling packages during an ABI or runtime transition without full sync causes broken bindings.
+[WARN] Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal.
+[INFO] Preflight sync already completed this run and the pending set is unchanged — skipping the redundant upgrade and database refresh.
+[WARN] Pending upgrades remain held back (IgnorePkg/IgnoreGroup or repository usage policy): linux-wifi-hotspot
+call_count=1 (expect STILL 1 -- v2.3.2 success-path dedup unaffected by the v2.3.4 addition)

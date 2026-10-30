@@ -1,0 +1,30 @@
+=== Call 1 (verified-missing-files batch): expect real attempt, failure recorded ===
+
+System synchronization required: 55 upgrade(s) pending
+Reinstalling packages during an ABI or runtime transition without full sync causes broken bindings.
+[WARN] Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal.
+[INFO] Executing preflight system upgrade (pacman -Syu --noconfirm)...
+[ERROR] Preflight system upgrade failed.
+OK: returned failure
+run_pacman_install call_count after call 1: 1 (expect 1)
+PREFLIGHT_SYNC_FAILED=true (expect true)
+
+=== Call 2 (stale-python-dir batch, same run, identical pending set): expect fast-decline, NO second pacman -Syu attempt ===
+
+System synchronization required: 55 upgrade(s) pending
+Reinstalling packages during an ABI or runtime transition without full sync causes broken bindings.
+[WARN] Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal.
+[ERROR] Preflight sync already failed this run against the identical pending set — declining to repeat a doomed upgrade attempt.
+OK: returned failure
+run_pacman_install call_count after call 2: 1 (expect STILL 1 — this is the fix)
+
+=== Call 3: pending set CHANGES (simulating partial resolution) -> must retry for real, not stay declined ===
+
+System synchronization required: 55 upgrade(s) pending
+Reinstalling packages during an ABI or runtime transition without full sync causes broken bindings.
+[WARN] Pending upgrades present; -I/--force-heal-all authorizes out-of-sync heal.
+[WARN] Pending upgrade set changed since this run's failed preflight — re-running the sync gate.
+[INFO] Executing preflight system upgrade (pacman -Syu --noconfirm)...
+[ERROR] Preflight system upgrade failed.
+OK: returned failure
+run_pacman_install call_count after call 3: 2 (expect 2 — the changed set must retry)

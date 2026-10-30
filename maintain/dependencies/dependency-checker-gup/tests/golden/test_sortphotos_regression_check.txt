@@ -1,0 +1,34 @@
+===== report_heal_outcome output =====
+[WARN]Integrity heal INCOMPLETE — 8 of 9 attempted package(s) still have missing files (pacman -Qk verified).
+Official (still broken):
+  filesystem
+AUR (rebuild failed):
+  electron-builder
+  kirigami2
+  pacaur
+  peerflix
+  python-pywal
+  sortphotos
+  textlint
+[WARN]Stale-Python unresolved — 1 reinstalled package(s) still install into a retired interpreter directory (pacman -Qql verified):
+  python-thefuzz
+Remediation (stale-python — a reinstall cannot fix these):
+  [ACTION]Wait for a repository rebuild targeting the current interpreter, or rebuild from source, or remove:
+  [ACTION]yay -S --rebuild --noconfirm python-thefuzz   (or: sudo pacman -R python-thefuzz)
+[WARN]PGP keys that blocked AUR rebuilds (import manually as the build user):
+  gpg --recv-keys 155DC67DC25496572CDD608FF635E931C2834999  (required by: python-pywal)
+  gpg --recv-keys 53E6B47B45CEA3E0D5B7457758D0EE648A48B3BB  (required by: kirigami2)
+Remediation (official):
+  [ACTION]sudo pacman -S --noconfirm filesystem
+[NOTE]Diagnosis for "filesystem" (still failing pacman -Qk after an attempted heal):
+  [NOTE]pacman -Qkk reports no ENOENT-class missing paths — the -Qk flag may have raced an earlier transaction this run; re-run the audit before acting.
+  [ACTION]If reinstalling does not clear them, list every missing path: pacman -Qkk filesystem
+Remediation (AUR):
+  [ACTION]PGP-blocked — import the key(s) listed above as the build user, then: yay -S --rebuild --noconfirm kirigami2 python-pywal
+  [ACTION]File conflicts — reinstall over the unowned leftovers: yay -S --rebuild --noconfirm --overwrite '/usr/lib/node_modules/electron-builder/node_modules/*' electron-builder
+  [ACTION]File conflicts — reinstall over the unowned leftovers: yay -S --rebuild --noconfirm --overwrite '/usr/lib/node_modules/peerflix/node_modules/*' peerflix
+  [ACTION]File conflicts — reinstall over the unowned leftovers: yay -S --rebuild --noconfirm --overwrite '/usr/lib/node_modules/textlint/node_modules/*' textlint
+  [ACTION]Build failed — PKGBUILD/upstream defect, not auto-retryable (see the AUR page): pacaur
+  [ACTION]Retry manually: yay -S --rebuild --noconfirm sortphotos
+
+===== end =====

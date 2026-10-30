@@ -1,0 +1,9 @@
+[INFO] Starting dependency closure process.
+[INFO] Checking all installed system packages.
+[INFO] Closure iteration 1.
+[INFO] Found 1 missing deps in iteration 1: stuck-dep=1.0
+[ERROR] Installation failed or was incomplete in iteration 1. Stopping.
+[INFO] Dependency closure finished.
+last_missing after closure: stuck-dep=1.0
+OK: last_missing is non-empty -- main() will take the 'missing deps' exit path, which DOES call report_unresolvable_findings
+UNRESOLVABLE_DEPS: stuck-dep=1.0
