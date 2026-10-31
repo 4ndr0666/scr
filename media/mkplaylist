@@ -1,28 +1,658 @@
 #!/bin/sh
 # === MKPLAYLIST === (c) 2026 - 4ndr0666
-# Usage: mkplaylist <dir>
+# Usage: mkplaylist [options] <dir>
+#
+# POSIX-compliant M3U playlist & coinciding Caddyfile generator.
+# Theme: #15FFFF (#15FFF electric cyan) on #000000 (black).
+
+set -eu
+set -C
+
+# ---------------------------------------------------------------------------
+# Color & Theme Setup (#15FFFF on #000000 black)
+# Note: 5-char #15FFF normalized to 6-hex #15FFFF (RGB 21, 255, 255) for TUI.
+# ---------------------------------------------------------------------------
+HEX_FG="#15ffff"
+HEX_BG="#000000"
+HEX_HL="#00d7ff"
+HEX_BG_ALT="#071a1a"
+
+if [ -t 1 ] || [ -t 2 ]; then
+	C_THEME=$(printf '\033[38;2;21;255;255m\033[48;2;0;0;0m')
+	C_BOLD=$(printf '\033[1m\033[38;2;21;255;255m\033[48;2;0;0;0m')
+	C_DIM=$(printf '\033[38;2;15;165;165m\033[48;2;0;0;0m')
+	C_ERR=$(printf '\033[1m\033[38;2;255;85;85m\033[48;2;0;0;0m')
+	C_RST=$(printf '\033[0m')
+else
+	C_THEME=""
+	C_BOLD=""
+	C_DIM=""
+	C_ERR=""
+	C_RST=""
+fi
+
+FZF_COLORS="bg:${HEX_BG},bg+:${HEX_BG_ALT},fg:${HEX_FG},fg+:${HEX_FG},hl:${HEX_HL},hl+:${HEX_FG},info:${HEX_FG},prompt:${HEX_FG},pointer:${HEX_FG},marker:${HEX_FG},spinner:${HEX_FG},header:${HEX_FG},border:${HEX_FG},gutter:${HEX_BG}"
+
+# ---------------------------------------------------------------------------
+# Cleanup & Helpers
+# ---------------------------------------------------------------------------
+TMP_M3U=""
+TMP_CADDY=""
+cleanup() {
+	[ -n "$TMP_M3U" ] && [ -f "$TMP_M3U" ] && rm -f -- "$TMP_M3U"
+	[ -n "$TMP_CADDY" ] && [ -f "$TMP_CADDY" ] && rm -f -- "$TMP_CADDY"
+	return 0
+}
+trap cleanup EXIT INT TERM HUP
+
+msg() {
+	printf '%s%s%s\n' "$C_THEME" "$*" "$C_RST" >&2
+}
+
+bold_msg() {
+	printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RST" >&2
+}
 
 die() {
-	printf '%s\n' "$*" >&2
+	printf '%s[ERROR] %s%s\n' "$C_ERR" "$*" "$C_RST" >&2
 	exit 1
 }
 
-[ -n "$1" ] || die "usage: ${0##*/} <path>"
-[ -e "$1" ] || die "${0##*/}: $1: no such file or directory"
+have_cmd() {
+	command -v "$1" >/dev/null 2>&1
+}
 
-[ -d "$1" ] && dir=$1 || dir=$(dirname -- "$1")
+# ---------------------------------------------------------------------------
+# Help Menu (Displayed when invoked with 0 arguments or -h/--help)
+# ---------------------------------------------------------------------------
+show_help() {
+	prog=${0##*/}
+	cat <<EOF
+${C_BOLD}=== MKPLAYLIST === (c) 2026 - 4ndr0666${C_RST}
+${C_THEME}POSIX-compliant M3U generator with fzf TUI & Caddyfile builder${C_RST}
+${C_DIM}Theme: #15FFFF (#15FFF) on Black (#000000)${C_RST}
+
+${C_BOLD}USAGE:${C_RST}
+  ${C_THEME}${prog} <dir>${C_RST}
+  ${C_THEME}${prog} [options] <dir>${C_RST}
+
+${C_BOLD}DESCRIPTION:${C_RST}
+  ${C_THEME}Scans <dir> (or the parent directory if a file path is given) and builds
+  an M3U playlist (playlist.m3u). Running with no arguments prints this menu.
+  When invoked interactively with just <dir>, launches an fzf-powered TUI
+  (with a POSIX prompt fallback) to select media type, sort order, and
+  optional coinciding Caddyfile generation.${C_RST}
+
+${C_BOLD}PLAYLIST TYPES (-t):${C_RST}
+  ${C_THEME}both    Videos/audio + images (default in non-interactive mode)${C_RST}
+  ${C_THEME}videos  Video & audio streams (.mp4, .mkv, .webm, .avi, .mov, .mp3, .flac, .ts, ...)${C_RST}
+  ${C_THEME}images  Still & animated images (.jpg, .jpeg, .png, .gif, .webp, .bmp, .svg, .avif, ...)${C_RST}
+
+${C_BOLD}SORTING OPTIONS (-s / -o):${C_RST}
+  ${C_THEME}date    Modification time (default: descending / newest first)${C_RST}
+  ${C_THEME}size    File size in bytes (ascending or descending)${C_RST}
+  ${C_THEME}name    Alphabetical relative path (ascending or descending)${C_RST}
+  ${C_THEME}shuffle Random / shuffled ordering (also accepts: random, rand, shuf)${C_RST}
+
+${C_BOLD}OPTIONS:${C_RST}
+  ${C_THEME}-t <type>   Playlist media filter: videos | images | both${C_RST}
+  ${C_THEME}-s <field>  Sort field: date | size | name | shuffle (default: date)${C_RST}
+  ${C_THEME}-o <order>  Sort order: desc | asc (default: desc; ignored for shuffle)${C_RST}
+  ${C_THEME}-r          Shorthand for -s shuffle (random ordering)${C_RST}
+  ${C_THEME}-d <depth>  Maximum directory traversal depth (default: 3)${C_RST}
+  ${C_THEME}-c          Generate a coinciding Caddyfile via interactive prompts${C_RST}
+  ${C_THEME}-n          Non-interactive mode (use defaults/flags without TUI prompts)${C_RST}
+  ${C_THEME}-h          Show this help menu${C_RST}
+
+${C_BOLD}IDEMPOTENCY & SAFETY:${C_RST}
+  ${C_THEME}* Never overwrites existing files (enforced via POSIX noclobber 'set -C').
+  * Idempotent: if an existing playlist.m3u or Caddyfile already matches the
+    generated output byte-for-byte, no duplicate file is created.
+  * If content differs, writes safely to the next free name (e.g. playlist.1.m3u).${C_RST}
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# TUI Selection Helper (fzf with #15FFFF on black + POSIX fallback)
+# Usage: tui_select "Prompt Title" "item1" "item2" ...
+# ---------------------------------------------------------------------------
+tui_select() {
+	_prompt=$1
+	shift
+
+	if have_cmd fzf && [ -t 0 ] && [ -t 2 ]; then
+		_choice=$(
+			for _item in "$@"; do
+				printf '%s\n' "$_item"
+			done | fzf \
+				--ansi \
+				--no-multi \
+				--height=40% \
+				--layout=reverse \
+				--border=rounded \
+				--prompt="${_prompt} > " \
+				--header="=== MKPLAYLIST === (Enter to confirm, Esc for default)" \
+				--color="$FZF_COLORS" \
+				2>/dev/tty || true
+		)
+		if [ -n "$_choice" ]; then
+			printf '%s\n' "$_choice"
+			return 0
+		fi
+	fi
+
+	if [ -t 0 ] && [ -t 2 ]; then
+		bold_msg "=== ${_prompt} ==="
+		_idx=1
+		for _item in "$@"; do
+			printf '%s  [%d] %s%s\n' "$C_THEME" "$_idx" "$_item" "$C_RST" >&2
+			_idx=$((_idx + 1))
+		done
+		printf '%sSelect [1-%d] (default: 1): %s' "$C_BOLD" "$#" "$C_RST" >&2
+		IFS= read -r _ans </dev/tty || _ans=""
+		case $_ans in
+			''|*[!0-9]*) _ans=1 ;;
+		esac
+		if [ "$_ans" -lt 1 ] || [ "$_ans" -gt "$#" ]; then
+			_ans=1
+		fi
+		_cur=1
+		for _item in "$@"; do
+			if [ "$_cur" -eq "$_ans" ]; then
+				printf '%s\n' "$_item"
+				return 0
+			fi
+			_cur=$((_cur + 1))
+		done
+	fi
+
+	printf '%s\n' "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Prompt Input Helper (with default value)
+# Usage: tui_input "Prompt text" "default_value"
+# ---------------------------------------------------------------------------
+tui_input() {
+	_label=$1
+	_def=$2
+	if [ -t 0 ] && [ -t 2 ]; then
+		printf '%s%s [%s]: %s' "$C_BOLD" "$_label" "$_def" "$C_RST" >&2
+		IFS= read -r _val </dev/tty || _val=""
+		if [ -n "$_val" ]; then
+			printf '%s\n' "$_val"
+		else
+			printf '%s\n' "$_def"
+		fi
+	else
+		printf '%s\n' "$_def"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# Media Discovery & Sorting (Date, Size, Name, Shuffle/Random)
+# ---------------------------------------------------------------------------
+find_media_files() {
+	_type=$1
+	_depth=$2
+
+	case $_type in
+		videos)
+			find . -maxdepth "$_depth" -type f \( \
+				-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
+				-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
+				-iname '*.mpg' -o -iname '*.m4v' -o -iname '*.webm' -o \
+				-iname '*.mp3' -o -iname '*.flac' -o -iname '*.ts' -o \
+				-iname '*.flv' -o -iname '*.ogv' -o -iname '*.3gp' \)
+			;;
+		images)
+			find . -maxdepth "$_depth" -type f \( \
+				-iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o \
+				-iname '*.gif' -o -iname '*.webp' -o -iname '*.bmp' -o \
+				-iname '*.tiff' -o -iname '*.tif' -o -iname '*.svg' -o \
+				-iname '*.avif' -o -iname '*.heic' \)
+			;;
+		both|*)
+			find . -maxdepth "$_depth" -type f \( \
+				-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
+				-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
+				-iname '*.mpg' -o -iname '*.m4v' -o -iname '*.gif' -o \
+				-iname '*.webm' -o -iname '*.mp3' -o -iname '*.flac' -o \
+				-iname '*.ts' -o -iname '*.flv' -o -iname '*.ogv' -o \
+				-iname '*.3gp' -o -iname '*.jpg' -o -iname '*.jpeg' -o \
+				-iname '*.png' -o -iname '*.webp' -o -iname '*.bmp' -o \
+				-iname '*.tiff' -o -iname '*.tif' -o -iname '*.svg' -o \
+				-iname '*.avif' -o -iname '*.heic' \)
+			;;
+	esac
+}
+
+# Emits "<mtime>\t<size>\t<clean_path>" for each discovered file
+stat_records() {
+	_stat_style=""
+	if stat -c '%Y	%s	%n' . >/dev/null 2>&1; then
+		_stat_style="gnu"
+	elif stat -f '%m	%z	%N' . >/dev/null 2>&1; then
+		_stat_style="bsd"
+	fi
+
+	while IFS= read -r _f; do
+		[ -n "$_f" ] || continue
+		_clean=${_f#./}
+		case $_stat_style in
+			gnu)
+				_meta=$(stat -c '%Y	%s' -- "$_f" 2>/dev/null || printf '0\t0')
+				printf '%s\t%s\n' "$_meta" "$_clean"
+				;;
+			bsd)
+				_meta=$(stat -f '%m	%z' -- "$_f" 2>/dev/null || printf '0\t0')
+				printf '%s\t%s\n' "$_meta" "$_clean"
+				;;
+			*)
+				printf '0\t0\t%s\n' "$_clean"
+				;;
+		esac
+	done
+}
+
+# Portable POSIX stream shuffler (uses shuf, sort -R, or awk PRNG fallback)
+shuffle_stream() {
+	if have_cmd shuf; then
+		shuf
+	elif printf '1\n2\n' | sort -R >/dev/null 2>&1; then
+		sort -R
+	else
+		awk 'BEGIN { srand(); } { printf "%0.9f\t%s\n", rand(), $0; }' \
+			| sort -t "$(printf '\t')" -k1,1n \
+			| cut -f2-
+	fi
+}
+
+sort_records() {
+	_field=$1
+	_order=$2
+
+	if [ "$_field" = "shuffle" ]; then
+		cut -f3- | shuffle_stream
+		return 0
+	fi
+
+	case "${_field}:${_order}" in
+		date:desc) sort -t "$(printf '\t')" -k1,1nr -k3,3 ;;
+		date:asc)  sort -t "$(printf '\t')" -k1,1n  -k3,3 ;;
+		size:desc) sort -t "$(printf '\t')" -k2,2nr -k3,3 ;;
+		size:asc)  sort -t "$(printf '\t')" -k2,2n  -k3,3 ;;
+		name:desc) sort -t "$(printf '\t')" -k3,3r ;;
+		name:asc)  sort -t "$(printf '\t')" -k3,3 ;;
+		*)         sort -t "$(printf '\t')" -k1,1nr -k3,3 ;;
+	esac | cut -f3-
+}
+
+# ---------------------------------------------------------------------------
+# Idempotent, Non-Overwriting File Commit
+# Usage: commit_file <tmp_file> <base_path> <ext_or_empty>
+# ---------------------------------------------------------------------------
+commit_file() {
+	_tmp=$1
+	_base=$2
+	_ext=$3
+
+	_primary="${_base}${_ext}"
+	if [ -f "$_primary" ]; then
+		if cmp -s -- "$_tmp" "$_primary"; then
+			msg "[IDEMPOTENT] Unchanged: $_primary already matches generated output."
+			printf '%s\n' "$_primary"
+			return 0
+		fi
+	else
+		cat -- "$_tmp" > "$_primary"
+		msg "[CREATED] $_primary"
+		printf '%s\n' "$_primary"
+		return 0
+	fi
+
+	# Check existing numbered variants for idempotency before allocating a new slot
+	_n=1
+	while [ "$_n" -le 9999 ]; do
+		_cand="${_base}.${_n}${_ext}"
+		if [ -f "$_cand" ]; then
+			if cmp -s -- "$_tmp" "$_cand"; then
+				msg "[IDEMPOTENT] Unchanged: $_cand already matches generated output."
+				printf '%s\n' "$_cand"
+				return 0
+			fi
+		else
+			cat -- "$_tmp" > "$_cand"
+			msg "[PROTECTED] Existing $_primary preserved; wrote new output to $_cand"
+			printf '%s\n' "$_cand"
+			return 0
+		fi
+		_n=$((_n + 1))
+	done
+
+	die "Unable to allocate non-colliding filename for ${_primary}"
+}
+
+# ---------------------------------------------------------------------------
+# Coinciding Caddyfile Builder
+# ---------------------------------------------------------------------------
+caddy_suffix_expr() {
+	_type=$1
+	case $_type in
+		videos)
+			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp
+			;;
+		images)
+			set -- .jpg .jpeg .png .gif .webp .bmp .tiff .tif .svg .avif .heic
+			;;
+		both|*)
+			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp .gif .jpg .jpeg .png .webp .bmp .tiff .tif .svg .avif .heic
+			;;
+	esac
+	_out=""
+	for _ext in "$@"; do
+		if [ -z "$_out" ]; then
+			_out="(hasSuffix \\\"${_ext}\\\" \$lower)"
+		else
+			_out="${_out} (hasSuffix \\\"${_ext}\\\" \$lower)"
+		fi
+	done
+	printf '%s' "$_out"
+}
+
+detect_lan_ip() {
+	if have_cmd hostname; then
+		_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+		if [ -n "$_ip" ]; then
+			printf '%s\n' "$_ip"
+			return 0
+		fi
+	fi
+	if have_cmd ip; then
+		_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n 1)
+		if [ -n "$_ip" ]; then
+			printf '%s\n' "$_ip"
+			return 0
+		fi
+	fi
+	printf '%s\n' "192.168.1.219"
+}
+
+generate_caddyfile() {
+	_target_dir=$1
+	_media_type=$2
+	_playlist_name=$3
+
+	bold_msg "--- Coinciding Caddyfile Configuration ---"
+
+	# 1. Port selection
+	_port_choice=$(tui_select "Caddy Listen Port" \
+		":3000 (default)" \
+		":8080 (alt HTTP)" \
+		":8000 (media server)" \
+		"Custom port...")
+	case $_port_choice in
+		":3000"*) _port=":3000" ;;
+		":8080"*) _port=":8080" ;;
+		":8000"*) _port=":8000" ;;
+		*)
+			_raw_port=$(tui_input "Enter listen port (e.g. :3000 or 3000)" ":3000")
+			case $_raw_port in
+				:*) _port=$_raw_port ;;
+				*)  _port=":${_raw_port}" ;;
+			esac
+			;;
+	esac
+
+	# 2. Bind address selection
+	_lan_ip=$(detect_lan_ip)
+	_bind_choice=$(tui_select "Caddy Bind Addresses" \
+		"192.168.1.219 127.0.0.1 (preset LAN + loopback)" \
+		"${_lan_ip} 127.0.0.1 (detected LAN + loopback)" \
+		"0.0.0.0 (all interfaces)" \
+		"127.0.0.1 (localhost only)" \
+		"Custom bind addresses...")
+	case $_bind_choice in
+		"192.168.1.219 127.0.0.1"*) _bind="192.168.1.219 127.0.0.1" ;;
+		"${_lan_ip} 127.0.0.1"*)    _bind="${_lan_ip} 127.0.0.1" ;;
+		"0.0.0.0"*)                 _bind="0.0.0.0" ;;
+		"127.0.0.1"*)               _bind="127.0.0.1" ;;
+		*)
+			_bind=$(tui_input "Enter space-separated bind IPs" "192.168.1.219 127.0.0.1")
+			;;
+	esac
+
+	# 3. Root directory selection
+	_root_choice=$(tui_select "Caddy Root Directory" \
+		"${_target_dir} (current target directory)" \
+		"/s4/s4Downloads (preset media root)" \
+		"Custom root path...")
+	case $_root_choice in
+		"${_target_dir}"*) _root=$_target_dir ;;
+		"/s4/s4Downloads"*) _root="/s4/s4Downloads" ;;
+		*)
+			_root=$(tui_input "Enter root directory path" "$_target_dir")
+			;;
+	esac
+
+	_suffix_cond=$(caddy_suffix_expr "$_media_type")
+	TMP_CADDY=$(mktemp "${TMPDIR:-/tmp}/mkplaylist_caddy.XXXXXX")
+
+	cat >| "$TMP_CADDY" <<EOF
+${_port} {
+	bind ${_bind}
+	root * ${_root}
+
+	handle /${_playlist_name} {
+		header Content-Type "audio/x-mpegurl; charset=utf-8"
+		header Cache-Control "no-cache, no-store, must-revalidate"
+		templates {
+			mime audio/x-mpegurl
+		}
+		respond "#EXTM3U
+{{- range listFiles \"/\" }}
+{{- \$lower := lower . }}
+{{- if or ${_suffix_cond} }}
+{{- \$safe := replace \"%\" \"%25\" . }}
+{{- \$safe = replace \" \" \"%20\" \$safe }}
+{{- \$safe = replace \"\x23\" \"%23\" \$safe }}
+{{- \$safe = replace \"?\" \"%3F\" \$safe }}
+{{- \$safe = replace \"[\" \"%5B\" \$safe }}
+{{- \$safe = replace \"]\" \"%5D\" \$safe }}
+http://{{ \$.Req.Host }}/{{ \$safe }}
+{{- end }}
+{{- end }}
+" 200
+	}
+
+	handle {
+		file_server
+	}
+}
+EOF
+
+	_caddy_out=$(commit_file "$TMP_CADDY" "${_target_dir}/Caddyfile" "")
+	printf '%s\n' "$_caddy_out"
+}
+
+# ---------------------------------------------------------------------------
+# Argument Parsing
+# ---------------------------------------------------------------------------
+if [ "$#" -eq 0 ]; then
+	show_help
+	exit 0
+fi
+
+case ${1:-} in
+	--help)
+		show_help
+		exit 0
+		;;
+esac
+
+OPT_TYPE=""
+OPT_SORT=""
+OPT_ORDER=""
+OPT_DEPTH=3
+OPT_CADDY=""
+OPT_NONINTERACTIVE=0
+
+while getopts ":t:s:o:rd:cnh" opt; do
+	case $opt in
+		t) OPT_TYPE=$OPTARG ;;
+		s) OPT_SORT=$OPTARG ;;
+		o) OPT_ORDER=$OPTARG ;;
+		r) OPT_SORT="shuffle" ;;
+		d) OPT_DEPTH=$OPTARG ;;
+		c) OPT_CADDY="yes" ;;
+		n) OPT_NONINTERACTIVE=1 ;;
+		h)
+			show_help
+			exit 0
+			;;
+		:)
+			die "Option -$OPTARG requires an argument. Run '${0##*/}' with no args for help."
+			;;
+		\?)
+			die "Invalid option: -$OPTARG. Run '${0##*/}' with no args for help."
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+[ "$#" -ge 1 ] || {
+	show_help
+	exit 1
+}
+[ "$#" -le 1 ] || die "Expected a single <dir> argument, got $#. Run '${0##*/}' with no args for help."
+
+TARGET_ARG=$1
+[ -e "$TARGET_ARG" ] || die "${0##*/}: $TARGET_ARG: no such file or directory"
+
+if [ -d "$TARGET_ARG" ]; then
+	dir=$TARGET_ARG
+else
+	dir=$(dirname -- "$TARGET_ARG")
+fi
+
 cd -- "$dir" || exit 1
+TARGET_DIR=$PWD
 
-out="$PWD/playlist.m3u"
+# Validate depth
+case $OPT_DEPTH in
+	''|*[!0-9]*) die "Invalid depth '$OPT_DEPTH': must be a positive integer" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Interactive TUI vs Defaults Resolution
+# ---------------------------------------------------------------------------
+IS_INTERACTIVE=0
+if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
+	IS_INTERACTIVE=1
+fi
+
+# 1. Resolve Media Type (videos | images | both)
+if [ -z "$OPT_TYPE" ]; then
+	if [ "$IS_INTERACTIVE" -eq 1 ]; then
+		_sel_type=$(tui_select "Playlist Media Kind" \
+			"both   - Videos/Audio + Images" \
+			"videos - Videos & Audio only" \
+			"images - Images only")
+		case $_sel_type in
+			videos*) OPT_TYPE="videos" ;;
+			images*) OPT_TYPE="images" ;;
+			*)       OPT_TYPE="both" ;;
+		esac
+	else
+		OPT_TYPE="both"
+	fi
+else
+	case $OPT_TYPE in
+		videos|video|v) OPT_TYPE="videos" ;;
+		images|image|i) OPT_TYPE="images" ;;
+		both|all|b)     OPT_TYPE="both" ;;
+		*) die "Invalid playlist type '$OPT_TYPE' (expected: videos, images, or both)" ;;
+	esac
+fi
+
+# 2. Resolve Sort Field & Order (default: date desc, plus shuffle/random)
+if [ -z "$OPT_SORT" ] && [ -z "$OPT_ORDER" ]; then
+	if [ "$IS_INTERACTIVE" -eq 1 ]; then
+		_sel_sort=$(tui_select "Sort Order (Default: Date Descending)" \
+			"date:desc - Date Descending (newest first) [DEFAULT]" \
+			"date:asc  - Date Ascending (oldest first)" \
+			"size:desc - Size Descending (largest first)" \
+			"size:asc  - Size Ascending (smallest first)" \
+			"name:asc  - Name Ascending (A -> Z)" \
+			"name:desc - Name Descending (Z -> A)" \
+			"shuffle   - Shuffle / Random order")
+		case $_sel_sort in
+			date:asc*)  OPT_SORT="date"; OPT_ORDER="asc" ;;
+			size:desc*) OPT_SORT="size"; OPT_ORDER="desc" ;;
+			size:asc*)  OPT_SORT="size"; OPT_ORDER="asc" ;;
+			name:asc*)  OPT_SORT="name"; OPT_ORDER="asc" ;;
+			name:desc*) OPT_SORT="name"; OPT_ORDER="desc" ;;
+			shuffle*)   OPT_SORT="shuffle"; OPT_ORDER="random" ;;
+			*)          OPT_SORT="date"; OPT_ORDER="desc" ;;
+		esac
+	else
+		OPT_SORT="date"
+		OPT_ORDER="desc"
+	fi
+else
+	[ -n "$OPT_SORT" ] || OPT_SORT="date"
+	[ -n "$OPT_ORDER" ] || OPT_ORDER="desc"
+	case $OPT_SORT in
+		date|time|mtime|d)          OPT_SORT="date" ;;
+		size|bytes|s)               OPT_SORT="size" ;;
+		name|alpha|n)               OPT_SORT="name" ;;
+		shuffle|random|rand|shuf|r) OPT_SORT="shuffle" ;;
+		*) die "Invalid sort field '$OPT_SORT' (expected: date, size, name, or shuffle)" ;;
+	esac
+	if [ "$OPT_SORT" != "shuffle" ]; then
+		case $OPT_ORDER in
+			desc|descending|r) OPT_ORDER="desc" ;;
+			asc|ascending|a)   OPT_ORDER="asc" ;;
+			*) die "Invalid sort order '$OPT_ORDER' (expected: desc or asc)" ;;
+		esac
+	fi
+fi
+
+# 3. Resolve Coinciding Caddyfile Option
+if [ -z "$OPT_CADDY" ]; then
+	if [ "$IS_INTERACTIVE" -eq 1 ]; then
+		_sel_caddy=$(tui_select "Generate Coinciding Caddyfile?" \
+			"no  - Playlist only" \
+			"yes - Configure & output coinciding Caddyfile")
+		case $_sel_caddy in
+			yes*) OPT_CADDY="yes" ;;
+			*)    OPT_CADDY="no" ;;
+		esac
+	else
+		OPT_CADDY="no"
+	fi
+fi
+
+# ---------------------------------------------------------------------------
+# Build Playlist in Temp File & Commit Idempotently
+# ---------------------------------------------------------------------------
+TMP_M3U=$(mktemp "${TMPDIR:-/tmp}/mkplaylist_m3u.XXXXXX")
 
 {
 	printf '#EXTM3U\n'
-	find . -maxdepth 3 -type f \( \
-		-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
-		-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
-		-iname '*.m4v' -o -iname '*.gif' -o -iname '*.webm' -o \
-		-iname '*.mp3' -o -iname '*.flac' -o -iname '*.ts' \) \
-		| sed 's|^\./||' | sort
-} > "$out"
+	find_media_files "$OPT_TYPE" "$OPT_DEPTH" \
+		| stat_records \
+		| sort_records "$OPT_SORT" "$OPT_ORDER"
+} >| "$TMP_M3U"
 
-printf '%s\n' "$out"
+OUT_M3U=$(commit_file "$TMP_M3U" "${TARGET_DIR}/playlist" ".m3u")
+PLAYLIST_BASENAME=${OUT_M3U##*/}
+printf '%s\n' "$OUT_M3U"
+
+# ---------------------------------------------------------------------------
+# Optional Coinciding Caddyfile Output
+# ---------------------------------------------------------------------------
+if [ "$OPT_CADDY" = "yes" ]; then
+	OUT_CADDY=$(generate_caddyfile "$TARGET_DIR" "$OPT_TYPE" "$PLAYLIST_BASENAME")
+	printf '%s\n' "$OUT_CADDY"
+fi
