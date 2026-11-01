@@ -63,22 +63,86 @@ have_cmd() {
 	command -v "$1" >/dev/null 2>&1
 }
 
+# Detect the physical LAN IPv4 address, strictly bypassing WireGuard, POINTOPOINT,
+# and virtual tunnel interfaces (e.g. `la`, `wg*`, `tun*`) so that running mkcaddy
+# while behind a VPN never mistakes the /32 tunnel IP (10.x.x.x) for the LAN IP!
 detect_lan_ip() {
-	if have_cmd hostname; then
-		_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-		if [ -n "$_ip" ]; then
-			printf '%s\n' "$_ip"
-			return 0
-		fi
-	fi
 	if have_cmd ip; then
-		_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n 1)
+		_wg_devs=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
+
+		# 1. Prefer the default-route physical interface in the main table
+		_lan_dev=$(ip -4 route show table main default 2>/dev/null | awk -v wg=" $_wg_devs " '
+			{
+				for (i = 1; i <= NF; i++) {
+					if ($i == "dev") {
+						d = $(i+1)
+						if (d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0) {
+							print d
+							exit
+						}
+					}
+				}
+			}')
+		if [ -n "$_lan_dev" ]; then
+			_ip=$(ip -o -4 addr show dev "$_lan_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
+			if [ -n "$_ip" ]; then
+				printf '%s\n' "$_ip"
+				return 0
+			fi
+		fi
+
+		# 2. Fallback: first UP BROADCAST Ethernet/Wi-Fi interface (excludes POINTOPOINT VPN tunnels)
+		_bcast_devs=$(ip -o link show up 2>/dev/null | awk -F': ' '/BROADCAST/ && !/POINTOPOINT/ {print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
+		_ip=$(ip -o -4 addr show up scope global 2>/dev/null | awk -v bcast=" $_bcast_devs " -v wg=" $_wg_devs " '
+			{
+				d = $2
+				if (d == "lo" || d ~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/) next
+				if (index(wg, " " d " ") > 0) next
+				if (bcast != "  " && index(bcast, " " d " ") == 0) next
+				split($4, a, "/")
+				if (a[2] != "32") {
+					print a[1]
+					exit
+				}
+			}')
 		if [ -n "$_ip" ]; then
 			printf '%s\n' "$_ip"
 			return 0
 		fi
 	fi
-	printf '%s\n' "192.168.1.219"
+
+	if have_cmd hostname; then
+		_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/) {print $i; exit}}')
+		if [ -n "$_ip" ]; then
+			printf '%s\n' "$_ip"
+			return 0
+		fi
+	fi
+	printf '%s\n' "192.168.1.242"
+}
+
+# Detect active WireGuard / POINTOPOINT VPN IPv4 address (if any) so the user can
+# optionally bind LAN + VPN + loopback together when behind a tunnel.
+detect_vpn_ip() {
+	if have_cmd ip; then
+		_wg_dev=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2; exit}' | cut -d'@' -f1 || true)
+		if [ -n "$_wg_dev" ]; then
+			_vip=$(ip -o -4 addr show dev "$_wg_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
+			if [ -n "$_vip" ]; then
+				printf '%s\n' "$_vip"
+				return 0
+			fi
+		fi
+		_ptp_dev=$(ip -o link show up 2>/dev/null | awk -F': ' '/POINTOPOINT/ {print $2; exit}' | cut -d'@' -f1 || true)
+		if [ -n "$_ptp_dev" ]; then
+			_vip=$(ip -o -4 addr show dev "$_ptp_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
+			if [ -n "$_vip" ]; then
+				printf '%s\n' "$_vip"
+				return 0
+			fi
+		fi
+	fi
+	return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -150,7 +214,7 @@ ${C_BOLD}SUPPORTED CADDY MODULES & CAPABILITIES (COMPOSABLE IN TUI):${C_RST}
 ${C_BOLD}CLI OPTIONS:${C_RST}
   ${C_THEME}-p <preset>  Select architecture preset (see list above)
   -a <addr>    Site address / port (e.g. :3000, example.com, http://localhost:8080)
-  -b <ips>     Bind address(es) (e.g. "192.168.1.219 127.0.0.1" or "0.0.0.0")
+  -b <ips>     Bind address(es) (e.g. "192.168.1.242 127.0.0.1" or "0.0.0.0")
   -r <path>    Root directory for file_server / templates / SPA / PHP
   -u <upstr>   Upstream address(es) for reverse_proxy or php_fastcgi
   -t <media>   Media filter for m3u-streamer preset: both | videos | images
@@ -389,25 +453,37 @@ prompt_site_header() {
 		esac
 	fi
 
-	# Bind interface configuration
+	# Bind interface configuration (VPN-aware physical LAN detection)
 	_lan_ip=$(detect_lan_ip)
+	_vpn_ip=$(detect_vpn_ip || true)
 	if [ -n "${OPT_BIND:-}" ]; then
 		SITE_BIND=$OPT_BIND
 	else
-		_bind_sel=$(tui_select "Network Interface Binding (bind directive)" \
-			"192.168.1.219 127.0.0.1 (${_lan_ip} preset LAN + loopback)" \
-			"${_lan_ip} 127.0.0.1 (auto-detected LAN + loopback)" \
-			"all (omit bind directive / listen on all interfaces)" \
-			"0.0.0.0 (explicit IPv4 all interfaces)" \
-			"127.0.0.1 (loopback / localhost only)" \
-			"Custom bind IP address(es)...")
+		if [ -n "$_vpn_ip" ] && [ "$_vpn_ip" != "$_lan_ip" ]; then
+			_bind_sel=$(tui_select "Network Interface Binding (bind directive)" \
+				"${_lan_ip} 127.0.0.1 (auto-detected physical LAN + loopback — bypasses VPN)" \
+				"${_lan_ip} ${_vpn_ip} 127.0.0.1 (physical LAN + active WireGuard VPN + loopback)" \
+				"all (omit bind directive / listen on all interfaces)" \
+				"0.0.0.0 (explicit IPv4 all interfaces)" \
+				"127.0.0.1 (loopback / localhost only)" \
+				"${_vpn_ip} 127.0.0.1 (VPN tunnel + loopback only)" \
+				"Custom bind IP address(es)...")
+		else
+			_bind_sel=$(tui_select "Network Interface Binding (bind directive)" \
+				"${_lan_ip} 127.0.0.1 (auto-detected physical LAN + loopback)" \
+				"all (omit bind directive / listen on all interfaces)" \
+				"0.0.0.0 (explicit IPv4 all interfaces)" \
+				"127.0.0.1 (loopback / localhost only)" \
+				"Custom bind IP address(es)...")
+		fi
 		case $_bind_sel in
-			"192.168.1.219 127.0.0.1"*) SITE_BIND="192.168.1.219 127.0.0.1" ;;
-			"${_lan_ip} 127.0.0.1"*)    SITE_BIND="${_lan_ip} 127.0.0.1" ;;
-			"all"*)                     SITE_BIND="" ;;
-			"0.0.0.0"*)                 SITE_BIND="0.0.0.0" ;;
-			"127.0.0.1"*)               SITE_BIND="127.0.0.1" ;;
-			*)                          SITE_BIND=$(tui_input "Enter space-separated bind IPs" "192.168.1.219 127.0.0.1") ;;
+			"${_lan_ip} 127.0.0.1"*)             SITE_BIND="${_lan_ip} 127.0.0.1" ;;
+			"${_lan_ip} ${_vpn_ip} 127.0.0.1"*)  SITE_BIND="${_lan_ip} ${_vpn_ip} 127.0.0.1" ;;
+			"all"*)                              SITE_BIND="" ;;
+			"0.0.0.0"*)                          SITE_BIND="0.0.0.0" ;;
+			"127.0.0.1"*)                        SITE_BIND="127.0.0.1" ;;
+			"${_vpn_ip} 127.0.0.1"*)             SITE_BIND="${_vpn_ip} 127.0.0.1" ;;
+			*)                                   SITE_BIND=$(tui_input "Enter space-separated bind IPs" "${_lan_ip} 127.0.0.1") ;;
 		esac
 	fi
 
