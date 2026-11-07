@@ -1,23 +1,19 @@
 #!/bin/sh
 # === MKPLAYLIST === (c) 2026 - 4ndr0666
-# Usage: mkplaylist [options] <dir>
-#
-# POSIX-compliant M3U playlist & coinciding Caddyfile generator.
-# Theme: #15FFFF (#15FFF electric cyan) on #000000 (black).
-
+# POSIX-shell TUI; embedded Python engine for lossless traversal and publication.
 set -eu
-set -C
-
-# ---------------------------------------------------------------------------
-# Color & Theme Setup (#15FFFF on #000000 black)
-# Note: 5-char #15FFF normalized to 6-hex #15FFFF (RGB 21, 255, 255) for TUI.
-# ---------------------------------------------------------------------------
+set -f
+umask 077
+LC_ALL=C
+export LC_ALL
+VERSION=3.0.0
+PYTHON_BIN=${PYTHON_BIN:-python3}
 HEX_FG="#15ffff"
 HEX_BG="#000000"
 HEX_HL="#00d7ff"
 HEX_BG_ALT="#071a1a"
 
-if [ -t 1 ] || [ -t 2 ]; then
+if { [ -t 1 ] || [ -t 2 ]; } && [ "${TERM:-}" != "dumb" ] && [ -z "${NO_COLOR:-}" ]; then
 	C_THEME=$(printf '\033[38;2;21;255;255m\033[48;2;0;0;0m')
 	C_BOLD=$(printf '\033[1m\033[38;2;21;255;255m\033[48;2;0;0;0m')
 	C_DIM=$(printf '\033[38;2;15;165;165m\033[48;2;0;0;0m')
@@ -33,22 +29,6 @@ fi
 
 FZF_COLORS="bg:${HEX_BG},bg+:${HEX_BG_ALT},fg:${HEX_FG},fg+:${HEX_FG},hl:${HEX_HL},hl+:${HEX_FG},info:${HEX_FG},prompt:${HEX_FG},pointer:${HEX_FG},marker:${HEX_FG},spinner:${HEX_FG},header:${HEX_FG},border:${HEX_FG},gutter:${HEX_BG}"
 
-# ---------------------------------------------------------------------------
-# Cleanup & Helpers
-# ---------------------------------------------------------------------------
-TMP_M3U=""
-TMP_CADDY=""
-cleanup() {
-	[ -n "$TMP_M3U" ] && [ -f "$TMP_M3U" ] && rm -f -- "$TMP_M3U"
-	[ -n "$TMP_CADDY" ] && [ -f "$TMP_CADDY" ] && rm -f -- "$TMP_CADDY"
-	return 0
-}
-trap cleanup EXIT INT TERM HUP
-
-msg() {
-	printf '%s%s%s\n' "$C_THEME" "$*" "$C_RST" >&2
-}
-
 bold_msg() {
 	printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RST" >&2
 }
@@ -62,60 +42,53 @@ have_cmd() {
 	command -v "$1" >/dev/null 2>&1
 }
 
-# ---------------------------------------------------------------------------
-# Help Menu (Displayed when invoked with 0 arguments or -h/--help)
-# ---------------------------------------------------------------------------
 show_help() {
-	prog=${0##*/}
 	cat <<EOF
-${C_BOLD}=== MKPLAYLIST === (c) 2026 - 4ndr0666${C_RST}
-${C_THEME}POSIX-compliant M3U generator with fzf TUI & Caddyfile builder${C_RST}
-${C_DIM}Theme: #15FFFF (#15FFF) on Black (#000000)${C_RST}
+${C_BOLD}=== MKPLAYLIST === (c) 2026 - 4ndr0666 | ${VERSION}${C_RST}
+${C_THEME}Usage: ${0##*/} [options] <dir_or_file>${C_RST}
 
-${C_BOLD}USAGE:${C_RST}
-  ${C_THEME}${prog} <dir>${C_RST}
-  ${C_THEME}${prog} [options] <dir>${C_RST}
+Scans all subdirectories by default and creates playlist.m3u. A regular file
+argument selects its parent directory. With a terminal, unresolved choices use
+fzf (electric cyan on black) or numbered prompts. No arguments displays help.
 
-${C_BOLD}DESCRIPTION:${C_RST}
-  ${C_THEME}Scans <dir> (or the parent directory if a file path is given) and builds
-  an M3U playlist (playlist.m3u). Running with no arguments prints this menu.
-  When invoked interactively with just <dir>, launches an fzf-powered TUI
-  (with a POSIX prompt fallback) to select media type, sort order, and
-  optional coinciding Caddyfile generation.${C_RST}
+  -t <type>   videos (video + audio), images, or both (default: both)
+  -s <field>  date, size, name, shuffle (default: date)
+  -o <order>  desc or asc (default: desc; ignored for shuffle)
+  -r          Shuffle every discovered file exactly once per generation
+  -d <depth>  Maximum file depth; 0 = unlimited (default), 1 = root files only
+  -K          Keep all existing files; reuse matching numbered variants
+  -e          Explicitly allow an empty playlist
+  -c          Generate a Caddyfile serving this exact playlist and media root
+  -a <port>   Caddy listen port (default: :3000; implies -c)
+  -b <ips>    Caddy bind IPs, or all (default: loopback without a terminal)
+  -v          Require Caddy validation before publishing either output
+  -V          Explicitly skip Caddy validation
+  -n          No interactive prompts
+  -h          Help (--help and --version also supported)
 
-${C_BOLD}PLAYLIST TYPES (-t):${C_RST}
-  ${C_THEME}both    Videos/audio + images (default in non-interactive mode)${C_RST}
-  ${C_THEME}videos  Video & audio streams (.mp4, .mkv, .webm, .avi, .mov, .mp3, .flac, .ts, ...)${C_RST}
-  ${C_THEME}images  Still & animated images (.jpg, .jpeg, .png, .gif, .webp, .bmp, .svg, .avif, ...)${C_RST}
+Requires POSIX sh and Python 3.9+ on a POSIX filesystem with hard links/flock.
+PYTHON_BIN and CADDY_BIN select the executables. No Caddy daemon is started.
 
-${C_BOLD}SORTING OPTIONS (-s / -o):${C_RST}
-  ${C_THEME}date    Modification time (default: descending / newest first)${C_RST}
-  ${C_THEME}size    File size in bytes (ascending or descending)${C_RST}
-  ${C_THEME}name    Alphabetical relative path (ascending or descending)${C_RST}
-  ${C_THEME}shuffle Random / shuffled ordering (also accepts: random, rand, shuf)${C_RST}
+Coverage includes common video/audio containers, AAC, WAV, Opus, M4A, M2TS,
+HEIF, APNG and JXL, plus all original extensions. Detection uses extensions;
+codec decodability depends on the player. Symlinks are skipped; hard links to
+one media inode appear once. Read/stat failures abort publication.
 
-${C_BOLD}OPTIONS:${C_RST}
-  ${C_THEME}-t <type>   Playlist media filter: videos | images | both${C_RST}
-  ${C_THEME}-s <field>  Sort field: date | size | name | shuffle (default: date)${C_RST}
-  ${C_THEME}-o <order>  Sort order: desc | asc (default: desc; ignored for shuffle)${C_RST}
-  ${C_THEME}-r          Shorthand for -s shuffle (random ordering)${C_RST}
-  ${C_THEME}-d <depth>  Maximum directory traversal depth (default: 3)${C_RST}
-  ${C_THEME}-c          Generate a coinciding Caddyfile via interactive prompts${C_RST}
-  ${C_THEME}-n          Non-interactive mode (use defaults/flags without TUI prompts)${C_RST}
-  ${C_THEME}-h          Show this help menu${C_RST}
+Output uses UTF-8 byte-percent-encoded relative URI paths (./...), preserving
+spaces, Unicode, percent signs, tabs and newlines without splitting records.
+The playlist location must stay alongside its media tree. Use a URI-aware player.
 
-${C_BOLD}IDEMPOTENCY & SAFETY:${C_RST}
-  ${C_THEME}* Never overwrites existing files (enforced via POSIX noclobber 'set -C').
-  * Idempotent: if an existing playlist.m3u or Caddyfile already matches the
-    generated output byte-for-byte, no duplicate file is created.
-  * If content differs, writes safely to the next free name (e.g. playlist.1.m3u).${C_RST}
+An unchanged playlist keeps its inode and timestamp. Changed output refreshes
+playlist.m3u atomically after preserving the old contents as playlist.N.m3u.
+-K retains the original never-overwrite behavior. Caddyfiles always preserve
+existing contents and reuse matching variants. Deploy the printed Caddyfile;
+configuration files are mode 0600, playlists are 0644. Grant service access as
+needed. Concurrent runs serialize on the media directory without a lock file.
+Shuffle intentionally changes ordering; it never samples a subset of files.
+${C_DIM}Theme: #15FFFF on #000000${C_RST}
 EOF
 }
 
-# ---------------------------------------------------------------------------
-# TUI Selection Helper (fzf with #15FFFF on black + POSIX fallback)
-# Usage: tui_select "Prompt Title" "item1" "item2" ...
-# ---------------------------------------------------------------------------
 tui_select() {
 	_prompt=$1
 	shift
@@ -126,6 +99,7 @@ tui_select() {
 	fi
 
 	if have_cmd fzf && [ -t 0 ] && [ -t 2 ]; then
+		_rc=0
 		_choice=$(
 			for _item in "$@"; do
 				printf '%s\n' "$_item"
@@ -137,11 +111,13 @@ tui_select() {
 				--border=rounded \
 				--prompt="${_prompt} > " \
 				--header="=== MKPLAYLIST === (Enter to confirm, Esc for default)" \
-				--color="$FZF_COLORS" \
-				2>/dev/tty || true
-		)
-		if [ -n "$_choice" ]; then
+				--color="$FZF_COLORS"
+		) || _rc=$?
+		if [ "$_rc" -eq 0 ] && [ -n "$_choice" ]; then
 			printf '%s\n' "$_choice"
+			return 0
+		elif [ "$_rc" -eq 1 ] || [ "$_rc" -eq 130 ]; then
+			printf '%s\n' "$1"
 			return 0
 		fi
 	fi
@@ -154,16 +130,15 @@ tui_select() {
 			_idx=$((_idx + 1))
 		done
 		printf '%sSelect [1-%d] (default: 1): %s' "$C_BOLD" "$#" "$C_RST" >&2
-		IFS= read -r _ans </dev/tty || _ans=""
+		IFS= read -r _ans || _ans=""
 		case $_ans in
 			''|*[!0-9]*) _ans=1 ;;
 		esac
-		if [ "$_ans" -lt 1 ] || [ "$_ans" -gt "$#" ]; then
-			_ans=1
-		fi
+		_ans=$(printf '%s' "$_ans" | sed 's/^0*//')
+		[ -n "$_ans" ] || _ans=1
 		_cur=1
 		for _item in "$@"; do
-			if [ "$_cur" -eq "$_ans" ]; then
+			if [ "$_cur" = "$_ans" ]; then
 				printf '%s\n' "$_item"
 				return 0
 			fi
@@ -183,7 +158,7 @@ tui_input() {
 	_def=$2
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 		printf '%s%s [%s]: %s' "$C_BOLD" "$_label" "$_def" "$C_RST" >&2
-		IFS= read -r _val </dev/tty || _val=""
+		IFS= read -r _val || _val=""
 		if [ -n "$_val" ]; then
 			printf '%s\n' "$_val"
 		else
@@ -194,191 +169,18 @@ tui_input() {
 	fi
 }
 
-# ---------------------------------------------------------------------------
-# Media Discovery & Sorting (Date, Size, Name, Shuffle/Random)
-# ---------------------------------------------------------------------------
-find_media_files() {
-	_type=$1
-	_depth=$2
-
-	case $_type in
-		videos)
-			find . -maxdepth "$_depth" -type f \( \
-				-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
-				-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
-				-iname '*.mpg' -o -iname '*.m4v' -o -iname '*.webm' -o \
-				-iname '*.mp3' -o -iname '*.flac' -o -iname '*.ts' -o \
-				-iname '*.flv' -o -iname '*.ogv' -o -iname '*.3gp' \)
-			;;
-		images)
-			find . -maxdepth "$_depth" -type f \( \
-				-iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o \
-				-iname '*.gif' -o -iname '*.webp' -o -iname '*.bmp' -o \
-				-iname '*.tiff' -o -iname '*.tif' -o -iname '*.svg' -o \
-				-iname '*.avif' -o -iname '*.heic' \)
-			;;
-		both|*)
-			find . -maxdepth "$_depth" -type f \( \
-				-iname '*.mp4' -o -iname '*.wmv' -o -iname '*.mkv' -o \
-				-iname '*.avi' -o -iname '*.mov' -o -iname '*.mpeg' -o \
-				-iname '*.mpg' -o -iname '*.m4v' -o -iname '*.gif' -o \
-				-iname '*.webm' -o -iname '*.mp3' -o -iname '*.flac' -o \
-				-iname '*.ts' -o -iname '*.flv' -o -iname '*.ogv' -o \
-				-iname '*.3gp' -o -iname '*.jpg' -o -iname '*.jpeg' -o \
-				-iname '*.png' -o -iname '*.webp' -o -iname '*.bmp' -o \
-				-iname '*.tiff' -o -iname '*.tif' -o -iname '*.svg' -o \
-				-iname '*.avif' -o -iname '*.heic' \)
-			;;
-	esac
-}
-
-# Emits "<mtime>\t<size>\t<clean_path>" for each discovered file
-stat_records() {
-	_stat_style=""
-	if stat -c '%Y	%s	%n' . >/dev/null 2>&1; then
-		_stat_style="gnu"
-	elif stat -f '%m	%z	%N' . >/dev/null 2>&1; then
-		_stat_style="bsd"
-	fi
-
-	while IFS= read -r _f; do
-		[ -n "$_f" ] || continue
-		_clean=${_f#./}
-		case $_stat_style in
-			gnu)
-				_meta=$(stat -c '%Y	%s' -- "$_f" 2>/dev/null || printf '0\t0')
-				printf '%s\t%s\n' "$_meta" "$_clean"
-				;;
-			bsd)
-				_meta=$(stat -f '%m	%z' -- "$_f" 2>/dev/null || printf '0\t0')
-				printf '%s\t%s\n' "$_meta" "$_clean"
-				;;
-			*)
-				printf '0\t0\t%s\n' "$_clean"
-				;;
-		esac
-	done
-}
-
-# Portable POSIX stream shuffler (uses shuf, sort -R, or awk PRNG fallback)
-shuffle_stream() {
-	if have_cmd shuf; then
-		shuf
-	elif printf '1\n2\n' | sort -R >/dev/null 2>&1; then
-		sort -R
-	else
-		awk 'BEGIN { srand(); } { printf "%0.9f\t%s\n", rand(), $0; }' \
-			| sort -t "$(printf '\t')" -k1,1n \
-			| cut -f2-
-	fi
-}
-
-sort_records() {
-	_field=$1
-	_order=$2
-
-	if [ "$_field" = "shuffle" ]; then
-		cut -f3- | shuffle_stream
-		return 0
-	fi
-
-	case "${_field}:${_order}" in
-		date:desc) sort -t "$(printf '\t')" -k1,1nr -k3,3 ;;
-		date:asc)  sort -t "$(printf '\t')" -k1,1n  -k3,3 ;;
-		size:desc) sort -t "$(printf '\t')" -k2,2nr -k3,3 ;;
-		size:asc)  sort -t "$(printf '\t')" -k2,2n  -k3,3 ;;
-		name:desc) sort -t "$(printf '\t')" -k3,3r ;;
-		name:asc)  sort -t "$(printf '\t')" -k3,3 ;;
-		*)         sort -t "$(printf '\t')" -k1,1nr -k3,3 ;;
-	esac | cut -f3-
-}
-
-# ---------------------------------------------------------------------------
-# Idempotent, Non-Overwriting File Commit
-# Usage: commit_file <tmp_file> <base_path> <ext_or_empty>
-# ---------------------------------------------------------------------------
-commit_file() {
-	_tmp=$1
-	_base=$2
-	_ext=$3
-
-	_primary="${_base}${_ext}"
-	if [ -f "$_primary" ]; then
-		if cmp -s -- "$_tmp" "$_primary"; then
-			msg "[IDEMPOTENT] Unchanged: $_primary already matches generated output."
-			printf '%s\n' "$_primary"
-			return 0
-		fi
-	else
-		cat -- "$_tmp" > "$_primary"
-		msg "[CREATED] $_primary"
-		printf '%s\n' "$_primary"
-		return 0
-	fi
-
-	# Check existing numbered variants for idempotency before allocating a new slot
-	_n=1
-	while [ "$_n" -le 9999 ]; do
-		_cand="${_base}.${_n}${_ext}"
-		if [ -f "$_cand" ]; then
-			if cmp -s -- "$_tmp" "$_cand"; then
-				msg "[IDEMPOTENT] Unchanged: $_cand already matches generated output."
-				printf '%s\n' "$_cand"
-				return 0
-			fi
-		else
-			cat -- "$_tmp" > "$_cand"
-			msg "[PROTECTED] Existing $_primary preserved; wrote new output to $_cand"
-			printf '%s\n' "$_cand"
-			return 0
-		fi
-		_n=$((_n + 1))
-	done
-
-	die "Unable to allocate non-colliding filename for ${_primary}"
-}
-
-# ---------------------------------------------------------------------------
-# Coinciding Caddyfile Builder
-# ---------------------------------------------------------------------------
-caddy_suffix_expr() {
-	_type=$1
-	case $_type in
-		videos)
-			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp
-			;;
-		images)
-			set -- .jpg .jpeg .png .gif .webp .bmp .tiff .tif .svg .avif .heic
-			;;
-		both|*)
-			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp .gif .jpg .jpeg .png .webp .bmp .tiff .tif .svg .avif .heic
-			;;
-	esac
-	_out=""
-	for _ext in "$@"; do
-		if [ -z "$_out" ]; then
-			_out="(hasSuffix \\\"${_ext}\\\" \$lower)"
-		else
-			_out="${_out} (hasSuffix \\\"${_ext}\\\" \$lower)"
-		fi
-	done
-	printf '%s' "$_out"
-}
-
-# Detect the physical LAN IPv4 address, strictly bypassing WireGuard, POINTOPOINT,
-# and virtual tunnel interfaces (e.g. `la`, `wg*`, `tun*`) so that running mkplaylist
-# while behind a VPN never mistakes the /32 tunnel IP (10.x.x.x) for the LAN IP!
 detect_lan_ip() {
 	if have_cmd ip; then
 		_wg_devs=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
+		_bcast_devs=$(ip -o link show up 2>/dev/null | awk -F': ' '/BROADCAST/ && !/POINTOPOINT/ {print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
 
-		# 1. Prefer the default-route physical interface in the main table
-		_lan_dev=$(ip -4 route show table main default 2>/dev/null | awk -v wg=" $_wg_devs " '
+		# 1. Prefer the default-route physical broadcast interface in the main table
+		_lan_dev=$(ip -4 route show table main default 2>/dev/null | awk -v bcast=" $_bcast_devs " -v wg=" $_wg_devs " '
 			{
 				for (i = 1; i <= NF; i++) {
 					if ($i == "dev") {
 						d = $(i+1)
-						if (d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0) {
+						if ($0 !~ /linkdown/ && d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0 && index(bcast, " " d " ") > 0) {
 							print d
 							exit
 						}
@@ -394,13 +196,12 @@ detect_lan_ip() {
 		fi
 
 		# 2. Fallback: first UP BROADCAST Ethernet/Wi-Fi interface (excludes POINTOPOINT VPN tunnels)
-		_bcast_devs=$(ip -o link show up 2>/dev/null | awk -F': ' '/BROADCAST/ && !/POINTOPOINT/ {print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
 		_ip=$(ip -o -4 addr show up scope global 2>/dev/null | awk -v bcast=" $_bcast_devs " -v wg=" $_wg_devs " '
 			{
 				d = $2
 				if (d == "lo" || d ~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/) next
 				if (index(wg, " " d " ") > 0) next
-				if (bcast != "  " && index(bcast, " " d " ") == 0) next
+				if (index(bcast, " " d " ") == 0) next
 				split($4, a, "/")
 				if (a[2] != "32") {
 					print a[1]
@@ -413,225 +214,110 @@ detect_lan_ip() {
 		fi
 	fi
 
-	if have_cmd hostname; then
-		_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/) {print $i; exit}}')
-		if [ -n "$_ip" ]; then
-			printf '%s\n' "$_ip"
-			return 0
-		fi
-	fi
-	printf '%s\n' "192.168.1.242"
+	return 1
 }
 
 # Detect active WireGuard / POINTOPOINT VPN IPv4 address (if any) so the user can
 # optionally bind LAN + VPN + loopback together when behind a tunnel.
 detect_vpn_ip() {
 	if have_cmd ip; then
-		_wg_dev=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2; exit}' | cut -d'@' -f1 || true)
-		if [ -n "$_wg_dev" ]; then
+		for _wg_dev in $(ip -o link show up type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 || true); do
 			_vip=$(ip -o -4 addr show dev "$_wg_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
 			if [ -n "$_vip" ]; then
 				printf '%s\n' "$_vip"
 				return 0
 			fi
-		fi
-		_ptp_dev=$(ip -o link show up 2>/dev/null | awk -F': ' '/POINTOPOINT/ {print $2; exit}' | cut -d'@' -f1 || true)
-		if [ -n "$_ptp_dev" ]; then
+		done
+		for _ptp_dev in $(ip -o link show up 2>/dev/null | awk -F': ' '/POINTOPOINT/ {print $2}' | cut -d'@' -f1 || true); do
 			_vip=$(ip -o -4 addr show dev "$_ptp_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
 			if [ -n "$_vip" ]; then
 				printf '%s\n' "$_vip"
 				return 0
 			fi
-		fi
+		done
 	fi
 	return 1
 }
 
-generate_caddyfile() {
-	_target_dir=$1
-	_media_type=$2
-	_playlist_name=$3
-
-	bold_msg "--- Coinciding Caddyfile Configuration ---"
-
-	# 1. Port selection
-	_port_choice=$(tui_select "Caddy Listen Port" \
-		":3000 (default)" \
-		":8080 (alt HTTP)" \
-		":8000 (media server)" \
-		"Custom port...")
-	case $_port_choice in
-		":3000"*) _port=":3000" ;;
-		":8080"*) _port=":8080" ;;
-		":8000"*) _port=":8000" ;;
-		*)
-			_raw_port=$(tui_input "Enter listen port (e.g. :3000 or 3000)" ":3000")
-			case $_raw_port in
-				:*) _port=$_raw_port ;;
-				*)  _port=":${_raw_port}" ;;
-			esac
-			;;
+normalize_type() {
+	case $1 in
+		videos|video|v) printf 'videos\n' ;;
+		images|image|i) printf 'images\n' ;;
+		both|all|b)     printf 'both\n' ;;
+		*) die "Invalid playlist type '$1' (expected: videos, images, or both)" ;;
 	esac
-
-	# 2. Bind address selection (VPN-aware physical LAN detection)
-	_lan_ip=$(detect_lan_ip)
-	_vpn_ip=$(detect_vpn_ip || true)
-	if [ -n "$_vpn_ip" ] && [ "$_vpn_ip" != "$_lan_ip" ]; then
-		_bind_choice=$(tui_select "Caddy Bind Addresses" \
-			"${_lan_ip} 127.0.0.1 (auto-detected physical LAN + loopback — bypasses VPN)" \
-			"${_lan_ip} ${_vpn_ip} 127.0.0.1 (physical LAN + active WireGuard VPN + loopback)" \
-			"all (omit bind directive / listen on all interfaces)" \
-			"0.0.0.0 (all IPv4 interfaces)" \
-			"127.0.0.1 (localhost only)" \
-			"${_vpn_ip} 127.0.0.1 (VPN tunnel + loopback only)" \
-			"Custom bind addresses...")
-	else
-		_bind_choice=$(tui_select "Caddy Bind Addresses" \
-			"${_lan_ip} 127.0.0.1 (auto-detected physical LAN + loopback)" \
-			"all (omit bind directive / listen on all interfaces)" \
-			"0.0.0.0 (all IPv4 interfaces)" \
-			"127.0.0.1 (localhost only)" \
-			"Custom bind addresses...")
-	fi
-	case $_bind_choice in
-		"${_lan_ip} 127.0.0.1"*)             _bind="${_lan_ip} 127.0.0.1" ;;
-		"${_lan_ip} ${_vpn_ip} 127.0.0.1"*)  _bind="${_lan_ip} ${_vpn_ip} 127.0.0.1" ;;
-		"all"*)                              _bind="" ;;
-		"0.0.0.0"*)                          _bind="0.0.0.0" ;;
-		"127.0.0.1"*)                        _bind="127.0.0.1" ;;
-		"${_vpn_ip} 127.0.0.1"*)             _bind="${_vpn_ip} 127.0.0.1" ;;
-		*)
-			_bind=$(tui_input "Enter space-separated bind IPs" "${_lan_ip} 127.0.0.1")
-			;;
-	esac
-
-	# 3. Root directory selection
-	_root_choice=$(tui_select "Caddy Root Directory" \
-		"${_target_dir} (current target directory)" \
-		"/s4/s4Downloads (preset media root)" \
-		"Custom root path...")
-	case $_root_choice in
-		"${_target_dir}"*) _root=$_target_dir ;;
-		"/s4/s4Downloads"*) _root="/s4/s4Downloads" ;;
-		*)
-			_root=$(tui_input "Enter root directory path" "$_target_dir")
-			;;
-	esac
-
-	_suffix_cond=$(caddy_suffix_expr "$_media_type")
-	TMP_CADDY=$(mktemp "${TMPDIR:-/tmp}/mkplaylist_caddy.XXXXXX")
-
-	_bind_line=""
-	if [ -n "$_bind" ]; then
-		_bind_line="	bind ${_bind}
-"
-	fi
-
-	cat >| "$TMP_CADDY" <<EOF
-${_port} {
-${_bind_line}	root * ${_root}
-
-	handle /${_playlist_name} {
-		header Content-Type "audio/x-mpegurl; charset=utf-8"
-		header Cache-Control "no-cache, no-store, must-revalidate"
-		templates {
-			mime audio/x-mpegurl
-		}
-		respond "#EXTM3U
-{{- range listFiles \"/\" }}
-{{- \$lower := lower . }}
-{{- if or ${_suffix_cond} }}
-{{- \$safe := replace \"%\" \"%25\" . }}
-{{- \$safe = replace \" \" \"%20\" \$safe }}
-{{- \$safe = replace \"\x23\" \"%23\" \$safe }}
-{{- \$safe = replace \"?\" \"%3F\" \$safe }}
-{{- \$safe = replace \"[\" \"%5B\" \$safe }}
-{{- \$safe = replace \"]\" \"%5D\" \$safe }}
-http://{{ \$.Req.Host }}/{{ \$safe }}
-{{- end }}
-{{- end }}
-" 200
-	}
-
-	handle {
-		file_server
-	}
-}
-EOF
-
-	_caddy_out=$(commit_file "$TMP_CADDY" "${_target_dir}/Caddyfile" "")
-	printf '%s\n' "$_caddy_out"
 }
 
-# ---------------------------------------------------------------------------
+normalize_sort() {
+	case $1 in
+		date|time|mtime|d)          printf 'date\n' ;;
+		size|bytes|s)               printf 'size\n' ;;
+		name|alpha|n)               printf 'name\n' ;;
+		shuffle|random|rand|shuf|r) printf 'shuffle\n' ;;
+		*) die "Invalid sort field '$1' (expected: date, size, name, or shuffle)" ;;
+	esac
+}
+
+normalize_order() {
+	case $1 in
+		desc|descending|r) printf 'desc\n' ;;
+		asc|ascending|a)   printf 'asc\n' ;;
+		*) die "Invalid sort order '$1' (expected: desc or asc)" ;;
+	esac
+}
+
 # Argument Parsing
-# ---------------------------------------------------------------------------
-if [ "$#" -eq 0 ]; then
-	show_help
-	exit 0
-fi
-
+if [ "$#" -eq 0 ]; then show_help; exit 0; fi
 case ${1:-} in
-	--help)
-		show_help
-		exit 0
-		;;
+	--help) show_help; exit 0 ;;
+	--version) printf '%s\n' "$VERSION"; exit 0 ;;
 esac
-
 OPT_TYPE=""
 OPT_SORT=""
 OPT_ORDER=""
-OPT_DEPTH=3
+OPT_DEPTH=0
 OPT_CADDY=""
 OPT_NONINTERACTIVE=0
-
-while getopts ":t:s:o:rd:cnh" opt; do
+OPT_KEEP=no
+OPT_EMPTY=no
+OPT_PORT=""
+OPT_BIND=""
+OPT_VALIDATE=auto
+SET_TYPE=0
+SET_SORT=0
+SET_ORDER=0
+SET_PORT=0
+SET_BIND=0
+while getopts ":t:s:o:rd:cnheKa:b:vV" opt; do
 	case $opt in
-		t) OPT_TYPE=$OPTARG ;;
-		s) OPT_SORT=$OPTARG ;;
-		o) OPT_ORDER=$OPTARG ;;
-		r) OPT_SORT="shuffle" ;;
+		t) OPT_TYPE=$(normalize_type "$OPTARG"); SET_TYPE=1 ;;
+		s) OPT_SORT=$(normalize_sort "$OPTARG"); SET_SORT=1 ;;
+		o) OPT_ORDER=$(normalize_order "$OPTARG"); SET_ORDER=1 ;;
+		r) OPT_SORT=shuffle; SET_SORT=1 ;;
 		d) OPT_DEPTH=$OPTARG ;;
-		c) OPT_CADDY="yes" ;;
+		c) OPT_CADDY=yes ;;
 		n) OPT_NONINTERACTIVE=1 ;;
-		h)
-			show_help
-			exit 0
-			;;
-		:)
-			die "Option -$OPTARG requires an argument. Run '${0##*/}' with no args for help."
-			;;
-		\?)
-			die "Invalid option: -$OPTARG. Run '${0##*/}' with no args for help."
-			;;
+		K) OPT_KEEP=yes ;;
+		e) OPT_EMPTY=yes ;;
+		a) OPT_PORT=$OPTARG; SET_PORT=1; OPT_CADDY=yes ;;
+		b) OPT_BIND=$OPTARG; SET_BIND=1; OPT_CADDY=yes ;;
+		v) OPT_VALIDATE=required ;;
+		V) OPT_VALIDATE=skip ;;
+		h) show_help; exit 0 ;;
+		:) die "Option -$OPTARG requires an argument" ;;
+		\?) die "Invalid option: -$OPTARG" ;;
 	esac
 done
 shift $((OPTIND - 1))
-
-[ "$#" -ge 1 ] || {
-	show_help
-	exit 1
-}
-[ "$#" -le 1 ] || die "Expected a single <dir> argument, got $#. Run '${0##*/}' with no args for help."
-
+[ "$#" -eq 1 ] || die "Expected one directory or regular file; use -h for help"
 TARGET_ARG=$1
-[ -e "$TARGET_ARG" ] || die "${0##*/}: $TARGET_ARG: no such file or directory"
+[ "$OPT_VALIDATE" = auto ] || [ "$OPT_CADDY" = yes ] || die "-v and -V require -c (or -a/-b)"
+case $OPT_DEPTH in ''|*[!0-9]*) die "Depth must be a nonnegative integer (0=unlimited)" ;; esac
+have_cmd "$PYTHON_BIN" || die "Python 3.9+ is required: $PYTHON_BIN"
+"$PYTHON_BIN" -c 'import sys; sys.exit(sys.version_info < (3, 9))' || die "Python 3.9+ is required"
+[ -e "$TARGET_ARG" ] || die "Target does not exist: $TARGET_ARG"
+[ -d "$TARGET_ARG" ] || [ -f "$TARGET_ARG" ] || die "Target must be a directory or a regular file: $TARGET_ARG"
 
-if [ -d "$TARGET_ARG" ]; then
-	dir=$TARGET_ARG
-else
-	dir=$(dirname -- "$TARGET_ARG")
-fi
-
-cd -- "$dir" || exit 1
-TARGET_DIR=$PWD
-
-# Validate depth
-case $OPT_DEPTH in
-	''|*[!0-9]*) die "Invalid depth '$OPT_DEPTH': must be a positive integer" ;;
-esac
-
-# ---------------------------------------------------------------------------
 # Interactive TUI vs Defaults Resolution
 # ---------------------------------------------------------------------------
 IS_INTERACTIVE=0
@@ -640,7 +326,7 @@ if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 fi
 
 # 1. Resolve Media Type (videos | images | both)
-if [ -z "$OPT_TYPE" ]; then
+if [ "$SET_TYPE" -eq 0 ]; then
 	if [ "$IS_INTERACTIVE" -eq 1 ]; then
 		_sel_type=$(tui_select "Playlist Media Kind" \
 			"both   - Videos/Audio + Images" \
@@ -654,17 +340,10 @@ if [ -z "$OPT_TYPE" ]; then
 	else
 		OPT_TYPE="both"
 	fi
-else
-	case $OPT_TYPE in
-		videos|video|v) OPT_TYPE="videos" ;;
-		images|image|i) OPT_TYPE="images" ;;
-		both|all|b)     OPT_TYPE="both" ;;
-		*) die "Invalid playlist type '$OPT_TYPE' (expected: videos, images, or both)" ;;
-	esac
 fi
 
 # 2. Resolve Sort Field & Order (default: date desc, plus shuffle/random)
-if [ -z "$OPT_SORT" ] && [ -z "$OPT_ORDER" ]; then
+if [ "$SET_SORT" -eq 0 ] && [ "$SET_ORDER" -eq 0 ]; then
 	if [ "$IS_INTERACTIVE" -eq 1 ]; then
 		_sel_sort=$(tui_select "Sort Order (Default: Date Descending)" \
 			"date:desc - Date Descending (newest first) [DEFAULT]" \
@@ -689,20 +368,10 @@ if [ -z "$OPT_SORT" ] && [ -z "$OPT_ORDER" ]; then
 	fi
 else
 	[ -n "$OPT_SORT" ] || OPT_SORT="date"
-	[ -n "$OPT_ORDER" ] || OPT_ORDER="desc"
-	case $OPT_SORT in
-		date|time|mtime|d)          OPT_SORT="date" ;;
-		size|bytes|s)               OPT_SORT="size" ;;
-		name|alpha|n)               OPT_SORT="name" ;;
-		shuffle|random|rand|shuf|r) OPT_SORT="shuffle" ;;
-		*) die "Invalid sort field '$OPT_SORT' (expected: date, size, name, or shuffle)" ;;
-	esac
-	if [ "$OPT_SORT" != "shuffle" ]; then
-		case $OPT_ORDER in
-			desc|descending|r) OPT_ORDER="desc" ;;
-			asc|ascending|a)   OPT_ORDER="asc" ;;
-			*) die "Invalid sort order '$OPT_ORDER' (expected: desc or asc)" ;;
-		esac
+	if [ "$OPT_SORT" = "shuffle" ]; then
+		OPT_ORDER="random"
+	else
+		[ -n "$OPT_ORDER" ] || OPT_ORDER="desc"
 	fi
 fi
 
@@ -721,26 +390,316 @@ if [ -z "$OPT_CADDY" ]; then
 	fi
 fi
 
-# ---------------------------------------------------------------------------
-# Build Playlist in Temp File & Commit Idempotently
-# ---------------------------------------------------------------------------
-TMP_M3U=$(mktemp "${TMPDIR:-/tmp}/mkplaylist_m3u.XXXXXX")
-
-{
-	printf '#EXTM3U\n'
-	find_media_files "$OPT_TYPE" "$OPT_DEPTH" \
-		| stat_records \
-		| sort_records "$OPT_SORT" "$OPT_ORDER"
-} >| "$TMP_M3U"
-
-OUT_M3U=$(commit_file "$TMP_M3U" "${TARGET_DIR}/playlist" ".m3u")
-PLAYLIST_BASENAME=${OUT_M3U##*/}
-printf '%s\n' "$OUT_M3U"
-
-# ---------------------------------------------------------------------------
-# Optional Coinciding Caddyfile Output
-# ---------------------------------------------------------------------------
-if [ "$OPT_CADDY" = "yes" ]; then
-	OUT_CADDY=$(generate_caddyfile "$TARGET_DIR" "$OPT_TYPE" "$PLAYLIST_BASENAME")
-	printf '%s\n' "$OUT_CADDY"
+# Coinciding config serves the generated snapshot, retaining sort and shuffle.
+# Root selection belongs to the target argument, so discovery and serving agree.
+if [ "$OPT_CADDY" = yes ]; then
+	if [ "$SET_PORT" -eq 0 ]; then
+		_choice=$(tui_select "Caddy Listen Port" ":3000 (default)" ":8080 (alt HTTP)" ":8000 (media server)" "Custom port...")
+		case $_choice in
+			:3000*) OPT_PORT=:3000 ;;
+			:8080*) OPT_PORT=:8080 ;;
+			:8000*) OPT_PORT=:8000 ;;
+			*) OPT_PORT=$(tui_input "Enter listen port" ":3000") ;;
+		esac
+	fi
+	if [ "$SET_BIND" -eq 0 ]; then
+		OPT_BIND=127.0.0.1
+		if [ "$IS_INTERACTIVE" -eq 1 ]; then
+			_lan=$(detect_lan_ip || true)
+			_vpn=$(detect_vpn_ip || true)
+			set --
+			if [ -n "$_lan" ] && [ "$_lan" != "127.0.0.1" ]; then
+				set -- "$@" "${_lan} 127.0.0.1 (LAN + loopback)"
+				if [ -n "$_vpn" ] && [ "$_vpn" != "127.0.0.1" ] && [ "$_vpn" != "$_lan" ]; then
+					set -- "$@" "${_lan} ${_vpn} 127.0.0.1 (LAN + VPN + loopback)"
+				fi
+			elif [ -n "$_vpn" ] && [ "$_vpn" != "127.0.0.1" ]; then
+				set -- "$@" "${_vpn} 127.0.0.1 (VPN + loopback)"
+			fi
+			set -- "$@" "all (all interfaces)" "0.0.0.0 (all IPv4)" "127.0.0.1 (loopback only)" "Custom..."
+			_choice=$(tui_select "Caddy Bind Addresses" "$@")
+			case $_choice in
+				all*) OPT_BIND=all ;;
+				Custom*) OPT_BIND=$(tui_input "Space-separated IP addresses, or all" 127.0.0.1) ;;
+				*) OPT_BIND=${_choice%% (*} ;;
+			esac
+		fi
+	fi
 fi
+
+exec "$PYTHON_BIN" - "$TARGET_ARG" "$OPT_TYPE" "$OPT_SORT" "$OPT_ORDER" "$OPT_DEPTH" "$OPT_KEEP" "$OPT_EMPTY" "$OPT_CADDY" "$OPT_PORT" "$OPT_BIND" "$OPT_VALIDATE" <<'PYTHON_ENGINE'
+import contextlib
+import fcntl
+import ipaddress
+import os
+from pathlib import Path
+import random
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+from urllib.parse import quote_from_bytes
+
+VIDEO = frozenset('mp4 wmv mkv avi mov mpeg mpg mpe m4v webm ts flv ogv 3gp 3g2 m2ts mts m2v vob vro mxf asf divx f4v mp3 flac aac m4a m4b ogg oga opus wav wave aif aiff aifc au snd wma ac3 eac3 dts amr ape alac tak wv caf mka'.split())
+IMAGE = frozenset('jpg jpeg jpe png gif webp bmp dib tiff tif svg avif heic heif apng jxl ico'.split())
+
+
+def emit(stream, message):
+    stream.buffer.write(os.fsencode(str(message)) + b'\n')
+    stream.flush()
+
+
+def log(message):
+    emit(sys.stderr, message)
+
+
+def discover(root, kind, depth):
+    extensions = VIDEO if kind == 'videos' else IMAGE if kind == 'images' else VIDEO | IMAGE
+    pending = [(root, 0)]
+    records = {}
+    info = root.stat()
+    directories = {(info.st_dev, info.st_ino)}
+    while pending:
+        folder, level = pending.pop()
+        # Errors abort the scan; a partial playlist must never replace a good one.
+        with os.scandir(folder) as entries:
+            entries = sorted(entries, key=lambda entry: os.fsencode(entry.name))
+        children = []
+        for entry in entries:
+            if entry.name in ('.git', '.env', '.DS_Store') or entry.name.startswith(('.mkplaylist.', '.mkcaddy.')):
+                continue
+            info = entry.stat(follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                identity = (info.st_dev, info.st_ino)
+                if (depth == 0 or level + 1 < depth) and identity not in directories:
+                    directories.add(identity)
+                    children.append((Path(entry.path), level + 1))
+            elif stat.S_ISREG(info.st_mode) and '.' in entry.name and entry.name.rsplit('.', 1)[-1].lower() in extensions:
+                identity = (info.st_dev, info.st_ino)
+                relative = os.path.relpath(entry.path, root)
+                if identity not in records or os.fsencode(relative) < os.fsencode(records[identity][0]):
+                    records[identity] = (relative, info.st_mtime_ns, info.st_size)
+        pending.extend(reversed(children))
+    return list(records.values())
+
+
+def order_records(records, field, direction):
+    records.sort(key=lambda row: os.fsencode(row[0]))
+    if field == 'shuffle':
+        random.SystemRandom().shuffle(records)
+    elif field in ('date', 'size'):
+        records.sort(key=lambda row: row[1 if field == 'date' else 2], reverse=direction == 'desc')
+    elif direction == 'desc':
+        records.reverse()
+    return records
+
+
+def regular_bytes(path):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except (FileNotFoundError, IsADirectoryError):
+        return None
+    except OSError:
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(mode):
+            return None
+        raise
+    with os.fdopen(descriptor, 'rb') as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            return None
+        return source.read()
+
+
+def variants(primary):
+    base, extension = (primary.stem, primary.suffix) if primary.name.endswith('.m3u') else (primary.name, '')
+    pattern = re.compile(re.escape(base) + r'\.([1-9][0-9]*)' + re.escape(extension) + r'\Z')
+    occupied = {}
+    for entry in primary.parent.iterdir():
+        match = pattern.fullmatch(entry.name)
+        if match:
+            occupied[int(match[1])] = entry
+    return base, extension, occupied
+
+
+def matching_or_free(primary, content, include_primary=True):
+    base, extension, occupied = variants(primary)
+    if include_primary and regular_bytes(primary) == content:
+        return primary
+    for number in sorted(occupied):
+        if regular_bytes(occupied[number]) == content:
+            return occupied[number]
+    if include_primary and not os.path.lexists(primary):
+        return primary
+    number = 1
+    while number in occupied:
+        number += 1
+    return primary.with_name(f'{base}.{number}{extension}')
+
+
+def stage(directory, content, mode, prefix='.mkplaylist.'):
+    descriptor, name = tempfile.mkstemp(prefix=prefix, dir=directory)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            os.fchmod(output.fileno(), mode)
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        return Path(name)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(name)
+        raise
+
+
+def publish(primary, content, refresh, mode, prefix='.mkplaylist.'):
+    existing = regular_bytes(primary)
+    if existing == content:
+        log(f'[IDEMPOTENT] {primary}')
+        return primary
+    if refresh:
+        if os.path.lexists(primary):
+            if primary.is_symlink() or not primary.is_file():
+                raise ValueError(f'Refusing to replace non-regular output: {primary}')
+            if existing is None:
+                raise ValueError(f'Cannot preserve existing output: {primary}')
+        destination = primary
+    else:
+        destination = matching_or_free(primary, content)
+        if regular_bytes(destination) == content:
+            log(f'[IDEMPOTENT] {destination}')
+            return destination
+    temporary = stage(primary.parent, content, mode, prefix=prefix)
+    try:
+        if refresh:
+            # Preserve operator edits from a non-cooperating writer detected after planning.
+            if regular_bytes(primary) != existing:
+                raise ValueError(f'Output changed concurrently: {primary}; rerun the command')
+            created_archive = None
+            if existing is not None:
+                archive = matching_or_free(primary, existing, include_primary=False)
+                if not os.path.lexists(archive):
+                    os.link(primary, archive, follow_symlinks=False)
+                    created_archive = archive
+            try:
+                os.replace(temporary, destination)
+            except BaseException:
+                if created_archive is not None:
+                    with contextlib.suppress(FileNotFoundError):
+                        os.unlink(created_archive)
+                raise
+            if created_archive is not None:
+                log(f'[BACKUP] {created_archive}')
+        else:
+            os.link(temporary, destination, follow_symlinks=False)
+        log(f'[CREATED] {destination}')
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
+
+
+def caddy_quote(value):
+    if not value or any(ord(char) < 32 or ord(char) == 127 for char in value) or '{$' in value:
+        raise ValueError('Caddy arguments must be nonempty single lines without control characters or {$ substitutions')
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def caddy_config(root, playlist, port, bind):
+    port = port.removeprefix(':')
+    if not port.isascii() or not port.isdecimal() or not 1 <= int(port) <= 65535:
+        raise ValueError('Listen port must be an integer from 1 to 65535')
+    addresses = [] if bind == 'all' else bind.split()
+    if not addresses and bind != 'all':
+        raise ValueError('Bind addresses must be IP literals, or all')
+    addresses = list(dict.fromkeys(str(ipaddress.ip_address(address)) for address in addresses))
+    binding = '\tbind ' + ' '.join(addresses) + '\n' if addresses else ''
+    try:
+        root_text = os.fsencode(root).decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise ValueError('Caddy root path must be valid UTF-8') from error
+    endpoint = '/' + quote_from_bytes(os.fsencode(playlist.name), safe='-._~')
+    return (f':{int(port)} {{\n{binding}\troot * {caddy_quote(root_text)}\n'
+            f'\thandle {caddy_quote(endpoint)} {{\n'
+            '\t\theader Content-Type "audio/x-mpegurl; charset=utf-8"\n'
+            '\t\theader Cache-Control "no-cache, no-store, must-revalidate"\n'
+            '\t\tfile_server\n\t}\n'
+            '\thandle {\n\t\tfile_server {\n'
+            '\t\t\thide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* Caddyfile Caddyfile.*\n'
+            '\t\t}\n\t}\n}\n').encode('utf-8')
+
+
+def validate_caddy(root, content, policy):
+    if policy == 'skip':
+        log('[UNVALIDATED] Caddy validation explicitly skipped')
+        return
+    binary = os.environ.get('CADDY_BIN') or 'caddy'
+    if not shutil.which(binary):
+        if policy == 'required':
+            raise ValueError(f'Caddy is required for -v validation: {binary}')
+        log('[UNVALIDATED] Caddy unavailable; use -v to require validation before publishing')
+        return
+    with tempfile.TemporaryDirectory(prefix='.mkcaddy.', dir=root) as directory:
+        config = Path(directory) / 'Caddyfile'
+        config.write_bytes(content)
+        config.chmod(0o600)
+        try:
+            process = subprocess.run([binary, 'adapt', '--config', str(config), '--adapter', 'caddyfile', '--validate'],
+                                     stdout=subprocess.DEVNULL, check=False, timeout=60)
+        except subprocess.TimeoutExpired as error:
+            raise ValueError('Caddy validation timed out after 60 seconds; no outputs published') from error
+        if process.returncode:
+            raise ValueError('Caddy rejected the configuration; no outputs published')
+    log('[VALIDATED] Caddy accepted the configuration')
+
+
+def main():
+    target, kind, field, direction, depth_arg, keep, empty, caddy, port, bind, validation = sys.argv[1:]
+    depth = int(depth_arg)
+    given = Path(target)
+    info = given.stat()
+    if stat.S_ISDIR(info.st_mode):
+        root = given.resolve(strict=True)
+    elif stat.S_ISREG(info.st_mode):
+        root = given.resolve(strict=True).parent
+    else:
+        raise ValueError('Target must be a directory or a regular file')
+    # Lock the directory inode: no persistent lock file and no stale-lock recovery.
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        records = order_records(discover(root, kind, depth), field, direction)
+        if not records and empty != 'yes':
+            raise ValueError('No matching media found; existing outputs preserved (use -e to allow an empty playlist)')
+        lines = ['./' + quote_from_bytes(os.fsencode(row[0]), safe='/-._~') for row in records]
+        content = ('#EXTM3U\n' + ''.join(line + '\n' for line in lines)).encode('ascii')
+        primary = root / 'playlist.m3u'
+        planned = matching_or_free(primary, content) if keep == 'yes' else primary
+        config = caddy_config(root, planned, port, bind) if caddy == 'yes' else None
+        if config is not None:
+            validate_caddy(root, config, validation)
+        output = publish(primary, content, refresh=keep != 'yes', mode=0o644, prefix='.mkplaylist.')
+        outputs = [output]
+        if config is not None:
+            outputs.append(publish(root / 'Caddyfile', config, refresh=False, mode=0o600, prefix='.mkcaddy.'))
+        os.fsync(descriptor)
+        log(f'[MEDIA] {len(records)} unique file(s); {kind}; {field}:{direction}; depth={depth} (0=unlimited)')
+        for output in outputs:
+            emit(sys.stdout, output)
+    finally:
+        os.close(descriptor)
+
+
+if __name__ == '__main__':
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, lambda number, frame: sys.exit(128 + number))
+    try:
+        main()
+    except (OSError, ValueError, OverflowError) as error:
+        log(f'[ERROR] {error}')
+        sys.exit(1)
+PYTHON_ENGINE

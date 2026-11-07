@@ -1,404 +1,721 @@
 #!/usr/bin/env bash
-# --- // PCUTS.SH // ========
-# File: /usr/local/bin/pcuts
-# Author: 4ndr0666
-# Edited: 6-26-26
+# --- // PCUTS // ========
+# File:    /usr/local/bin/pcuts
+# Author:  4ndr0666
+# Version: 4.0.0 (Monolith Edition)
 #
-# Quick-reference cheat sheet for pacman + companion tools (pacreport,
-# paccheck, expac, lsof, fzf). Prints categorized command listings; never
-# executes pacman itself, except when the user explicitly selects a command
-# in --browse mode and that command is copied/printed (still not run).
-# Pure presentation — no host mutation, no network, no subprocess beyond
-# `tput cols` (delegated to colors.sh) and, only in --browse mode, `fzf`
-# and an optional clipboard tool.
-#
-# Architecture: every printable command lives exactly once, in
-# PCUTS_TABLE (see below). Both the categorized plain-text view (sync,
-# search, query, files, remove) and the --browse fzf view render from
-# that one table — there is no second copy of the command text to drift
-# out of sync.
-#
-# Unified from two divergent prior revisions:
-#   - combined short-flags (-srqfx) and the REMOVE category restored (was
-#     dropped in the long-flag revision)
-#   - long-flag aliases (--sync/--remote/--query/--files/--remove) added
-#   - per-category print-once guards restored on every category function
-#   - heading() is now always called with its required two positional args
-#     (color, text) — a prior revision called heading() with one argument,
-#     which silently no-ops into a usage error against the real colors.sh
-#     and only "worked" by accident against a bundled one-arg fallback.
-#
-# Revision 2 (this pass):
-#   - sync/search/query/files/remove now render from PCUTS_TABLE instead of
-#     hardcoded echo calls, eliminating the duplicate-data-in-two-places
-#     risk that --browse would otherwise introduce.
-#   - -Qu gets a one-line caveat: it only reflects reality after a -Sy.
-#   - SEARCH LOCAL PACKAGES and SEARCH FILES now use higher-contrast
-#     heading colors (cyan, magenta) in place of olive/lavender, which were
-#     hard to read against common dark terminal themes.
-#   - New -b/--browse flag: an interactive fzf-backed picker over every
-#     command in the table, fuzzy-searchable across all categories at
-#     once. Selecting a line prints the raw command and copies it to the
-#     clipboard if a clipboard tool is available. Falls back to a clear
-#     error (not silent failure) if fzf is not installed.
+# High-density terminal reference & interactive fzf picker for pacman and the
+# Arch Linux package management ecosystem (pacman-contrib, pacutils, expac,
+# devtools, lsof, fzf). Embeds the full 4ndr0666 colors.sh 256-color banner
+# engine in a single zero-dependency executable.
 
 set -uo pipefail
 IFS=$'\n\t'
 
-# --- // CONSTANTS_AND_COLORS:
-BASEPATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" &>/dev/null && pwd -P)"
+VERSION="4.0.0"
 
-if [[ -f "${BASEPATH}/colors.sh" ]]; then
-    # shellcheck source=./colors.sh
-    . "${BASEPATH}/colors.sh"
-else
-    # Minimal fallback matching colors.sh's real two-arg contract:
-    # heading <color> "Heading Text". The color argument is accepted but
-    # ignored here since the fallback has no palette — this keeps call
-    # sites identical whether or not colors.sh is present.
-    heading() {
-        if [[ -z "${1:-}" || -z "${2:-}" ]]; then
-            echo 'Usage: heading <color> "Heading Text"'
-            return 1
-        fi
-        echo " ----------------------------------------------------------------------"
-        echo "  $2"
-        echo " ----------------------------------------------------------------------"
-        echo
-    }
-    grn='\033[0;32m'
-    yel='\033[0;33m'
-    red='\033[0;31m'
-    cyn='\033[0;36m'
-    mag='\033[0;35m'
-    r='\033[0m'
-fi
+# ===================================================================================
+# --- // EMBEDDED COLORS.SH PALETTE & BANNER ENGINE // ---
+# ===================================================================================
 
-# Print-once guards — each category prints exactly once per invocation even
-# if reached through multiple flags or the no-args "show everything" path.
-_sync=false
-_search=false
-_query=false
-_files=false
-_remove=false
+setup_colors() {
+    local mode="${1:-auto}"
+    if [[ "$mode" == "never" ]] || { [[ "$mode" == "auto" ]] && { [[ ! -t 1 ]] || [[ "${TERM:-dumb}" == "dumb" ]] || [[ -n "${NO_COLOR:-}" ]]; }; }; then
+        reset="" bold="" dim=""
+        white="" black="" grey="" red="" green="" blue="" cyan="" yellow="" orange="" magenta="" purple=""
+        bg_black="" bg_grey="" bg_charcoal="" bg_red="" bg_green="" bg_lime="" bg_aquamarine=""
+        bg_olive="" bg_blue="" bg_sky="" bg_cyan="" bg_aqua="" bg_goldenrod="" bg_yellow=""
+        bg_coral="" bg_orange="" bg_pink="" bg_lavender="" bg_magenta="" bg_purple="" bg_white=""
+    else
+        reset=$'\e[0m'
+        bold=$'\e[1m'
+        dim=$'\e[2m'
 
-#-----------------------------------------------------------------------------------
-# --- // COMMAND_TABLE:
-#
-# Single source of truth. Each row is "category\tcommand\tdescription".
-# category is one of: sync search query files remove — matching the
-# dispatch letters s/r/q/f/x respectively. A tab-delimited flat array (not
-# a multi-dim structure bash doesn't have) keeps this readable, greppable,
-# and trivially convertible into either render path below.
-#
-# NOTE: command text here is the literal, uncolored pacman invocation —
-# coloring is applied at render time per display mode, not baked in, so
-# the --browse path can emit plain text to the clipboard instead of a
-# string full of ANSI escape codes.
+        # Foreground text colors
+        white=$'\e[97m'
+        black=$'\e[38;5;232m'
+        grey=$'\e[38;5;246m'
+        red=$'\e[91m'
+        green=$'\e[92m'
+        blue=$'\e[94m'
+        cyan=$'\e[96m'
+        yellow=$'\e[93m'
+        orange=$'\e[38;5;208m'
+        magenta=$'\e[95m'
+        purple=$'\e[38;5;141m'
+
+        # Background banner colors (256-color palette from colors.sh)
+        bg_black=$'\e[40m'
+        bg_grey=$'\e[48;5;240m'
+        bg_charcoal=$'\e[48;5;237m'
+        bg_red=$'\e[48;5;1m'
+        bg_green=$'\e[48;5;22m'
+        bg_lime=$'\e[48;5;40m'
+        bg_aquamarine=$'\e[48;5;120m'
+        bg_olive=$'\e[48;5;58m'
+        bg_blue=$'\e[44m'
+        bg_sky=$'\e[48;5;25m'
+        bg_cyan=$'\e[46m'
+        bg_aqua=$'\e[48;5;87m'
+        bg_goldenrod=$'\e[48;5;220m'
+        bg_yellow=$'\e[48;5;226m'
+        bg_coral=$'\e[48;5;208m'
+        bg_orange=$'\e[48;5;202m'
+        bg_pink=$'\e[48;5;207m'
+        bg_lavender=$'\e[48;5;141m'
+        bg_magenta=$'\e[48;5;90m'
+        bg_purple=$'\e[48;5;53m'
+        bg_white=$'\e[107m'
+    fi
+
+    # Shortcuts
+    r=$reset
+    b=$bold
+    blk=$black
+    gry=$grey
+    grn=$green
+    blu=$blue
+    yel=$yellow
+    org=$orange
+    mag=$magenta
+    pur=$purple
+    cyn=$cyan
+    wht=$white
+
+    bgblk=$bg_black
+    bggry=$bg_grey
+    bgchr=$bg_charcoal
+    bgred=$bg_red
+    bggrn=$bg_green
+    bglim=$bg_lime
+    bgaqm=$bg_aquamarine
+    bgolv=$bg_olive
+    bgblu=$bg_blue
+    bgsky=$bg_sky
+    bgcyn=$bg_cyan
+    bgaqa=$bg_aqua
+    bggdr=$bg_goldenrod
+    bgyel=$bg_yellow
+    bgcrl=$bg_coral
+    bgorg=$bg_orange
+    bgpnk=$bg_pink
+    bglav=$bg_lavender
+    bgmag=$bg_magenta
+    bgpur=$bg_purple
+    bgwht=$bg_white
+}
+
+term_width() {
+    local cols="${COLUMNS:-}"
+    if [[ ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols=$(tput cols 2>/dev/null) || cols=100
+    fi
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=100
+    (( cols < 40 )) && cols=40
+    printf '%s' "$cols"
+}
+
+heading() {
+    if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+        printf 'Usage: heading <color> "Heading Text"\n' >&2
+        return 1
+    fi
+
+    local weight=""
+    [[ -n "${3:-}" ]] && weight="$bold"
+
+    local color="${1,,}"
+    local hding="$2"
+    local hdlen=${#hding}
+    local twidt
+    twidt=$(term_width)
+
+    if (( twidt <= hdlen )); then
+        twidt=$(( hdlen + 2 ))
+    fi
+
+    local l=$(( twidt - hdlen ))
+    local d=$(( l / 2 ))
+    local padding=""
+    printf -v padding '%*s' "$d" ''
+
+    local padextra=""
+    local totlenth=$(( ${#padding} * 2 + hdlen ))
+    if (( twidt != totlenth )); then
+        padextra=" "
+    fi
+
+    # Plain-mode fallback when colors are disabled
+    if [[ -z "$reset" ]]; then
+        local rule=""
+        printf -v rule '%*s' "$twidt" ''
+        rule="${rule// /=}"
+        printf '\n%s\n%s%s\n%s\n\n' "$rule" "$padding" "$hding" "$rule"
+        return 0
+    fi
+
+    if [[ "$color" == "rnd" || "$color" == "rand" || "$color" == "random" ]]; then
+        local colors=("gry" "chr" "red" "grn" "lim" "aqm" "olv" "blu" "sky" "cyn" "aqa" "gdr" "yel" "crl" "org" "pnk" "lav" "mag" "pur")
+        color="${colors[$RANDOM % ${#colors[@]}]}"
+    fi
+
+    case "$color" in
+        grey|gry)           color="${bggry}${white}" ;;
+        charcoal|chr)       color="${bgchr}${white}" ;;
+        red)                color="${bgred}${white}" ;;
+        green|grn)          color="${bggrn}${white}" ;;
+        lime|lim)           color="${bglim}${black}" ;;
+        aquamarine|aqm)     color="${bgaqm}${black}" ;;
+        olive|olv)          color="${bgolv}${white}" ;;
+        blue|blu)           color="${bgblu}${white}" ;;
+        sky)                color="${bgsky}${white}" ;;
+        cyan|cyn)           color="${bgcyn}${black}" ;;
+        aqua|agua|aqa)      color="${bgaqa}${black}" ;;
+        goldenrod|gdr)      color="${bggdr}${black}" ;;
+        yellow|yel)         color="${bgyel}${black}" ;;
+        coral|crl)          color="${bgcrl}${black}" ;;
+        orange|org)         color="${bgorg}${white}" ;;
+        pink|pnk)           color="${bgpnk}${black}" ;;
+        lavender|lav)       color="${bglav}${black}" ;;
+        magenta|mag)        color="${bgmag}${white}" ;;
+        purple|pur)         color="${bgpur}${white}" ;;
+        *)                  color="${bggrn}${white}" ;;
+    esac
+
+    printf '\n%b%s%b%s%s%s%b\n\n' "$color" "$padding" "$weight" "$hding" "$padding" "$padextra" "$reset"
+}
+
+bheading() {
+    heading "$1" "$2" "bold"
+}
+
+# ===================================================================================
+# --- // COMMAND CATALOG (SINGLE SOURCE OF TRUTH) // ---
+# ===================================================================================
+# Format per row: "category \t command \t description \t tip"
+# Categories & short flags:
+#   sync     (-s, --sync)      : Sync, Install & Upgrade
+#   search   (-r, --remote)    : Search Remote Packages & Repos
+#   query    (-q, --query)     : Search Installed / Local Packages
+#   files    (-f, --files)     : Search Files & Package Ownership
+#   remove   (-x, --remove)    : Remove Packages & Orphan Cleanup
+#   cache    (-c, --cache)     : Cache Management, Logs & Downgrading
+#   verify   (-v, --verify)    : Integrity Audit, .pacnew & Dependency Trees
+#   tricks   (-t, --tricks)    : Power-User One-Liners & Pacman Tips
+#   recovery (-e, --emergency) : Broken System, Keyring & Lock Recovery
 
 PCUTS_TABLE=(
-    $'sync\tpacman -U /path/package.pkg.tar.xz\tInstall a local package'
-    $'sync\tpacman -S --needed - < pkglist.txt\tInstall from a list'
-    $'sync\tpacman -S package-name\tInstall a package'
-    $'sync\tpacman -Syu\tUpdate all installed packages and sync and refresh database'
-    $'sync\tpacman -Sy\tSync and refresh the pacman database'
-    $'sync\tpacman -Syy\tSync and FORCE refresh the pacman database. Be careful!'
-    $'sync\tpacman -Syyu\tForce refresh database and update all packages'
-    $'sync\tpacman -Sw package-name\tDownload a package but do not install it'
-    $'sync\tpacman -Sc\tClear the package cache of uninstalled/old packages'
-    $'sync\tpacman -Scc\tClear ALL caches (run this periodically)'
-    $'search\tpacman -Ql keyword\tSearch package databases that contain a keyword'
-    $'search\tpacman -Ss \'^keyword\'\tSearch for package name that begins with a keyword'
-    $'search\tpacman -Si package-name\tShow detailed information about a package'
-    $'search\tpacman -Sl repo-name\tList all packages in a repository'
-    $'query\tpacman -Qs\tShow all installed packages'
-    $'query\tpacman -Qs keyword\tSearch for installed packages that contain a keyword'
-    $'query\tpacman -Qi package-name\tShow detailed information about an installed package'
-    $'query\tpacman -Ql package-name\tShow all files installed by a package'
-    $'query\tpacman -Qu\tList packages out of date as of the last -Sy (run -Sy first or this is stale)'
-    $'query\tpacman -Qdt\tList orphaned packages (shorthand)'
-    $'query\tpacman -Qm\tList all foreign (AUR) packages and include version info'
-    $'query\tpacman -Qmq\tList all foreign (AUR) packages - name only'
-    $'query\tpacman -Qqe > pkglist.txt\tCreate a file with all installed packages including AUR'
-    $'query\tpacman -Qq | grep -Ee \'-(bzr|cvs|darcs|git|hg|svn)$\'\tList all dev packages'
-    $'query\tpacman -Qq | fzf --preview \'pacman -Qil {}\' --layout=reverse --bind \'enter:execute(pacman -Qil {} | less)\'\tBrowse all in GUI'
-    $'files\tpacman -Fs keyword\tSearch for package filenames that contain a keyword'
-    $'files\tpacman -Q | grep -i keyword\tSearch for installed packages by keyword'
-    $'files\tpacman -Fl package-name\tShow all files installed by a remote package'
-    $'files\tpacman -Fo /path/filename\tShow which remote package a file belongs to'
-    $'files\tpacman -Qo /path/filename\tShow which installed package owns a file'
-    $'files\tpacman -Q\tShow all packages installed'
-    $'files\tpaccheck --md5sum --quiet\tShow all changed files from packages'
-    $'files\tlsof +c 0 | grep -w DEL | awk \'1 { print $1 ": " $NF }\' | sort -u\tShow apps using old libraries'
-    $'files\texpac --timefmt=\'%Y-%m-%d %T\' \'%l\\t%n\' | sort | tail -n 20\tShow last 20 installed packages'
-    $'remove\tpacreport --unowned-files\tIdentify files not owned by any package'
-    $'remove\tpacman -R package-name\tRemove pkg leaving all dependencies'
-    $'remove\tpacman -Rs package-name\tRemove pkg and dependencies not needed elsewhere'
-    $'remove\tpacman -Rc package-name\tRemove pkg and its config'
-    $'remove\tpacman -Rsc package-name\tRemove pkg, its dependencies and config'
-    $'remove\tpacman -Rns package-name\tRemove pkg, dependencies, and config (non-save)'
-    $'remove\tpacman -Qtdq | pacman -Rns -\tRemove orphans'
-    $'remove\tpacman -Qqd | pacman -Rsu --print -\tDetect more unneeded packages'
-    $'remove\tpacman -D --asdeps $(pacman -Qqe)\tMark everything as a dependency (keep only essential explicit)'
-    $'remove\tpacman -D --asexplicit package-name\tMark a package as explicitly installed'
+    # --- 1. SYNC, INSTALL & UPGRADE (-s / --sync) ---
+    $'sync\tpacman -Syu\tSync databases and upgrade all installed packages\tAlways upgrade with -Syu; installing after a bare -Sy causes partial upgrades.'
+    $'sync\tpacman -S package-name\tInstall a package from repositories\tMultiple packages or package groups can be space-separated.'
+    $'sync\tpacman -S --needed package-name\tInstall a package only if not already up-to-date\tSkips reinstalling packages that are already at the latest version.'
+    $'sync\tpacman -Syu --needed package-name\tUpgrade system and install a package in one transaction\tSafest way to install new software on a rolling-release system.'
+    $'sync\tpacman -S --asdeps package-name\tInstall a package marked as a dependency (e.g. optional dep)\tAllows pacman -Qtdq to clean it up automatically if its parent is removed.'
+    $'sync\tpacman -S extra/package-name\tInstall a package from a specific repository\tUseful when testing/multilib/custom repos provide duplicate package names.'
+    $'sync\tpacman -S --needed - < pkglist.txt\tInstall all packages listed in a text file\tPair with pacman -Qqen > pkglist.txt to clone native packages across machines.'
+    $'sync\tpacman -U /path/to/package.pkg.tar.zst\tInstall a local or downloaded package archive\tAlso accepts http:// or https:// URLs directly.'
+    $'sync\tpacman -U --asdeps /path/to/package.pkg.tar.zst\tInstall a local package archive marked as a dependency\tPrevents manually built dependency packages from polluting pacman -Qe.'
+    $'sync\tpacman -Sw package-name\tDownload package archive to cache without installing\tArchives land in /var/cache/pacman/pkg/ for offline or later use.'
+    $'sync\tpacman -Sy\tSync and refresh remote package databases only\tDo NOT follow with pacman -S <pkg> without -u (partial upgrade hazard).'
+    $'sync\tpacman -Syyu\tForce refresh all package databases and full upgrade\tUseful when switching mirrors or recovering from a corrupted sync db.'
+
+    # --- 2. SEARCH REMOTE PACKAGES & REPOS (-r / --remote) ---
+    $'search\tpacman -Ss keyword\tSearch remote package names and descriptions\tAccepts extended regular expressions (ERE) by default.'
+    $'search\tpacman -Ss \'^keyword\'\tSearch remote packages whose name begins with keyword\tAnchoring with ^ filters out noisy matches in descriptions.'
+    $'search\tpacman -Si package-name\tShow detailed metadata for a remote package\tDisplays version, repo, dependencies, optional deps, and download/install size.'
+    $'search\tpacman -Sii package-name\tShow extended remote info including reverse dependencies\tReveals "Required By" and "Optional For" across the entire sync database.'
+    $'search\tpacman -Sl repo-name\tList all packages in a repository (e.g. core, extra, multilib)\tMarks already-installed packages with [installed] at the end of the line.'
+    $'search\tpacman -Sg\tList all package groups across enabled repositories\tPass a group name (pacman -Sg base-devel) to list group members.'
+    $'search\tpacman-conf --repo-list\tList all currently enabled repositories in order\tOrder in pacman.conf determines repository precedence.'
+    $'search\tpactree -s package-name\tShow full dependency tree of a remote package\tFrom pacman-contrib; queries sync DB even if the package is not installed.'
+
+    # --- 3. SEARCH LOCAL / INSTALLED PACKAGES (-q / --query) ---
+    $'query\tpacman -Q\tList all installed packages with versions\tAdd -q (pacman -Qq) to output package names only for scripting.'
+    $'query\tpacman -Qs keyword\tSearch installed package names and descriptions\tSupports regexes; use pacman -Qs \'^lib\' to find installed libraries.'
+    $'query\tpacman -Qi package-name\tShow detailed metadata for an installed package\tShows install date, install reason, size, required-by, and optional deps.'
+    $'query\tpacman -Qii package-name\tShow installed package info plus modified backup files\tLists tracked config files and whether they are MODIFIED or UNMODIFIED.'
+    $'query\tpacman -Qe\tList explicitly installed packages\tPackages you intentionally installed (not pulled in automatically as deps).'
+    $'query\tpacman -Qent\tList explicit native packages not required by any other pkg\tTrue top-level "leaf" packages from official repos.'
+    $'query\tpacman -Qn\tList all native packages (found in enabled sync repos)\tExcludes AUR and locally built packages.'
+    $'query\tpacman -Qm\tList all foreign (AUR / local / dropped) packages with versions\tIncludes anything not present in currently configured sync databases.'
+    $'query\tpacman -Qmq\tList all foreign (AUR) package names only\tPipe into an AUR helper or review list to audit non-repo software.'
+    $'query\tpacman -Qu\tList out-of-date packages as of the last database sync\tReflects cached sync DB state; use checkupdates for a live safe check.'
+    $'query\tcheckupdates\tSafely check for pending upgrades without root or -Sy\tFrom pacman-contrib; syncs to a temporary DB so your system DB stays untouched.'
+    $'query\tpacman -Qdt\tList unneeded orphaned dependencies\tPackages installed as dependencies that no installed package requires anymore.'
+    $'query\tpacman -Qdtt\tList orphans including packages kept only as optional deps\tSingle -t hides optional deps; -tt includes them.'
+    $'query\tpacman -Qq | grep -Ee \'-(bzr|cvs|darcs|git|hg|svn)$\'\tList all installed VCS / development (-git) packages\tHelpful for auditing AUR -git packages that need manual rebuilds.'
+    $'query\tpacman -Qqe > pkglist.txt\tExport all explicitly installed packages to a file\tUse pacman -Qqen > pkglist.txt for official repo packages only.'
+    $'query\tpacman -Qq | fzf --preview \'pacman -Qil {}\' --layout=reverse --bind \'enter:execute(pacman -Qil {} | less)\'\tInteractive fzf browser over all installed packages\tPress Enter on any package to inspect its full info and file list in less.'
+
+    # --- 4. SEARCH FILES & PACKAGE OWNERSHIP (-f / --files) ---
+    $'files\tpacman -Qo /path/to/file\tShow which installed package owns a local file\tAlso accepts a command name in PATH (e.g. pacman -Qo $(which mpv)).'
+    $'files\tpacman -Ql package-name\tList all files installed by a local package\tCombine with grep (pacman -Ql pkg | grep /usr/bin/) to see its binaries.'
+    $'files\tpacman -Qql package-name\tList files owned by a local package (paths only)\tQuiet output without the package-name prefix—ideal for piping to xargs/stat.'
+    $'files\tpacman -Fy\tRefresh the remote files database (required before -F)\tSeparate from -Sy; updates file lists for uninstalled repository packages.'
+    $'files\tpacman -F filename\tFind which remote package provides a filename or path\tReplaces pkgfile; pass a bare binary name (e.g. pacman -F mkfs.fat) or path.'
+    $'files\tpacman -Fx \'usr/bin/.*ctl$\'\tSearch remote package file paths using a regular expression\tMatches against full root-relative paths in the sync files database.'
+    $'files\tpacman -Fl package-name\tList all files inside a remote (uninstalled) package\tInspect a package\'s contents before deciding to install it.'
+    $'files\tpacman -Qlp /path/to/package.pkg.tar.zst\tList all files inside a local .pkg.tar.zst archive\tUse -Qip on the same file to inspect its PKGINFO metadata before installing.'
+
+    # --- 5. REMOVE, ORPHANS & INSTALL REASONS (-x / --remove) ---
+    $'remove\tpacman -R package-name\tRemove a single package, leaving all its dependencies\tSafest minimal removal; refuses if another package depends on it.'
+    $'remove\tpacman -Rs package-name\tRemove package and its unused dependencies (recommended)\tLeaves configuration backup files (.pacsave) in place.'
+    $'remove\tpacman -Rns package-name\tRemove package, unused dependencies, and its config backups\t-n prevents saving .pacsave config backups in /etc.'
+    $'remove\tpacman -Rsu package-name\tRemove package, unused deps, and unneeded optional dependents\t-u (--unneeded) avoids breaking packages while cleaning loose ends.'
+    $'remove\tpacman -Rc package-name\tCascade remove package and ALL packages that depend on it\tDANGER: -c means cascade (NOT config!). Always preview with -Rcp first.'
+    $'remove\tpacman -Rdd package-name\tForce remove a package ignoring all dependency checks\tUse ONLY when replacing a blocking provider package manually.'
+    $'remove\tpacman -Qtdq | sudo pacman -Rns -\tRemove all orphaned packages and their configs in one shot\tExits cleanly if no orphans exist; review the target list before confirming.'
+    $'remove\tpacman -Qqd | pacman -Rsu --print -\tDetect circular or isolated dependency subgraphs\tPrints dependency groups that only depend on each other.'
+    $'remove\tpacman -D --asexplicit package-name\tMark an installed package as explicitly installed\tProtects a dependency from being removed by pacman -Rs or orphan cleanup.'
+    $'remove\tpacman -D --asdeps package-name\tMark an installed package as a dependency\tMakes a formerly explicit package eligible for automatic orphan removal.'
+
+    # --- 6. CACHE, LOGS & DOWNGRADE (-c / --cache) ---
+    $'cache\tpaccache -d -k 2\tDry-run cache cleanup keeping the last 2 versions per pkg\tFrom pacman-contrib; shows how much disk space would be reclaimed.'
+    $'cache\tsudo paccache -r -k 2\tPrune package cache keeping 2 versions for easy rollback\tRecommended over pacman -Sc so you can still downgrade broken upgrades.'
+    $'cache\tsudo paccache -rk1 && sudo paccache -ruk0\tKeep 1 version of installed pkgs and 0 of uninstalled pkgs\tReclaims maximum disk space while still keeping the current archive.'
+    $'cache\tpacman -Sc\tRemove cached packages that are not currently installed\tBuilt-in pacman cache cleaner; removes all rollback versions of installed pkgs.'
+    $'cache\tpacman -Scc\tWipe the ENTIRE package cache (/var/cache/pacman/pkg/)\tUse only when critically low on disk space; eliminates local rollback.'
+    $'cache\tsudo pacman -U /var/cache/pacman/pkg/pkg-oldver.pkg.tar.zst\tDowngrade a package from your local pacman cache\tTab-complete inside /var/cache/pacman/pkg/ to pick the previous version.'
+    $'cache\tsudo pacman -U https://archive.archlinux.org/packages/p/pkg/pkg-ver.pkg.tar.zst\tDowngrade a package directly from the Arch Linux Archive\tWorks even if you cleared your local /var/cache/pacman/pkg/ directory.'
+    $'cache\tgrep -E \'\\[(ALPM)\\] (installed|upgraded|removed)\' /var/log/pacman.log | tail -n 30\tShow the last 30 install, upgrade, and removal events\tReads /var/log/pacman.log directly to see what changed in recent updates.'
+
+    # --- 7. VERIFY, AUDIT, CONFIGS & DEPS (-v / --verify) ---
+    $'verify\tpacman -Dk\tVerify internal consistency of the local pacman database\tAdd -Dkk to check sync databases for missing or conflicting dependencies.'
+    $'verify\tpacman -Qk\tVerify that all files owned by installed packages exist\tQuick presence check across every installed package on the system.'
+    $'verify\tpacman -Qkk package-name\tPerform thorough file-attribute verification on a package\tChecks permissions, file sizes, modification times, and symlink targets.'
+    $'verify\tpaccheck --md5sum --quiet\tShow all installed package files with modified checksums\tFrom pacutils; use --sha256sum for cryptographic content verification.'
+    $'verify\tpacreport --unowned-files\tGenerate a system report including unowned files in /etc & /usr\tFrom pacutils; run with sudo for complete filesystem visibility.'
+    $'verify\tsudo DIFFPROG=\'nvim -d\' pacdiff\tFind and interactively merge .pacnew and .pacsave files\tFrom pacman-contrib; View, Merge, Skip, or Overwrite updated /etc configs.'
+    $'verify\tpactree -c package-name\tDisplay colorized forward dependency tree of an installed pkg\tAdd -d 2 (pactree -cd2 pkg) to limit recursion depth to 2 levels.'
+    $'verify\tpactree -r package-name\tDisplay reverse dependency tree ("why is this installed?")\tShows every installed package chain that requires the target package.'
+    $'verify\tpacman -T \'package>=1.2.0\'\tTest whether versioned dependencies are satisfied locally\tPrints unsatisfied dependencies; exits 0 if satisfied, 127 if missing.'
+    $'verify\tlsof +c 0 | grep -w DEL | awk \'1 { print $1 ": " $NF }\' | sort -u\tShow running processes still holding deleted shared libraries\tRun after pacman -Syu to see which daemons/apps need restarting.'
+
+    # --- 8. POWER-USER ONE-LINERS & TIPS (-t / --tricks) ---
+    $'tricks\texpac --timefmt=\'%Y-%m-%d %T\' \'%l\\t%n\' | sort | tail -n 20\tShow the 20 most recently installed or upgraded packages\tRequires expac; sorts by exact installation epoch timestamp.'
+    $'tricks\texpac -H M \'%m\\t%n\' | sort -h | tail -n 20\tShow the 20 largest installed packages by disk size (MiB)\tHuman-readable MiB output sorted from smallest to largest.'
+    $'tricks\texpac -S -H M \'%k\\t%n\' $(pacman -Qqu) | sort -sh\tShow download sizes of all pending package updates\tRun after checkupdates or -Sy to see which pending update is huge.'
+    $'tricks\tpacman -Sp --print-format \'%r/%n %v (%s bytes)\' package-name\tPreview exact repo, version, and download size without root\tAlso accepts %l to print the exact mirror download URLs.'
+    $'tricks\tpacman -Slq | fzf --multi --preview \'pacman -Si {1}\' | xargs -ro sudo pacman -S\tInteractive fzf package finder and multi-select installer\tUse Tab to mark multiple packages in fzf, Enter to install them with pacman.'
+    $'tricks\tpacman -Qq | fzf --multi --preview \'pacman -Qi {1}\' | xargs -ro sudo pacman -Rns\tInteractive fzf multi-select package remover\tPreview local package details and remove selected items with -Rns.'
+    $'tricks\tbsdtar -xvf package.pkg.tar.zst -C /tmp/extracted\tExtract a pacman package archive without installing it\tUseful for inspecting scripts, binaries, or recovering a single deleted file.'
+    $'tricks\tbacman package-name\tReconstruct a .pkg.tar.zst archive from an installed package\tFrom pacman-contrib; repacks an installed package before you upgrade/remove it.'
+    $'tricks\tsudo reflector --country US --latest 15 --protocol https --sort rate --save /etc/pacman.d/mirrorlist\tRank and save the 15 fastest HTTPS Arch mirrors\tRequires reflector; dramatically speeds up pacman ParallelDownloads.'
+
+    # --- 9. EMERGENCY & BROKEN SYSTEM RECOVERY (-e / --emergency) ---
+    $'recovery\tsudo rm -f /var/lib/pacman/db.lck\tRemove a stale pacman database lock file\tRun ONLY after verifying no pacman process is currently active (pgrep -a pacman).'
+    $'recovery\tsudo pacman -Sy --needed archlinux-keyring && sudo pacman -Su\tFix "unknown trust" or invalid PGP signature errors on upgrade\tRefreshes the Arch master keyring before upgrading the rest of the system.'
+    $'recovery\tsudo rm -rf /etc/pacman.d/gnupg && sudo pacman-key --init && sudo pacman-key --populate archlinux\tCompletely reset and rebuild a corrupted pacman GPG keyring\tNuclear fix when gpg keyrings in /etc/pacman.d/gnupg are damaged.'
+    $'recovery\tsudo pacman -S --overwrite \'glob\' package-name\tInstall package overwriting conflicting untracked files\tReplace glob with the specific conflicting path (e.g. \'/usr/lib/python3.12/*\').'
+    $'recovery\tsudo pacman -S --dbonly package-name\tRestore local pacman database entry without writing files\tFixes missing /var/lib/pacman/local/ metadata when files are already on disk.'
+    $'recovery\tsudo pacman --sysroot /mnt -Syu\tUpgrade or repair an unbootable Arch installation from live ISO\tMount root at /mnt first; safer than arch-chroot when bash/glibc Inside /mnt is broken.'
+    $'recovery\tpacman -Qqn | sudo pacman -S -\tReinstall every native repository package on the system\tRepairs widespread filesystem corruption or accidentally deleted /usr files.'
 )
 
-# Maps each category to the heading color used for its plain-text banner.
-# SEARCH LOCAL PACKAGES and SEARCH FILES moved from olive/lavender to
-# cyan/magenta — both legibility refinements against common dark terminal
-# backgrounds; the underlying palette in colors.sh is unchanged.
+# ===================================================================================
+# --- // CATEGORY METADATA & RENDERING // ---
+# ===================================================================================
+
+ALL_CATEGORIES=(sync search query files remove cache verify tricks recovery)
+
 _category_color() {
     case "$1" in
-        sync)   echo "purple" ;;
-        search) echo "grn"    ;;
-        query)  echo "cyn"    ;;
-        files)  echo "mag"    ;;
-        remove) echo "red"    ;;
+        sync)     printf 'pur' ;;
+        search)   printf 'grn' ;;
+        query)    printf 'cyn' ;;
+        files)    printf 'mag' ;;
+        remove)   printf 'red' ;;
+        cache)    printf 'gdr' ;;
+        verify)   printf 'sky' ;;
+        tricks)   printf 'aqm' ;;
+        recovery) printf 'org' ;;
+        *)        printf 'grn' ;;
     esac
 }
 
 _category_title() {
     case "$1" in
-        sync)   echo "SYNC COMMANDS"            ;;
-        search) echo "SEARCH REMOTE PACKAGES"   ;;
-        query)  echo "SEARCH LOCAL PACKAGES"    ;;
-        files)  echo "SEARCH FILES"             ;;
-        remove) echo "REMOVE"                   ;;
+        sync)     printf 'SYNC, INSTALL & UPGRADE  (-s)' ;;
+        search)   printf 'SEARCH REMOTE PACKAGES   (-r)' ;;
+        query)    printf 'SEARCH LOCAL PACKAGES    (-q)' ;;
+        files)    printf 'SEARCH FILES & OWNERS    (-f)' ;;
+        remove)   printf 'REMOVE & ORPHAN CLEANUP  (-x)' ;;
+        cache)    printf 'CACHE, LOGS & DOWNGRADE  (-c)' ;;
+        verify)   printf 'VERIFY, AUDIT & DEPS     (-v)' ;;
+        tricks)   printf 'POWER-USER ONE-LINERS    (-t)' ;;
+        recovery) printf 'EMERGENCY & RECOVERY     (-e)' ;;
     esac
 }
 
-# Renders every PCUTS_TABLE row matching $1 (a category name) as a colored
-# "command  # description" line, in table order, with the comment column
-# aligned to the widest command in that category. This replaces the
-# original's hand-counted \t / \t\t tab sequences (which only lined up at
-# one specific terminal tab-stop width and had already drifted out of
-# alignment in the REMOVE category) with alignment computed from the
-# actual string length, so it stays correct regardless of tab-stop width
-# or future additions to the table.
+_row_matches_filter() {
+    local filter="$1"
+    local cmd="$2"
+    local desc="$3"
+    local tip="$4"
+    [[ -z "$filter" ]] && return 0
+    local haystack="${cmd} ${desc} ${tip}"
+    [[ "${haystack,,}" == *"${filter,,}"* ]]
+}
+
+# Renders every matching row in category $1.
+# Uses two-tier column alignment so normal-length commands align in a crisp vertical
+# column while 90+ char pipelines never push short commands across the screen.
 _print_category() {
     local category="$1"
-    local row cat cmd desc maxlen=0
-    local -a cmds=() descs=()
+    local filter="${2:-}"
+    local detailed="${3:-0}"
+    local row cat cmd desc tip
+    local align_max=42
+    local AlignCap=56
+    local -a cmds=() descs=() tips=()
 
     for row in "${PCUTS_TABLE[@]}"; do
-        IFS=$'\t' read -r cat cmd desc <<<"$row"
+        IFS=$'\t' read -r cat cmd desc tip <<<"$row"
         [[ "$cat" == "$category" ]] || continue
+        _row_matches_filter "$filter" "$cmd" "$desc" "$tip" || continue
         cmds+=("$cmd")
         descs+=("$desc")
-        (( ${#cmd} > maxlen )) && maxlen=${#cmd}
+        tips+=("${tip:-}")
+        if (( ${#cmd} <= AlignCap && ${#cmd} > align_max )); then
+            align_max=${#cmd}
+        fi
     done
 
-    local idx pad pad_str
+    (( ${#cmds[@]} == 0 )) && return 1
+
+    bheading "$(_category_color "$category")" "$(_category_title "$category")"
+
+    local idx pad pad_str cmd_len
     for idx in "${!cmds[@]}"; do
-        pad=$(( maxlen - ${#cmds[$idx]} + 2 ))
+        cmd_len=${#cmds[$idx]}
+        if (( cmd_len <= align_max )); then
+            pad=$(( align_max - cmd_len + 3 ))
+        else
+            pad=2
+        fi
         printf -v pad_str '%*s' "$pad" ''
-        echo -e "${grn}${cmds[$idx]}${r}${pad_str}# ${descs[$idx]}"
+        printf '  %b%s%b%s%b#%b %s\n' \
+            "$grn" "${cmds[$idx]}" "$r" \
+            "$pad_str" \
+            "$cyn" "$r" "${descs[$idx]}"
+        if (( detailed )) && [[ -n "${tips[$idx]}" ]]; then
+            printf '      %b↳ Tip: %s%b\n' "$gry" "${tips[$idx]}" "$r"
+        fi
     done
+    return 0
 }
 
-#-----------------------------------------------------------------------------------
+# ===================================================================================
+# --- // HELP MENU // ---
+# ===================================================================================
 
-help() {
-    heading grn "HELP"
+show_help() {
+    bheading grn "PCUTS ${VERSION} — ARCH LINUX PACMAN REFERENCE"
 
-    echo -e "${grn}pcuts${r}\t\t  # Show all commands"
-    echo -e "${grn}pcuts${r}${yel} -s${r}, ${yel}--sync${r}\t  # Sync commands"
-    echo -e "${grn}pcuts${r}${yel} -r${r}, ${yel}--remote${r}\t  # Remote search commands"
-    echo -e "${grn}pcuts${r}${yel} -q${r}, ${yel}--query${r}\t  # Local query commands"
-    echo -e "${grn}pcuts${r}${yel} -f${r}, ${yel}--files${r}\t  # File commands"
-    echo -e "${grn}pcuts${r}${yel} -x${r}, ${yel}--remove${r}\t  # Remove commands"
-    echo -e "${grn}pcuts${r}${yel} -srqfx${r}\t  # Short flags can be combined"
-    echo -e "${grn}pcuts${r}${yel} -b${r}, ${yel}--browse${r}\t  # Interactive fuzzy-search picker (requires fzf)"
-    echo -e "${grn}pcuts${r}${yel} -h${r}, ${yel}--help${r}\t  # Display this help menu"
-    echo
+    printf '  %bUSAGE:%b\n' "$b$wht" "$r"
+    printf '    %bpcuts%b                         %b# Show all 9 command categories%b\n' "$grn" "$r" "$gry" "$r"
+    printf '    %bpcuts%b %b-srqfx%b                  %b# Combine any category short flags%b\n' "$grn" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %bpcuts%b %b<keyword>%b               %b# Filter commands across all categories (e.g. pcuts orphan)%b\n' "$grn" "$r" "$cyn" "$r" "$gry" "$r"
+    printf '    %bpcuts%b %b-b%b, %b--browse%b            %b# Interactive fzf fuzzy picker with live preview & clipboard copy%b\n\n' "$grn" "$r" "$yel" "$r" "$yel" "$r" "$gry" "$r"
+
+    printf '  %bCATEGORY FLAGS:%b\n' "$b$wht" "$r"
+    printf '    %b-s%b, %b--sync%b                    %b# Sync, install & upgrade commands%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-r%b, %b--remote%b, %b--search%b        %b# Remote repository search & metadata%b\n' "$yel" "$r" "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-q%b, %b--query%b                   %b# Local / installed package queries%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-f%b, %b--files%b                   %b# File ownership & remote file database (-F / -Qo)%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-x%b, %b--remove%b                  %b# Package removal, orphans & install reasons%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-c%b, %b--cache%b                   %b# Cache pruning (paccache), logs & downgrading%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-v%b, %b--verify%b                  %b# Integrity checks, pacdiff (.pacnew) & dependency trees%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-t%b, %b--tricks%b                  %b# Power-user one-liners (expac, fzf, bsdtar, reflector)%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-e%b, %b--emergency%b, %b--recovery%b   %b# Broken system, GPG keyring, db.lck & chroot recovery%b\n' "$yel" "$r" "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-a%b, %b--all%b                     %b# Show all categories explicitly%b\n\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+
+    printf '  %bMODIFIERS & MODES:%b\n' "$b$wht" "$r"
+    printf '    %b-d%b, %b--detailed%b                %b# Show pro-tips & caveats underneath each command%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-g%b, %b--find%b %b<text>%b             %b# Case-insensitive filter across commands, descriptions & tips%b\n' "$yel" "$r" "$yel" "$r" "$cyn" "$r" "$gry" "$r"
+    printf '    %b-l%b, %b--list%b                    %b# Emit raw TSV (category, command, description, tip) for scripts%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '    %b-C%b, %b--clear%b                   %b# Clear terminal screen before displaying output%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '        %b--color%b %b<auto|always|never>%b%b# Control ANSI color output (or pass --plain)%b\n' "$yel" "$r" "$cyn" "$r" "$gry" "$r"
+    printf '    %b-h%b, %b--help%b                    %b# Display this help menu%b\n' "$yel" "$r" "$yel" "$r" "$gry" "$r"
+    printf '        %b--version%b                 %b# Print version (%s)%b\n\n' "$yel" "$r" "$gry" "$VERSION" "$r"
 }
 
-#-----------------------------------------------------------------------------------
-
-search() {
-    if [[ $_search == false ]]; then
-        heading "$(_category_color search)" "$(_category_title search)"
-        _print_category search
-        _search=true
-    fi
-}
-
-#-----------------------------------------------------------------------------------
-
-query() {
-    if [[ $_query == false ]]; then
-        heading "$(_category_color query)" "$(_category_title query)"
-        _print_category query
-        _query=true
-    fi
-}
-
-#-----------------------------------------------------------------------------------
-
-files() {
-    if [[ $_files == false ]]; then
-        heading "$(_category_color files)" "$(_category_title files)"
-        _print_category files
-        _files=true
-    fi
-}
-
-#-----------------------------------------------------------------------------------
-
-sync() {
-    if [[ $_sync == false ]]; then
-        heading "$(_category_color sync)" "$(_category_title sync)"
-        _print_category sync
-        _sync=true
-    fi
-}
-
-#-----------------------------------------------------------------------------------
-
-remove() {
-    if [[ $_remove == false ]]; then
-        heading "$(_category_color remove)" "$(_category_title remove)"
-        _print_category remove
-        _remove=true
-    fi
-}
-
-#-----------------------------------------------------------------------------------
-# --- // BROWSE (fzf interactive picker):
-#
-# Commits fully to fzf as the single interactive loop — bash only builds
-# the input list and handles the one selected line afterward. No bash
-# `select`/`read`-driven menu exists alongside this; that would be a
-# chimera (two interaction paradigms for the same job). If fzf is absent,
-# this fails loudly with a one-line message rather than silently doing
-# nothing — the person asked for an interactive picker, and a quiet no-op
-# would look like the program hung or ignored the flag.
+# ===================================================================================
+# --- // INTERACTIVE FZF BROWSER (--browse) // ---
+# ===================================================================================
 
 browse() {
+    local filter="${1:-}"
+    shift || true
+    local -a active_cats=("$@")
+
     if ! command -v fzf &>/dev/null; then
-        echo -e "${red:-}pcuts --browse requires fzf, which is not installed.${r:-}" >&2
-        echo "Install it (e.g. 'pacman -S fzf') or use a category flag instead (pcuts -h)." >&2
+        printf '%bpcuts --browse requires fzf, which is not installed.%b\n' "$red" "$r" >&2
+        printf 'Install it with: sudo pacman -S fzf\n' >&2
         return 1
     fi
 
-    local row cat cmd desc title selected key
+    local row cat cmd desc tip tag
     local -a lines=()
+    local cat_match
 
     for row in "${PCUTS_TABLE[@]}"; do
-        IFS=$'\t' read -r cat cmd desc <<<"$row"
-        title="$(_category_title "$cat")"
-        # Display line: "[TITLE] command  -- description". fzf fuzzy-matches
-        # across the whole line, so searching "orphan" or "remove" or
-        # "-Syu" all work regardless of category.
-        lines+=("[$title] $cmd  -- $desc")
+        IFS=$'\t' read -r cat cmd desc tip <<<"$row"
+        cat_match=0
+        for c in "${active_cats[@]}"; do
+            [[ "$c" == "$cat" ]] && { cat_match=1; break; }
+        done
+        (( cat_match )) || continue
+        _row_matches_filter "$filter" "$cmd" "$desc" "$tip" || continue
+        tag=$(printf '[%-8s]' "${cat^^}")
+        # Tab-separated fields:
+        # 1: display line | 2: raw command | 3: category | 4: description | 5: tip
+        lines+=("${cyn}${tag}${r} ${grn}${cmd}${r}  ${gry}# ${desc}${r}"$'\t'"${cmd}"$'\t'"${cat^^}"$'\t'"${desc}"$'\t'"${tip:-None}")
     done
 
-    # --expect=esc lets us tell "user cancelled" apart from "user selected
-    # nothing because the list was somehow empty" — both print nothing to
-    # stdout from fzf, but only the former is an ordinary, successful exit.
-    selected="$(printf '%s\n' "${lines[@]}" | fzf \
-        --ansi \
-        --height=80% \
-        --layout=reverse \
-        --header='pcuts: fuzzy-search every pacman command — Enter to select, Esc to cancel' \
-        --prompt='pcuts> ' \
-        --expect=esc)"
+    if (( ${#lines[@]} == 0 )); then
+        printf '%bpcuts: no commands matched filter "%s".%b\n' "$red" "$filter" "$r" >&2
+        return 1
+    fi
 
-    key="${selected%%$'\n'*}"
-    selected="${selected#*$'\n'}"
+    local selected status=0
+    selected=$(
+        printf '%s\n' "${lines[@]}" | FZF_DEFAULT_OPTS="" fzf \
+            --ansi \
+            --delimiter=$'\t' \
+            --with-nth=1 \
+            --no-multi \
+            --height=85% \
+            --layout=reverse \
+            --border=rounded \
+            --query="$filter" \
+            --prompt='pcuts> ' \
+            --header='Enter: print & copy command | Esc: cancel' \
+            --preview=$'printf "\\033[1;95mCATEGORY:\\033[0m    %s\\n\\n\\033[1;92mCOMMAND:\\033[0m\\n  %s\\n\\n\\033[1;96mDESCRIPTION:\\033[0m\\n  %s\\n\\n\\033[1;93mPRO-TIP / NOTE:\\033[0m\\n  %s\\n" {3} {2} {4} {5}' \
+            --preview-window='down:9:wrap:border-top' \
+            --color='bg:#000000,bg+:#071a1a,fg:#e0e0e0,fg+:#15ffff,hl:#00d7ff,hl+:#15ffff,info:#15ffff,prompt:#15ffff,pointer:#15ffff,marker:#15ffff,header:#a855f7,border:#15ffff'
+    ) || status=$?
 
-    if [[ "$key" == "esc" || -z "$selected" ]]; then
-        # User cancelled — this is a normal, successful exit, not an error.
+    if (( status == 1 || status == 130 )) || [[ -z "$selected" ]]; then
         return 0
     fi
+    if (( status != 0 )); then
+        return "$status"
+    fi
 
-    # Strip the "[TITLE] " prefix and the trailing "  -- description" back
-    # off, leaving only the raw command — this is what actually gets handed
-    # to the user, never the decorated display line.
-    cmd="${selected#\[*\] }"
-    cmd="${cmd%  -- *}"
+    local chosen_cmd
+    IFS=$'\t' read -r _ chosen_cmd _ <<<"$selected"
 
-    echo -e "${grn}${cmd}${r}"
+    printf '%b%s%b\n' "$grn" "$chosen_cmd" "$r"
 
-    if command -v wl-copy &>/dev/null; then
-        printf '%s' "$cmd" | wl-copy
-        echo -e "${yel}(copied to clipboard via wl-copy)${r}" >&2
-    elif command -v xclip &>/dev/null; then
-        printf '%s' "$cmd" | xclip -selection clipboard
-        echo -e "${yel}(copied to clipboard via xclip)${r}" >&2
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-copy &>/dev/null; then
+        printf '%s' "$chosen_cmd" | wl-copy
+        printf '%b(copied to Wayland clipboard via wl-copy)%b\n' "$yel" "$r" >&2
+    elif [[ -n "${DISPLAY:-}" ]] && command -v xclip &>/dev/null; then
+        printf '%s' "$chosen_cmd" | xclip -selection clipboard
+        printf '%b(copied to X11 clipboard via xclip)%b\n' "$yel" "$r" >&2
+    elif [[ -n "${DISPLAY:-}" ]] && command -v xsel &>/dev/null; then
+        printf '%s' "$chosen_cmd" | xsel --clipboard --input
+        printf '%b(copied to X11 clipboard via xsel)%b\n' "$yel" "$r" >&2
     fi
 }
 
-#-----------------------------------------------------------------------------------
-# --- // ARGUMENT_PARSING:
-#
-# Single paradigm: every argument (short, combined-short, or long) is
-# normalized into a set of category letters {s,r,q,f,x}, then dispatched
-# once through one case loop. -b/--browse is the one exception — it is
-# mutually exclusive with the print categories (an interactive picker and
-# a "dump everything" mode don't compose), so it short-circuits before
-# category accumulation begins, exactly like -h/--help already does.
+# ===================================================================================
+# --- // ARGUMENT PARSING & DISPATCH // ---
+# ===================================================================================
 
-show_help_and_exit() {
-    help
-    exit "${1:-1}"
-}
+main() {
+    local color_mode="auto"
+    local mode="show"
+    local detailed=0
+    local do_clear=0
+    local filter=""
+    local -a requested_cats=()
+    local -A seen_cats=()
 
-# Accumulates recognized category letters from all arguments into one string,
-# e.g. "srq", so -s -r --query and -srq all converge on the same dispatch path.
-_categories=""
+    add_cat() {
+        local c="$1"
+        if [[ -z "${seen_cats[$c]:-}" ]]; then
+            requested_cats+=("$c")
+            seen_cats["$c"]=1
+        fi
+    }
 
-if [[ $# -eq 0 ]]; then
-    _categories="srqfx"
-else
-    for arg in "$@"; do
-        case "$arg" in
+    while (( $# > 0 )); do
+        case "$1" in
             -h|--help)
-                show_help_and_exit 0
+                mode="help"
+                shift
+                ;;
+            --version)
+                printf 'pcuts %s\n' "$VERSION"
+                return 0
                 ;;
             -b|--browse)
-                browse
-                exit $?
+                mode="browse"
+                shift
                 ;;
-            --sync)   _categories+="s" ;;
-            --remote) _categories+="r" ;;
-            --query)  _categories+="q" ;;
-            --files)  _categories+="f" ;;
-            --remove) _categories+="x" ;;
+            -l|--list)
+                mode="list"
+                shift
+                ;;
+            -d|--detailed)
+                detailed=1
+                shift
+                ;;
+            -C|--clear)
+                do_clear=1
+                shift
+                ;;
+            --plain|--no-color)
+                color_mode="never"
+                shift
+                ;;
+            --color)
+                if (( $# < 2 )); then
+                    printf 'pcuts: --color requires an argument (auto, always, never)\n' >&2
+                    return 1
+                fi
+                color_mode="$2"
+                shift 2
+                ;;
+            --color=*)
+                color_mode="${1#--color=}"
+                shift
+                ;;
+            -g|--find|--grep)
+                if (( $# < 2 )); then
+                    printf 'pcuts: %s requires a search pattern\n' "$1" >&2
+                    return 1
+                fi
+                filter="$2"
+                shift 2
+                ;;
+            --sync)                add_cat sync; shift ;;
+            --remote|--search)     add_cat search; shift ;;
+            --query)               add_cat query; shift ;;
+            --files)               add_cat files; shift ;;
+            --remove)              add_cat remove; shift ;;
+            --cache)               add_cat cache; shift ;;
+            --verify|--audit)      add_cat verify; shift ;;
+            --tricks|--tips)       add_cat tricks; shift ;;
+            --emergency|--recovery) add_cat recovery; shift ;;
+            --all)
+                for c in "${ALL_CATEGORIES[@]}"; do add_cat "$c"; done
+                shift
+                ;;
+            --)
+                shift
+                if (( $# > 0 )); then
+                    filter="${filter:+$filter }$*"
+                fi
+                break
+                ;;
             --*)
-                echo -e "${red:-}Unknown option: $arg${r:-}"
-                show_help_and_exit 1
+                setup_colors "$color_mode"
+                printf '%bUnknown option: %s%b\n' "$red" "$1" "$r" >&2
+                show_help >&2
+                return 1
                 ;;
             -*)
-                # Short form: strip the leading dash, validate the remainder
-                # is composed only of recognized category letters, allowing
-                # combined flags like -srqfx.
-                flag="${arg#-}"
-                flag="${flag,,}"
-                if [[ -z "$flag" || "$flag" =~ [^srqfx] ]]; then
-                    echo -e "${red:-}Unknown option: $arg${r:-}"
-                    show_help_and_exit 1
+                local flags="${1#-}"
+                if [[ -z "$flags" ]]; then
+                    setup_colors "$color_mode"
+                    printf '%bUnknown option: %s%b\n' "$red" "$1" "$r" >&2
+                    return 1
                 fi
-                _categories+="$flag"
+                local i ch
+                for (( i=0; i<${#flags}; i++ )); do
+                    ch="${flags:$i:1}"
+                    case "$ch" in
+                        s|S) add_cat sync ;;
+                        r|R) add_cat search ;;
+                        q|Q) add_cat query ;;
+                        f|F) add_cat files ;;
+                        x|X) add_cat remove ;;
+                        c)   add_cat cache ;;
+                        v|V) add_cat verify ;;
+                        t|T) add_cat tricks ;;
+                        e|E) add_cat recovery ;;
+                        a|A) for c in "${ALL_CATEGORIES[@]}"; do add_cat "$c"; done ;;
+                        d|D) detailed=1 ;;
+                        C)   do_clear=1 ;;
+                        b|B) mode="browse" ;;
+                        l|L) mode="list" ;;
+                        h|H) mode="help" ;;
+                        *)
+                            setup_colors "$color_mode"
+                            printf '%bUnknown short flag: -%s (in %s)%b\n' "$red" "$ch" "$1" "$r" >&2
+                            show_help >&2
+                            return 1
+                            ;;
+                    esac
+                done
+                shift
                 ;;
             *)
-                echo -e "${red:-}Unknown option: $arg${r:-}"
-                show_help_and_exit 1
+                # Positional arguments act as a convenient live search filter
+                filter="${filter:+$filter }$1"
+                shift
                 ;;
         esac
     done
-fi
 
-clear 2>/dev/null || true
-
-for (( i=0; i<${#_categories}; i++ )); do
-    case "${_categories:$i:1}" in
-        s) sync   ;;
-        r) search ;;
-        q) query  ;;
-        f) files  ;;
-        x) remove ;;
+    case "$color_mode" in
+        auto|always|never) ;;
+        *)
+            printf 'pcuts: --color must be auto, always, or never (got: %s)\n' "$color_mode" >&2
+            return 1
+            ;;
     esac
-done
 
-echo
+    setup_colors "$color_mode"
+
+    if [[ "$mode" == "help" ]]; then
+        show_help
+        return 0
+    fi
+
+    if (( ${#requested_cats[@]} == 0 )); then
+        requested_cats=("${ALL_CATEGORIES[@]}")
+    fi
+
+    if [[ "$mode" == "browse" ]]; then
+        browse "$filter" "${requested_cats[@]}"
+        return $?
+    fi
+
+    if [[ "$mode" == "list" ]]; then
+        local row cat cmd desc tip matched=0
+        for c in "${requested_cats[@]}"; do
+            for row in "${PCUTS_TABLE[@]}"; do
+                IFS=$'\t' read -r cat cmd desc tip <<<"$row"
+                [[ "$cat" == "$c" ]] || continue
+                _row_matches_filter "$filter" "$cmd" "$desc" "$tip" || continue
+                printf '%s\t%s\t%s\t%s\n' "$cat" "$cmd" "$desc" "${tip:-}"
+                matched=1
+            done
+        done
+        (( matched )) && return 0 || return 1
+    fi
+
+    if (( do_clear )) && [[ -t 1 ]]; then
+        clear 2>/dev/null || true
+    fi
+
+    local any_printed=0
+    for c in "${requested_cats[@]}"; do
+        if _print_category "$c" "$filter" "$detailed"; then
+            any_printed=1
+        fi
+    done
+
+    if (( ! any_printed )); then
+        printf '\n%bNo pacman commands matched filter "%s".%b\n\n' "$red" "$filter" "$r" >&2
+        return 1
+    fi
+
+    printf '\n'
+}
+
+main "$@"

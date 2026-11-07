@@ -3,11 +3,19 @@
 # Usage: mkcaddy [options] <dir_or_file>
 #
 # Standalone POSIX-compliant Caddyfile builder & architecture wizard.
-# Covers the full gamut of Caddy modules, presets, and directives via an
-# interactive #15FFFF-on-black fzf TUI (with POSIX fallback) or CLI flags.
+# Nine architecture presets plus native Caddyfile/JSON extension points.
+# POSIX shell syntax; requires Linux/coreutils (mktemp and ln -T).
+# Caddy 2.8+ is needed for validation and basic_auth. No daemon is started.
 
 set -eu
 set -C
+set -f
+umask 077
+LC_ALL=C
+export LC_ALL
+VERSION="3.0.0"
+CADDY_BIN=${CADDY_BIN:-caddy}
+PYTHON_BIN=${PYTHON_BIN:-python3}
 
 # ---------------------------------------------------------------------------
 # Color & Theme Setup (#15FFFF on #000000 black)
@@ -37,20 +45,27 @@ FZF_COLORS="bg:${HEX_BG},bg+:${HEX_BG_ALT},fg:${HEX_FG},fg+:${HEX_FG},hl:${HEX_H
 # ---------------------------------------------------------------------------
 # Cleanup & Core Helpers
 # ---------------------------------------------------------------------------
+WORK_DIR=""
 TMP_CADDY=""
 TMP_SITE=""
 cleanup() {
-	[ -n "$TMP_CADDY" ] && [ -f "$TMP_CADDY" ] && rm -f -- "$TMP_CADDY"
-	[ -n "$TMP_SITE" ] && [ -f "$TMP_SITE" ] && rm -f -- "$TMP_SITE"
+	if [ -n "$WORK_DIR" ]; then
+		rm -rf -- "$WORK_DIR"
+	fi
 	return 0
 }
-trap cleanup EXIT INT TERM HUP
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 msg() {
+	[ "${OPT_QUIET:-0}" -eq 0 ] || return 0
 	printf '%s%s%s\n' "$C_THEME" "$*" "$C_RST" >&2
 }
 
 bold_msg() {
+	[ "${OPT_QUIET:-0}" -eq 0 ] || return 0
 	printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RST" >&2
 }
 
@@ -76,7 +91,7 @@ detect_lan_ip() {
 				for (i = 1; i <= NF; i++) {
 					if ($i == "dev") {
 						d = $(i+1)
-						if (d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0) {
+						if ($0 !~ /linkdown/ && d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0) {
 							print d
 							exit
 						}
@@ -85,7 +100,7 @@ detect_lan_ip() {
 			}')
 		if [ -n "$_lan_dev" ]; then
 			_ip=$(ip -o -4 addr show dev "$_lan_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
-			if [ -n "$_ip" ]; then
+			if [ -n "$_ip" ] && ip -o link show dev "$_lan_dev" 2>/dev/null | awk '/BROADCAST/ && !/POINTOPOINT/ {ok=1} END {exit !ok}'; then
 				printf '%s\n' "$_ip"
 				return 0
 			fi
@@ -98,7 +113,7 @@ detect_lan_ip() {
 				d = $2
 				if (d == "lo" || d ~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/) next
 				if (index(wg, " " d " ") > 0) next
-				if (bcast != "  " && index(bcast, " " d " ") == 0) next
+				if (index(bcast, " " d " ") == 0) next
 				split($4, a, "/")
 				if (a[2] != "32") {
 					print a[1]
@@ -111,14 +126,7 @@ detect_lan_ip() {
 		fi
 	fi
 
-	if have_cmd hostname; then
-		_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/) {print $i; exit}}')
-		if [ -n "$_ip" ]; then
-			printf '%s\n' "$_ip"
-			return 0
-		fi
-	fi
-	printf '%s\n' "192.168.1.242"
+	return 1
 }
 
 # Detect active WireGuard / POINTOPOINT VPN IPv4 address (if any) so the user can
@@ -145,6 +153,107 @@ detect_vpn_ip() {
 	return 1
 }
 
+# Escape a literal Caddyfile argument. Never use printf %b on operator input.
+caddy_quote() {
+	require_line "Literal argument" "$1"
+	case $1 in *'{$'*) die "Literal arguments cannot contain Caddyfile environment substitutions; use a trusted fragment" ;; esac
+	printf '"'
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+	printf '"'
+}
+
+require_line() {
+	case $2 in
+		''|*'
+'*|*"$(printf '\r')"*) die "$1 must be a nonempty single line" ;;
+	esac
+}
+
+# Restrict lists of grammar tokens; use -c/-g for intentional native syntax.
+require_tokens() {
+	require_line "$1" "$2"
+	case $2 in
+		*[!a-zA-Z0-9_./:@%+*=,?\[\]\ -]*) die "Invalid characters in $1; use a native fragment for advanced syntax" ;;
+	esac
+}
+
+require_literal() {
+	require_line "$1" "$2"
+	case $2 in *'{$'*) die "$1 cannot contain Caddyfile environment substitutions; use a trusted fragment" ;; esac
+}
+
+absolute_file() (
+	require_literal "File path" "$1"
+	case $1 in /*) _af=$1 ;; *) _af=$PWD/$1 ;; esac
+	require_literal "Absolute file path" "$_af"
+	[ -f "$_af" ] && [ -r "$_af" ] || die "Cannot read regular file: $_af"
+	printf '%s/%s\n' "$(cd -- "$(dirname -- "$_af")" && pwd -P)" "$(basename -- "$_af")"
+)
+
+absolute_path() (
+	require_literal "File system path" "$1"
+	case $1 in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac
+)
+
+require_port() {
+	case $2 in ''|*[!0-9]*) die "$1 must be a port from 1 to 65535" ;; esac
+	_port_number=$(printf '%s' "$2" | sed 's/^0*//')
+	_port_number=${_port_number:-0}
+	[ "${#_port_number}" -le 5 ] && [ "$_port_number" -ge 1 ] && [ "$_port_number" -le 65535 ] ||
+		die "$1 must be a port from 1 to 65535"
+}
+
+hide_config_paths() {
+	# file_server treats hide arguments as globs even when they are quoted.
+	_hidden_config=$(printf '%s' "$TARGET_BASE" | sed 's/[][?*\\]/\\&/g')
+	printf '%s %s' "$(caddy_quote "$_hidden_config")" "$(caddy_quote "$_hidden_config.*")"
+}
+
+require_module() {
+	[ "${OPT_VALIDATE:-auto}" != "skip" ] || return 0
+	if have_cmd "$CADDY_BIN"; then
+		"$CADDY_BIN" list-modules | awk -v wanted="$1" '$0 == wanted {found=1} END {exit !found}' ||
+			die "Caddy build lacks required module: $1"
+	fi
+}
+
+validate_config() {
+	if [ "$OPT_VALIDATE" = "skip" ]; then
+		msg "[UNVALIDATED] Validation explicitly disabled (-V)."
+		return 0
+	fi
+	if ! have_cmd "$CADDY_BIN"; then
+		[ "$OPT_VALIDATE" != "required" ] || die "Caddy is required for -v validation"
+		msg "[UNVALIDATED] Caddy unavailable; run caddy validate before deployment (or use -v to require it)."
+		return 0
+	fi
+	have_cmd timeout || die "GNU coreutils timeout is required for validation"
+	if [ -n "$OPT_JSON" ]; then
+		timeout --foreground 60 "$CADDY_BIN" validate --config "$TMP_CADDY" >&2 || die "Native JSON validation failed or timed out; nothing committed"
+	else
+		timeout --foreground 60 "$CADDY_BIN" adapt --config "$TMP_CADDY" --adapter caddyfile --validate >/dev/null ||
+			die "Caddyfile validation failed or timed out; nothing committed"
+	fi
+	msg "[VALIDATED] Caddy accepted the generated configuration."
+}
+
+# Root-owning terminal handlers cannot be flattened into the same site.
+# Scoped combinations remain available via native handle/route fragments.
+claim_content() {
+	if [ -n "$SITE_CONTENT" ]; then
+		[ "$OPT_NONINTERACTIVE" -eq 0 ] || die "Conflicting content modules: $SITE_CONTENT and $1"
+		msg "[SKIPPED] $SITE_CONTENT already owns this site's root; use scoped native routes to combine handlers."
+		return 1
+	fi
+	SITE_CONTENT=$1
+}
+
+mod_native_fragment() {
+	_native=$(tui_input "Native site fragment file (trusted Caddyfile directives)" "${OPT_SITE_FRAGMENT:-}")
+	_native=$(absolute_file "$_native")
+	emit_line "	import $(caddy_quote "$_native")"
+}
+
 # ---------------------------------------------------------------------------
 # Dedicated & Comprehensive Help Menu
 # ---------------------------------------------------------------------------
@@ -152,24 +261,25 @@ show_help() {
 	prog=${0##*/}
 	cat <<EOF
 ${C_BOLD}=== MKCADDY === (c) 2026 - 4ndr0666${C_RST}
-${C_THEME}Standalone POSIX-Compliant Caddyfile Architecture & Module Builder${C_RST}
+${C_THEME}MKCADDY ${VERSION} | POSIX-shell Caddyfile Architecture & Module Builder${C_RST}
 ${C_DIM}Theme: #15FFFF (#15FFF) on Black (#000000) | Idempotent & Non-Overwriting${C_RST}
 
 ${C_BOLD}USAGE:${C_RST}
   ${C_THEME}${prog} <target_dir_or_file>${C_RST}
   ${C_THEME}${prog} [options] <target_dir_or_file>${C_RST}
+  ${C_THEME}${prog} -m | --version${C_RST}
 
 ${C_BOLD}DESCRIPTION:${C_RST}
   ${C_THEME}Interactive fzf-driven TUI (with POSIX /dev/tty fallback) and CLI generator
-  for production-ready Caddyfiles. Supports both popular turnkey architecture
+  for Caddyfiles (validate before deployment). Supports both popular turnkey architecture
   presets and a full composable module-by-module builder that prompts for every
   required parameter per feature. Running with no arguments displays this help.${C_RST}
 
 ${C_BOLD}POPULAR ARCHITECTURE PRESETS (-p <preset>):${C_RST}
   ${C_THEME}file-browser   Static File Server & Interactive Directory Browser (file_server browse,
                  hidden file filters, precompressed sidecars, zstd/gzip encoding)
-  m3u-streamer   Dynamic M3U Media Streaming Server (templates + listFiles URL-safe
-                 responder for videos/images/both + file_server)
+  m3u-streamer   Recursive M3U Media Streaming Server (native templates + file_server;
+                 video/audio/images, metadata sorting and complete shuffling)
   reverse-proxy  Single or Load-Balanced Reverse Proxy (upstreams, lb_policy, active &
                  passive health checks, WebSocket/streaming flush, header_up rules)
   spa-api        Single-Page Application (try_files -> /index.html) + split /api/*
@@ -193,7 +303,7 @@ ${C_BOLD}SUPPORTED CADDY MODULES & CAPABILITIES (COMPOSABLE IN TUI):${C_RST}
                             (cloudflare, route53, duckdns, digitalocean, hetzner)
   4. File Server            root, file_server, browse (with optional custom template), hide
                             patterns, index files, precompressed (zstd, br, gzip)
-  5. Dynamic Templates      templates mime, dynamic M3U playlist responder (videos/images/both)
+  5. Dynamic Templates      templates mime, recursive M3U responder (videos/images/both)
   6. Reverse Proxy          Single/multi upstreams, lb_policy (round_robin, least_conn, random,
                             first, ip_hash, uri_hash), health_uri/interval/timeout/status,
                             fail_duration/max_fails, header_up/header_down, flush_interval, HTTPS
@@ -218,17 +328,56 @@ ${C_BOLD}CLI OPTIONS:${C_RST}
   -r <path>    Root directory for file_server / templates / SPA / PHP
   -u <upstr>   Upstream address(es) for reverse_proxy or php_fastcgi
   -t <media>   Media filter for m3u-streamer preset: both | videos | images
+  -s <field>   M3U order: date | size | name | shuffle (default: date)
+  -o <order>   M3U order direction: desc | asc (default: desc)
+  -d <depth>   M3U maximum file depth: 0=all, 1=root (default: 0; max: 255)
   -B           Enable interactive file browser (file_server browse)
   -E           Enable zstd + gzip compression (encode zstd gzip)
   -S           Enable hardened HTTP security headers preset
   -n           Non-interactive mode (use flags and sensible defaults without prompts)
+  -c <file>    Import trusted native HTTP handler directives (inside protected routing)
+  -g <file>    Import trusted native global options (storage, PKI, events, servers...)
+  -J <file>    Commit native JSON configuration verbatim (any installed Caddy app)
+  -P <list>    Global server protocols (e.g. "h1 h2 h3")
+  -T <mode>    TLS: auto | internal (certificate/DNS wizard; full TLS/PKI via -J)
+  -e <email>   ACME registration email
+  -A <addr>    Admin API: off or listen address
+  -H <file>    Required bcrypt hash file for noninteractive secure-gateway
+  -U <user>    Basic authentication username (default: admin)
+  -L <dest>    Access log: stdout | stderr | absolute file path
+  -k <CIDRs>   Allow only these remote IP ranges
+  -D <CIDRs>   Deny these remote IP ranges (mutually exclusive with -k)
+  -C <origin>  CORS origin (* or one explicit origin)
+  -i <names>   File-server index filenames
+  -w <globs>   File-server hide patterns (default: .git .env *.bak .DS_Store)
+  -z <list>    Precompressed sidecars (zstd br gzip; br sidecars need no plugin)
+  -v           Require successful Caddy validation before committing
+  -V           Explicitly skip Caddy validation (generate only)
+  -m           List modules in the selected CADDY_BIN, then exit
+  -q           Suppress progress messages (errors remain visible)
   -h           Display this comprehensive help menu${C_RST}
 
 ${C_BOLD}EXAMPLES:${C_RST}
   ${C_THEME}${prog} .                                    # Launch interactive TUI in current dir
-  ${C_THEME}${prog} -p file-browser -a :8080 -B /srv/pub # Non-interactive file browser setup
+  ${C_THEME}${prog} -p file-browser -a :8080 -B /srv/pub # Browser preset setup
   ${C_THEME}${prog} -n -p reverse-proxy -a app.local -u 127.0.0.1:5000 ./Caddyfile
   ${C_THEME}${prog} -n -p m3u-streamer -a :3000 -t videos /s4/s4Downloads${C_RST}
+
+Validation defaults to using Caddy when available; -v makes it mandatory.
+CADDY_BIN selects a specific binary. Third-party modules must already be installed.
+Native handler/global fragments remain external dependencies; their imports resolve
+relative to that fragment. Site options such as tls/log/bind do not belong in -c;
+use the built-in controls or full native JSON (-J). -J accepts all native apps (including layer4 with a custom build).
+Recursive media generation additionally requires Python 3.9+ (PYTHON_BIN) at
+build time. The generated server uses Caddy native templates on Linux local disk,
+without a helper process. It skips symlinks, deduplicates hard links by inode,
+and aborts requests on unreadable directories or recursion beyond 256 levels.
+The media sort/filter/depth is baked into the config; shuffle permutes all files
+on every request. Formats are selected by extension, not decoded by this tool.
+Deploy the printed output path; when an existing config differs it is preserved.
+Generated configurations are mode 0600; grant the Caddy service read access before
+reload. This builder never installs, starts, stops or reloads a service.
+GTK/Cairo glass effects require a separate graphical application; this is a TUI.
 EOF
 }
 
@@ -277,12 +426,11 @@ tui_select() {
 		case $_ans in
 			''|*[!0-9]*) _ans=1 ;;
 		esac
-		if [ "$_ans" -lt 1 ] || [ "$_ans" -gt "$#" ]; then
-			_ans=1
-		fi
+		_ans=$(printf '%s' "$_ans" | sed 's/^0*//')
+		[ -n "$_ans" ] || _ans=1
 		_cur=1
 		for _item in "$@"; do
-			if [ "$_cur" -eq "$_ans" ]; then
+			if [ "$_cur" = "$_ans" ]; then
 				printf '%s\n' "$_item"
 				return 0
 			fi
@@ -296,17 +444,17 @@ tui_select() {
 tui_input() {
 	_label=$1
 	_def=$2
+	_val=""
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 		printf '%s%s [%s]: %s' "$C_BOLD" "$_label" "$_def" "$C_RST" >&2
 		IFS= read -r _val </dev/tty || _val=""
-		if [ -n "$_val" ]; then
-			printf '%s\n' "$_val"
-		else
-			printf '%s\n' "$_def"
-		fi
-	else
-		printf '%s\n' "$_def"
 	fi
+	_val=${_val:-$_def}
+	if [ -n "$_val" ]; then
+		require_line "$_label" "$_val"
+		case $_val in *'{$'*) die "Use a trusted native fragment for Caddyfile environment substitutions" ;; esac
+	fi
+	printf '%s\n' "$_val"
 }
 
 tui_yesno() {
@@ -326,45 +474,54 @@ tui_yesno() {
 # ---------------------------------------------------------------------------
 # Idempotent, Non-Overwriting File Commit
 # ---------------------------------------------------------------------------
-commit_file() {
-	_tmp=$1
-	_base=$2
-	_ext=$3
-
-	_primary="${_base}${_ext}"
-	if [ -f "$_primary" ]; then
-		if cmp -s -- "$_tmp" "$_primary"; then
-			msg "[IDEMPOTENT] Unchanged: $_primary already matches generated Caddyfile."
-			printf '%s\n' "$_primary"
-			return 0
-		fi
-	else
-		cat -- "$_tmp" > "$_primary"
-		msg "[CREATED] $_primary"
-		printf '%s\n' "$_primary"
+commit_file() (
+	_commit_tmp=$1
+	_commit_base=$2
+	_commit_ext=$3
+	if [ ! -L "${_commit_base}${_commit_ext}" ] && [ -f "${_commit_base}${_commit_ext}" ] && cmp -s -- "$_commit_tmp" "${_commit_base}${_commit_ext}"; then
+		msg "[IDEMPOTENT] Unchanged: ${_commit_base}${_commit_ext}"
+		printf '%s\n' "${_commit_base}${_commit_ext}"
 		return 0
 	fi
-
-	_n=1
-	while [ "$_n" -le 9999 ]; do
-		_cand="${_base}.${_n}${_ext}"
-		if [ -f "$_cand" ]; then
-			if cmp -s -- "$_tmp" "$_cand"; then
-				msg "[IDEMPOTENT] Unchanged: $_cand already matches generated Caddyfile."
-				printf '%s\n' "$_cand"
-				return 0
-			fi
-		else
-			cat -- "$_tmp" > "$_cand"
-			msg "[PROTECTED] Existing $_primary preserved; wrote new Caddyfile to $_cand"
-			printf '%s\n' "$_cand"
+	set +f
+	for _commit_existing in "$_commit_base".[0-9]*"$_commit_ext"; do
+		_commit_suffix=${_commit_existing#"$_commit_base".}
+		_commit_suffix=${_commit_suffix%"$_commit_ext"}
+		case $_commit_suffix in ''|0*|*[!0-9]*) continue ;; esac
+		if [ ! -L "$_commit_existing" ] && [ -f "$_commit_existing" ] && cmp -s -- "$_commit_tmp" "$_commit_existing"; then
+			msg "[IDEMPOTENT] Unchanged: $_commit_existing"
+			printf '%s\n' "$_commit_existing"
 			return 0
 		fi
-		_n=$((_n + 1))
 	done
-
-	die "Unable to allocate non-colliding filename for ${_primary}"
-}
+	set -f
+	_commit_n=0
+	while [ "$_commit_n" -le 9999 ]; do
+		if [ "$_commit_n" -eq 0 ]; then
+			_commit_dest=${_commit_base}${_commit_ext}
+		else
+			_commit_dest=${_commit_base}.${_commit_n}${_commit_ext}
+		fi
+		# -T treats even a directory as the destination itself. A hard link
+		# publishes the already-complete file atomically and cannot overwrite.
+		if ln -T -- "$_commit_tmp" "$_commit_dest" 2>/dev/null; then
+			msg "[CREATED] $_commit_dest"
+			printf '%s\n' "$_commit_dest"
+			return 0
+		fi
+		if [ ! -L "$_commit_dest" ] && [ -f "$_commit_dest" ] &&
+			cmp -s -- "$_commit_tmp" "$_commit_dest"; then
+			msg "[IDEMPOTENT] Unchanged: $_commit_dest"
+			printf '%s\n' "$_commit_dest"
+			return 0
+		fi
+		if [ ! -e "$_commit_dest" ] && [ ! -L "$_commit_dest" ]; then
+			die "Cannot atomically publish $_commit_dest (check permissions and ln -T support)"
+		fi
+		_commit_n=$((_commit_n + 1))
+	done
+	die "Unable to allocate non-colliding filename for ${_commit_base}${_commit_ext}"
+)
 
 # ---------------------------------------------------------------------------
 # Feature Module Prompts & Snippet Generators
@@ -372,6 +529,19 @@ commit_file() {
 # ---------------------------------------------------------------------------
 emit_line() {
 	printf '%s\n' "$*" >> "$TMP_SITE"
+}
+
+# Shared static-serving policy used by SPA, PHP, media and subpath routes.
+emit_static_handler() {
+	_static_indent=$1
+	_static_browse=$2
+	_static_hide=$3
+	emit_line "${_static_indent}file_server {"
+	[ "$_static_browse" != "yes" ] || emit_line "${_static_indent}	browse"
+	emit_line "${_static_indent}	hide $_static_hide $(hide_config_paths) .mkcaddy.* .mkplaylist.*"
+	[ -z "$OPT_INDEX" ] || emit_line "${_static_indent}	index $OPT_INDEX"
+	[ -z "$OPT_PRECOMP" ] || emit_line "${_static_indent}	precompressed $OPT_PRECOMP"
+	emit_line "${_static_indent}}"
 }
 
 # 1. Global Options Block
@@ -386,7 +556,7 @@ prompt_global_options() {
 		off*)    _admin_line="	admin off" ;;
 		custom*)
 			_adm_addr=$(tui_input "Admin API listen address" "127.0.0.1:2019")
-			_admin_line="	admin ${_adm_addr}"
+			_admin_line="	admin $(caddy_quote "$_adm_addr")"
 			;;
 	esac
 
@@ -400,14 +570,14 @@ prompt_global_options() {
 	case $_https_sel in
 		email*)
 			_email=$(tui_input "ACME Registration Email" "admin@example.com")
-			_https_lines="	email ${_email}"
+			_https_lines="	email $(caddy_quote "$_email")"
 			;;
 		local_certs*)
 			_https_lines="	local_certs"
 			;;
 		staging*)
 			_email=$(tui_input "ACME Registration Email" "admin@example.com")
-			_https_lines="	email ${_email}
+			_https_lines="	email $(caddy_quote "$_email")
 	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory"
 			;;
 		auto_https_off*)
@@ -419,15 +589,29 @@ prompt_global_options() {
 	if tui_yesno "Customize global default HTTP/HTTPS ports (80/443)?" "no"; then
 		_hp=$(tui_input "Global HTTP port" "80")
 		_sp=$(tui_input "Global HTTPS port" "443")
+		require_port "Global HTTP port" "$_hp"
+		require_port "Global HTTPS port" "$_sp"
 		_ports_line="	http_port ${_hp}
 	https_port ${_sp}"
 	fi
 
+	if tui_yesno "Customize HTTP server protocols?" "no"; then
+		OPT_PROTOCOLS=$(tui_input "Protocols (h1 h2 h2c h3)" "h1 h2 h3")
+		for _protocol in $OPT_PROTOCOLS; do
+			case $_protocol in h1|h2|h2c|h3) ;; *) die "Invalid HTTP protocol: $_protocol" ;; esac
+		done
+	fi
 	{
 		printf '{\n'
 		[ -n "$_admin_line" ] && printf '%s\n' "$_admin_line"
 		[ -n "$_https_lines" ] && printf '%s\n' "$_https_lines"
 		[ -n "$_ports_line" ] && printf '%s\n' "$_ports_line"
+		if [ -n "$OPT_PROTOCOLS" ]; then
+			printf '\tservers {\n\t\tprotocols %s\n\t}\n' "$OPT_PROTOCOLS"
+		fi
+		[ -z "$OPT_EMAIL" ] || printf '\temail %s\n' "$(caddy_quote "$OPT_EMAIL")"
+		[ -z "$OPT_ADMIN" ] || printf '\tadmin %s\n' "$(caddy_quote "$OPT_ADMIN")"
+		[ -z "$OPT_GLOBAL_FRAGMENT" ] || printf '\timport %s\n' "$(caddy_quote "$OPT_GLOBAL_FRAGMENT")"
 		printf '}\n\n'
 	} >> "$TMP_CADDY"
 }
@@ -454,10 +638,12 @@ prompt_site_header() {
 	fi
 
 	# Bind interface configuration (VPN-aware physical LAN detection)
-	_lan_ip=$(detect_lan_ip)
+	_lan_ip=$(detect_lan_ip || printf '%s\n' "127.0.0.1")
 	_vpn_ip=$(detect_vpn_ip || true)
 	if [ -n "${OPT_BIND:-}" ]; then
-		SITE_BIND=$OPT_BIND
+		case $OPT_BIND in all) SITE_BIND="" ;; *) SITE_BIND=$OPT_BIND ;; esac
+	elif [ "$OPT_NONINTERACTIVE" -eq 1 ]; then
+		SITE_BIND="127.0.0.1"
 	else
 		if [ -n "$_vpn_ip" ] && [ "$_vpn_ip" != "$_lan_ip" ]; then
 			_bind_sel=$(tui_select "Network Interface Binding (bind directive)" \
@@ -487,8 +673,16 @@ prompt_site_header() {
 		esac
 	fi
 
+	require_tokens "Site address" "$SITE_ADDR"
+	[ -z "$SITE_BIND" ] || require_tokens "Bind addresses" "$SITE_BIND"
+	SITE_BIND=$(printf '%s\n' "$SITE_BIND" | awk '{for (i=1; i<=NF; i++) if (!seen[$i]++) {printf "%s%s", sep, $i; sep=" "}} END {print ""}')
 	[ -n "$SITE_BIND" ] && emit_line "	bind ${SITE_BIND}"
 
+	if [ "$OPT_TLS" = "internal" ]; then
+		case $SITE_ADDR in http://*) die "tls internal conflicts with an explicit HTTP site" ;; esac
+		emit_line "	tls internal"
+		return 0
+	fi
 	# TLS configuration if interactive and non-HTTP port
 	case $SITE_ADDR in
 		:*|http://*)
@@ -508,14 +702,22 @@ prompt_site_header() {
 					custom*)
 						_cert=$(tui_input "Path to certificate PEM" "/etc/caddy/certs/fullchain.pem")
 						_key=$(tui_input "Path to private key PEM" "/etc/caddy/certs/privkey.pem")
-						emit_line "	tls ${_cert} ${_key}"
+						emit_line "	tls $(caddy_quote "$_cert") $(caddy_quote "$_key")"
 						;;
 					dns*)
 						_prov=$(tui_select "DNS-01 Provider Module" \
 							"cloudflare" "route53" "duckdns" "digitalocean" "hetzner")
-						_tok_env=$(tui_input "Environment variable name for API token" "DNS_API_TOKEN")
+						if [ "$_prov" != "route53" ]; then
+							_tok_env=$(tui_input "Environment variable name for API token" "DNS_API_TOKEN")
+							case $_tok_env in ''|[0-9]*|*[!A-Za-z0-9_]*) die "Invalid DNS token environment variable name" ;; esac
+						fi
+						require_module "dns.providers.${_prov}"
 						emit_line "	tls {"
-						emit_line "		dns ${_prov} {env.${_tok_env}}"
+						if [ "$_prov" = "route53" ]; then
+							emit_line "		dns route53"
+						else
+							emit_line "		dns ${_prov} {env.${_tok_env}}"
+						fi
 						emit_line "	}"
 						;;
 				esac
@@ -526,7 +728,7 @@ prompt_site_header() {
 
 # 3. File Server & Interactive File Browser Module
 mod_file_server() {
-	_default_root=${OPT_ROOT:-"$ TARGET_DIR"}
+	claim_content mod_file_server || return 0
 	_default_root=${OPT_ROOT:-"$TARGET_DIR"}
 	bold_msg "--- [Module: File Server & File Browser] ---"
 
@@ -564,7 +766,7 @@ mod_file_server() {
 		fi
 	fi
 
-	_hide_pat=""
+	_hide_pat=$OPT_HIDE
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ]; then
 		_hide_sel=$(tui_select "Hide Sensitive Dotfiles / Patterns" \
 			"standard - Hide .git, .env, *.bak, .DS_Store" \
@@ -572,75 +774,175 @@ mod_file_server() {
 			"custom   - Enter custom space-separated hide patterns")
 		case $_hide_sel in
 			standard*) _hide_pat=".git .env *.bak .DS_Store" ;;
+			none*)     _hide_pat="" ;;
 			custom*)   _hide_pat=$(tui_input "Space-separated hide patterns" ".git .env *.bak") ;;
 		esac
 	fi
 
-	_precomp=""
+	_precomp=$OPT_PRECOMP
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ]; then
 		if tui_yesno "Serve precompressed sidecar files (.zst, .br, .gz)?" "no"; then
 			_precomp="zstd br gzip"
 		fi
 	fi
 
-	emit_line "	root * ${_fs_root}"
-	if [ "$_browse" = "no" ] && [ -z "$_hide_pat" ] && [ -z "$_precomp" ]; then
-		emit_line "	file_server"
-	elif [ "$_browse" = "yes" ] && [ -z "$_tpl_path" ] && [ -z "$_hide_pat" ] && [ -z "$_precomp" ]; then
-		emit_line "	file_server browse"
-	else
+	_fs_root=$(absolute_path "$_fs_root")
+	[ -z "$_hide_pat" ] || require_tokens "Hide patterns" "$_hide_pat"
+	emit_line "	root * $(caddy_quote "$_fs_root")"
+	{
 		emit_line "	file_server {"
 		if [ "$_browse" = "yes" ]; then
 			if [ -n "$_tpl_path" ]; then
-				emit_line "		browse ${_tpl_path}"
+				emit_line "		browse $(caddy_quote "$_tpl_path")"
 			else
 				emit_line "		browse"
 			fi
 		fi
-		[ -n "$_hide_pat" ] && emit_line "		hide ${_hide_pat}"
+		[ -z "$OPT_INDEX" ] || emit_line "		index $OPT_INDEX"
+		emit_line "		hide ${_hide_pat} $(hide_config_paths) .mkcaddy.* .mkplaylist.*"
 		[ -n "$_precomp" ] && emit_line "		precompressed ${_precomp}"
 		emit_line "	}"
-	fi
+	}
 }
 
 # 4. Dynamic M3U Playlist Responder Module
-caddy_suffix_expr() {
-	_type=$1
-	case $_type in
-		videos)
-			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp
-			;;
-		images)
-			set -- .jpg .jpeg .png .gif .webp .bmp .tiff .tif .svg .avif .heic
-			;;
-		both|*)
-			set -- .mp4 .wmv .mkv .mp3 .flac .ts .avi .webm .m4v .mov .mpeg .mpg .flv .ogv .3gp .gif .jpg .jpeg .png .webp .bmp .tiff .tif .svg .avif .heic
-			;;
-	esac
-	_out=""
-	for _ext in "$@"; do
-		if [ -z "$_out" ]; then
-			_out="(hasSuffix \\\"${_ext}\\\" \$lower)"
-		else
-			_out="${_out} (hasSuffix \\\"${_ext}\\\" \$lower)"
-		fi
-	done
-	printf '%s' "$_out"
+media_extensions() {
+    _videos="mp4 wmv mkv avi mov mpeg mpg mpe m4v webm ts flv ogv 3gp 3g2 m2ts mts m2v vob vro mxf asf divx f4v mp3 flac aac m4a m4b ogg oga opus wav wave aif aiff aifc au snd wma ac3 eac3 dts amr ape alac tak wv caf mka"
+    _images="jpg jpeg jpe png gif webp bmp dib tiff tif svg avif heic heif apng jxl ico"
+    case $1 in
+        videos) printf '%s\n' "$_videos" ;;
+        images) printf '%s\n' "$_images" ;;
+        both) printf '%s %s\n' "$_videos" "$_images" ;;
+        *) die "Invalid media kind: $1" ;;
+    esac
+}
+
+emit_m3u_response() {
+    have_cmd "$PYTHON_BIN" || die "Python 3.9+ is required for recursive media generation"
+    "$PYTHON_BIN" -c 'import sys; sys.exit(sys.version_info < (3, 9))' || die "Python 3.9+ is required"
+    "$PYTHON_BIN" - "$(media_extensions "$_mtype")" "$OPT_MEDIA_SORT" "$OPT_MEDIA_ORDER" "$OPT_MEDIA_DEPTH" "$OPT_HIDE .mkplaylist.* .mkcaddy.*" "$_m3u_root" "$TARGET_BASE" <<'PYTHON_TEMPLATE'
+"""Generate a native Caddy template; no runtime helper or extra service is needed."""
+import fnmatch
+import json
+import os
+import re
+import sys
+
+extensions, field, direction, depth, hides, root, configuration = sys.argv[1:]
+if field not in ('date', 'size', 'name', 'shuffle') or direction not in ('asc', 'desc'):
+    raise SystemExit('Invalid media sort or order')
+try:
+    depth = int(depth)
+except ValueError:
+    raise SystemExit('Media depth must be a nonnegative integer')
+if not 0 <= depth <= 255:
+    raise SystemExit('Media depth must be 0..255 (0=unlimited)')
+
+def go_string(value):
+    return json.dumps(value, ensure_ascii=True)
+
+# Match the same basename/path globs used by file_server hide. Relative paths
+# containing a slash are relative to Caddy's working directory, as in Caddy.
+patterns = []
+for pattern in hides.split():
+    if '/' in pattern:
+        absolute = os.path.abspath(pattern)
+        relative = os.path.relpath(absolute, root)
+        if relative == '..' or relative.startswith('../'):
+            continue
+        subject = '$relative'
+        pattern = relative
+    else:
+        subject = '.Name'
+    expression = '^' + fnmatch.translate(pattern).replace(r'\Z', r'\z')
+    # Python's translation uses atomic groups for some multi-star globs. RE2
+    # does not implement atomic groups; their backtracking optimization is not
+    # needed here. Retain their matching semantics with ordinary groups.
+    expression = expression.replace('(?>', '(?:')
+    patterns.append(f'(regexMatch {go_string(expression)} {subject})')
+relative_config = os.path.relpath(configuration, root)
+if relative_config != '..' and not relative_config.startswith('../'):
+    patterns.append(f'(eq $relative {go_string(relative_config)})')
+    patterns.append(f'(hasPrefix {go_string(relative_config + ".")} $relative)')
+hidden = '(or ' + ' '.join(patterns) + ')' if patterns else 'false'
+suffix = '(or ' + ' '.join(f'(hasSuffix {go_string("." + ext)} $lower)' for ext in extensions.split()) + ')'
+
+if field == 'shuffle':
+    sort_key = 'printf "%s\\t%s" (randAlphaNum 32) $relative'
+elif field == 'size':
+    numeric = '(sub 9223372036854775807 .Size)' if direction == 'desc' else '.Size'
+    sort_key = f'printf "%020d\\t%s" {numeric} $relative'
+elif field == 'date':
+    seconds = '(sub 253402300800 .ModTime.Unix)' if direction == 'desc' else '(add .ModTime.Unix 62135596800)'
+    fraction = '(sub 999999999 .ModTime.Nanosecond)' if direction == 'desc' else '.ModTime.Nanosecond'
+    sort_key = f'printf "%020d.%09d\\t%s" {seconds} {fraction} $relative'
+else:
+    sort_key = '$relative'
+ordering = 'keys $state.paths | sortAlpha' + (' | reverse' if field == 'name' and direction == 'desc' else '')
+
+# Readdir returns FileInfo from lstat, so symlinks are excluded without ever
+# opening their targets. Directory handles close before recursion. FileInfo.Sys
+# provides Linux device/inode identity, including for hard links.
+body = r'''{{- define "mkplaylist_walk" -}}
+{{- $directory := .ctx.Root.Open .path -}}
+{{- $info := $directory.Stat -}}
+{{- $_ := set .state.dirs (printf "%v:%v" $info.Sys.Dev $info.Sys.Ino) true -}}
+{{- $entries := $directory.Readdir -1 -}}
+{{- $ignored := $directory.Close -}}
+{{- $scope := . -}}
+{{- range $entries -}}
+  {{- $relative := trimPrefix "/" (printf "%s/%s" (trimSuffix "/" $scope.path) .Name) -}}
+  {{- if not HIDDEN -}}
+    {{- $identity := printf "%v:%v" .Sys.Dev .Sys.Ino -}}
+    {{- if .IsDir -}}
+      {{- if and (or (eq MAXDEPTH 0) (lt (add $scope.depth 1) MAXDEPTH)) (not (hasKey $scope.state.dirs $identity)) -}}
+        {{- if ge $scope.depth 255 -}}{{ httpError 500 }}{{- end -}}
+        {{- $_ := set $scope.state.dirs $identity true -}}
+        {{- template "mkplaylist_walk" (dict "ctx" $scope.ctx "path" (printf "/%s" $relative) "depth" (add $scope.depth 1) "state" $scope.state) -}}
+      {{- end -}}
+    {{- else if .Mode.IsRegular -}}
+      {{- $lower := lower .Name -}}
+      {{- if SUFFIX -}}
+        {{- $key := SORTKEY -}}
+        {{- $oldkey := get $scope.state.files $identity -}}
+        {{- if or (not $oldkey) (lt $relative (get $scope.state.paths $oldkey)) -}}
+          {{- if $oldkey -}}{{- $_ := unset $scope.state.paths $oldkey -}}{{- end -}}
+          {{- $_ := set $scope.state.files $identity $key -}}
+          {{- $_ := set $scope.state.paths $key $relative -}}
+        {{- end -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $state := dict "paths" (dict) "dirs" (dict) "files" (dict) -}}
+{{- template "mkplaylist_walk" (dict "ctx" $ "path" "/" "depth" 0 "state" $state) -}}
+{{- printf "#EXTM3U\n" -}}
+{{- range $key := ORDERING -}}
+  {{- $relative := index $state.paths $key -}}
+  {{- $uri := replace "%2F" "/" (pathEscape $relative) -}}
+  {{- printf "%s://%s/%s\n" (ternary "https" "http" (ne $.Req.TLS nil)) $.Req.Host $uri -}}
+{{- end -}}'''
+values = dict(HIDDEN=hidden, MAXDEPTH=str(depth), SUFFIX=suffix, SORTKEY=sort_key, ORDERING=ordering)
+body = re.sub(r'\b(HIDDEN|MAXDEPTH|SUFFIX|SORTKEY|ORDERING)\b', lambda match: values[match[0]], body)
+print('\t\trespond `' + body + '` 200')
+PYTHON_TEMPLATE
 }
 
 mod_m3u_streamer() {
+	claim_content mod_m3u_streamer || return 0
 	bold_msg "--- [Module: Dynamic M3U Playlist & Media Streamer] ---"
-	_def_root=${OPT_ROOT:-"/s4/s4Downloads"}
+	_def_root=${OPT_ROOT:-"$TARGET_DIR"}
 	if [ -n "${OPT_ROOT:-}" ] && [ "${OPT_NONINTERACTIVE:-0}" -eq 1 ]; then
 		_m3u_root=$OPT_ROOT
 	else
 		_root_sel=$(tui_select "Media Root Directory" \
+			"${_def_root} (selected target directory)" \
 			"/s4/s4Downloads (preset media root)" \
-			"${TARGET_DIR} (current target directory)" \
 			"Custom media root path...")
 		case $_root_sel in
 			"/s4/s4Downloads"*) _m3u_root="/s4/s4Downloads" ;;
-			"${TARGET_DIR}"*)   _m3u_root=$TARGET_DIR ;;
+			"${_def_root}"*)    _m3u_root=$_def_root ;;
 			*)                  _m3u_root=$(tui_input "Media root directory" "$_def_root") ;;
 		esac
 	fi
@@ -673,40 +975,24 @@ mod_m3u_streamer() {
 		fi
 	fi
 
-	_suffix_cond=$(caddy_suffix_expr "$_mtype")
-	cat >> "$TMP_SITE" <<EOF
-	root * ${_m3u_root}
+	require_literal "Media root" "$_m3u_root"
+	case $_m3u_root in /*) ;; *) _m3u_root=$PWD/$_m3u_root ;; esac
+	[ -d "$_m3u_root" ] && [ -r "$_m3u_root" ] && [ -x "$_m3u_root" ] || die "Cannot read media root: $_m3u_root"
+	require_tokens "Playlist endpoint" "$_m3u_route"
 
-	handle ${_m3u_route} {
-		header Content-Type "audio/x-mpegurl; charset=utf-8"
-		header Cache-Control "no-cache, no-store, must-revalidate"
-		templates {
-			mime audio/x-mpegurl
-		}
-		respond "#EXTM3U
-{{- range listFiles \"/\" }}
-{{- \$lower := lower . }}
-{{- if or ${_suffix_cond} }}
-{{- \$safe := replace \"%\" \"%25\" . }}
-{{- \$safe = replace \" \" \"%20\" \$safe }}
-{{- \$safe = replace \"\x23\" \"%23\" \$safe }}
-{{- \$safe = replace \"?\" \"%3F\" \$safe }}
-{{- \$safe = replace \"[\" \"%5B\" \$safe }}
-{{- \$safe = replace \"]\" \"%5D\" \$safe }}
-http://{{ \$.Req.Host }}/{{ \$safe }}
-{{- end }}
-{{- end }}
-" 200
-	}
+	{
+		printf '\troot * %s\n\n' "$(caddy_quote "$_m3u_root")"
+		printf '\thandle %s {\n' "$_m3u_route"
+		printf '\t\theader Content-Type "audio/x-mpegurl; charset=utf-8"\n'
+		printf '\t\theader Cache-Control "no-cache, no-store, must-revalidate"\n'
+		printf '\t\ttemplates {\n\t\t\tmime audio/x-mpegurl\n\t\t}\n'
+		emit_m3u_response || die "Cannot generate recursive media template"
+		printf '\t}\n\n\thandle {\n'
+	} >> "$TMP_SITE"
 
-	handle {
-EOF
-	if [ "$_browse_Static" = "yes" ]; then
-		emit_line "		file_server browse"
-	else
-		emit_line "		file_server"
-	fi
+	emit_static_handler "		" "$_browse_Static" "$OPT_HIDE"
 	emit_line "	}"
+
 }
 
 # 5. Reverse Proxy & Load Balancer Module
@@ -739,6 +1025,10 @@ mod_reverse_proxy() {
 	_flush=""
 	_hdr_up="no"
 	_https_skip="no"
+	_passive=""
+	_max_fails=""
+	_health_status=""
+	_hdr_down=""
 
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ]; then
 		_lb_sel=$(tui_select "Load Balancing Policy (lb_policy)" \
@@ -762,6 +1052,16 @@ mod_reverse_proxy() {
 			_hc_to=$(tui_input "Health check timeout" "5s")
 		fi
 
+		if [ -n "$_hc_uri" ]; then
+			_health_status=$(tui_input "Expected health status" "200")
+		fi
+		if tui_yesno "Enable passive health checks?" "no"; then
+			_passive=$(tui_input "Passive failure duration" "30s")
+			_max_fails=$(tui_input "Maximum failures before marking down" "3")
+		fi
+		if tui_yesno "Remove a response header from the upstream?" "no"; then
+			_hdr_down=$(tui_input "Response header to remove" "Server")
+		fi
 		if tui_yesno "Add explicit upstream forwarding headers (X-Real-IP, X-Forwarded-Proto)?" "no"; then
 			_hdr_up="yes"
 		fi
@@ -775,11 +1075,13 @@ mod_reverse_proxy() {
 		fi
 	fi
 
+	require_tokens "Reverse proxy upstreams" "$_upstreams"
 	_rp_head="	reverse_proxy"
+	[ -z "$_rp_match" ] || require_tokens "Reverse proxy matcher" "$_rp_match"
 	[ -n "$_rp_match" ] && _rp_head="${_rp_head} ${_rp_match}"
 	_rp_head="${_rp_head} ${_upstreams}"
 
-	if [ -z "$_lb_policy" ] && [ -z "$_hc_uri" ] && [ -z "$_flush" ] && [ "$_hdr_up" = "no" ] && [ "$_https_skip" = "no" ]; then
+	if [ -z "$_lb_policy" ] && [ -z "$_hc_uri" ] && [ -z "$_flush" ] && [ "$_hdr_up" = "no" ] && [ "$_https_skip" = "no" ] && [ -z "$_passive" ] && [ -z "$_hdr_down" ]; then
 		emit_line "$_rp_head"
 	else
 		emit_line "${_rp_head} {"
@@ -789,6 +1091,12 @@ mod_reverse_proxy() {
 			emit_line "		health_interval ${_hc_int}"
 			emit_line "		health_timeout ${_hc_to}"
 		fi
+		[ -z "$_health_status" ] || emit_line "		health_status $_health_status"
+		if [ -n "$_passive" ]; then
+			emit_line "		fail_duration $_passive"
+			emit_line "		max_fails $_max_fails"
+		fi
+		[ -z "$_hdr_down" ] || emit_line "		header_down -$_hdr_down"
 		[ -n "$_flush" ] && emit_line "		flush_interval ${_flush}"
 		if [ "$_hdr_up" = "yes" ]; then
 			emit_line "		header_up Host {host}"
@@ -806,17 +1114,22 @@ mod_reverse_proxy() {
 
 # 6. Single-Page Application (SPA) + Optional API Backend Module
 mod_spa_router() {
+	claim_content mod_spa_router || return 0
 	bold_msg "--- [Module: Single-Page Application (SPA) Router] ---"
 	_def_root=${OPT_ROOT:-"/var/www/app/dist"}
 	_spa_root=$(tui_input "SPA build output root directory" "$_def_root")
+	_spa_root=$(absolute_path "$_spa_root")
 	_spa_index=$(tui_input "SPA fallback entry file" "/index.html")
+	require_tokens "SPA fallback path" "$_spa_index"
 
-	emit_line "	root * ${_spa_root}"
-	emit_line "	encode zstd gzip"
+	emit_line "	root * $(caddy_quote "$_spa_root")"
+	mod_compression
 
 	if tui_yesno "Add split /api/* reverse_proxy to a backend service?" "yes"; then
 		_api_path=$(tui_input "API route prefix" "/api/*")
 		_api_up=$(tui_input "API backend upstream" "${OPT_UPSTREAM:-127.0.0.1:8080}")
+		require_tokens "API path" "$_api_path"
+		require_tokens "API upstream" "$_api_up"
 		emit_line ""
 		emit_line "	handle ${_api_path} {"
 		emit_line "		reverse_proxy ${_api_up}"
@@ -825,21 +1138,31 @@ mod_spa_router() {
 
 	if tui_yesno "Add immutable Cache-Control headers for static hashed assets (*.js, *.css, *.woff2)?" "yes"; then
 		emit_line ""
-		emit_line "	@static path *.js *.css *.png *.jpg *.jpeg *.gif *.webp *.svg *.ico *.woff *.woff2"
+		emit_line "	@static path_regexp fingerprint \"[.-][a-fA-F0-9]{8,}[.](js|css|png|jpe?g|gif|webp|svg|ico|woff2?)$\""
 		emit_line "	header @static Cache-Control \"public, max-age=31536000, immutable\""
 	fi
 
 	emit_line ""
 	emit_line "	handle {"
 	emit_line "		try_files {path} {path}/ ${_spa_index}"
-	emit_line "		file_server"
+	emit_static_handler "		" no "$OPT_HIDE"
 	emit_line "	}"
 }
 
 # 7. PHP-FPM / FastCGI Application Server Module
 mod_php_fastcgi() {
+	claim_content mod_php_fastcgi || return 0
+	# Protect private paths before the PHP rewrite/proxy, not just file_server.
+	cat >> "$SITE_ACCESS" <<'EOF'
+	@php_sensitive path_regexp php_sensitive "(^|/)[.](git|env|ht)"
+	respond @php_sensitive "404 Not Found" 404
+EOF
 	bold_msg "--- [Module: PHP-FPM / FastCGI Application Server] ---"
 	_php_root=$(tui_input "PHP application document root" "${OPT_ROOT:-/var/www/html}")
+	_php_root=$(absolute_path "$_php_root")
+	if [ -n "$OPT_UPSTREAM" ]; then
+		_fpm_up=$OPT_UPSTREAM
+	else
 	_fpm_sel=$(tui_select "PHP-FPM Upstream Socket / Address" \
 		"unix//run/php/php-fpm.sock     - Debian/Ubuntu/Arch default Unix socket" \
 		"unix//var/run/php-fpm/www.sock - RHEL/Fedora Unix socket" \
@@ -852,52 +1175,78 @@ mod_php_fastcgi() {
 		*)                                 _fpm_up=$(tui_input "Enter PHP-FPM socket or host:port" "${OPT_UPSTREAM:-127.0.0.1:9000}") ;;
 	esac
 
-	emit_line "	root * ${_php_root}"
-	emit_line "	encode zstd gzip"
-	emit_line "	php_fastcgi ${_fpm_up}"
-	emit_line "	file_server {"
-	emit_line "		hide .git .env *.bak .ht*"
+	fi
+	emit_line "	root * $(caddy_quote "$_php_root")"
+	mod_compression
+	require_tokens "PHP-FPM upstream" "$_fpm_up"
+	_php_index=$(tui_input "PHP index filename" "index.php")
+	_php_split=$(tui_input "FastCGI split suffix" ".php")
+	require_tokens "PHP index" "$_php_index"
+	require_tokens "FastCGI split suffix" "$_php_split"
+	emit_line "	php_fastcgi ${_fpm_up} {"
+	emit_line "		index $_php_index"
+	emit_line "		split $_php_split"
 	emit_line "	}"
+	emit_static_handler "	" no "${OPT_HIDE} .ht*"
 }
 
 # 8. Authentication Module (basic_auth / forward_auth)
 mod_authentication() {
+	_auth_target=$TMP_SITE
+	TMP_SITE=$SITE_AUTH
 	bold_msg "--- [Module: Authentication (Basic Auth / Forward Auth)] ---"
 	_auth_sel=$(tui_select "Authentication Method" \
 		"basic_auth   - HTTP Basic Authentication (username + bcrypt password hash)" \
 		"forward_auth - External Auth Portal (Authelia, Authentik, OAuth2-Proxy, Tailscale)")
+	emit_line "	route {"
 	case $_auth_sel in
 		basic_auth*)
 			_match=$(tui_input "Path matcher to protect (* for entire site)" "*")
+			require_tokens "Authentication matcher" "$_match"
 			_user=$(tui_input "Username" "admin")
-			_hash=$(tui_input "Bcrypt password hash (generate via 'caddy hash-password')" "\$2a\$14\$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG")
+			_user=${OPT_AUTH_USER:-$_user}
+			if [ -n "$OPT_HASH_FILE" ]; then
+				_hash=$(cat -- "$OPT_HASH_FILE") || die "Cannot read bcrypt hash file"
+			else
+				_hash=$(tui_input "Bcrypt hash (generate with caddy hash-password; required)" "")
+			fi
+			require_line "Bcrypt hash" "$_hash"
+			printf '%s\n' "$_hash" | awk 'length($0)==60 && substr($0,5,2)+0 >= 4 && substr($0,5,2)+0 <= 31 && $0 ~ /^\$2[aby]\$[0-9][0-9]\$[.\/A-Za-z0-9]+$/ {ok=1} END {exit !ok}' || die "A valid bcrypt hash is required; no shared default credential is supplied"
+			require_line "Authentication username" "$_user"
 			if [ "$_match" = "*" ]; then
 				emit_line "	basic_auth {"
 			else
 				emit_line "	basic_auth ${_match} {"
 			fi
-			emit_line "		${_user} ${_hash}"
+			emit_line "		$(caddy_quote "$_user") $(caddy_quote "$_hash")"
 			emit_line "	}"
 			;;
 		forward_auth*)
 			_fa_up=$(tui_input "Auth portal upstream (e.g. 127.0.0.1:9091 for Authelia)" "127.0.0.1:9091")
 			_fa_uri=$(tui_input "Auth verification URI" "/api/verify?rd=https://auth.example.com/")
 			_fa_hdrs=$(tui_input "Identity headers to copy" "Remote-User Remote-Groups Remote-Name Remote-Email")
+			require_tokens "Authentication upstream" "$_fa_up"
+			require_tokens "Identity headers" "$_fa_hdrs"
 			emit_line "	forward_auth ${_fa_up} {"
-			emit_line "		uri ${_fa_uri}"
+			emit_line "		uri $(caddy_quote "$_fa_uri")"
 			emit_line "		copy_headers ${_fa_hdrs}"
 			emit_line "	}"
 			;;
 	esac
+	emit_line "	}"
+	TMP_SITE=$_auth_target
 }
 
 # 9. Security Headers & CORS Module
 mod_headers_cors() {
+	_headers_target=$TMP_SITE
+	TMP_SITE=$SITE_CORS
 	bold_msg "--- [Module: Security Headers & CORS] ---"
-	if [ "${OPT_SEC_HEADERS:-}" = "yes" ] || tui_yesno "Add hardened HTTP security headers (HSTS, X-Frame-Options, nosniff, Referrer-Policy, -Server)?" "yes"; then
+	if [ "$SITE_HAS_HEADERS" -eq 0 ] && { [ "${OPT_SEC_HEADERS:-}" = "yes" ] || tui_yesno "Add hardened HTTP security headers (HSTS, X-Frame-Options, nosniff, Referrer-Policy, -Server)?" "yes"; }; then
+		SITE_HAS_HEADERS=1
 		cat >> "$TMP_SITE" <<'EOF'
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -905,40 +1254,48 @@ mod_headers_cors() {
 		-Server
 	}
 EOF
+		if tui_yesno "Add a Content-Security-Policy header (review for your application)?" "no"; then
+			_csp=$(tui_input "CSP policy" "default-src 'self'; object-src 'none'; base-uri 'self'")
+			emit_line "	header Content-Security-Policy $(caddy_quote "$_csp")"
+		fi
 	fi
 
-	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ] && tui_yesno "Configure Cross-Origin Resource Sharing (CORS) headers & preflight responder?" "no"; then
-		_origin=$(tui_input "Allowed Origin (e.g. * or https://app.example.com)" "*")
+	if [ "$SITE_HAS_CORS" -eq 0 ] && { [ -n "$OPT_CORS" ] || { [ "$OPT_NONINTERACTIVE" -eq 0 ] && tui_yesno "Configure CORS headers & preflight?" "no"; }; }; then
+		SITE_HAS_CORS=1
+		_origin=$(tui_input "Allowed Origin (one origin or *)" "${OPT_CORS:-*}")
+		require_line "CORS origin" "$_origin"
 		_methods=$(tui_input "Allowed HTTP Methods" "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		_headers=$(tui_input "Allowed Request Headers" "Content-Type, Authorization, X-Requested-With")
 		cat >> "$TMP_SITE" <<EOF
-	@cors_preflight method OPTIONS
-	handle @cors_preflight {
-		header Access-Control-Allow-Origin "${_origin}"
-		header Access-Control-Allow-Methods "${_methods}"
-		header Access-Control-Allow-Headers "${_headers}"
-		header Access-Control-Max-Age "86400"
-		respond "" 204
+	header Access-Control-Allow-Origin $(caddy_quote "$_origin")
+	header +Vary Origin
+	header Access-Control-Allow-Methods $(caddy_quote "$_methods")
+	header Access-Control-Allow-Headers $(caddy_quote "$_headers")
+	header Access-Control-Max-Age "86400"
+	route {
+		@cors_preflight {
+			method OPTIONS
+			header Origin *
+			header Access-Control-Request-Method *
+		}
+		respond @cors_preflight "" 204
 	}
-	header Access-Control-Allow-Origin "${_origin}"
 EOF
 	fi
+	TMP_SITE=$_headers_target
 }
 
 # 10. Compression Module (encode)
 mod_compression() {
+	[ "$SITE_HAS_ENCODE" -eq 0 ] || return 0
 	bold_msg "--- [Module: Response Compression (encode)] ---"
-	if [ "${OPT_NONINTERACTIVE:-0}" -eq 1 ]; then
-		emit_line "	encode zstd gzip"
-		return 0
-	fi
 	_enc_sel=$(tui_select "Compression Algorithms" \
-		"zstd gzip    - Zstandard + Gzip (Caddy recommended default)" \
-		"br zstd gzip - Brotli + Zstandard + Gzip")
+		"zstd gzip    - Zstandard + Gzip" "br zstd gzip - Brotli + Zstandard + Gzip (plugin)")
 	case $_enc_sel in
-		"br"*) emit_line "	encode br zstd gzip" ;;
-		*)     emit_line "	encode zstd gzip" ;;
+		br*) require_module http.encoders.br; emit_line "	encode br zstd gzip" ;;
+		*) emit_line "	encode zstd gzip" ;;
 	esac
+	SITE_HAS_ENCODE=1
 }
 
 # 11. Redirects, Rewrites & Path Stripping Module
@@ -946,25 +1303,48 @@ mod_redirects_rewrites() {
 	bold_msg "--- [Module: Redirects, Rewrites & Subpath Routing] ---"
 	_rw_sel=$(tui_select "Redirect / Rewrite Rule Type" \
 		"www-to-apex  - Permanent 308 redirect from www.<domain> to <domain>" \
+		"apex-to-www  - Permanent 308 redirect from apex to www" \
+		"strip-prefix - Strip a URI path prefix" \
 		"redir        - Custom URL redirect (redir <from> <to> <code>)" \
 		"handle_path  - Strip path prefix and route to upstream or root" \
 		"rewrite      - Internal URI rewrite (rewrite <from> <to>)")
 	case $_rw_sel in
-		www-to-apex*)
-			_dom=$(tui_input "Apex domain name" "example.com")
-			emit_line "	@www host www.${_dom}"
-			emit_line "	redir @www https://${_dom}{uri} 308"
+		www-to-apex*|apex-to-www*)
+			_dom=${SITE_ADDR#http://}
+			_dom=${_dom#https://}
+			_dom=${_dom#www.}
+			case $_dom in ''|:*|*[!a-zA-Z0-9.-]*) die "Canonical redirects require a domain in -a (e.g. example.com)" ;; esac
+			_dom=$(tui_input "Apex domain name" "$_dom")
+			case $_dom in ''|*[!a-zA-Z0-9.-]*) die "Canonical redirects require an apex domain name" ;; esac
+			case $_rw_sel in
+				apex-to-www*)
+					SITE_ADDR=$_dom
+					emit_line "	@canonical host ${_dom}"
+					emit_line "	redir @canonical https://www.${_dom}{uri} 308" ;;
+				*)
+					SITE_ADDR=www.${_dom}
+					emit_line "	@canonical host www.${_dom}"
+					emit_line "	redir @canonical https://${_dom}{uri} 308" ;;
+			esac
+			;;
+		strip-prefix*)
+			_prefix=$(tui_input "URI prefix to strip" "/prefix")
+			require_tokens "URI prefix" "$_prefix"
+			emit_line "	uri strip_prefix $_prefix"
 			;;
 		redir*)
 			_from=$(tui_input "Match path (e.g. /old-path or *)" "/old")
 			_to=$(tui_input "Target URL or path" "/new")
+			require_tokens "Redirect matcher" "$_from"
 			_code=$(tui_select "Redirect HTTP Status" "308 (Permanent Redirect)" "301 (Moved Permanently)" "302 (Found / Temporary)" "307 (Temporary Redirect)")
 			_code_num=${_code%% *}
-			emit_line "	redir ${_from} ${_to} ${_code_num}"
+			emit_line "	redir ${_from} $(caddy_quote "$_to") ${_code_num}"
 			;;
 		handle_path*)
 			_pfx=$(tui_input "Path prefix to match & strip (e.g. /service/*)" "/service/*")
 			_up=$(tui_input "Upstream host:port for stripped route" "127.0.0.1:9001")
+			require_tokens "Path matcher" "$_pfx"
+			require_tokens "Route upstream" "$_up"
 			emit_line "	handle_path ${_pfx} {"
 			emit_line "		reverse_proxy ${_up}"
 			emit_line "	}"
@@ -972,37 +1352,51 @@ mod_redirects_rewrites() {
 		rewrite*)
 			_from=$(tui_input "Match path pattern" "/legacy/*")
 			_to=$(tui_input "Rewrite target URI" "/v2{uri}")
-			emit_line "	rewrite ${_from} ${_to}"
+			require_tokens "Rewrite matcher" "$_from"
+			emit_line "	rewrite ${_from} $(caddy_quote "$_to")"
 			;;
 	esac
 }
 
 # 12. IP Access Control & Custom Error Pages
 mod_access_errors() {
+	_access_target=$TMP_SITE
+	TMP_SITE=$SITE_ACCESS
 	bold_msg "--- [Module: IP Access Control & Custom Error Handling] ---"
-	if tui_yesno "Restrict access by client IP / CIDR ranges (remote_ip)?" "yes"; then
+	if [ -n "$OPT_ALLOW" ] || [ -n "$OPT_DENY" ] || tui_yesno "Restrict access by client IP / CIDR ranges (remote_ip)?" "yes"; then
+		emit_line "	route {"
+		if [ -n "$OPT_ALLOW" ]; then
+			_ip_mode="allow-custom"
+		elif [ -n "$OPT_DENY" ]; then
+			_ip_mode="block-custom"
+		else
 		_ip_mode=$(tui_select "IP Filter Policy" \
 			"allow-private - Allow only RFC1918 LAN & loopback (private_ranges), block others" \
 			"allow-custom  - Allow only specific CIDR/IP list, block others" \
 			"block-custom  - Block specific CIDR/IP list")
+		fi
 		case $_ip_mode in
 			allow-private*)
 				emit_line "	@denied not remote_ip private_ranges 127.0.0.1 ::1"
 				emit_line "	respond @denied \"403 Forbidden\" 403"
 				;;
 			allow-custom*)
-				_cidrs=$(tui_input "Space-separated allowed IPs/CIDRs" "192.168.1.0/24 127.0.0.1")
+				_cidrs=$(tui_input "Space-separated allowed IPs/CIDRs" "${OPT_ALLOW:-192.168.1.0/24 127.0.0.1}")
+				require_tokens "Allowed ranges" "$_cidrs"
 				emit_line "	@denied not remote_ip ${_cidrs}"
 				emit_line "	respond @denied \"403 Forbidden\" 403"
 				;;
 			block-custom*)
-				_cidrs=$(tui_input "Space-separated blocked IPs/CIDRs" "203.0.113.0/24")
+				_cidrs=$(tui_input "Space-separated blocked IPs/CIDRs" "${OPT_DENY:-203.0.113.0/24}")
+				require_tokens "Blocked ranges" "$_cidrs"
 				emit_line "	@blocked remote_ip ${_cidrs}"
 				emit_line "	respond @blocked \"403 Forbidden\" 403"
 				;;
 		esac
+		emit_line "	}"
 	fi
 
+	TMP_SITE=$SITE_META
 	if tui_yesno "Add a custom error handler block (handle_errors)?" "no"; then
 		_err_mode=$(tui_select "Error Response Style" \
 			"json - Structured JSON error response" \
@@ -1018,9 +1412,10 @@ EOF
 				;;
 			page*)
 				_eroot=$(tui_input "Error pages directory" "/var/www/errors")
+				_eroot=$(absolute_path "$_eroot")
 				cat >> "$TMP_SITE" <<EOF
 	handle_errors {
-		root * ${_eroot}
+		root * $(caddy_quote "$_eroot")
 		rewrite * /{err.status_code}.html
 		file_server
 	}
@@ -1028,40 +1423,42 @@ EOF
 				;;
 		esac
 	fi
+	TMP_SITE=$_access_target
 }
 
 # 13. Structured Access Logging Module
 mod_logging() {
-	bold_msg "--- [Module: Structured Access Logging (log)] ---"
-	_log_dest=$(tui_select "Access Log Output Destination" \
-		"file   - Rotating log file (/var/log/caddy/access.log)" \
-		"stdout - Standard output (Docker / systemd journal)" \
-		"stderr - Standard error")
+	[ "$SITE_HAS_LOG" -eq 0 ] || return 0
+	SITE_HAS_LOG=1
+	_log_target=$TMP_SITE
+	TMP_SITE=$SITE_META
+	if [ -n "$OPT_LOG" ]; then
+		_log_dest=$OPT_LOG
+	else
+		_log_dest=$(tui_select "Access Log Output Destination" \
+			"stdout - systemd / container logs" "stderr - Standard error" "file - Rotating file")
+	fi
+	_fmt=$(tui_select "Log Format" "json (structured JSON)" "console (human-readable)")
+	_level=$(tui_select "Log Level" "INFO" "DEBUG" "WARN" "ERROR")
+	emit_line "	log {"
 	case $_log_dest in
-		file*)
-			_lpath=$(tui_input "Log file path" "/var/log/caddy/access.log")
-			_rsize=$(tui_input "Max log file size before rotation" "100mb")
-			_rkeep=$(tui_input "Number of rotated files to keep" "5")
-			_fmt=$(tui_select "Log Format" "json (structured JSON)" "console (human-readable)")
-			_fmt_word=${_fmt%% *}
-			cat >> "$TMP_SITE" <<EOF
-	log {
-		output file ${_lpath} {
-			roll_size ${_rsize}
-			roll_keep ${_rkeep}
-			roll_keep_for 720h
-		}
-		format ${_fmt_word}
-	}
-EOF
-			;;
-		stdout*|stderr*)
-			_out_word=${_log_dest%% *}
-			emit_line "	log {"
-			emit_line "		output ${_out_word}"
-			emit_line "	}"
+		stdout*|stderr*) emit_line "		output ${_log_dest%% *}" ;;
+		*)
+			case $_log_dest in /*) _lpath=$_log_dest ;; *) _lpath=$(tui_input "Log file path" "/var/log/caddy/access.log") ;; esac
+			_rsize=$(tui_input "Rotation size" "100MiB")
+			_rkeep=$(tui_input "Rotated files to keep" "5")
+			_rkeep_for=$(tui_input "Retention duration" "720h")
+			emit_line "		output file $(caddy_quote "$_lpath") {"
+			emit_line "			roll_size $_rsize"
+			emit_line "			roll_keep $_rkeep"
+			emit_line "			roll_keep_for $_rkeep_for"
+			emit_line "		}"
 			;;
 	esac
+	emit_line "		format ${_fmt%% *}"
+	emit_line "		level $_level"
+	emit_line "	}"
+	TMP_SITE=$_log_target
 }
 
 # 14. Multi-Service Subpath Gateway Preset Helper
@@ -1075,24 +1472,29 @@ mod_multi_service() {
 			"handle (keep prefix & reverse_proxy)" \
 			"static (serve static directory at path)")
 		_spath=$(tui_input "Route path matcher (e.g. /api/*, /app/*, /media/*)" "/service${_count}/*")
+		require_tokens "Service path" "$_spath"
+		[ "$_count" -le 57535 ] || die "Too many service routes for automatic backend ports"
 		case $_stype in
 			"handle_path"*)
-				_sup=$(tui_input "Backend upstream (host:port)" "127.0.0.1:800${_count}")
+				_sup=$(tui_input "Backend upstream (host:port)" "${OPT_UPSTREAM:-127.0.0.1:$((8000 + _count))}")
+				require_tokens "Service upstream" "$_sup"
 				emit_line "	handle_path ${_spath} {"
 				emit_line "		reverse_proxy ${_sup}"
 				emit_line "	}"
 				;;
 			"handle "*)
-				_sup=$(tui_input "Backend upstream (host:port)" "127.0.0.1:800${_count}")
+				_sup=$(tui_input "Backend upstream (host:port)" "${OPT_UPSTREAM:-127.0.0.1:$((8000 + _count))}")
+				require_tokens "Service upstream" "$_sup"
 				emit_line "	handle ${_spath} {"
 				emit_line "		reverse_proxy ${_sup}"
 				emit_line "	}"
 				;;
 			"static"*)
 				_sroot=$(tui_input "Static directory root" "/srv/service${_count}")
+				_sroot=$(absolute_path "$_sroot")
 				emit_line "	handle_path ${_spath} {"
-				emit_line "		root * ${_sroot}"
-				emit_line "		file_server browse"
+				emit_line "		root * $(caddy_quote "$_sroot")"
+				emit_static_handler "		" yes "$OPT_HIDE"
 				emit_line "	}"
 				;;
 		esac
@@ -1101,6 +1503,9 @@ mod_multi_service() {
 			break
 		fi
 	done
+	emit_line '	handle {'
+	emit_line '		respond "404 Not Found" 404'
+	emit_line '	}'
 }
 
 # ---------------------------------------------------------------------------
@@ -1108,12 +1513,29 @@ mod_multi_service() {
 # ---------------------------------------------------------------------------
 build_site_block() {
 	_preset=$1
-	TMP_SITE=$(mktemp "${TMPDIR:-/tmp}/mkcaddy_site.XXXXXX")
+	SITE_META=$(mktemp "$WORK_DIR/meta.XXXXXX")
+	SITE_BODY=$(mktemp "$WORK_DIR/body.XXXXXX")
+	SITE_ACCESS=$(mktemp "$WORK_DIR/access.XXXXXX")
+	SITE_CORS=$(mktemp "$WORK_DIR/cors.XXXXXX")
+	SITE_AUTH=$(mktemp "$WORK_DIR/auth.XXXXXX")
+	TMP_SITE=$SITE_META
+	SITE_HAS_ENCODE=0
+	SITE_HAS_HEADERS=0
+	SITE_HAS_CORS=0
+	SITE_HAS_LOG=0
+	SITE_CONTENT=""
+	_saved_browse=$OPT_BROWSE
 
 	prompt_site_header
+	TMP_SITE=$SITE_BODY
 
 	[ "${OPT_ENCODE:-}" = "yes" ] && mod_compression
-	[ "${OPT_SEC_HEADERS:-}" = "yes" ] && mod_headers_cors
+	if [ -n "$OPT_ALLOW" ] || [ -n "$OPT_DENY" ]; then
+		mod_access_errors
+	fi
+	if [ "${OPT_SEC_HEADERS:-}" = "yes" ] || [ -n "$OPT_CORS" ]; then
+		mod_headers_cors
+	fi
 
 	case $_preset in
 		file-browser)
@@ -1134,10 +1556,13 @@ build_site_block() {
 			mod_php_fastcgi
 			;;
 		secure-gateway)
+			case $SITE_ADDR in :*|http://*|*:80)
+				[ "$OPT_TLS" = "internal" ] || die "secure-gateway requires an HTTPS hostname or -T internal" ;;
+			esac
 			mod_authentication
 			[ "${OPT_SEC_HEADERS:-}" != "yes" ] && mod_headers_cors
 			mod_reverse_proxy
-			if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ] && tui_yesno "Add structured access logging?" "yes"; then
+			if tui_yesno "Add structured access logging?" "yes"; then
 				mod_logging
 			fi
 			;;
@@ -1148,6 +1573,9 @@ build_site_block() {
 			mod_redirects_rewrites
 			;;
 		custom)
+			if [ "$OPT_NONINTERACTIVE" -eq 1 ] && [ -z "$OPT_SITE_FRAGMENT" ]; then
+				die "Noninteractive custom mode requires -c native site directives"
+			fi
 			while :; do
 				_mod=$(tui_select "Add / Configure Module for ${SITE_ADDR}" \
 					"DONE            - Finish this site block & write Caddyfile" \
@@ -1161,7 +1589,8 @@ build_site_block() {
 					"8. encode       - Response Compression (zstd, br, gzip)" \
 					"9. redirects    - Redirects (301/308), Rewrites & handle_path" \
 					"10. access_err  - IP Allow/Block Filtering & Custom Error Pages" \
-					"11. logging     - Structured Rotating Access Logs (JSON/Console)")
+					"11. logging     - Structured Rotating Access Logs (JSON/Console)" \
+					"12. native      - Import any installed native directive or module")
 				case $_mod in
 					DONE*)   break ;;
 					"1."*)   mod_file_server ;;
@@ -1175,6 +1604,7 @@ build_site_block() {
 					"9."*)   mod_redirects_rewrites ;;
 					"10."*)  mod_access_errors ;;
 					"11."*)  mod_logging ;;
+					"12."*)  mod_native_fragment ;;
 					*)       break ;;
 				esac
 			done
@@ -1184,14 +1614,24 @@ build_site_block() {
 			;;
 	esac
 
+	[ -z "$OPT_SITE_FRAGMENT" ] || emit_line "	import $(caddy_quote "$OPT_SITE_FRAGMENT")"
+	[ -z "$OPT_LOG" ] || mod_logging
 	{
 		printf '%s {\n' "$SITE_ADDR"
-		cat -- "$TMP_SITE"
-		printf '}\n'
+		cat -- "$SITE_META"
+		# Literal outer route: policy always precedes terminal content handlers.
+		printf '\troute {\n'
+		cat -- "$SITE_ACCESS" "$SITE_CORS" "$SITE_AUTH"
+		# handle applies Caddy's ordinary directive sorting inside the content
+		# scope, preserving rewrites, middleware and exclusive path dispatch.
+		printf '\t\thandle {\n'
+		cat -- "$SITE_BODY"
+		printf '\t\t}\n\t}\n}\n'
 	} >> "$TMP_CADDY"
 
-	rm -f -- "$TMP_SITE"
+	rm -f -- "$SITE_META" "$SITE_ACCESS" "$SITE_CORS" "$SITE_AUTH" "$SITE_BODY"
 	TMP_SITE=""
+	OPT_BROWSE=$_saved_browse
 }
 
 # ---------------------------------------------------------------------------
@@ -1203,10 +1643,8 @@ if [ "$#" -eq 0 ]; then
 fi
 
 case ${1:-} in
-	--help)
-		show_help
-		exit 0
-		;;
+	--help) show_help; exit 0 ;;
+	--version) printf '%s\n' "$VERSION"; exit 0 ;;
 esac
 
 OPT_PRESET=""
@@ -1215,12 +1653,34 @@ OPT_BIND=""
 OPT_ROOT=""
 OPT_UPSTREAM=""
 OPT_MEDIA_TYPE=""
+OPT_MEDIA_SORT=date
+OPT_MEDIA_ORDER=desc
+OPT_MEDIA_DEPTH=0
 OPT_BROWSE=""
 OPT_ENCODE=""
 OPT_SEC_HEADERS=""
 OPT_NONINTERACTIVE=0
+OPT_SITE_FRAGMENT=""
+OPT_GLOBAL_FRAGMENT=""
+OPT_JSON=""
+OPT_PROTOCOLS=""
+OPT_TLS="auto"
+OPT_EMAIL=""
+OPT_ADMIN=""
+OPT_HASH_FILE=""
+OPT_AUTH_USER=""
+OPT_LOG=""
+OPT_ALLOW=""
+OPT_DENY=""
+OPT_CORS=""
+OPT_INDEX=""
+OPT_HIDE=".git .env *.bak .DS_Store"
+OPT_PRECOMP=""
+OPT_VALIDATE="auto"
+OPT_MODULES=0
+OPT_QUIET=0
 
-while getopts ":p:a:b:r:u:t:BESnh" opt; do
+while getopts ":p:a:b:r:u:t:s:o:d:BESnhc:g:J:P:T:e:A:H:U:L:k:D:C:i:w:z:vVmq" opt; do
 	case $opt in
 		p) OPT_PRESET=$OPTARG ;;
 		a) OPT_ADDR=$OPTARG ;;
@@ -1228,23 +1688,91 @@ while getopts ":p:a:b:r:u:t:BESnh" opt; do
 		r) OPT_ROOT=$OPTARG ;;
 		u) OPT_UPSTREAM=$OPTARG ;;
 		t) OPT_MEDIA_TYPE=$OPTARG ;;
+		s) OPT_MEDIA_SORT=$OPTARG ;;
+		o) OPT_MEDIA_ORDER=$OPTARG ;;
+		d) OPT_MEDIA_DEPTH=$OPTARG ;;
 		B) OPT_BROWSE="yes" ;;
 		E) OPT_ENCODE="yes" ;;
 		S) OPT_SEC_HEADERS="yes" ;;
 		n) OPT_NONINTERACTIVE=1 ;;
-		h)
-			show_help
-			exit 0
-			;;
-		:)
-			die "Option -$OPTARG requires an argument. Run '${0##*/}' with no args for help."
-			;;
-		\?)
-			die "Invalid option: -$OPTARG. Run '${0##*/}' with no args for help."
-			;;
+		c) OPT_SITE_FRAGMENT=$(absolute_file "$OPTARG") ;;
+		g) OPT_GLOBAL_FRAGMENT=$(absolute_file "$OPTARG") ;;
+		J) OPT_JSON=$(absolute_file "$OPTARG") ;;
+		P) OPT_PROTOCOLS=$OPTARG ;;
+		T) OPT_TLS=$OPTARG ;;
+		e) OPT_EMAIL=$OPTARG ;;
+		A) OPT_ADMIN=$OPTARG ;;
+		H) OPT_HASH_FILE=$(absolute_file "$OPTARG") ;;
+		U) OPT_AUTH_USER=$OPTARG ;;
+		L) OPT_LOG=$OPTARG ;;
+		k) OPT_ALLOW=$OPTARG ;;
+		D) OPT_DENY=$OPTARG ;;
+		C) OPT_CORS=$OPTARG ;;
+		i) OPT_INDEX=$OPTARG ;;
+		w) OPT_HIDE=$OPTARG ;;
+		z) OPT_PRECOMP=$OPTARG ;;
+		v) OPT_VALIDATE="required" ;;
+		V) OPT_VALIDATE="skip" ;;
+		m) OPT_MODULES=1 ;;
+		q) OPT_QUIET=1 ;;
+		h) show_help; exit 0 ;;
+		:) die "Option -$OPTARG requires an argument" ;;
+		\?) die "Invalid option: -$OPTARG" ;;
 	esac
 done
 shift $((OPTIND - 1))
+
+if [ "$OPT_MODULES" -eq 1 ]; then
+	have_cmd "$CADDY_BIN" || die "Caddy unavailable: $CADDY_BIN"
+	"$CADDY_BIN" list-modules
+	exit
+fi
+case $OPT_MEDIA_SORT in
+    date|time|mtime|d) OPT_MEDIA_SORT=date ;;
+    size|bytes|s) OPT_MEDIA_SORT=size ;;
+    name|alpha|n) OPT_MEDIA_SORT=name ;;
+    shuffle|random|rand|shuf|r) OPT_MEDIA_SORT=shuffle ;;
+    *) die "Invalid media sort field: $OPT_MEDIA_SORT" ;;
+esac
+case $OPT_MEDIA_ORDER in
+    asc|ascending|a) OPT_MEDIA_ORDER=asc ;;
+    desc|descending|r) OPT_MEDIA_ORDER=desc ;;
+    *) die "Invalid media sort order: $OPT_MEDIA_ORDER" ;;
+esac
+case $OPT_MEDIA_DEPTH in ''|*[!0-9]*) die "Media depth must be 0..255 (0=unlimited)" ;; esac
+OPT_MEDIA_DEPTH=$(printf '%s' "$OPT_MEDIA_DEPTH" | sed 's/^0*//')
+OPT_MEDIA_DEPTH=${OPT_MEDIA_DEPTH:-0}
+[ "${#OPT_MEDIA_DEPTH}" -le 3 ] && [ "$OPT_MEDIA_DEPTH" -le 255 ] || die "Media depth must be 0..255 (0=unlimited)"
+case $OPT_MEDIA_TYPE in ''|both|videos|images) ;; *) die "Invalid media filter: $OPT_MEDIA_TYPE" ;; esac
+case $OPT_TLS in auto|internal) ;; *) die "Invalid TLS mode: $OPT_TLS" ;; esac
+case $OPT_LOG in ''|stdout|stderr|/*) ;; *) die "Log destination must be stdout, stderr, or an absolute path" ;; esac
+[ -z "$OPT_ALLOW" ] || [ -z "$OPT_DENY" ] || die "Use either -k allow or -D deny"
+if [ -n "$OPT_ROOT" ]; then
+    require_literal "Document root" "$OPT_ROOT"
+    case $OPT_ROOT in /*) ;; *) OPT_ROOT=$PWD/$OPT_ROOT ;; esac
+fi
+[ -z "$OPT_EMAIL" ] || require_literal "ACME email" "$OPT_EMAIL"
+[ -z "$OPT_ADMIN" ] || require_literal "Admin address" "$OPT_ADMIN"
+[ -z "$OPT_CORS" ] || require_literal "CORS origin" "$OPT_CORS"
+[ -z "$OPT_AUTH_USER" ] || require_literal "Auth username" "$OPT_AUTH_USER"
+[ -z "$OPT_LOG" ] || require_literal "Log destination" "$OPT_LOG"
+[ -z "$OPT_ALLOW" ] || require_tokens "Allowed ranges" "$OPT_ALLOW"
+[ -z "$OPT_DENY" ] || require_tokens "Denied ranges" "$OPT_DENY"
+[ -z "$OPT_ADDR" ] || require_tokens "Site address" "$OPT_ADDR"
+[ -z "$OPT_BIND" ] || require_tokens "Bind addresses" "$OPT_BIND"
+[ -z "$OPT_UPSTREAM" ] || require_tokens "Upstream addresses" "$OPT_UPSTREAM"
+[ -z "$OPT_INDEX" ] || require_tokens "Index names" "$OPT_INDEX"
+[ -z "$OPT_HIDE" ] || require_tokens "Hide patterns" "$OPT_HIDE"
+for _protocol in $OPT_PROTOCOLS; do
+	case $_protocol in h1|h2|h2c|h3) ;; *) die "Invalid HTTP protocol: $_protocol" ;; esac
+done
+for _sidecar in $OPT_PRECOMP; do
+	case $_sidecar in zstd|br|gzip) ;; *) die "Invalid precompressed format: $_sidecar" ;; esac
+done
+if [ -n "$OPT_JSON" ]; then
+	[ -z "$OPT_PRESET$OPT_ADDR$OPT_BIND$OPT_ROOT$OPT_UPSTREAM$OPT_MEDIA_TYPE$OPT_BROWSE$OPT_ENCODE$OPT_SEC_HEADERS$OPT_SITE_FRAGMENT$OPT_GLOBAL_FRAGMENT$OPT_PROTOCOLS$OPT_EMAIL$OPT_ADMIN$OPT_HASH_FILE$OPT_AUTH_USER$OPT_LOG$OPT_ALLOW$OPT_DENY$OPT_CORS$OPT_INDEX$OPT_PRECOMP" ] &&
+		[ "$OPT_MEDIA_SORT:$OPT_MEDIA_ORDER:$OPT_MEDIA_DEPTH" = "date:desc:0" ] && [ "$OPT_TLS" = "auto" ] && [ "$OPT_HIDE" = ".git .env *.bak .DS_Store" ] || die "-J cannot be combined with generation options"
+fi
 
 [ "$#" -ge 1 ] || {
 	show_help
@@ -1253,6 +1781,9 @@ shift $((OPTIND - 1))
 [ "$#" -le 1 ] || die "Expected a single <target_dir_or_file> argument, got $#."
 
 TARGET_ARG=$1
+require_literal "Target" "$TARGET_ARG"
+case $TARGET_ARG in /*) ;; *) TARGET_ARG=$PWD/$TARGET_ARG ;; esac
+require_literal "Absolute target" "$TARGET_ARG"
 if [ -d "$TARGET_ARG" ]; then
 	TARGET_DIR=$(cd -- "$TARGET_ARG" && pwd)
 	TARGET_BASE="${TARGET_DIR}/Caddyfile"
@@ -1267,7 +1798,20 @@ fi
 # ---------------------------------------------------------------------------
 # Main Interactive / Preset Dispatch
 # ---------------------------------------------------------------------------
-TMP_CADDY=$(mktemp "${TMPDIR:-/tmp}/mkcaddy_out.XXXXXX")
+WORK_DIR=$(mktemp -d "$TARGET_DIR/.mkcaddy.XXXXXX") || die "Cannot create staging directory in $TARGET_DIR"
+TMP_CADDY=$WORK_DIR/config
+: > "$TMP_CADDY"
+if [ -n "$OPT_JSON" ]; then
+	cat -- "$OPT_JSON" >> "$TMP_CADDY" || die "Cannot read native JSON"
+	validate_config
+	OUT_FILE=$(commit_file "$TMP_CADDY" "$TARGET_BASE" "")
+	printf '%s\n' "$OUT_FILE"
+	exit 0
+fi
+# With no terminal, all modules take the documented noninteractive defaults.
+if [ ! -t 0 ] || [ ! -t 2 ]; then
+	OPT_NONINTERACTIVE=1
+fi
 
 if [ -z "$OPT_PRESET" ]; then
 	if [ "$OPT_NONINTERACTIVE" -eq 1 ]; then
@@ -1287,8 +1831,18 @@ if [ -z "$OPT_PRESET" ]; then
 	fi
 fi
 
+# Explicit global flags bypass prompts; native global fragments cover all options.
+if [ -n "$OPT_PROTOCOLS$OPT_EMAIL$OPT_ADMIN$OPT_GLOBAL_FRAGMENT" ]; then
+	{
+		printf '{\n'
+		[ -z "$OPT_PROTOCOLS" ] || printf '\tservers {\n\t\tprotocols %s\n\t}\n' "$OPT_PROTOCOLS"
+		[ -z "$OPT_EMAIL" ] || printf '\temail %s\n' "$(caddy_quote "$OPT_EMAIL")"
+		[ -z "$OPT_ADMIN" ] || printf '\tadmin %s\n' "$(caddy_quote "$OPT_ADMIN")"
+		[ -z "$OPT_GLOBAL_FRAGMENT" ] || printf '\timport %s\n' "$(caddy_quote "$OPT_GLOBAL_FRAGMENT")"
+		printf '}\n\n'
+	} >> "$TMP_CADDY"
 # Optional Global Options Block in Interactive Mode
-if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
+elif [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 	if tui_yesno "Configure a Global Options Block { ... } (admin API, ACME email/CA, ports)?" "no"; then
 		prompt_global_options
 	fi
@@ -1309,6 +1863,7 @@ if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 			"m3u-streamer   - Dynamic M3U Streamer" \
 			"spa-api        - Single-Page App + API" \
 			"php-webapp     - PHP-FPM Server" \
+			"multi-service  - Path-Routed Services" \
 			"secure-gateway - Authenticated Gateway" \
 			"redirect-canon - Redirect / Canonicalization" \
 			"custom         - Composable Module Builder")
@@ -1316,5 +1871,6 @@ if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 	done
 fi
 
+validate_config
 OUT_FILE=$(commit_file "$TMP_CADDY" "$TARGET_BASE" "")
 printf '%s\n' "$OUT_FILE"

@@ -1,30 +1,22 @@
-# Ψ-4ndr0666 Production Build System
-# Artifact: merge (Video/Image Unifier)
-# Version: 3.1.1
-
+# merge 3.2.0 — portable release flags; DESTDIR-aware staging.
 CC = cc
-# Includes _DEFAULT_SOURCE to handle modern POSIX/Linux extensions
-CFLAGS = -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -O3 -march=native
+CPPFLAGS += -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+CFLAGS ?= -O2 -g
+CFLAGS += -Wall -Wextra -Wpedantic -std=c99
 TARGET = merge
 SRC = merge.c
-PREFIX = /usr/local/bin
-
-.PHONY: all clean install uninstall
-
+PREFIX ?= /usr/local/bin
+DESTDIR ?=
+.PHONY: all clean install uninstall test
 all: $(TARGET)
-
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
-	@echo "[+] Build complete: $(TARGET)"
-
+$(TARGET): $(SRC) makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
 clean:
-	rm -f $(TARGET)
-	@echo "[+] Cleaned build artifacts."
-
+	$(RM) -- "$(TARGET)"
 install: $(TARGET)
-	install -m 755 $(TARGET) $(PREFIX)/$(TARGET)
-	@echo "[+] Installed $(TARGET) to $(PREFIX)"
-
+	install -d -- "$(DESTDIR)$(PREFIX)"
+	install -m 755 -- "$(TARGET)" "$(DESTDIR)$(PREFIX)/$(TARGET)"
 uninstall:
-	rm -f $(PREFIX)/$(TARGET)
-	@echo "[+] Uninstalled $(TARGET)"
+	$(RM) -- "$(DESTDIR)$(PREFIX)/$(TARGET)"
+test: $(TARGET)
+	python3 tests.py
