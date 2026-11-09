@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
+import re
 import shlex
 import subprocess
 import sys
@@ -67,6 +69,94 @@ DANGER_ALIASES = {
 }
 
 
+# --- prompt_toolkit is OPTIONAL (graceful degradation) ---
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.formatted_text import HTML
+
+    HAVE_PTK = True
+except ImportError:
+    HAVE_PTK = False
+
+
+# --- THEME TOKENS: ELECTRIC-GLASSMORPHISM ---
+class Theme:
+    """24-bit ANSI palette, disabled automatically when unsupported."""
+
+    def __init__(self, enabled: bool) -> None:
+        e = enabled
+        self.cyan = "\033[38;2;21;255;255m" if e else ""
+        self.cyan_muted = "\033[38;2;21;125;125m" if e else ""
+        self.text = "\033[38;2;234;234;234m" if e else ""
+        self.text2 = "\033[38;2;158;158;158m" if e else ""
+        self.red = "\033[38;2;255;77;77m" if e else ""
+        self.bold = "\033[1m" if e else ""
+        self.reset = "\033[0m" if e else ""
+
+
+def _color_default() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    term = os.environ.get("TERM", "")
+    if term in ("", "dumb"):
+        return False
+    return True
+
+
+TH = Theme(_color_default())
+
+
+def ptk_style():
+    return Style.from_dict(
+        {
+            "prompt": "fg:#15FFFF bold",
+            "separator": "fg:#151515",
+            "bottom": "fg:#157d7d",
+            "completion-menu": "bg:#101827 fg:#15FFFF",
+            "completion-menu.completion": "bg:#101827 fg:#157d7d",
+            "completion-menu.completion.current": "bg:#070B14 fg:#15FFFF bold",
+        }
+    )
+
+
+# --- BANNER (width-computed so borders always align) ---
+INNER = 60
+ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _vlen(s: str) -> int:
+    return len(ANSI_RE.sub("", s))
+
+
+def _row(text: str) -> None:
+    pad = " " * max(1, INNER - 2 - _vlen(text) + 1)
+    print(f"{TH.cyan}│{TH.reset} {text}{pad}{TH.cyan}│{TH.reset}")
+
+
+def clear_screen() -> None:
+    if sys.stdout.isatty():
+        sys.stdout.write("\033[H\033[2J\033[3J")
+        sys.stdout.flush()
+
+
+def print_header() -> None:
+    clear_screen()
+    print(f"\n{TH.cyan}┌{'─' * INNER}┐{TH.reset}")
+    _row(
+        f"{TH.bold}{TH.text}   ⦑ {TH.cyan}Ψ{TH.reset} ⦒ "
+        f"{TH.bold}{TH.text}{APP_NAME}: ADVANCED ARCH LINUX PACKAGE MANAGER{TH.reset}"
+    )
+    print(f"{TH.cyan}├{'─' * INNER}┤{TH.reset}")
+    _row(f"{TH.text2}v{VERSION} Copyright © 2026 4ndr0{TH.cyan}666{TH.reset}")
+    print(f"{TH.cyan}└{'─' * INNER}┘{TH.reset}\n")
+
+
+# --- RESOLUTION & SUGGESTIONS ---
 def resolve_menu(raw: str) -> tuple[str, str] | str | None:
     low = raw.strip().lower()
     if not low:
@@ -186,34 +276,109 @@ def one_shot(backend: Path, words: list[str], extras: list[str], dry: bool) -> i
     return rc
 
 
-def interactive(backend: Path) -> int:
+def pause() -> None:
+    try:
+        input(f"\n{TH.cyan}Press ENTER to return to the Grid...{TH.reset}")
+    except (EOFError, KeyboardInterrupt):
+        print()
+
+
+# --- INTERACTIVE MODE ---
+def history_file() -> Path | None:
+    try:
+        base = Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser()
+        d = base / "4ndr0pac"
+        d.mkdir(parents=True, exist_ok=True)
+        return d / "history"
+    except OSError:
+        return None
+
+
+def print_menu() -> None:
+    """Compact two-column numbered menu (fallback when prompt_toolkit is absent)."""
+    entries = []
+    for i, (name, _, danger) in enumerate(DIRECTIVES, 1):
+        mark = f" {TH.red}*{TH.reset}" if danger else ""
+        entries.append(f"{i:>2}) {name}{mark}")
+    half = (len(entries) + 1) // 2
+    left, right = entries[:half], entries[half:]
+    for a, b in zip(left, right + [""] * len(left)):
+        print(f"  {a:<30}{b}")
+    print(f"   {TH.text2}0/q) quit  ·  * = asks for confirmation{TH.reset}")
+
+
+def interactive(backend: Path, dry: bool = False) -> int:
+    session = None
+    # prompt_toolkit reads piped stdin in greedy chunks, which starves the
+    # plain input() calls made by confirm()/pause() between prompts. Use it
+    # only when stdin is a real terminal; pipes get the deterministic
+    # line-by-line fallback instead.
+    if HAVE_PTK and sys.stdin.isatty():
+        names = [n for n, _, _ in DIRECTIVES]
+        completer = FuzzyCompleter(WordCompleter(names, ignore_case=True))
+        history_path = history_file()
+        hist = FileHistory(str(history_path)) if history_path else None
+        session = PromptSession(
+            completer=completer, history=hist, style=ptk_style()
+        )
+    elif not HAVE_PTK and sys.stdin.isatty():
+        print(
+            f"{TH.cyan_muted}prompt_toolkit not installed — using the plain menu "
+            f"(pacman -S python-prompt-toolkit restores fuzzy completion).{TH.reset}\n"
+        )
+
     while True:
-        print_directives()
+        print_header()
         try:
-            raw = input("[name/number/q]> ").strip()
-        except EOFError:
-            print()
-            return EXIT_OK
+            if session is not None:
+                raw = session.prompt(
+                    HTML("<prompt>█▓░SYSTEM_ONLINE</prompt><separator> > </separator>"),
+                    bottom_toolbar=HTML(
+                        "<bottom>Tab: complete · ↑: history · name / # / flag · q: quit</bottom>"
+                    ),
+                ).strip()
+            else:
+                print_menu()
+                raw = input(
+                    f"{TH.bold}{TH.cyan}█▓░SYSTEM_ONLINE{TH.reset} "
+                    f"{TH.cyan_muted}[name/number/q]>{TH.reset} "
+                ).strip()
         except KeyboardInterrupt:
-            print()
+            print(f"\n{TH.cyan}Session aborted.{TH.reset}")
             return EXIT_ABORT
+        except EOFError:
+            print(f"\n{TH.cyan}Terminating session...{TH.reset}")
+            return EXIT_OK
 
         got = resolve_menu(raw)
         if got == "quit":
+            print(f"{TH.cyan}Terminating session...{TH.reset}")
             return EXIT_OK
         if got is None:
-            print(f"Unknown directive: '{raw}'.")
             hints = suggest(raw)
+            msg = f"{TH.red}Unrecognized directive: '{raw}'.{TH.reset}"
             if hints:
-                print(f"Did you mean: {' / '.join(hints)}?")
+                msg += f" Did you mean: {TH.cyan}{' / '.join(hints)}{TH.reset}?"
+            else:
+                msg += (
+                    f" {TH.cyan_muted}(Tab lists the topology menu; "
+                    f"number keys 1-{len(DIRECTIVES)} also work){TH.reset}"
+                )
+            print(msg)
+            pause()
             continue
 
         name, flag = got
-        if is_dangerous(name, flag) and not confirm_danger(name):
-            print("Directive cancelled.")
+        if not dry and is_dangerous(name, flag) and not confirm_danger(name):
+            print(f"{TH.cyan_muted}Directive cancelled.{TH.reset}")
             continue
-        rc = run_backend(backend, flag, [])
-        report_rc(rc)
+
+        print(f"\n{TH.cyan}Executing directive: {name}...{TH.reset}\n")
+        rc = run_backend(backend, flag, [], dry)
+        if not dry:
+            report_rc(rc)
+        pause()
+
 
 
 def print_directives() -> None:
@@ -233,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-color", action="store_true", help="accepted for CLI compatibility")
     parser.add_argument("--version", "-V", action="version", version=f"{APP_NAME} v{VERSION}")
     args, unknown = parser.parse_known_args(argv)
+    global TH
+    TH = Theme(not args.no_color and _color_default())
 
     backend = locate_backend(args.backend)
     if backend is None:
@@ -242,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_OK
     if args.directive or unknown:
         return one_shot(backend, args.directive, unknown, args.dry_run)
-    return interactive(backend)
+    return interactive(backend, args.dry_run)
 
 
 if __name__ == "__main__":

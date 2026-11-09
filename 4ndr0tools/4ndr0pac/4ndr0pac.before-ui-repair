@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""4NDR0PAC — Arch Linux package-manager frontend.
+
+The frontend delegates all system mutations to the sibling Bash backend.
+Dangerous directives require an explicit confirmation in both interactive and
+one-shot modes. Tests use a fake backend and never invoke package managers.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+APP_NAME = "4NDR0PAC"
+VERSION = "1.6.1"
+BACKEND_NAME = "4ndr0pac.sh"
+EXIT_OK = 0
+EXIT_BACKEND = 1
+EXIT_USAGE = 2
+EXIT_ABORT = 130
+QUIT_WORDS = {"q", "quit", "exit", ":q"}
+
+DIRECTIVES: list[tuple[str, str, bool]] = [
+    ("Analyze", "s", False),
+    ("Update System", "u", False),
+    ("Maintain System", "m", False),
+    ("Install (Native)", "i", False),
+    ("Install (AUR)", "a", False),
+    ("Remove Packages", "r", True),
+    ("List Installed", "l", False),
+    ("Dependency Tree (OF)", "tree", False),
+    ("Dependency Tree (ON)", "v", False),
+    ("Edit Configurations", "e", False),
+    ("Roll Back System", "b", True),
+    ("Fix Pacman Errors", "z", False),
+    ("Packages by Size", "x", False),
+    ("Force Update AUR", "w", False),
+    ("List AUR Installed", "n", False),
+    ("Downgrade Package", "d", False),
+    ("Package Info", "p", False),
+    ("Find File Owner", "f", False),
+    ("Files in Package", "o", False),
+    ("CachyOS Repo/Kernel", "c", True),
+    ("Chaotic AUR", "g", True),
+    ("System Cleanup", "k", False),
+    ("Topgrade", "topgrade", False),
+    ("Remove Desktop", "y", True),
+    ("Manual / Help", "h", False),
+]
+
+BACKEND_WORDS = {
+    "u", "update", "m", "maintain", "i", "install", "a", "aur", "r", "remove",
+    "l", "list", "tree", "v", "rtree", "e", "edit", "b", "rollback", "z", "fix",
+    "x", "ls", "listsize", "w", "ua", "force-aur", "n", "la", "list-aur", "d", "down",
+    "downgrade", "p", "info", "f", "find", "find-file", "o", "fo", "files-in-pkg",
+    "c", "cachyos", "g", "chaotic", "k", "cleanup", "clean", "topgrade", "y",
+    "remove-de", "de", "h", "help", "s", "analyze", "health", "diff", "version",
+}
+
+DANGER_FLAGS = {flag.lower() for _, flag, danger in DIRECTIVES if danger}
+DANGER_ALIASES = {
+    "remove": "r", "rollback": "b", "cachyos": "c", "chaotic": "g",
+    "remove-de": "y", "de": "y",
+}
+
+
+def resolve_menu(raw: str) -> tuple[str, str] | str | None:
+    low = raw.strip().lower()
+    if not low:
+        return None
+    if low in QUIT_WORDS:
+        return "quit"
+    if low.isdigit():
+        number = int(low)
+        if number == 0:
+            return "quit"
+        if 1 <= number <= len(DIRECTIVES):
+            name, flag, _ = DIRECTIVES[number - 1]
+            return name, flag
+        return None
+    for name, flag, _ in DIRECTIVES:
+        if low == name.lower() or low == flag.lower():
+            return name, flag
+    return None
+
+
+def suggest(raw: str) -> list[str]:
+    names = [name.lower() for name, _, _ in DIRECTIVES]
+    return difflib.get_close_matches(raw.strip().lower(), names, n=3, cutoff=0.6)
+
+
+def is_dangerous(name: str, flag: str) -> bool:
+    low_name = name.strip().lower()
+    low_flag = flag.strip().lower()
+    if low_flag in DANGER_FLAGS:
+        return True
+    return DANGER_ALIASES.get(low_name, low_name) in DANGER_FLAGS
+
+
+def locate_backend(override: str | None) -> Path | None:
+    path = Path(override).expanduser() if override else Path(__file__).resolve().parent / BACKEND_NAME
+    try:
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        if path.stat().st_mode & 0o002:
+            raise PermissionError(f"backend is world-writable: {path}")
+    except (FileNotFoundError, PermissionError) as exc:
+        print(f"Fatal: {exc}", file=sys.stderr)
+        return None
+    return path
+
+
+def run_backend(backend: Path, flag: str, extras: list[str], dry: bool = False) -> int:
+    cmd = ["bash", str(backend), flag, *extras]
+    if dry:
+        print(f"[dry-run] {shlex.join(cmd)}")
+        return EXIT_OK
+    try:
+        return subprocess.run(cmd, check=False).returncode
+    except KeyboardInterrupt:
+        print("Directive interrupted.")
+        return EXIT_ABORT
+
+
+def confirm_danger(name: str) -> bool:
+    try:
+        answer = input(f"{name} can alter system state. Proceed? [y/N] ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def report_rc(rc: int) -> None:
+    if rc == EXIT_OK:
+        print("TASK COMPLETE (exit 0)")
+    elif rc == EXIT_ABORT:
+        print(f"TASK INTERRUPTED (exit {rc})")
+    else:
+        print(f"TASK FAILED (exit {rc})")
+
+
+def one_shot(backend: Path, words: list[str], extras: list[str], dry: bool) -> int:
+    joined = " ".join(words).strip()
+    got = resolve_menu(joined)
+    name: str | None = None
+    flag: str | None = None
+    rest = list(extras)
+
+    if got == "quit":
+        return EXIT_OK
+    if isinstance(got, tuple):
+        name, flag = got
+    else:
+        for size in range(len(words) - 1, 0, -1):
+            candidate = " ".join(words[:size])
+            resolved = resolve_menu(candidate)
+            if isinstance(resolved, tuple):
+                name, flag = resolved
+                rest = words[size:] + extras
+                break
+        if name is None and words and words[0].lower() in BACKEND_WORDS:
+            raw = words[0].lower()
+            name = raw
+            flag = raw
+            rest = words[1:] + extras
+
+    if name is None or flag is None:
+        hints = suggest(joined)
+        print(f"Unknown directive: '{joined}'.")
+        if hints:
+            print(f"Did you mean: {' / '.join(hints)}?")
+        return EXIT_USAGE
+
+    if not dry and is_dangerous(name, flag) and not confirm_danger(name):
+        print("Directive cancelled.")
+        return EXIT_ABORT
+
+    print(f"Executing directive: {name}...")
+    rc = run_backend(backend, flag, rest, dry)
+    if not dry:
+        report_rc(rc)
+    return rc
+
+
+def interactive(backend: Path) -> int:
+    while True:
+        print_directives()
+        try:
+            raw = input("[name/number/q]> ").strip()
+        except EOFError:
+            print()
+            return EXIT_OK
+        except KeyboardInterrupt:
+            print()
+            return EXIT_ABORT
+
+        got = resolve_menu(raw)
+        if got == "quit":
+            return EXIT_OK
+        if got is None:
+            print(f"Unknown directive: '{raw}'.")
+            hints = suggest(raw)
+            if hints:
+                print(f"Did you mean: {' / '.join(hints)}?")
+            continue
+
+        name, flag = got
+        if is_dangerous(name, flag) and not confirm_danger(name):
+            print("Directive cancelled.")
+            continue
+        rc = run_backend(backend, flag, [])
+        report_rc(rc)
+
+
+def print_directives() -> None:
+    print(f"{APP_NAME} v{VERSION}")
+    for index, (name, flag, danger) in enumerate(DIRECTIVES, 1):
+        marker = " [confirm]" if danger else ""
+        print(f" {index:>2}  {name:<24} -> {flag}{marker}")
+    print("  0 / q / quit          -> exit")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="4ndr0pac")
+    parser.add_argument("directive", nargs="*", help="menu name, flag, number, or backend word")
+    parser.add_argument("--backend", metavar="PATH")
+    parser.add_argument("--list", "-L", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-color", action="store_true", help="accepted for CLI compatibility")
+    parser.add_argument("--version", "-V", action="version", version=f"{APP_NAME} v{VERSION}")
+    args, unknown = parser.parse_known_args(argv)
+
+    backend = locate_backend(args.backend)
+    if backend is None:
+        return EXIT_BACKEND
+    if args.list:
+        print_directives()
+        return EXIT_OK
+    if args.directive or unknown:
+        return one_shot(backend, args.directive, unknown, args.dry_run)
+    return interactive(backend)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
