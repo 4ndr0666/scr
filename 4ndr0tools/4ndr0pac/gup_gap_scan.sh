@@ -70,6 +70,10 @@ check_gap \
     'awk[[:space:]]+[{][[:space:]]+print[[:space:]]+[$][(]NF-1[)][[:space:]]+" "[[:space:]]+[$]NF[[:space:]]+[}][[:space:]]*[|][|][[:space:]]*true' \
     'rollback package selection transformation failure is suppressed'
 
+check_gap \
+    'pacui_cache_(install|downgrade|upgrade)=[^\n]*awk[^\n]*[|][|][[:space:]]*true' \
+    'rollback package derivation failure is suppressed'
+
 require_gap_invariant() {
     local pattern="$1"
     local description="$2"
