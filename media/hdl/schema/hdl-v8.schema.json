@@ -1,0 +1,1296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:4ndr0prompts:hdl:v8",
+  "title": "4ndr0prompts HDL v8 — Canonical Compiler Schema",
+  "description": "Normative seven-block HDL v8 structure. Two root sections (!INIT_MEM_LOCK, !INIT_ATMOSPHERICS); within atmospherics require bio/dermal mapping, composition, photometry, material physics, and negative bias. Extra geometric, text-reconstruction, and finalization blocks from the 11.3.1 compiler are valid optional extensions. Strict root forbids competing module authorities. Catalog values remain open; hardware/semantic coherence requires additional checks.",
+  "$comment": "This is the primary contract for the 7-stage HDL workstation; legacy prompt_arc.py shape is specified separately in hdl-v8.prompt-arc-legacy.schema.json.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "const": "./hdl-v8.schema.json"
+    },
+    "!INIT_MEM_LOCK": {
+      "$ref": "#/$defs/memoryLock"
+    },
+    "!INIT_ATMOSPHERICS": {
+      "$ref": "#/$defs/atmospherics"
+    }
+  },
+  "required": [
+    "!INIT_MEM_LOCK",
+    "!INIT_ATMOSPHERICS"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "vec3": {
+      "title": "XYZ vector",
+      "description": "Three JSON numbers in the declared coordinate space.",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "nonEmptyText": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonEmptyTextArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "memoryLock": {
+      "type": "object",
+      "properties": {
+        "SYSTEM_REFERENCE_INPUT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BIOMETRIC_LOCK": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "IDENTITY_SHADOW": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BIOMETRIC_TOPOGRAPHY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "UNALTERABLE": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "IDENTITY_DRIFT_CONTROL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "STRUCTURAL_NON_DEVIATION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "STRUCTURAL_FIDELITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "INHIBIT": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "WARDROBE_LOCK": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "SYSTEM_REFERENCE_INPUT",
+        "BIOMETRIC_LOCK",
+        "IDENTITY_SHADOW",
+        "BIOMETRIC_TOPOGRAPHY",
+        "UNALTERABLE",
+        "IDENTITY_DRIFT_CONTROL",
+        "STRUCTURAL_NON_DEVIATION",
+        "STRUCTURAL_FIDELITY",
+        "INHIBIT",
+        "WARDROBE_LOCK"
+      ],
+      "additionalProperties": false,
+      "description": "Single authoritative lock section. For product subjects BIOMETRIC_LOCK may be false."
+    },
+    "depth": {
+      "type": "object",
+      "properties": {
+        "FOREGROUND": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MIDGROUND": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BACKGROUND": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "FOREGROUND",
+        "MIDGROUND",
+        "BACKGROUND"
+      ],
+      "additionalProperties": false
+    },
+    "geometricSeed": {
+      "type": "object",
+      "properties": {
+        "COORDINATE_SPACE": {
+          "const": "RIGHT_HAND_Y_UP"
+        },
+        "LENGTH_UNIT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SUBJECT_ORIGIN_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "CAMERA_ORIGIN_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "CAMERA_TARGET_XYZ": {
+          "$ref": "#/$defs/vec3"
+        }
+      },
+      "required": [
+        "COORDINATE_SPACE",
+        "LENGTH_UNIT",
+        "SUBJECT_ORIGIN_XYZ",
+        "CAMERA_ORIGIN_XYZ",
+        "CAMERA_TARGET_XYZ"
+      ],
+      "additionalProperties": false
+    },
+    "dermal": {
+      "type": "object",
+      "properties": {
+        "SKIN_TOPOGRAPHY_LOGIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SURFACE_MICRO_ELEMENTS": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "REFLECTANCE_MAP": {
+          "type": "string",
+          "minLength": 1
+        },
+        "EXPRESSION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "HAIR": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "SKIN_TOPOGRAPHY_LOGIC",
+        "SURFACE_MICRO_ELEMENTS",
+        "REFLECTANCE_MAP",
+        "EXPRESSION",
+        "HAIR"
+      ],
+      "additionalProperties": false
+    },
+    "panelLayer": {
+      "type": "object",
+      "properties": {
+        "PANEL": {
+          "type": "string",
+          "pattern": "^PANEL_[1-9]$"
+        },
+        "LAYERS": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "PANEL",
+        "LAYERS"
+      ],
+      "additionalProperties": false
+    },
+    "panelLighting": {
+      "type": "object",
+      "properties": {
+        "PANEL": {
+          "type": "string",
+          "pattern": "^PANEL_[1-9]$"
+        },
+        "LIGHTING_RIG": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "PANEL",
+        "LIGHTING_RIG"
+      ],
+      "additionalProperties": false
+    },
+    "surfaceInteraction": {
+      "type": "object",
+      "properties": {
+        "HIT_POINT_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "SURFACE_NORMAL_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "REFLECTION_VECTOR_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "LIGHT_DISTANCE_UNITS": {
+          "type": "number",
+          "minimum": 0
+        },
+        "INCIDENCE_ANGLE_DEG": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180
+        }
+      },
+      "required": [
+        "HIT_POINT_XYZ",
+        "SURFACE_NORMAL_XYZ",
+        "REFLECTION_VECTOR_XYZ",
+        "LIGHT_DISTANCE_UNITS",
+        "INCIDENCE_ANGLE_DEG"
+      ],
+      "additionalProperties": false
+    },
+    "photonicVectors": {
+      "type": "object",
+      "properties": {
+        "PHOTONIC_ENERGY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ENERGY_CONSERVATION_COMPLIANT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "RIM_LIGHT_SCATTERING_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "EPIDERMAL_TRANSLUCENCY_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PHOTON_TRANSMISSION_RATIO": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MEAN_FREE_PATH_SCATTERING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BACKLIT_SUBSURFACE_GLOW": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FRESNEL_REFLECTION_COEFFICIENT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SPECULAR_HIGHLIGHT_LOBE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "spotlight": {
+      "type": "object",
+      "properties": {
+        "TYPE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COLOR_TEMPERATURE_K": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "ORIGIN_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "TARGET_XYZ": {
+          "$ref": "#/$defs/vec3"
+        },
+        "DIRECTION_VECTOR": {
+          "$ref": "#/$defs/vec3"
+        },
+        "AZIMUTH_DEG": {
+          "type": "number",
+          "minimum": -360,
+          "maximum": 360
+        },
+        "ELEVATION_DEG": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "DISTANCE_UNITS": {
+          "type": "number",
+          "minimum": 0
+        },
+        "BEAM_CONE_DEG": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "PENUMBRA_PCT": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "INTENSITY_PCT": {
+          "type": "number",
+          "minimum": 0
+        },
+        "LUMINOUS_INTENSITY_PCT": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?%$"
+            }
+          ]
+        },
+        "FALLOFF_MODEL": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "TYPE",
+        "COLOR_TEMPERATURE_K",
+        "ORIGIN_XYZ",
+        "TARGET_XYZ",
+        "DIRECTION_VECTOR",
+        "AZIMUTH_DEG",
+        "ELEVATION_DEG",
+        "DISTANCE_UNITS",
+        "BEAM_CONE_DEG",
+        "PENUMBRA_PCT",
+        "FALLOFF_MODEL"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "INTENSITY_PCT"
+          ],
+          "not": {
+            "required": [
+              "LUMINOUS_INTENSITY_PCT"
+            ]
+          }
+        },
+        {
+          "required": [
+            "LUMINOUS_INTENSITY_PCT"
+          ],
+          "not": {
+            "required": [
+              "INTENSITY_PCT"
+            ]
+          }
+        }
+      ]
+    },
+    "photometry": {
+      "type": "object",
+      "properties": {
+        "RIG": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LIGHT_SOURCE_01": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SURFACE_INTERACTION": {
+          "$ref": "#/$defs/surfaceInteraction"
+        },
+        "KEY": {
+          "$ref": "#/$defs/spotlight"
+        },
+        "FILL": {
+          "$ref": "#/$defs/spotlight"
+        },
+        "LIGHTING_PHYSICS_MANIFEST": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PHOTONIC_ENERGY_MODEL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PHOTOGRAPHER_STYLE_OF": {
+          "type": "string",
+          "minLength": 1
+        },
+        "STYLE_DETAIL": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "PHOTOGRAPHY_STYLE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "CAMERA": {
+          "type": "string",
+          "minLength": 1
+        },
+        "CAMERA_PROFILE_ID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LENS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LENS_PROFILE_ID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "APERTURE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SHUTTER_SYNC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COLOR_SCIENCE_PROFILE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "OPTICAL_ABERRATIONS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FOCUS_LOCK": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SHADOW_PROFILE": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "PHOTONIC_VECTORS": {
+          "$ref": "#/$defs/photonicVectors"
+        }
+      },
+      "required": [
+        "RIG",
+        "LIGHT_SOURCE_01",
+        "SURFACE_INTERACTION",
+        "KEY",
+        "FILL"
+      ],
+      "additionalProperties": false,
+      "description": "Only photometry/camera authority for the canonical compiled document."
+    },
+    "drape": {
+      "type": "object",
+      "properties": {
+        "MICRO_FIBER_DRAPE_PHYSICS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GRAVITY_WEIGHTED_FOLDS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SUB_MICRON_WEAVE_DENSITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOW_DENIER_SSS_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SURFACE_ADHESION_COEFFICIENT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "MICRO_FIBER_DRAPE_PHYSICS",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY",
+        "GRAVITY_WEIGHTED_FOLDS",
+        "SUB_MICRON_WEAVE_DENSITY",
+        "LOW_DENIER_SSS_PASS",
+        "SURFACE_ADHESION_COEFFICIENT",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE"
+      ],
+      "additionalProperties": false
+    },
+    "material": {
+      "type": "object",
+      "properties": {
+        "WARDROBE_SPECIFICATION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MATERIAL_RESPONSE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MICRO_GEOMETRY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SPECULAR_ROUGHNESS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SUBSURFACE_SCATTERING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TEXTILE_ADHESION_LOGIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "OPACITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TEXTILE_SURFACE_SHEEN": {
+          "type": "string",
+          "minLength": 1
+        },
+        "DRAPE_AND_TENSION_LOGIC": {
+          "$ref": "#/$defs/drape"
+        },
+        "OPACITY_MODEL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TEXTILE_SHEEN_MODEL": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "TEXTILE_ADHESION_LOGIC",
+        "OPACITY",
+        "TEXTILE_SURFACE_SHEEN",
+        "DRAPE_AND_TENSION_LOGIC"
+      ],
+      "additionalProperties": false
+    },
+    "textRecon": {
+      "type": "object",
+      "properties": {
+        "TEXT_STRING_LITERAL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FONTTYPE_AESTHETIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LAYER_PLACEMENT": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "TEXT_STRING_LITERAL",
+        "FONTTYPE_AESTHETIC",
+        "LAYER_PLACEMENT"
+      ],
+      "additionalProperties": false
+    },
+    "finalize": {
+      "type": "object",
+      "properties": {
+        "GENERATION_STYLE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COLOR_GRADE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FOCUS_LOCK": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ADDITIONAL_DIRECTION": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "GENERATION_STYLE",
+        "COLOR_GRADE",
+        "FOCUS_LOCK"
+      ],
+      "additionalProperties": false
+    },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "MODEL_TARGET": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GENERATION_MODE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "CAMERA_TRAJECTORY_CODE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "CAMERA_MOTION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "CLIP_DURATION_SEC": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "FRAME_RATE": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "RESOLUTION_TARGET": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TEMPORAL_PACING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FIRST_FRAME_LOCK": {
+          "type": [
+            "string",
+            "boolean"
+          ]
+        },
+        "LAST_FRAME_TARGET": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SCENEBUILDER_TRANSITION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "NEGATIVE_CONSTRAINTS": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
+        "INGREDIENTS": {},
+        "AUDIO": {}
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Optional Google Flow/VeO information: INGREDIENTS/AUDIO intentionally defer to model-specific validation."
+    },
+    "composition": {
+      "type": "object",
+      "properties": {
+        "LAYOUT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANELS": {
+          "type": "string",
+          "pattern": "^[1-9]$"
+        },
+        "PANEL_1": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_2": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_3": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_4": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_5": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_6": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_7": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_8": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_9": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PANEL_KINEMATIC_LAYERS": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/panelLayer"
+          },
+          "minItems": 1,
+          "maxItems": 9
+        },
+        "PANEL_LIGHTING_OVERRIDES": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/panelLighting"
+          },
+          "minItems": 1,
+          "maxItems": 9
+        },
+        "POSE_POOL": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "LAYOUT",
+        "PANELS"
+      ],
+      "additionalProperties": false,
+      "description": "Layout and per-panel directives. PANELS must equal the number of PANEL_n fields.",
+      "oneOf": [
+        {
+          "properties": {
+            "PANELS": {
+              "const": "1"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_2"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_3"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_4"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_5"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_6"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "2"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_3"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_4"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_5"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_6"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "3"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_4"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_5"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_6"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "4"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_5"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_6"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "5"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4",
+            "PANEL_5"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_6"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "6"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4",
+            "PANEL_5",
+            "PANEL_6"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_7"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "7"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4",
+            "PANEL_5",
+            "PANEL_6",
+            "PANEL_7"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_8"
+                ]
+              },
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "8"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4",
+            "PANEL_5",
+            "PANEL_6",
+            "PANEL_7",
+            "PANEL_8"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "PANEL_9"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "PANELS": {
+              "const": "9"
+            }
+          },
+          "required": [
+            "PANELS",
+            "PANEL_1",
+            "PANEL_2",
+            "PANEL_3",
+            "PANEL_4",
+            "PANEL_5",
+            "PANEL_6",
+            "PANEL_7",
+            "PANEL_8",
+            "PANEL_9"
+          ]
+        }
+      ]
+    },
+    "atmospherics": {
+      "type": "object",
+      "properties": {
+        "LOCATION_SETTING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOCATION_MANIFEST_KEY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SUBJECT_DESCRIPTION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PRODUCTION_CONTEXT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GLASS_SURFACE_METRICS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PARTICULATE_SCATTERING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "WIND_VECTOR_FORCE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COMPOSITION_DEPTH": {
+          "$ref": "#/$defs/depth"
+        },
+        "!INIT_GEOMETRIC_SEED": {
+          "$ref": "#/$defs/geometricSeed"
+        },
+        "!INIT_BIO_DERMAL_MAPPING": {
+          "$ref": "#/$defs/dermal"
+        },
+        "!EXEC_COMPOSITION_MATRIX": {
+          "$ref": "#/$defs/composition"
+        },
+        "!ENV_PHOTOMETRY": {
+          "$ref": "#/$defs/photometry"
+        },
+        "!EXEC_MATERIAL_PHYSICS": {
+          "$ref": "#/$defs/material"
+        },
+        "!GLOBAL_NEGATIVE_BIAS": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "TEXT_RECON_ENGINE": {
+          "$ref": "#/$defs/textRecon"
+        },
+        "!FINALIZE_OUTPUT": {
+          "$ref": "#/$defs/finalize"
+        },
+        "ADDITIONAL_DIRECTION": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "!EXEC_GOOGLE_FLOW_ENGINE": {
+          "$ref": "#/$defs/flow"
+        }
+      },
+      "required": [
+        "LOCATION_SETTING",
+        "!INIT_BIO_DERMAL_MAPPING",
+        "!EXEC_COMPOSITION_MATRIX",
+        "!ENV_PHOTOMETRY",
+        "!EXEC_MATERIAL_PHYSICS",
+        "!GLOBAL_NEGATIVE_BIAS"
+      ],
+      "additionalProperties": false,
+      "description": "Single atmosphere envelope. The seven-workbench-stage HDL payload and finalization are nested here; no duplicate root optics or photometry."
+    }
+  }
+}

@@ -30,9 +30,39 @@ from typing import Any
 # ── TUI imports are deferred to avoid loading layout objects in CLI mode ──────
 # They are imported inside HDLTUIApplication.__init__ only when --tui is passed.
 
-from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.styles import Style
+try:
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.completion import WordCompleter
+    from prompt_toolkit.styles import Style
+    _HAS_PROMPT_TOOLKIT = True
+except ImportError:
+    _HAS_PROMPT_TOOLKIT = False
+    try:
+        import readline as _readline
+    except ImportError:
+        _readline = None
+
+    class WordCompleter:  # type: ignore[no-redef]
+        def __init__(self, words: list[str], ignore_case: bool = True, sentence: bool = False) -> None:
+            self.words = list(words or [])
+            self.ignore_case = ignore_case
+            self.sentence = sentence
+
+    class Style:  # type: ignore[no-redef]
+        @staticmethod
+        def from_dict(d: dict[str, str]) -> dict[str, str]:
+            return d
+
+    def pt_prompt(text: str, completer: Any = None, style: Any = None, complete_while_typing: bool = False) -> str:
+        words = getattr(completer, "words", []) if completer is not None else []
+        if _readline is not None and words:
+            def _rl_completer(prefix: str, state: int) -> str | None:
+                p_low = prefix.lower()
+                matches = [w for w in words if w.lower().startswith(p_low)]
+                return matches[state] if state < len(matches) else None
+            _readline.set_completer(_rl_completer)
+            _readline.parse_and_bind("tab: complete")
+        return input(text)
 
 import promptlib as lib
 
@@ -271,13 +301,13 @@ def generate_random(n_panels: int | None = None, seed: int | None = None) -> dic
     }
 
     ray_tracing = {
-        "LIGHT_SOURCE_01": _r(lib.RAY_TRACING_COMPLETIONS),
-        "ORIGIN_COORDINATE": _r(lib.RAY_TRACING_COMPLETIONS),
-        "TARGET_COORDINATE": _r(lib.RAY_TRACING_COMPLETIONS),
-        "BEAM_ANGLE": _r(lib.RAY_TRACING_COMPLETIONS),
-        "LUMINOUS_INTENSITY": _r(lib.RAY_TRACING_COMPLETIONS),
-        "FALLOFF_PROFILE": _r(lib.RAY_TRACING_COMPLETIONS),
-        "BOUNCE_LIGHT_LOGIC": _r(lib.RAY_TRACING_COMPLETIONS),
+        "LIGHT_SOURCE_01": _r(list(lib.RAY_TRACING_MANIFEST["light_sources"].keys())),
+        "ORIGIN_COORDINATE": _r(list(lib.RAY_TRACING_MANIFEST["coordinates"].keys())),
+        "TARGET_COORDINATE": _r(list(lib.RAY_TRACING_MANIFEST["coordinates"].keys())),
+        "BEAM_ANGLE": _r(list(lib.RAY_TRACING_MANIFEST["beam_angles"].keys())),
+        "LUMINOUS_INTENSITY": _r(list(lib.RAY_TRACING_MANIFEST["intensity"].keys())),
+        "FALLOFF_PROFILE": _r(list(lib.RAY_TRACING_MANIFEST["falloff"].keys())),
+        "BOUNCE_LIGHT_LOGIC": _r(list(lib.RAY_TRACING_MANIFEST["bounce_logic"].keys())),
     }
 
     material = {
@@ -306,8 +336,8 @@ def generate_random(n_panels: int | None = None, seed: int | None = None) -> dic
     env_atmospherics = {
         "LOCATION_SETTING": _r(lib.LOCATION_COMPLETIONS),
         "GLASS_SURFACE_METRICS": _r(lib.GLASS_COMPLETIONS),
-        "PARTICULATE_SCATTERING": _r(lib.METEOROLOGY_COMPLETIONS),
-        "WIND_VECTOR_FORCE": _r(lib.METEOROLOGY_COMPLETIONS),
+        "PARTICULATE_SCATTERING": _r(getattr(lib, "PARTICULATE_COMPLETIONS", list(lib.METEOROLOGY_MANIFEST["particulate_scattering"].keys()))),
+        "WIND_VECTOR_FORCE": _r(getattr(lib, "WIND_COMPLETIONS", list(lib.METEOROLOGY_MANIFEST["wind_vectors"].keys()))),
         "COMPOSITION_DEPTH": {
             "FOREGROUND": _r(list(lib.DOF_MANIFEST["foreground"].keys())),
             "MIDGROUND": _r(list(lib.DOF_MANIFEST["midground"].keys())),
@@ -357,16 +387,16 @@ def build_env_atmospherics(skip: bool = False) -> dict:
         ),
         "PARTICULATE_SCATTERING": _prompt(
             "PARTICULATE_SCATTERING",
-            lib.METEOROLOGY_COMPLETIONS,
+            getattr(lib, "PARTICULATE_COMPLETIONS", lib.METEOROLOGY_COMPLETIONS),
             default="MIE_SCATTERING_DENSE_FOG",
-            hint="meteorology key or free description",
+            hint="snow/rain/fog/particulate key or free description",
             skip=skip,
         ),
         "WIND_VECTOR_FORCE": _prompt(
             "WIND_VECTOR_FORCE",
-            lib.METEOROLOGY_COMPLETIONS,
+            getattr(lib, "WIND_COMPLETIONS", lib.METEOROLOGY_COMPLETIONS),
             default="WIND_VELOCITY_HIGH_TURBULENT",
-            hint="meteorology key or free description",
+            hint="wind velocity/vector key or free description",
             skip=skip,
         ),
         "COMPOSITION_DEPTH": {
@@ -404,6 +434,9 @@ def build_env_atmospherics(skip: bool = False) -> dict:
 
 
 _MACRO_VIEWS = {
+    "FRONT EXTREME CLOSE-UP (ECU/XCU)",
+    "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)",
+    "FRONT EXTREME CLOSE-UP MACRO (ECUM/XCUM)",
     "INSERT MACRO DETAIL (IMD)",
     "EXTREME MACRO DETAIL (XMD)",
     "HAND DETAIL MACRO (HDM)",
@@ -411,10 +444,6 @@ _MACRO_VIEWS = {
 _LIST_VIEWS = {
     "SIDE CLOSE-UP (SCU)",
     "THREE_QUARTER DRAMATIC HIGH ANGLE (TQDH)",
-    "FRONT MEDIUM CLOSE-UP (MCU)",
-    "BIRDS EYE (BE)",
-    "FRONT EXTREME CLOSE-UP (ECU/XCU)",
-    "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM)",
 }
 
 
@@ -954,7 +983,11 @@ def _pool_for_path(path: str) -> list[str]:
         return lib.COLOR_COMPLETIONS
     if "optics" in p or "aberration" in p:
         return lib.OPTICS_COMPLETIONS
-    if "meteorology" in p or "weather" in p or "wind" in p:
+    if "particulate" in p:
+        return getattr(lib, "PARTICULATE_COMPLETIONS", lib.METEOROLOGY_COMPLETIONS)
+    if "wind" in p:
+        return getattr(lib, "WIND_COMPLETIONS", lib.METEOROLOGY_COMPLETIONS)
+    if "meteorology" in p or "weather" in p:
         return lib.METEOROLOGY_COMPLETIONS
     if any(
         k in p
@@ -968,6 +1001,10 @@ def _pool_for_path(path: str) -> list[str]:
         )
     ):
         return lib.RAY_TRACING_COMPLETIONS
+    if "sss_pass" in p:
+        return ["ON", "OFF"] + lib.LEVEL_COMPLETIONS
+    if "moisture" in p:
+        return lib.BOOL_COMPLETIONS
     if any(
         k in p
         for k in (
@@ -980,9 +1017,20 @@ def _pool_for_path(path: str) -> list[str]:
             "fresnel",
             "specular_lobe",
             "lambertian",
+            "micro_fiber",
+            "deformity",
+            "gravity",
+            "weave",
+            "adhesion",
         )
     ):
         return lib.LEVEL_COMPLETIONS
+    if "layout_preset" in p:
+        return lib.LAYOUT_COMPLETIONS
+    if "panels" in p:
+        return lib.PANEL_COUNT_COMPLETIONS
+    if "!exec_composition_matrix" in p:
+        return lib.POSE_COMPLETIONS
     return []
 
 
@@ -1037,18 +1085,89 @@ def run_hybrid(schema: dict) -> dict:
 
 
 class HDLTUIState:
-    """Single source of truth for the live JSON payload in TUI mode."""
+    """Single source of truth for the live JSON payload in TUI and programmatic modes."""
 
-    def __init__(self, seed: int | None = None) -> None:
-        self._schema: dict = generate_random(seed=seed)
+    _STATIC_KEYS = {"!INIT_MEM_LOCK_PROTOCOL", "!FINALIZE_OUTPUT"}
 
-    def randomise(self, seed: int | None = None) -> None:
-        self._schema = generate_random(seed=seed)
+    def __init__(self, seed: int | None = None, n_panels: int | None = None) -> None:
+        self.mode: str = "tui"
+        self.n_panels: int | None = n_panels
+        self.seed: int | None = seed
+        self.active_category: str = "!ENV_ATMOSPHERICS"
+        self.stock_custom: set[str] = set()
+        self._schema: dict = generate_random(n_panels=n_panels, seed=seed)
+
+    def randomise(self, n_panels: int | None = None, seed: int | None = None) -> dict:
+        if n_panels is not None:
+            self.n_panels = n_panels
+        if seed is not None:
+            self.seed = seed
+        self._schema = generate_random(n_panels=self.n_panels, seed=self.seed)
+        return self._schema
+
+    def load_stock(self, overrides: dict[str, Any] | None = None) -> dict:
+        ov = overrides or {}
+        base_atmo = copy.deepcopy(ov.get("!ENV_ATMOSPHERICS_BASE") or build_env_atmospherics(skip=True))
+        base_atmo["!EXEC_COMPOSITION_MATRIX"] = copy.deepcopy(
+            ov.get("!EXEC_COMPOSITION_MATRIX") or build_composition_matrix(skip=True)
+        )
+        base_atmo["!EXEC_BIO_DERMAL_MAP"] = copy.deepcopy(
+            ov.get("!EXEC_BIO_DERMAL_MAP") or build_bio_dermal_map(skip=True)
+        )
+        base_atmo["!ENV_PHOTOMETRY"] = copy.deepcopy(
+            ov.get("!ENV_PHOTOMETRY") or build_env_photometry(skip=True)
+        )
+        base_atmo["!ENV_RAY_TRACING_PHOTOMETRY"] = copy.deepcopy(
+            ov.get("!ENV_RAY_TRACING_PHOTOMETRY") or build_ray_tracing_photometry(skip=True)
+        )
+        base_atmo["!EXEC_MATERIAL_PHYSICS"] = copy.deepcopy(
+            ov.get("!EXEC_MATERIAL_PHYSICS") or build_material_physics(skip=True)
+        )
+        base_atmo["TEXT_RECON_ENGINE"] = copy.deepcopy(
+            ov.get("TEXT_RECON_ENGINE") or build_text_recon(skip=True)
+        )
+        base_atmo["!FINALIZE_OUTPUT"] = build_finalize()
+        self._schema = {
+            "!INIT_MEM_LOCK_PROTOCOL": build_mem_lock(),
+            "!ENV_ATMOSPHERICS": base_atmo,
+        }
+        return self._schema
+
+    def get_categories(self) -> list[tuple[str, str]]:
+        return [
+            ("!INIT_MEM_LOCK_PROTOCOL", "!INIT_MEM_LOCK (Static)"),
+            ("!ENV_ATMOSPHERICS", "!ENV_ATMOSPHERICS (Depth & Weather)"),
+            ("!EXEC_COMPOSITION_MATRIX", "!EXEC_COMPOSITION_MATRIX (Panels)"),
+            ("!EXEC_BIO_DERMAL_MAP", "!EXEC_BIO_DERMAL_MAP (Skin & Hair)"),
+            ("!ENV_PHOTOMETRY", "!ENV_PHOTOMETRY (Optics & Vectors)"),
+            ("!ENV_RAY_TRACING_PHOTOMETRY", "!ENV_RAY_TRACING (Coordinates)"),
+            ("!EXEC_MATERIAL_PHYSICS", "!EXEC_MATERIAL_PHYSICS (Drape)"),
+            ("TEXT_RECON_ENGINE", "TEXT_RECON_ENGINE (Surface Text)"),
+            ("!FINALIZE_OUTPUT", "!FINALIZE_OUTPUT (Static Lock)"),
+        ]
+
+    def get_section_node(self, cat_key: str) -> Any:
+        if cat_key == "!INIT_MEM_LOCK_PROTOCOL":
+            return self._schema.get("!INIT_MEM_LOCK_PROTOCOL", {})
+        env = self._schema.get("!ENV_ATMOSPHERICS", {})
+        if cat_key == "!ENV_ATMOSPHERICS":
+            return {
+                k: v
+                for k, v in env.items()
+                if not k.startswith("!") and k != "TEXT_RECON_ENGINE"
+            }
+        return env.get(cat_key, {})
 
     def update_val(self, path: list[str], new_value: Any) -> None:
-        """Apply a mutation at an arbitrary nested path."""
+        """Apply a mutation at an arbitrary nested path while enforcing static-lock immutability."""
+        if not path:
+            return
+        if any(k in self._STATIC_KEYS for k in path):
+            return
         node = self._schema
         for key in path[:-1]:
+            if key not in node or not isinstance(node[key], dict):
+                node[key] = {}
             node = node[key]
         node[path[-1]] = new_value
 
@@ -1074,6 +1193,11 @@ class HDLTUIApplication:
     """
 
     def __init__(self) -> None:
+        if not _HAS_PROMPT_TOOLKIT:
+            raise RuntimeError(
+                "TUI mode (--tui) requires 'prompt_toolkit' and 'pygments'. "
+                "Run without --tui to use CLI mode with standard input fallback."
+            )
         # ── Deferred heavy imports ─────────────────────────────────────────────
         from prompt_toolkit.application import Application
         from prompt_toolkit.buffer import Buffer
@@ -1121,17 +1245,29 @@ class HDLTUIApplication:
         self._Label = Label
         self._FloatContainer = FloatContainer
         self._Float = Float
-        self._status_text = "[Tab] Focus  [F2] Randomise  [F5] Export  [Ctrl+Q] Quit"
+        self._status_text = "[Tab/S-Tab] Focus  [Enter/Space] Select Section  [F2] Randomise  [F5] Export  [Ctrl+Q] Quit"
         self._app: Application | None = None
+        self._last_nav_cat: str = ""
 
     def _build_layout(self):
-        """Construct the full 3-pane layout."""
-        schema = self._state.schema
-        top_keys = list(schema.keys())
+        """Construct the full 3-pane layout across all 9 HDL sections."""
+        nav_values = self._state.get_categories()
+        default_cat = nav_values[0][0] if nav_values else "!ENV_ATMOSPHERICS"
 
         # ── Navigator (left pane) ──────────────────────────────────────────────
-        nav_values = [(k, k) for k in top_keys]
         self._navigator = self._RadioList(values=nav_values)
+        self._last_nav_cat = default_cat
+
+        # Hook RadioList handler so selecting a category rebuilds the Editor pane
+        orig_handle = getattr(self._navigator, "_handle_enter", None)
+        if callable(orig_handle):
+            def _wrapped_handle_enter() -> None:
+                orig_handle()
+                cur = getattr(self._navigator, "current_value", default_cat)
+                if cur != self._last_nav_cat:
+                    self._last_nav_cat = cur
+                    self._rebuild_editor(cur)
+            self._navigator._handle_enter = _wrapped_handle_enter  # type: ignore[attr-defined]
 
         # ── Live JSON output (right pane) ──────────────────────────────────────
         self._json_area = self._TextArea(
@@ -1144,11 +1280,10 @@ class HDLTUIApplication:
         )
 
         # ── Editor pane (centre) — dynamically rebuilt on navigator change ─────
-        # We hold a mutable list so the DynamicContainer closure sees updates.
         self._editor_fields: list = []
         self._editor_container = self._HSplit(self._editor_fields)
 
-        self._rebuild_editor(top_keys[0] if top_keys else "")
+        self._rebuild_editor(default_cat)
 
         # ── Status bar ────────────────────────────────────────────────────────
         self._status_bar = self._Window(
@@ -1180,11 +1315,21 @@ class HDLTUIApplication:
         read-only — their TextAreas have no on_text_changed hooks.
         """
         self._editor_fields.clear()
-        schema = self._state.schema
-        if category_key not in schema:
+        self._state.active_category = category_key
+        sec_node = self._state.get_section_node(category_key)
+        if not sec_node:
             return
 
+        base_path = (
+            ["!INIT_MEM_LOCK_PROTOCOL"]
+            if category_key == "!INIT_MEM_LOCK_PROTOCOL"
+            else ["!ENV_ATMOSPHERICS"]
+            if category_key == "!ENV_ATMOSPHERICS"
+            else ["!ENV_ATMOSPHERICS", category_key]
+        )
+
         def _walk(node: Any, path: list[str]) -> None:
+            is_static = any(k in HDLTUIState._STATIC_KEYS for k in path)
             if isinstance(node, dict):
                 for k, v in node.items():
                     self._editor_fields.append(self._Label(f" {k}"))
@@ -1194,39 +1339,43 @@ class HDLTUIApplication:
                 pool = _pool_for_path(".".join(path))
                 ta = self._TextArea(
                     text=text_val,
-                    completer=WordCompleter(pool, ignore_case=True),
+                    completer=None if is_static else WordCompleter(pool, ignore_case=True),
                     height=2,
                     multiline=False,
-                    style="bg:#313244 fg:#cdd6f4",
+                    read_only=is_static,
+                    style="bg:#181825 fg:#9399b2" if is_static else "bg:#313244 fg:#cdd6f4",
                 )
-                captured_path = list(path)
+                if not is_static:
+                    captured_path = list(path)
 
-                def _on_change(buf, _path=captured_path) -> None:
-                    vals = [v.strip() for v in buf.text.split(",") if v.strip()]
-                    self._state.update_val(_path, vals)
-                    self._json_area.text = self._state.to_json()
+                    def _on_change(buf, _path=captured_path) -> None:
+                        vals = [v.strip() for v in buf.text.split(",") if v.strip()]
+                        self._state.update_val(_path, vals)
+                        self._json_area.text = self._state.to_json()
 
-                ta.buffer.on_text_changed += _on_change
+                    ta.buffer.on_text_changed += _on_change
                 self._editor_fields.append(ta)
             elif isinstance(node, str):
                 pool = _pool_for_path(".".join(path))
                 ta = self._TextArea(
                     text=node,
-                    completer=WordCompleter(pool, ignore_case=True),
+                    completer=None if is_static else WordCompleter(pool, ignore_case=True),
                     height=2,
                     multiline=False,
-                    style="bg:#313244 fg:#cdd6f4",
+                    read_only=is_static,
+                    style="bg:#181825 fg:#9399b2" if is_static else "bg:#313244 fg:#cdd6f4",
                 )
-                captured_path = list(path)
+                if not is_static:
+                    captured_path = list(path)
 
-                def _on_change_str(buf, _path=captured_path) -> None:
-                    self._state.update_val(_path, buf.text)
-                    self._json_area.text = self._state.to_json()
+                    def _on_change_str(buf, _path=captured_path) -> None:
+                        self._state.update_val(_path, buf.text)
+                        self._json_area.text = self._state.to_json()
 
-                ta.buffer.on_text_changed += _on_change_str
+                    ta.buffer.on_text_changed += _on_change_str
                 self._editor_fields.append(ta)
 
-        _walk(schema[category_key], [category_key])
+        _walk(sec_node, base_path)
 
         if self._app is not None:
             try:
@@ -1243,13 +1392,25 @@ class HDLTUIApplication:
 
         @kb.add("tab")
         def _tab(event):
+            cur = getattr(self._navigator, "current_value", self._last_nav_cat)
+            if cur != self._last_nav_cat:
+                self._last_nav_cat = cur
+                self._rebuild_editor(cur)
             event.app.layout.focus_next()
+
+        @kb.add("s-tab")
+        def _stab(event):
+            cur = getattr(self._navigator, "current_value", self._last_nav_cat)
+            if cur != self._last_nav_cat:
+                self._last_nav_cat = cur
+                self._rebuild_editor(cur)
+            event.app.layout.focus_previous()
 
         @kb.add("f2")
         def _randomise(event):
             self._state.randomise()
-            top_keys = list(self._state.schema.keys())
-            self._rebuild_editor(top_keys[0] if top_keys else "")
+            cur = getattr(self._navigator, "current_value", None) or self._state.active_category
+            self._rebuild_editor(cur)
             self._json_area.text = self._state.to_json()
             event.app.invalidate()
 
@@ -1353,15 +1514,267 @@ def _mode_menu() -> str:
     return mode.strip().lower()[:1]  # 'i', 'r', 'h', or 's'
 
 
+
+# ==============================================================================
+# CANONICAL HDL V8 PROJECTION & SCHEMA VALIDATOR BRIDGE (11.5.0 CONVERGENCE)
+# ==============================================================================
+
+
+def build_stock() -> dict:
+    """Return a fresh deep copy of the complete stock HDL schema."""
+    return HDLTUIState().load_stock()
+
+
+def build_canonical_v8(legacy_doc: dict | None = None) -> dict:
+    """
+    Projects a legacy PromptArc document (hdl_schema: 'v8.0-MODULAR_FLOW')
+    or freshly generated stock document into the official Draft 2020-12
+    HDL v8 canonical AST ('!INIT_MEM_LOCK' + '!INIT_ATMOSPHERICS').
+    Preserves all legacy PromptArc fields without mutation.
+    """
+    src = copy.deepcopy(legacy_doc) if isinstance(legacy_doc, dict) else build_stock()
+    mem_src = src.get("!INIT_MEM_LOCK_PROTOCOL") or src.get("!INIT_MEM_LOCK") or {}
+    env_src = src.get("!ENV_ATMOSPHERICS") or src.get("!INIT_ATMOSPHERICS") or {}
+    comp_src = env_src.get("!EXEC_COMPOSITION_MATRIX") or {}
+    photo_src = env_src.get("!ENV_PHOTOMETRY") or {}
+    mat_src = env_src.get("!EXEC_MATERIAL_PHYSICS") or {}
+    bio_src = env_src.get("!INIT_BIO_DERMAL_MAPPING") or {}
+    fin_src = src.get("!FINALIZE_OUTPUT") or env_src.get("!FINALIZE_OUTPUT") or {}
+
+    unalterable = list(mem_src.get("UNALTERABLE") or [
+        "EXACT_FACIAL_ID_GEOMETRY",
+        "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+        "EXACT_BODY_PROPORTIONS",
+        "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION",
+    ])
+    inhibit = list(mem_src.get("!INHIBIT") or mem_src.get("INHIBIT") or [
+        "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+        "FACIAL_BALANCING",
+        "SYMMETRY_MODIFICATIONS",
+        "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS",
+    ])
+    wardrobe = str(mat_src.get("WARDROBE_SPECIFICATION") or mem_src.get("WARDROBE_LOCK") or "same exact outfit")
+
+    identity = {
+        "SYSTEM_REFERENCE_INPUT": str(mem_src.get("SYSTEM_REFERENCE_INPUT") or "IMAGE_1"),
+        "BIOMETRIC_LOCK": mem_src.get("BIOMETRIC_LOCK", "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANATOMICAL_TOPOGRAPHY_FAITHFULLY)"),
+        "IDENTITY_SHADOW": str(mem_src.get("IDENTITY_SHADOW") or "REFERENCE_INPUT"),
+        "BIOMETRIC_TOPOGRAPHY": str(mem_src.get("BIOMETRIC_TOPOGRAPHY") or "PRESERVE_PRECISE_FACIAL_IDENTITY,BODY_PROPORTIONS,BODY_SIZE,BODY_SHAPE,BODYFAT_PERCENTAGE_AND_SCALE"),
+        "UNALTERABLE": unalterable,
+        "IDENTITY_DRIFT_CONTROL": str(mem_src.get("IDENTITY_DRIFT_CONTROL") or "MAXIMUM_LOCK"),
+        "STRUCTURAL_NON_DEVIATION": str(mem_src.get("STRUCTURAL_NON_DEVIATION") or "HIGH"),
+        "STRUCTURAL_FIDELITY": str(mem_src.get("STRUCTURAL_FIDELITY") or "HIGH"),
+        "INHIBIT": inhibit,
+        "WARDROBE_LOCK": wardrobe,
+    }
+
+    layout_raw = str(comp_src.get("LAYOUT") or "SINGLE_FRAME").replace("LAYOUT:", "").strip() or "SINGLE_FRAME"
+    panels_count = max(1, min(9, int(str(comp_src.get("PANELS") or "1") if str(comp_src.get("PANELS") or "1").isdigit() else 1)))
+    matrix = {
+        "LAYOUT": layout_raw,
+        "PANELS": str(panels_count),
+    }
+    for i in range(1, panels_count + 1):
+        pk = f"PANEL_{i}"
+        matrix[pk] = str(comp_src.get(pk) or "FULL SHOT (FS) — MAINTAIN_REFERENCE_POSE")
+
+    depth_src = env_src.get("COMPOSITION_DEPTH") or {}
+    bg_raw = depth_src.get("BACKGROUND")
+    if isinstance(bg_raw, list) and bg_raw:
+        bg_list = [str(x) for x in bg_raw if str(x).strip()]
+    elif isinstance(bg_raw, str) and bg_raw.strip():
+        bg_list = [bg_raw.strip()]
+    else:
+        bg_list = ["BACKGROUND_FALL_OFF"]
+
+    depth = {
+        "FOREGROUND": str(depth_src.get("FOREGROUND") or "SHALLOW_DEPTH_OF_FIELD"),
+        "MIDGROUND": matrix["PANEL_1"].split("—", 1)[-1].strip() if panels_count == 1 else "PANEL_SPECIFIC_SUBJECT_POSES",
+        "BACKGROUND": bg_list,
+    }
+
+    micro_raw = bio_src.get("SURFACE_MICRO_ELEMENTS")
+    if isinstance(micro_raw, list) and micro_raw:
+        micro_list = [str(x) for x in micro_raw if str(x).strip()]
+    elif isinstance(micro_raw, str) and micro_raw.strip():
+        micro_list = [micro_raw.strip()]
+    else:
+        micro_list = ["TRUE_VISIBLE_DERMAL_PORES_AND_NATURAL_SKIN_TEXTURE"]
+
+    dermal = {
+        "SKIN_TOPOGRAPHY_LOGIC": str(bio_src.get("SKIN_TOPOGRAPHY_LOGIC") or "UNFILTERED_HUMAN_SKIN_TEXTURE_SHOWING_HYPER_REALISTIC_DETAILS"),
+        "SURFACE_MICRO_ELEMENTS": micro_list,
+        "REFLECTANCE_MAP": str(bio_src.get("REFLECTANCE_MAP") or "AUTHENTIC_REFERENCE_SKIN_REFLECTANCE"),
+        "EXPRESSION": str(bio_src.get("EXPRESSION") or "REFERENCE_EXPRESSION"),
+        "HAIR": str(bio_src.get("HAIR") or "REFERENCE_HAIR_TOPOGRAPHY"),
+    }
+
+    focus_lock = str((fin_src.get("REQUIREMENT_CHECKS") or {}).get("FOCUS_LOCK") or fin_src.get("FOCUS_LOCK") or "Recognizable eyes, natural skin micro-texture, and exact garment weave")
+    photo = {
+        "RIG": str(photo_src.get("RIG") or photo_src.get("LIGHTING_PHYSICS_MANIFEST") or "CALIBRATED_REFERENCE_LIGHTING_RIG"),
+        "LIGHT_SOURCE_01": str(photo_src.get("LIGHT_SOURCE_01") or "CONICAL_SPOTLIGHT"),
+        "SURFACE_INTERACTION": photo_src.get("SURFACE_INTERACTION") if isinstance(photo_src.get("SURFACE_INTERACTION"), dict) else {
+            "ANISOTROPIC_HIGHLIGHTS": "ENABLED",
+            "SUBSURFACE_SCATTERING": "CALIBRATED",
+            "CAUSTIC_REFRACTION": "NATURAL",
+        },
+        "KEY": photo_src.get("KEY") if isinstance(photo_src.get("KEY"), dict) else {
+            "TYPE": "CONICAL_SPOTLIGHT",
+            "COLOR_TEMP_K": 5600,
+            "INTENSITY_EV": 1.2,
+            "AZIMUTH_DEG": 35,
+            "ELEVATION_DEG": 42,
+        },
+        "FILL": photo_src.get("FILL") if isinstance(photo_src.get("FILL"), dict) else {
+            "TYPE": "DIFFUSE_BOUNCE",
+            "COLOR_TEMP_K": 5200,
+            "INTENSITY_EV": -0.8,
+            "RATIO_TO_KEY": "1:3",
+        },
+        "CAMERA": str(photo_src.get("CAMERA") or "ARRI ALEXA 65"),
+        "LENS": str(photo_src.get("LENS") or "ARRI Prime DNA 50mm"),
+        "APERTURE": str(photo_src.get("APERTURE") or "f/2.0"),
+        "FOCUS_LOCK": focus_lock,
+    }
+    if photo_src.get("LIGHTING_PHYSICS_MANIFEST"):
+        photo["LIGHTING_PHYSICS_MANIFEST"] = str(photo_src["LIGHTING_PHYSICS_MANIFEST"])
+    if photo_src.get("PHOTONIC_ENERGY_MODEL"):
+        photo["PHOTONIC_ENERGY_MODEL"] = str(photo_src["PHOTONIC_ENERGY_MODEL"])
+    if photo_src.get("PHOTOGRAPHER_STYLE_OF"):
+        photo["PHOTOGRAPHER_STYLE_OF"] = str(photo_src["PHOTOGRAPHER_STYLE_OF"])
+        sd = photo_src.get("STYLE_DETAIL")
+        if isinstance(sd, list) and sd:
+            photo["STYLE_DETAIL"] = [str(x) for x in sd if str(x).strip()]
+
+    drape_src = mat_src.get("DRAPE_AND_TENSION_LOGIC") if isinstance(mat_src.get("DRAPE_AND_TENSION_LOGIC"), dict) else {}
+    material = {
+        "WARDROBE_SPECIFICATION": wardrobe,
+        "MATERIAL_RESPONSE": str(mat_src.get("MATERIAL_RESPONSE") or "PRESERVE_ACTUAL_REFERENCE_MATERIAL"),
+        "MICRO_GEOMETRY": str(mat_src.get("MICRO_GEOMETRY") or "Retain authentic reference weave, seams and skin texture"),
+        "SPECULAR_ROUGHNESS": str(mat_src.get("SPECULAR_ROUGHNESS") or "Preserve roughness appropriate to the selected material"),
+        "SUBSURFACE_SCATTERING": str(mat_src.get("SUBSURFACE_SCATTERING") or "Use only physically appropriate reference-material translucency"),
+        "TEXTILE_ADHESION_LOGIC": str(mat_src.get("TEXTILE_ADHESION_LOGIC") or "Flush anatomical surface contact"),
+        "OPACITY": str(mat_src.get("OPACITY") or "PRESERVE_REFERENCE_GARMENT_OPACITY"),
+        "TEXTILE_SURFACE_SHEEN": str(mat_src.get("TEXTILE_SURFACE_SHEEN") or "REFERENCE_MATERIAL_REFLECTANCE"),
+        "DRAPE_AND_TENSION_LOGIC": {
+            "MICRO_FIBER_DRAPE_PHYSICS": str(drape_src.get("MICRO_FIBER_DRAPE_PHYSICS") or "HIGH"),
+            "LOW_TENSILE_STRUCTURAL_DEFORMITY": str(drape_src.get("LOW_TENSILE_STRUCTURAL_DEFORMITY") or "MEDIUM"),
+            "GRAVITY_WEIGHTED_FOLDS": str(drape_src.get("GRAVITY_WEIGHTED_FOLDS") or "LOW"),
+            "SUB_MICRON_WEAVE_DENSITY": str(drape_src.get("SUB_MICRON_WEAVE_DENSITY") or "LOW"),
+            "LOW_DENIER_SSS_PASS": str(drape_src.get("LOW_DENIER_SSS_PASS") or "ON"),
+            "SURFACE_ADHESION_COEFFICIENT": str(drape_src.get("SURFACE_ADHESION_COEFFICIENT") or "HIGH"),
+            "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": str(drape_src.get("FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE") or "TRUE"),
+        },
+    }
+
+    neg_bias = list(
+        (fin_src.get("REQUIREMENT_CHECKS") or {}).get("GLOBAL_NEGATIVE_BIAS")
+        or env_src.get("!GLOBAL_NEGATIVE_BIAS")
+        or ["BEAUTY_FILTER", "AIRBRUSHED_SKIN", "IDENTITY_SHIFTING", "BODY_PROPORTION_ALTERATION"]
+    )
+    recon_src = env_src.get("TEXT_RECON_ENGINE") if isinstance(env_src.get("TEXT_RECON_ENGINE"), dict) else {}
+
+    env = {
+        "LOCATION_SETTING": str(env_src.get("LOCATION_SETTING") or "REFERENCE_ENVIRONMENT"),
+        "SUBJECT_DESCRIPTION": str(env_src.get("SUBJECT_DESCRIPTION") or "Reference model (IMAGE_1)"),
+        "PRODUCTION_CONTEXT": str(env_src.get("PRODUCTION_CONTEXT") or "PRODUCTION_CONTEXT_REFERENCE"),
+        "COMPOSITION_DEPTH": depth,
+        "!INIT_GEOMETRIC_SEED": {
+            "COORDINATE_SPACE": "RIGHT_HAND_Y_UP",
+            "LENGTH_UNIT": "SCENE_UNITS",
+            "SUBJECT_ORIGIN_XYZ": [0.0, 0.0, 0.0],
+            "CAMERA_ORIGIN_XYZ": [0.0, 1.5, 2.8],
+            "CAMERA_TARGET_XYZ": [0.0, 1.2, 0.0],
+        },
+        "!INIT_BIO_DERMAL_MAPPING": dermal,
+        "!EXEC_COMPOSITION_MATRIX": matrix,
+        "!ENV_PHOTOMETRY": photo,
+        "!EXEC_MATERIAL_PHYSICS": material,
+        "!GLOBAL_NEGATIVE_BIAS": neg_bias,
+        "TEXT_RECON_ENGINE": {
+            "TEXT_STRING_LITERAL": str(recon_src.get("TEXT_STRING_LITERAL") or "NO_TEXT"),
+            "FONTTYPE_AESTHETIC": str(recon_src.get("FONTTYPE_AESTHETIC") or "NO_TEXT"),
+            "LAYER_PLACEMENT": str(recon_src.get("LAYER_PLACEMENT") or "NO_TEXT"),
+        },
+        "!FINALIZE_OUTPUT": {
+            "GENERATION_STYLE": str(fin_src.get("GENERATION_STYLE") or "RAW, UNEDITED, AUTHENTIC"),
+            "COLOR_GRADE": str(fin_src.get("COLOR_GRADE") or "NEUTRAL_REFERENCE_GRADE"),
+            "FOCUS_LOCK": focus_lock,
+        },
+    }
+
+    return {
+        "$schema": "./hdl-v8.schema.json",
+        "!INIT_MEM_LOCK": identity,
+        "!INIT_ATMOSPHERICS": env,
+    }
+
+
+def validate_canonical_v8(doc: dict) -> dict:
+    """
+    Validates a canonical HDL v8 document against the seven-block structural
+    and semantic consistency invariants of HDL_V8_JSON_SCHEMA.
+    """
+    errors: list[str] = []
+    if not isinstance(doc, dict):
+        return {"valid": False, "errors": ["/: expected object"]}
+    for req in ("!INIT_MEM_LOCK", "!INIT_ATMOSPHERICS"):
+        if req not in doc or not isinstance(doc[req], dict):
+            errors.append(f"/{req}: missing required canonical block")
+    if errors:
+        return {"valid": False, "errors": errors}
+    mem = doc["!INIT_MEM_LOCK"]
+    env = doc["!INIT_ATMOSPHERICS"]
+    comp = env.get("!EXEC_COMPOSITION_MATRIX") or {}
+    photo = env.get("!ENV_PHOTOMETRY") or {}
+    mat = env.get("!EXEC_MATERIAL_PHYSICS") or {}
+    fin = env.get("!FINALIZE_OUTPUT") or {}
+    if mem.get("WARDROBE_LOCK") != mat.get("WARDROBE_SPECIFICATION"):
+        errors.append("/!INIT_ATMOSPHERICS/!EXEC_MATERIAL_PHYSICS/WARDROBE_SPECIFICATION: must equal /!INIT_MEM_LOCK/WARDROBE_LOCK")
+    if photo.get("FOCUS_LOCK") != fin.get("FOCUS_LOCK"):
+        errors.append("/!INIT_ATMOSPHERICS/!FINALIZE_OUTPUT/FOCUS_LOCK: must equal /!INIT_ATMOSPHERICS/!ENV_PHOTOMETRY/FOCUS_LOCK")
+    panels_count = int(comp.get("PANELS", "0")) if str(comp.get("PANELS", "")).isdigit() else 0
+    if not (1 <= panels_count <= 9):
+        errors.append("/!INIT_ATMOSPHERICS/!EXEC_COMPOSITION_MATRIX/PANELS: must be '1'..'9'")
+    for idx in range(1, panels_count + 1):
+        if not comp.get(f"PANEL_{idx}"):
+            errors.append(f"/!INIT_ATMOSPHERICS/!EXEC_COMPOSITION_MATRIX/PANEL_{idx}: missing active panel")
+    return {"valid": len(errors) == 0, "errors": errors}
+
+
 # ==============================================================================
 # ENTRY POINT
 # ==============================================================================
 
 
 def main() -> None:
-    # ── Bifurcate at --tui before any CLI logic runs ───────────────────────────
+    # ── Bifurcate at --tui or direct CLI flags before interactive menu runs ────
     if "--tui" in sys.argv:
         HDLTUIApplication().run()
+        return
+
+    if "--random" in sys.argv or "-r" in sys.argv:
+        n_arg = None
+        seed_arg = None
+        for i, arg in enumerate(sys.argv):
+            if arg in ("--panels", "-p") and i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
+                n_arg = int(sys.argv[i + 1])
+            elif arg in ("--seed", "-s") and i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
+                seed_arg = int(sys.argv[i + 1])
+        schema = generate_random(n_panels=n_arg, seed=seed_arg)
+        _write_and_print(schema, "hdl_prompt-random.json")
+        return
+
+    if "--stock" in sys.argv:
+        schema = HDLTUIState().load_stock()
+        if "--canonical-v8" in sys.argv:
+            schema = build_canonical_v8(schema)
+        _write_and_print(schema, "hdl_prompt-stock.json")
+        return
+
+    if "--canonical-v8" in sys.argv:
+        schema = build_canonical_v8(HDLTUIState().load_stock())
+        _write_and_print(schema, "hdl_prompt-canonical-v8.json")
         return
 
     mode = _mode_menu()

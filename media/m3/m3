@@ -1,0 +1,655 @@
+#!/usr/bin/env bash
+# === Ψ M3 // N_m3u8DL-RE STREAM EXTRACTION & REMUX ORCHESTRATOR === (c) 2026 - 4ndr0666
+# Standalone HLS (.m3u8), DASH (.mpd), and MSS (.ism) extraction, decryption, remuxing,
+# batch-queue, and optional Apple TV SVPlayer / Caddy LAN casting wrapper.
+set -euo pipefail
+
+VERSION="3.2.0"
+
+# -----------------------------------------------------------------------------
+# Global State & XDG Base Directories (PID-Safe TMP_BASE Separation)
+# -----------------------------------------------------------------------------
+CONFIG_FILE="${M3_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/m3u8/m3u8.conf}"
+CONFIG_DIR="${CONFIG_FILE%/*}"
+LOG_DIR="${M3_LOG_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/logs}"
+TMP_BASE="${M3_TMP_BASE:-${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl}"
+TMP_DIR="${TMP_BASE}/$$"
+SAVE_DIR="${M3_SAVE_DIR:-$HOME/streamdir}"
+
+THREAD_COUNT="${M3_THREADS:-8}"
+RETRY_COUNT="${M3_RETRIES:-5}"
+SAVE_NAME=""
+PROXY_URL="${M3_PROXY:-}"
+USER_AGENT="${M3_USER_AGENT:-Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0}"
+MUX_FORMAT="${M3_MUX_FORMAT:-mp4}"
+MUX_ENGINE="${M3_MUX_ENGINE:-ffmpeg}"
+MAX_SPEED="${M3_MAX_SPEED:-}"
+KEY_TEXT_FILE=""
+BATCH_FILE=""
+TARGET_URL=""
+BIN_M3U8=""
+BIN_DECRYPT=""
+
+# Boolean extraction switches (VOD-safe defaults: Live flags off unless --live passed)
+AUTO_SELECT=1
+SKIP_MERGE=0
+DEL_AFTER_DONE=1
+USE_FFMPEG_CONCAT=0
+LIVE_REAL_TIME_MERGE=0
+LIVE_PERFORM_AS_VOD=0
+SUB_ONLY=0
+AUTO_SUB_FIX=1
+CHECK_SEGMENTS_COUNT=1
+BINARY_MERGE=0
+CONCURRENT_DOWNLOAD=1
+ DRY_RUN=0
+
+# Optional Post-Extraction SVPlayer / Caddy Bridge
+POST_ACTION="none"
+SVP_HOST="${SVP_HOST:-http://192.168.1.211}"
+CADDY_PORT="${SVP_CADDY_PORT:-3000}"
+
+declare -a CUSTOM_HEADERS=()
+declare -a DRM_KEYS=()
+
+PRESET_URL_1="https://example.com/master.m3u8"
+PRESET_LABEL_1="Preset Stream 1 (VOD Master)"
+PRESET_URL_2="https://example.com/live.m3u8"
+PRESET_LABEL_2="Preset Stream 2 (Live Feed)"
+
+# -----------------------------------------------------------------------------
+# Output & Validation Helpers (#15FFFF Theme)
+# -----------------------------------------------------------------------------
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+	C_RED=$'\033[1;31m'
+	C_GRN=$'\033[1;32m'
+	C_CYN=$'\033[38;2;21;255;255m'
+	C_DIM=$'\033[38;2;15;165;165m'
+	C_YLW=$'\033[1;33m'
+	C_RST=$'\033[0m'
+else
+	C_RED='' C_GRN='' C_CYN='' C_DIM='' C_YLW='' C_RST=''
+fi
+
+info() { printf '%s[Ψ M3] %s%s\n' "$C_CYN" "$*" "$C_RST"; }
+ok()   { printf '%s[+] %s%s\n' "$C_GRN" "$*" "$C_RST"; }
+warn() { printf '%s[*] %s%s\n' "$C_YLW" "$*" "$C_RST" >&2; }
+err()  { printf '%s[!] %s%s\n' "$C_RED" "$*" "$C_RST" >&2; }
+die()  { err "$*"; exit 1; }
+
+is_uint() {
+	case ${1:-} in '' | *[!0-9]* | 0*) return 1 ;; *) return 0 ;; esac
+}
+
+is_bool() {
+	case ${1:-} in 0|1) return 0 ;; *) return 1 ;; esac
+}
+
+ensure_dir() {
+	mkdir -p -- "$1" 2>/dev/null || die "Cannot create directory: $1"
+	[[ -w "$1" ]] || die "Directory is not writable: $1"
+}
+
+cleanup() {
+	if [[ -n "${TMP_DIR:-}" && -d "$TMP_DIR" ]]; then
+		rm -rf -- "$TMP_DIR" || true
+	fi
+}
+trap cleanup EXIT INT TERM HUP
+
+detect_lan_ip() {
+	if command -v ip >/dev/null 2>&1; then
+		ip -o -4 addr show up scope global 2>/dev/null | \
+			awk '$2 !~ /^(lo|tun|tap|wg|docker|br-|veth|virbr)/ && $4 !~ /\/32$/ {split($4,a,"/"); print a[1]; exit}'
+	fi
+}
+
+# -----------------------------------------------------------------------------
+# Dependency Resolution & Persistent Configuration Management
+# -----------------------------------------------------------------------------
+check_dependencies() {
+	for bin in N_m3u8DL-RE n-m3u8dl-re N-m3u8DL-RE n-m3u8dl-re-git N-m3u8dl-RE-git; do
+		if command -v "$bin" >/dev/null 2>&1; then
+			BIN_M3U8="$bin"
+			break
+		fi
+	done
+	if [[ "$DRY_RUN" -eq 1 && -z "$BIN_M3U8" ]]; then
+		BIN_M3U8="N_m3u8DL-RE"
+	fi
+	[[ -n "$BIN_M3U8" ]] || die "Missing N_m3u8DL-RE in PATH. Install via 'yay -S n-m3u8dl-re-bin' or place binary in PATH."
+
+	if [[ "$DRY_RUN" -eq 0 ]]; then
+		command -v ffmpeg >/dev/null 2>&1 || die "Missing ffmpeg in PATH."
+	fi
+
+	for dbin in mp4decrypt shaka-packager; do
+		if command -v "$dbin" >/dev/null 2>&1; then
+			BIN_DECRYPT="$dbin"
+			break
+		fi
+	done
+}
+
+load_config() {
+	[[ -f "$CONFIG_FILE" ]] || return 0
+	while IFS='=' read -r key val || [[ -n "$key" ]]; do
+		case "$key" in '' | \#*) continue ;; esac
+		val="${val#\"}"
+		val="${val%\"}"
+		case "$key" in
+			THREAD_COUNT)         is_uint "$val" && THREAD_COUNT="$val" ;;
+			RETRY_COUNT)          is_uint "$val" && RETRY_COUNT="$val" ;;
+			SAVE_DIR)             [[ -n "$val" ]] && SAVE_DIR="$val" ;;
+			TMP_BASE)             [[ -n "$val" ]] && TMP_BASE="$val" && TMP_DIR="${TMP_BASE}/$$" ;;
+			LOG_DIR)              [[ -n "$val" ]] && LOG_DIR="$val" ;;
+			PROXY_URL)            PROXY_URL="$val" ;;
+			USER_AGENT)           [[ -n "$val" ]] && USER_AGENT="$val" ;;
+			MUX_FORMAT)           [[ -n "$val" ]] && MUX_FORMAT="$val" ;;
+			MUX_ENGINE)           [[ -n "$val" ]] && MUX_ENGINE="$val" ;;
+			AUTO_SELECT)          is_bool "$val" && AUTO_SELECT="$val" ;;
+			SKIP_MERGE)           is_bool "$val" && SKIP_MERGE="$val" ;;
+			DEL_AFTER_DONE)       is_bool "$val" && DEL_AFTER_DONE="$val" ;;
+			USE_FFMPEG_CONCAT)    is_bool "$val" && USE_FFMPEG_CONCAT="$val" ;;
+			LIVE_REAL_TIME_MERGE) is_bool "$val" && LIVE_REAL_TIME_MERGE="$val" ;;
+			LIVE_PERFORM_AS_VOD)  is_bool "$val" && LIVE_PERFORM_AS_VOD="$val" ;;
+			AUTO_SUB_FIX)         is_bool "$val" && AUTO_SUB_FIX="$val" ;;
+			SVP_HOST)             [[ -n "$val" ]] && SVP_HOST="$val" ;;
+			CADDY_PORT)           is_uint "$val" && CADDY_PORT="$val" ;;
+			PRESET_URL_1)         [[ -n "$val" ]] && PRESET_URL_1="$val" ;;
+			PRESET_LABEL_1)       [[ -n "$val" ]] && PRESET_LABEL_1="$val" ;;
+			PRESET_URL_2)         [[ -n "$val" ]] && PRESET_URL_2="$val" ;;
+			PRESET_LABEL_2)       [[ -n "$val" ]] && PRESET_LABEL_2="$val" ;;
+		esac
+	done <"$CONFIG_FILE"
+}
+
+save_config() {
+	ensure_dir "$CONFIG_DIR"
+	cat <<EOF >"$CONFIG_FILE"
+# === Ψ M3 (N_m3u8DL-RE) Persistent Configuration === (c) 2026 - 4ndr0666
+# Note: TMP_BASE is stored without runtime PID (\$\$) to prevent stale path locks.
+THREAD_COUNT="$THREAD_COUNT"
+RETRY_COUNT="$RETRY_COUNT"
+SAVE_DIR="$SAVE_DIR"
+TMP_BASE="$TMP_BASE"
+LOG_DIR="$LOG_DIR"
+PROXY_URL="$PROXY_URL"
+USER_AGENT="$USER_AGENT"
+MUX_FORMAT="$MUX_FORMAT"
+MUX_ENGINE="$MUX_ENGINE"
+AUTO_SELECT="$AUTO_SELECT"
+SKIP_MERGE="$SKIP_MERGE"
+DEL_AFTER_DONE="$DEL_AFTER_DONE"
+USE_FFMPEG_CONCAT="$USE_FFMPEG_CONCAT"
+LIVE_REAL_TIME_MERGE="$LIVE_REAL_TIME_MERGE"
+LIVE_PERFORM_AS_VOD="$LIVE_PERFORM_AS_VOD"
+AUTO_SUB_FIX="$AUTO_SUB_FIX"
+SVP_HOST="$SVP_HOST"
+CADDY_PORT="$CADDY_PORT"
+PRESET_URL_1="$PRESET_URL_1"
+PRESET_LABEL_1="$PRESET_LABEL_1"
+PRESET_URL_2="$PRESET_URL_2"
+PRESET_LABEL_2="$PRESET_LABEL_2"
+EOF
+	chmod 0600 "$CONFIG_FILE"
+	ok "Saved M3 configuration to $CONFIG_FILE"
+}
+
+# -----------------------------------------------------------------------------
+# Post-Extraction Handoff to SVPlayer / Caddy (Optional --cast / --upload)
+# -----------------------------------------------------------------------------
+dispatch_post_action() {
+	local out_file="$1"
+	[[ "$POST_ACTION" != "none" ]] || return 0
+	[[ -f "$out_file" ]] || die "Output media file not found for post-action: $out_file"
+
+	local script_dir
+	script_dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+	local svp_bin=""
+	if command -v svp-cli >/dev/null 2>&1; then
+		svp_bin="svp-cli"
+	elif command -v svp >/dev/null 2>&1; then
+		svp_bin="svp"
+	elif [[ -x "${script_dir}/svp-cli" ]]; then
+		svp_bin="${script_dir}/svp-cli"
+	fi
+
+	if [[ "$POST_ACTION" == "upload" ]]; then
+		if [[ -n "$svp_bin" ]]; then
+			SVP_HOST="$SVP_HOST" "$svp_bin" upload "$out_file"
+		else
+			info "Uploading $(basename "$out_file") directly to ${SVP_HOST}/r/upload..."
+			curl -# -X POST -F "file=@${out_file}" "${SVP_HOST}/r/upload" -o /dev/null
+			ok "Uploaded $(basename "$out_file") to Apple TV."
+		fi
+	elif [[ "$POST_ACTION" == "cast" ]]; then
+		if [[ -n "$svp_bin" ]]; then
+			SVP_HOST="$SVP_HOST" SVP_CADDY_PORT="$CADDY_PORT" "$svp_bin" cast-local "$out_file"
+		else
+			local lan_ip
+			lan_ip="$(detect_lan_ip)"
+			[[ -n "$lan_ip" ]] || lan_ip="127.0.0.1"
+			local serve_dir
+			serve_dir="$(dirname "$out_file")"
+			local encoded_name
+			encoded_name="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$(basename "$out_file")")"
+			if command -v caddy >/dev/null 2>&1; then
+				pkill -f "caddy file-server.*:${CADDY_PORT}" 2>/dev/null || true
+				nohup caddy file-server --root "$serve_dir" --listen "${lan_ip}:${CADDY_PORT}" >/dev/null 2>&1 &
+				sleep 1
+			fi
+			curl -sS -G --data-urlencode "url=http://${lan_ip}:${CADDY_PORT}/${encoded_name}" "${SVP_HOST}/r/play" >/dev/null
+			ok "LAN-casted http://${lan_ip}:${CADDY_PORT}/${encoded_name} -> ${SVP_HOST}/r/play"
+		fi
+	fi
+}
+
+# -----------------------------------------------------------------------------
+# Core Stream Extraction Engine
+# -----------------------------------------------------------------------------
+extract_single_url() {
+	local url="$1"
+	local custom_name="${2:-}"
+	[[ -n "$url" ]] || die "Target stream URL cannot be empty."
+
+	check_dependencies
+	ensure_dir "$SAVE_DIR"
+	ensure_dir "$TMP_DIR"
+	ensure_dir "$LOG_DIR"
+
+	local save_base="${custom_name:-${SAVE_NAME:-stream_$(date +%Y%m%d_%H%M%S)}}"
+	local cmd_args=(
+		"$BIN_M3U8" "$url"
+		--log-file-path "${LOG_DIR}/n-m3u8dl-re.log"
+		--thread-count "$THREAD_COUNT"
+		--download-retry-count "$RETRY_COUNT"
+		--tmp-dir "$TMP_DIR"
+		--save-dir "$SAVE_DIR"
+		--save-name "$save_base"
+	)
+
+	[[ "$AUTO_SELECT" -eq 1 ]] && cmd_args+=(--auto-select)
+	[[ "$SKIP_MERGE" -eq 1 ]] && cmd_args+=(--skip-merge)
+	[[ "$DEL_AFTER_DONE" -eq 1 ]] && cmd_args+=(--del-after-done)
+	[[ "$USE_FFMPEG_CONCAT" -eq 1 ]] && cmd_args+=(--use-ffmpeg-concat-demuxer)
+	[[ "$LIVE_REAL_TIME_MERGE" -eq 1 ]] && cmd_args+=(--live-real-time-merge)
+	[[ "$LIVE_PERFORM_AS_VOD" -eq 1 ]] && cmd_args+=(--live-perform-as-vod)
+	[[ "$SUB_ONLY" -eq 1 ]] && cmd_args+=(--sub-only)
+	[[ "$AUTO_SUB_FIX" -eq 1 ]] && cmd_args+=(--auto-subtitle-fix)
+	[[ "$CHECK_SEGMENTS_COUNT" -eq 0 ]] && cmd_args+=(--check-segments-count false)
+	[[ "$BINARY_MERGE" -eq 1 ]] && cmd_args+=(--binary-merge)
+	[[ "$CONCURRENT_DOWNLOAD" -eq 1 ]] && cmd_args+=(--concurrent-download)
+
+	if [[ "$SKIP_MERGE" -eq 0 && "$MUX_FORMAT" != "none" ]]; then
+		cmd_args+=(--mux-after-done "format=${MUX_FORMAT}:muxer=${MUX_ENGINE}")
+	fi
+
+	[[ -n "$PROXY_URL" ]] && cmd_args+=(--custom-proxy "$PROXY_URL")
+	[[ -n "$MAX_SPEED" ]] && cmd_args+=(--max-speed "$MAX_SPEED")
+	[[ -n "$KEY_TEXT_FILE" ]] && cmd_args+=(--key-text-file "$KEY_TEXT_FILE")
+	[[ -n "$BIN_DECRYPT" && ( ${#DRM_KEYS[@]} -gt 0 || -n "$KEY_TEXT_FILE" ) ]] && cmd_args+=(--decryption-binary-path "$BIN_DECRYPT")
+
+	if [[ -n "$USER_AGENT" ]]; then
+		cmd_args+=(-H "User-Agent: ${USER_AGENT}")
+	fi
+	for hdr in "${CUSTOM_HEADERS[@]}"; do
+		cmd_args+=(-H "$hdr")
+	done
+	for dkey in "${DRM_KEYS[@]}"; do
+		cmd_args+=(--key "$dkey")
+	done
+
+	info "Target URL : $url"
+	info "Output Base: ${SAVE_DIR}/${save_base} (Mux: ${MUX_FORMAT} via ${MUX_ENGINE})"
+	info "Parameters : Threads=${THREAD_COUNT} | Retries=${RETRY_COUNT} | Temp=${TMP_DIR}"
+
+	if [[ "$DRY_RUN" -eq 1 ]]; then
+		printf '[DRY-RUN] '
+		printf '%q ' "${cmd_args[@]}"
+		printf '\n'
+		return 0
+	fi
+
+	if "${cmd_args[@]}"; then
+		ok "Extraction completed in $SAVE_DIR"
+	else
+		local rc=$?
+		err "N_m3u8DL-RE failed with exit code $rc. Inspect ${LOG_DIR}/n-m3u8dl-re.log"
+		return "$rc"
+	fi
+
+	if [[ "$POST_ACTION" != "none" ]]; then
+		local out_file
+		out_file="$(find "$SAVE_DIR" -maxdepth 1 -name "${save_base}.*" -type f | sort | head -n 1)"
+		[[ -n "$out_file" ]] || die "Extraction succeeded, but no file matching ${save_base}.* was found in $SAVE_DIR"
+		dispatch_post_action "$out_file"
+	fi
+}
+
+run_batch_file() {
+	local bfile="$1"
+	[[ -f "$bfile" && -r "$bfile" ]] || die "Batch input file is missing or unreadable: $bfile"
+	local idx=0
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+		case "$line" in '' | \#*) continue ;; esac
+		idx=$((idx + 1))
+		local item_url="$line"
+		local item_name=""
+		if [[ "$line" == *"|"* ]]; then
+			item_url="${line%%|*}"
+			item_name="${line#*|}"
+		else
+			item_name="${SAVE_NAME:+${SAVE_NAME}_}${idx}_$(date +%s)"
+		fi
+		info "=== [Batch Item #${idx}] ${item_name} ==="
+		extract_single_url "$item_url" "$item_name"
+	done <"$bfile"
+}
+
+# -----------------------------------------------------------------------------
+# Interactive TUI Menu
+# -----------------------------------------------------------------------------
+interactive_menu() {
+	while :; do
+		printf '\n      === //%s Ψ M3 STREAM EXTRACTOR v%s %s// ===\n' "$C_CYN" "$VERSION" "$C_RST"
+		printf '%s  Save Dir: %s | Threads: %s | Retries: %s | Mux: %s | Mode: %s%s\n\n' \
+			"$C_DIM" "$SAVE_DIR" "$THREAD_COUNT" "$RETRY_COUNT" "$MUX_FORMAT" \
+			"$([[ $LIVE_REAL_TIME_MERGE -eq 1 ]] && echo "LIVE" || echo "VOD")" "$C_RST"
+		printf '  1. Extract VOD Stream (.m3u8 / .mpd / .ism)\n'
+		printf '  2. Extract VOD Stream & Auto-Cast to Apple TV via Caddy (--cast)\n'
+		printf '  3. Extract VOD Stream & Upload to Apple TV Cache (--upload)\n'
+		printf '  4. Extract Live Stream (Real-Time Merge enabled)\n'
+		printf '  5. Process Batch URL Queue File (-i)\n'
+		printf '  6. Launch Preset 1: %s\n' "$PRESET_LABEL_1"
+		printf '  7. Launch Preset 2: %s\n' "$PRESET_LABEL_2"
+		printf '  8. Configure Threads / Retries / Save Directory / Headers\n'
+		printf '  s. Save Current Configuration to %s\n' "$CONFIG_FILE"
+		printf '  q. Quit\n\nΨ '
+		IFS= read -r choice || exit 0
+
+		case "$choice" in
+			1)
+				LIVE_REAL_TIME_MERGE=0; LIVE_PERFORM_AS_VOD=0; POST_ACTION="none"
+				printf 'Stream URL: '; IFS= read -r TARGET_URL || continue
+				printf 'Save Name (blank for timestamp): '; IFS= read -r SAVE_NAME || true
+				[[ -n "$TARGET_URL" ]] && extract_single_url "$TARGET_URL" "$SAVE_NAME"
+				;;
+			2)
+				LIVE_REAL_TIME_MERGE=0; LIVE_PERFORM_AS_VOD=0; POST_ACTION="cast"
+				printf 'Stream URL: '; IFS= read -r TARGET_URL || continue
+				printf 'Save Name (blank for timestamp): '; IFS= read -r SAVE_NAME || true
+				[[ -n "$TARGET_URL" ]] && extract_single_url "$TARGET_URL" "$SAVE_NAME"
+				;;
+			3)
+				LIVE_REAL_TIME_MERGE=0; LIVE_PERFORM_AS_VOD=0; POST_ACTION="upload"
+				printf 'Stream URL: '; IFS= read -r TARGET_URL || continue
+				printf 'Save Name (blank for timestamp): '; IFS= read -r SAVE_NAME || true
+				[[ -n "$TARGET_URL" ]] && extract_single_url "$TARGET_URL" "$SAVE_NAME"
+				;;
+			4)
+				LIVE_REAL_TIME_MERGE=1; LIVE_PERFORM_AS_VOD=1; POST_ACTION="none"
+				printf 'Live Stream URL: '; IFS= read -r TARGET_URL || continue
+				printf 'Save Name (blank for timestamp): '; IFS= read -r SAVE_NAME || true
+				[[ -n "$TARGET_URL" ]] && extract_single_url "$TARGET_URL" "$SAVE_NAME"
+				;;
+			5)
+				printf 'Batch File Path: '; IFS= read -r BATCH_FILE || continue
+				[[ -n "$BATCH_FILE" ]] && run_batch_file "$BATCH_FILE"
+				;;
+			6)
+				TARGET_URL="$PRESET_URL_1"
+				extract_single_url "$TARGET_URL" "preset_1_$(date +%s)"
+				;;
+			7)
+				TARGET_URL="$PRESET_URL_2"
+				extract_single_url "$TARGET_URL" "preset_2_$(date +%s)"
+				;;
+			8)
+				printf 'Thread Count [%s]: ' "$THREAD_COUNT"; IFS= read -r _tc || true
+				[[ -n "${_tc:-}" ]] && is_uint "$_tc" && THREAD_COUNT="$_tc"
+				printf 'Retry Count [%s]: ' "$RETRY_COUNT"; IFS= read -r _rc || true
+				[[ -n "${_rc:-}" ]] && is_uint "$_rc" && RETRY_COUNT="$_rc"
+				printf 'Save Directory [%s]: ' "$SAVE_DIR"; IFS= read -r _sd || true
+				[[ -n "${_sd:-}" ]] && SAVE_DIR="$_sd"
+				printf 'Mux Format (mp4|mkv|ts|none) [%s]: ' "$MUX_FORMAT"; IFS= read -r _mf || true
+				[[ -n "${_mf:-}" ]] && MUX_FORMAT="$_mf"
+				;;
+			s|S)
+				save_config
+				;;
+			q|Q)
+				info "─── ⊰ 💀 • - ⦑4NDR0666OS⦒ - • 💀 ⊱ ───"
+				exit 0
+				;;
+			*)
+				warn "Unrecognized menu option: $choice"
+				;;
+		esac
+	done
+}
+
+usage() {
+	cat <<EOF
+${C_CYN}=== Ψ M3 // N_m3u8DL-RE STREAM ORCHESTRATOR v${VERSION} // 4ndr0666 ===${C_RST}
+Usage: ${0##*/} [options] [url]
+
+Run with no arguments in a terminal to open the interactive TUI menu.
+
+Core Extraction Options:
+  -o, --output <name>        Output filename without extension (default: stream_<timestamp>)
+  -d, --save-dir <dir>       Destination directory (default: $SAVE_DIR)
+  -t, --threads <num>        Download thread count (default: $THREAD_COUNT)
+  -r, --retries <num>        Segment retry count (default: $RETRY_COUNT)
+  -M, --mux-format <fmt>     Post-merge container: mp4 | mkv | ts | none (default: $MUX_FORMAT)
+  --mux-engine <bin>         Muxer engine: ffmpeg | mkvmerge (default: $MUX_ENGINE)
+  -i, --input-file <file>    Batch file of URLs (supports 'URL|save_name' per line)
+
+Network, Headers & Decryption:
+  -H, --header <"K: V">      Append custom HTTP header (repeatable: Referer, Cookie, Origin)
+  -U, --user-agent <str>     Override User-Agent string
+  -p, --proxy <url>          HTTP/SOCKS5 proxy URL (e.g. http://127.0.0.1:8080)
+  -R, --max-speed <rate>     Bandwidth limit (e.g. 25M, 500K)
+  -k, --key <KID:KEY>        Widevine/PlayReady/ClearKey decryption key (repeatable)
+  --key-file <file>          Text file containing KID:KEY pairs
+
+Stream Mode Flags:
+  --live                     Enable live stream real-time merge (--live-real-time-merge --live-perform-as-vod)
+  --vod                      Force standard VOD segment mode (default; avoids CDN missing-ENDLIST stalls)
+  --concat                   Use FFmpeg concat demuxer (--use-ffmpeg-concat-demuxer)
+  --binary-merge             Use binary segment concatenation (--binary-merge)
+  --skip-merge               Download segments only without merging (--skip-merge)
+  --keep-temp                Retain temporary segment chunks after completion
+  --sub-only                 Extract subtitles only (--sub-only)
+  --no-auto-select           Prompt for track selection instead of --auto-select
+
+SVPlayer / Caddy Integration Hooks:
+  --cast                     After extraction, serve via Caddy & cast to SVPlayer (/r/play)
+  --up, --upload             After extraction, multipart-upload output to SVPlayer (/r/upload)
+  --svp-host <url>           SVPlayer target host (default: $SVP_HOST)
+  --caddy-port <port>        Caddy LAN stream port for --cast (default: $CADDY_PORT)
+
+Configuration & Diagnostics:
+  -c, --create-config        Write current settings to $CONFIG_FILE and exit
+  --dry-run                  Print the constructed N_m3u8DL-RE command without executing
+  -v, --version              Print version ($VERSION) and exit
+  -h, --help                 Show this help message and exit
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# CLI Argument Parser
+# -----------------------------------------------------------------------------
+load_config
+
+if [[ $# -eq 0 ]]; then
+	if [[ -t 0 && -t 1 ]]; then
+		interactive_menu
+		exit 0
+	else
+		usage
+		exit 1
+	fi
+fi
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-h|--help)
+			usage
+			exit 0
+			;;
+		-v|--version)
+			printf '%s\n' "$VERSION"
+			exit 0
+			;;
+		-c|--create-config)
+			save_config
+			exit 0
+			;;
+		-o|--output)
+			[[ $# -ge 2 ]] || die "Option $1 requires a filename argument"
+			SAVE_NAME="$2"
+			shift 2
+			;;
+		-d|--save-dir)
+			[[ $# -ge 2 ]] || die "Option $1 requires a directory argument"
+			SAVE_DIR="$2"
+			shift 2
+			;;
+		-t|--threads)
+			[[ $# -ge 2 ]] && is_uint "$2" || die "Option $1 requires a positive integer"
+			THREAD_COUNT="$2"
+			shift 2
+			;;
+		-r|--retries)
+			[[ $# -ge 2 ]] && is_uint "$2" || die "Option $1 requires a positive integer"
+			RETRY_COUNT="$2"
+			shift 2
+			;;
+		-M|--mux-format)
+			[[ $# -ge 2 ]] || die "Option $1 requires mp4, mkv, ts, or none"
+			case "$2" in
+				mp4|mkv|ts|none) MUX_FORMAT="$2" ;;
+				*) die "Invalid mux format '$2' (expected: mp4, mkv, ts, or none)" ;;
+			esac
+			shift 2
+			;;
+		--mux-engine)
+			[[ $# -ge 2 ]] || die "Option $1 requires ffmpeg or mkvmerge"
+			MUX_ENGINE="$2"
+			shift 2
+			;;
+		-i|--input-file)
+			[[ $# -ge 2 ]] || die "Option $1 requires a file path"
+			BATCH_FILE="$2"
+			shift 2
+			;;
+		-H|--header)
+			[[ $# -ge 2 ]] || die "Option $1 requires a 'Header: Value' string"
+			CUSTOM_HEADERS+=("$2")
+			shift 2
+			;;
+		-U|--user-agent)
+			[[ $# -ge 2 ]] || die "Option $1 requires a User-Agent string"
+			USER_AGENT="$2"
+			shift 2
+			;;
+		-p|--proxy)
+			[[ $# -ge 2 ]] || die "Option $1 requires a proxy URL"
+			PROXY_URL="$2"
+			shift 2
+			;;
+		-R|--max-speed)
+			[[ $# -ge 2 ]] || die "Option $1 requires a speed limit (e.g. 20M)"
+			MAX_SPEED="$2"
+			shift 2
+			;;
+		-k|--key)
+			[[ $# -ge 2 ]] || die "Option $1 requires a KID:KEY string"
+			DRM_KEYS+=("$2")
+			shift 2
+			;;
+		--key-file)
+			[[ $# -ge 2 ]] || die "Option $1 requires a key file path"
+			KEY_TEXT_FILE="$2"
+			shift 2
+			;;
+		--live)
+			LIVE_REAL_TIME_MERGE=1
+			LIVE_PERFORM_AS_VOD=1
+			shift
+			;;
+		--vod)
+			LIVE_REAL_TIME_MERGE=0
+			LIVE_PERFORM_AS_VOD=0
+			shift
+			;;
+		--concat)
+			USE_FFMPEG_CONCAT=1
+			shift
+			;;
+		--binary-merge)
+			BINARY_MERGE=1
+			shift
+			;;
+		--skip-merge)
+			SKIP_MERGE=1
+			shift
+			;;
+		--keep-temp)
+			DEL_AFTER_DONE=0
+			shift
+			;;
+		--sub-only)
+			SUB_ONLY=1
+			shift
+			;;
+		--no-auto-select)
+			AUTO_SELECT=0
+			shift
+			;;
+		--cast)
+			POST_ACTION="cast"
+			shift
+			;;
+		--up|--upload)
+			POST_ACTION="upload"
+			shift
+			;;
+		--svp-host)
+			[[ $# -ge 2 ]] || die "Option $1 requires an SVPlayer host URL"
+			SVP_HOST="$2"
+			shift 2
+			;;
+		--caddy-port)
+			[[ $# -ge 2 ]] && is_uint "$2" || die "Option $1 requires a port number"
+			CADDY_PORT="$2"
+			shift 2
+			;;
+		--dry-run)
+			DRY_RUN=1
+			shift
+			;;
+		--)
+			shift
+			break
+			;;
+		-*)
+			die "Unknown option: $1 (use --help for usage)"
+			;;
+		*)
+			TARGET_URL="$1"
+			shift
+			;;
+	esac
+done
+
+if [[ -n "$BATCH_FILE" ]]; then
+	run_batch_file "$BATCH_FILE"
+elif [[ -n "$TARGET_URL" ]]; then
+	extract_single_url "$TARGET_URL" "$SAVE_NAME"
+else
+	die "No stream URL or --input-file specified. Run '${0##*/} --help' for usage."
+fi

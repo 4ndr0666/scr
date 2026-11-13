@@ -1,12 +1,12 @@
 #!/bin/sh
 # === MKPLAYLIST === (c) 2026 - 4ndr0666
-# POSIX-shell TUI; embedded Python engine for lossless traversal and publication.
+# POSIX-shell TUI; embedded Python engine for lossless traversal, LAN URL injection & SVPlayer casting.
 set -eu
 set -f
 umask 077
 LC_ALL=C
 export LC_ALL
-VERSION=3.0.0
+VERSION=3.2.0
 PYTHON_BIN=${PYTHON_BIN:-python3}
 HEX_FG="#15ffff"
 HEX_BG="#000000"
@@ -29,86 +29,52 @@ fi
 
 FZF_COLORS="bg:${HEX_BG},bg+:${HEX_BG_ALT},fg:${HEX_FG},fg+:${HEX_FG},hl:${HEX_HL},hl+:${HEX_FG},info:${HEX_FG},prompt:${HEX_FG},pointer:${HEX_FG},marker:${HEX_FG},spinner:${HEX_FG},header:${HEX_FG},border:${HEX_FG},gutter:${HEX_BG}"
 
-bold_msg() {
-	printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RST" >&2
-}
-
-die() {
-	printf '%s[ERROR] %s%s\n' "$C_ERR" "$*" "$C_RST" >&2
-	exit 1
-}
-
-have_cmd() {
-	command -v "$1" >/dev/null 2>&1
-}
+bold_msg() { printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RST" >&2; }
+warn_msg() { printf '%s[WARN] %s%s\n' "$C_DIM" "$*" "$C_RST" >&2; }
+die() { printf '%s[ERROR] %s%s\n' "$C_ERR" "$*" "$C_RST" >&2; exit 1; }
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 show_help() {
 	cat <<EOF
 ${C_BOLD}=== MKPLAYLIST === (c) 2026 - 4ndr0666 | ${VERSION}${C_RST}
 ${C_THEME}Usage: ${0##*/} [options] <dir_or_file>${C_RST}
 
-Scans all subdirectories by default and creates playlist.m3u. A regular file
-argument selects its parent directory. With a terminal, unresolved choices use
-fzf (electric cyan on black) or numbered prompts. No arguments displays help.
+Scans all subdirectories by default and creates playlist.m3u. Automatically
+injects http://<LAN_IP>:<PORT>/ URLs when generating a Caddyfile (-c/-a/-b) or
+when -u is specified, eliminating manual MKPLAYLIST_BASE_URL exports.
 
   -t <type>   videos (video + audio), images, or both (default: both)
   -s <field>  date, size, name, shuffle (default: date)
   -o <order>  desc or asc (default: desc; ignored for shuffle)
   -r          Shuffle every discovered file exactly once per generation
   -d <depth>  Maximum file depth; 0 = unlimited (default), 1 = root files only
+  -u <url>    Base URL prefix: 'auto' (http://LAN_IP:PORT), 'rel' (./), or custom http://...
+  -M          Include #EXTINF:-1,<filename> metadata lines for extended M3U players
   -K          Keep all existing files; reuse matching numbered variants
   -e          Explicitly allow an empty playlist
-  -c          Generate a Caddyfile serving this exact playlist and media root
-  -a <port>   Caddy listen port (default: :3000; implies -c)
-  -b <ips>    Caddy bind IPs, or all (default: loopback without a terminal)
-  -v          Require Caddy validation before publishing either output
-  -V          Explicitly skip Caddy validation
+  -c          Generate a Caddyfile (with admin off) serving this playlist and root
+  -a <port>   Caddy listen port (default: :3000; implies -c and -u auto)
+  -b <ips>    Caddy bind IPs, or all (auto-fixes 192.1.168.x octet typos!)
+  -S          Start Caddy on the generated config and cast playlist.m3u to SVPlayer
+  -I <ip>     SVPlayer Apple TV IP for -S casting (default: 192.168.1.211)
+  -v / -V     Require (-v) or skip (-V) Caddy validation before publishing
   -n          No interactive prompts
   -h          Help (--help and --version also supported)
-
-Requires POSIX sh and Python 3.9+ on a POSIX filesystem with hard links/flock.
-PYTHON_BIN and CADDY_BIN select the executables. No Caddy daemon is started.
-
-Coverage includes common video/audio containers, AAC, WAV, Opus, M4A, M2TS,
-HEIF, APNG and JXL, plus all original extensions. Detection uses extensions;
-codec decodability depends on the player. Symlinks are skipped; hard links to
-one media inode appear once. Read/stat failures abort publication.
-
-Output uses UTF-8 byte-percent-encoded relative URI paths (./...), preserving
-spaces, Unicode, percent signs, tabs and newlines without splitting records.
-The playlist location must stay alongside its media tree. Use a URI-aware player.
-
-An unchanged playlist keeps its inode and timestamp. Changed output refreshes
-playlist.m3u atomically after preserving the old contents as playlist.N.m3u.
--K retains the original never-overwrite behavior. Caddyfiles always preserve
-existing contents and reuse matching variants. Deploy the printed Caddyfile;
-configuration files are mode 0600, playlists are 0644. Grant service access as
-needed. Concurrent runs serialize on the media directory without a lock file.
-Shuffle intentionally changes ordering; it never samples a subset of files.
-${C_DIM}Theme: #15FFFF on #000000${C_RST}
 EOF
 }
 
 tui_select() {
 	_prompt=$1
 	shift
-
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 1 ]; then
 		printf '%s\n' "$1"
 		return 0
 	fi
-
 	if have_cmd fzf && [ -t 0 ] && [ -t 2 ]; then
 		_rc=0
 		_choice=$(
-			for _item in "$@"; do
-				printf '%s\n' "$_item"
-			done | fzf \
-				--ansi \
-				--no-multi \
-				--height=40% \
-				--layout=reverse \
-				--border=rounded \
+			for _item in "$@"; do printf '%s\n' "$_item"; done | fzf \
+				--ansi --no-multi --height=40% --layout=reverse --border=rounded \
 				--prompt="${_prompt} > " \
 				--header="=== MKPLAYLIST === (Enter to confirm, Esc for default)" \
 				--color="$FZF_COLORS"
@@ -121,7 +87,6 @@ tui_select() {
 			return 0
 		fi
 	fi
-
 	if [ -t 0 ] && [ -t 2 ]; then
 		bold_msg "=== ${_prompt} ==="
 		_idx=1
@@ -131,39 +96,25 @@ tui_select() {
 		done
 		printf '%sSelect [1-%d] (default: 1): %s' "$C_BOLD" "$#" "$C_RST" >&2
 		IFS= read -r _ans || _ans=""
-		case $_ans in
-			''|*[!0-9]*) _ans=1 ;;
-		esac
+		case $_ans in ''|*[!0-9]*) _ans=1 ;; esac
 		_ans=$(printf '%s' "$_ans" | sed 's/^0*//')
 		[ -n "$_ans" ] || _ans=1
 		_cur=1
 		for _item in "$@"; do
-			if [ "$_cur" = "$_ans" ]; then
-				printf '%s\n' "$_item"
-				return 0
-			fi
+			if [ "$_cur" = "$_ans" ]; then printf '%s\n' "$_item"; return 0; fi
 			_cur=$((_cur + 1))
 		done
 	fi
-
 	printf '%s\n' "$1"
 }
 
-# ---------------------------------------------------------------------------
-# Prompt Input Helper (with default value)
-# Usage: tui_input "Prompt text" "default_value"
-# ---------------------------------------------------------------------------
 tui_input() {
 	_label=$1
 	_def=$2
 	if [ "${OPT_NONINTERACTIVE:-0}" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 		printf '%s%s [%s]: %s' "$C_BOLD" "$_label" "$_def" "$C_RST" >&2
 		IFS= read -r _val || _val=""
-		if [ -n "$_val" ]; then
-			printf '%s\n' "$_val"
-		else
-			printf '%s\n' "$_def"
-		fi
+		printf '%s\n' "${_val:-$_def}"
 	else
 		printf '%s\n' "$_def"
 	fi
@@ -173,70 +124,59 @@ detect_lan_ip() {
 	if have_cmd ip; then
 		_wg_devs=$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
 		_bcast_devs=$(ip -o link show up 2>/dev/null | awk -F': ' '/BROADCAST/ && !/POINTOPOINT/ {print $2}' | cut -d'@' -f1 | tr '\n' ' ' || true)
-
-		# 1. Prefer the default-route physical broadcast interface in the main table
 		_lan_dev=$(ip -4 route show table main default 2>/dev/null | awk -v bcast=" $_bcast_devs " -v wg=" $_wg_devs " '
 			{
 				for (i = 1; i <= NF; i++) {
 					if ($i == "dev") {
 						d = $(i+1)
 						if ($0 !~ /linkdown/ && d != "lo" && d !~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/ && index(wg, " " d " ") == 0 && index(bcast, " " d " ") > 0) {
-							print d
-							exit
+							print d; exit
 						}
 					}
 				}
 			}')
 		if [ -n "$_lan_dev" ]; then
 			_ip=$(ip -o -4 addr show dev "$_lan_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
-			if [ -n "$_ip" ]; then
-				printf '%s\n' "$_ip"
-				return 0
-			fi
+			if [ -n "$_ip" ]; then printf '%s\n' "$_ip"; return 0; fi
 		fi
-
-		# 2. Fallback: first UP BROADCAST Ethernet/Wi-Fi interface (excludes POINTOPOINT VPN tunnels)
 		_ip=$(ip -o -4 addr show up scope global 2>/dev/null | awk -v bcast=" $_bcast_devs " -v wg=" $_wg_devs " '
 			{
 				d = $2
 				if (d == "lo" || d ~ /^(tun|tap|wg|ppp|docker|br-|veth|virbr)/) next
-				if (index(wg, " " d " ") > 0) next
-				if (index(bcast, " " d " ") == 0) next
+				if (index(wg, " " d " ") > 0 || index(bcast, " " d " ") == 0) next
 				split($4, a, "/")
-				if (a[2] != "32") {
-					print a[1]
-					exit
-				}
+				if (a[2] != "32") { print a[1]; exit }
 			}')
-		if [ -n "$_ip" ]; then
-			printf '%s\n' "$_ip"
-			return 0
-		fi
+		if [ -n "$_ip" ]; then printf '%s\n' "$_ip"; return 0; fi
 	fi
-
 	return 1
 }
 
-# Detect active WireGuard / POINTOPOINT VPN IPv4 address (if any) so the user can
-# optionally bind LAN + VPN + loopback together when behind a tunnel.
 detect_vpn_ip() {
 	if have_cmd ip; then
 		for _wg_dev in $(ip -o link show up type wireguard 2>/dev/null | awk -F': ' '{print $2}' | cut -d'@' -f1 || true); do
 			_vip=$(ip -o -4 addr show dev "$_wg_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
-			if [ -n "$_vip" ]; then
-				printf '%s\n' "$_vip"
-				return 0
-			fi
-		done
-		for _ptp_dev in $(ip -o link show up 2>/dev/null | awk -F': ' '/POINTOPOINT/ {print $2}' | cut -d'@' -f1 || true); do
-			_vip=$(ip -o -4 addr show dev "$_ptp_dev" scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
-			if [ -n "$_vip" ]; then
-				printf '%s\n' "$_vip"
-				return 0
-			fi
+			if [ -n "$_vip" ]; then printf '%s\n' "$_vip"; return 0; fi
 		done
 	fi
 	return 1
+}
+
+sanitize_bind_ips() {
+	_raw_bind=$1
+	[ "$_raw_bind" = "all" ] && { printf 'all\n'; return 0; }
+	_out_bind=""
+	for _tok in $_raw_bind; do
+		case $_tok in
+			192.1.168.*)
+				_fixed="192.168.1.${_tok#192.1.168.}"
+				warn_msg "Auto-corrected transposed LAN octet '$_tok' -> '$_fixed'"
+				_tok=$_fixed
+				;;
+		esac
+		_out_bind="${_out_bind:+$_out_bind }$_tok"
+	done
+	printf '%s\n' "$_out_bind"
 }
 
 normalize_type() {
@@ -266,41 +206,51 @@ normalize_order() {
 	esac
 }
 
-# Argument Parsing
 if [ "$#" -eq 0 ]; then show_help; exit 0; fi
 case ${1:-} in
 	--help) show_help; exit 0 ;;
 	--version) printf '%s\n' "$VERSION"; exit 0 ;;
 esac
+
 OPT_TYPE=""
 OPT_SORT=""
 OPT_ORDER=""
 OPT_DEPTH=0
 OPT_CADDY=""
+OPT_BASE_URL="${MKPLAYLIST_BASE_URL:-}"
+OPT_EXTM3U_META=no
 OPT_NONINTERACTIVE=0
 OPT_KEEP=no
 OPT_EMPTY=no
 OPT_PORT=""
 OPT_BIND=""
+OPT_CAST=no
+OPT_ATV_IP="192.168.1.211"
 OPT_VALIDATE=auto
 SET_TYPE=0
 SET_SORT=0
 SET_ORDER=0
 SET_PORT=0
 SET_BIND=0
-while getopts ":t:s:o:rd:cnheKa:b:vV" opt; do
+SET_URL=0
+
+while getopts ":t:s:o:rd:u:McnheKa:b:SI:vV" opt; do
 	case $opt in
 		t) OPT_TYPE=$(normalize_type "$OPTARG"); SET_TYPE=1 ;;
 		s) OPT_SORT=$(normalize_sort "$OPTARG"); SET_SORT=1 ;;
 		o) OPT_ORDER=$(normalize_order "$OPTARG"); SET_ORDER=1 ;;
 		r) OPT_SORT=shuffle; SET_SORT=1 ;;
 		d) OPT_DEPTH=$OPTARG ;;
+		u) OPT_BASE_URL=$OPTARG; SET_URL=1 ;;
+		M) OPT_EXTM3U_META=yes ;;
 		c) OPT_CADDY=yes ;;
 		n) OPT_NONINTERACTIVE=1 ;;
 		K) OPT_KEEP=yes ;;
 		e) OPT_EMPTY=yes ;;
 		a) OPT_PORT=$OPTARG; SET_PORT=1; OPT_CADDY=yes ;;
-		b) OPT_BIND=$OPTARG; SET_BIND=1; OPT_CADDY=yes ;;
+		b) OPT_BIND=$(sanitize_bind_ips "$OPTARG"); SET_BIND=1; OPT_CADDY=yes ;;
+		S) OPT_CAST=yes; OPT_CADDY=yes ;;
+		I) OPT_ATV_IP=$OPTARG ;;
 		v) OPT_VALIDATE=required ;;
 		V) OPT_VALIDATE=skip ;;
 		h) show_help; exit 0 ;;
@@ -311,48 +261,27 @@ done
 shift $((OPTIND - 1))
 [ "$#" -eq 1 ] || die "Expected one directory or regular file; use -h for help"
 TARGET_ARG=$1
-[ "$OPT_VALIDATE" = auto ] || [ "$OPT_CADDY" = yes ] || die "-v and -V require -c (or -a/-b)"
 case $OPT_DEPTH in ''|*[!0-9]*) die "Depth must be a nonnegative integer (0=unlimited)" ;; esac
 have_cmd "$PYTHON_BIN" || die "Python 3.9+ is required: $PYTHON_BIN"
-"$PYTHON_BIN" -c 'import sys; sys.exit(sys.version_info < (3, 9))' || die "Python 3.9+ is required"
 [ -e "$TARGET_ARG" ] || die "Target does not exist: $TARGET_ARG"
-[ -d "$TARGET_ARG" ] || [ -f "$TARGET_ARG" ] || die "Target must be a directory or a regular file: $TARGET_ARG"
 
-# Interactive TUI vs Defaults Resolution
-# ---------------------------------------------------------------------------
 IS_INTERACTIVE=0
 if [ "$OPT_NONINTERACTIVE" -eq 0 ] && [ -t 0 ] && [ -t 2 ]; then
 	IS_INTERACTIVE=1
 fi
 
-# 1. Resolve Media Type (videos | images | both)
 if [ "$SET_TYPE" -eq 0 ]; then
 	if [ "$IS_INTERACTIVE" -eq 1 ]; then
-		_sel_type=$(tui_select "Playlist Media Kind" \
-			"both   - Videos/Audio + Images" \
-			"videos - Videos & Audio only" \
-			"images - Images only")
-		case $_sel_type in
-			videos*) OPT_TYPE="videos" ;;
-			images*) OPT_TYPE="images" ;;
-			*)       OPT_TYPE="both" ;;
-		esac
+		_sel_type=$(tui_select "Playlist Media Kind" "both   - Videos/Audio + Images" "videos - Videos & Audio only" "images - Images only")
+		case $_sel_type in videos*) OPT_TYPE="videos" ;; images*) OPT_TYPE="images" ;; *) OPT_TYPE="both" ;; esac
 	else
 		OPT_TYPE="both"
 	fi
 fi
 
-# 2. Resolve Sort Field & Order (default: date desc, plus shuffle/random)
 if [ "$SET_SORT" -eq 0 ] && [ "$SET_ORDER" -eq 0 ]; then
 	if [ "$IS_INTERACTIVE" -eq 1 ]; then
-		_sel_sort=$(tui_select "Sort Order (Default: Date Descending)" \
-			"date:desc - Date Descending (newest first) [DEFAULT]" \
-			"date:asc  - Date Ascending (oldest first)" \
-			"size:desc - Size Descending (largest first)" \
-			"size:asc  - Size Ascending (smallest first)" \
-			"name:asc  - Name Ascending (A -> Z)" \
-			"name:desc - Name Descending (Z -> A)" \
-			"shuffle   - Shuffle / Random order")
+		_sel_sort=$(tui_select "Sort Order" "date:desc - Date Descending [DEFAULT]" "date:asc  - Date Ascending" "size:desc - Size Descending" "size:asc  - Size Ascending" "name:asc  - Name Ascending" "name:desc - Name Descending" "shuffle   - Shuffle / Random")
 		case $_sel_sort in
 			date:asc*)  OPT_SORT="date"; OPT_ORDER="asc" ;;
 			size:desc*) OPT_SORT="size"; OPT_ORDER="desc" ;;
@@ -368,66 +297,63 @@ if [ "$SET_SORT" -eq 0 ] && [ "$SET_ORDER" -eq 0 ]; then
 	fi
 else
 	[ -n "$OPT_SORT" ] || OPT_SORT="date"
-	if [ "$OPT_SORT" = "shuffle" ]; then
-		OPT_ORDER="random"
-	else
-		[ -n "$OPT_ORDER" ] || OPT_ORDER="desc"
-	fi
+	if [ "$OPT_SORT" = "shuffle" ]; then OPT_ORDER="random"; else [ -n "$OPT_ORDER" ] || OPT_ORDER="desc"; fi
 fi
 
-# 3. Resolve Coinciding Caddyfile Option
 if [ -z "$OPT_CADDY" ]; then
 	if [ "$IS_INTERACTIVE" -eq 1 ]; then
-		_sel_caddy=$(tui_select "Generate Coinciding Caddyfile?" \
-			"no  - Playlist only" \
-			"yes - Configure & output coinciding Caddyfile")
-		case $_sel_caddy in
-			yes*) OPT_CADDY="yes" ;;
-			*)    OPT_CADDY="no" ;;
-		esac
+		_sel_caddy=$(tui_select "Generate Coinciding Caddyfile?" "yes - Configure Caddyfile & LAN URLs" "no  - Relative playlist only")
+		case $_sel_caddy in yes*) OPT_CADDY="yes" ;; *) OPT_CADDY="no" ;; esac
 	else
 		OPT_CADDY="no"
 	fi
 fi
 
-# Coinciding config serves the generated snapshot, retaining sort and shuffle.
-# Root selection belongs to the target argument, so discovery and serving agree.
+LAN_IP=$(detect_lan_ip || printf '127.0.0.1')
+
 if [ "$OPT_CADDY" = yes ]; then
 	if [ "$SET_PORT" -eq 0 ]; then
-		_choice=$(tui_select "Caddy Listen Port" ":3000 (default)" ":8080 (alt HTTP)" ":8000 (media server)" "Custom port...")
-		case $_choice in
-			:3000*) OPT_PORT=:3000 ;;
-			:8080*) OPT_PORT=:8080 ;;
-			:8000*) OPT_PORT=:8000 ;;
-			*) OPT_PORT=$(tui_input "Enter listen port" ":3000") ;;
-		esac
+		if [ "$IS_INTERACTIVE" -eq 1 ]; then
+			_choice=$(tui_select "Caddy Listen Port" ":3000 (default)" ":8080 (alt HTTP)" ":8000 (media server)" "Custom port...")
+			case $_choice in
+				:3000*) OPT_PORT=:3000 ;;
+				:8080*) OPT_PORT=:8080 ;;
+				:8000*) OPT_PORT=:8000 ;;
+				*) OPT_PORT=$(tui_input "Enter listen port" ":3000") ;;
+			esac
+		else
+			OPT_PORT=":3000"
+		fi
 	fi
 	if [ "$SET_BIND" -eq 0 ]; then
-		OPT_BIND=127.0.0.1
+		OPT_BIND="${LAN_IP} 127.0.0.1"
 		if [ "$IS_INTERACTIVE" -eq 1 ]; then
-			_lan=$(detect_lan_ip || true)
-			_vpn=$(detect_vpn_ip || true)
-			set --
-			if [ -n "$_lan" ] && [ "$_lan" != "127.0.0.1" ]; then
-				set -- "$@" "${_lan} 127.0.0.1 (LAN + loopback)"
-				if [ -n "$_vpn" ] && [ "$_vpn" != "127.0.0.1" ] && [ "$_vpn" != "$_lan" ]; then
-					set -- "$@" "${_lan} ${_vpn} 127.0.0.1 (LAN + VPN + loopback)"
-				fi
-			elif [ -n "$_vpn" ] && [ "$_vpn" != "127.0.0.1" ]; then
-				set -- "$@" "${_vpn} 127.0.0.1 (VPN + loopback)"
-			fi
-			set -- "$@" "all (all interfaces)" "0.0.0.0 (all IPv4)" "127.0.0.1 (loopback only)" "Custom..."
-			_choice=$(tui_select "Caddy Bind Addresses" "$@")
-			case $_choice in
-				all*) OPT_BIND=all ;;
-				Custom*) OPT_BIND=$(tui_input "Space-separated IP addresses, or all" 127.0.0.1) ;;
-				*) OPT_BIND=${_choice%% (*} ;;
-			esac
+			_choice=$(tui_select "Caddy Bind Addresses" "${LAN_IP} 127.0.0.1 (LAN + loopback)" "all (all interfaces)" "127.0.0.1 (loopback only)")
+			case $_choice in all*) OPT_BIND=all ;; 127.0.0.1*) OPT_BIND=127.0.0.1 ;; *) OPT_BIND="${LAN_IP} 127.0.0.1" ;; esac
 		fi
+	fi
+	if [ "$SET_URL" -eq 0 ] && [ -z "$OPT_BASE_URL" ]; then
+		_pnum=${OPT_PORT#:}
+		_first_ip=${OPT_BIND%% *}
+		if [ "$_first_ip" = "all" ] || [ "$_first_ip" = "0.0.0.0" ] || [ "$_first_ip" = "127.0.0.1" ]; then
+			_first_ip=$LAN_IP
+		fi
+		OPT_BASE_URL="http://${_first_ip}:${_pnum}"
 	fi
 fi
 
-exec "$PYTHON_BIN" - "$TARGET_ARG" "$OPT_TYPE" "$OPT_SORT" "$OPT_ORDER" "$OPT_DEPTH" "$OPT_KEEP" "$OPT_EMPTY" "$OPT_CADDY" "$OPT_PORT" "$OPT_BIND" "$OPT_VALIDATE" <<'PYTHON_ENGINE'
+case $OPT_BASE_URL in
+	auto)
+		_pnum=${OPT_PORT#:}
+		_pnum=${_pnum:-3000}
+		OPT_BASE_URL="http://${LAN_IP}:${_pnum}"
+		;;
+	rel|relative|none)
+		OPT_BASE_URL=""
+		;;
+esac
+
+OUT_PATHS=$("$PYTHON_BIN" - "$TARGET_ARG" "$OPT_TYPE" "$OPT_SORT" "$OPT_ORDER" "$OPT_DEPTH" "$OPT_KEEP" "$OPT_EMPTY" "$OPT_CADDY" "$OPT_PORT" "$OPT_BIND" "$OPT_VALIDATE" "$OPT_BASE_URL" "$OPT_EXTM3U_META" <<'PYTHON_ENGINE'
 import contextlib
 import fcntl
 import ipaddress
@@ -464,12 +390,11 @@ def discover(root, kind, depth):
     directories = {(info.st_dev, info.st_ino)}
     while pending:
         folder, level = pending.pop()
-        # Errors abort the scan; a partial playlist must never replace a good one.
         with os.scandir(folder) as entries:
             entries = sorted(entries, key=lambda entry: os.fsencode(entry.name))
         children = []
         for entry in entries:
-            if entry.name in ('.git', '.env', '.DS_Store') or entry.name.startswith(('.mkplaylist.', '.mkcaddy.')):
+            if entry.name in ('.git', '.env', '.DS_Store', '.svp_auth.hash', 'svp-ui') or entry.name.startswith(('.mkplaylist.', '.mkcaddy.')):
                 continue
             info = entry.stat(follow_symlinks=False)
             if stat.S_ISDIR(info.st_mode):
@@ -577,7 +502,6 @@ def publish(primary, content, refresh, mode, prefix='.mkplaylist.'):
     temporary = stage(primary.parent, content, mode, prefix=prefix)
     try:
         if refresh:
-            # Preserve operator edits from a non-cooperating writer detected after planning.
             if regular_bytes(primary) != existing:
                 raise ValueError(f'Output changed concurrently: {primary}; rerun the command')
             created_archive = None
@@ -618,17 +542,17 @@ def caddy_config(root, playlist, port, bind):
         raise ValueError('Bind addresses must be IP literals, or all')
     addresses = list(dict.fromkeys(str(ipaddress.ip_address(address)) for address in addresses))
     binding = '\tbind ' + ' '.join(addresses) + '\n' if addresses else ''
-    try:
-        root_text = os.fsencode(root).decode('utf-8')
-    except UnicodeDecodeError as error:
-        raise ValueError('Caddy root path must be valid UTF-8') from error
+    root_text = os.fsencode(root).decode('utf-8')
     endpoint = '/' + quote_from_bytes(os.fsencode(playlist.name), safe='-._~')
-    return (f':{int(port)} {{\n{binding}\troot * {caddy_quote(root_text)}\n'
+    return ('{\n\tadmin off\n}\n\n'
+            f':{int(port)} {{\n{binding}\troot * {caddy_quote(root_text)}\n'
             f'\thandle {caddy_quote(endpoint)} {{\n'
             '\t\theader Content-Type "audio/x-mpegurl; charset=utf-8"\n'
             '\t\theader Cache-Control "no-cache, no-store, must-revalidate"\n'
+            '\t\theader Access-Control-Allow-Origin "*"\n'
             '\t\tfile_server\n\t}\n'
-            '\thandle {\n\t\tfile_server {\n'
+            '\thandle {\n\t\theader Access-Control-Allow-Origin "*"\n'
+            '\t\tfile_server {\n'
             '\t\t\thide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* Caddyfile Caddyfile.*\n'
             '\t\t}\n\t}\n}\n').encode('utf-8')
 
@@ -647,18 +571,15 @@ def validate_caddy(root, content, policy):
         config = Path(directory) / 'Caddyfile'
         config.write_bytes(content)
         config.chmod(0o600)
-        try:
-            process = subprocess.run([binary, 'adapt', '--config', str(config), '--adapter', 'caddyfile', '--validate'],
-                                     stdout=subprocess.DEVNULL, check=False, timeout=60)
-        except subprocess.TimeoutExpired as error:
-            raise ValueError('Caddy validation timed out after 60 seconds; no outputs published') from error
+        process = subprocess.run([binary, 'adapt', '--config', str(config), '--adapter', 'caddyfile', '--validate'],
+                                 stdout=subprocess.DEVNULL, check=False, timeout=60)
         if process.returncode:
             raise ValueError('Caddy rejected the configuration; no outputs published')
-    log('[VALIDATED] Caddy accepted the configuration')
+    log('[VALIDATED] Caddy accepted the configuration (admin off enforced)')
 
 
 def main():
-    target, kind, field, direction, depth_arg, keep, empty, caddy, port, bind, validation = sys.argv[1:]
+    target, kind, field, direction, depth_arg, keep, empty, caddy, port, bind, validation, base_url_arg, extm3u_meta = sys.argv[1:]
     depth = int(depth_arg)
     given = Path(target)
     info = given.stat()
@@ -668,14 +589,24 @@ def main():
         root = given.resolve(strict=True).parent
     else:
         raise ValueError('Target must be a directory or a regular file')
-    # Lock the directory inode: no persistent lock file and no stale-lock recovery.
+
     descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
         records = order_records(discover(root, kind, depth), field, direction)
         if not records and empty != 'yes':
             raise ValueError('No matching media found; existing outputs preserved (use -e to allow an empty playlist)')
-        lines = ['./' + quote_from_bytes(os.fsencode(row[0]), safe='/-._~') for row in records]
+
+        base_url = base_url_arg.rstrip('/')
+        lines = []
+        for row in records:
+            rel_uri = quote_from_bytes(os.fsencode(row[0]), safe='/-._~')
+            url_line = f"{base_url}/{rel_uri}" if base_url else f"./{rel_uri}"
+            if extm3u_meta == 'yes':
+                display_title = os.path.basename(row[0]).encode('utf-8', 'replace').decode('ascii', 'ignore') or 'media'
+                lines.append(f"#EXTINF:-1,{display_title}")
+            lines.append(url_line)
+
         content = ('#EXTM3U\n' + ''.join(line + '\n' for line in lines)).encode('ascii')
         primary = root / 'playlist.m3u'
         planned = matching_or_free(primary, content) if keep == 'yes' else primary
@@ -687,7 +618,8 @@ def main():
         if config is not None:
             outputs.append(publish(root / 'Caddyfile', config, refresh=False, mode=0o600, prefix='.mkcaddy.'))
         os.fsync(descriptor)
-        log(f'[MEDIA] {len(records)} unique file(s); {kind}; {field}:{direction}; depth={depth} (0=unlimited)')
+        url_mode = f"base_url={base_url}" if base_url else "relative=./"
+        log(f'[MEDIA] {len(records)} unique file(s); {kind}; {field}:{direction}; depth={depth}; {url_mode}')
         for output in outputs:
             emit(sys.stdout, output)
     finally:
@@ -703,3 +635,19 @@ if __name__ == '__main__':
         log(f'[ERROR] {error}')
         sys.exit(1)
 PYTHON_ENGINE
+)
+
+printf '%s\n' "$OUT_PATHS"
+
+if [ "$OPT_CAST" = "yes" ]; then
+	_m3u_file=$(printf '%s\n' "$OUT_PATHS" | head -n 1)
+	_caddy_file=$(printf '%s\n' "$OUT_PATHS" | tail -n 1)
+	if have_cmd caddy && [ -f "$_caddy_file" ]; then
+		pkill -f "caddy run --config $_caddy_file" 2>/dev/null || true
+		nohup caddy run --config "$_caddy_file" --adapter caddyfile >/dev/null 2>&1 &
+		sleep 1
+	fi
+	_cast_url="${OPT_BASE_URL}/$(basename -- "$_m3u_file")"
+	bold_msg "[CAST] Dispatching $_cast_url -> http://${OPT_ATV_IP}/r/play"
+	curl -sS -G --data-urlencode "url=${_cast_url}" "http://${OPT_ATV_IP}/r/play" >/dev/null
+fi

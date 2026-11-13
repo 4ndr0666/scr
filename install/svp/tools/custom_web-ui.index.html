@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ψ SVPlayer Command Deck // 4ndr0666</title>
+<style>
+  :root {
+    --bg: #000000;
+    --bg-alt: #071a1a;
+    --panel: #040d0d;
+    --fg: #15ffff;
+    --fg-dim: #0fa5a5;
+    --hl: #00d7ff;
+    --err: #ff5555;
+    --ok: #50fa7b;
+    --border: #0f6666;
+    --font: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 16px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--fg);
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; letter-spacing: 1px; text-shadow: 0 0 8px rgba(21,255,255,0.4); }
+  .badge {
+    background: var(--bg-alt);
+    border: 1px solid var(--fg);
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card h2 {
+    font-size: 14px;
+    color: var(--hl);
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  input[type="text"], textarea, select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: var(--font);
+    font-size: 12px;
+    border-radius: 3px;
+    outline: none;
+  }
+  input[type="text"]:focus, textarea:focus {
+    border-color: var(--fg);
+    box-shadow: 0 0 6px rgba(21,255,255,0.25);
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    background: var(--bg-alt);
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    padding: 7px 12px;
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+  }
+  button:hover {
+    background: var(--fg);
+    color: var(--bg);
+    font-weight: bold;
+  }
+  button.danger { border-color: var(--err); color: var(--err); }
+  button.danger:hover { background: var(--err); color: var(--bg); }
+  #drop-zone {
+    border: 2px dashed var(--border);
+    padding: 22px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 4px;
+    background: var(--bg);
+    transition: border-color 0.2s;
+  }
+  #drop-zone.dragover { border-color: var(--fg); background: var(--bg-alt); }
+  progress {
+    width: 100%;
+    height: 10px;
+    accent-color: var(--fg);
+    display: none;
+  }
+  #log-box {
+    height: 280px;
+    overflow-y: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-size: 11px;
+    white-space: pre-wrap;
+    color: var(--fg-dim);
+  }
+  .settings-list {
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg);
+    padding: 6px 8px;
+    border: 1px solid #093333;
+  }
+  .setting-item input { width: 130px; padding: 4px; }
+  #toast {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: var(--bg-alt);
+    border: 1px solid var(--fg);
+    padding: 10px 16px;
+    display: none;
+    z-index: 999;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Ψ SVPLAYER COMMAND DECK // APPLETV5,3</h1>
+  <div class="row">
+    <span class="badge" id="conn-status">CONNECTING...</span>
+    <button onclick="applyNerdPreset()">⚡ Restore Nerd Settings + mpv.conf</button>
+    <button class="danger" onclick="clearUploads()">🗑 Clear ATV Cache</button>
+  </div>
+</header>
+
+<div class="grid">
+  <!-- Stream / Cast Card -->
+  <div class="card">
+    <h2><span>▶ Stream Cast (M3U8 / HTTP / Caddy)</span></h2>
+    <div class="row">
+      <input type="text" id="play-url" placeholder="http://192.168.1.X:3000/playlist.m3u or .m3u8 URL">
+      <button onclick="castUrl()">CAST NOW</button>
+    </div>
+    <div class="row" id="quick-presets">
+      <button onclick="quickCast(':3000/playlist.m3u')">Caddy :3000/playlist.m3u</button>
+      <button onclick="quickCast(':8080/playlist.m3u')">Caddy :8080/playlist.m3u</button>
+    </div>
+    <h2><span>⬆ Direct Media / Subtitle Upload</span></h2>
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      Drop .mp4, .mkv, .m3u8, .srt, .ass here or click to browse
+      <input type="file" id="file-input" multiple style="display:none" onchange="uploadFiles(this.files)">
+    </div>
+    <progress id="upload-prog" value="0" max="100"></progress>
+    <div id="upload-msg" style="font-size:11px;color:var(--fg-dim);"></div>
+  </div>
+
+  <!-- MPV.CONF Editor Card -->
+  <div class="card">
+    <h2>
+      <span>⚙ Hardware-Tuned mpv.conf</span>
+      <div class="row">
+        <button onclick="loadMpvc()">Pull</button>
+        <button onclick="pushOptimalMpvc()">Load Optimal A8 Config</button>
+        <button onclick="saveMpvc()">Save to ATV</button>
+      </div>
+    </h2>
+    <textarea id="mpv-conf" rows="12" spellcheck="false"></textarea>
+  </div>
+
+  <!-- All Settings / Nerd Injector Card -->
+  <div class="card">
+    <h2>
+      <span>🔧 SVPlayer All Settings (/r/settings)</span>
+      <button onclick="loadSettings()">Refresh</button>
+    </h2>
+    <div class="row">
+      <input type="text" id="opt-key" placeholder="Option Key (e.g. main.setup.frc.profile)" style="flex:1">
+      <input type="text" id="opt-val" placeholder="Value" style="width:110px">
+      <button onclick="setSingleOpt()">Set</button>
+    </div>
+    <div class="settings-list" id="settings-container">Loading settings...</div>
+  </div>
+
+  <!-- Live Telemetry Log Card -->
+  <div class="card">
+    <h2>
+      <span>📡 Real-Time Engine Telemetry (/r/log)</span>
+      <div class="row">
+        <button onclick="toggleLogPoll()" id="btn-poll">Pause Poll</button>
+        <button onclick="document.getElementById('log-box').textContent=''">Clear</button>
+      </div>
+    </h2>
+    <div id="log-box"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let lastLogId = 0;
+let pollActive = true;
+
+const OPTIMAL_MPV_CONF = `# === Ψ-4ndr0666 AppleTV5,3 (A8 2GB RAM) Hardened Config ===
+# 1. Strictly RAM-only Cache (prevents tvOS eMMC wear & cache_delete purges)
+cache=yes
+cache-on-disk=no
+cache-pause=yes
+cache-pause-initial=yes
+cache-pause-wait=3
+cache-secs=15
+demuxer-max-bytes=220MiB
+demuxer-max-back-bytes=40MiB
+demuxer-readahead-secs=12
+
+# 2. HLS / M3U8 & Caddy LAN Resilience
+network-timeout=15
+stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=4
+hls-bitrate=max
+prefetch-playlist=yes
+
+# 3. Apple A8 GPU / MoltenVK / Frame Interpolation Sync
+hwdec=videotoolbox-copy
+video-sync=display-resample
+interpolation=no
+framedrop=vo
+vd-lavc-threads=2
+ad-lavc-threads=2
+tls-verify=no`;
+
+// Nerd settings dictionary - customize keys matching your /r/settings dump
+const NERD_SETTINGS_PRESET = {
+  "cast.allow_wan": "0",
+  "main.setup.frc.enabled": "1"
+};
+
+function notify(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = `[Ψ] ${msg}`;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function castUrl() {
+  const input = document.getElementById('play-url');
+  const url = input.value.trim();
+  if (!url) return;
+  await fetch(`/r/play?url=${encodeURIComponent(url)}`);
+  notify(`Casted: ${url}`);
+  input.value = '';
+}
+
+function quickCast(suffix) {
+  const host = window.location.hostname;
+  document.getElementById('play-url').value = `http://${host}${suffix}`;
+  castUrl();
+}
+
+async function clearUploads() {
+  if (!confirm('Clear all uploaded files in Apple TV cache?')) return;
+  await fetch('/r/upload-clear');
+  notify('Apple TV upload cache purged.');
+}
+
+async function loadMpvc() {
+  const res = await fetch('/r/mpvc');
+  const data = await res.json();
+  document.getElementById('mpv-conf').value = data.conf || '';
+}
+
+async function saveMpvc() {
+  const conf = document.getElementById('mpv-conf').value;
+  const body = new URLSearchParams({ conf });
+  await fetch('/r/mpvc', { method: 'POST', body });
+  notify('mpv.conf committed to Apple TV.');
+}
+
+function pushOptimalMpvc() {
+  document.getElementById('mpv-conf').value = OPTIMAL_MPV_CONF;
+  saveMpvc();
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/r/settings');
+    const data = await res.json();
+    renderSettings(data);
+    document.getElementById('conn-status').textContent = 'ONLINE // 192.168.1.211';
+    document.getElementById('conn-status').style.borderColor = 'var(--ok)';
+  } catch (e) {
+    document.getElementById('conn-status').textContent = 'OFFLINE';
+    document.getElementById('conn-status').style.borderColor = 'var(--err)';
+  }
+}
+
+function renderSettings(data) {
+  const container = document.getElementById('settings-container');
+  container.innerHTML = '';
+  const items = Array.isArray(data) ? data : (data.options || Object.entries(data).map(([n,v]) => ({n, v})));
+  items.forEach(item => {
+    const key = item.n ?? item[0];
+    const val = item.v ?? item[1];
+    if (typeof val === 'object') return;
+    const row = document.createElement('div');
+    row.className = 'setting-item';
+    row.innerHTML = `<span>${key}</span><input type="text" value="${val}" onchange="updateOpt('${key}', this.value)">`;
+    container.appendChild(row);
+  });
+}
+
+async function updateOpt(n, v) {
+  const body = new URLSearchParams({ n, v });
+  const res = await fetch('/r/set-opt', { method: 'POST', body });
+  const data = await res.json();
+  renderSettings(data);
+  notify(`Updated ${n} = ${v}`);
+}
+
+function setSingleOpt() {
+  const n = document.getElementById('opt-key').value.trim();
+  const v = document.getElementById('opt-val').value.trim();
+  if (n) updateOpt(n, v);
+}
+
+async function applyNerdPreset() {
+  pushOptimalMpvc();
+  for (const [n, v] of Object.entries(NERD_SETTINGS_PRESET)) {
+    await updateOpt(n, v);
+  }
+  notify('All Nerd Settings & mpv.conf restored!');
+}
+
+function uploadFiles(files) {
+  const prog = document.getElementById('upload-prog');
+  const msg = document.getElementById('upload-msg');
+  Array.from(files).forEach(file => {
+    const xhr = new XMLHttpRequest();
+    const form = new FormData();
+    form.append('file', file);
+    prog.style.display = 'block';
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        prog.value = pct;
+        msg.textContent = `Uploading ${file.name}: ${pct}%`;
+      }
+    };
+    xhr.onload = () => {
+      msg.textContent = `Completed: ${file.name}`;
+      notify(`Uploaded ${file.name}`);
+      setTimeout(() => prog.style.display = 'none', 1500);
+    };
+    xhr.open('POST', '/r/upload', true);
+    xhr.send(form);
+  });
+}
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('dragover');
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+});
+
+async function pollLogs() {
+  if (!pollActive) return;
+  try {
+    const res = await fetch(`/r/log?last=${lastLogId}`);
+    const data = await res.json();
+    const box = document.getElementById('log-box');
+    if (Array.isArray(data.log) && data.log.length > 0) {
+      data.log.forEach(entry => {
+        const line = typeof entry === 'string' ? entry : `${entry.t || ''} [${entry.s || 'I'}]: ${entry.m || JSON.stringify(entry)}`;
+        box.textContent = line + '\n' + box.textContent;
+      });
+    }
+    if (data.last) lastLogId = data.last;
+  } catch (e) {}
+}
+
+function toggleLogPoll() {
+  pollActive = !pollActive;
+  document.getElementById('btn-poll').textContent = pollActive ? 'Pause Poll' : 'Resume Poll';
+}
+
+loadMpvc();
+loadSettings();
+setInterval(pollLogs, 2000);
+</script>
+</body>
+</html>

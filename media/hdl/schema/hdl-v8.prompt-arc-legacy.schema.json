@@ -1,0 +1,552 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:4ndr0prompts:hdl:v8:prompt-arc-legacy",
+  "title": "4ndr0prompts prompt_arc.py native document (legacy profile)",
+  "description": "Compatibility-only validation of prompt_arc.py native JSON shape. This is not the canonical HDL v8 export contract. For canonical export use hdl-v8.schema.json.",
+  "type": "object",
+  "properties": {
+    "!INIT_MEM_LOCK_PROTOCOL": {
+      "$ref": "#/$defs/promptArcMemory"
+    },
+    "!ENV_ATMOSPHERICS": {
+      "$ref": "#/$defs/promptArcAtmospherics"
+    }
+  },
+  "required": [
+    "!INIT_MEM_LOCK_PROTOCOL",
+    "!ENV_ATMOSPHERICS"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "textRecon": {
+      "type": "object",
+      "properties": {
+        "TEXT_STRING_LITERAL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FONTTYPE_AESTHETIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LAYER_PLACEMENT": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "TEXT_STRING_LITERAL",
+        "FONTTYPE_AESTHETIC",
+        "LAYER_PLACEMENT"
+      ],
+      "additionalProperties": false
+    },
+    "vec3": {
+      "title": "XYZ vector",
+      "description": "Three JSON numbers in the declared coordinate space.",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "promptArcMemory": {
+      "type": "object",
+      "properties": {
+        "SYSTEM_REFERENCE_INPUT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BIOMETRIC_LOCK": {
+          "type": "string",
+          "minLength": 1
+        },
+        "IDENTITY_DRIFT_CONTROL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "STRUCTURAL_NON_DEVIATION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "STRUCTURAL_FIDELITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "UNALTERABLE": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "!INHIBIT": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "SYSTEM_REFERENCE_INPUT",
+        "BIOMETRIC_LOCK",
+        "IDENTITY_DRIFT_CONTROL",
+        "STRUCTURAL_NON_DEVIATION",
+        "STRUCTURAL_FIDELITY",
+        "UNALTERABLE",
+        "!INHIBIT"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcDepth": {
+      "type": "object",
+      "properties": {
+        "FOREGROUND": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MIDGROUND": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BACKGROUND": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "FOREGROUND",
+        "MIDGROUND",
+        "BACKGROUND"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcBio": {
+      "type": "object",
+      "properties": {
+        "SKIN_TOPOGRAPHY_LOGIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SURFACE_MICRO_ELEMENTS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "REFLECTANCE_MAP": {
+          "type": "string",
+          "minLength": 1
+        },
+        "EXPRESSION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "HAIR": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "SKIN_TOPOGRAPHY_LOGIC",
+        "SURFACE_MICRO_ELEMENTS",
+        "REFLECTANCE_MAP",
+        "EXPRESSION",
+        "HAIR"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcPhotonics": {
+      "type": "object",
+      "properties": {
+        "PHOTONIC_ENERGY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ENERGY_CONSERVATION_COMPLIANT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "RIM_LIGHT_SCATTERING_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "EPIDERMAL_TRANSLUCENCY_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PHOTON_TRANSMISSION_RATIO": {
+          "type": "string",
+          "minLength": 1
+        },
+        "MEAN_FREE_PATH_SCATTERING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BACKLIT_SUBSURFACE_GLOW": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FRESNEL_REFLECTION_COEFFICIENT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SPECULAR_HIGHLIGHT_LOBE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "PHOTONIC_ENERGY",
+        "ENERGY_CONSERVATION_COMPLIANT",
+        "RIM_LIGHT_SCATTERING_PASS",
+        "EPIDERMAL_TRANSLUCENCY_PASS",
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE",
+        "PHOTON_TRANSMISSION_RATIO",
+        "MEAN_FREE_PATH_SCATTERING",
+        "BACKLIT_SUBSURFACE_GLOW",
+        "FRESNEL_REFLECTION_COEFFICIENT",
+        "SPECULAR_HIGHLIGHT_LOBE",
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcPhoton": {
+      "type": "object",
+      "properties": {
+        "STYLE_OF": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "HARDWARE_EMULATION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "OPTICAL_HARDWARE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COLOR_SCIENCE_PROFILE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "OPTICAL_ABERRATIONS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "APERTURE_SETTING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SHUTTER_AESTHETIC": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ILLUMINATION_AXIS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "KEY_LIGHT_CHARACTER": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FILL_LIGHT_CHARACTER": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SHADOW_PROFILE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PHOTONIC_VECTORS": {
+          "$ref": "#/$defs/promptArcPhotonics"
+        }
+      },
+      "required": [
+        "STYLE_OF",
+        "HARDWARE_EMULATION",
+        "OPTICAL_HARDWARE",
+        "COLOR_SCIENCE_PROFILE",
+        "OPTICAL_ABERRATIONS",
+        "APERTURE_SETTING",
+        "SHUTTER_AESTHETIC",
+        "ILLUMINATION_AXIS",
+        "KEY_LIGHT_CHARACTER",
+        "FILL_LIGHT_CHARACTER",
+        "SHADOW_PROFILE",
+        "PHOTONIC_VECTORS"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcRay": {
+      "type": "object",
+      "properties": {
+        "LIGHT_SOURCE_01": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ORIGIN_COORDINATE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TARGET_COORDINATE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BEAM_ANGLE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LUMINOUS_INTENSITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FALLOFF_PROFILE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "BOUNCE_LIGHT_LOGIC": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "LIGHT_SOURCE_01",
+        "ORIGIN_COORDINATE",
+        "TARGET_COORDINATE",
+        "BEAM_ANGLE",
+        "LUMINOUS_INTENSITY",
+        "FALLOFF_PROFILE",
+        "BOUNCE_LIGHT_LOGIC"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcDrape": {
+      "type": "object",
+      "properties": {
+        "MICRO_FIBER_DRAPE_PHYSICS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GRAVITY_WEIGHTED_FOLDS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SUB_MICRON_WEAVE_DENSITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOW_DENIER_SSS_PASS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "SURFACE_ADHESION_COEFFICIENT": {
+          "type": "string",
+          "minLength": 1
+        },
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "MICRO_FIBER_DRAPE_PHYSICS",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY",
+        "GRAVITY_WEIGHTED_FOLDS",
+        "SUB_MICRON_WEAVE_DENSITY",
+        "LOW_DENIER_SSS_PASS",
+        "SURFACE_ADHESION_COEFFICIENT",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcMaterial": {
+      "type": "object",
+      "properties": {
+        "WARDROBE_SPECIFICATION": {
+          "type": "string",
+          "minLength": 1
+        },
+        "OPACITY": {
+          "type": "string",
+          "minLength": 1
+        },
+        "TEXTILE_SURFACE_SHEEN": {
+          "type": "string",
+          "minLength": 1
+        },
+        "DRAPE_AND_TENSION_LOGIC": {
+          "$ref": "#/$defs/promptArcDrape"
+        }
+      },
+      "required": [
+        "WARDROBE_SPECIFICATION",
+        "OPACITY",
+        "TEXTILE_SURFACE_SHEEN",
+        "DRAPE_AND_TENSION_LOGIC"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcChecks": {
+      "type": "object",
+      "properties": {
+        "FOCUS_LOCK": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GLOBAL_NEGATIVE_BIAS": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "FOCUS_LOCK",
+        "GLOBAL_NEGATIVE_BIAS"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcFinal": {
+      "type": "object",
+      "properties": {
+        "REQUIREMENT_CHECKS": {
+          "$ref": "#/$defs/promptArcChecks"
+        }
+      },
+      "required": [
+        "REQUIREMENT_CHECKS"
+      ],
+      "additionalProperties": false
+    },
+    "promptArcComposition": {
+      "type": "object",
+      "properties": {
+        "PANELS": {
+          "type": "string",
+          "pattern": "^[1-9]$"
+        },
+        "LAYOUT_PRESET": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "PANELS"
+      ],
+      "patternProperties": {
+        "^(?!PANELS$|LAYOUT_PRESET$).+": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 2
+    },
+    "promptArcAtmospherics": {
+      "type": "object",
+      "properties": {
+        "LOCATION_SETTING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GLASS_SURFACE_METRICS": {
+          "type": "string",
+          "minLength": 1
+        },
+        "PARTICULATE_SCATTERING": {
+          "type": "string",
+          "minLength": 1
+        },
+        "WIND_VECTOR_FORCE": {
+          "type": "string",
+          "minLength": 1
+        },
+        "COMPOSITION_DEPTH": {
+          "$ref": "#/$defs/promptArcDepth"
+        },
+        "!EXEC_COMPOSITION_MATRIX": {
+          "$ref": "#/$defs/promptArcComposition"
+        },
+        "!EXEC_BIO_DERMAL_MAP": {
+          "$ref": "#/$defs/promptArcBio"
+        },
+        "!ENV_PHOTOMETRY": {
+          "$ref": "#/$defs/promptArcPhoton"
+        },
+        "!ENV_RAY_TRACING_PHOTOMETRY": {
+          "$ref": "#/$defs/promptArcRay"
+        },
+        "!EXEC_MATERIAL_PHYSICS": {
+          "$ref": "#/$defs/promptArcMaterial"
+        },
+        "TEXT_RECON_ENGINE": {
+          "$ref": "#/$defs/textRecon"
+        },
+        "!FINALIZE_OUTPUT": {
+          "$ref": "#/$defs/promptArcFinal"
+        }
+      },
+      "required": [
+        "LOCATION_SETTING",
+        "GLASS_SURFACE_METRICS",
+        "PARTICULATE_SCATTERING",
+        "WIND_VECTOR_FORCE",
+        "COMPOSITION_DEPTH",
+        "!EXEC_COMPOSITION_MATRIX",
+        "!EXEC_BIO_DERMAL_MAP",
+        "!ENV_PHOTOMETRY",
+        "!ENV_RAY_TRACING_PHOTOMETRY",
+        "!EXEC_MATERIAL_PHYSICS",
+        "TEXT_RECON_ENGINE",
+        "!FINALIZE_OUTPUT"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

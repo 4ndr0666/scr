@@ -1,0 +1,234 @@
+{
+  "$schema": "./hdl-v8.schema.json",
+  "!INIT_MEM_LOCK": {
+    "SYSTEM_REFERENCE_INPUT": "same ingredient",
+    "BIOMETRIC_LOCK": "TRUE (REPLICATING_EVERY_PIXEL_OF_THE_ANATOMICAL_TOPOGRAPHY_FAITHFULLY)",
+    "IDENTITY_SHADOW": "REFERENCE_INPUT",
+    "BIOMETRIC_TOPOGRAPHY": "PRESERVE_PRECISE_FACIAL_IDENTITY,BODY_PROPORTIONS,BODY_SIZE,BODY_SHAPE,BODYFAT_PERCENTAGE_AND_SCALE",
+    "UNALTERABLE": [
+      "EXACT_FACIAL_ID_GEOMETRY",
+      "UN-BEAUTIFIED_FACIAL_BONE_CONTOURS",
+      "EXACT_BODY_PROPORTIONS",
+      "TRUE_BODYFAT_PERCENTAGE_DISTRIBUTION"
+    ],
+    "IDENTITY_DRIFT_CONTROL": "MAXIMUM_LOCK",
+    "STRUCTURAL_NON_DEVIATION": "HIGH",
+    "STRUCTURAL_FIDELITY": "HIGH",
+    "INHIBIT": [
+      "AUTOMATIC_SKIN-SMOOTHING_FILTERS",
+      "FACIAL_BALANCING",
+      "BRAZZIER_SUPPORT",
+      "SYMMETRY_MODIFICATIONS",
+      "DEFAULT_COMMERCIAL_TOUCH-UP_LAYERS"
+    ],
+    "WARDROBE_LOCK": "same exact outfit"
+  },
+  "!INIT_ATMOSPHERICS": {
+    "LOCATION_SETTING": "Avedon Cirque Dhiver Paris Sawdust Ring — Richard Avedon 1955 'Dovima with Elephants' set — historic Parisian winter circus interior with skylights, rough stone walls, sawdust floor, and iron chains",
+    "LOCATION_MANIFEST_KEY": "avedon_cirque_dhiver_paris_sawdust_ring",
+    "SUBJECT_DESCRIPTION": "a dew-covered strawberry",
+    "PRODUCTION_CONTEXT": "a focus puller's handset and a marked camera position on the floor",
+    "GLASS_SURFACE_METRICS": "Text written through condensation, drip artefacts",
+    "PARTICULATE_SCATTERING": "POWDER_SNOW_FLURRIES_BACKLIT_BOKEH",
+    "WIND_VECTOR_FORCE": "katabatic_downdraft_vertical_compression",
+    "COMPOSITION_DEPTH": {
+      "FOREGROUND": "tilt_shift_selective_plane",
+      "MIDGROUND": "PANEL_SPECIFIC_SUBJECT_POSES",
+      "BACKGROUND": [
+        "full-length mirrors"
+      ]
+    },
+    "!INIT_GEOMETRIC_SEED": {
+      "COORDINATE_SPACE": "RIGHT_HAND_Y_UP",
+      "LENGTH_UNIT": "SCENE_UNITS",
+      "SUBJECT_ORIGIN_XYZ": [
+        0,
+        0,
+        0
+      ],
+      "CAMERA_ORIGIN_XYZ": [
+        0,
+        1.55,
+        1.35
+      ],
+      "CAMERA_TARGET_XYZ": [
+        0,
+        0,
+        0
+      ]
+    },
+    "!INIT_BIO_DERMAL_MAPPING": {
+      "SKIN_TOPOGRAPHY_LOGIC": "scarred_terrain_irregular_surface",
+      "SURFACE_MICRO_ELEMENTS": [
+        "Fine black linework tattoo — crisp edges, ink texture"
+      ],
+      "REFLECTANCE_MAP": "Ashen dry powder coat — total specular suppression",
+      "EXPRESSION": "Near-smile tension without commitment, ambiguous",
+      "HAIR": "High-velocity studio fan lifting long hair into a dynamic radial halo around head"
+    },
+    "!EXEC_COMPOSITION_MATRIX": {
+      "LAYOUT": "TRIPTYCH_NARRATIVE",
+      "PANELS": "3",
+      "PANEL_1": "FRONT EXTREME CLOSE-UP MACRO(ECUM/XCUM) — Supine reclined dorsal posture with hips and knees flexed, pelvis anchored (vector 0.0,-0.7,-0.4); Head tilted back in serene neck arch, eyes closed, lips slightly parted on exhale [0.0,0.4,-0.1]; Fingertips resting with feather-light pressure on mirror/glass XY-plane (vector 0.0,0.1,0.3)",
+      "PANEL_2": "CRANE JIB ARC SWEEP (CJAS) — Half-kneeling on right knee with left knee raised at 90°, asymmetric level change (vector -0.1,-0.5,0.1); Hands closed into taut fists with visible tendon and knuckle micro-topography (vector 0.0,0.3,0.2); Thumb and index finger delicately pinching and lifting 10-denier silk hem [0.2,-0.3,0.1]",
+      "PANEL_3": "LOW ANGLE DUTCH (LAD) — Boxer Guard Right Lead anatomical articulation (vector 0.2,0.4,0.3); Applying Makeup Mirror Lean anatomical articulation (vector 0.0,-0.3,0.4); facing away from camera with head turned 135 degrees so chin rests over scapula (vector 0.2,0.0,-0.8)",
+      "PANEL_KINEMATIC_LAYERS": [
+        {
+          "PANEL": "PANEL_1",
+          "LAYERS": [
+            "structural_alignment:dorsal_lithotomy_position",
+            "intimate_and_expressive:neck_arch_eyes_closed_exhale",
+            "micro_hand_articulation:fingertips_resting_lightly_on_glass"
+          ]
+        },
+        {
+          "PANEL": "PANEL_2",
+          "LAYERS": [
+            "postural_dynamics:kneeling_single_left_up",
+            "extremity_articulation_upper:hands_clenched_fists",
+            "micro_hand_articulation:delicate_pinch_lifting_silk_hem"
+          ]
+        },
+        {
+          "PANEL": "PANEL_3",
+          "LAYERS": [
+            "kinetic_combat_and_athletic:boxer_guard_right_lead",
+            "ergonomic_and_occupational:applying_makeup_mirror_lean",
+            "facial_and_cephalic_orientation:over_shoulder_dorsal_chin_tuck"
+          ]
+        }
+      ]
+    },
+    "!ENV_PHOTOMETRY": {
+      "RIG": "Light returns directly to source — safety vest, cat eye",
+      "LIGHT_SOURCE_01": "CONICAL_SPOTLIGHT",
+      "SURFACE_INTERACTION": {
+        "HIT_POINT_XYZ": [
+          0.1492,
+          2.0934,
+          2.1521
+        ],
+        "SURFACE_NORMAL_XYZ": [
+          0.054,
+          -0.0639,
+          0.996494
+        ],
+        "REFLECTION_VECTOR_XYZ": [
+          -0.002808,
+          0.123283,
+          0.992368
+        ],
+        "LIGHT_DISTANCE_UNITS": 19.999923,
+        "INCIDENCE_ANGLE_DEG": 11.228249
+      },
+      "KEY": {
+        "TYPE": "CONICAL_SPOTLIGHT",
+        "COLOR_TEMPERATURE_K": 5500,
+        "ORIGIN_XYZ": [
+          2.324,
+          -2.8793,
+          21.4015
+        ],
+        "TARGET_XYZ": [
+          0.1492,
+          2.0934,
+          2.1521
+        ],
+        "DIRECTION_VECTOR": [
+          -0.10874,
+          0.248636,
+          -0.962474
+        ],
+        "AZIMUTH_DEG": -6.445952,
+        "ELEVATION_DEG": 14.39681,
+        "DISTANCE_UNITS": 19.999923,
+        "BEAM_CONE_DEG": 18,
+        "PENUMBRA_PCT": 24,
+        "INTENSITY_PCT": 100,
+        "FALLOFF_MODEL": "INVERSE_SQUARE_RELATIVE"
+      },
+      "FILL": {
+        "TYPE": "CONICAL_SPOTLIGHT",
+        "COLOR_TEMPERATURE_K": 5000,
+        "ORIGIN_XYZ": [
+          -0.3651,
+          0.6008,
+          10.4552
+        ],
+        "TARGET_XYZ": [
+          0.1492,
+          2.0934,
+          2.1521
+        ],
+        "DIRECTION_VECTOR": [
+          0.060851,
+          0.1766,
+          -0.9824
+        ],
+        "AZIMUTH_DEG": 3.544414,
+        "ELEVATION_DEG": 10.1718,
+        "DISTANCE_UNITS": 8.451854,
+        "BEAM_CONE_DEG": 38,
+        "PENUMBRA_PCT": 42,
+        "INTENSITY_PCT": 70,
+        "FALLOFF_MODEL": "INVERSE_SQUARE_RELATIVE"
+      },
+      "LIGHTING_PHYSICS_MANIFEST": "Extreme warm point source, 1600K, hard short falloff",
+      "PHOTONIC_ENERGY_MODEL": "Random luminance/chroma noise pattern — pushed ISO emul",
+      "PHOTOGRAPHER_STYLE_OF": "Richard Avedon Street",
+      "STYLE_DETAIL": [
+        "Richard Avedon Street visual style (Signature Richard Avedon Street editorial lighting, framing, and tonal aesthetic)"
+      ],
+      "PHOTOGRAPHY_STYLE": "Probe & Worm’s-Eye Perspective",
+      "CAMERA": "Hasselblad H6D-100c Medium Format (53.4x40mm 100MP CMOS, 16-bit color depth, leaf-shutter flash sync to 1/2000s)",
+      "CAMERA_PROFILE_ID": "Hasselblad H6D-100c Medium Format",
+      "LENS": "Nikkor 58mm f/1.2 Noct AI-S (Vintage hand-ground aspherical, legendary, nocturnal)",
+      "LENS_PROFILE_ID": "Nikkor 58mm f/1.2 Noct AI-S",
+      "APERTURE": "f/22",
+      "SHUTTER_SYNC": "flash_sync_1_250_hss",
+      "COLOR_SCIENCE_PROFILE": "bleach_bypass_process",
+      "OPTICAL_ABERRATIONS": "INFRARED_720NM_HOYA_R72_WOOD_EFFECT",
+      "FOCUS_LOCK": "crystalline water droplets, refractive meniscus, and recessed seed achenes"
+    },
+    "!EXEC_MATERIAL_PHYSICS": {
+      "WARDROBE_SPECIFICATION": "same exact outfit",
+      "MATERIAL_RESPONSE": "100% unfiltered human skin topography with visible dermal pores, fine goosebumps, vellus peach fuzz, natural skin folds, and micro-sweatbeads catching specular flash glare",
+      "MICRO_GEOMETRY": "Retain authentic reference weave, seams and skin texture",
+      "SPECULAR_ROUGHNESS": "Preserve roughness appropriate to the selected material",
+      "SUBSURFACE_SCATTERING": "Use only physically appropriate reference-material translucency",
+      "TEXTILE_ADHESION_LOGIC": "Preserve the selected surface structure and physical contact.",
+      "OPACITY": "Use the opacity of the actual reference material.",
+      "TEXTILE_SURFACE_SHEEN": "100% unfiltered human skin topography with visible dermal pores, fine goosebumps, vellus peach fuzz, natural skin folds, and micro-sweatbeads catching specular flash glare",
+      "DRAPE_AND_TENSION_LOGIC": {
+        "MICRO_FIBER_DRAPE_PHYSICS": "HIGH",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": "MEDIUM",
+        "GRAVITY_WEIGHTED_FOLDS": "LOW",
+        "SUB_MICRON_WEAVE_DENSITY": "LOW",
+        "LOW_DENIER_SSS_PASS": "ON",
+        "SURFACE_ADHESION_COEFFICIENT": "HIGH",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": "FALSE"
+      }
+    },
+    "!GLOBAL_NEGATIVE_BIAS": [
+      "BEAUTY_FILTER",
+      "AIRBRUSHED_SKIN",
+      "DIGITAL_3D_RENDER",
+      "COMMERCIAL_STOCK_PHOTOGRAPHY_LOOK",
+      "HAPPY_EXPRESSIONS",
+      "IDENTITY_SHIFTING",
+      "HAIR_CLEANUP_FLYAWAY",
+      "OPAQUE_FABRIC",
+      "BODY_PROPORTION_ALTERATION"
+    ],
+    "TEXT_RECON_ENGINE": {
+      "TEXT_STRING_LITERAL": "NO_TEXT",
+      "FONTTYPE_AESTHETIC": "NO_TEXT",
+      "LAYER_PLACEMENT": "NO_TEXT"
+    },
+    "!FINALIZE_OUTPUT": {
+      "GENERATION_STYLE": "polished magazine-cover tonal control with sharp eyes, restrained skin retouching and precise garment highlights",
+      "COLOR_GRADE": "twilight indigo, skyscraper gold points of light, deep glass reflections, and champagne skin highlights",
+      "FOCUS_LOCK": "crystalline water droplets, refractive meniscus, and recessed seed achenes"
+    }
+  }
+}

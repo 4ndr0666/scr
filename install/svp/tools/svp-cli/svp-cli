@@ -1,0 +1,755 @@
+#!/usr/bin/env bash
+# === Ψ SVP-CLI // APPLE TV SVPLAYER CONTROLLER & TELEMETRY SUITE === (c) 2026 - 4ndr0666
+# Standalone CLI controller for Apple TV (AppleTV5,3) SVPlayer REST API (/r/*),
+# Hardware-Tuned mpv.conf management, Nerd Settings snapshot/restore, Browser DevTools JS
+# snippet generator, systemd auto-heal watchdog, and seamless delegation to standalone M3 & mkplaylist.
+set -euo pipefail
+
+VERSION="3.2.0"
+
+# -----------------------------------------------------------------------------
+# Global State & XDG Base Directories
+# -----------------------------------------------------------------------------
+SVP_HOST="${SVP_HOST:-http://192.168.1.211}"
+SVP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/svp"
+M3_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/m3u8/m3u8.conf"
+M3_CONFIG_DIR="${M3_CONFIG_FILE%/*}"
+LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
+TMP_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl"
+TMP_DIR="${TMP_BASE}/$$"
+SAVE_DIR="${SVP_STREAM_DIR:-$HOME/streamdir}"
+NERD_SNAPSHOT="${SVP_CONFIG_DIR}/nerd-settings.json"
+MPV_SNAPSHOT="${SVP_CONFIG_DIR}/mpv.conf"
+JS_SNIPPET_FILE="${SVP_CONFIG_DIR}/svp-nerd-injector.js"
+CADDY_PORT="${SVP_CADDY_PORT:-3000}"
+
+THREAD_COUNT=8
+RETRY_COUNT=5
+SAVE_NAME=""
+PROXY_URL=""
+TARGET_URL=""
+BIN_M3U8=""
+
+# M3 fallback switches
+AUTO_SELECT=1
+SKIP_MERGE=0
+DEL_AFTER_DONE=1
+USE_FFMPEG_CONCAT=0
+LIVE_REAL_TIME_MERGE=0
+LIVE_PERFORM_AS_VOD=0
+
+PRESET_URL_1="https://example.com/master.m3u8"
+PRESET_LABEL_1="Preset Stream 1"
+PRESET_URL_2="https://example.com/live.m3u8"
+PRESET_LABEL_2="Preset Stream 2"
+
+# -----------------------------------------------------------------------------
+# Output & Validation Helpers (#15FFFF Theme)
+# -----------------------------------------------------------------------------
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+	C_RED=$'\033[1;31m'
+	C_GRN=$'\033[1;32m'
+	C_CYN=$'\033[38;2;21;255;255m'
+	C_YLW=$'\033[1;33m'
+	C_RST=$'\033[0m'
+else
+	C_RED='' C_GRN='' C_CYN='' C_YLW='' C_RST=''
+fi
+
+info() { printf '%s[Ψ] %s%s\n' "$C_CYN" "$*" "$C_RST"; }
+ok()   { printf '%s[+] %s%s\n' "$C_GRN" "$*" "$C_RST"; }
+warn() { printf '%s[*] %s%s\n' "$C_YLW" "$*" "$C_RST" >&2; }
+err()  { printf '%s[!] %s%s\n' "$C_RED" "$*" "$C_RST" >&2; }
+die()  { err "$*"; exit 1; }
+
+is_uint() {
+	case ${1:-} in '' | *[!0-9]* | 0*) return 1 ;; *) return 0 ;; esac
+}
+
+ensure_dir() {
+	mkdir -p -- "$1" 2>/dev/null || die "Cannot create directory: $1"
+	[[ -w "$1" ]] || die "Directory not writable: $1"
+}
+
+cleanup() {
+	[[ -d "$TMP_DIR" ]] && rm -rf -- "$TMP_DIR" || true
+}
+trap cleanup EXIT INT TERM
+
+ensure_dir "$SVP_CONFIG_DIR"
+ensure_dir "$M3_CONFIG_DIR"
+ensure_dir "$LOG_DIR"
+
+detect_lan_ip() {
+	if command -v ip >/dev/null 2>&1; then
+		ip -o -4 addr show up scope global 2>/dev/null | \
+			awk '$2 !~ /^(lo|tun|tap|wg|docker|br-|veth|virbr)/ && $4 !~ /\/32$/ {split($4,a,"/"); print a[1]; exit}'
+	fi
+}
+
+resolve_m3_script() {
+	local self_dir
+	self_dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+	if [[ -x "${self_dir}/M3" ]]; then
+		printf '%s\n' "${self_dir}/M3"
+		return 0
+	elif command -v M3 >/dev/null 2>&1; then
+		command -v M3
+		return 0
+	fi
+	return 1
+}
+
+# -----------------------------------------------------------------------------
+# M3 Dependency & Configuration Management (Preserved & Delegated to Standalone M3)
+# -----------------------------------------------------------------------------
+check_m3_deps() {
+	for bin in N_m3u8DL-RE n-m3u8dl-re N-m3u8DL-RE n-m3u8dl-re-git N-m3u8dl-RE-git; do
+		if command -v "$bin" >/dev/null 2>&1; then
+			BIN_M3U8="$bin"
+			break
+		fi
+	done
+	[[ -n "$BIN_M3U8" ]] || die "Missing N_m3u8DL-RE in PATH."
+	command -v ffmpeg >/dev/null 2>&1 || die "Missing ffmpeg in PATH."
+}
+
+load_m3_config() {
+	[[ -f "$M3_CONFIG_FILE" ]] || return 0
+	while IFS='=' read -r key val || [[ -n "$key" ]]; do
+		case "$key" in '' | \#*) continue ;; esac
+		val="${val#\"}"
+		val="${val%\"}"
+		case "$key" in
+			THREAD_COUNT) is_uint "$val" && THREAD_COUNT="$val" ;;
+			RETRY_COUNT)  is_uint "$val" && RETRY_COUNT="$val" ;;
+			SAVE_DIR)     [[ -n "$val" ]] && SAVE_DIR="$val" ;;
+			TMP_BASE)     [[ -n "$val" ]] && TMP_BASE="$val" && TMP_DIR="${TMP_BASE}/$$" ;;
+			PROXY_URL)    PROXY_URL="$val" ;;
+			SVP_HOST)     [[ -n "$val" ]] && SVP_HOST="$val" ;;
+		esac
+	done <"$M3_CONFIG_FILE"
+}
+
+save_m3_config() {
+	local m3_bin=""
+	if m3_bin="$(resolve_m3_script)"; then
+		SVP_HOST="$SVP_HOST" "$m3_bin" --create-config
+		return 0
+	fi
+	ensure_dir "$M3_CONFIG_DIR"
+	cat <<EOF >"$M3_CONFIG_FILE"
+# Ψ-4ndr0666 SVP & N_m3u8DL-RE Orchestrator Configuration
+SVP_HOST="$SVP_HOST"
+THREAD_COUNT="$THREAD_COUNT"
+RETRY_COUNT="$RETRY_COUNT"
+SAVE_DIR="$SAVE_DIR"
+TMP_BASE="$TMP_BASE"
+PROXY_URL="$PROXY_URL"
+EOF
+	ok "Configuration locked at $M3_CONFIG_FILE"
+}
+
+# -----------------------------------------------------------------------------
+# Optimal AppleTV5,3 mpv.conf Emitter
+# -----------------------------------------------------------------------------
+write_optimal_mpv_conf() {
+	cat <<'EOF' > "$MPV_SNAPSHOT"
+# === Ψ-4ndr0666 AppleTV5,3 (A8 2GB RAM) Hardened Config ===
+# 1. Strictly RAM-only Cache (prevents tvOS eMMC wear & cache_delete resets)
+cache=yes
+cache-on-disk=no
+cache-pause=yes
+cache-pause-initial=yes
+cache-pause-wait=3
+cache-secs=15
+demuxer-max-bytes=220MiB
+demuxer-max-back-bytes=40MiB
+demuxer-readahead-secs=12
+
+# 2. HLS / M3U8 & Caddy LAN Stream Resilience
+network-timeout=15
+stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=4
+hls-bitrate=max
+prefetch-playlist=yes
+tls-verify=no
+user-agent="Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
+
+# 3. Apple A8 Hardware Decode & MoltenVK Render Sync
+hwdec=videotoolbox-copy
+video-sync=display-resample
+framedrop=vo
+vd-lavc-threads=2
+ad-lavc-threads=2
+sub-auto=fuzzy
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Browser Console JS Snippet Generator (Auto-populates & Copies to Clipboard)
+# -----------------------------------------------------------------------------
+generate_js_snippet() {
+	local overrides_json=""
+	if [[ -f "$NERD_SNAPSHOT" ]] && command -v jq >/dev/null 2>&1; then
+		overrides_json=$(jq -c 'if type=="array" then INDEX(.[]; .n) | map_values(.v) elif has("options") then INDEX(.options[]; .n) | map_values(.v) else . end' "$NERD_SNAPSHOT" 2>/dev/null || true)
+	fi
+	if [[ -z "${overrides_json:-}" || "$overrides_json" == "null" ]]; then
+		overrides_json='{
+    "main.setup.frc.enabled": "1",
+    "main.setup.frc.profile": "12",
+    "frc.target.fps": "60",
+    "frc.shader.11": "2",
+    "frc.mask.mode": "1",
+    "frc.scene.mode": "1"
+  }'
+	fi
+
+	cat <<EOF > "$JS_SNIPPET_FILE"
+// === Ψ-4ndr0666 SVPlayer Nerd Settings & mpv.conf Console Injector ===
+// Paste directly into Browser DevTools Console (F12) on http://192.168.1.211/
+(async function svpNerdInjector() {
+  window.svpExportSettings = async () => {
+    const res = await fetch("r/settings");
+    const data = await res.json();
+    console.log("[Ψ] Current /r/settings dump:", JSON.stringify(data, null, 2));
+    return data;
+  };
+
+  const NERD_OVERRIDES = ${overrides_json};
+
+  const OPTIMAL_MPV_CONF = \`cache=yes
+cache-on-disk=no
+cache-pause=yes
+cache-pause-initial=yes
+cache-pause-wait=3
+cache-secs=15
+demuxer-max-bytes=220MiB
+demuxer-max-back-bytes=40MiB
+demuxer-readahead-secs=12
+network-timeout=15
+stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=4
+hls-bitrate=max
+prefetch-playlist=yes
+tls-verify=no
+user-agent="Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
+hwdec=videotoolbox-copy
+video-sync=display-resample
+framedrop=vo
+vd-lavc-threads=2
+ad-lavc-threads=2
+sub-auto=fuzzy\`;
+
+  console.log("[Ψ] Pushing optimal mpv.conf...");
+  await fetch("r/mpvc", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+    body: new URLSearchParams({ conf: OPTIMAL_MPV_CONF })
+  });
+
+  console.log("[Ψ] Injecting SVPlayer Nerd Settings...");
+  for (const [n, v] of Object.entries(NERD_OVERRIDES)) {
+    if (typeof v === "object") continue;
+    await fetch("r/set-opt", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      body: new URLSearchParams({ n, v: String(v) })
+    });
+    console.log(\`[+] Set \${n} = \${v}\`);
+  }
+
+  if (typeof updateAllSettings === "function") {
+    const fresh = await fetch("r/settings").then(r => r.json());
+    updateAllSettings(fresh);
+  }
+  console.log("[Ψ] All Nerd Settings & mpv.conf successfully restored!");
+})();
+EOF
+
+	cat "$JS_SNIPPET_FILE"
+	if command -v wl-copy >/dev/null 2>&1 && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+		wl-copy < "$JS_SNIPPET_FILE" 2>/dev/null && ok "Copied JS snippet to Wayland clipboard (wl-copy) & saved to $JS_SNIPPET_FILE" || ok "Saved JS snippet to $JS_SNIPPET_FILE"
+	elif command -v xclip >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+		xclip -selection clipboard < "$JS_SNIPPET_FILE" 2>/dev/null && ok "Copied JS snippet to X11 clipboard (xclip) & saved to $JS_SNIPPET_FILE" || ok "Saved JS snippet to $JS_SNIPPET_FILE"
+	else
+		ok "Saved JS snippet to $JS_SNIPPET_FILE"
+	fi
+}
+
+# -----------------------------------------------------------------------------
+# M3 Extraction Bridge (Delegates to Standalone M3 when available, with Fallback)
+# -----------------------------------------------------------------------------
+m3_extract() {
+	local post_action="${1:-none}"
+	local m3_bin=""
+	if m3_bin="$(resolve_m3_script)"; then
+		local m3_args=(
+			-t "$THREAD_COUNT"
+			-r "$RETRY_COUNT"
+			-d "$SAVE_DIR"
+			--svp-host "$SVP_HOST"
+			--caddy-port "$CADDY_PORT"
+		)
+		[[ -n "$SAVE_NAME" ]] && m3_args+=(-o "$SAVE_NAME")
+		[[ -n "$PROXY_URL" ]] && m3_args+=(-p "$PROXY_URL")
+		[[ "$LIVE_REAL_TIME_MERGE" -eq 1 ]] && m3_args+=(--live)
+		[[ "$post_action" == "cast" ]] && m3_args+=(--cast)
+		[[ "$post_action" == "upload" ]] && m3_args+=(--upload)
+		"$m3_bin" "${m3_args[@]}" "$TARGET_URL"
+		return $?
+	fi
+
+	check_m3_deps
+	[[ -n "$TARGET_URL" ]] || die "TARGET_URL is empty."
+	ensure_dir "$SAVE_DIR"
+	ensure_dir "$TMP_DIR"
+	ensure_dir "$LOG_DIR"
+
+	local save_base="${SAVE_NAME:-stream_$(date +%s)}"
+	local cmd_args=(
+		"$BIN_M3U8" "$TARGET_URL"
+		--log-file-path "$LOG_DIR/n-m3u8dl-re.log"
+		--thread-count "$THREAD_COUNT"
+		--download-retry-count "$RETRY_COUNT"
+		--tmp-dir "$TMP_DIR"
+		--save-dir "$SAVE_DIR"
+		--save-name "$save_base"
+		--mux-after-done "format=mp4:muxer=ffmpeg"
+	)
+
+	[[ "$SKIP_MERGE" -eq 1 ]] && cmd_args+=(--skip-merge)
+	[[ "$DEL_AFTER_DONE" -eq 1 ]] && cmd_args+=(--del-after-done)
+	[[ "$AUTO_SELECT" -eq 1 ]] && cmd_args+=(--auto-select)
+	[[ "$USE_FFMPEG_CONCAT" -eq 1 ]] && cmd_args+=(--use-ffmpeg-concat-demuxer)
+	[[ "$LIVE_REAL_TIME_MERGE" -eq 1 ]] && cmd_args+=(--live-real-time-merge)
+	[[ "$LIVE_PERFORM_AS_VOD" -eq 1 ]] && cmd_args+=(--live-perform-as-vod)
+	[[ -n "$PROXY_URL" ]] && cmd_args+=(--custom-proxy "$PROXY_URL")
+
+	info "Target: $TARGET_URL (Threads: $THREAD_COUNT | Retries: $RETRY_COUNT)"
+	if "${cmd_args[@]}"; then
+		ok "Extraction complete in $SAVE_DIR"
+	else
+		local rc=$?
+		err "Extraction failed (exit $rc). Check $LOG_DIR/n-m3u8dl-re.log"
+		return "$rc"
+	fi
+
+	if [[ "$post_action" == "cast" || "$post_action" == "upload" ]]; then
+		local out_file
+		out_file="$(find "$SAVE_DIR" -maxdepth 1 -name "${save_base}.*" -type f | head -n 1)"
+		[[ -n "$out_file" ]] || die "Could not locate extracted file matching ${save_base}.*"
+		if [[ "$post_action" == "upload" ]]; then
+			svp_upload "$out_file"
+		else
+			svp_cast_local "$out_file"
+		fi
+	fi
+}
+
+# -----------------------------------------------------------------------------
+# Core SVPlayer Operations (/r/* Endpoints + Systemd Watchdog Installer)
+# -----------------------------------------------------------------------------
+svp_play() {
+	[[ $# -ge 1 ]] || die "Usage: svp-cli play <url>"
+	curl -sS -G --data-urlencode "url=$1" "${SVP_HOST}/r/play" >/dev/null
+	ok "Dispatched stream to SVPlayer: $1"
+}
+
+svp_upload() {
+	[[ $# -ge 1 ]] || die "Usage: svp-cli upload <file...>"
+	for f in "$@"; do
+		[[ -f "$f" ]] || { warn "File not found: $f"; continue; }
+		info "Uploading $(basename "$f") -> ${SVP_HOST}/r/upload ..."
+		curl -# -X POST -F "file=@${f}" "${SVP_HOST}/r/upload" -o /dev/null
+		ok "Uploaded: $(basename "$f")"
+	done
+}
+
+svp_cast_local() {
+	[[ $# -ge 1 ]] || die "Usage: svp-cli cast-local <file_or_dir>"
+	local target
+	target="$(realpath "$1")"
+	local lan_ip
+	lan_ip="$(detect_lan_ip)"
+	[[ -n "$lan_ip" ]] || lan_ip="127.0.0.1"
+	local self_dir
+	self_dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+	local mkp_bin=""
+	if [[ -x "${self_dir}/mkplaylist" ]]; then
+		mkp_bin="${self_dir}/mkplaylist"
+	elif command -v mkplaylist >/dev/null 2>&1; then
+		mkp_bin="mkplaylist"
+	fi
+
+	if [[ -d "$target" ]]; then
+		if [[ -n "$mkp_bin" ]]; then
+			"$mkp_bin" -n -t videos -s date -o desc -a ":${CADDY_PORT}" -b "${lan_ip} 127.0.0.1" -S "$target"
+			return 0
+		fi
+		local serve_dir="$target"
+		local play_uri="playlist.m3u"
+	else
+		local serve_dir
+		serve_dir="$(dirname "$target")"
+		local play_uri
+		play_uri="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$(basename "$target")")"
+	fi
+
+	if command -v caddy >/dev/null 2>&1; then
+		pkill -f "caddy file-server.*:${CADDY_PORT}" 2>/dev/null || true
+		nohup caddy file-server --root "$serve_dir" --listen "${lan_ip}:${CADDY_PORT}" >/dev/null 2>&1 &
+		sleep 1
+	fi
+	svp_play "http://${lan_ip}:${CADDY_PORT}/${play_uri}"
+}
+
+install_systemd_watchdog() {
+	local unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+	ensure_dir "$unit_dir"
+	local self_bin
+	self_bin="$(realpath "$0")"
+
+	cat <<EOF > "${unit_dir}/svp-autoheal.service"
+[Unit]
+Description=Auto-Heal Apple TV SVPlayer Settings if Wiped by tvOS cache_delete
+
+[Service]
+Type=oneshot
+Environment="SVP_HOST=${SVP_HOST}"
+ExecStart=/bin/bash -c 'if curl -sf --max-time 2 "${SVP_HOST}/r/mpvc" | jq -e ".conf | length < 20" >/dev/null; then "${self_bin}" heal; fi'
+EOF
+
+	cat <<EOF > "${unit_dir}/svp-autoheal.timer"
+[Unit]
+Description=Check Apple TV SVPlayer Config Every 5 Minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+	ok "Wrote systemd user units to ${unit_dir}/svp-autoheal.{service,timer}"
+	if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+		systemctl --user daemon-reload
+		systemctl --user enable --now svp-autoheal.timer
+		ok "Enabled and started svp-autoheal.timer"
+	else
+		info "To activate timer in an active systemd user session: systemctl --user daemon-reload && systemctl --user enable --now svp-autoheal.timer"
+	fi
+}
+
+# -----------------------------------------------------------------------------
+# Interactive TUI Menu
+# -----------------------------------------------------------------------------
+interactive_menu() {
+	while :; do
+		printf '\n      === //%s Ψ SVP-CLI COMMAND DECK v%s %s// ===\n\n' "$C_CYN" "$VERSION" "$C_RST"
+		printf '1. Cast Stream URL directly to Apple TV (/r/play)\n'
+		printf '2. Extract M3U8 via M3 (N_m3u8DL-RE) & LAN-Cast via Caddy\n'
+		printf '3. Extract M3U8 via M3 (N_m3u8DL-RE) & Upload to Apple TV\n'
+		printf '4. Zero-Copy LAN Cast Local File/Directory (mkplaylist + Caddy)\n'
+		printf '5. Heal Apple TV (Purge Cache + Restore Optimal mpv.conf & Nerd Settings)\n'
+		printf '6. Dump Current Apple TV Nerd Settings & Generate Browser JS Snippet\n'
+		printf '7. Live-Tail Apple TV SVPlayer Telemetry Log (/r/log)\n'
+		printf '8. M3 Preset 1: %s\n' "$PRESET_LABEL_1"
+		printf '9. M3 Preset 2: %s\n' "$PRESET_LABEL_2"
+		printf 'w. Install Systemd User Auto-Heal Watchdog Timer\n'
+		printf 's. Save Current Config (%s)\n' "$M3_CONFIG_FILE"
+		printf 'q. Quit\n\nΨ '
+		IFS= read -r choice || exit 0
+
+		case "$choice" in
+			1)
+				printf 'Stream URL: '
+				IFS= read -r u || continue
+				[[ -n "$u" ]] && svp_play "$u"
+				;;
+			2)
+				printf 'M3U8/MPD URL: '
+				IFS= read -r TARGET_URL || continue
+				[[ -n "$TARGET_URL" ]] && m3_extract "cast"
+				;;
+			3)
+				printf 'M3U8/MPD URL: '
+				IFS= read -r TARGET_URL || continue
+				[[ -n "$TARGET_URL" ]] && m3_extract "upload"
+				;;
+			4)
+				printf 'Local File or Directory Path: '
+				IFS= read -r p || continue
+				[[ -n "$p" ]] && svp_cast_local "$p"
+				;;
+			5)
+				bash "$0" heal
+				;;
+			6)
+				bash "$0" nerd dump
+				bash "$0" js
+				;;
+			7)
+				bash "$0" log -f
+				;;
+			8)
+				TARGET_URL="$PRESET_URL_1"
+				m3_extract "cast"
+				;;
+			9)
+				TARGET_URL="$PRESET_URL_2"
+				m3_extract "cast"
+				;;
+			w|W)
+				install_systemd_watchdog
+				;;
+			s|S)
+				save_m3_config
+				;;
+			q|Q)
+				info "─── ⊰ 💀 • - ⦑4NDR0666OS⦒ - • 💀 ⊱ ───"
+				exit 0
+				;;
+			*)
+				warn "Invalid selection."
+				;;
+		esac
+	done
+}
+
+usage() {
+	cat <<EOF
+${C_CYN}=== Ψ SVP-CLI // APPLE TV SVPLAYER CONTROLLER v${VERSION} // 4ndr0666 ===${C_RST}
+Usage: ${0##*/} [command] [options] [args]
+
+Run with no arguments in a terminal to launch the interactive SVP Command Deck.
+
+Commands:
+  play <url>                        Cast an .m3u8 / .m3u / HTTP URL to Apple TV (/r/play)
+  cast-local <file|dir>             Zero-copy LAN stream via mkplaylist + Caddy
+  m3u8|m3 [opts] <url>              Delegate to standalone M3 (--cast to LAN stream, --up to upload)
+    -t, --threads NUM               Thread count (Default: $THREAD_COUNT)
+    -r, --retries NUM               Retry count (Default: $RETRY_COUNT)
+    -d, --save-dir DIR              Output directory (Default: $SAVE_DIR)
+    -o, --output NAME               Output filename without extension
+    --live                          Enable live real-time merge flags
+    --cast                          Automatically LAN-cast via Caddy when finished
+    --up                            Automatically upload to Apple TV when finished
+  upload|up <file...>               Multipart upload media/subtitle files to Apple TV (/r/upload)
+  clear                             Purge Apple TV /Library/Caches/SVPlayer/uploads/ (/r/upload-clear)
+  conf [pull|push [file]|edit|optimal]
+                                    Manage Apple TV mpv.conf (optimal = A8 2GB RAM config)
+  nerd [dump|restore|preset|set <k> <v>]
+                                    Snapshot, restore, or modify /r/settings
+  js                                Generate & copy DevTools Console JS Injector snippet
+  heal                              1-command recovery: clear cache + optimal mpv.conf + nerd restore
+  install-watchdog                  Install systemd user timer to auto-heal Apple TV after tvOS resets
+  share [list|add <type> <title> <url>|del <id>]
+                                    Manage SVPlayer network shares (/r/loc, /r/loc-add, /r/loc-del)
+  report <message> [email]          Submit diagnostic report to /r/report
+  log [-f]                          View or live-tail SVPlayer logs (/r/log)
+  audit                             Scan Apple TV open ports & query lockdownd (62078/tcp)
+  -v, --version                     Print version ($VERSION) and exit
+  -h, --help                        Display this help message
+EOF
+}
+
+load_m3_config
+
+if [[ $# -eq 0 ]]; then
+	if [[ -t 0 && -t 1 ]]; then
+		interactive_menu
+		exit 0
+	else
+		usage
+		exit 1
+	fi
+fi
+
+cmd="$1"; shift
+
+case "$cmd" in
+	-h|--help|help)
+		usage
+		;;
+	-v|--version)
+		printf '%s\n' "$VERSION"
+		;;
+	-c|--create-config)
+		save_m3_config
+		;;
+	play)
+		svp_play "$@"
+		;;
+	upload|up)
+		svp_upload "$@"
+		;;
+	cast-local)
+		svp_cast_local "$@"
+		;;
+	clear)
+		curl -sS "${SVP_HOST}/r/upload-clear" >/dev/null
+		ok "Apple TV upload cache purged."
+		;;
+	m3u8|m3)
+		post_act="none"
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+				-t|--threads) THREAD_COUNT="$2"; shift 2 ;;
+				-r|--retries) RETRY_COUNT="$2"; shift 2 ;;
+				-d|--save-dir) SAVE_DIR="$2"; shift 2 ;;
+				-o|--output) SAVE_NAME="$2"; shift 2 ;;
+				--live) LIVE_REAL_TIME_MERGE=1; LIVE_PERFORM_AS_VOD=1; shift ;;
+				--cast) post_act="cast"; shift ;;
+				--up|--upload) post_act="upload"; shift ;;
+				-*) die "Unknown m3 option: $1" ;;
+				*) TARGET_URL="$1"; shift ;;
+			esac
+		done
+		m3_extract "$post_act"
+		;;
+	conf)
+		sub="${1:-pull}"
+		case "$sub" in
+			pull)
+				curl -sS "${SVP_HOST}/r/mpvc" | jq -r '.conf' | tee "$MPV_SNAPSHOT"
+				ok "Saved mpv.conf snapshot to $MPV_SNAPSHOT"
+				;;
+			push)
+				src="${2:-$MPV_SNAPSHOT}"
+				[[ -f "$src" ]] || die "Config file not found: $src"
+				curl -sS -X POST --data-urlencode "conf=$(cat "$src")" "${SVP_HOST}/r/mpvc" >/dev/null
+				ok "Pushed $src to Apple TV."
+				;;
+			edit)
+				tmp="$(mktemp /tmp/svp-mpv.XXXXXX.conf)"
+				trap 'rm -f "$tmp"' EXIT
+				curl -sS "${SVP_HOST}/r/mpvc" | jq -r '.conf' > "$tmp"
+				"${EDITOR:-vim}" "$tmp"
+				curl -sS -X POST --data-urlencode "conf=$(cat "$tmp")" "${SVP_HOST}/r/mpvc" >/dev/null
+				cp "$tmp" "$MPV_SNAPSHOT"
+				ok "Updated Apple TV mpv.conf and local snapshot."
+				;;
+			optimal)
+				write_optimal_mpv_conf
+				bash "$0" conf push "$MPV_SNAPSHOT"
+				;;
+			*)
+				die "Unknown conf subcommand '$sub' (expected: pull, push, edit, optimal)"
+				;;
+		esac
+		;;
+	nerd)
+		sub="${1:-dump}"
+		case "$sub" in
+			dump)
+				curl -sS "${SVP_HOST}/r/settings" | jq '.' > "$NERD_SNAPSHOT"
+				ok "Dumped all Apple TV Nerd Settings to $NERD_SNAPSHOT"
+				;;
+			restore)
+				if [[ ! -f "$NERD_SNAPSHOT" ]]; then
+					warn "No snapshot at $NERD_SNAPSHOT; applying built-in A8 Nerd Preset..."
+					bash "$0" nerd preset
+					exit 0
+				fi
+				info "Restoring Nerd Settings from $NERD_SNAPSHOT..."
+				jq -r 'if type=="array" then .[] | "\(.n)\t\(.v)" elif has("options") then .options[] | "\(.n)\t\(.v)" else to_entries[] | "\(.key)\t\(.value)" end' "$NERD_SNAPSHOT" | \
+				while IFS=$'\t' read -r k v; do
+					[[ -n "$k" && "$v" != "null" ]] || continue
+					curl -sS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
+					printf '  [+] %s = %s\n' "$k" "$v"
+				done
+				ok "All Nerd Settings restored!"
+				;;
+			preset)
+				for kv in \
+					"main.setup.frc.enabled=1" \
+					"main.setup.frc.profile=12" \
+					"frc.target.fps=60" \
+					"frc.shader.11=2" \
+					"frc.mask.mode=1" \
+					"frc.scene.mode=1"; do
+					k="${kv%%=*}"
+					v="${kv#*=}"
+					curl -sS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
+					printf '  [+] %s = %s\n' "$k" "$v"
+				done
+				ok "Applied built-in Apple TV A8 Nerd Preset!"
+				;;
+			set)
+				[[ $# -ge 3 ]] || die "Usage: svp-cli nerd set <key> <val>"
+				curl -sS -X POST --data-urlencode "n=$2" --data-urlencode "v=$3" "${SVP_HOST}/r/set-opt" | jq .
+				;;
+			*)
+				die "Unknown nerd subcommand '$sub' (expected: dump, restore, preset, set)"
+				;;
+		esac
+		;;
+	js)
+		generate_js_snippet
+		;;
+	heal)
+		info "Executing 1-Command Apple TV SVPlayer Recovery..."
+		bash "$0" clear
+		bash "$0" conf optimal
+		bash "$0" nerd restore
+		generate_js_snippet >/dev/null
+		ok "Apple TV SVPlayer completely healed and synced!"
+		;;
+	install-watchdog)
+		install_systemd_watchdog
+		;;
+	share)
+		sub="${1:-list}"
+		case "$sub" in
+			list)
+				curl -sS "${SVP_HOST}/r/loc" | jq .
+				;;
+			add)
+				[[ $# -ge 4 ]] || die "Usage: svp-cli share add <0=SMB|1=DAV|2=FTP|3=Plex> <title> <url>"
+				curl -sS -X POST --data-urlencode "n=$2" --data-urlencode "t=$3" --data-urlencode "u=$4" "${SVP_HOST}/r/loc-add" | jq .
+				;;
+			del)
+				[[ $# -ge 2 ]] || die "Usage: svp-cli share del <id>"
+				curl -sS -X POST --data-urlencode "n=$2" "${SVP_HOST}/r/loc-del" | jq .
+				;;
+			*)
+				die "Unknown share subcommand '$sub' (expected: list, add, del)"
+				;;
+		esac
+		;;
+	report)
+		[[ $# -ge 1 ]] || die "Usage: svp-cli report <message> [email]"
+		curl -sS -X POST --data-urlencode "m=$1" --data-urlencode "e=${2:-}" "${SVP_HOST}/r/report" >/dev/null
+		ok "Submitted report to ${SVP_HOST}/r/report"
+		;;
+	log|logs)
+		if [[ "${1:-}" == "-f" ]]; then
+			last_id=0
+			while true; do
+				res="$(curl -sS "${SVP_HOST}/r/log?last=${last_id}")"
+				echo "$res" | jq -r '.log[]? | if type=="object" then "\(.t) [\(.s)]: \(.m)" else . end' 2>/dev/null || true
+				new_id="$(echo "$res" | jq -r '.last // empty' 2>/dev/null || true)"
+				[[ -n "$new_id" && "$new_id" != "null" ]] && last_id="$new_id"
+				sleep 2
+			done
+		else
+			curl -sS "${SVP_HOST}/r/log?last=0" | jq .
+		fi
+		;;
+	audit)
+		atv_ip="${SVP_HOST#*//}"
+		atv_ip="${atv_ip#*@}"
+		atv_ip="${atv_ip%%:*}"
+		atv_ip="${atv_ip%%/*}"
+		info "Scanning Apple TV ($atv_ip) open ports & services..."
+		nmap -sV -p 80,49152,49153,62078 "$atv_ip"
+		if command -v ideviceinfo >/dev/null 2>&1; then
+			info "Probing lockdownd (62078/tcp) unauthenticated plist metadata:"
+			ideviceinfo -n || true
+		fi
+		;;
+	*)
+		usage
+		exit 1
+		;;
+esac
