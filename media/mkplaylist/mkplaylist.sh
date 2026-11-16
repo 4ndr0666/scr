@@ -553,7 +553,7 @@ def caddy_config(root, playlist, port, bind):
             '\t\tfile_server\n\t}\n'
             '\thandle {\n\t\theader Access-Control-Allow-Origin "*"\n'
             '\t\tfile_server {\n'
-            '\t\t\thide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* Caddyfile Caddyfile.*\n'
+            '\t\t\thide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* .svp_auth.hash svp-ui Caddyfile Caddyfile.*\n'
             '\t\t}\n\t}\n}\n').encode('utf-8')
 
 
@@ -607,7 +607,7 @@ def main():
                 lines.append(f"#EXTINF:-1,{display_title}")
             lines.append(url_line)
 
-        content = ('#EXTM3U\n' + ''.join(line + '\n' for line in lines)).encode('ascii')
+        content = ('#EXTM3U\n' + ''.join(line + '\n' for line in lines)).encode('utf-8')
         primary = root / 'playlist.m3u'
         planned = matching_or_free(primary, content) if keep == 'yes' else primary
         config = caddy_config(root, planned, port, bind) if caddy == 'yes' else None
@@ -640,14 +640,22 @@ PYTHON_ENGINE
 printf '%s\n' "$OUT_PATHS"
 
 if [ "$OPT_CAST" = "yes" ]; then
+	_caddy_bin=${CADDY_BIN:-caddy}
 	_m3u_file=$(printf '%s\n' "$OUT_PATHS" | head -n 1)
 	_caddy_file=$(printf '%s\n' "$OUT_PATHS" | tail -n 1)
-	if have_cmd caddy && [ -f "$_caddy_file" ]; then
+	if have_cmd "$_caddy_bin" && [ -f "$_caddy_file" ]; then
 		pkill -f "caddy run --config $_caddy_file" 2>/dev/null || true
-		nohup caddy run --config "$_caddy_file" --adapter caddyfile >/dev/null 2>&1 &
+		nohup "$_caddy_bin" run --config "$_caddy_file" --adapter caddyfile >/dev/null 2>&1 &
 		sleep 1
+	elif [ -f "$_caddy_file" ]; then
+		warn_msg "Caddy ($_caddy_bin) not found in PATH; assuming playlist is already served at $OPT_BASE_URL"
 	fi
+	have_cmd curl || die "curl is required for -S casting"
+	case $OPT_ATV_IP in
+		http://*|https://*) _svp_endpoint="${OPT_ATV_IP%/}/r/play" ;;
+		*) _svp_endpoint="http://${OPT_ATV_IP}/r/play" ;;
+	esac
 	_cast_url="${OPT_BASE_URL}/$(basename -- "$_m3u_file")"
-	bold_msg "[CAST] Dispatching $_cast_url -> http://${OPT_ATV_IP}/r/play"
-	curl -sS -G --data-urlencode "url=${_cast_url}" "http://${OPT_ATV_IP}/r/play" >/dev/null
+	bold_msg "[CAST] Dispatching $_cast_url -> $_svp_endpoint"
+	curl -sfS -G --data-urlencode "url=${_cast_url}" "$_svp_endpoint" >/dev/null
 fi

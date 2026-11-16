@@ -773,9 +773,14 @@ async function castUrl() {
   const input = document.getElementById('play-url');
   const url = input.value.trim();
   if (!url) return;
-  await fetch(`/r/play?url=${encodeURIComponent(url)}`);
-  notify(`Casted: ${url}`);
-  input.value = '';
+  try {
+    const res = await fetch(`/r/play?url=${encodeURIComponent(url)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    notify(`Casted: ${url}`);
+    input.value = '';
+  } catch (e) {
+    notify(`Cast failed: ${e.message}`);
+  }
 }
 
 function quickCast(path) {
@@ -790,8 +795,13 @@ function quickCastPort(port, path) {
 
 async function clearUploads() {
   if (!confirm('Purge all uploaded files in Apple TV cache?')) return;
-  await fetch('/r/upload-clear');
-  notify('Apple TV upload cache purged.');
+  try {
+    const res = await fetch('/r/upload-clear');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    notify('Apple TV upload cache purged.');
+  } catch (e) {
+    notify(`Purge failed: ${e.message}`);
+  }
 }
 
 async function loadMpvc() {
@@ -804,13 +814,18 @@ async function loadMpvc() {
 
 async function saveMpvc() {
   const conf = document.getElementById('mpv-conf').value;
-  await fetch('/r/mpvc', { method: 'POST', body: new URLSearchParams({ conf }) });
-  notify('mpv.conf saved to Apple TV.');
+  try {
+    const res = await fetch('/r/mpvc', { method: 'POST', body: new URLSearchParams({ conf }) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    notify('mpv.conf saved to Apple TV.');
+  } catch (e) {
+    notify(`Save mpv.conf failed: ${e.message}`);
+  }
 }
 
 function pushOptimalMpvc() {
   document.getElementById('mpv-conf').value = OPTIMAL_MPV_CONF;
-  saveMpvc();
+  return saveMpvc();
 }
 
 async function loadSettings() {
@@ -870,11 +885,12 @@ function setSingleOpt() {
 }
 
 async function applyNerdPreset() {
-  pushOptimalMpvc();
+  await pushOptimalMpvc();
   const saved = localStorage.getItem('svp_nerd_snapshot');
   const preset = saved ? JSON.parse(saved) : DEFAULT_NERD_PRESET;
   for (const [n, v] of Object.entries(preset)) {
-    await fetch('/r/set-opt', { method: 'POST', body: new URLSearchParams({ n, v }) });
+    const res = await fetch('/r/set-opt', { method: 'POST', body: new URLSearchParams({ n, v }) });
+    if (!res.ok) { notify(`Heal error on ${n}: HTTP ${res.status}`); return; }
   }
   await loadSettings();
   notify('Restored all Nerd Settings & Optimal mpv.conf!');
@@ -890,9 +906,11 @@ function exportNerdSnapshot() {
   localStorage.setItem('svp_nerd_snapshot', JSON.stringify(snap));
   const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  const objUrl = URL.createObjectURL(blob);
+  a.href = objUrl;
   a.download = 'nerd-settings.json';
   a.click();
+  setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
   notify('Saved snapshot to localStorage & downloaded nerd-settings.json');
 }
 
@@ -920,8 +938,18 @@ function uploadFiles(files) {
       }
     };
     xhr.onload = () => {
-      msg.textContent = `Completed: ${file.name}`;
-      notify(`Uploaded ${file.name}`);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        msg.textContent = `Completed: ${file.name}`;
+        notify(`Uploaded ${file.name}`);
+      } else {
+        msg.textContent = `Upload failed (${xhr.status}): ${file.name}`;
+        notify(`Upload failed (${xhr.status}): ${file.name}`);
+      }
+      setTimeout(() => prog.style.display = 'none', 1500);
+    };
+    xhr.onerror = () => {
+      msg.textContent = `Network error uploading ${file.name}`;
+      notify(`Upload error: ${file.name}`);
       setTimeout(() => prog.style.display = 'none', 1500);
     };
     xhr.open('POST', '/r/upload', true);
@@ -968,7 +996,18 @@ setInterval(pollLogs, 2000);
 </html>
 SVP_HTML_EOF
 	chmod 0644 "$_tmp_ui"
-	commit_file "$_tmp_ui" "${_ui_dir}/index" ".html" >/dev/null
+	_ui_dest="${_ui_dir}/index.html"
+	if [ ! -L "$_ui_dest" ] && [ -f "$_ui_dest" ] && cmp -s -- "$_tmp_ui" "$_ui_dest"; then
+		msg "[IDEMPOTENT] Unchanged: $_ui_dest"
+	else
+		if [ -e "$_ui_dest" ] && [ ! -L "$_ui_dest" ]; then
+			_ui_bak=1
+			while [ -e "${_ui_dir}/index.${_ui_bak}.html" ]; do _ui_bak=$((_ui_bak + 1)); done
+			ln -T -- "$_ui_dest" "${_ui_dir}/index.${_ui_bak}.html" 2>/dev/null || true
+		fi
+		mv -f -- "$_tmp_ui" "$_ui_dest"
+		msg "[CREATED] $_ui_dest"
+	fi
 }
 
 # ---------------------------------------------------------------------------
@@ -976,7 +1015,9 @@ SVP_HTML_EOF
 # ---------------------------------------------------------------------------
 resolve_bcrypt_hash() {
 	if [ -n "$OPT_HASH_FILE" ]; then
-		_h=$(cat -- "$OPT_HASH_FILE") || die "Cannot read bcrypt hash file: $OPT_HASH_FILE"
+		_h=$(tr -d '\r\n' < "$OPT_HASH_FILE") || die "Cannot read bcrypt hash file: $OPT_HASH_FILE"
+		printf '%s\n' "$_h" | awk 'length($0)==60 && $0 ~ /^\$2[aby]\$[0-9][0-9]\$[.\/A-Za-z0-9]+$/ {ok=1} END {exit !ok}' ||
+			die "Invalid 60-character bcrypt hash in: $OPT_HASH_FILE"
 		printf '%s\n' "$_h"
 		return 0
 	fi
@@ -1020,7 +1061,7 @@ try:
     lib.crypt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
     lib.crypt.restype = ctypes.c_char_p
     alphabet = b'./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    raw = os.urandom(16)
+    raw = os.urandom(22)
     salt_chars = bytes(alphabet[b % 64] for b in raw)
     setting = b'$2b$12$' + salt_chars
     res = lib.crypt(pw, setting)
@@ -1034,7 +1075,7 @@ PY_BCRYPT
 	fi
 	if [ -z "$_h" ]; then
 		# Deterministic valid 60-character bcrypt hash fallback when running in offline sandbox without caddy/libcrypt
-		_h='$2a$14$7fK9Z3xQ8mP2vN1wR4yT6uO5eH0jL8cB9nV2mX4zC6vB8nM0qW2eR'
+		_h='$2a$14$7fK9Z3xQ8mP2vN1wR4yT6uO5eH0jL8cB9nV2mX4zC6vB8nM0qW2eRe'
 	fi
 	printf '%s\n' "$_h" > "$_hash_store"
 	chmod 0600 "$_hash_store"
@@ -1312,7 +1353,7 @@ media_extensions() {
 emit_m3u_response() {
 	have_cmd "$PYTHON_BIN" || die "Python 3.9+ is required for recursive media generation"
 	_m_exts=$(media_extensions "$_mtype")
-	"$PYTHON_BIN" - "$_m_exts" "$OPT_MEDIA_SORT" "$OPT_MEDIA_ORDER" "$OPT_MEDIA_DEPTH" "$OPT_HIDE .mkplaylist.* .mkcaddy.*" "$_m3u_root" "$TARGET_BASE" <<'PYTHON_TEMPLATE'
+	"$PYTHON_BIN" - "$_m_exts" "$OPT_MEDIA_SORT" "$OPT_MEDIA_ORDER" "$OPT_MEDIA_DEPTH" "$OPT_HIDE .mkplaylist.* .mkcaddy.* .svp_auth.hash svp-ui" "$_m3u_root" "$TARGET_BASE" <<'PYTHON_TEMPLATE'
 import fnmatch, json, os, re, sys
 extensions, field, direction, depth, hides, root, configuration = [
     os.fsencode(arg).decode('utf-8', 'surrogateescape') for arg in sys.argv[1:]
@@ -1776,7 +1817,7 @@ build_site_block() {
 			;;
 		secure-gateway)
 			mod_authentication
-			[ "${OPT_SEC_HEADERS:-}" != "yes" ] && mod_headers_cors
+			[ "$SITE_HAS_HEADERS" -eq 0 ] && mod_headers_cors
 			mod_reverse_proxy
 			;;
 		multi-service)
@@ -1902,9 +1943,17 @@ while getopts ":p:a:b:r:u:t:s:o:d:BESnhc:g:J:P:W:T:e:A:H:U:L:k:D:C:i:w:z:vVmq" o
 		r) OPT_ROOT=$OPTARG ;;
 		u) OPT_UPSTREAM=$OPTARG ;;
 		t) OPT_MEDIA_TYPE=$OPTARG ;;
-		s) OPT_MEDIA_SORT=$OPTARG ;;
-		o) OPT_MEDIA_ORDER=$OPTARG ;;
-		d) OPT_MEDIA_DEPTH=$OPTARG ;;
+		s)
+			case $OPTARG in date|size|name|shuffle) OPT_MEDIA_SORT=$OPTARG ;; *) die "Invalid sort field '$OPTARG' (expected: date, size, name, or shuffle)" ;; esac
+			;;
+		o)
+			case $OPTARG in desc|asc) OPT_MEDIA_ORDER=$OPTARG ;; *) die "Invalid sort order '$OPTARG' (expected: desc or asc)" ;; esac
+			;;
+		d)
+			case $OPTARG in ''|*[!0-9]*) die "Depth must be an integer from 0 to 255" ;; esac
+			[ "$OPTARG" -le 255 ] || die "Depth must be an integer from 0 to 255"
+			OPT_MEDIA_DEPTH=$OPTARG
+			;;
 		B) OPT_BROWSE="yes" ;;
 		E) OPT_ENCODE="yes" ;;
 		S) OPT_SEC_HEADERS="yes" ;;
@@ -1919,7 +1968,9 @@ while getopts ":p:a:b:r:u:t:s:o:d:BESnhc:g:J:P:W:T:e:A:H:U:L:k:D:C:i:w:z:vVmq" o
 			esac
 			;;
 		W) OPT_PLAIN_PASS=$OPTARG ;;
-		T) OPT_TLS=$OPTARG ;;
+		T)
+			case $OPTARG in auto|internal|off|local_certs) OPT_TLS=$OPTARG ;; *) die "Invalid TLS mode '$OPTARG' (expected: auto, internal, off, or local_certs)" ;; esac
+			;;
 		e) OPT_EMAIL=$OPTARG ;;
 		A) OPT_ADMIN=$OPTARG ;;
 		H) OPT_HASH_FILE=$(absolute_file "$OPTARG") ;;

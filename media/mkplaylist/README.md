@@ -26,6 +26,10 @@
 | **`MKP-BUG-03`** | Passing `-b "192.1.168.100 127.0.0.1"` caused Caddy to fail to bind or rejected the transposed octet. | Common finger-slip transposing `.1.168.` instead of `.168.1.` on a `192.168.1.0/24` LAN. | Added `sanitize_bind_ips()`, which automatically rewrites `192.1.168.<host>` to `192.168.1.<host>` and logs a clear `[WARN]` message to `stderr`. |
 | **`MKP-BUG-04`** | Uploading a relative `./subdir/file.mp4` `playlist.m3u` to the SVPlayer WebUI failed to play any entries. | `mpv` on Apple TV resolved `./` relative to `/Library/Caches/SVPlayer/uploads/` instead of the LAN media server. | With automatic `http://<LAN_IP>:<PORT>/` URLs in `playlist.m3u`, the `.m3u` file works both when cast via `/r/play?url=...` AND when drag-and-dropped into `/r/upload`. |
 | **`MKP-BUG-05`** | Generated `Caddyfile` did not explicitly disable Caddy's `:2019` admin endpoint. | Missing global `{ admin off }` block in `caddy_config()`. | `caddy_config()` now unconditionally prepends `{\n\tadmin off\n}\n\n` to every generated `Caddyfile`. |
+| **`MKP-BUG-06`** | Generated `Caddyfile` in `mkplaylist` hid `Caddyfile*` and `.mk*` but did not hide `.svp_auth.hash` or `svp-ui` when sharing a media root with `mkcaddy.sh`. | Incomplete `hide` directive list in `caddy_config()`. | Added `.svp_auth.hash` and `svp-ui` to `hide` in `caddy_config()` so authentication hashes and WebUI assets are never exposed as media files. |
+| **`MKP-BUG-07`** | Passing a full gateway URL to `-I` (e.g., `-I http://andro:pass@127.0.0.1:8090`) produced `http://http://.../r/play` during `-S` casting. | Unconditional `http://${OPT_ATV_IP}/r/play` prefixing in `-S` cast handler. | Normalized `OPT_ATV_IP` so both raw IPs (`192.168.1.211`) and full HTTP/HTTPS gateway URLs (`http://user:pass@host:port`) route cleanly to `/r/play` with `curl -sfS`. |
+| **`MKP-BUG-08`** | `-S` background Caddy launcher ignored `$CADDY_BIN`, whereas `validate_caddy()` honored `os.environ.get('CADDY_BIN')`. | Hardcoded `caddy` binary name in the shell `-S` block. | Unified `-S` to use `_caddy_bin=${CADDY_BIN:-caddy}` and log a clear warning if Caddy is not installed. |
+| **`MKP-BUG-09`** | `playlist.m3u` was encoded as strict `'ascii'` instead of `'utf-8'`. | `.encode('ascii')` in `main()`. | Switched playlist encoding to UTF-8 (`.encode('utf-8')`) matching `Content-Type "audio/x-mpegurl; charset=utf-8"`. |
 
 ## 2. Design Invariants: Inode Deduplication, Exclusive Locking & Atomic Publishing
 
@@ -146,7 +150,7 @@ When `-c` (or `-a` / `-b` / `-S`) is passed, `mkplaylist` generates a hardened `
 	handle {
 		header Access-Control-Allow-Origin "*"
 		file_server {
-			hide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* Caddyfile Caddyfile.*
+			hide .git .env .DS_Store *.bak .mkplaylist.* .mkcaddy.* .svp_auth.hash svp-ui Caddyfile Caddyfile.*
 		}
 	}
 }

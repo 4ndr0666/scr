@@ -17,7 +17,17 @@
 11. Interactive TUI Command Deck
 12. Troubleshooting & Operational Edge Cases
 
-## 1. Hardware & tvOS Sandbox Context (`AppleTV5,3` @ `192.168.1.211`)
+## 1. Architectural Audit & Stepwise Gap Mitigations Applied in `v3.2.0`
+
+| Defect ID | Prior Behavior | Root Cause | `v3.2.0` Mitigation in `svp-cli` |
+| :--- | :--- | :--- | :--- |
+| **`SVP-BUG-01`** | `SAVE_DIR` defaulted to relative `sto2/SVP_streamdir` while documentation specified `$HOME/streamdir`. | Hardcoded host-specific relative path in `SAVE_DIR` initialization. | Standardized `SAVE_DIR="${SVP_STREAM_DIR:-$HOME/streamdir}"` to match documented XDG/HOME defaults. |
+| **`SVP-BUG-02`** | `svp-cli conf edit` overwrote `trap cleanup EXIT` with `trap 'rm -f "$tmp"' EXIT`, orphaning `$TMP_DIR` cleanup on exit. | Local `trap ... EXIT` inside `conf edit` clobbered the global `cleanup()` trap. | Consolidated `$TMP_MPV_FILE` into the top-level `cleanup()` handler under a single `trap cleanup EXIT INT TERM`. |
+| **`SVP-BUG-03`** | `svp-cli cast-local <dir>` only checked for `mkplaylist` (missing `/media/mkplaylist.sh`) and did not forward `SVP_HOST` (`-I`), breaking authenticated gateway or custom-IP casting. | Narrow binary lookup and omitted `-I "$SVP_HOST"` flag when delegating to `mkplaylist`. | Expanded lookup across `mkplaylist` and `mkplaylist.sh` (in script dir, `/media/mkplaylist.sh`, and `PATH`) and passed `-I "$SVP_HOST"`. |
+| **`SVP-BUG-04`** | `svp-cli m3u8 -t` (with missing option argument or missing URL) crashed with bash `unbound variable` under `set -u`, and lacked `-p`/`--proxy` CLI flag parsing. | Missing `$# -ge 2` bounds checks in the `m3u8` option loop and missing `-p|--proxy` branch. | Added strict argument count validation for `-t`, `-r`, `-d`, `-o`, `-p|--proxy`, plus non-empty `TARGET_URL` verification before extraction. |
+| **`SVP-BUG-05`** | `svp-cli js` and `svp-cli nerd restore` silently fell back or failed if `jq` was absent, and `curl -sS` did not fail on HTTP `401`/`500` responses. | Hard dependency on `jq` without `python3` fallback, and missing `-f` (`--fail`) in `curl` calls. | Added `python3` JSON parser fallback alongside `jq`, switched all API calls to `curl -sfS`, and added `command -v nmap` preflight check in `svp-cli audit`. |
+
+### Hardware & tvOS Sandbox Context (`AppleTV5,3` @ `192.168.1.211`)
 
 Telemetry extracted directly from `192.168.1.211` runtime logs:
 
@@ -204,7 +214,7 @@ Running `svp-cli install-watchdog` creates `~/.config/systemd/user/svp-autoheal.
 ## 9. Seamless Integration with Standalone `M3` and `mkplaylist`
 
 * When `svp-cli m3u8` is invoked, `resolve_m3_script()` checks for the standalone `M3` binary in the script's directory and in `PATH`, forwarding all thread, retry, output, `--live`, `--cast`, and `--upload` flags directly to `M3`.
-* When `svp-cli cast-local <directory>` is invoked, it automatically invokes `mkplaylist -n -t videos -s date -o desc -a :3000 -S <directory>` to build a LAN-URL playlist and cast it to the Apple TV.
+* When `svp-cli cast-local <directory>` is invoked, it automatically resolves `mkplaylist` or `/media/mkplaylist.sh` and invokes `mkplaylist -n -t videos -s date -o desc -a :3000 -b "<LAN_IP> 127.0.0.1" -I "$SVP_HOST" -S <directory>` to build a LAN-URL playlist and cast it to the Apple TV (or through your authenticated `svp-gateway`).
 
 ## 10. Security Audit Subcommand (`svp-cli audit` & Port `62078/tcp`)
 

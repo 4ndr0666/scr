@@ -17,6 +17,7 @@ M3_CONFIG_DIR="${M3_CONFIG_FILE%/*}"
 LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/logs"
 TMP_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/m3u8dl"
 TMP_DIR="${TMP_BASE}/$$"
+TMP_MPV_FILE=""
 SAVE_DIR="${SVP_STREAM_DIR:-$HOME/streamdir}"
 NERD_SNAPSHOT="${SVP_CONFIG_DIR}/nerd-settings.json"
 MPV_SNAPSHOT="${SVP_CONFIG_DIR}/mpv.conf"
@@ -38,8 +39,8 @@ USE_FFMPEG_CONCAT=0
 LIVE_REAL_TIME_MERGE=0
 LIVE_PERFORM_AS_VOD=0
 
-PRESET_URL_1="https://example.com/master.m3u8"
-PRESET_LABEL_1="Preset Stream 1"
+PRESET_URL_1="http://192.168.1.123:3000/playlist.m3u"
+PRESET_LABEL_1="Caddy Playlist"
 PRESET_URL_2="https://example.com/live.m3u8"
 PRESET_LABEL_2="Preset Stream 2"
 
@@ -73,6 +74,7 @@ ensure_dir() {
 
 cleanup() {
 	[[ -d "$TMP_DIR" ]] && rm -rf -- "$TMP_DIR" || true
+	[[ -n "${TMP_MPV_FILE:-}" && -f "$TMP_MPV_FILE" ]] && rm -f -- "$TMP_MPV_FILE" || true
 }
 trap cleanup EXIT INT TERM
 
@@ -104,7 +106,7 @@ resolve_m3_script() {
 # M3 Dependency & Configuration Management (Preserved & Delegated to Standalone M3)
 # -----------------------------------------------------------------------------
 check_m3_deps() {
-	for bin in N_m3u8DL-RE n-m3u8dl-re N-m3u8DL-RE n-m3u8dl-re-git N-m3u8dl-RE-git; do
+	for bin in N_m3u8DL-RE n-m3u8dl-re n-m3u8dl-re-git n-m3u8dl-RE-git; do
 		if command -v "$bin" >/dev/null 2>&1; then
 			BIN_M3U8="$bin"
 			break
@@ -190,8 +192,12 @@ EOF
 # -----------------------------------------------------------------------------
 generate_js_snippet() {
 	local overrides_json=""
-	if [[ -f "$NERD_SNAPSHOT" ]] && command -v jq >/dev/null 2>&1; then
-		overrides_json=$(jq -c 'if type=="array" then INDEX(.[]; .n) | map_values(.v) elif has("options") then INDEX(.options[]; .n) | map_values(.v) else . end' "$NERD_SNAPSHOT" 2>/dev/null || true)
+	if [[ -f "$NERD_SNAPSHOT" ]]; then
+		if command -v jq >/dev/null 2>&1; then
+			overrides_json=$(jq -c 'if type=="array" then INDEX(.[]; .n) | map_values(.v) elif has("options") then INDEX(.options[]; .n) | map_values(.v) else . end' "$NERD_SNAPSHOT" 2>/dev/null || true)
+		elif command -v python3 >/dev/null 2>&1; then
+			overrides_json=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); items=d if isinstance(d,list) else d.get("options",[]) if isinstance(d,dict) and "options" in d else None; print(json.dumps({i["n"]:i["v"] for i in items if isinstance(i,dict) and "n" in i and "v" in i} if items is not None else d, separators=(",",":")))' "$NERD_SNAPSHOT" 2>/dev/null || true)
+		fi
 	fi
 	if [[ -z "${overrides_json:-}" || "$overrides_json" == "null" ]]; then
 		overrides_json='{
@@ -350,7 +356,7 @@ m3_extract() {
 # -----------------------------------------------------------------------------
 svp_play() {
 	[[ $# -ge 1 ]] || die "Usage: svp-cli play <url>"
-	curl -sS -G --data-urlencode "url=$1" "${SVP_HOST}/r/play" >/dev/null
+	curl -sfS -G --data-urlencode "url=$1" "${SVP_HOST}/r/play" >/dev/null
 	ok "Dispatched stream to SVPlayer: $1"
 }
 
@@ -359,7 +365,7 @@ svp_upload() {
 	for f in "$@"; do
 		[[ -f "$f" ]] || { warn "File not found: $f"; continue; }
 		info "Uploading $(basename "$f") -> ${SVP_HOST}/r/upload ..."
-		curl -# -X POST -F "file=@${f}" "${SVP_HOST}/r/upload" -o /dev/null
+		curl -f# -X POST -F "file=@${f}" "${SVP_HOST}/r/upload" -o /dev/null
 		ok "Uploaded: $(basename "$f")"
 	done
 }
@@ -374,15 +380,18 @@ svp_cast_local() {
 	local self_dir
 	self_dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 	local mkp_bin=""
-	if [[ -x "${self_dir}/mkplaylist" ]]; then
-		mkp_bin="${self_dir}/mkplaylist"
-	elif command -v mkplaylist >/dev/null 2>&1; then
-		mkp_bin="mkplaylist"
+	for cand in "${self_dir}/mkplaylist" "${self_dir}/mkplaylist.sh"; do
+		if [[ -x "$cand" ]]; then mkp_bin="$cand"; break; fi
+	done
+	if [[ -z "$mkp_bin" ]]; then
+		for cand in mkplaylist mkplaylist.sh; do
+			if command -v "$cand" >/dev/null 2>&1; then mkp_bin="$cand"; break; fi
+		done
 	fi
 
 	if [[ -d "$target" ]]; then
 		if [[ -n "$mkp_bin" ]]; then
-			"$mkp_bin" -n -t videos -s date -o desc -a ":${CADDY_PORT}" -b "${lan_ip} 127.0.0.1" -S "$target"
+			"$mkp_bin" -n -t videos -s date -o desc -a ":${CADDY_PORT}" -b "${lan_ip} 127.0.0.1" -I "$SVP_HOST" -S "$target"
 			return 0
 		fi
 		local serve_dir="$target"
@@ -395,9 +404,11 @@ svp_cast_local() {
 	fi
 
 	if command -v caddy >/dev/null 2>&1; then
-		pkill -f "caddy file-server.*:${CADDY_PORT}" 2>/dev/null || true
+		pkill -f "caddy.*:${CADDY_PORT}" 2>/dev/null || true
 		nohup caddy file-server --root "$serve_dir" --listen "${lan_ip}:${CADDY_PORT}" >/dev/null 2>&1 &
 		sleep 1
+	else
+		warn "caddy not found in PATH; assuming port ${CADDY_PORT} is already served"
 	fi
 	svp_play "http://${lan_ip}:${CADDY_PORT}/${play_uri}"
 }
@@ -587,17 +598,18 @@ case "$cmd" in
 		svp_cast_local "$@"
 		;;
 	clear)
-		curl -sS "${SVP_HOST}/r/upload-clear" >/dev/null
+		curl -sfS "${SVP_HOST}/r/upload-clear" >/dev/null
 		ok "Apple TV upload cache purged."
 		;;
 	m3u8|m3)
 		post_act="none"
 		while [[ $# -gt 0 ]]; do
 			case "$1" in
-				-t|--threads) THREAD_COUNT="$2"; shift 2 ;;
-				-r|--retries) RETRY_COUNT="$2"; shift 2 ;;
-				-d|--save-dir) SAVE_DIR="$2"; shift 2 ;;
-				-o|--output) SAVE_NAME="$2"; shift 2 ;;
+				-t|--threads) [[ $# -ge 2 ]] || die "Option $1 requires an argument"; THREAD_COUNT="$2"; shift 2 ;;
+				-r|--retries) [[ $# -ge 2 ]] || die "Option $1 requires an argument"; RETRY_COUNT="$2"; shift 2 ;;
+				-d|--save-dir) [[ $# -ge 2 ]] || die "Option $1 requires an argument"; SAVE_DIR="$2"; shift 2 ;;
+				-o|--output) [[ $# -ge 2 ]] || die "Option $1 requires an argument"; SAVE_NAME="$2"; shift 2 ;;
+				-p|--proxy) [[ $# -ge 2 ]] || die "Option $1 requires an argument"; PROXY_URL="$2"; shift 2 ;;
 				--live) LIVE_REAL_TIME_MERGE=1; LIVE_PERFORM_AS_VOD=1; shift ;;
 				--cast) post_act="cast"; shift ;;
 				--up|--upload) post_act="upload"; shift ;;
@@ -605,28 +617,28 @@ case "$cmd" in
 				*) TARGET_URL="$1"; shift ;;
 			esac
 		done
+		[[ -n "$TARGET_URL" ]] || die "Usage: svp-cli m3u8 [opts] <url>"
 		m3_extract "$post_act"
 		;;
 	conf)
 		sub="${1:-pull}"
 		case "$sub" in
 			pull)
-				curl -sS "${SVP_HOST}/r/mpvc" | jq -r '.conf' | tee "$MPV_SNAPSHOT"
+				curl -sfS "${SVP_HOST}/r/mpvc" | jq -r '.conf' | tee "$MPV_SNAPSHOT"
 				ok "Saved mpv.conf snapshot to $MPV_SNAPSHOT"
 				;;
 			push)
 				src="${2:-$MPV_SNAPSHOT}"
 				[[ -f "$src" ]] || die "Config file not found: $src"
-				curl -sS -X POST --data-urlencode "conf=$(cat "$src")" "${SVP_HOST}/r/mpvc" >/dev/null
+				curl -sfS -X POST --data-urlencode "conf=$(cat "$src")" "${SVP_HOST}/r/mpvc" >/dev/null
 				ok "Pushed $src to Apple TV."
 				;;
 			edit)
-				tmp="$(mktemp /tmp/svp-mpv.XXXXXX.conf)"
-				trap 'rm -f "$tmp"' EXIT
-				curl -sS "${SVP_HOST}/r/mpvc" | jq -r '.conf' > "$tmp"
-				"${EDITOR:-vim}" "$tmp"
-				curl -sS -X POST --data-urlencode "conf=$(cat "$tmp")" "${SVP_HOST}/r/mpvc" >/dev/null
-				cp "$tmp" "$MPV_SNAPSHOT"
+				TMP_MPV_FILE="$(mktemp "${TMPDIR:-/tmp}/svp-mpv.XXXXXX.conf")"
+				curl -sfS "${SVP_HOST}/r/mpvc" | jq -r '.conf' > "$TMP_MPV_FILE"
+				"${EDITOR:-vim}" "$TMP_MPV_FILE"
+				curl -sfS -X POST --data-urlencode "conf=$(cat "$TMP_MPV_FILE")" "${SVP_HOST}/r/mpvc" >/dev/null
+				cp "$TMP_MPV_FILE" "$MPV_SNAPSHOT"
 				ok "Updated Apple TV mpv.conf and local snapshot."
 				;;
 			optimal)
@@ -642,7 +654,7 @@ case "$cmd" in
 		sub="${1:-dump}"
 		case "$sub" in
 			dump)
-				curl -sS "${SVP_HOST}/r/settings" | jq '.' > "$NERD_SNAPSHOT"
+				curl -sfS "${SVP_HOST}/r/settings" | jq '.' > "$NERD_SNAPSHOT"
 				ok "Dumped all Apple TV Nerd Settings to $NERD_SNAPSHOT"
 				;;
 			restore)
@@ -652,10 +664,10 @@ case "$cmd" in
 					exit 0
 				fi
 				info "Restoring Nerd Settings from $NERD_SNAPSHOT..."
-				jq -r 'if type=="array" then .[] | "\(.n)\t\(.v)" elif has("options") then .options[] | "\(.n)\t\(.v)" else to_entries[] | "\(.key)\t\(.value)" end' "$NERD_SNAPSHOT" | \
+				{ if command -v jq >/dev/null 2>&1; then jq -r 'if type=="array" then .[] | "\(.n)\t\(.v)" elif has("options") then .options[] | "\(.n)\t\(.v)" else to_entries[] | "\(.key)\t\(.value)" end' "$NERD_SNAPSHOT"; else python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); items=d if isinstance(d,list) else d.get("options",[]) if isinstance(d,dict) and "options" in d else [{"n":k,"v":v} for k,v in d.items()]; [print(f"{i[\"n\"]}\t{i[\"v\"]}") for i in items if isinstance(i,dict) and i.get("n") and not isinstance(i.get("v"),(dict,list))]' "$NERD_SNAPSHOT"; fi; } | \
 				while IFS=$'\t' read -r k v; do
 					[[ -n "$k" && "$v" != "null" ]] || continue
-					curl -sS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
+					curl -sfS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
 					printf '  [+] %s = %s\n' "$k" "$v"
 				done
 				ok "All Nerd Settings restored!"
@@ -670,14 +682,14 @@ case "$cmd" in
 					"frc.scene.mode=1"; do
 					k="${kv%%=*}"
 					v="${kv#*=}"
-					curl -sS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
+					curl -sfS -X POST --data-urlencode "n=$k" --data-urlencode "v=$v" "${SVP_HOST}/r/set-opt" >/dev/null
 					printf '  [+] %s = %s\n' "$k" "$v"
 				done
 				ok "Applied built-in Apple TV A8 Nerd Preset!"
 				;;
 			set)
 				[[ $# -ge 3 ]] || die "Usage: svp-cli nerd set <key> <val>"
-				curl -sS -X POST --data-urlencode "n=$2" --data-urlencode "v=$3" "${SVP_HOST}/r/set-opt" | jq .
+				curl -sfS -X POST --data-urlencode "n=$2" --data-urlencode "v=$3" "${SVP_HOST}/r/set-opt" | jq .
 				;;
 			*)
 				die "Unknown nerd subcommand '$sub' (expected: dump, restore, preset, set)"
@@ -702,15 +714,15 @@ case "$cmd" in
 		sub="${1:-list}"
 		case "$sub" in
 			list)
-				curl -sS "${SVP_HOST}/r/loc" | jq .
+				curl -sfS "${SVP_HOST}/r/loc" | jq .
 				;;
 			add)
 				[[ $# -ge 4 ]] || die "Usage: svp-cli share add <0=SMB|1=DAV|2=FTP|3=Plex> <title> <url>"
-				curl -sS -X POST --data-urlencode "n=$2" --data-urlencode "t=$3" --data-urlencode "u=$4" "${SVP_HOST}/r/loc-add" | jq .
+				curl -sfS -X POST --data-urlencode "n=$2" --data-urlencode "t=$3" --data-urlencode "u=$4" "${SVP_HOST}/r/loc-add" | jq .
 				;;
 			del)
 				[[ $# -ge 2 ]] || die "Usage: svp-cli share del <id>"
-				curl -sS -X POST --data-urlencode "n=$2" "${SVP_HOST}/r/loc-del" | jq .
+				curl -sfS -X POST --data-urlencode "n=$2" "${SVP_HOST}/r/loc-del" | jq .
 				;;
 			*)
 				die "Unknown share subcommand '$sub' (expected: list, add, del)"
@@ -719,21 +731,21 @@ case "$cmd" in
 		;;
 	report)
 		[[ $# -ge 1 ]] || die "Usage: svp-cli report <message> [email]"
-		curl -sS -X POST --data-urlencode "m=$1" --data-urlencode "e=${2:-}" "${SVP_HOST}/r/report" >/dev/null
+		curl -sfS -X POST --data-urlencode "m=$1" --data-urlencode "e=${2:-}" "${SVP_HOST}/r/report" >/dev/null
 		ok "Submitted report to ${SVP_HOST}/r/report"
 		;;
 	log|logs)
 		if [[ "${1:-}" == "-f" ]]; then
 			last_id=0
 			while true; do
-				res="$(curl -sS "${SVP_HOST}/r/log?last=${last_id}")"
+				res="$(curl -sfS "${SVP_HOST}/r/log?last=${last_id}")"
 				echo "$res" | jq -r '.log[]? | if type=="object" then "\(.t) [\(.s)]: \(.m)" else . end' 2>/dev/null || true
 				new_id="$(echo "$res" | jq -r '.last // empty' 2>/dev/null || true)"
 				[[ -n "$new_id" && "$new_id" != "null" ]] && last_id="$new_id"
 				sleep 2
 			done
 		else
-			curl -sS "${SVP_HOST}/r/log?last=0" | jq .
+			curl -sfS "${SVP_HOST}/r/log?last=0" | jq .
 		fi
 		;;
 	audit)
@@ -741,6 +753,7 @@ case "$cmd" in
 		atv_ip="${atv_ip#*@}"
 		atv_ip="${atv_ip%%:*}"
 		atv_ip="${atv_ip%%/*}"
+		command -v nmap >/dev/null 2>&1 || die "nmap is required for audit"
 		info "Scanning Apple TV ($atv_ip) open ports & services..."
 		nmap -sV -p 80,49152,49153,62078 "$atv_ip"
 		if command -v ideviceinfo >/dev/null 2>&1; then
