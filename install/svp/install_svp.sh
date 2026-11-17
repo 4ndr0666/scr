@@ -106,11 +106,11 @@ update_and_install_base() {
     mkdir -p "$BUILD_DIR"
     chown -R "$REAL_USER:$REAL_USER" "$BUILD_DIR"
 
-    yay -Syu --needed --noconfirm \
+    pacman -Syu --needed --noconfirm \
         base-devel git meson ninja cmake pkgconf autoconf automake libtool \
         mesa vulkan-radeon vulkan-mesa-layers vulkan-tools vulkan-icd-loader \
         pipewire pipewire-pulse wireplumber \
-        wl-clipboard mkvtoolnix-cli ffmpeg caddy jq nmap libimobiledevice-git \
+        wl-clipboard mkvtoolnix-cli ffmpeg caddy jq nmap  \
         qt5-base qt5-declarative qt5-svg libmediainfo lsof vapoursynth zimg \
         python cython opencl-headers ocl-icd \
         alsa-lib aom bzip2 fontconfig fribidi gmp gnutls gsm lame \
@@ -120,7 +120,7 @@ update_and_install_base() {
         vid.stab libvorbis libvpx libwebp libx11 x264 x265 libxcb libxext \
         libxml2 libxv xvidcore onevpl opencore-amr openjpeg2 opus sdl2 \
         speex srt svt-av1 v4l-utils vmaf xz zlib luajit rubberband \
-        uchardet libarchive libcdio-paranoia libdvdnav libplacebo-git shaderc spirv-cross \
+        uchardet libarchive libcdio-paranoia libdvdnav shaderc spirv-cross \
         || handle_error "Pacman package installation failed."
 
     if ! sudo -u "$REAL_USER" bash -c 'command -v yay' >/dev/null 2>&1; then
@@ -143,7 +143,7 @@ install_aur_packages() {
     echo_status "Installing AUR packages (n-m3u8dl-re-bin, fdk-aac, kvazaar, etc.)..."
     sudo -u "$REAL_USER" yay -S --needed --noconfirm \
         n-m3u8dl-re-git libfdk-aac kvazaar libilbc libmysofa librabbitmq-c openh264 \
-        sndio twolame zvbi  || echo_status "Note: Optional AUR package skipped."
+        sndio twolame zvbi libplacebo-git libimobiledevice-git   || echo_status "Note: Optional AUR package skipped."
 }
 
 ###############################################################################
