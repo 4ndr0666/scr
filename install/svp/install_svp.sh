@@ -106,21 +106,21 @@ update_and_install_base() {
     mkdir -p "$BUILD_DIR"
     chown -R "$REAL_USER:$REAL_USER" "$BUILD_DIR"
 
-    pacman -Syu --needed --noconfirm \
+    yay -Syu --needed --noconfirm \
         base-devel git meson ninja cmake pkgconf autoconf automake libtool \
         mesa vulkan-radeon vulkan-mesa-layers vulkan-tools vulkan-icd-loader \
         pipewire pipewire-pulse wireplumber \
-        wl-clipboard mkvtoolnix-cli ffmpeg caddy jq nmap libimobiledevice \
+        wl-clipboard mkvtoolnix-cli ffmpeg caddy jq nmap libimobiledevice-git \
         qt5-base qt5-declarative qt5-svg libmediainfo lsof vapoursynth zimg \
         python cython opencl-headers ocl-icd \
-        alsa-lib aom bzip2 fontconfig fribidi gmp gnutls gsm jack2 lame \
-        libass libavc1394 libbluray libbs2b libdav1d libdrm freetype2 \
+        alsa-lib aom bzip2 fontconfig fribidi gmp gnutls gsm lame \
+        libass libavc1394 libbluray libbs2b dav1d libdrm freetype2 \
         libglvnd libiec61883 libjxl libmodplug libopenmpt libpulse rav1e \
         libraw1394 librsvg libsoxr libssh libtheora libva libvdpau \
         vid.stab libvorbis libvpx libwebp libx11 x264 x265 libxcb libxext \
         libxml2 libxv xvidcore onevpl opencore-amr openjpeg2 opus sdl2 \
         speex srt svt-av1 v4l-utils vmaf xz zlib luajit rubberband \
-        uchardet libarchive libcdio-paranoia libdvdnav libplacebo shaderc spirv-cross \
+        uchardet libarchive libcdio-paranoia libdvdnav libplacebo-git shaderc spirv-cross \
         || handle_error "Pacman package installation failed."
 
     if ! sudo -u "$REAL_USER" bash -c 'command -v yay' >/dev/null 2>&1; then
@@ -142,8 +142,8 @@ install_aur_packages() {
 
     echo_status "Installing AUR packages (n-m3u8dl-re-bin, fdk-aac, kvazaar, etc.)..."
     sudo -u "$REAL_USER" yay -S --needed --noconfirm \
-        libfdk-aac kvazaar libilbc libmysofa librabbitmq-c openh264 \
-        sndio twolame zvbi n-m3u8dl-re-bin || echo_status "Note: Optional AUR package skipped."
+        n-m3u8dl-re-git libfdk-aac kvazaar libilbc libmysofa librabbitmq-c openh264 \
+        sndio twolame zvbi  || echo_status "Note: Optional AUR package skipped."
 }
 
 ###############################################################################
@@ -214,7 +214,6 @@ build_mpv() {
         "--enable-libfribidi"
         "--enable-libgsm"
         "--enable-libiec61883"
-        "--enable-libjack"
         "--enable-libjxl"
         "--enable-libmodplug"
         "--enable-libmp3lame"
@@ -283,7 +282,6 @@ build_mpv() {
         "-Dzimg=enabled"
         "-Dzlib=enabled"
         "-Dalsa=enabled"
-        "-Djack=enabled"
         "-Dpipewire=enabled"
         "-Dpulse=enabled"
         "-Dsdl2-audio=enabled"
@@ -337,7 +335,7 @@ install_suite_tools() {
 
 update_and_install_base
 install_aur_packages
-build_zimg_and_vapoursynth
-build_mpv
-install_suite_tools
+#build_zimg_and_vapoursynth
+#build_mpv
+#install_suite_tools
 echo_ok "=== Ψ SVP4 & MPV-VAPOURSYNTH ECOSYSTEM SETUP COMPLETE ==="

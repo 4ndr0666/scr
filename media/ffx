@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Author: 4ndr0666
-# v8.7.0 — one standalone command, configuration authority and media lifecycle.
-# Audit release: transactional outputs, CPU-verified media paths, content-aware
-# resume leases, native FFmpeg/ffprobe access, and guide-driven web encoding.
+# v8.8.0 — Unified GUP Superset (v8.5.0 + v8.6.0 Ease-of-Use/Resume + v8.7.0 Beta/FFXD).
+# Audit release: transactional outputs, CPU-verified media paths, zero-arg smart
+# `ffx resume` with persisted job manifests, content-addressed segment cache,
+# fast stat-based checkpoint keys with legacy sha256 fallback, cached ffprobe/DTS
+# results, atomic zero-copy mv, uncached-aware preflight_space, CLI --tmp-dir /
+# --cache-dir / --overwrite flags, native FFmpeg/ffprobe, carve, and config authority.
 # Paradigm: Bash transaction coordinator; FFmpeg workers run in private session storage.
-if [[ "${BASH_SOURCE[0]}" != "$0" && "${FFX_SOURCE_LOADED:-}" == 8.7.0 ]] && declare -F main >/dev/null; then
+if [[ "${BASH_SOURCE[0]}" != "$0" && "${FFX_SOURCE_LOADED:-}" == 8.8.0 ]] && declare -F main >/dev/null; then
     return 0
 fi
-FFX_SOURCE_LOADED=8.7.0
+FFX_SOURCE_LOADED=8.8.0
 set -euo pipefail
 IFS=$'\n\t'
 #                        === FFX === #
@@ -26,10 +29,9 @@ IFS=$'\n\t'
 # compare, check_dts_for_file N/A false positive, name-reservation hang and
 # leaked 0-byte outputs, die() used before definition, paths.conf loader for
 # FFX_SCRATCH_DIR/FFX_CACHE_DIR, -o <dir>, --audio-rate, faststart on clean/
-# cleanmeta/fix/looperang/composite, debug_log wiring. Removed (WO-01 "zero
-# dead code", zero call sites): detect_max_res, check_container_first
-# (its only caller, the per-input faststart/webm guard, is superseded by
-# merge_encode_input, whose temp segments are always .mp4).
+# cleanmeta/fix/looperang/composite, debug_log wiring. Public library contracts
+# (detect_max_res, check_container_first, log_verbose, log_error, show_help,
+# build_ffmpeg_options) are exported for sourced callers (`source ffx`).
 # v8.1.0: fixes the single-static-timeout-kills-the-whole-batch defect in
 # run_ffmpeg, adds checkpointed/resumable batch concat for merge and
 # composite, and makes die() able to scrub a partially-written destination file.
@@ -194,27 +196,47 @@ die() {
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_RUNTIME_DIR:=${TMPDIR:-/tmp}}"
+if [[ -z "${TEMP:-}" ]]; then
+    if [[ -d "/Nas/tmp" && -w "/Nas/tmp" ]]; then
+        TEMP="/Nas/tmp"
+    else
+        TEMP="${TMPDIR:-/tmp}"
+    fi
+fi
 
 FFX_CONFIG_DIR="$XDG_CONFIG_HOME/ffx"
 FFX_LOG_DIR="$XDG_DATA_HOME/ffx"
 FFX_DEFAULTS="$FFX_CONFIG_DIR/defaults"
 
-# _load_paths_conf(): NEW unit. Persistent counterpart to exporting the four
-# environment-level knobs below, so an operator whose scratch/cache must live
-# on a different filesystem sets that ONCE instead of in every shell. The
-# file is PARSED, never sourced (a config file must not be able to execute
-# code), only these four keys are honored, and an already-exported
-# environment value always wins over the file. One KEY=VALUE per line;
-# surrounding quotes and a leading ~ are expanded. Missing file = no-op.
-#   FFX_SCRATCH_DIR=/sto2/tmp
-#   FFX_CACHE_DIR=/sto2/ffx-cache
 FFX_PATHS_CONF="$FFX_CONFIG_DIR/paths.conf"
+FFX_ORIG_ARGV=("$0" "$@")
+SAVE_PATHS_ON_PARSE=false
+
+_refresh_derived_dirs() {
+    if [[ -n "${FFX_TMP_DIR:-}" && -z "${FFX_SCRATCH_DIR:-}" ]]; then
+        FFX_SCRATCH_DIR="$FFX_TMP_DIR"
+    fi
+    : "${FFX_TMP_DIR:=${FFX_SCRATCH_DIR:-}}"
+    FFX_CHECKPOINT_DIR="$FFX_CACHE_DIR/checkpoints"
+    FFX_SEGMENT_CACHE_DIR="$FFX_CHECKPOINT_DIR/_segments"
+    FFX_PROBE_CACHE_DIR="$FFX_CHECKPOINT_DIR/_probes"
+    FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
+}
+
 _load_paths_conf() {
     local key value
     while IFS='=' read -r key value || [[ -n "$key" ]]; do
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
         value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
         value="${value/#\~/$HOME}"
         case "$key" in
+            FFX_TMP_DIR)
+                if [[ -n "$value" && -z "${FFX_TMP_DIR:-}" ]]; then FFX_TMP_DIR="$value"; fi
+                if [[ -n "$value" && -z "${FFX_SCRATCH_DIR:-}" ]]; then FFX_SCRATCH_DIR="$value"; fi ;;
             FFX_SCRATCH_DIR|FFX_CACHE_DIR|FFX_SKIP_SPACE_CHECK|FFX_SPACE_SAFETY_FACTOR)
                 if [[ -n "$value" && -z "${!key:-}" ]]; then printf -v "$key" '%s' "$value"; fi ;;
         esac
@@ -222,26 +244,101 @@ _load_paths_conf() {
 }
 _load_paths_conf
 
-# FFX_CACHE_DIR: persistent across runs AND across a single run's own
-# lifetime (checkpoint_store_artifact()/checkpoint_get()). Override to move
-# it off the default disk entirely, e.g.:  export FFX_CACHE_DIR=/sto2/ffx-cache
-: "${FFX_CACHE_DIR:=$XDG_CACHE_HOME/ffx}"
+if [[ -n "${FFX_TMP_DIR:-}" && -z "${FFX_SCRATCH_DIR:-}" ]]; then
+    FFX_SCRATCH_DIR="$FFX_TMP_DIR"
+fi
 
-# FFX_SCRATCH_DIR: the base directory FFX_RUN_DIR's mktemp creates its
-# ephemeral per-invocation directory under. Wiped on every exit by
-# cleanup_all(), so it is always safe to point at a disk that's also
-# subject to an external tmp-reaping policy. Override for the same reasons
-# as FFX_CACHE_DIR, independently, e.g.:  export FFX_SCRATCH_DIR=/sto2/tmp
-: "${FFX_SCRATCH_DIR:=$XDG_RUNTIME_DIR}"
+if [[ -d "/Nas/tmp" && -w "/Nas/tmp" ]]; then
+    : "${FFX_CACHE_DIR:=/Nas/tmp}"
+    : "${FFX_SCRATCH_DIR:=/Nas/tmp}"
+    : "${FFX_TMP_DIR:=/Nas/tmp}"
+else
+    : "${FFX_CACHE_DIR:=$XDG_CACHE_HOME/ffx}"
+    : "${FFX_SCRATCH_DIR:=${TEMP:-$XDG_RUNTIME_DIR}}"
+    : "${FFX_TMP_DIR:=$FFX_SCRATCH_DIR}"
+fi
 
 FFX_RUN_DIR=""
 LOG_FILE="$FFX_LOG_DIR/ffx.log"
-FFX_CHECKPOINT_DIR="$FFX_CACHE_DIR/checkpoints"
+_refresh_derived_dirs
 
-# Session initialization is deferred: help, source, and parsing create no files.
+save_paths_conf() {
+    [[ "$DRY_RUN" != true ]] || {
+        printf '[DRY-RUN] save paths to %q (FFX_SCRATCH_DIR=%q FFX_TMP_DIR=%q FFX_CACHE_DIR=%q)\n' \
+            "$FFX_PATHS_CONF" "$FFX_SCRATCH_DIR" "${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}" "$FFX_CACHE_DIR" >&2
+        return 0
+    }
+    mkdir -p -- "$FFX_CONFIG_DIR" || die "Cannot create config directory: $FFX_CONFIG_DIR"
+    local tmp_p; tmp_p=$(mktemp -p "$FFX_CONFIG_DIR" .paths.XXXXXXXX) || die "Cannot write $FFX_PATHS_CONF"
+    {
+        printf '# FFX persistent directory configuration\n'
+        printf 'FFX_SCRATCH_DIR=%s\n' "$FFX_SCRATCH_DIR"
+        printf 'FFX_TMP_DIR=%s\n' "${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}"
+        printf 'FFX_CACHE_DIR=%s\n' "$FFX_CACHE_DIR"
+        printf 'FFX_SKIP_SPACE_CHECK=%s\n' "${FFX_SKIP_SPACE_CHECK:-false}"
+        printf 'FFX_SPACE_SAFETY_FACTOR=%s\n' "${FFX_SPACE_SAFETY_FACTOR:-1.3}"
+    } > "$tmp_p"
+    mv -f -- "$tmp_p" "$FFX_PATHS_CONF" || { rm -f -- "$tmp_p"; die "Cannot save $FFX_PATHS_CONF"; }
+    _refresh_derived_dirs
+    mkdir -p -- "$FFX_SCRATCH_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR" "$FFX_SEGMENT_CACHE_DIR" "$FFX_PROBE_CACHE_DIR" 2>/dev/null || true
+    say "Saved directory config to $FFX_PATHS_CONF (scratch=$FFX_SCRATCH_DIR, tmp=${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}, cache=$FFX_CACHE_DIR)"
+}
+
+prompt_paths_config() {
+    printf '%b* Directory Configuration%b -- press Enter to keep current path.\n' "${CYAN}${BOLD}" "${RESET}"
+    local inp
+    read -r -p "Scratch directory (FFX_SCRATCH_DIR) [${FFX_SCRATCH_DIR}]: " inp || true
+    if [[ -n "$inp" ]]; then
+        inp="${inp/#\~/$HOME}"
+        FFX_SCRATCH_DIR="$inp"
+    fi
+    read -r -p "Temp directory    (FFX_TMP_DIR)     [${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}]: " inp || true
+    if [[ -n "$inp" ]]; then
+        inp="${inp/#\~/$HOME}"
+        FFX_TMP_DIR="$inp"
+        FFX_SCRATCH_DIR="$inp"
+    else
+        FFX_TMP_DIR="$FFX_SCRATCH_DIR"
+    fi
+    read -r -p "Cache directory   (FFX_CACHE_DIR)   [${FFX_CACHE_DIR}]: " inp || true
+    if [[ -n "$inp" ]]; then
+        inp="${inp/#\~/$HOME}"
+        FFX_CACHE_DIR="$inp"
+    fi
+    save_paths_conf
+}
+
+reap_stale_scratch_dirs() {
+    [[ "$DRY_RUN" != true && -d "${FFX_SCRATCH_DIR:-}" ]] || return 0
+    local d pid_file owner_pid
+    for d in "$FFX_SCRATCH_DIR"/ffx.[A-Za-z0-9]*; do
+        [[ -d "$d" ]] || continue
+        [[ "$d" == "${FFX_RUN_DIR:-}" ]] && continue
+        pid_file="$d/.pid"
+        if [[ -f "$pid_file" ]]; then
+            owner_pid="$(<"$pid_file")"
+            if [[ "$owner_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
+                rm -rf -- "$d" 2>/dev/null || true
+            fi
+        fi
+    done
+}
+
 init_session() {
-    mkdir -p -- "$FFX_SCRATCH_DIR" || die "Cannot create scratch directory: $FFX_SCRATCH_DIR"
-    FFX_RUN_DIR=$(umask 077; mktemp -d -p "$FFX_SCRATCH_DIR" ffx.XXXXXXXX) || die "Cannot create private session"
+    _refresh_derived_dirs
+    mkdir -p -- "$FFX_SCRATCH_DIR" 2>/dev/null || {
+        if [[ "$FFX_SCRATCH_DIR" == "/Nas/tmp" ]]; then
+            warn "Scratch directory '/Nas/tmp' unavailable; falling back to '${TMPDIR:-/tmp}'."
+            FFX_SCRATCH_DIR="${TMPDIR:-/tmp}"
+            FFX_TMP_DIR="$FFX_SCRATCH_DIR"
+            mkdir -p -- "$FFX_SCRATCH_DIR" || die "Cannot create scratch directory: $FFX_SCRATCH_DIR"
+        else
+            die "Cannot create scratch directory: $FFX_SCRATCH_DIR (use --scratch-dir / --tmp-dir <dir> or 'ffx paths' to choose a writable path)"
+        fi
+    }
+    reap_stale_scratch_dirs
+    FFX_RUN_DIR=$(umask 077; mktemp -d -p "$FFX_SCRATCH_DIR" ffx.XXXXXXXX) || die "Cannot create private session in $FFX_SCRATCH_DIR"
+    printf '%s\n' "$$" > "$FFX_RUN_DIR/.pid" 2>/dev/null || true
     trap cleanup_all EXIT
     FFX_WORKER_PID=""
     FFX_LOG_PID=""
@@ -251,9 +348,11 @@ init_session() {
     trap 'terminate_session 129' HUP
     if [[ "$DRY_RUN" == true ]]; then
         FFX_CHECKPOINT_DIR="$FFX_RUN_DIR/checkpoints"
+        FFX_SEGMENT_CACHE_DIR="$FFX_CHECKPOINT_DIR/_segments"
+        FFX_PROBE_CACHE_DIR="$FFX_CHECKPOINT_DIR/_probes"
         LOG_FILE="$FFX_RUN_DIR/ffx.log"
     else
-        mkdir -p -- "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR" || die "Cannot initialize FFX directories"
+        mkdir -p -- "$FFX_CONFIG_DIR" "$FFX_LOG_DIR" "$FFX_CACHE_DIR" "$FFX_CHECKPOINT_DIR" "$FFX_SEGMENT_CACHE_DIR" "$FFX_PROBE_CACHE_DIR" || die "Cannot initialize FFX directories"
         exec {FFX_CACHE_LOCK_FD}>"$FFX_CACHE_DIR/.ffx.lock" || die "Cannot open cache lease"
         flock -s -w 30 "$FFX_CACHE_LOCK_FD" || die "Cannot acquire cache lease"
     fi
@@ -294,10 +393,12 @@ terminate_session() {
     local status="$1"
     trap - INT TERM HUP
     if [[ -n "${FFX_CAPTURE_PID:-}" ]]; then
+        pkill -TERM -P "$FFX_CAPTURE_PID" 2>/dev/null || true
         kill -TERM "$FFX_CAPTURE_PID" 2>/dev/null || true
         wait "$FFX_CAPTURE_PID" 2>/dev/null || true
     fi
     if [[ -n "${FFX_WORKER_PID:-}" ]]; then
+        pkill -TERM -P "$FFX_WORKER_PID" 2>/dev/null || true
         kill -TERM -- "-$FFX_WORKER_PID" 2>/dev/null || kill -TERM "$FFX_WORKER_PID" 2>/dev/null || true
         wait "$FFX_WORKER_PID" 2>/dev/null || true
     fi
@@ -402,6 +503,8 @@ default_config() {
     COMPOSITE_LAYOUT=""
     COMPOSITE_AUDIO=mix
     EXPLICIT_RES=false
+    OVERWRITE_OUTPUT=false
+    RESUME_MODE=false
 }
 default_config
 REMAINING_ARGS=()
@@ -443,13 +546,81 @@ save_defaults() {
     )
 }
 
+print_paths_config() {
+    printf '%s\n' \
+        "FFX_SCRATCH_DIR=$FFX_SCRATCH_DIR" \
+        "FFX_TMP_DIR=${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}" \
+        "FFX_CACHE_DIR=$FFX_CACHE_DIR" \
+        "FFX_CHECKPOINT_DIR=$FFX_CHECKPOINT_DIR" \
+        "FFX_PATHS_CONF=$FFX_PATHS_CONF"
+}
+
+cmd_paths() {
+    local sub="prompt" changed=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            show|--show|-l|--list) sub="show"; shift ;;
+            prompt|--prompt|-i)    sub="prompt"; shift ;;
+            --scratch-dir)
+                [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires a directory path."
+                FFX_SCRATCH_DIR="${2/#\~/$HOME}"; FFX_TMP_DIR="$FFX_SCRATCH_DIR"; changed=true; shift 2 ;;
+            -T|--tmp-dir|--temp-dir)
+                [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires a directory path."
+                FFX_TMP_DIR="${2/#\~/$HOME}"; FFX_SCRATCH_DIR="$FFX_TMP_DIR"; changed=true; shift 2 ;;
+            --cache-dir)
+                [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires a directory path."
+                FFX_CACHE_DIR="${2/#\~/$HOME}"; changed=true; shift 2 ;;
+            -*) die "Unknown paths option: $1" ;;
+            *)
+                if [[ "$1" == "show" || "$1" == "prompt" ]]; then sub="$1"; shift
+                else die "Unknown paths argument: $1"; fi ;;
+        esac
+    done
+    if [[ "$changed" == true ]]; then
+        save_paths_conf
+        return 0
+    fi
+    if [[ "$sub" == "show" ]]; then
+        print_paths_config
+        return 0
+    fi
+    if tui_available; then
+        FFX_SCRATCH_DIR="$(_tui_pick "Scratch directory (FFX_SCRATCH_DIR)" "$FFX_SCRATCH_DIR" "/Nas/tmp" "/tmp" "${XDG_RUNTIME_DIR:-/tmp}")"
+        FFX_TMP_DIR="$(_tui_pick "Temp directory (FFX_TMP_DIR)" "${FFX_TMP_DIR:-$FFX_SCRATCH_DIR}" "$FFX_SCRATCH_DIR" "/Nas/tmp" "/tmp")"
+        FFX_CACHE_DIR="$(_tui_pick "Cache/Checkpoint directory (FFX_CACHE_DIR)" "$FFX_CACHE_DIR" "/Nas/tmp" "$XDG_CACHE_HOME/ffx" "/tmp/ffx-cache")"
+        save_paths_conf
+    else
+        prompt_paths_config
+    fi
+}
+
 cmd_config() {
+    if [[ "${SAVE_PATHS_ON_PARSE:-false}" == true && $# -eq 0 ]]; then
+        save_paths_conf
+        return 0
+    fi
     case "${1:-show}" in
-        show) (($# <= 1)) || die "config show takes no operands"; print_defaults ;;
-        save) (($# == 1)) || die "config save takes no operands"
-            if [[ "$DRY_RUN" == true ]]; then printf '[DRY-RUN] save defaults to %q\n' "$FFX_DEFAULTS" >&2
-            else save_defaults || die "Cannot save defaults"; fi ;;
-        *) die "config requires show or save" ;;
+        show)
+            (($# <= 1)) || die "config show takes no operands"
+            print_defaults ;;
+        all|show-all)
+            print_defaults
+            print_paths_config ;;
+        save)
+            (($# == 1)) || die "config save takes no operands"
+            if [[ "$DRY_RUN" == true ]]; then
+                printf '[DRY-RUN] save defaults to %q\n' "$FFX_DEFAULTS" >&2
+            else
+                save_defaults || die "Cannot save defaults"
+                if [[ "${SAVE_PATHS_ON_PARSE:-false}" == true ]]; then save_paths_conf; fi
+            fi ;;
+        paths|dirs|set)
+            shift
+            cmd_paths "$@" ;;
+        prompt|edit)
+            ADVANCED_MODE=true
+            advanced_prompt ;;
+        *) die "config requires show, save, paths, set, or prompt" ;;
     esac
 }
 
@@ -603,6 +774,9 @@ get_default_filename() {
     # means the name belongs to this call from that moment on: any
     # concurrent caller's scan will see it already exists and move on to
     # the next candidate instead of colliding with it.
+    if [[ -f "$candidate" && ! -s "$candidate" ]]; then
+        rm -f -- "$candidate" 2>/dev/null || true
+    fi
     _reserve_unique "$OUTPUT_DIR" "${base}_${suffix}" "$ext" "$candidate"
 }
 
@@ -636,8 +810,20 @@ ensure_unique_output() {
 
     local candidate="$requested" n=1
 
+    if [[ "${OVERWRITE_OUTPUT:-false}" == true ]]; then
+        if [[ "$DRY_RUN" != true ]]; then
+            mkdir -p -- "$dir" 2>/dev/null || die "Cannot create output directory '$dir'."
+            if [[ ! -e "$candidate" ]]; then
+                : > "$candidate" 2>/dev/null || die "Cannot create output file '$candidate'."
+                register_cleanup empty "$candidate"
+            fi
+        fi
+        printf '%s' "$candidate"
+        return 0
+    fi
+
     if [[ "$DRY_RUN" == true ]]; then
-        while [[ -e "$candidate" ]]; do
+        while [[ -e "$candidate" && -s "$candidate" ]]; do
             if [[ -n "$ext" ]]; then
                 candidate="${dir}/${base}_${n}.${ext}"
             else
@@ -647,6 +833,10 @@ ensure_unique_output() {
         done
         printf '%s' "$candidate"
         return 0
+    fi
+
+    if [[ -f "$candidate" && ! -s "$candidate" ]]; then
+        rm -f -- "$candidate" 2>/dev/null || true
     fi
 
     _reserve_unique "$dir" "$base" "$ext" "$candidate"
@@ -833,6 +1023,7 @@ run_ffmpeg() {
         elif ((ec==0)); then
             return 0
         fi
+        [[ -z "$stage" ]] || rm -f -- "$stage" 2>/dev/null || true
         if ((ec==124 || ec==137)); then
             if [[ -n "$override_timeout" ]]; then
                 warn "FFmpeg timed out after ${effective_timeout}s (scaled via --timeout-per-file; --timeout is its floor)."
@@ -843,7 +1034,9 @@ run_ffmpeg() {
         fi
         ((attempt>=max_attempts)) || verbose_log "FFmpeg failed ($ec); retrying ${attempt}/${max_attempts}."
     done
+    [[ -z "$stage" ]] || rm -f -- "$stage" 2>/dev/null || true
     tail -n 20 "$log" >&2 || true
+    rm -f -- "$log" 2>/dev/null || true
     warn "FFmpeg failed (exit $ec), log: $LOG_FILE"
     return 1
 }
@@ -982,9 +1175,38 @@ preflight_space() {
         register_space_requirement "$out_dir" "$per_dir"
     else
         per_dir=$(awk -v t="$total" -v m="$multiplier" -v f="$FFX_SPACE_SAFETY_FACTOR" 'BEGIN{printf "%.0f",(t*m*f)/3}')
-        register_space_requirement "$FFX_RUN_DIR" "$per_dir"
-        register_space_requirement "$FFX_CACHE_DIR" "$per_dir"
+        local mnt_run mnt_cache
+        mnt_run="$(fs_mountpoint "$FFX_RUN_DIR")"
+        mnt_cache="$(fs_mountpoint "$FFX_CACHE_DIR")"
+        if [[ -n "$mnt_run" && "$mnt_run" == "$mnt_cache" ]]; then
+            register_space_requirement "$FFX_CACHE_DIR" "$per_dir"
+        else
+            register_space_requirement "$FFX_RUN_DIR" "$per_dir"
+            register_space_requirement "$FFX_CACHE_DIR" "$per_dir"
+        fi
         register_space_requirement "$out_dir" "$per_dir"
+    fi
+    verify_space_requirements
+}
+
+preflight_space_resumable() {
+    local out_dir="$1" all_bytes="${2:-0}" uncached_bytes="${3:-0}"
+    [[ "$FFX_SKIP_SPACE_CHECK" == true || "$DRY_RUN" == true ]] && return 0
+    (( all_bytes > 0 )) || return 0
+    local out_req uncached_req
+    out_req=$(awk -v t="$all_bytes" -v f="$FFX_SPACE_SAFETY_FACTOR" 'BEGIN{printf "%.0f",t*f}')
+    register_space_requirement "$out_dir" "$out_req"
+    if (( uncached_bytes > 0 )); then
+        uncached_req=$(awk -v t="$uncached_bytes" -v f="$FFX_SPACE_SAFETY_FACTOR" 'BEGIN{printf "%.0f",t*f}')
+        local mnt_run mnt_cache
+        mnt_run="$(fs_mountpoint "$FFX_RUN_DIR")"
+        mnt_cache="$(fs_mountpoint "$FFX_CACHE_DIR")"
+        if [[ -n "$mnt_run" && "$mnt_run" == "$mnt_cache" ]]; then
+            register_space_requirement "$FFX_CACHE_DIR" "$uncached_req"
+        else
+            register_space_requirement "$FFX_RUN_DIR" "$uncached_req"
+            register_space_requirement "$FFX_CACHE_DIR" "$uncached_req"
+        fi
     fi
     verify_space_requirements
 }
@@ -1309,7 +1531,7 @@ checkpoint_key() {
     {
         if [[ -f "$input" ]]; then
             absolute_path "$input"
-            sha256sum -- "$input"
+            stat -c '%s:%Y' -- "$input" 2>/dev/null || stat -f '%z:%m' -- "$input" 2>/dev/null || sha256sum -- "$input"
         else
             printf '%s\n' "$input"
         fi
@@ -1317,22 +1539,244 @@ checkpoint_key() {
     } | sha256sum | awk '{print $1}'
 }
 
-# checkpoint_job_dir(): one checkpoint directory per logical batch job, keyed
-# off the full sorted input list + output target, so two unrelated merge jobs
-# never collide or resume into each other's state.
-checkpoint_job_dir() {
-    local job_sig="$1"
-    local job_hash; job_hash="$(sha256sum <<< "$job_sig" | awk '{print $1}')"
-    printf '%s/%s' "$FFX_CHECKPOINT_DIR" "$job_hash"
+checkpoint_key_legacy() {
+    local input="$1" geometry_override="${2:-$ADV_RES}" norm_tag="${3:-norm4}"
+    {
+        if [[ -f "$input" ]]; then
+            absolute_path "$input"
+            sha256sum -- "$input"
+        else
+            printf '%s\n' "$input"
+        fi
+        if [[ "$norm_tag" == "norm3" ]]; then
+            printf '%s\0' "$ADV_CODEC" "$ADV_PIX_FMT" "$geometry_override" "${SPECIFIC_FPS:-$ADV_FPS}" "$ADV_CRF" "$ADV_PRESET" "$ADV_BR" "$ADV_QUALITY_MODE" "$ADV_MULTIPASS" "$REMOVE_AUDIO" "$FFX_AUDIO_RATE" "norm3"
+        else
+            printf '%s\0' "$ADV_CODEC" "$ADV_PIX_FMT" "$geometry_override" "${SPECIFIC_FPS:-$ADV_FPS}" "$ADV_CRF" "$ADV_PRESET" "$ADV_BR" "$ADV_QUALITY_MODE" "$ADV_MULTIPASS" "$REMOVE_AUDIO" "$FFX_AUDIO_RATE" "$PTS_FACTOR" "$INTERPOLATE" "norm4"
+        fi
+    } | sha256sum | awk '{print $1}'
 }
 
-# checkpoint_get(): prints the path to a previously-completed temp output for
-# this input under current settings, if one still exists on disk and is
-# non-empty. Empty stdout + return 1 means "no usable checkpoint" — callers
-# treat that as "process this input fresh," never as an error. Optional
-# third argument overrides the geometry component of the key (see
-# checkpoint_key) for callers whose actual per-file encode target isn't
-# ADV_RES.
+probe_cache_key() {
+    local input="$1"
+    {
+        absolute_path "$input"
+        stat -c '%s:%Y' -- "$input" 2>/dev/null || stat -f '%z:%m' -- "$input" 2>/dev/null || printf '0:0\n'
+        printf 'probe_v1\0'
+    } | sha256sum | awk '{print $1}'
+}
+
+probe_file_cached() {
+    local f="$1"
+    _P_VC="unknown"; _P_VW="0"; _P_VH="0"; _P_VPIX="unknown"; _P_VFPS="0/1"; _P_VPROF="unknown"
+    _P_AC="none"; _P_AR="0"; _P_ACH="0"; _P_HAS_AUD="false"
+    _P_DTS_OK="true"; _P_MOOV_OK="true"; _P_CSIG="none"
+
+    if is_image "$f"; then
+        _P_VC="image"
+        return 0
+    fi
+
+    local pkey="" pfile=""
+    if [[ "$DRY_RUN" != true && -d "${FFX_PROBE_CACHE_DIR:-}" ]]; then
+        pkey="$(probe_cache_key "$f")"
+        pfile="$FFX_PROBE_CACHE_DIR/${pkey}.probe"
+        if [[ -s "$pfile" ]]; then
+            local k v
+            while IFS='=' read -r k v; do
+                case "$k" in
+                    VC)      _P_VC="$v" ;;
+                    VW)      _P_VW="$v" ;;
+                    VH)      _P_VH="$v" ;;
+                    VPIX)    _P_VPIX="$v" ;;
+                    VFPS)    _P_VFPS="$v" ;;
+                    VPROF)   _P_VPROF="$v" ;;
+                    AC)      _P_AC="$v" ;;
+                    AR)      _P_AR="$v" ;;
+                    ACH)     _P_ACH="$v" ;;
+                    HAS_AUD) _P_HAS_AUD="$v" ;;
+                    DTS_OK)  _P_DTS_OK="$v" ;;
+                    MOOV_OK) _P_MOOV_OK="$v" ;;
+                    CSIG)    _P_CSIG="$v" ;;
+                esac
+            done < "$pfile"
+            if [[ -n "$_P_VC" && "$_P_VC" != "unknown" ]]; then
+                return 0
+            fi
+        fi
+    fi
+
+    IFS=' ' read -r _P_VC _P_VW _P_VH _P_VPIX _P_VFPS _P_VPROF < <(probe_video_params "$f") || true
+    _P_VC="${_P_VC:-unknown}"; _P_VW="${_P_VW:-0}"; _P_VH="${_P_VH:-0}"
+    _P_VPIX="${_P_VPIX:-unknown}"; _P_VFPS="${_P_VFPS:-0/1}"; _P_VPROF="${_P_VPROF:-unknown}"
+
+    IFS=' ' read -r _P_AC _P_AR _P_ACH < <(probe_audio_params "$f") || true
+    _P_AC="${_P_AC:-none}"; _P_AR="${_P_AR:-0}"; _P_ACH="${_P_ACH:-0}"
+    if [[ "$_P_AC" != "none" ]] || has_audio "$f"; then _P_HAS_AUD="true"; else _P_HAS_AUD="false"; fi
+
+    if check_moov_atom "$f"; then _P_MOOV_OK="true"; else _P_MOOV_OK="false"; fi
+    if check_dts_for_file "$f"; then _P_DTS_OK="true"; else _P_DTS_OK="false"; fi
+    _P_CSIG="$(concat_signature "$f" 2>/dev/null || echo "none")"
+
+    if [[ -n "$pfile" && "$DRY_RUN" != true && "$_P_VC" != "unknown" && "$_P_MOOV_OK" == "true" ]]; then
+        local tmp_pf
+        if tmp_pf="$(mktemp -p "$FFX_PROBE_CACHE_DIR" .probe.XXXXXXXX 2>/dev/null)"; then
+            register_cleanup always "$tmp_pf"
+            printf 'VC=%s\nVW=%s\nVH=%s\nVPIX=%s\nVFPS=%s\nVPROF=%s\nAC=%s\nAR=%s\nACH=%s\nHAS_AUD=%s\nDTS_OK=%s\nMOOV_OK=%s\nCSIG=%s\n' \
+                "$_P_VC" "$_P_VW" "$_P_VH" "$_P_VPIX" "$_P_VFPS" "$_P_VPROF" \
+                "$_P_AC" "$_P_AR" "$_P_ACH" "$_P_HAS_AUD" "$_P_DTS_OK" "$_P_MOOV_OK" "$_P_CSIG" > "$tmp_pf"
+            mv -f -- "$tmp_pf" "$pfile" 2>/dev/null || rm -f -- "$tmp_pf" 2>/dev/null || true
+        fi
+    fi
+}
+
+# =============================================================================
+# REAL-TIME CORRUPT INPUT AUTO-REPAIR & FAILURE TRACKING
+# =============================================================================
+record_job_failure() {
+    [[ "$DRY_RUN" != true ]] || return 0
+    local job_dir="$1" bad_file="$2" reason="${3:-corrupt or unreadable media stream}"
+    mkdir -p -- "$job_dir" 2>/dev/null || return 0
+    local abs_bad; abs_bad="$(absolute_path "$bad_file" 2>/dev/null || printf '%s' "$bad_file")"
+    reason="${reason//$'
+'/ }"
+    reason="${reason//$'	'/ }"
+    local fail_file="$job_dir/job.failed"
+    local tmp_f; tmp_f=$(mktemp -p "$job_dir" .failed.XXXXXXXX) || return 0
+    if [[ -f "$fail_file" ]]; then
+        awk -F$'\t' -v target="$abs_bad" '$1 != target {print $0}' "$fail_file" > "$tmp_f" 2>/dev/null || true
+    fi
+    printf '%s\t%s\n' "$abs_bad" "$reason" >> "$tmp_f"
+    mv -f -- "$tmp_f" "$fail_file" 2>/dev/null || rm -f -- "$tmp_f"
+}
+
+clear_job_failure() {
+    [[ "$DRY_RUN" != true ]] || return 0
+    local job_dir="$1" target_file="$2"
+    local fail_file="$job_dir/job.failed"
+    [[ -f "$fail_file" ]] || return 0
+    local abs_t; abs_t="$(absolute_path "$target_file" 2>/dev/null || printf '%s' "$target_file")"
+    local tmp_f; tmp_f=$(mktemp -p "$job_dir" .failed.XXXXXXXX) || return 0
+    awk -F$'\t' -v target="$abs_t" -v raw="$target_file" '$1 != target && $1 != raw {print $0}' "$fail_file" > "$tmp_f" 2>/dev/null || true
+    if [[ -s "$tmp_f" ]]; then
+        mv -f -- "$tmp_f" "$fail_file" 2>/dev/null || rm -f -- "$tmp_f"
+    else
+        rm -f -- "$tmp_f" "$fail_file" 2>/dev/null || true
+    fi
+}
+
+auto_repair_media_file() {
+    local bad_file="$1"; shift || true
+    local -a siblings=("$@")
+    [[ -s "$bad_file" ]] || return 1
+    if [[ "$DRY_RUN" == true ]]; then
+        printf '%s' "$bad_file"
+        return 0
+    fi
+
+    verbose_log "Attempting real-time auto-repair on '$(basename -- "$bad_file")'..."
+
+    # Stage 1: untrunc container recovery using a valid sibling reference clip
+    if command_exists untrunc; then
+        local ref="${FIX_REFERENCE:-}" s
+        if [[ -z "$ref" || ! -s "$ref" ]]; then
+            for s in "${siblings[@]}"; do
+                [[ "$s" == "$bad_file" || ! -s "$s" ]] && continue
+                is_image "$s" && continue
+                if check_moov_atom "$s"; then
+                    ref="$s"
+                    break
+                fi
+            done
+        fi
+        if [[ -n "$ref" && -s "$ref" ]]; then
+            local untrunc_out=""
+            if capture_value untrunc_out recover_container "$bad_file" "$ref" 2>/dev/null && [[ -s "$untrunc_out" ]] && check_moov_atom "$untrunc_out"; then
+                say "Auto-repaired '$(basename -- "$bad_file")' via untrunc reference '$(basename -- "$ref")'."
+                printf '%s' "$untrunc_out"
+                return 0
+            fi
+        fi
+    fi
+
+    # Stage 2: Tolerant FFmpeg packet salvage (-fflags +genpts+igndts+discardcorrupt -err_detect ignore_err)
+    local salvage_out
+    salvage_out="$(mktemp_ffx .repaired.mp4)" || return 1
+    if timeout --kill-after=5 "${FFX_TIMEOUT:-300}" ffmpeg -nostdin -hide_banner -v error -y \
+        -fflags +genpts+igndts+discardcorrupt -err_detect ignore_err -i "$bad_file" \
+        -map 0:v:0 -map '0:a:0?' -c:v "$ADV_CODEC" -preset ultrafast -crf "${ADV_CRF:-18}" \
+        -pix_fmt "$ADV_PIX_FMT" -c:a aac -ar "$FFX_AUDIO_RATE" -ac 2 -movflags +faststart "$salvage_out" >/dev/null 2>&1; then
+        if [[ -s "$salvage_out" ]] && check_moov_atom "$salvage_out"; then
+            local dur; dur="$(probe_duration "$salvage_out" 2>/dev/null || echo 0)"
+            if awk -v d="$dur" 'BEGIN{exit !(d+0 > 0)}'; then
+                say "Auto-repaired '$(basename -- "$bad_file")' via tolerant stream salvage."
+                printf '%s' "$salvage_out"
+                return 0
+            fi
+        fi
+    fi
+    rm -f -- "$salvage_out" 2>/dev/null || true
+
+    # Stage 3: Elementary stream Annex-B carve + remux
+    local bsf ext raw_elem remux_out
+    for bsf in "h264_mp4toannexb:h264" "hevc_mp4toannexb:hevc"; do
+        ext="${bsf#*:}"; bsf="${bsf%:*}"
+        raw_elem="$(mktemp_ffx ".carve.${ext}")" || continue
+        remux_out="$(mktemp_ffx .carved.mp4)" || { rm -f -- "$raw_elem"; continue; }
+        if timeout --kill-after=5 "${FFX_PROBE_TIMEOUT:-30}" ffmpeg -nostdin -hide_banner -v error -y \
+            -err_detect ignore_err -i "$bad_file" -map 0:v:0 -an -c:v copy -bsf:v "$bsf" -f "$ext" "$raw_elem" >/dev/null 2>&1 \
+            && [[ -s "$raw_elem" ]]; then
+            if timeout --kill-after=5 "${FFX_TIMEOUT:-300}" ffmpeg -nostdin -hide_banner -v error -y \
+                -fflags +genpts -r "${SPECIFIC_FPS:-$ADV_FPS}" -i "$raw_elem" \
+                -f lavfi -i "anullsrc=r=${FFX_AUDIO_RATE}:cl=stereo" -shortest \
+                -c:v "$ADV_CODEC" -preset ultrafast -crf "${ADV_CRF:-18}" -pix_fmt "$ADV_PIX_FMT" \
+                -c:a aac -ar "$FFX_AUDIO_RATE" -ac 2 -movflags +faststart "$remux_out" >/dev/null 2>&1 \
+                && [[ -s "$remux_out" ]] && check_moov_atom "$remux_out"; then
+                rm -f -- "$raw_elem" 2>/dev/null || true
+                say "Auto-repaired '$(basename -- "$bad_file")' via Annex-B bitstream carve."
+                printf '%s' "$remux_out"
+                return 0
+            fi
+        fi
+        rm -f -- "$raw_elem" "$remux_out" 2>/dev/null || true
+    done
+
+    return 1
+}
+
+canonical_job_sig() {
+    local target="$1"; shift
+    local extra="$1"; shift
+    local -a abs_files=()
+    local f
+    for f in "$@"; do
+        abs_files+=("$(absolute_path "$f")")
+    done
+    local abs_target; abs_target="$(absolute_path "$target")"
+    if [[ -n "$extra" ]]; then
+        printf '%s|%s|%s' "${abs_files[*]}" "$extra" "$abs_target"
+    else
+        printf '%s|%s' "${abs_files[*]}" "$abs_target"
+    fi
+}
+
+checkpoint_job_dir() {
+    local job_sig="$1" legacy_sig="${2:-}"
+    local job_hash; job_hash="$(sha256sum <<< "$job_sig" | awk '{print $1}')"
+    local canon_dir="$FFX_CHECKPOINT_DIR/$job_hash"
+    if [[ -d "$canon_dir" || -z "$legacy_sig" || "$legacy_sig" == "$job_sig" ]]; then
+        printf '%s' "$canon_dir"
+        return 0
+    fi
+    local leg_hash; leg_hash="$(sha256sum <<< "$legacy_sig" | awk '{print $1}')"
+    local leg_dir="$FFX_CHECKPOINT_DIR/$leg_hash"
+    if [[ -d "$leg_dir" ]]; then
+        verbose_log "checkpoint: detected legacy job directory ($leg_hash); resuming in place."
+        printf '%s' "$leg_dir"
+        return 0
+    fi
+    printf '%s' "$canon_dir"
+}
+
 checkpoint_lock() {
     [[ "$DRY_RUN" != true ]] || return 0
     local job_dir="$1"
@@ -1345,49 +1789,78 @@ checkpoint_get() {
     local job_dir="$1" input="$2" geometry_override="${3:-}"
     local key; key="$(checkpoint_key "$input" "$geometry_override")"
     local marker="$job_dir/$key"
-    [[ -f "$marker" ]] || return 1
-    local recorded_path; recorded_path="$(<"$marker")"
-    [[ -s "$recorded_path" ]] || return 1
-    check_moov_atom "$recorded_path" || return 1
-    printf '%s' "$recorded_path"
+    local recorded_path=""
+    if [[ -f "$marker" ]]; then
+        recorded_path="$(<"$marker")"
+        [[ -s "$recorded_path" ]] || recorded_path="$job_dir/${key}.artifact.mp4"
+        if [[ -s "$recorded_path" ]] && check_moov_atom "$recorded_path"; then
+            printf '%s' "$recorded_path"
+            return 0
+        fi
+    elif [[ -s "$job_dir/${key}.artifact.mp4" ]] && check_moov_atom "$job_dir/${key}.artifact.mp4"; then
+        printf '%s' "$job_dir/${key}.artifact.mp4"
+        return 0
+    fi
+    if [[ -d "${FFX_SEGMENT_CACHE_DIR:-}" ]]; then
+        local shared_path="$FFX_SEGMENT_CACHE_DIR/${key}.artifact.mp4"
+        if [[ -s "$shared_path" ]] && check_moov_atom "$shared_path"; then
+            checkpoint_set "$job_dir" "$input" "$shared_path" "$geometry_override" 2>/dev/null || true
+            printf '%s' "$shared_path"
+            return 0
+        fi
+    fi
+    if [[ -f "$input" ]] && { { [[ -d "$job_dir" ]] && compgen -G "$job_dir/*.artifact.mp4" >/dev/null 2>&1; } || { [[ -d "${FFX_SEGMENT_CACHE_DIR:-}" ]] && compgen -G "$FFX_SEGMENT_CACHE_DIR/*.artifact.mp4" >/dev/null 2>&1; }; }; then
+        local norm_tag leg_key leg_marker leg_shared
+        for norm_tag in norm4 norm3; do
+            leg_key="$(checkpoint_key_legacy "$input" "$geometry_override" "$norm_tag")"
+            leg_marker="$job_dir/$leg_key"
+            if [[ -f "$leg_marker" ]]; then
+                recorded_path="$(<"$leg_marker")"
+                [[ -s "$recorded_path" ]] || recorded_path="$job_dir/${leg_key}.artifact.mp4"
+                if [[ -s "$recorded_path" ]] && check_moov_atom "$recorded_path"; then
+                    checkpoint_set "$job_dir" "$input" "$recorded_path" "$geometry_override" 2>/dev/null || true
+                    printf '%s' "$recorded_path"
+                    return 0
+                fi
+            elif [[ -s "$job_dir/${leg_key}.artifact.mp4" ]] && check_moov_atom "$job_dir/${leg_key}.artifact.mp4"; then
+                recorded_path="$job_dir/${leg_key}.artifact.mp4"
+                checkpoint_set "$job_dir" "$input" "$recorded_path" "$geometry_override" 2>/dev/null || true
+                printf '%s' "$recorded_path"
+                return 0
+            fi
+            if [[ -d "${FFX_SEGMENT_CACHE_DIR:-}" ]]; then
+                leg_shared="$FFX_SEGMENT_CACHE_DIR/${leg_key}.artifact.mp4"
+                if [[ -s "$leg_shared" ]] && check_moov_atom "$leg_shared"; then
+                    checkpoint_set "$job_dir" "$input" "$leg_shared" "$geometry_override" 2>/dev/null || true
+                    ln -f -- "$leg_shared" "$FFX_SEGMENT_CACHE_DIR/${key}.artifact.mp4" 2>/dev/null || true
+                    printf '%s' "$leg_shared"
+                    return 0
+                fi
+            fi
+        done
+    fi
+    return 1
 }
 
-# checkpoint_store_artifact(): copies a just-produced temp file OUT of
-# $FFX_RUN_DIR (which is wiped by the EXIT trap on every invocation, success
-# or failure alike) and INTO the job's checkpoint directory (which persists
-# across invocations by design). Returns the new persistent path on stdout.
-#
-# This exists because checkpoint_set() recording a path is only useful if
-# that path still resolves on the NEXT invocation; pointing a persistent
-# manifest entry at ephemeral $FFX_RUN_DIR storage would record correctly
-# but resume into a dangling reference every time — the manifest would claim
-# a batch is done while the file it points to is already gone. Call this
-# BEFORE checkpoint_set() for every artifact that needs to survive a
-# resumed run. Optional fourth argument is the same geometry override as
-# checkpoint_get/checkpoint_set.
 checkpoint_store_artifact() {
     [[ "$DRY_RUN" != true ]] || { printf '%s' "$3"; return 0; }
     local job_dir="$1" input="$2" transient_path="$3" geometry_override="${4:-}"
-    mkdir -p "$job_dir"
+    mkdir -p "$job_dir" "${FFX_SEGMENT_CACHE_DIR:-$job_dir}"
     local key; key="$(checkpoint_key "$input" "$geometry_override")"
     local persistent_path="$job_dir/${key}.artifact.mp4"
     local tmp_publish; tmp_publish=$(mktemp -p "$job_dir" .artifact.XXXXXXXX) || return 1
     register_cleanup always "$tmp_publish"
-    cp -- "$transient_path" "$tmp_publish"  || { rm -f -- "$tmp_publish"; return 1; }
+    if ! mv -f -- "$transient_path" "$tmp_publish" 2>/dev/null; then
+        cp -- "$transient_path" "$tmp_publish" || { rm -f -- "$tmp_publish"; return 1; }
+        rm -f -- "$transient_path" 2>/dev/null || true
+    fi
     mv -f -- "$tmp_publish" "$persistent_path" || { rm -f -- "$tmp_publish"; return 1; }
+    if [[ -d "${FFX_SEGMENT_CACHE_DIR:-}" ]]; then
+        ln -f -- "$persistent_path" "$FFX_SEGMENT_CACHE_DIR/${key}.artifact.mp4" 2>/dev/null || true
+    fi
     printf '%s' "$persistent_path"
 }
 
-# checkpoint_set(): records that `input`, under current settings, has a
-# completed, valid output at `produced_path`. produced_path must already
-# exist and be non-empty, and MUST be a path that survives this process
-# exiting (i.e. the output of checkpoint_store_artifact, never a raw
-# $FFX_RUN_DIR path) — this function only records, it never validates
-# beyond existence, keeping validation logic (moov checks etc) where it
-# already lives rather than duplicating it here. Optional fourth argument
-# is the same geometry override as checkpoint_get/checkpoint_store_artifact —
-# it MUST match what was passed to those for the same input, or the marker
-# written here will never be found by a later checkpoint_get lookup.
 checkpoint_set() {
     [[ "$DRY_RUN" != true ]] || return 0
     local job_dir="$1" input="$2" produced_path="$3" geometry_override="${4:-}"
@@ -1400,20 +1873,869 @@ checkpoint_set() {
     mv -f -- "$tmp_marker" "$marker"
 }
 
-# checkpoint_clear(): the only "reset" operation — removes the entire job's
-# checkpoint directory. This is base+patch in the other direction: instead of
-# trying to undo individual recorded steps, it returns the job to the known-
-# pristine state of "no checkpoint exists," which is always a safe, well-
-# defined baseline to resume (i.e. restart) from.
 checkpoint_clear() {
     [[ "$DRY_RUN" != true ]] || return 0
     local job_dir="$1"
-    rm -rf -- "$job_dir" 2>/dev/null || true
+    if [[ -d "$job_dir" && -d "${FFX_SEGMENT_CACHE_DIR:-}" ]]; then
+        local art base
+        for art in "$job_dir"/*.artifact.mp4; do
+            [[ -e "$art" ]] || continue
+            base="$(basename -- "$art")"
+            rm -f -- "$FFX_SEGMENT_CACHE_DIR/$base" 2>/dev/null || true
+        done
+    fi
+    rm -rf -- "$job_dir" "$job_dir.lock" 2>/dev/null || true
+}
+
+record_command_history() {
+    [[ "$DRY_RUN" != true ]] || return 0
+    local job_dir="$1" cmd_str="$2"
+    mkdir -p -- "$job_dir" "$FFX_CHECKPOINT_DIR" 2>/dev/null || return 0
+    printf '%s\n' "$cmd_str" > "$job_dir/job.cmd" 2>/dev/null || true
+    local hist="$FFX_CHECKPOINT_DIR/command_history.log"
+    local jid; jid="$(basename -- "$job_dir")"
+    printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${jid:0:12}" "$(pwd -P)" "$cmd_str" >> "$hist" 2>/dev/null || true
+}
+
+job_manifest_save() {
+    [[ "$DRY_RUN" != true ]] || return 0
+    local job_dir="$1" cmd_name="$2" out_target="$3" total_count="$4" completed_count="$5"
+    shift 5
+    local -a job_files=("$@")
+    mkdir -p -- "$job_dir" || return 0
+    local saved_cmd=""
+    if [[ -f "$job_dir/job.cmd" ]]; then
+        saved_cmd="$(<"$job_dir/job.cmd")"
+    else
+        saved_cmd="$(printf '%q ' "${FFX_ORIG_ARGV[@]}")"
+        saved_cmd="${saved_cmd% }"
+        record_command_history "$job_dir" "$saved_cmd"
+    fi
+    local tmp_meta; tmp_meta=$(mktemp -p "$job_dir" .meta.XXXXXXXX) || return 0
+    register_cleanup always "$tmp_meta"
+    local now; now="$(date +%s)"
+    local created="$now"
+    if [[ -f "$job_dir/job.meta" ]]; then
+        local prev_c
+        prev_c="$(awk -F= '$1=="CREATED_AT"{print $2}' "$job_dir/job.meta" 2>/dev/null || true)"
+        [[ "$prev_c" =~ ^[0-9]+$ ]] && created="$prev_c"
+    fi
+    {
+        printf 'JOB_ID=%s\n' "$(basename -- "$job_dir")"
+        printf 'JOB_CMD=%s\n' "$cmd_name"
+        printf 'SAVED_CMD=%s\n' "$saved_cmd"
+        printf 'CREATED_AT=%s\n' "$created"
+        printf 'UPDATED_AT=%s\n' "$now"
+        printf 'CWD=%s\n' "$(pwd -P)"
+        printf 'OUTPUT_TARGET=%s\n' "$(absolute_path "$out_target")"
+        printf 'OUTPUT_DIR=%s\n' "$(absolute_path "$OUTPUT_DIR")"
+        printf 'TOTAL_COUNT=%d\n' "$total_count"
+        printf 'COMPLETED_COUNT=%d\n' "$completed_count"
+        printf 'ADV_CONTAINER=%s\n' "$ADV_CONTAINER"
+        printf 'ADV_RES=%s\n' "$ADV_RES"
+        printf 'EXPLICIT_RES=%s\n' "${EXPLICIT_RES:-false}"
+        printf 'ADV_FPS=%s\n' "$ADV_FPS"
+        printf 'SPECIFIC_FPS=%s\n' "${SPECIFIC_FPS:-}"
+        printf 'PTS_FACTOR=%s\n' "${PTS_FACTOR:-}"
+        printf 'INTERPOLATE=%s\n' "${INTERPOLATE:-false}"
+        printf 'ADV_CODEC=%s\n' "$ADV_CODEC"
+        printf 'ADV_PIX_FMT=%s\n' "$ADV_PIX_FMT"
+        printf 'ADV_CRF=%s\n' "$ADV_CRF"
+        printf 'ADV_BR=%s\n' "$ADV_BR"
+        printf 'ADV_PRESET=%s\n' "$ADV_PRESET"
+        printf 'ADV_QUALITY_MODE=%s\n' "$ADV_QUALITY_MODE"
+        printf 'ADV_MULTIPASS=%s\n' "$ADV_MULTIPASS"
+        printf 'REMOVE_AUDIO=%s\n' "$REMOVE_AUDIO"
+        printf 'FFX_AUDIO_RATE=%s\n' "$FFX_AUDIO_RATE"
+        printf 'LAYOUT_MODE=%s\n' "$LAYOUT_MODE"
+        printf 'COMPOSITE_LAYOUT=%s\n' "${COMPOSITE_LAYOUT:-}"
+        printf 'COMPOSITE_AUDIO=%s\n' "${COMPOSITE_AUDIO:-mix}"
+        printf 'BATCH_SIZE=%s\n' "$BATCH_SIZE"
+    } > "$tmp_meta"
+    mv -f -- "$tmp_meta" "$job_dir/job.meta" 2>/dev/null || rm -f -- "$tmp_meta"
+
+    local tmp_files; tmp_files=$(mktemp -p "$job_dir" .files.XXXXXXXX) || return 0
+    register_cleanup always "$tmp_files"
+    local jf
+    for jf in "${job_files[@]}"; do
+        printf '%s\0' "$(absolute_path "$jf")"
+    done > "$tmp_files"
+    mv -f -- "$tmp_files" "$job_dir/job.files" 2>/dev/null || rm -f -- "$tmp_files"
+}
+
+_collect_session_failures() {
+    local job_dir="$1"
+    if [[ -s "$job_dir/job.failed" ]]; then
+        cat -- "$job_dir/job.failed"
+        return 0
+    fi
+    if [[ -s "${LOG_FILE:-}" ]]; then
+        awk '
+            /moov atom not found/ { last_reason="moov atom not found" }
+            /Invalid data found when processing input/ { if (!last_reason) last_reason="Invalid data found" }
+            /^Error opening input file / {
+                line=$0
+                sub(/^Error opening input file /, "", line)
+                sub(/\.[[:space:]]*$/, "", line)
+                if (line != "" && !seen[line]++) {
+                    printf "%s\t%s\n", line, (last_reason ? last_reason : "Error opening input file")
+                }
+                last_reason=""
+            }
+        ' "$LOG_FILE" 2>/dev/null || true
+    fi
+}
+
+_discover_resumable_jobs() {
+    [[ -d "$FFX_CHECKPOINT_DIR" ]] || return 0
+    local d meta
+    local -a raw_rows=()
+    for d in "$FFX_CHECKPOINT_DIR"/*; do
+        [[ -d "$d" ]] || continue
+        local base; base="$(basename -- "$d")"
+        [[ "$base" == _* ]] && continue
+        local fail_cnt=0
+        if [[ -s "$d/job.failed" ]]; then
+            fail_cnt="$(wc -l < "$d/job.failed" | awk '{print $1}')"
+        fi
+        meta="$d/job.meta"
+        if [[ -f "$meta" ]]; then
+            local jid="" jcmd="" upd="0" tot="0" comp="0" out="" cwd="" scmd=""
+            local k v
+            while IFS='=' read -r k v; do
+                case "$k" in
+                    JOB_ID)          jid="$v" ;;
+                    JOB_CMD)         jcmd="$v" ;;
+                    SAVED_CMD)       scmd="$v" ;;
+                    UPDATED_AT)      upd="$v" ;;
+                    TOTAL_COUNT)     tot="$v" ;;
+                    COMPLETED_COUNT) comp="$v" ;;
+                    OUTPUT_TARGET)   out="$v" ;;
+                    CWD)             cwd="$v" ;;
+                esac
+            done < "$meta"
+            local actual_arts=0
+            local a
+            for a in "$d"/*.artifact.mp4; do
+                [[ -e "$a" ]] && (( actual_arts++ )) || true
+            done
+            (( actual_arts > comp )) && comp=$actual_arts
+            raw_rows+=("${upd:-0}"$'\t'"${jid:-$base}"$'\t'"${jcmd:-merge}"$'\t'"${comp}/${tot}"$'\t'"${out:-unknown}"$'\t'"${cwd:-unknown}"$'\t'"$d"$'\t'"${fail_cnt}"$'\t'"${scmd:-ffx ${jcmd:-merge}}")
+        else
+            local actual_arts=0 mtime="0"
+            local a
+            for a in "$d"/*.artifact.mp4; do
+                [[ -e "$a" ]] && (( actual_arts++ )) || true
+            done
+            (( actual_arts > 0 )) || continue
+            mtime="$(stat -c '%Y' -- "$d" 2>/dev/null || echo 0)"
+            raw_rows+=("${mtime}"$'\t'"${base}"$'\t'"legacy-job"$'\t'"${actual_arts}/?"$'\t'"(legacy checkpoint)"$'\t'"unknown"$'\t'"$d"$'\t'"${fail_cnt}"$'\t'"(pre-v8.8.0 checkpoint)")
+        fi
+    done
+    (( ${#raw_rows[@]} > 0 )) || return 0
+    printf '%s\n' "${raw_rows[@]}" | sort -rn -k1,1
+}
+
+_write_session_files_array() {
+    local job_dir="$1"; shift
+    local -a arr=("$@")
+    local tmp_files; tmp_files=$(mktemp -p "$job_dir" .files.XXXXXXXX) || return 1
+    local jf
+    for jf in "${arr[@]}"; do
+        printf '%s\0' "$(absolute_path "$jf" 2>/dev/null || printf '%s' "$jf")"
+    done > "$tmp_files"
+    mv -f -- "$tmp_files" "$job_dir/job.files"
+    if [[ -f "$job_dir/job.meta" ]]; then
+        local tmp_m; tmp_m=$(mktemp -p "$job_dir" .meta.XXXXXXXX) || return 0
+        awk -F= -v OFS='=' -v tot="${#arr[@]}" '$1=="TOTAL_COUNT"{$2=tot} {print}' "$job_dir/job.meta" > "$tmp_m" && mv -f -- "$tmp_m" "$job_dir/job.meta"
+    fi
+}
+
+_handle_session_failed_files() {
+    local job_dir="$1"
+    local -n _files_ref="$2"
+    local -a fail_lines=()
+    mapfile -t fail_lines < <(_collect_session_failures "$job_dir")
+    (( ${#fail_lines[@]} > 0 )) || return 0
+
+    printf '\n%b[!!] Identified Failed / Corrupt File(s) for Session %s:%b\n' "${YELLOW}${BOLD}" "$(basename -- "$job_dir" | cut -c1-12)" "${RESET}"
+    local fl fpath freason
+    for fl in "${fail_lines[@]}"; do
+        IFS=$'\t' read -r fpath freason <<< "$fl"
+        printf '     - %b%s%b (%s)\n' "${RED}" "$fpath" "${RESET}" "${freason:-corrupt input}"
+    done
+
+    local choice="remove-failed"
+    if tui_available; then
+        local -a fopts=(
+            "remove-failed -- Remove failed file(s) from the session file list and continue"
+            "repair-failed -- Attempt multi-stage auto-repair on failed file(s) now (or remove if unrepairable)"
+            "keep-failed   -- Keep file list unchanged (real-time auto-repair/skip will handle during run)"
+        )
+        local picked
+        picked="$(printf '%s\n' "${fopts[@]}" | fzf --prompt='Failed file action> ' --height='~40%' --reverse --header='Failed/corrupt input file(s) detected in this session:' 2>/dev/null)" || picked=""
+        [[ -n "$picked" ]] && choice="${picked%% *}"
+    elif [[ -t 0 && -t 1 ]]; then
+        local ans=""
+        read -r -p "Failed file action — [r]emove from list, [a]uto-repair, or [k]eep? [R/a/k]: " ans || true
+        case "${ans,,}" in
+            a*) choice="repair-failed" ;;
+            k*) choice="keep-failed" ;;
+            *)  choice="remove-failed" ;;
+        esac
+    fi
+
+    if [[ "$choice" == "remove-failed" ]]; then
+        local -a cleaned=()
+        local item is_bad
+        for item in "${_files_ref[@]}"; do
+            is_bad=false
+            for fl in "${fail_lines[@]}"; do
+                IFS=$'\t' read -r fpath _ <<< "$fl"
+                if [[ "$item" == "$fpath" || "$(basename -- "$item")" == "$(basename -- "$fpath")" ]]; then
+                    is_bad=true
+                    clear_job_failure "$job_dir" "$fpath"
+                    say "Removed failed file from session list: $item"
+                    break
+                fi
+            done
+            [[ "$is_bad" == true ]] || cleaned+=("$item")
+        done
+        _files_ref=("${cleaned[@]}")
+        _write_session_files_array "$job_dir" "${_files_ref[@]}"
+    elif [[ "$choice" == "repair-failed" ]]; then
+        local -a updated=()
+        local item repaired="" matched_bad
+        for item in "${_files_ref[@]}"; do
+            matched_bad=false
+            for fl in "${fail_lines[@]}"; do
+                IFS=$'\t' read -r fpath _ <<< "$fl"
+                if [[ "$item" == "$fpath" || "$(basename -- "$item")" == "$(basename -- "$fpath")" ]]; then
+                    matched_bad=true
+                    break
+                fi
+            done
+            if [[ "$matched_bad" == true ]]; then
+                repaired=""
+                if repaired="$(auto_repair_media_file "$item" "${_files_ref[@]}")" && [[ -s "$repaired" ]]; then
+                    local perm_rep="${item%.*}_repaired.${item##*.}"
+                    cp -f -- "$repaired" "$perm_rep" 2>/dev/null && item="$perm_rep" || item="$repaired"
+                    clear_job_failure "$job_dir" "$fpath"
+                    updated+=("$item")
+                else
+                    warn "Could not repair '$item' — removing from session file list."
+                    clear_job_failure "$job_dir" "$item"
+                fi
+            else
+                updated+=("$item")
+            fi
+        done
+        _files_ref=("${updated[@]}")
+        _write_session_files_array "$job_dir" "${_files_ref[@]}"
+    fi
+}
+
+_edit_session_files() {
+    local job_dir="$1"
+    local -n _edit_ref="$2"
+    local geom="${3:-$ADV_RES}"
+
+    while true; do
+        local action=""
+        if tui_available; then
+            local -a menu=(
+                "done          -- Finish editing (${#_edit_ref[@]} files in list) and return"
+                "remove-files  -- Select file(s) to remove from this session (Tab to multi-select)"
+                "add-files     -- Browse & append file(s) to this session (Tab to multi-select)"
+                "edit-editor   -- Open file list in ${EDITOR:-nano} to reorder/add/remove lines"
+            )
+            local picked
+            picked="$(printf '%s\n' "${menu[@]}" | fzf --prompt="Edit file list (${#_edit_ref[@]} files)> " --height='~45%' --reverse 2>/dev/null)" || picked=""
+            action="${picked%% *}"
+        else
+            printf 'File list has %d file(s). Actions: [d]one, [r]emove, [a]dd, [e]ditor: ' "${#_edit_ref[@]}"
+            read -r action || action="done"
+            case "$action" in
+                r*) action="remove-files" ;;
+                a*) action="add-files" ;;
+                e*) action="edit-editor" ;;
+                *)  action="done" ;;
+            esac
+        fi
+
+        case "$action" in
+            ""|done) break ;;
+            remove-files)
+                if tui_available; then
+                    local -a annotated=()
+                    local idx=1 f status_tag
+                    for f in "${_edit_ref[@]}"; do
+                        if checkpoint_get "$job_dir" "$f" "$geom" >/dev/null 2>&1; then
+                            status_tag="[CACHED]"
+                        elif [[ -f "$job_dir/job.failed" ]] && grep -Fq -- "$f" "$job_dir/job.failed" 2>/dev/null; then
+                            status_tag="[FAILED]"
+                        else
+                            status_tag="[PENDING]"
+                        fi
+                        annotated+=("${idx}"$'\t'"${status_tag}"$'\t'"${f}")
+                        (( idx++ )) || true
+                    done
+                    local -a to_remove=()
+                    mapfile -t to_remove < <(printf '%s\n' "${annotated[@]}" | fzf --multi --prompt='Remove file(s)> ' --height='~60%' --reverse --header='Tab to mark file(s) for removal, Enter to confirm' 2>/dev/null) || true
+                    if (( ${#to_remove[@]} > 0 )); then
+                        local -a kept=()
+                        local i rem_line rem_idx skip
+                        for (( i=0; i<${#_edit_ref[@]}; i++ )); do
+                            skip=false
+                            for rem_line in "${to_remove[@]}"; do
+                                rem_idx="${rem_line%%$'\t'*}"
+                                if (( rem_idx == i + 1 )); then
+                                    skip=true
+                                    say "Removed: ${_edit_ref[$i]}"
+                                    break
+                                fi
+                            done
+                            [[ "$skip" == true ]] || kept+=("${_edit_ref[$i]}")
+                        done
+                        _edit_ref=("${kept[@]}")
+                        _write_session_files_array "$job_dir" "${_edit_ref[@]}"
+                    fi
+                else
+                    local idx=1 f
+                    for f in "${_edit_ref[@]}"; do
+                        printf '  [%d] %s\n' "$idx" "$f"
+                        (( idx++ )) || true
+                    done
+                    local del_num=""
+                    read -r -p "Enter file number to remove (or Enter to cancel): " del_num || true
+                    if [[ "$del_num" =~ ^[0-9]+$ ]] && (( del_num >= 1 && del_num <= ${#_edit_ref[@]} )); then
+                        say "Removed: ${_edit_ref[$((del_num-1))]}"
+                        unset '_edit_ref[$((del_num-1))]'
+                        _edit_ref=("${_edit_ref[@]}")
+                        _write_session_files_array "$job_dir" "${_edit_ref[@]}"
+                    fi
+                fi
+                ;;
+            add-files)
+                if tui_available; then
+                    local -a added=()
+                    mapfile -t added < <(tui_pick_many "Select file(s) to add to session") || true
+                    if (( ${#added[@]} > 0 )); then
+                        local af
+                        for af in "${added[@]}"; do
+                            [[ -f "$af" ]] && _edit_ref+=("$(absolute_path "$af")")
+                        done
+                        _write_session_files_array "$job_dir" "${_edit_ref[@]}"
+                        say "Added ${#added[@]} file(s) to session."
+                    fi
+                else
+                    local new_path=""
+                    read -r -p "Enter file path to add: " new_path || true
+                    if [[ -n "$new_path" && -f "$new_path" ]]; then
+                        _edit_ref+=("$(absolute_path "$new_path")")
+                        _write_session_files_array "$job_dir" "${_edit_ref[@]}"
+                        say "Added: $new_path"
+                    fi
+                fi
+                ;;
+            edit-editor)
+                local tmp_txt; tmp_txt="$(mktemp_ffx .filelist.txt)"
+                printf '%s\n' "${_edit_ref[@]}" > "$tmp_txt"
+                "${EDITOR:-nano}" "$tmp_txt"
+                local -a reloaded=()
+                local line
+                while IFS= read -r line || [[ -n "$line" ]]; do
+                    line="${line#"${line%%[![:space:]]*}"}"
+                    line="${line%"${line##*[![:space:]]}"}"
+                    [[ -z "$line" || "$line" == \#* ]] && continue
+                    reloaded+=("$line")
+                done < "$tmp_txt"
+                if (( ${#reloaded[@]} > 0 )); then
+                    _edit_ref=("${reloaded[@]}")
+                    _write_session_files_array "$job_dir" "${_edit_ref[@]}"
+                    say "Updated session file list (${#_edit_ref[@]} files)."
+                fi
+                ;;
+        esac
+    done
+}
+
+_recover_legacy_checkpoint() {
+    local job_dir="$1" pre_action="${2:-auto}"
+    local jid; jid="$(basename -- "$job_dir")"
+    local -a segs=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && segs+=("${line#* }")
+    done < <(
+        for a in "$job_dir"/*.artifact.mp4; do
+            [[ -s "$a" ]] || continue
+            printf '%s %s\n' "$(stat -c '%Y' -- "$a" 2>/dev/null || echo 0)" "$a"
+        done | sort -n
+    )
+    (( ${#segs[@]} > 0 )) || die "Legacy checkpoint '${jid:0:12}' contains no valid .artifact.mp4 segments."
+
+    local seg_w=1920 seg_h=1080 seg_fps="$ADV_FPS"
+    IFS=' ' read -r seg_w seg_h < <(probe_wh "${segs[0]}") || true
+    (( seg_w > 0 && seg_h > 0 )) || { seg_w=1920; seg_h=1080; }
+    seg_fps="$(get_fps "${segs[0]}")"
+    local seg_geom="${seg_w}x${seg_h}"
+
+    # Check if any failed files were logged in ffx.log
+    local -a fail_lines=()
+    mapfile -t fail_lines < <(_collect_session_failures "$job_dir")
+    if (( ${#fail_lines[@]} > 0 )); then
+        printf '\n%b[!!] Identified Failed / Corrupt File(s) from Log:%b\n' "${YELLOW}${BOLD}" "${RESET}"
+        local fl fpath freason
+        for fl in "${fail_lines[@]}"; do
+            IFS=$'\t' read -r fpath freason <<< "$fl"
+            printf '     - %b%s%b (%s)\n' "${RED}" "$fpath" "${RESET}" "${freason:-corrupt input}"
+        done
+    fi
+
+    local mode="concat-now"
+    if [[ "$pre_action" == "edit" ]]; then
+        mode="edit-segments"
+    elif tui_available && [[ "$pre_action" != "latest" ]]; then
+        local -a opts=(
+            "concat-now     -- Concatenate the ${#segs[@]} completed segments in encode order right now"
+            "append-more    -- Keep the ${#segs[@]} completed segments, pick file(s) in fzf to append/repair, then concat"
+            "edit-segments  -- Remove or reorder individual cached segments before concatenating"
+            "scan-dir       -- Match files in $(pwd) against this checkpoint to rebuild job.files & open editor"
+            "delete-session -- Delete this checkpoint session (${jid:0:12}) from disk"
+        )
+        local picked
+        picked="$(printf '%s\n' "${opts[@]}" | fzf --prompt="Legacy session ${jid:0:12} (${#segs[@]} segments @ ${seg_geom})> " --height='~50%' --reverse --header="Choose how to resume or manage legacy session ${jid:0:12}:" 2>/dev/null)" || picked=""
+        [[ -n "$picked" ]] || die "Resume cancelled."
+        mode="${picked%% *}"
+    fi
+
+    if [[ "$mode" == "delete-session" ]]; then
+        checkpoint_clear "$job_dir"
+        say "Deleted checkpoint session: ${jid:0:12}"
+        return 0
+    fi
+
+    local out="${GLOBAL_OUTPUT_FILE:-}"
+    if [[ -z "$out" ]]; then
+        out="$(get_default_filename "output" "merged" "$ADV_CONTAINER")"
+    else
+        out="$(ensure_unique_output "$out")"
+    fi
+
+    if [[ "$mode" == "scan-dir" ]]; then
+        say "Scanning $(pwd) for source files matching ${#segs[@]} cached segments (${seg_geom})..."
+        local -a cand_files=() matched_pairs=()
+        mapfile -t cand_files < <(apply_bulk_glob "$(pwd)")
+        (( ${#cand_files[@]} > 0 )) || die "No media files found in $(pwd) to match against checkpoint."
+        local cf k_fast k_leg3 k_leg4 match_art="" art_mtime
+        for cf in "${cand_files[@]}"; do
+            match_art=""
+            k_fast="$(checkpoint_key "$cf" "$seg_geom")"
+            if [[ -s "$job_dir/${k_fast}.artifact.mp4" ]]; then
+                match_art="$job_dir/${k_fast}.artifact.mp4"
+            else
+                k_leg3="$(checkpoint_key_legacy "$cf" "$seg_geom" "norm3")"
+                if [[ -s "$job_dir/${k_leg3}.artifact.mp4" ]]; then
+                    match_art="$job_dir/${k_leg3}.artifact.mp4"
+                else
+                    k_leg4="$(checkpoint_key_legacy "$cf" "$seg_geom" "norm4")"
+                    [[ -s "$job_dir/${k_leg4}.artifact.mp4" ]] && match_art="$job_dir/${k_leg4}.artifact.mp4"
+                fi
+            fi
+            if [[ -n "$match_art" ]]; then
+                art_mtime="$(stat -c '%Y' -- "$match_art" 2>/dev/null || echo 0)"
+                matched_pairs+=("${art_mtime}"$'\t'"$(absolute_path "$cf")")
+            fi
+        done
+        (( ${#matched_pairs[@]} > 0 )) || die "No files in $(pwd) matched the segments in ${jid:0:12}. Use 'concat-now' or 'append-more' instead."
+        local -a ordered_files=()
+        while IFS=$'\t' read -r _ mfile; do
+            [[ -n "$mfile" ]] && ordered_files+=("$mfile")
+        done < <(printf '%s\n' "${matched_pairs[@]}" | sort -n -k1,1)
+        say "Matched ${#ordered_files[@]}/${#segs[@]} cached segment(s) in $(pwd)."
+        job_manifest_save "$job_dir" "merge" "$out" "${#ordered_files[@]}" "${#ordered_files[@]}" "${ordered_files[@]}"
+        _handle_session_failed_files "$job_dir" ordered_files
+        _edit_session_files "$job_dir" ordered_files "$seg_geom"
+        OVERWRITE_OUTPUT=true
+        cmd_merge -o "$out" -- "${ordered_files[@]}"
+        return $?
+    fi
+
+    local -a final_segs=("${segs[@]}")
+    if [[ "$mode" == "edit-segments" ]] && tui_available; then
+        local -a seg_lines=()
+        local idx=1 s dur ts
+        for s in "${final_segs[@]}"; do
+            dur="$(probe_duration "$s" 2>/dev/null || echo "?")"
+            ts="$(date -d "@$(stat -c '%Y' -- "$s" 2>/dev/null || echo 0)" '+%H:%M:%S' 2>/dev/null || echo "")"
+            seg_lines+=("${idx}"$'\t'"[${ts} | ${dur}s]"$'\t'"${s}")
+            (( idx++ )) || true
+        done
+        local -a rem_segs=()
+        mapfile -t rem_segs < <(printf '%s\n' "${seg_lines[@]}" | fzf --multi --prompt='Select segment(s) to REMOVE (or Esc to keep all)> ' --height='~60%' --reverse 2>/dev/null) || true
+        if (( ${#rem_segs[@]} > 0 )); then
+            local -a kept_segs=()
+            local i rl r_idx skip
+            for (( i=0; i<${#final_segs[@]}; i++ )); do
+                skip=false
+                for rl in "${rem_segs[@]}"; do
+                    r_idx="${rl%%$'\t'*}"
+                    (( r_idx == i + 1 )) && { skip=true; break; }
+                done
+                [[ "$skip" == true ]] || kept_segs+=("${final_segs[$i]}")
+            done
+            final_segs=("${kept_segs[@]}")
+        fi
+    fi
+
+    if [[ "$mode" == "append-more" || "$mode" == "edit-segments" ]]; then
+        if tui_available; then
+            local -a extra_inputs=()
+            mapfile -t extra_inputs < <(tui_pick_many "Pick file(s) to normalize & append (Esc to skip)") || true
+            local ef
+            for ef in "${extra_inputs[@]}"; do
+                [[ -f "$ef" ]] || continue
+                local working_ef="$ef"
+                if ! is_image "$ef" && ! check_moov_atom "$ef"; then
+                    if working_ef="$(auto_repair_media_file "$ef" "${final_segs[@]}")"; then
+                        say "Repaired corrupt appended file: $(basename -- "$ef")"
+                    else
+                        warn "Skipping unrepairable file: $ef"
+                        continue
+                    fi
+                fi
+                local tmp_seg; tmp_seg="$(mktemp_ffx .mp4)"
+                local has_aud="false"
+                has_audio "$working_ef" && has_aud="true"
+                say "Normalizing appended file: $(basename -- "$ef") (${seg_geom} @ ${seg_fps}fps)..."
+                if is_image "$working_ef"; then
+                    merge_image_input "$working_ef" "$tmp_seg" "$seg_w" "$seg_h" "$seg_fps" || { warn "Failed to normalize image: $ef — skipping"; continue; }
+                else
+                    merge_encode_input "$working_ef" "$tmp_seg" "$seg_w" "$seg_h" "$seg_fps" "$has_aud" false false || { warn "Failed to normalize video: $ef — skipping"; continue; }
+                fi
+                local persisted; persisted="$(checkpoint_store_artifact "$job_dir" "$ef" "$tmp_seg" "$seg_geom")"
+                checkpoint_set "$job_dir" "$ef" "$persisted" "$seg_geom"
+                final_segs+=("$persisted")
+            done
+        fi
+    fi
+
+    (( ${#final_segs[@]} > 0 )) || die "No segments remaining to concatenate."
+    say "Concatenating ${#final_segs[@]} normalized segment(s) from checkpoint ${jid:0:12} -> $out"
+    local concat_list; concat_list="$(mktemp_ffx .txt)"
+    local s
+    for s in "${final_segs[@]}"; do
+        concat_add "$concat_list" "$s"
+    done
+    local final_to; final_to="$(compute_batch_timeout "${#final_segs[@]}")"
+    local -a final_fs; mapfile -t final_fs < <(faststart_flags_for "$out")
+    run_ffmpeg --ffx-timeout "$final_to" --ffx-output "$out" \
+        -y -avoid_negative_ts make_zero \
+        -f concat -safe 0 -i "$concat_list" -c copy "${final_fs[@]}" "$out" \
+        || die "merge: legacy checkpoint concat failed -> $out" "$out"
+    finalize_merge_output "$out"
+    say "Merged [${#final_segs[@]} segments]: $out"
+    return 0
+}
+
+_execute_resumed_job() {
+    local job_dir="$1" mode="${2:-auto}"
+    local meta="$job_dir/job.meta"
+    local files_list="$job_dir/job.files"
+    if [[ ! -f "$meta" || ! -f "$files_list" ]]; then
+        _recover_legacy_checkpoint "$job_dir" "$mode"
+        return $?
+    fi
+
+    local cli_timeout="$FFX_TIMEOUT"
+    local cli_timeout_pf="$FFX_TIMEOUT_PER_FILE"
+    local cli_verbose="$VERBOSE_MODE"
+    local cli_out="$GLOBAL_OUTPUT_FILE"
+
+    local jcmd="merge" out_target="" scmd=""
+    local k v
+    while IFS='=' read -r k v; do
+        case "$k" in
+            JOB_CMD)          jcmd="$v" ;;
+            SAVED_CMD)        scmd="$v" ;;
+            OUTPUT_TARGET)    out_target="$v" ;;
+            OUTPUT_DIR)       OUTPUT_DIR="$v" ;;
+            ADV_CONTAINER)    ADV_CONTAINER="$v" ;;
+            ADV_RES)          ADV_RES="$v" ;;
+            EXPLICIT_RES)     EXPLICIT_RES="$v" ;;
+            ADV_FPS)          ADV_FPS="$v" ;;
+            SPECIFIC_FPS)     SPECIFIC_FPS="$v" ;;
+            PTS_FACTOR)       PTS_FACTOR="$v" ;;
+            INTERPOLATE)      INTERPOLATE="$v" ;;
+            ADV_CODEC)        ADV_CODEC="$v" ;;
+            ADV_PIX_FMT)      ADV_PIX_FMT="$v" ;;
+            ADV_CRF)          ADV_CRF="$v" ;;
+            ADV_BR)           ADV_BR="$v" ;;
+            ADV_PRESET)       ADV_PRESET="$v" ;;
+            ADV_QUALITY_MODE) ADV_QUALITY_MODE="$v" ;;
+            ADV_MULTIPASS)    ADV_MULTIPASS="$v" ;;
+            REMOVE_AUDIO)     REMOVE_AUDIO="$v" ;;
+            FFX_AUDIO_RATE)   FFX_AUDIO_RATE="$v" ;;
+            LAYOUT_MODE)      LAYOUT_MODE="$v" ;;
+            COMPOSITE_LAYOUT) COMPOSITE_LAYOUT="$v" ;;
+            COMPOSITE_AUDIO)  COMPOSITE_AUDIO="$v" ;;
+            BATCH_SIZE)       BATCH_SIZE="$v" ;;
+        esac
+    done < "$meta"
+
+    FFX_TIMEOUT="$cli_timeout"
+    FFX_TIMEOUT_PER_FILE="$cli_timeout_pf"
+    [[ "$cli_verbose" == true ]] && VERBOSE_MODE=true
+    [[ -n "$cli_out" ]] && out_target="$cli_out"
+
+    local -a saved_files=()
+    local f
+    while IFS= read -r -d '' f; do
+        saved_files+=("$f")
+    done < "$files_list"
+
+    (( ${#saved_files[@]} > 0 )) || die "Saved job manifest has no input files."
+
+    # 1. Surface any identified failed/corrupt files with removal/repair options
+    if [[ "$mode" != "latest" ]] && { [[ -t 0 && -t 1 ]] || [[ "$mode" == "edit" ]]; }; then
+        _handle_session_failed_files "$job_dir" saved_files
+    fi
+
+    # 2. If interactive or --edit requested, offer pre-resumption file list editing / session deletion
+    if [[ "$mode" == "edit" ]]; then
+        _edit_session_files "$job_dir" saved_files "$ADV_RES"
+    elif [[ "$mode" == "interactive" ]] && tui_available; then
+        while true; do
+            local jid_short; jid_short="$(basename -- "$job_dir" | cut -c1-12)"
+            local -a hub_opts=(
+                "resume-now     -- Resume ${jcmd} now (${#saved_files[@]} files -> ${out_target})"
+                "edit-files     -- Modify file list before resuming (remove/add/reorder files)"
+                "show-command   -- View saved command & session details (${scmd:-ffx $jcmd})"
+                "delete-session -- Delete this session (${jid_short}) and its cached segments"
+                "cancel         -- Exit without resuming"
+            )
+            local hpick="" hact=""
+            hpick="$(printf '%s\n' "${hub_opts[@]}" | fzf --prompt="Session ${jid_short}> " --height='~45%' --reverse --header="Cmd: ${scmd:-ffx $jcmd} | Target: ${out_target}" 2>/dev/null)" || hpick=""
+            hact="${hpick%% *}"
+            case "$hact" in
+                ""|cancel) die "Resume cancelled." ;;
+                resume-now) break ;;
+                edit-files) _edit_session_files "$job_dir" saved_files "$ADV_RES" ;;
+                show-command)
+                    printf '\n%b# === Session %s ===%b\n' "${CYAN}${BOLD}" "$jid_short" "${RESET}"
+                    printf 'Saved Command: %s\nOutput Target: %s\nFiles (%d):\n' "${scmd:-ffx $jcmd}" "$out_target" "${#saved_files[@]}"
+                    printf '  - %s\n' "${saved_files[@]}"
+                    read -r -p "Press Enter to return to session menu..." _ || true
+                    ;;
+                delete-session)
+                    checkpoint_clear "$job_dir"
+                    say "Deleted checkpoint session: $jid_short"
+                    return 0
+                    ;;
+            esac
+        done
+    fi
+
+    (( ${#saved_files[@]} > 0 )) || die "No files remaining in session to resume."
+    say "Resuming ${jcmd} job ($(basename -- "$job_dir" | cut -c1-12)) with ${#saved_files[@]} file(s) -> $out_target"
+
+    local saved_adv="$ADVANCED_MODE"
+    ADVANCED_MODE=false
+    OVERWRITE_OUTPUT=true
+    local rc=0
+    case "$jcmd" in
+        composite) cmd_composite -o "$out_target" -- "${saved_files[@]}" || rc=$? ;;
+        *)         cmd_merge     -o "$out_target" -- "${saved_files[@]}" || rc=$? ;;
+    esac
+    if (( rc == 0 )) && [[ -d "$job_dir" && ! -s "$job_dir/job.failed" ]]; then
+        checkpoint_clear "$job_dir"
+    fi
+    ADVANCED_MODE="$saved_adv"
+    return "$rc"
+}
+
+_delete_sessions_interactive() {
+    local -n _rows_ref="$1"
+    if tui_available; then
+        local -a del_lines=()
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd ts_human
+        for row in "${_rows_ref[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            ts_human="$(date -d "@$upd" '+%Y-%m-%d %H:%M' 2>/dev/null || printf '%s' "$upd")"
+            del_lines+=("${idx}"$'\t'"${jid:0:12} | ${jcmd} (${prog}) | ${ts_human} | ${out}"$'\t'"${jdir}")
+            (( idx++ )) || true
+        done
+        local -a picked_del=()
+        mapfile -t picked_del < <(printf '%s\n' "${del_lines[@]}" | cut -f1,2 | fzf --multi --prompt='Delete session(s)> ' --height='~50%' --reverse --header='Tab to select session(s) to delete, Enter to confirm' 2>/dev/null) || true
+        (( ${#picked_del[@]} > 0 )) || { say "No sessions deleted."; return 0; }
+        local pl pidx
+        for pl in "${picked_del[@]}"; do
+            pidx="${pl%%$'\t'*}"
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "${_rows_ref[$((pidx-1))]}"
+            checkpoint_clear "$jdir"
+            say "Deleted session [${pidx}] ${jid:0:12} ($out)"
+        done
+    else
+        local del_id=""
+        read -r -p "Enter session index or ID prefix to delete: " del_id || true
+        [[ -n "$del_id" ]] || return 0
+        cmd_resume --delete "$del_id"
+    fi
+}
+
+cmd_resume() {
+    local action="auto" target_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -l|--list|list)         action="list"; shift ;;
+            --latest|latest|--auto) action="latest"; shift ;;
+            -d|--delete|delete|rm)
+                action="delete"; shift
+                if [[ $# -gt 0 && "$1" != -* ]]; then target_id="$1"; shift; fi ;;
+            -e|--edit|edit)
+                action="edit"; shift
+                if [[ $# -gt 0 && "$1" != -* ]]; then target_id="$1"; shift; fi ;;
+            --history|history)      action="history"; shift ;;
+            -v|--verbose)           VERBOSE_MODE=true; shift ;;
+            -o|--output)            [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires an argument."; GLOBAL_OUTPUT_FILE="$2"; shift 2 ;;
+            -*)                     die "Unknown resume option: $1" ;;
+            *)                      action="pick_id"; target_id="$1"; shift ;;
+        esac
+    done
+
+    if [[ "$action" == "history" ]]; then
+        local hist="$FFX_CHECKPOINT_DIR/command_history.log"
+        if [[ ! -s "$hist" ]]; then
+            say "No saved command history in $hist."
+            return 0
+        fi
+        printf '%b# === Saved FFX Command History ===%b\n' "${CYAN}${BOLD}" "${RESET}"
+        cat -- "$hist"
+        return 0
+    fi
+
+    local -a rows=()
+    mapfile -t rows < <(_discover_resumable_jobs)
+    if (( ${#rows[@]} == 0 )); then
+        say "No incomplete or resumable batch jobs found in $FFX_CHECKPOINT_DIR."
+        return 0
+    fi
+
+    if [[ "$action" == "list" ]]; then
+        printf '%b# === Resumable FFX Jobs (%d) ===%b\n' "${CYAN}${BOLD}" "${#rows[@]}" "${RESET}"
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd ts_human
+        for row in "${rows[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            ts_human="$(date -d "@$upd" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '%s' "$upd")"
+            printf '  [%d] %b%s%b  cmd=%-9s progress=%-7s failed=%-2s updated=%s\n      target: %s\n      saved:  %s\n' \
+                "$idx" "${CYAN}" "${jid:0:12}" "${RESET}" "$jcmd" "$prog" "${fcnt:-0}" "$ts_human" "$out" "${scmd:-ffx $jcmd}"
+            if [[ -s "$jdir/job.failed" ]]; then
+                local fl fp fr
+                while IFS=$'\t' read -r fp fr; do
+                    printf '      %b! failed: %s (%s)%b\n' "${RED}" "$fp" "$fr" "${RESET}"
+                done < "$jdir/job.failed"
+            fi
+            (( idx++ )) || true
+        done
+        return 0
+    fi
+
+    if [[ "$action" == "delete" ]]; then
+        if [[ -z "$target_id" ]]; then
+            _delete_sessions_interactive rows
+            return $?
+        fi
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd
+        for row in "${rows[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            if [[ "$target_id" == "$idx" || "$jid" == "$target_id"* ]]; then
+                checkpoint_clear "$jdir"
+                say "Deleted checkpoint session: ${jid:0:12}"
+                return 0
+            fi
+            (( idx++ )) || true
+        done
+        die "resume --delete: no session matching '$target_id'."
+    fi
+
+    if [[ "$action" == "edit" ]]; then
+        if [[ -z "$target_id" ]]; then
+            local upd jid jcmd prog out cwd jdir fcnt scmd
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "${rows[0]}"
+            _execute_resumed_job "$jdir" "edit"
+            return $?
+        fi
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd
+        for row in "${rows[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            if [[ "$target_id" == "$idx" || "$jid" == "$target_id"* ]]; then
+                _execute_resumed_job "$jdir" "edit"
+                return $?
+            fi
+            (( idx++ )) || true
+        done
+        die "resume --edit: no session matching '$target_id'."
+    fi
+
+    if [[ "$action" == "pick_id" ]]; then
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd
+        for row in "${rows[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            if [[ "$target_id" == "$idx" || "$jid" == "$target_id"* ]]; then
+                _execute_resumed_job "$jdir" "interactive"
+                return $?
+            fi
+            (( idx++ )) || true
+        done
+        die "resume: no resumable job matching '$target_id'. Run 'ffx resume --list' to inspect available jobs."
+    fi
+
+    if [[ "$action" == "latest" ]]; then
+        local upd jid jcmd prog out cwd jdir fcnt scmd
+        IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "${rows[0]}"
+        _execute_resumed_job "$jdir" "latest"
+        return $?
+    fi
+
+    if tui_available; then
+        local -a display_lines=()
+        local idx=1 row upd jid jcmd prog out cwd jdir fcnt scmd ts_human fail_badge
+        for row in "${rows[@]}"; do
+            IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "$row"
+            ts_human="$(date -d "@$upd" '+%Y-%m-%d %H:%M' 2>/dev/null || printf '%s' "$upd")"
+            fail_badge=""
+            (( ${fcnt:-0} > 0 )) && fail_badge=" [FAILED:${fcnt}]"
+            display_lines+=("${idx} | ${jid:0:12} | ${jcmd} (${prog})${fail_badge} | ${ts_human} | ${out}")
+            (( idx++ )) || true
+        done
+        display_lines+=("DELETE | Delete individual session(s) (multi-select)")
+        display_lines+=("HISTORY | View saved command recall history")
+        local picked
+        picked="$(printf '%s\n' "${display_lines[@]}" | fzf --prompt='Resume manager> ' --height='~55%' --reverse --header='Select a session to inspect/edit/resume, or manage sessions:' 2>/dev/null)" || picked=""
+        [[ -n "$picked" ]] || die "No job selected to resume."
+        local picked_idx="${picked%% |*}"
+        if [[ "$picked_idx" == "DELETE" ]]; then
+            _delete_sessions_interactive rows
+            return $?
+        elif [[ "$picked_idx" == "HISTORY" ]]; then
+            cmd_resume --history
+            return 0
+        fi
+        IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "${rows[$((picked_idx-1))]}"
+        _execute_resumed_job "$jdir" "interactive"
+        return $?
+    else
+        local upd jid jcmd prog out cwd jdir fcnt scmd
+        IFS=$'\t' read -r upd jid jcmd prog out cwd jdir fcnt scmd <<< "${rows[0]}"
+        (( ${#rows[@]} > 1 )) && warn "Multiple resumable jobs found; selecting most recent (${jid:0:12}). Use 'ffx resume --list' or 'ffx resume <index>' to pick another."
+        _execute_resumed_job "$jdir" "auto"
+        return $?
+    fi
 }
 # =============================================================================
 # SELF-AUDIT ENGINE
 # =============================================================================
-FFX_VERSION="8.7.0"
+FFX_VERSION="8.8.0"
 FFX_SEGMENT_LINES="${FFX_SEGMENT_LINES:-500}"
 FFX_MANIFEST_DIR="$FFX_CACHE_DIR/manifests"
 
@@ -1551,8 +2873,19 @@ advanced_prompt() {
         say "Lossless mode (qp=0): CRF/bitrate/multipass ignored."
     fi
 
+    read -r -p "Scratch/Temp directory (${FFX_SCRATCH_DIR}): " inp || true
+    if [[ -n "$inp" ]]; then
+        FFX_SCRATCH_DIR="${inp/#\~/$HOME}"
+        FFX_TMP_DIR="$FFX_SCRATCH_DIR"
+    fi
+    read -r -p "Cache/Checkpoint directory (${FFX_CACHE_DIR}): " inp || true
+    if [[ -n "$inp" ]]; then
+        FFX_CACHE_DIR="${inp/#\~/$HOME}"
+    fi
+
     validate_settings
     save_defaults
+    save_paths_conf
     printf '%b[config]%b container=%s res=%s fps=%s codec=%s pix=%s preset=%s layout=%s quality=%s crf=%s\n' \
         "${CYAN}" "${RESET}" \
         "$ADV_CONTAINER" "$ADV_RES" "$ADV_FPS" \
@@ -2034,7 +3367,7 @@ cmd_composite() {
     local output_base="composite"
     local output="${GLOBAL_OUTPUT_FILE:-}"
     local -a input_files=()
-    local no_resume=false
+    local no_resume=false resume_requested="${RESUME_MODE:-false}"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -2043,18 +3376,30 @@ cmd_composite() {
             -B|--batch-size)    [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires an argument."; [[ "$2" =~ ^[0-9]{1,9}$ ]] || die "Batch size must be a bounded non-negative integer"; BATCH_SIZE="$((10#$2))"; shift 2 ;;
             -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
             -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -r|--resume)        resume_requested=true; shift ;;
             --no-resume)        no_resume=true; shift ;;
+            -y|--overwrite)     OVERWRITE_OUTPUT=true; shift ;;
             --layout|--audio-mode) [[ $# -ge 2 ]] || die "Missing $1 operand"; set_composite_option "$1" "$2"; shift 2 ;;
             -*) die "Unknown composite option: $1" ;;
             *)                  input_files+=("$1"); shift ;;
         esac
     done
 
+    if (( ${#input_files[@]} == 0 )) && [[ "$resume_requested" == true ]]; then
+        cmd_resume ${output:+-o "$output"}
+        return $?
+    fi
     (( ${#input_files[@]} == 0 )) && mapfile -t input_files < <(fzf_pick)
     for f in "${input_files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
 
     local checkpoint_target="${output:-$OUTPUT_DIR/composite_composite.$ADV_CONTAINER}"
     local -a corrected=("${input_files[@]}")
+
+    local legacy_job_sig="${input_files[*]}|${LAYOUT_MODE}|${COMPOSITE_LAYOUT}|${COMPOSITE_AUDIO}|audio-v2|${checkpoint_target}"
+    local job_sig; job_sig="$(canonical_job_sig "$checkpoint_target" "${LAYOUT_MODE}|${COMPOSITE_LAYOUT}|${COMPOSITE_AUDIO}|audio-v2" "${input_files[@]}")"
+    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig" "$legacy_job_sig")"
+    checkpoint_lock "$job_dir"
+    [[ "$no_resume" == true ]] && checkpoint_clear "$job_dir"
 
     if [[ -z "$output" ]]; then
         output="$(get_default_filename "$output_base" "composite" "$ADV_CONTAINER")"
@@ -2062,20 +3407,8 @@ cmd_composite() {
         output="$(ensure_unique_output "$output")"
     fi
 
-    # Composite always re-encodes (layout filters, never a stream-copy fast
-    # path): batch part files land in FFX_RUN_DIR, each checkpointed into
-    # FFX_CACHE_DIR, before the final output — same ~3x multiplier as merge's
-    # normalize path. See preflight_space()'s definition for the reasoning.
     preflight_space "$(dirname -- "$output")" 3 "${corrected[@]}"
-
-    # Job identity covers the full corrected input list (post-DTS-fix paths),
-    # the layout mode, and the final output target — so changing any of those
-    # is correctly treated as a different job with no stale resume, while
-    # re-running the exact same invocation after a crash resumes cleanly.
-    local job_sig="${input_files[*]}|${LAYOUT_MODE}|${COMPOSITE_LAYOUT}|${COMPOSITE_AUDIO}|audio-v2|${checkpoint_target}"
-    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig")"
-    checkpoint_lock "$job_dir"
-    [[ "$no_resume" == true ]] && checkpoint_clear "$job_dir"
+    job_manifest_save "$job_dir" "composite" "$checkpoint_target" "${#corrected[@]}" 0 "${corrected[@]}"
     if [[ "$LAYOUT_MODE" == random ]]; then
         if [[ "$DRY_RUN" == true ]]; then
             FFX_RANDOM_SEED=1
@@ -2137,11 +3470,24 @@ cmd_composite() {
             (( resumed_count++ )) || true
         else
             local -a prepared=()
-            local normalized
+            local normalized rep_f=""
             for f in "${batch[@]}"; do
-                capture_value normalized prepare_composite_input "$f" || die "Cannot prepare composite input: $f"
-                prepared+=("$normalized")
+                if capture_value normalized prepare_composite_input "$f"; then
+                    clear_job_failure "$job_dir" "$f"
+                    prepared+=("$normalized")
+                elif rep_f="$(auto_repair_media_file "$f" "${corrected[@]}")" && capture_value normalized prepare_composite_input "$rep_f"; then
+                    clear_job_failure "$job_dir" "$f"
+                    prepared+=("$normalized")
+                else
+                    record_job_failure "$job_dir" "$f" "Cannot prepare composite input (auto-repair unsuccessful)"
+                    warn "composite: corrupt input '$(basename "$f")' failed auto-repair — skipping in real time."
+                fi
             done
+            if (( ${#prepared[@]} == 0 )); then
+                warn "composite: batch ${bnum} had no usable inputs after skipping corrupt files."
+                (( bnum++ )) || true
+                continue
+            fi
             local part_file
             if [[ "$LAYOUT_MODE" == "random" ]]; then
                 capture_value part_file composite_batch "$bnum" "${prepared[@]}"
@@ -2161,6 +3507,7 @@ cmd_composite() {
             PART_FILES+=("$persisted")
             (( fresh_count++ )) || true
         fi
+        job_manifest_save "$job_dir" "composite" "$checkpoint_target" "$total" "$idx" "${corrected[@]}"
         (( bnum++ )) || true
     done
 
@@ -2356,17 +3703,20 @@ cmd_merge() {
     advanced_prompt
     local -a files=()
     local output="${GLOBAL_OUTPUT_FILE:-}"
-    local no_resume=false
+    local no_resume=false resume_requested="${RESUME_MODE:-false}"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --) shift; files+=("$@"); break ;;
             -o|--output)        [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires an argument."; output="$2"; shift 2 ;;
             -C|--composite)     COMPOSITE_MODE=true; shift ;;
+            -B|--batch-size)    [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires an argument."; [[ "$2" =~ ^[0-9]{1,9}$ ]] || die "Batch size must be a bounded non-negative integer"; BATCH_SIZE="$((10#$2))"; shift 2 ;;
             -s|--fps|-f)        [[ $# -ge 2 && -n "$2" ]] || die "Option '$1' requires an argument."; is_positive_rate "$2" || die "Frame rate must be positive"; SPECIFIC_FPS="$2"; shift 2 ;;
             -an|--remove-audio) REMOVE_AUDIO=true; shift ;;
             -v|--verbose)       VERBOSE_MODE=true; shift ;;
+            -r|--resume)        resume_requested=true; shift ;;
             --no-resume)        no_resume=true; shift ;;
+            -y|--overwrite)     OVERWRITE_OUTPUT=true; shift ;;
             -*) die "Unknown merge option: $1" ;;
             *)                  files+=("$1"); shift ;;
         esac
@@ -2374,13 +3724,19 @@ cmd_merge() {
 
     if [[ "$COMPOSITE_MODE" == true ]]; then
         local -a composite_output_args=()
-        [[ -z "$output" ]] || composite_output_args=(-o "$output")
-        cmd_composite "${files[@]}" "${composite_output_args[@]}"
-        return 0
+        [[ -z "$output" ]] || composite_output_args+=(-o "$output")
+        [[ "$no_resume" != true ]] || composite_output_args+=(--no-resume)
+        [[ "$resume_requested" != true ]] || composite_output_args+=(--resume)
+        (( BATCH_SIZE <= 0 )) || composite_output_args+=(-B "$BATCH_SIZE")
+        cmd_composite "${composite_output_args[@]}" -- "${files[@]}"
+        return $?
     fi
 
     if (( ${#files[@]} < 1 )); then
-        if [[ "$BULK_MODE" == true ]]; then
+        if [[ "$resume_requested" == true ]]; then
+            cmd_resume ${output:+-o "$output"}
+            return $?
+        elif [[ "$BULK_MODE" == true ]]; then
             mapfile -t files < <(apply_bulk_glob "${OUTPUT_DIR:-$(pwd)}")
             (( ${#files[@]} >= 1 )) || die "merge --bulk: no video files found in '${OUTPUT_DIR:-$(pwd)}'."
         else
@@ -2388,49 +3744,40 @@ cmd_merge() {
         fi
     fi
     (( ${#files[@]} >= 1 )) || die "'merge' requires at least 1 file."
+
+    local f
+    for f in "${files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
+
     local checkpoint_target="${output:-$OUTPUT_DIR/output_merged.$ADV_CONTAINER}"
+    local legacy_job_sig="${files[*]}|${checkpoint_target}"
+    local job_sig; job_sig="$(canonical_job_sig "$checkpoint_target" "" "${files[@]}")"
+    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig" "$legacy_job_sig")"
+
     if [[ -z "$output" ]]; then
         output="$(get_default_filename "output" "merged" "$ADV_CONTAINER")"
     else
         output="$(ensure_unique_output "$output")"
     fi
 
-    local f
-    for f in "${files[@]}"; do [[ -f "$f" ]] || die "File not found: $f"; done
-
-    # ── PROBE PHASE ──────────────────────────────────────────────────────────
-    # Every field is parsed BY KEY (probe_video_params/probe_audio_params) and
-    # split with an explicit IFS=' ': the global IFS=$'\n\t' hardening makes a
-    # bare `read -r a b c` hand the WHOLE line to the first variable, which
-    # previously left v_res "0x0" for every input (so the target geometry was
-    # always the 1920x1080 fallback) and made every comparison below a
-    # comparison of unparsed strings.
+    # ── PROBE PHASE (Cached per file path + size + mtime) ────────────────────
     local -a v_codec=() v_res=() v_fps=() v_pix=() v_prof=()
     local -a a_codec=() a_rate=() a_ch=() has_audio_arr=()
-    local -a dts_ok=() moov_ok=()
+    local -a dts_ok=() moov_ok=() csig_arr=()
 
     for f in "${files[@]}"; do
-        if is_image "$f"; then
-            v_codec+=("image"); v_res+=("0x0"); v_fps+=("0/1"); v_pix+=("unknown"); v_prof+=("unknown")
-            a_codec+=("none"); a_rate+=("0"); a_ch+=("0"); has_audio_arr+=(false)
-            dts_ok+=(true); moov_ok+=(true)
-            continue
-        fi
-        local vc="" vw="" vh="" vpix="" vfps="" vprof=""
-        IFS=' ' read -r vc vw vh vpix vfps vprof < <(probe_video_params "$f") || true
-        v_codec+=("${vc:-unknown}")
-        v_res+=("${vw:-0}x${vh:-0}")
-        v_fps+=("${vfps:-0/1}")
-        v_pix+=("${vpix:-unknown}")
-        v_prof+=("${vprof:-unknown}")
-
-        local ac="" ar="" ach=""
-        IFS=' ' read -r ac ar ach < <(probe_audio_params "$f") || true
-        a_codec+=("${ac:-none}"); a_rate+=("${ar:-0}"); a_ch+=("${ach:-0}")
-        if has_audio "$f"; then has_audio_arr+=(true); else has_audio_arr+=(false); fi
-
-        if check_dts_for_file "$f"; then dts_ok+=(true); else dts_ok+=(false); fi
-        if check_moov_atom "$f";    then moov_ok+=(true); else moov_ok+=(false); fi
+        probe_file_cached "$f"
+        v_codec+=("$_P_VC")
+        v_res+=("${_P_VW}x${_P_VH}")
+        v_fps+=("$_P_VFPS")
+        v_pix+=("$_P_VPIX")
+        v_prof+=("$_P_VPROF")
+        a_codec+=("$_P_AC")
+        a_rate+=("$_P_AR")
+        a_ch+=("$_P_ACH")
+        has_audio_arr+=("$_P_HAS_AUD")
+        dts_ok+=("$_P_DTS_OK")
+        moov_ok+=("$_P_MOOV_OK")
+        csig_arr+=("$_P_CSIG")
     done
 
     # ── UNIFORMITY CHECK ─────────────────────────────────────────────────────
@@ -2452,16 +3799,11 @@ cmd_merge() {
     (( max_w % 2 != 0 )) && (( max_w++ )) || true
     (( max_h % 2 != 0 )) && (( max_h++ )) || true
 
-    # Fast path = stream-copy concat, valid ONLY when every input agrees on
-    # everything the concat demuxer cannot reconcile: video codec, geometry,
-    # frame rate, pixel format and profile AND audio codec, sample rate and
-    # channel count (a mismatch in the audio parameters silently drops or
-    # mis-times every later segment's audio).
     local target_family; target_family="$(codec_family "$ADV_CODEC")"
     local uniform=true
     [[ -z "$PTS_FACTOR" && "$INTERPOLATE" != true ]] || uniform=false
-    local target_signature current_signature
-    target_signature=$(concat_signature "${files[0]}") || uniform=false
+    local target_signature="${csig_arr[0]}"
+    [[ -n "$target_signature" && "$target_signature" != "none" ]] || uniform=false
     [[ "$target_vc" == "$target_family" && "$target_pix" == "$ADV_PIX_FMT" ]] || uniform=false
     [[ -z "$SPECIFIC_FPS" ]] || fps_equals "$target_fps" "$SPECIFIC_FPS" || uniform=false
     if [[ "${EXPLICIT_RES:-false}" == true ]]; then
@@ -2469,8 +3811,7 @@ cmd_merge() {
         [[ "$target_res" == "$ADV_RES" ]] || uniform=false
     fi
     for (( i=0; i<${#files[@]}; i++ )); do
-        current_signature=$(concat_signature "${files[$i]}") || { uniform=false; break; }
-        [[ "$current_signature" == "$target_signature" ]] || { uniform=false; break; }
+        [[ "${csig_arr[$i]}" == "$target_signature" ]] || { uniform=false; break; }
         [[ "${v_codec[$i]}" != "image" ]]          || { uniform=false; break; }
         [[ "${has_audio_arr[$i]}" == "true" ]]     || { uniform=false; break; }
         [[ "${v_codec[$i]}" == "$target_vc" ]]     || { uniform=false; break; }
@@ -2485,25 +3826,9 @@ cmd_merge() {
         [[ "${moov_ok[$i]}" == "true" ]]           || { uniform=false; break; }
     done
 
-    # ── SPACE PREFLIGHT ──────────────────────────────────────────────────────
-    # Fast path writes only the final concat output (~1x input bytes, stream
-    # copy). Normalize path additionally writes one tmp per input into
-    # FFX_RUN_DIR and a checkpointed copy of each into FFX_CACHE_DIR before
-    # the final concat (~3x). Checked here, after uniform/fast-vs-normalize
-    # is known and before either branch's first ffmpeg call.
+    # ── FAST PATH ─────────────────────────────────────────────────────────────
     if [[ "$uniform" == true && "$REMOVE_AUDIO" != true ]]; then
         preflight_space "$(dirname -- "$output")" 1 "${files[@]}"
-    else
-        preflight_space "$(dirname -- "$output")" 3 "${files[@]}"
-    fi
-
-    # ── FAST PATH ─────────────────────────────────────────────────────────────
-    # Timeout now scaled by input count: a 50-file stream-copy concat is cheap
-    # per-file but not free, and previously inherited the single-file default
-    # ceiling regardless of count. This is the most direct fix for the reported
-    # "large batch concat times out and kills everything" failure mode, since
-    # the fast path is exactly what a uniform bulk merge hits.
-    if [[ "$uniform" == true && "$REMOVE_AUDIO" != true ]]; then
         verbose_log "merge: fast path — all ${#files[@]} inputs conformant; skipping re-encode."
         local concat_list; concat_list="$(mktemp_ffx .txt)"
         for f in "${files[@]}"; do
@@ -2522,30 +3847,33 @@ cmd_merge() {
 
     verbose_log "merge: normalise path — target ${max_w}x${max_h} @ ${ADV_FPS}fps (uniform=${uniform})"
 
-    # Job identity for the checkpointed normalize path: input file list +
-    # output target ONLY. Deliberately does NOT include max_w/max_h, which
-    # are derived by PROBING these same files — if one input is transiently
-    # corrupt on a failed attempt and fixed on retry, its probed resolution
-    # changes, which would silently change the job key and cause a
-    # resumable run to miss its own checkpoint. Job identity must be stable
-    # across "same inputs, repaired state" retries; per-input encode
-    # settings (including target resolution) are already covered by
-    # checkpoint_key() at the per-file level.
-    local job_sig="${files[*]}|${checkpoint_target}"
-    local job_dir; job_dir="$(checkpoint_job_dir "$job_sig")"
     checkpoint_lock "$job_dir"
     [[ "$no_resume" == true ]] && checkpoint_clear "$job_dir"
 
+    # ── PRE-SCAN CHECKPOINTS & RESUME-AWARE SPACE PREFLIGHT ──────────────────
+    local -a cached_paths=() uncached_files=()
+    local pre_resumed=0
+    for (( i=0; i<${#files[@]}; i++ )); do
+        f="${files[$i]}"
+        local cpath=""
+        if [[ "$no_resume" != true ]] && cpath="$(checkpoint_get "$job_dir" "$f" "${max_w}x${max_h}" 2>/dev/null)"; then
+            cached_paths[$i]="$cpath"
+            (( pre_resumed++ )) || true
+        else
+            cached_paths[$i]=""
+            uncached_files+=("$f")
+        fi
+    done
+
+    local all_bytes uncached_bytes=0
+    all_bytes="$(sum_input_bytes "${files[@]}")"
+    if (( ${#uncached_files[@]} > 0 )); then
+        uncached_bytes="$(sum_input_bytes "${uncached_files[@]}")"
+    fi
+    preflight_space_resumable "$(dirname -- "$output")" "$all_bytes" "$uncached_bytes"
+    job_manifest_save "$job_dir" "merge" "$checkpoint_target" "${#files[@]}" "$pre_resumed" "${files[@]}"
+
     # ── NORMALISE PATH ────────────────────────────────────────────────────────
-    # Every per-file encode is checkpointed into the job's on-disk checkpoint
-    # dir before joining preprocessed[]. A single file's failure does NOT
-    # abort the batch: it is recorded, skipped, and the merge still completes
-    # with whatever succeeded — the failure is reported at the end, not
-    # mid-batch, so a run that hits one bad file never has to be thrown away
-    # entirely. checkpoint_clear() only fires once the job has zero failures
-    # AND the final concat has succeeded (see below) — a job with any skipped
-    # file keeps its cache, so fixing/removing that file and re-running
-    # resumes every other file for free instead of redoing the whole batch.
     local -a preprocessed=() failed_files=()
     local tf="${SPECIFIC_FPS:-$ADV_FPS}"
     local resumed_count=0 fresh_count=0
@@ -2553,8 +3881,11 @@ cmd_merge() {
     for (( i=0; i<${#files[@]}; i++ )); do
         f="${files[$i]}"
 
-        local resumed_tmp=""
-        if resumed_tmp="$(checkpoint_get "$job_dir" "$f" "${max_w}x${max_h}" 2>/dev/null)"; then
+        local resumed_tmp="${cached_paths[$i]:-}"
+        if [[ -z "$resumed_tmp" && "$no_resume" != true ]]; then
+            resumed_tmp="$(checkpoint_get "$job_dir" "$f" "${max_w}x${max_h}" 2>/dev/null || true)"
+        fi
+        if [[ -n "$resumed_tmp" ]]; then
             verbose_log "merge: input $(basename "$f") resumed from checkpoint."
             preprocessed+=("$resumed_tmp")
             (( resumed_count++ )) || true
@@ -2612,16 +3943,33 @@ cmd_merge() {
             has_audio "$tmp" || { warn "merge: normalised segment for '$(basename "$f")' has no audio."; step_ok=false; }
         fi
 
+        if [[ "$step_ok" != true && "$DRY_RUN" != true ]] && ! is_image "$f"; then
+            local repaired_src=""
+            if repaired_src="$(auto_repair_media_file "$f" "${files[@]}")" && [[ -s "$repaired_src" ]]; then
+                local rep_aud="false"
+                has_audio "$repaired_src" && rep_aud="true"
+                if merge_encode_input "$repaired_src" "$tmp" "$max_w" "$max_h" "$tf" "$rep_aud" false false && check_moov_atom "$tmp"; then
+                    if [[ "$REMOVE_AUDIO" == true ]] || has_audio "$tmp"; then
+                        step_ok=true
+                    fi
+                fi
+            fi
+        fi
+
         if [[ "$step_ok" != true ]]; then
-            warn "merge: failed to normalize '$(basename "$f")' — skipping (rerun to retry; completed files stay cached)."
+            rm -f -- "$tmp" 2>/dev/null || true
+            record_job_failure "$job_dir" "$f" "moov atom missing or stream corrupt (auto-repair unsuccessful)"
+            warn "merge: corrupt input '$(basename "$f")' failed auto-repair — skipping in real time (completed files stay cached)."
             failed_files+=("$f")
             continue
         fi
 
+        clear_job_failure "$job_dir" "$f"
         local persisted; persisted="$(checkpoint_store_artifact "$job_dir" "$f" "$tmp" "${max_w}x${max_h}")"
         checkpoint_set "$job_dir" "$f" "$persisted" "${max_w}x${max_h}"
         preprocessed+=("$persisted")
         (( fresh_count++ )) || true
+        job_manifest_save "$job_dir" "merge" "$checkpoint_target" "${#files[@]}" "${#preprocessed[@]}" "${files[@]}"
     done
 
     (( resumed_count > 0 )) && verbose_log "merge: ${resumed_count} input(s) resumed from prior run, ${fresh_count} processed fresh."
@@ -3375,8 +4723,12 @@ tui_options_screen() {
     ra_current="$([[ "$REMOVE_AUDIO" == true ]] && printf 'yes' || printf 'no')"
     ra_choice="$(_tui_pick "Remove audio" "$ra_current" "yes" "no")"
     [[ "$ra_choice" == "yes" ]] && REMOVE_AUDIO=true || REMOVE_AUDIO=false
+    FFX_SCRATCH_DIR="$(_tui_pick "Scratch/Temp directory" "$FFX_SCRATCH_DIR" "/Nas/tmp" "/tmp" "${XDG_RUNTIME_DIR:-/tmp}")"
+    FFX_TMP_DIR="$FFX_SCRATCH_DIR"
+    FFX_CACHE_DIR="$(_tui_pick "Cache/Checkpoint directory" "$FFX_CACHE_DIR" "/Nas/tmp" "$XDG_CACHE_HOME/ffx" "/tmp/ffx-cache")"
     validate_settings
     save_defaults
+    save_paths_conf
 }
 
 run_tui() {
@@ -3385,6 +4737,8 @@ run_tui() {
         "capabilities -- Inspect installed FFmpeg capabilities"
         "probe        -- Inspect a file's stream info"
         "process      -- Re-encode/scale a file"
+        "resume       -- Resume/edit/delete interrupted merge/composite sessions"
+        "paths        -- Configure & save scratch/temp/cache directories"
         "merge        -- Concatenate multiple files"
         "composite    -- Multi-file layout composite"
         "looperang    -- Forward+reverse palindrome"
@@ -3468,6 +4822,8 @@ run_tui() {
             sub="$(printf '%s\n' save verify show | fzf --prompt='manifest> ' --height='~30%' --reverse 2>/dev/null)"
             dispatch_args=(manifest "${sub:-show}")
             ;;
+        resume)      dispatch_args=(resume) ;;
+        paths)       dispatch_args=(paths) ;;
         cache-clean) dispatch_args=(cache-clean) ;;
         help)        display_usage ;;
         quit)        exit 0 ;;
@@ -3527,8 +4883,19 @@ Global Options:
                              in the batch.
   --retry <n>                Automatic retries on a transient (non-timeout)
                              ffmpeg failure before giving up (default 1).
+  -r, --resume               Resume the latest interrupted merge/composite job
+                             (or open interactive session manager via fzf).
   --no-resume                Ignore any existing resume checkpoint for this job
                              and reprocess every input from scratch.
+  -T, --tmp-dir <dir>        Directory for ephemeral session scratch/temp files
+                             (overrides FFX_TMP_DIR / FFX_SCRATCH_DIR).
+  --scratch-dir <dir>        Directory for ephemeral session scratch files.
+  --cache-dir <dir>          Directory for persistent checkpoints & cache
+                             (overrides FFX_CACHE_DIR).
+  --save-paths               Persist --scratch-dir / --tmp-dir / --cache-dir
+                             changes to ~/.config/ffx/paths.conf.
+  -y, --overwrite            Overwrite explicit output file (-o) instead of
+                             appending _1, _2 suffixes.
   --quality <crf|qp0>         Guided quality mode.
   --crf <value>              Guided CRF quality value.
   --bitrate <rate>           Target bitrate for two-pass mode.
@@ -3559,10 +4926,17 @@ Commands:
                                         hwaccels/pix_fmts/sample_fmts/layouts/bsfs.
   probe      [<input>] [--full|--json]     Summary or complete stream/format metadata.
   process    <input> [output]             Re-encode/scale; auto-deinterlace; lanczos.
+  resume     [--list|--delete [id]|--edit [id]|--history|--latest|<id>]
+                                           Interactive session manager: list active
+                                           checkpoints, delete individual sessions,
+                                           edit file lists prior to resumption, and
+                                           repair or remove failed files.
+  paths      [show|prompt|--scratch-dir <d>|--tmp-dir <d>|--cache-dir <d>]
+                                           Configure & save scratch, temp, and cache
+                                           directories to ~/.config/ffx/paths.conf.
   merge      [files...] [-o <out>]        Concat. -C composites; -b globs directory.
-                                           Resumable: a failed large-batch merge can
-                                           be re-run identically to continue from
-                                           where it left off (see --no-resume).
+                                           Auto-repairs or skips corrupt files in real
+                                           time and checkpoints segments for resume.
   composite  [files...] [-o <base>]       Layout composite (fixed or random mode).
                                            Resumable per-batch, same as merge.
   looperang  <input> [output]             Forward+reverse palindrome.
@@ -3802,8 +5176,24 @@ parse_global_options() {
         -P|-m|--max-1080|--max1080) MAX_1080=true; shift ;;
         -i|--interpolate)   INTERPOLATE=true;    shift ;;
         --no-interpolate)  INTERPOLATE=false; shift ;;
+        -r|--resume)
+            RESUME_MODE=true; shift ;;
         --no-resume)
             NO_RESUME_GLOBAL=true; shift ;;
+        -y|--overwrite)
+            OVERWRITE_OUTPUT=true; shift ;;
+        -T|--tmp-dir|--temp-dir|--scratch-dir)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires a directory path."
+            FFX_TMP_DIR="${2/#\~/$HOME}"; FFX_SCRATCH_DIR="$FFX_TMP_DIR"; _refresh_derived_dirs; shift 2 ;;
+        --cache-dir)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires a directory path."
+            FFX_CACHE_DIR="${2/#\~/$HOME}"; _refresh_derived_dirs; shift 2 ;;
+        --save-paths)
+            SAVE_PATHS_ON_PARSE=true; shift ;;
+        -B|--batch-size)
+            [[ -z "${2:-}" ]] && die "Option '$1' requires an integer."
+            [[ "$2" =~ ^[0-9]{1,9}$ ]] || die "Batch size must be a bounded non-negative integer"
+            BATCH_SIZE="$((10#$2))"; shift 2 ;;
         -o|--output-dir|--output)
             [[ -z "${2:-}" ]] && die "Option '$1' requires an argument."
             if [[ "$1" == --output-dir || -d "$2" || "$2" == */ ]]; then
@@ -3995,9 +5385,16 @@ main_dispatch() {
             merge|composite) set -- "$@" "--no-resume" ;;
         esac
     fi
+    if [[ "${RESUME_MODE:-false}" == true ]]; then
+        case "$cmd" in
+            merge|composite) set -- "$@" "--resume" ;;
+        esac
+    fi
     case "$cmd" in
-        web) cmd_web "$@" ;;
-        carve) cmd_carve "$@" ;;
+        resume)      cmd_resume "$@" ;;
+        paths)       cmd_paths  "$@" ;;
+        web)         cmd_web    "$@" ;;
+        carve)       cmd_carve  "$@" ;;
         ffmpeg|run)  cmd_ffmpeg "$@" ;;
         ffprobe)     cmd_ffprobe "$@" ;;
         capabilities) cmd_capabilities "$@" ;;
@@ -4027,12 +5424,25 @@ main() {
     load_defaults
     parse_global_options "$@"
     validate_settings
+    if [[ "${SAVE_PATHS_ON_PARSE:-false}" == true ]]; then
+        save_paths_conf
+        if (( ${#REMAINING_ARGS[@]} == 0 )) && [[ "${RESUME_MODE:-false}" != true ]]; then
+            return 0
+        fi
+    fi
+    if (( ${#REMAINING_ARGS[@]} == 0 )) && [[ "${RESUME_MODE:-false}" == true ]]; then
+        REMAINING_ARGS=(resume)
+    fi
     if (( ${#REMAINING_ARGS[@]} == 0 )); then
         if ! tui_available; then display_usage; fi
     fi
-    # Configuration inspection/save is independent of media providers and sessions.
+    # Configuration and directory path management are independent of media providers.
     if [[ "${REMAINING_ARGS[0]:-}" == config ]]; then
         cmd_config "${REMAINING_ARGS[@]:1}"
+        return
+    fi
+    if [[ "${REMAINING_ARGS[0]:-}" == paths ]]; then
+        cmd_paths "${REMAINING_ARGS[@]:1}"
         return
     fi
     init_session
