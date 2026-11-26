@@ -194,7 +194,7 @@ if [[ "$SOURCE_DIR" != "$INSTALL_LOCATION" ]]; then
     _ROLLBACK_NEEDED=true
     if command -v rsync &>/dev/null; then
         run sudo rsync -av --delete --progress \
-            --exclude '.git/' --exclude '__pycache__/' --exclude '*.bak' \
+            --exclude '.git/' --exclude '__pycache__/' --exclude '*.bak' --exclude '*~' \
             --exclude '.gemini/' --exclude '.github/' \
             "${SOURCE_DIR}/" "${INSTALL_LOCATION}/"
     else

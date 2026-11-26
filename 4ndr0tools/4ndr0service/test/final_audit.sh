@@ -88,11 +88,20 @@ AUDITEOF
     fi
 
     if command -v augenrules &>/dev/null; then
-        if sudo augenrules --load 2>/dev/null; then
+        local _augen_out
+        if _augen_out="$(sudo augenrules --load 2>&1)"; then
             log_success "auditd rules loaded via augenrules"
         else
-            log_error "augenrules --load failed — auditd rules are not active"
-            return 1
+            local _active_rules=""
+            if [[ "$_augen_out" == *"No change"* ]]; then
+                _active_rules="$(sudo auditctl -l 2>/dev/null || true)"
+            fi
+            if [[ "$_augen_out" == *"No change"* ]] &&                grep -qw "config_watch" <<< "$_active_rules" &&                grep -qw "data_watch" <<< "$_active_rules" &&                grep -qw "cache_watch" <<< "$_active_rules"; then
+                log_success "auditd rules already active (augenrules: No change)"
+            else
+                log_error "augenrules --load failed (${_augen_out:-no output}) — auditd rules are not active"
+                return 1
+            fi
         fi
     else
         if sudo auditctl -R "$_AUDITD_RULES_FILE" 2>/dev/null; then

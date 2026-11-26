@@ -205,9 +205,10 @@ pipx_package_is_installed() {
 }
 
 handle_error() {
+    local exit_code="${3:-$?}"
     local line_no="$1"
     local command="$2"
-    local exit_code="${3:-$?}"
+    (( exit_code == 0 )) && exit_code=1
     log_error "Command '$command' failed at line $line_no with exit code $exit_code."
     # D-08 FIX: Services can set _ALLOW_ERRORS=1 to make handle_error recoverable
     # (log and return) rather than fatal (exit). Default behavior (exit) is
@@ -218,7 +219,7 @@ handle_error() {
     exit "$exit_code"
 }
 
-trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
+trap 'handle_error $LINENO "$BASH_COMMAND" $?' ERR
 
 # =============================================================================
 # 5. FILESYSTEM UTILITIES
