@@ -329,7 +329,8 @@ if [[ "$DRY_RUN" == "false" ]]; then
         "$INSTALL_LOCATION/main.sh" --report || log_warn "--report returned non-zero; review output above."
     fi
 else
-    log_dry "Would run: sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
+    _dry_user="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || printf 'unknown')}}"
+    log_dry "Would run: sudo -u ${_dry_user} $INSTALL_LOCATION/main.sh --report"
 fi
 
 # ── DONE ──────────────────────────────────────────────────────────────────────

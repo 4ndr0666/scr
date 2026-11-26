@@ -62,8 +62,9 @@ VENV_BASE="$VENV_HOME"
 # (the chown target never existed, so the reclaim step was a permanent no-op,
 # masked by `2>/dev/null || true`). Mirrors the same discovery pattern already
 # established in ascension.sh.
-REAL_USER="${SUDO_USER:-$USER}"
-USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+REAL_USER="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || printf 'unknown')}}"
+USER_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6 || true)"
+USER_HOME="${USER_HOME:-${HOME:-}}"
 
 load_pyenv() {
     if [[ -d "$PYENV_ROOT" ]]; then

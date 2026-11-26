@@ -275,7 +275,8 @@ if [[ "$DRY_RUN" == "false" ]]; then
             || { log_error "--report verification failed; installation aborted."; exit 1; }
     fi
 else
-    log_dry "Would run: HOME=~${SUDO_USER:-$USER} sudo -u ${SUDO_USER:-$USER} $INSTALL_LOCATION/main.sh --report"
+    _dry_user="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || printf 'unknown')}}"
+    log_dry "Would run: HOME=~${_dry_user} sudo -u ${_dry_user} $INSTALL_LOCATION/main.sh --report"
 fi
 
 _ROLLBACK_NEEDED=false

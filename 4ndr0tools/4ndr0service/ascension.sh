@@ -55,8 +55,9 @@ PSI_COLOR="\033[38;5;196m"
 RESET_ASC="\033[0m"
 log_psi() { echo -e "${PSI_COLOR}[Ψ-CORE] $1${RESET_ASC}"; }
 
-REAL_USER="${SUDO_USER:-$USER}"
-USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+REAL_USER="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || printf 'unknown')}}"
+USER_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6 || true)"
+USER_HOME="${USER_HOME:-${HOME:-}}"
 BIN_TARGET="${USER_HOME}/.local/bin"
 path_prepend "$BIN_TARGET"
 path_prepend "${PYENV_ROOT}/shims"

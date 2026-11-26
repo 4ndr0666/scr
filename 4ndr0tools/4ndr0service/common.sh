@@ -147,11 +147,11 @@ _log_file_write() {
     # directly bypass initialize_suite, so the log dir may not exist yet),
     # bootstrap the directory once per process and retry; afterwards degrade
     # silently so the sink can never fail a caller.
-    if ! printf '%s [%s] %s\n' "$1" "$2" "$3" >>"$LOG_FILE" 2>/dev/null; then
+    if ! { printf '%s [%s] %s\n' "$1" "$2" "$3" >>"$LOG_FILE"; } 2>/dev/null; then
         if [[ -z "${_LOG_DIR_BOOTSTRAPPED:-}" ]]; then
             _LOG_DIR_BOOTSTRAPPED=1
             mkdir -p -- "$(dirname -- "$LOG_FILE")" 2>/dev/null || true
-            printf '%s [%s] %s\n' "$1" "$2" "$3" >>"$LOG_FILE" 2>/dev/null || true
+            { printf '%s [%s] %s\n' "$1" "$2" "$3" >>"$LOG_FILE"; } 2>/dev/null || true
         fi
     fi
     return 0

@@ -4,8 +4,12 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-ROOT="$(command git rev-parse --show-toplevel)"
-SOURCE="$ROOT/4ndr0tools/4ndr0service"
+_TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+if [[ -n "${GUP_REPO_ROOT:-}" && -f "$GUP_REPO_ROOT/4ndr0tools/4ndr0service/common.sh" ]]; then
+    SOURCE="$GUP_REPO_ROOT/4ndr0tools/4ndr0service"
+else
+    SOURCE="$(dirname -- "$_TEST_DIR")"
+fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

@@ -2,14 +2,14 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-ROOT="$(command git rev-parse --show-toplevel)"
+TEST_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+readonly TEST_DIR
+
+ROOT="$(command git -C "$TEST_DIR" rev-parse --show-toplevel 2>/dev/null || dirname -- "$TEST_DIR")"
 readonly ROOT
 
-HEAD="$(command git -C "$ROOT" rev-parse HEAD)"
+HEAD="$(command git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'WORKTREE')"
 readonly HEAD
-
-TEST_DIR="$ROOT/4ndr0tools/4ndr0service/test"
-readonly TEST_DIR
 
 runtime_tests=(
     ascension_runtime.sh
