@@ -1,9 +1,6 @@
-#!/bin/bash
-# shellcheck disable=all
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
-
-# Function to display usage
 usage() {
     echo "Usage: $0 [install|uninstall] /path/to/source_directory"
     echo "Example:"
@@ -12,76 +9,62 @@ usage() {
     exit 1
 }
 
-# Check if user is root
-if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root"
-    exit 1
-fi
+LOG_DIR="${LOG_DIR:-/var/log/make_installer}"
+SCAN_PATHS=(/usr /bin /sbin /lib /lib64 /opt /usr/local)
 
-# Ensure the correct number of arguments
-if [ $# -ne 2 ]; then
-    usage
-fi
-
-ACTION=$1
-SOURCE_DIR=$2
-
-# Ensure the source directory exists
-if [ ! -d "$SOURCE_DIR" ]; then
-    echo "Source directory $SOURCE_DIR does not exist"
-    exit 1
-fi
-
-# Move to the source directory
-cd "$SOURCE_DIR"
-
-# Function to install software and log installed files
 install_software() {
-    local log_file="/var/log/make_installer/$(basename $SOURCE_DIR).log"
-    mkdir -p /var/log/make_installer
+    local log_file="$LOG_DIR/$(basename -- "$SOURCE_DIR").log"
+    mkdir -p -- "$LOG_DIR"
 
-    # Find files before installation
-    find /usr /bin /sbin /lib /lib64 /opt /usr/local > /tmp/before_install.txt
+    local tmpdir
+    tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/make-install.XXXXXX")"
+    trap 'rm -rf -- "$tmpdir"' RETURN
+
+    find "${SCAN_PATHS[@]}" 2>/dev/null | LC_ALL=C sort > "$tmpdir/before.txt"
 
     echo "Configuring the package..."
     ./configure
     echo "Building the package..."
     make
     echo "Installing the package..."
-    sudo make install
+    make install
 
-    # Find files after installation
-    find /usr /bin /sbin /lib /lib64 /opt /usr/local > /tmp/after_install.txt
+    find "${SCAN_PATHS[@]}" 2>/dev/null | LC_ALL=C sort > "$tmpdir/after.txt"
 
-    # Compare and log the installed files
-    comm -13 /tmp/before_install.txt /tmp/after_install.txt > "$log_file"
+    comm -13 "$tmpdir/before.txt" "$tmpdir/after.txt" > "$log_file"
     echo "Installation complete. Installed files logged to $log_file."
 }
 
-# Function to uninstall software using the log
 uninstall_software() {
-    local log_file="/var/log/make_installer/$(basename $SOURCE_DIR).log"
-    if [ ! -f "$log_file" ]; then
-        echo "Log file $log_file not found. Cannot uninstall."
+    local log_file="$LOG_DIR/$(basename -- "$SOURCE_DIR").log"
+    if [[ ! -f "$log_file" ]]; then
+        echo "Log file $log_file not found. Cannot uninstall." >&2
         exit 1
     fi
 
     echo "Uninstalling the package using log file $log_file..."
-    while read -r file; do
-        sudo rm -rf "$file"
+    while IFS= read -r file; do
+        [[ -n "$file" && "$file" != "/" ]] || continue
+        if [[ -f "$file" || -L "$file" ]]; then
+            rm -f -- "$file"
+        fi
     done < "$log_file"
     echo "Uninstallation complete."
 }
 
-# Perform the action specified by the user
-case $ACTION in
-    install)
-        install_software
-        ;;
-    uninstall)
-        uninstall_software
-        ;;
-    *)
-        usage
-        ;;
-esac
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        echo "Please run as root" >&2
+        exit 1
+    fi
+    [[ $# -eq 2 ]] || usage
+    ACTION="$1"
+    SOURCE_DIR="$2"
+    [[ -d "$SOURCE_DIR" ]] || { echo "Source directory $SOURCE_DIR does not exist" >&2; exit 1; }
+    cd -- "$SOURCE_DIR"
+    case "$ACTION" in
+        install)   install_software ;;
+        uninstall) uninstall_software ;;
+        *)         usage ;;
+    esac
+fi

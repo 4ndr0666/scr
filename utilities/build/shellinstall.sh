@@ -1,112 +1,79 @@
-#!/bin/bash
-# shellcheck disable=all
+#!/usr/bin/env bash
+set -euo pipefail
 
-# --- // AUTO_ESCALATE:
-if [ "$(id -u)" -ne 0 ]; then
-      sudo "$0" "$@"
-    exit $?
-fi
-sleep 1
-echo "💀WARNING💀 - you are now operating as root..."
-sleep 1
-echo
-
-set -e
-
-# Function to display usage
 usage() {
     echo "Usage: $0 [install|uninstall|clean] [source_directory]"
     exit 1
 }
 
-# Check if user is root
-if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root"
-    exit 1
-fi
+LOG_DIR="${LOG_DIR:-/var/log/install_manager}"
+SCAN_PATHS=(/usr /bin /sbin /lib /lib64 /opt /usr/local)
 
-# Ensure the correct number of arguments
-if [ $# -lt 1 ] || { [ "$1" != "clean" ] && [ $# -ne 2 ]; }; then
-    usage
-fi
-
-ACTION=$1
-SOURCE_DIR=$2
-LOG_DIR="/var/log/install_manager"
-LOG_FILE="$LOG_DIR/$(basename $SOURCE_DIR).log"
-
-# Ensure the source directory exists
-if [ "$ACTION" != "clean" ] && [ ! -d "$SOURCE_DIR" ]; then
-    echo "Source directory $SOURCE_DIR does not exist"
-    exit 1
-fi
-
-# Function to install software and log installed files
 install_software() {
-    mkdir -p "$LOG_DIR"
+    mkdir -p -- "$LOG_DIR"
+    local tmpdir
+    tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/shellinstall.XXXXXX")"
+    trap 'rm -rf -- "$tmpdir"' RETURN
 
-    # Find files before installation
     echo "Finding files before installation..."
-    find /usr /bin /sbin > /tmp/before_install_part1.txt 2>/dev/null
-    find /lib /lib64 /opt > /tmp/before_install_part2.txt 2>/dev/null
-    find /usr/local > /tmp/before_install_part3.txt 2>/dev/null
-    cat /tmp/before_install_part1.txt /tmp/before_install_part2.txt /tmp/before_install_part3.txt > /tmp/before_install.txt
-    rm /tmp/before_install_part1.txt /tmp/before_install_part2.txt /tmp/before_install_part3.txt
+    find "${SCAN_PATHS[@]}" 2>/dev/null | LC_ALL=C sort > "$tmpdir/before.txt"
 
     echo "Running install script..."
-    (cd "$SOURCE_DIR" && ./install.sh)
+    (cd -- "$SOURCE_DIR" && ./install.sh)
 
-    # Find files after installation
     echo "Finding files after installation..."
-    find /usr /bin /sbin > /tmp/after_install_part1.txt 2>/dev/null
-    find /lib /lib64 /opt > /tmp/after_install_part2.txt 2>/dev/null
-    find /usr/local > /tmp/after_install_part3.txt 2>/dev/null
-    cat /tmp/after_install_part1.txt /tmp/after_install_part2.txt /tmp/after_install_part3.txt > /tmp/after_install.txt
-    rm /tmp/after_install_part1.txt /tmp/after_install_part2.txt /tmp/after_install_part3.txt
+    find "${SCAN_PATHS[@]}" 2>/dev/null | LC_ALL=C sort > "$tmpdir/after.txt"
 
-    # Compare and log the installed files
     echo "Logging installed files..."
-    comm -13 /tmp/before_install.txt /tmp/after_install.txt > "$LOG_FILE"
+    comm -13 "$tmpdir/before.txt" "$tmpdir/after.txt" > "$LOG_FILE"
     echo "Installation complete. Installed files logged to $LOG_FILE."
 }
 
-# Function to uninstall software using the log
 uninstall_software() {
-    if [ ! -f "$LOG_FILE" ]; then
-        echo "Log file $LOG_FILE not found. Cannot uninstall."
+    if [[ ! -f "$LOG_FILE" ]]; then
+        echo "Log file $LOG_FILE not found. Cannot uninstall." >&2
         exit 1
     fi
 
     echo "Uninstalling the package using log file $LOG_FILE..."
-    while read -r file; do
-        rm -rf "$file"
+    while IFS= read -r file; do
+        [[ -n "$file" && "$file" != "/" ]] || continue
+        if [[ -f "$file" || -L "$file" ]]; then
+            rm -f -- "$file"
+        fi
     done < "$LOG_FILE"
     echo "Uninstallation complete."
 }
 
-# Function to clean up temporary files and logs
 clean_up() {
     echo "Cleaning up..."
-    rm -f /tmp/before_install.txt /tmp/after_install.txt
-    rm -f "$LOG_FILE"
+    if [[ -n "${LOG_FILE:-}" && -f "$LOG_FILE" ]]; then
+        rm -f -- "$LOG_FILE"
+    fi
     echo "Clean up complete."
 }
 
-# Perform the action specified by the user
-case $ACTION in
-    install)
-        echo "Starting installation..."
-        install_software
-        ;;
-    uninstall)
-        echo "Starting uninstallation..."
-        uninstall_software
-        ;;
-    clean)
-        echo "Starting cleanup..."
-        clean_up
-        ;;
-    *)
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        exec sudo "$0" "$@"
+    fi
+    if [[ $# -lt 1 ]] || { [[ "$1" != "clean" ]] && [[ $# -ne 2 ]]; }; then
         usage
-        ;;
-esac
+    fi
+    ACTION="$1"
+    SOURCE_DIR="${2:-}"
+    LOG_FILE=""
+    if [[ -n "$SOURCE_DIR" ]]; then
+        LOG_FILE="$LOG_DIR/$(basename -- "$SOURCE_DIR").log"
+    fi
+    if [[ "$ACTION" != "clean" && ! -d "$SOURCE_DIR" ]]; then
+        echo "Source directory $SOURCE_DIR does not exist" >&2
+        exit 1
+    fi
+    case "$ACTION" in
+        install)   echo "Starting installation..."; install_software ;;
+        uninstall) echo "Starting uninstallation..."; uninstall_software ;;
+        clean)     echo "Starting cleanup..."; clean_up ;;
+        *)         usage ;;
+    esac
+fi

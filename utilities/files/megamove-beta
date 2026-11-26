@@ -94,26 +94,26 @@ fi
 total=$(wc -l <"$tmpf")
 echo -e "${CYAN}Ready to move $total file(s) → $dst_dir${RESET}"
 
-if ! \$auto_yes; then
+if ! $auto_yes; then
   read -r -p "Proceed? [y/N] " reply
-  [[ \$reply =~ ^[Yy]\$ ]] || { echo "Aborted."; exit 1; }
+  [[ $reply =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 fi
 
 ##############################################################################
 # Move loop with live cyan counter
 ##############################################################################
 ok=0 fail=0 idx=0
-while IFS= read -r file || [[ -n \$file ]]; do
-  [[ -z \$file ]] && continue
-  idx=\$((idx+1))
-  printf "${CYAN}[%d/%d] %s${RESET}\r" "\$idx" "\$total" "\${file##*/}"
-  if mv -n -- "\$file" "\$dst_dir/" 2>/dev/null; then
-    ok=\$((ok+1))
+while IFS= read -r file || [[ -n $file ]]; do
+  [[ -z $file ]] && continue
+  idx=$((idx+1))
+  printf "${CYAN}[%d/%d] %s${RESET}\r" "$idx" "$total" "${file##*/}"
+  if mv -n -- "$file" "$dst_dir/" 2>/dev/null; then
+    ok=$((ok+1))
   else
-    fail=\$((fail+1))
+    fail=$((fail+1))
   fi
-done < "\$tmpf"
+done < "$tmpf"
 
 echo                          # newline after \r spinner
-echo -e "${CYAN}Finished – OK: \$ok | Fail: \$fail | Total: \$total${RESET}"
-exit \$(( fail > 0 ? 4 : 0 ))
+echo -e "${CYAN}Finished – OK: $ok | Fail: $fail | Total: $total${RESET}"
+exit $(( fail > 0 ? 4 : 0 ))

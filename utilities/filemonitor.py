@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # import the modules
 import sys
 import time

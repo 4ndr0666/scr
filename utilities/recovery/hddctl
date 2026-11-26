@@ -1,0 +1,231 @@
+#!/bin/sh
+###############################################################################
+# hddctl (POSIX-Compliant)
+# Purpose: Single script for either block-level cloning (ddrescue) or
+#          file-level synchronization (rsync).
+# Usage:
+#   sudo ./hddctl [--help]
+#
+# Logs all actions to ${LOG_FILE:-/var/log/drive_ops.log}
+###############################################################################
+
+LOG_FILE="${LOG_FILE:-/var/log/drive_ops.log}"
+
+log_msg() {
+    TS="$(date "+%Y-%m-%d_%H:%M:%S" 2>/dev/null)"
+    if [ -z "$TS" ]; then
+        TS="unknown_time"
+    fi
+    printf '%s : %s\n' "$TS" "$1" | tee -a "$LOG_FILE" >&2
+}
+
+show_help() {
+    cat <<'EOF'
+Usage: hddctl [--help]
+
+Interactive POSIX disk cloning (ddrescue) and file-level sync (rsync) utility.
+Requires root privileges for block-device operations.
+EOF
+}
+
+check_dependencies() {
+    DEPS="ddrescue rsync fsck lsblk"
+    MISSING=""
+    for dep in $DEPS
+    do
+        if ! command -v "$dep" >/dev/null 2>&1
+        then
+            MISSING="$MISSING $dep"
+        fi
+    done
+    if [ -n "$MISSING" ]; then
+        log_msg "Missing required command(s):$MISSING. Install via your package manager (e.g. pacman -S ddrescue rsync util-linux)."
+        exit 1
+    fi
+}
+
+menu_selection() {
+    echo "Select an operation:" >&2
+    echo "1) Clone a disk (ddrescue)" >&2
+    echo "2) File-level sync (rsync)" >&2
+    printf "Enter choice [1 or 2]: " >&2
+    read -r CHOICE
+    case "$CHOICE" in
+        1) return 1 ;;
+        2) return 2 ;;
+        *) return 255 ;;
+    esac
+}
+
+confirm_operation() {
+    printf "Are you sure you want to proceed? (yes/no): " >&2
+    read -r ANSWER
+    ANSWER_LOWER="$(printf '%s' "$ANSWER" | tr '[:upper:]' '[:lower:]')"
+    if [ "$ANSWER_LOWER" != "yes" ]
+    then
+        log_msg "User aborted operation."
+        exit 0
+    fi
+}
+
+select_drive() {
+    echo "Available block devices:" >&2
+    lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null >&2
+    echo "" >&2
+    printf "Enter the device name for %s (e.g., sda or nvme0n1): " "$1" >&2
+    read -r DRIVE
+    if [ -z "$DRIVE" ] || [ ! -b "/dev/$DRIVE" ]
+    then
+        log_msg "Device /dev/$DRIVE does not exist. Exiting."
+        exit 1
+    fi
+    printf '/dev/%s\n' "$DRIVE"
+}
+
+ddrescue_clone() {
+    SOURCE_DEV="$1"
+    TARGET_DEV="$2"
+    DDRESC_LOG="${DDRESC_LOG:-/var/log/ddrescue_clone.log}"
+
+    if [ "$SOURCE_DEV" = "$TARGET_DEV" ]; then
+        log_msg "Refusing to clone $SOURCE_DEV onto itself. Exiting."
+        exit 1
+    fi
+
+    for DEV in "$SOURCE_DEV" "$TARGET_DEV"
+    do
+        MOUNTS="$(lsblk -ln -o MOUNTPOINT "$DEV" 2>/dev/null)"
+        if [ -n "$MOUNTS" ]
+        then
+            log_msg "Unmounting partitions on $DEV..."
+            for MP in $MOUNTS; do
+                umount "$MP" 2>/dev/null || true
+            done
+        fi
+    done
+
+    log_msg "Starting ddrescue initial pass: $SOURCE_DEV -> $TARGET_DEV"
+    ddrescue -n "$SOURCE_DEV" "$TARGET_DEV" "$DDRESC_LOG"
+
+    log_msg "Retrying bad sectors with ddrescue..."
+    ddrescue -d -f -r3 "$SOURCE_DEV" "$TARGET_DEV" "$DDRESC_LOG"
+
+    log_msg "Checking for partitions on $TARGET_DEV..."
+    PARTS="$(lsblk -ln -o NAME "$TARGET_DEV" 2>/dev/null | grep -E "^$(basename "$TARGET_DEV")p?[0-9]+$")"
+    if [ -n "$PARTS" ]
+    then
+        OIFS="$IFS"
+        IFS='
+'
+        for P in $PARTS
+        do
+            PARTITION="/dev/$P"
+            log_msg "Running fsck on $PARTITION..."
+            fsck -f "$PARTITION" 2>/dev/null || true
+        done
+        IFS="$OIFS"
+    else
+        log_msg "No partitions found on $TARGET_DEV. Skipping fsck."
+    fi
+
+    log_msg "ddrescue clone operation completed."
+}
+
+rsync_sync() {
+    printf "Enter the SOURCE path (directory): " >&2
+    read -r SRC_PATH
+    if [ -z "$SRC_PATH" ] || [ ! -d "$SRC_PATH" ]
+    then
+        log_msg "Source path '$SRC_PATH' is not a directory or does not exist."
+        exit 1
+    fi
+
+    printf "Enter the TARGET path (directory): " >&2
+    read -r TGT_PATH
+    if [ -z "$TGT_PATH" ]; then
+        log_msg "Target path cannot be empty."
+        exit 1
+    fi
+    if [ ! -d "$TGT_PATH" ]
+    then
+        log_msg "Target path '$TGT_PATH' not found. Creating..."
+        mkdir -p -- "$TGT_PATH" 2>/dev/null
+        if [ ! -d "$TGT_PATH" ]
+        then
+            log_msg "Failed to create '$TGT_PATH'. Exiting."
+            exit 1
+        fi
+    fi
+
+    printf "About to sync from '%s' to '%s'. Proceed? (yes/no): " "$SRC_PATH" "$TGT_PATH" >&2
+    read -r RESP
+    RESP_LOWER="$(printf '%s' "$RESP" | tr '[:upper:]' '[:lower:]')"
+    if [ "$RESP_LOWER" != "yes" ]
+    then
+        log_msg "User aborted file sync."
+        exit 0
+    fi
+
+    log_msg "Starting rsync transfer from '$SRC_PATH' to '$TGT_PATH'."
+    RC_FILE="$(mktemp "${TMPDIR:-/tmp}/hddctl-rc.XXXXXX")"
+    (
+        rsync -avP --append-verify "$SRC_PATH" "$TGT_PATH" 2>&1
+        printf '%s' "$?" > "$RC_FILE"
+    ) | tee -a "$LOG_FILE" >&2
+    RSYNC_EXIT="$(cat "$RC_FILE" 2>/dev/null || echo 1)"
+    rm -f -- "$RC_FILE"
+    if [ "$RSYNC_EXIT" -ne 0 ]
+    then
+        log_msg "rsync encountered an error (exit code $RSYNC_EXIT)."
+        exit "$RSYNC_EXIT"
+    fi
+
+    log_msg "rsync file transfer completed successfully."
+}
+
+main() {
+    case "${1:-}" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+    esac
+
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "hddctl requires root privileges. Run with sudo." >&2
+        exit 1
+    fi
+
+    : > "$LOG_FILE"
+    log_msg "Starting hddctl..."
+
+    check_dependencies
+
+    menu_selection
+    CHOICE="$?"
+    case "$CHOICE" in
+        1)
+            log_msg "User selected ddrescue (clone)."
+            SRC_DEV="$(select_drive "SOURCE drive")"
+            TGT_DEV="$(select_drive "TARGET drive")"
+            log_msg "Source: $SRC_DEV | Target: $TGT_DEV"
+            confirm_operation
+            ddrescue_clone "$SRC_DEV" "$TGT_DEV"
+            ;;
+        2)
+            log_msg "User selected rsync (file-level sync)."
+            rsync_sync
+            ;;
+        255)
+            log_msg "Invalid menu choice. Exiting."
+            exit 1
+            ;;
+    esac
+
+    log_msg "All operations completed."
+    exit 0
+}
+
+if [ "${HDDCTL_SOURCE_ONLY:-0}" != "1" ]; then
+    main "$@"
+fi

@@ -1,19 +1,19 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-shopt -s extglob
+shopt -s nullglob
 
 if [[ $# -eq 0 ]]; then
     # List . and .., visible folders, then visible files
     command ls -d --color=auto --human-readable --time-style=long-iso \
-        --group-directories-first {.,..,*} -lA
+        --group-directories-first . .. * -lA 2>/dev/null || true
 
     # List hidden folders and files (only if they exist)
-    command ls -d --color=auto --human-readable --time-style=long-iso \
-        --group-directories-first --hide='..?' .!(.|..) >/dev/null 2>&1 \
-    && echo "" \
-    && command ls -d --color=auto --human-readable --time-style=long-iso \
-        --group-directories-first --hide='..' .!(.|..) -l
-
+    hidden=(.[!.]* ..?*)
+    if (( ${#hidden[@]} > 0 )); then
+        echo ""
+        command ls -d --color=auto --human-readable --time-style=long-iso \
+            --group-directories-first -l -- "${hidden[@]}"
+    fi
 else
     command ls -la --color=auto --human-readable --time-style=long-iso \
         --group-directories-first "$@"
