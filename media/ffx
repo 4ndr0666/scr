@@ -691,6 +691,12 @@ check_deps() {
             type -P "$dep" >/dev/null 2>&1 || die "Required command unavailable: $dep. Install dependencies, or explicitly enable FFX_AUTO_INSTALL=true."
         done
     fi
+    local _ff_err=""
+    if ! _ff_err="$(ffmpeg -version 2>&1 >/dev/null)"; then
+        printf '%s
+' "$_ff_err" >&2
+        die "ffmpeg failed to initialize (shared library / symbol lookup mismatch). Update ffmpeg and its libraries (e.g. 'sudo pacman -Syu ffmpeg libplacebo')."
+    fi
 }
 
 # =============================================================================
@@ -874,7 +880,7 @@ shuffle_files() {
 is_image() {
     local ext="${1##*.}"
     case "${ext,,}" in
-        jpg|jpeg|png|bmp|gif|webp|tif|tiff) return 0 ;;
+        jpg|jpeg|png|bmp|webp|tif|tiff) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1024,6 +1030,11 @@ run_ffmpeg() {
             return 0
         fi
         [[ -z "$stage" ]] || rm -f -- "$stage" 2>/dev/null || true
+        if ((ec==126 || ec==127)) || grep -Eq 'symbol lookup error|error while loading shared libraries' "$log" 2>/dev/null; then
+            cat -- "$log" >&2 || true
+            rm -f -- "$log" 2>/dev/null || true
+            die "FFmpeg binary/shared-library linkage error (exit $ec) — fix system packages (e.g. 'sudo pacman -Syu ffmpeg libplacebo') before running." "$output_path"
+        fi
         if ((ec==124 || ec==137)); then
             if [[ -n "$override_timeout" ]]; then
                 warn "FFmpeg timed out after ${effective_timeout}s (scaled via --timeout-per-file; --timeout is its floor)."
@@ -1227,7 +1238,18 @@ probe_wh() {
             -show_entries stream=width,height \
             -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
     ) || true
-    [[ "$_w" =~ ^[0-9]+$ ]] || _w=$CANVAS_W
+    if ! [[ "$_w" =~ ^[0-9]+$ && "$_w" -gt 0 && "$_h" =~ ^[0-9]+$ && "$_h" -gt 0 ]] && is_image "$1"; then
+        local -a idmx=()
+        mapfile -t idmx < <(image_demux_args "$1")
+        if (( ${#idmx[@]} > 0 )); then
+            IFS=' ' read -r _w _h < <(
+                ffprobe -v error "${idmx[@]}" -select_streams v:0 \
+                    -show_entries stream=width,height \
+                    -of default=nw=1:nk=1 "$1" 2>/dev/null | xargs
+            ) || true
+        fi
+    fi
+    [[ "$_w" =~ ^[0-9]+$ && "$_w" -gt 0 ]] || _w=$CANVAS_W
     [[ "$_h" =~ ^[0-9]+$ && "$_h" -gt 0 ]] || _h=$CANVAS_H
     printf '%d %d\n' "$_w" "$_h"
 }
@@ -1664,6 +1686,18 @@ clear_job_failure() {
     fi
 }
 
+image_demux_args() {
+    local img="$1" magic=""
+    [[ -f "$img" ]] || return 0
+    magic="$(od -An -tx1 -N12 -- "$img" 2>/dev/null | tr -d ' \n' || true)"
+    case "$magic" in
+        ffd8ff*)                 printf '%s\n' "-f" "jpeg_pipe" ;;
+        89504e470d0a1a0a*)       printf '%s\n' "-f" "png_pipe" ;;
+        52494646????????57454250*) printf '%s\n' "-f" "webp_pipe" ;;
+        424d*)                   printf '%s\n' "-f" "bmp_pipe" ;;
+    esac
+}
+
 auto_repair_media_file() {
     local bad_file="$1"; shift || true
     local -a siblings=("$@")
@@ -1674,6 +1708,40 @@ auto_repair_media_file() {
     fi
 
     verbose_log "Attempting real-time auto-repair on '$(basename -- "$bad_file")'..."
+
+    # Stage 0a: Handle still images (including mislabeled JPEG/WebP/PNG extensions)
+    if is_image "$bad_file"; then
+        local -a idmx=()
+        mapfile -t idmx < <(image_demux_args "$bad_file")
+        local fixed_img; fixed_img="$(mktemp_ffx .repaired.jpg)" || return 1
+        if timeout --kill-after=5 "${FFX_PROBE_TIMEOUT:-30}" ffmpeg -nostdin -hide_banner -v error -y \
+            "${idmx[@]}" -i "$bad_file" -frames:v 1 -q:v 2 "$fixed_img" >/dev/null 2>&1 && [[ -s "$fixed_img" ]]; then
+            say "Verified/repaired image '$(basename -- "$bad_file")'." >&2
+            printf '%s' "$fixed_img"
+            return 0
+        fi
+        rm -f -- "$fixed_img" 2>/dev/null || true
+        if command_exists magick && magick "$bad_file[0]" "$fixed_img" >/dev/null 2>&1 && [[ -s "$fixed_img" ]]; then
+            say "Repaired image '$(basename -- "$bad_file")' via ImageMagick." >&2
+            printf '%s' "$fixed_img"
+            return 0
+        elif command_exists convert && convert "$bad_file[0]" "$fixed_img" >/dev/null 2>&1 && [[ -s "$fixed_img" ]]; then
+            say "Repaired image '$(basename -- "$bad_file")' via convert." >&2
+            printf '%s' "$fixed_img"
+            return 0
+        fi
+        return 1
+    fi
+
+    # Stage 0b: Check if video file is already healthy (e.g. failed earlier due to transient system/library/disk issue)
+    if check_moov_atom "$bad_file"; then
+        local _vdur; _vdur="$(probe_duration "$bad_file" 2>/dev/null || echo 0)"
+        if awk -v d="$_vdur" 'BEGIN{exit !(d+0 > 0)}'; then
+            say "Verified '$(basename -- "$bad_file")' is intact." >&2
+            printf '%s' "$bad_file"
+            return 0
+        fi
+    fi
 
     # Stage 1: untrunc container recovery using a valid sibling reference clip
     if command_exists untrunc; then
@@ -1691,7 +1759,7 @@ auto_repair_media_file() {
         if [[ -n "$ref" && -s "$ref" ]]; then
             local untrunc_out=""
             if capture_value untrunc_out recover_container "$bad_file" "$ref" 2>/dev/null && [[ -s "$untrunc_out" ]] && check_moov_atom "$untrunc_out"; then
-                say "Auto-repaired '$(basename -- "$bad_file")' via untrunc reference '$(basename -- "$ref")'."
+                say "Auto-repaired '$(basename -- "$bad_file")' via untrunc reference '$(basename -- "$ref")'." >&2
                 printf '%s' "$untrunc_out"
                 return 0
             fi
@@ -1708,7 +1776,7 @@ auto_repair_media_file() {
         if [[ -s "$salvage_out" ]] && check_moov_atom "$salvage_out"; then
             local dur; dur="$(probe_duration "$salvage_out" 2>/dev/null || echo 0)"
             if awk -v d="$dur" 'BEGIN{exit !(d+0 > 0)}'; then
-                say "Auto-repaired '$(basename -- "$bad_file")' via tolerant stream salvage."
+                say "Auto-repaired '$(basename -- "$bad_file")' via tolerant stream salvage." >&2
                 printf '%s' "$salvage_out"
                 return 0
             fi
@@ -1732,7 +1800,7 @@ auto_repair_media_file() {
                 -c:a aac -ar "$FFX_AUDIO_RATE" -ac 2 -movflags +faststart "$remux_out" >/dev/null 2>&1 \
                 && [[ -s "$remux_out" ]] && check_moov_atom "$remux_out"; then
                 rm -f -- "$raw_elem" 2>/dev/null || true
-                say "Auto-repaired '$(basename -- "$bad_file")' via Annex-B bitstream carve."
+                say "Auto-repaired '$(basename -- "$bad_file")' via Annex-B bitstream carve." >&2
                 printf '%s' "$remux_out"
                 return 0
             fi
@@ -2118,20 +2186,20 @@ _handle_session_failed_files() {
             if [[ "$matched_bad" == true ]]; then
                 repaired=""
                 if repaired="$(auto_repair_media_file "$item" "${_files_ref[@]}")" && [[ -s "$repaired" ]]; then
-                    local perm_rep="${item%.*}_repaired.${item##*.}"
-                    cp -f -- "$repaired" "$perm_rep" 2>/dev/null && item="$perm_rep" || item="$repaired"
+                    if [[ "$repaired" != "$item" ]] && ! is_image "$item"; then
+                        local perm_rep="${item%.*}_repaired.${repaired##*.}"
+                        cp -f -- "$repaired" "$perm_rep" 2>/dev/null && item="$perm_rep" || item="$repaired"
+                    fi
                     clear_job_failure "$job_dir" "$fpath"
                     updated+=("$item")
                 else
-                    warn "Could not repair '$item' — removing from session file list."
-                    clear_job_failure "$job_dir" "$item"
+                    warn "Could not repair '$item' — skipping for this run (use 'remove-failed' to delete permanently from session)."
                 fi
             else
                 updated+=("$item")
             fi
         done
         _files_ref=("${updated[@]}")
-        _write_session_files_array "$job_dir" "${_files_ref[@]}"
     fi
 }
 
@@ -3335,9 +3403,11 @@ composite_batch() {
 # =============================================================================
 prepare_composite_input() {
     local PTS_FACTOR="" INTERPOLATE=false
-    local f="$1" out w h ac ar ch duration
+    local f="$1" out w=1920 h=1080 ac ar ch duration
     if is_image "$f"; then
-        IFS=' ' read -r w h < <(probe_wh "$f")
+        IFS=' ' read -r w h < <(probe_wh "$f") || true
+        [[ "$w" =~ ^[0-9]+$ ]] && (( w > 0 )) || w=$CANVAS_W
+        [[ "$h" =~ ^[0-9]+$ ]] && (( h > 0 )) || h=$CANVAS_H
         w=$(( (w+1)/2*2 )); h=$(( (h+1)/2*2 ))
         out=$(mktemp_ffx .mp4)
         merge_image_input "$f" "$out" "$w" "$h" "${SPECIFIC_FPS:-$ADV_FPS}" || return 1
@@ -3655,15 +3725,16 @@ merge_image_input() {
     local f="$1" tmp="$2" w="$3" h="$4" tf="$5"
     local duration="$IMAGE_DURATION"
     [[ -z "$PTS_FACTOR" ]] || duration=$(awk -v d="$IMAGE_DURATION" -v f="$PTS_FACTOR" 'BEGIN{print d*f}')
-    local scale_vf="scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:-1:-1:color=black,setsar=1,fps=${tf},format=${ADV_PIX_FMT}"
-    local -a ain=() aout=("-an")
+    local scale_vf="loop=loop=-1:size=1:start=0,trim=duration=${duration},fps=${tf},scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:-1:-1:color=black,setsar=1,format=${ADV_PIX_FMT}"
+    local -a idmx=() ain=() aout=("-an")
+    mapfile -t idmx < <(image_demux_args "$f")
     local -a enc=(-c:v "$ADV_CODEC" -crf "${ADV_CRF:-18}" -preset ultrafast)
     [[ "$ADV_QUALITY_MODE" != qp0 ]] || enc=(-c:v "$ADV_CODEC" -qp 0 -preset ultrafast)
     if [[ "$REMOVE_AUDIO" != true ]]; then
         ain=("-f" "lavfi" "-i" "anullsrc=r=${FFX_AUDIO_RATE}:cl=stereo")
         aout=("-c:a" "aac" "-ar" "$FFX_AUDIO_RATE" "-ac" "2" "-shortest")
     fi
-    run_ffmpeg --ffx-output "$tmp" -y -loop 1 -t "$duration" -i "$f" \
+    run_ffmpeg --ffx-output "$tmp" -y "${idmx[@]}" -i "$f" \
         "${ain[@]}" -vf "$scale_vf" \
         "${enc[@]}" \
         "${aout[@]}" -t "$duration" -video_track_timescale 90000 -movflags +faststart "$tmp"

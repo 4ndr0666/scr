@@ -1,0 +1,441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:4ndr0prompts:hdl:v8",
+  "title": "4ndr0prompts HDL v8 — Finalized 7-Block Canonical Schema",
+  "description": "Normative seven-block HDL structure (!INIT_MEM_LOCK, !EXEC_PHOTOMETRY, !EXEC_ENVIRONMENT, !EXEC_BIO_DERMAL_MAPPING, !EXEC_MATERIAL_PHYSICS, !EXEC_COMPOSITION_MATRIX, !INIT_VALIDATION).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "!INIT_MEM_LOCK": {
+      "$ref": "#/$defs/initMemLock"
+    },
+    "!EXEC_PHOTOMETRY": {
+      "$ref": "#/$defs/execPhotometry"
+    },
+    "!EXEC_ENVIRONMENT": {
+      "$ref": "#/$defs/execEnvironment"
+    },
+    "!EXEC_BIO_DERMAL_MAPPING": {
+      "$ref": "#/$defs/execBioDermalMapping"
+    },
+    "!EXEC_MATERIAL_PHYSICS": {
+      "$ref": "#/$defs/execMaterialPhysics"
+    },
+    "!EXEC_COMPOSITION_MATRIX": {
+      "$ref": "#/$defs/execCompositionMatrix"
+    },
+    "!INIT_VALIDATION": {
+      "$ref": "#/$defs/initValidation"
+    }
+  },
+  "required": [
+    "!INIT_MEM_LOCK",
+    "!EXEC_PHOTOMETRY",
+    "!EXEC_ENVIRONMENT",
+    "!EXEC_BIO_DERMAL_MAPPING",
+    "!EXEC_MATERIAL_PHYSICS",
+    "!EXEC_COMPOSITION_MATRIX",
+    "!INIT_VALIDATION"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "initMemLock": {
+      "type": "object",
+      "properties": {
+        "SYSTEM_REFERENCE_INPUT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "BIOMETRIC_LOCK": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "IDENTITY_DRIFT_CONTROL": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "STRUCTURAL_NON-DEVIATION": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "UNALTERABLE": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "INHIBIT": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      },
+      "required": [
+        "SYSTEM_REFERENCE_INPUT",
+        "BIOMETRIC_LOCK",
+        "IDENTITY_DRIFT_CONTROL",
+        "STRUCTURAL_NON-DEVIATION",
+        "UNALTERABLE",
+        "INHIBIT"
+      ],
+      "additionalProperties": true
+    },
+    "paddingBlock": {
+      "type": "object",
+      "properties": {
+        "TOP_OF_HEAD": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "TOP_OF_HEAD_AMOUNT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "BOTTOM_OF_TORSO": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "TOP_OF_HEAD",
+        "TOP_OF_HEAD_AMOUNT",
+        "BOTTOM_OF_TORSO"
+      ],
+      "additionalProperties": false
+    },
+    "photonicVectors": {
+      "type": "object",
+      "properties": {
+        "PHOTONIC_ENERGY": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ENERGY_CONSERVATION_COMPLIANT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "RIM_LIGHT_SCATTERING_PASS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "EPIDERMAL_TRANSLUCENCY_PASS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PHOTON_TRANSMISSION_RATIO": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "MEAN_FREE_PATH_SCATTERING": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "BACKLIT_SUBSURFACE_GLOW": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "FRESNEL_REFLECTION_COEFFICIENT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SPECULAR_HIGHLIGHT_LOBE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "PHOTONIC_ENERGY",
+        "ENERGY_CONSERVATION_COMPLIANT",
+        "RIM_LIGHT_SCATTERING_PASS",
+        "EPIDERMAL_TRANSLUCENCY_PASS",
+        "THROUGH_FABRIC_DIFFUSE_BOUNCE",
+        "PHOTON_TRANSMISSION_RATIO",
+        "MEAN_FREE_PATH_SCATTERING",
+        "BACKLIT_SUBSURFACE_GLOW",
+        "FRESNEL_REFLECTION_COEFFICIENT",
+        "SPECULAR_HIGHLIGHT_LOBE",
+        "LAMBERTIAN_DIFFUSE_REFLECTANCE"
+      ],
+      "additionalProperties": false
+    },
+    "execPhotometry": {
+      "type": "object",
+      "properties": {
+        "STYLE_OF": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "ASPECT-RATIO": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SHOT-TYPE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "CAMERA_PERSPECTIVE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "FRAMING": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PADDING": {
+          "$ref": "#/$defs/paddingBlock"
+        },
+        "HARDWARE_EMULATION": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "OPTICAL_HARDWARE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "APERTURE_SETTING": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SHUTTER_AESTHETIC": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "KEY_LIGHT_CHARACTER": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyStringArray"
+            },
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          ]
+        },
+        "FILL_LIGHT_CHARACTER": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyStringArray"
+            },
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          ]
+        },
+        "SHADOW_PROFILE": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PHOTONIC_VECTORS": {
+          "$ref": "#/$defs/photonicVectors"
+        }
+      },
+      "required": [
+        "STYLE_OF",
+        "ASPECT-RATIO",
+        "SHOT-TYPE",
+        "CAMERA_PERSPECTIVE",
+        "FRAMING",
+        "PADDING",
+        "HARDWARE_EMULATION",
+        "OPTICAL_HARDWARE",
+        "APERTURE_SETTING",
+        "SHUTTER_AESTHETIC",
+        "KEY_LIGHT_CHARACTER",
+        "FILL_LIGHT_CHARACTER",
+        "SHADOW_PROFILE",
+        "PHOTONIC_VECTORS"
+      ],
+      "additionalProperties": true
+    },
+    "compositionDepth": {
+      "type": "object",
+      "properties": {
+        "FOREGROUND": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "MIDGROUND": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "BACKGROUND": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      },
+      "required": [
+        "FOREGROUND",
+        "MIDGROUND",
+        "BACKGROUND"
+      ],
+      "additionalProperties": false
+    },
+    "execEnvironment": {
+      "type": "object",
+      "properties": {
+        "LOCATION": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "GLASS_SURFACE_METRICS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "COMPOSITION_DEPTH": {
+          "$ref": "#/$defs/compositionDepth"
+        }
+      },
+      "required": [
+        "LOCATION",
+        "GLASS_SURFACE_METRICS",
+        "COMPOSITION_DEPTH"
+      ],
+      "additionalProperties": true
+    },
+    "execBioDermalMapping": {
+      "type": "object",
+      "properties": {
+        "SKIN_TOPOGRAPHY_LOGIC": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SURFACE_MICRO_ELEMENTS": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "REFLECTANCE_MAP": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "HIGH_PRECISION_REPLICATION": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      },
+      "required": [
+        "SKIN_TOPOGRAPHY_LOGIC",
+        "SURFACE_MICRO_ELEMENTS",
+        "REFLECTANCE_MAP",
+        "HIGH_PRECISION_REPLICATION"
+      ],
+      "additionalProperties": true
+    },
+    "drapeAndTensionLogic": {
+      "type": "object",
+      "properties": {
+        "MICRO_FIBER_DRAPE_PHYSICS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "GRAVITY_WEIGHTED_FOLDS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SUB_MICRON_WEAVE_DENSITY": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "LOW_DENIER_SSS_PASS": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "SURFACE_ADHESION_COEFFICIENT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "MICRO_FIBER_DRAPE_PHYSICS",
+        "LOW_TENSILE_STRUCTURAL_DEFORMITY",
+        "GRAVITY_WEIGHTED_FOLDS",
+        "SUB_MICRON_WEAVE_DENSITY",
+        "LOW_DENIER_SSS_PASS",
+        "SURFACE_ADHESION_COEFFICIENT",
+        "FULLY_SATURATED_WITH_ATMOSPHERIC_MOISTURE"
+      ],
+      "additionalProperties": false
+    },
+    "execMaterialPhysics": {
+      "type": "object",
+      "properties": {
+        "WARDROBE_SPECIFICATION": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "OPACITY": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyStringArray"
+            },
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          ]
+        },
+        "TEXTILE_SURFACE_SHEEN": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "DRAPE_AND_TENSION_LOGIC": {
+          "$ref": "#/$defs/drapeAndTensionLogic"
+        }
+      },
+      "required": [
+        "WARDROBE_SPECIFICATION",
+        "OPACITY",
+        "TEXTILE_SURFACE_SHEEN",
+        "DRAPE_AND_TENSION_LOGIC"
+      ],
+      "additionalProperties": true
+    },
+    "execCompositionMatrix": {
+      "type": "object",
+      "properties": {
+        "LAYOUT": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 1": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 2": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 3": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 4": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 5": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 6": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 7": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 8": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "PANEL 9": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "LAYOUT",
+        "PANEL 1"
+      ],
+      "additionalProperties": true
+    },
+    "requiredChecks": {
+      "type": "object",
+      "properties": {
+        "GLOBAL_NEGATIVE_BIAS": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      },
+      "required": [
+        "GLOBAL_NEGATIVE_BIAS"
+      ],
+      "additionalProperties": true
+    },
+    "initValidation": {
+      "type": "object",
+      "properties": {
+        "REQUIRED_CHECKS": {
+          "$ref": "#/$defs/requiredChecks"
+        }
+      },
+      "required": [
+        "REQUIRED_CHECKS"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -14,8 +14,17 @@
 #   At every prompt you may type anything not in the completion list and press
 #   ENTER — the value is accepted verbatim.  The completer is advisory only.
 #
+# OUTPUT SHAPE
+#   Every mode writes the canonical 7-block HDL v8 document (!INIT_MEM_LOCK,
+#   !EXEC_PHOTOMETRY, !EXEC_ENVIRONMENT, !EXEC_BIO_DERMAL_MAPPING,
+#   !EXEC_MATERIAL_PHYSICS, !EXEC_COMPOSITION_MATRIX, !INIT_VALIDATION) by default.
+#   --legacy      emit the legacy v8.0-MODULAR_FLOW tree instead
+#   --canonical-v8 accepted for compatibility (canonical is already the default)
+#   --validate F  validate a JSON file against the canonical schema
+#
 # TUI (--tui flag)
-#   Full-screen 3-pane prompt_toolkit Application with live JSON preview.
+#   Full-screen 3-pane prompt_toolkit Application with live JSON preview
+#   (canonical shape by default; [F6] toggles legacy; [F5] exports the shown shape).
 #   The TUI and CLI share generate_random() and HDLTUIState but run in
 #   completely separate event-loop paths — no chimera mixing.
 # ==============================================================================
@@ -1136,14 +1145,14 @@ class HDLTUIState:
     def get_categories(self) -> list[tuple[str, str]]:
         return [
             ("!INIT_MEM_LOCK_PROTOCOL", "!INIT_MEM_LOCK (Static)"),
-            ("!ENV_ATMOSPHERICS", "!ENV_ATMOSPHERICS (Depth & Weather)"),
+            ("!ENV_ATMOSPHERICS", "!EXEC_ENVIRONMENT (Depth & Weather)"),
             ("!EXEC_COMPOSITION_MATRIX", "!EXEC_COMPOSITION_MATRIX (Panels)"),
-            ("!EXEC_BIO_DERMAL_MAP", "!EXEC_BIO_DERMAL_MAP (Skin & Hair)"),
-            ("!ENV_PHOTOMETRY", "!ENV_PHOTOMETRY (Optics & Vectors)"),
-            ("!ENV_RAY_TRACING_PHOTOMETRY", "!ENV_RAY_TRACING (Coordinates)"),
+            ("!EXEC_BIO_DERMAL_MAP", "!EXEC_BIO_DERMAL_MAPPING (Skin & Hair)"),
+            ("!ENV_PHOTOMETRY", "!EXEC_PHOTOMETRY (Optics & Vectors)"),
+            ("!ENV_RAY_TRACING_PHOTOMETRY", "!EXEC_PHOTOMETRY > RAY_TRACING (Coordinates)"),
             ("!EXEC_MATERIAL_PHYSICS", "!EXEC_MATERIAL_PHYSICS (Drape)"),
-            ("TEXT_RECON_ENGINE", "TEXT_RECON_ENGINE (Surface Text)"),
-            ("!FINALIZE_OUTPUT", "!FINALIZE_OUTPUT (Static Lock)"),
+            ("TEXT_RECON_ENGINE", "!EXEC_ENVIRONMENT > TEXT_RECON_ENGINE (Surface Text)"),
+            ("!FINALIZE_OUTPUT", "!INIT_VALIDATION (Static Lock)"),
         ]
 
     def get_section_node(self, cat_key: str) -> Any:
@@ -1171,8 +1180,18 @@ class HDLTUIState:
             node = node[key]
         node[path[-1]] = new_value
 
+    # Output shape of the live preview / export: "canonical" (7-block HDL v8,
+    # default) or "legacy" (the editable v8.0-MODULAR_FLOW tree).  Editing always
+    # happens on the legacy tree; the canonical document is projected from it.
+    output_shape: str = "canonical"
+
     def to_json(self) -> str:
-        return json.dumps(self._schema, indent=2, ensure_ascii=False)
+        doc = build_canonical_v8(self._schema) if self.output_shape == "canonical" else self._schema
+        return json.dumps(doc, indent=2, ensure_ascii=False)
+
+    def toggle_shape(self) -> str:
+        self.output_shape = "legacy" if self.output_shape == "canonical" else "canonical"
+        return self.output_shape
 
     @property
     def schema(self) -> dict:
@@ -1245,7 +1264,7 @@ class HDLTUIApplication:
         self._Label = Label
         self._FloatContainer = FloatContainer
         self._Float = Float
-        self._status_text = "[Tab/S-Tab] Focus  [Enter/Space] Select Section  [F2] Randomise  [F5] Export  [Ctrl+Q] Quit"
+        self._status_text = "[Tab/S-Tab] Focus  [Enter/Space] Select Section  [F2] Randomise  [F5] Export  [F6] Shape: canonical  [Ctrl+Q] Quit"
         self._app: Application | None = None
         self._last_nav_cat: str = ""
 
@@ -1414,14 +1433,21 @@ class HDLTUIApplication:
             self._json_area.text = self._state.to_json()
             event.app.invalidate()
 
+        @kb.add("f6")
+        def _toggle_shape(event):
+            shape = self._state.toggle_shape()
+            self._json_area.text = self._state.to_json()
+            self._status_text = (f"[F6] Preview/export shape: {shape}  [F5] Export  [F2] Randomise  [Ctrl+Q] Quit")
+            event.app.invalidate()
+
         @kb.add("f5")
         def _export(event):
             try:
-                output_path = "hdl_output.json"
+                output_path = "hdl_output.json" if self._state.output_shape == "canonical" else "hdl_output-legacy.json"
                 with open(output_path, "w", encoding="utf-8") as fh:
                     fh.write(self._state.to_json())
                 _clipboard_copy(self._state.to_json())
-                self._status_text = f"[F5] Exported → {output_path}  [Ctrl+Q] Quit"
+                self._status_text = f"[F5] Exported ({self._state.output_shape}) → {output_path}  [F6] Shape  [Ctrl+Q] Quit"
             except Exception as exc:
                 self._status_text = f"[F5] Export FAILED: {exc}  [Ctrl+Q] Quit"
             event.app.invalidate()
@@ -1473,13 +1499,23 @@ def _clipboard_copy(text: str) -> None:
 
 
 def _write_and_print(schema: dict, output_path: str = "hdl_prompt.json") -> None:
+    """Write/print a schema. Canonical 7-block HDL v8 is the default shape for
+    every mode; pass --legacy on the command line for the v8.0-MODULAR_FLOW tree."""
+    canonical = "--legacy" not in sys.argv
+    if canonical:
+        schema = build_canonical_v8(schema)
+        verdict = validate_canonical_v8(schema)
+        if not verdict["valid"]:
+            print("WARNING: canonical document failed schema validation:", file=sys.stderr)
+            for err in verdict["errors"]:
+                print(f"  {err}", file=sys.stderr)
     payload = json.dumps(schema, indent=2, ensure_ascii=False)
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(payload)
     _clipboard_copy(payload)
     print()
     print("═" * 72)
-    print(f"  ✓ HDL prompt: {output_path}")
+    print(f"  ✓ HDL prompt ({'canonical 7-block v8' if canonical else 'legacy v8.0-MODULAR_FLOW'}): {output_path}")
     print("═" * 72)
     print()
     print(payload)
@@ -1525,8 +1561,10 @@ def build_stock() -> dict:
     return HDLTUIState().load_stock()
 
 
-def build_canonical_v8(legacy_doc: dict | None = None) -> dict:
+def build_atmospherics_v8_legacy(legacy_doc: dict | None = None) -> dict:
     """
+    PRE-11.5.0 projection ('!INIT_MEM_LOCK' + '!INIT_ATMOSPHERICS'); retained
+    unchanged for backward compatibility. Superseded by build_canonical_v8().
     Projects a legacy PromptArc document (hdl_schema: 'v8.0-MODULAR_FLOW')
     or freshly generated stock document into the official Draft 2020-12
     HDL v8 canonical AST ('!INIT_MEM_LOCK' + '!INIT_ATMOSPHERICS').
@@ -1710,8 +1748,9 @@ def build_canonical_v8(legacy_doc: dict | None = None) -> dict:
     }
 
 
-def validate_canonical_v8(doc: dict) -> dict:
+def validate_atmospherics_v8_legacy(doc: dict) -> dict:
     """
+    PRE-11.5.0 validator for the '!INIT_ATMOSPHERICS' shape; retained unchanged.
     Validates a canonical HDL v8 document against the seven-block structural
     and semantic consistency invariants of HDL_V8_JSON_SCHEMA.
     """
@@ -1743,6 +1782,243 @@ def validate_canonical_v8(doc: dict) -> dict:
 
 
 # ==============================================================================
+# CANONICAL 7-BLOCK HDL V8 — projection and validation (11.5.0)
+# ==============================================================================
+_PANEL_WORDS = {1: "SINGLE_FRAME", 2: "TWO_PANEL_GRID_COMPOSITE", 3: "THREE_PANEL_GRID_COMPOSITE",
+                4: "FOUR_PANEL_GRID_COMPOSITE", 5: "FIVE_PANEL_GRID_COMPOSITE", 6: "SIX_PANEL_GRID_COMPOSITE",
+                7: "SEVEN_PANEL_GRID_COMPOSITE", 8: "EIGHT_PANEL_GRID_COMPOSITE", 9: "NINE_PANEL_GRID_COMPOSITE"}
+_LEGACY_SYSREF = {"", "INGREDIENT", "IMAGE_1"}
+
+
+def _as_list(value: Any, fallback: list[str]) -> list[str]:
+    """Normalise a str / list value to a non-empty list of non-empty strings."""
+    if isinstance(value, (list, tuple)):
+        out = [str(x) for x in value if str(x).strip()]
+    elif isinstance(value, str) and value.strip():
+        out = [value.strip()]
+    else:
+        out = []
+    return out or list(fallback)
+
+
+def _as_text(value: Any, fallback: str) -> str:
+    """Normalise a value to a non-empty string; lists are joined with ', '."""
+    if isinstance(value, (list, tuple)):
+        value = ", ".join(str(x) for x in value if str(x).strip())
+    value = str(value).strip() if value is not None else ""
+    return value or fallback
+
+
+def _legacy_panels(comp_src: dict) -> list[str]:
+    """Collect active panel strings from a legacy composition matrix, in order."""
+    panels: list[str] = []
+    numbered = sorted(
+        (k for k in comp_src if isinstance(k, str) and k.upper().startswith("PANEL_") and k[6:].isdigit()),
+        key=lambda k: int(k[6:]),
+    )
+    if numbered:
+        return [str(comp_src[k]) for k in numbered if str(comp_src[k]).strip()]
+    for key, value in comp_src.items():
+        if key in ("LAYOUT", "PANELS") or not str(value).strip():
+            continue
+        panels.append(f"{key}: {value}")
+    return panels
+
+
+def build_canonical_v8(legacy_doc: dict | None = None, include_schema_ref: bool = False) -> dict:
+    """
+    Project a legacy PromptArc document ('v8.0-MODULAR_FLOW', as produced by
+    generate_random() / build_stock()) onto the user-declared canonical 7-block
+    HDL v8 document:
+
+        !INIT_MEM_LOCK, !EXEC_PHOTOMETRY, !EXEC_ENVIRONMENT,
+        !EXEC_BIO_DERMAL_MAPPING, !EXEC_MATERIAL_PHYSICS,
+        !EXEC_COMPOSITION_MATRIX, !INIT_VALIDATION
+
+    Every schema-required field is filled from the legacy source when present,
+    otherwise from lib.CANONICAL_HDL_REFERENCE.  Legacy-only fields that the
+    schema permits as extras (COLOR_SCIENCE_PROFILE, OPTICAL_ABERRATIONS,
+    ILLUMINATION_AXIS, ray-tracing, meteorology, expression, hair, text
+    reconstruction, focus lock) are carried forward so nothing is dropped.
+    The input document is never mutated.
+    """
+    ref = copy.deepcopy(lib.CANONICAL_HDL_REFERENCE)
+    src = copy.deepcopy(legacy_doc) if isinstance(legacy_doc, dict) else build_stock()
+    # Already canonical: return as-is (idempotent).
+    if all(k in src for k in lib.CANONICAL_BLOCK_ORDER):
+        return src
+
+    mem_src = src.get("!INIT_MEM_LOCK_PROTOCOL") or src.get("!INIT_MEM_LOCK") or {}
+    env_src = src.get("!ENV_ATMOSPHERICS") or src.get("!INIT_ATMOSPHERICS") or {}
+    photo_src = env_src.get("!ENV_PHOTOMETRY") or {}
+    ray_src = env_src.get("!ENV_RAY_TRACING_PHOTOMETRY") or {}
+    bio_src = env_src.get("!EXEC_BIO_DERMAL_MAP") or env_src.get("!INIT_BIO_DERMAL_MAPPING") or {}
+    mat_src = env_src.get("!EXEC_MATERIAL_PHYSICS") or {}
+    comp_src = env_src.get("!EXEC_COMPOSITION_MATRIX") or {}
+    fin_src = src.get("!FINALIZE_OUTPUT") or env_src.get("!FINALIZE_OUTPUT") or {}
+    checks_src = fin_src.get("REQUIREMENT_CHECKS") or {}
+
+    # --- !INIT_MEM_LOCK -------------------------------------------------------
+    mem = ref["!INIT_MEM_LOCK"]
+    sysref = str(mem_src.get("SYSTEM_REFERENCE_INPUT") or "").strip()
+    if sysref not in _LEGACY_SYSREF:
+        mem["SYSTEM_REFERENCE_INPUT"] = sysref
+
+    # --- !EXEC_PHOTOMETRY -----------------------------------------------------
+    photo = ref["!EXEC_PHOTOMETRY"]
+    photo["STYLE_OF"] = _as_list(photo_src.get("STYLE_OF"), photo["STYLE_OF"])
+    for key in ("ASPECT-RATIO", "SHOT-TYPE", "CAMERA_PERSPECTIVE", "FRAMING"):
+        photo[key] = _as_text(photo_src.get(key), photo[key])
+    if isinstance(photo_src.get("PADDING"), dict):
+        pad = photo_src["PADDING"]
+        photo["PADDING"] = {k: _as_text(pad.get(k), photo["PADDING"][k]) for k in photo["PADDING"]}
+    for key in ("HARDWARE_EMULATION", "OPTICAL_HARDWARE", "APERTURE_SETTING", "SHUTTER_AESTHETIC", "SHADOW_PROFILE"):
+        photo[key] = _as_text(photo_src.get(key), photo[key])
+    photo["KEY_LIGHT_CHARACTER"] = _as_list(photo_src.get("KEY_LIGHT_CHARACTER"), photo["KEY_LIGHT_CHARACTER"])
+    photo["FILL_LIGHT_CHARACTER"] = _as_list(photo_src.get("FILL_LIGHT_CHARACTER"), photo["FILL_LIGHT_CHARACTER"])
+    if isinstance(photo_src.get("PHOTONIC_VECTORS"), dict):
+        pv = photo_src["PHOTONIC_VECTORS"]
+        photo["PHOTONIC_VECTORS"] = {k: _as_text(pv.get(k), v) for k, v in photo["PHOTONIC_VECTORS"].items()}
+    for extra in ("COLOR_SCIENCE_PROFILE", "OPTICAL_ABERRATIONS", "ILLUMINATION_AXIS"):
+        if photo_src.get(extra):
+            photo[extra] = _as_text(photo_src[extra], "")
+    if ray_src:
+        photo["RAY_TRACING_PHOTOMETRY"] = {str(k): _as_text(v, "") for k, v in ray_src.items() if str(v).strip()}
+
+    # --- !EXEC_ENVIRONMENT ----------------------------------------------------
+    env = ref["!EXEC_ENVIRONMENT"]
+    env["LOCATION"] = _as_text(env_src.get("LOCATION_SETTING") or env_src.get("LOCATION"), env["LOCATION"])
+    env["GLASS_SURFACE_METRICS"] = _as_text(env_src.get("GLASS_SURFACE_METRICS"), env["GLASS_SURFACE_METRICS"])
+    depth_src = env_src.get("COMPOSITION_DEPTH") or {}
+    env["COMPOSITION_DEPTH"] = {
+        "FOREGROUND": _as_text(depth_src.get("FOREGROUND"), env["COMPOSITION_DEPTH"]["FOREGROUND"]),
+        "MIDGROUND": _as_text(depth_src.get("MIDGROUND"), env["COMPOSITION_DEPTH"]["MIDGROUND"]),
+        "BACKGROUND": _as_list(depth_src.get("BACKGROUND"), env["COMPOSITION_DEPTH"]["BACKGROUND"]),
+    }
+    for extra in ("PARTICULATE_SCATTERING", "WIND_VECTOR_FORCE", "SUBJECT_DESCRIPTION", "PRODUCTION_CONTEXT"):
+        if env_src.get(extra):
+            env[extra] = _as_text(env_src[extra], "")
+    if isinstance(env_src.get("TEXT_RECON_ENGINE"), dict):
+        env["TEXT_RECON_ENGINE"] = {str(k): _as_text(v, "NO_TEXT") for k, v in env_src["TEXT_RECON_ENGINE"].items()}
+
+    # --- !EXEC_BIO_DERMAL_MAPPING --------------------------------------------
+    bio = ref["!EXEC_BIO_DERMAL_MAPPING"]
+    bio["SKIN_TOPOGRAPHY_LOGIC"] = _as_text(bio_src.get("SKIN_TOPOGRAPHY_LOGIC"), bio["SKIN_TOPOGRAPHY_LOGIC"])
+    bio["SURFACE_MICRO_ELEMENTS"] = _as_list(bio_src.get("SURFACE_MICRO_ELEMENTS"), bio["SURFACE_MICRO_ELEMENTS"])
+    bio["REFLECTANCE_MAP"] = _as_text(bio_src.get("REFLECTANCE_MAP"), bio["REFLECTANCE_MAP"])
+    if bio_src.get("HIGH_PRECISION_REPLICATION"):
+        bio["HIGH_PRECISION_REPLICATION"] = _as_list(bio_src["HIGH_PRECISION_REPLICATION"], bio["HIGH_PRECISION_REPLICATION"])
+    for extra in ("EXPRESSION", "HAIR"):
+        if bio_src.get(extra):
+            bio[extra] = _as_text(bio_src[extra], "")
+
+    # --- !EXEC_MATERIAL_PHYSICS ----------------------------------------------
+    mat = ref["!EXEC_MATERIAL_PHYSICS"]
+    mat["WARDROBE_SPECIFICATION"] = _as_text(mat_src.get("WARDROBE_SPECIFICATION"), mat["WARDROBE_SPECIFICATION"])
+    mat["OPACITY"] = _as_list(mat_src.get("OPACITY"), mat["OPACITY"]) if isinstance(mat_src.get("OPACITY"), (list, tuple)) \
+        else _as_text(mat_src.get("OPACITY"), "") or mat["OPACITY"]
+    mat["TEXTILE_SURFACE_SHEEN"] = _as_text(mat_src.get("TEXTILE_SURFACE_SHEEN"), mat["TEXTILE_SURFACE_SHEEN"])
+    if isinstance(mat_src.get("DRAPE_AND_TENSION_LOGIC"), dict):
+        drape = mat_src["DRAPE_AND_TENSION_LOGIC"]
+        mat["DRAPE_AND_TENSION_LOGIC"] = {k: _as_text(drape.get(k), v) for k, v in mat["DRAPE_AND_TENSION_LOGIC"].items()}
+
+    # --- !EXEC_COMPOSITION_MATRIX --------------------------------------------
+    panels = _legacy_panels(comp_src)
+    if panels:
+        panels = panels[:9]
+        layout = str(comp_src.get("LAYOUT") or "").replace("LAYOUT:", "").strip() or _PANEL_WORDS[len(panels)]
+        matrix = {"LAYOUT": layout}
+        for i, text in enumerate(panels, start=1):
+            matrix[f"PANEL {i}"] = text
+        ref["!EXEC_COMPOSITION_MATRIX"] = matrix
+
+    # --- !INIT_VALIDATION -----------------------------------------------------
+    rc = ref["!INIT_VALIDATION"]["REQUIRED_CHECKS"]
+    rc["GLOBAL_NEGATIVE_BIAS"] = _as_list(
+        checks_src.get("GLOBAL_NEGATIVE_BIAS") or env_src.get("!GLOBAL_NEGATIVE_BIAS"), rc["GLOBAL_NEGATIVE_BIAS"])
+    focus = checks_src.get("FOCUS_LOCK") or fin_src.get("FOCUS_LOCK")
+    if focus:
+        rc["FOCUS_LOCK"] = _as_text(focus, "")
+
+    doc = {k: ref[k] for k in lib.CANONICAL_BLOCK_ORDER}
+    if include_schema_ref:
+        doc = {"$schema": "./hdl-v8.schema.json", **doc}
+    return doc
+
+
+def generate_canonical_random(n_panels: int | None = None, seed: int | None = None) -> dict:
+    """Random canonical 7-block document (generate_random() projected by build_canonical_v8)."""
+    return build_canonical_v8(generate_random(n_panels=n_panels, seed=seed))
+
+
+def _schema_resolve(root: dict, node: dict) -> dict:
+    ref = node.get("$ref")
+    if not ref:
+        return node
+    target: Any = root
+    for part in ref.lstrip("#/").split("/"):
+        target = target[part]
+    return target
+
+
+def _schema_check(root: dict, node: dict, value: Any, path: str, errors: list[str]) -> None:
+    """Minimal Draft 2020-12 evaluator for the keywords used by the HDL v8 schema."""
+    node = _schema_resolve(root, node)
+    if "oneOf" in node:
+        passes = 0
+        for sub in node["oneOf"]:
+            trial: list[str] = []
+            _schema_check(root, sub, value, path, trial)
+            passes += not trial
+        if passes != 1:
+            errors.append(f"{path or '/'}: must match exactly one allowed shape (matched {passes})")
+        return
+    kind = node.get("type")
+    py = {"string": str, "boolean": bool, "array": list, "object": dict}.get(kind)
+    if py is not None and (not isinstance(value, py) or (kind != "boolean" and isinstance(value, bool))):
+        errors.append(f"{path or '/'}: expected {kind}")
+        return
+    if kind == "string" and len(value) < node.get("minLength", 0):
+        errors.append(f"{path or '/'}: string shorter than minLength {node['minLength']}")
+    if kind == "array":
+        if len(value) < node.get("minItems", 0):
+            errors.append(f"{path or '/'}: fewer than minItems {node['minItems']}")
+        if "items" in node:
+            for i, item in enumerate(value):
+                _schema_check(root, node["items"], item, f"{path}/{i}", errors)
+    if kind == "object":
+        for req in node.get("required", []):
+            if req not in value:
+                errors.append(f"{path or '/'}: missing required property '{req}'")
+        props = node.get("properties", {})
+        for key, sub in value.items():
+            if key in props:
+                _schema_check(root, props[key], sub, f"{path}/{key}", errors)
+            elif node.get("additionalProperties") is False:
+                errors.append(f"{path or '/'}: additional property '{key}' not allowed")
+
+
+def validate_canonical_v8(doc: dict) -> dict:
+    """
+    Validate a document against the canonical 7-block HDL v8 schema
+    (lib.CANONICAL_HDL_SCHEMA, Draft 2020-12).  Uses the 'jsonschema' package
+    when installed, otherwise the built-in evaluator above (same keyword
+    coverage; both are exercised by verify_canonical_lineage.py).
+    Returns {"valid": bool, "errors": [...], "engine": str}.
+    """
+    schema = lib.CANONICAL_HDL_SCHEMA
+    try:
+        import jsonschema  # type: ignore[import-not-found]
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = sorted(f"{'/' + '/'.join(str(p) for p in e.absolute_path)}: {e.message}" for e in validator.iter_errors(doc))
+        return {"valid": not errors, "errors": errors, "engine": "jsonschema-Draft2020-12"}
+    except ImportError:
+        errors = []
+        _schema_check(schema, schema, doc, "", errors)
+        return {"valid": not errors, "errors": errors, "engine": "builtin-Draft2020-12-subset"}
+
+
+# ==============================================================================
 # ENTRY POINT
 # ==============================================================================
 
@@ -1767,10 +2043,17 @@ def main() -> None:
 
     if "--stock" in sys.argv:
         schema = HDLTUIState().load_stock()
-        if "--canonical-v8" in sys.argv:
-            schema = build_canonical_v8(schema)
         _write_and_print(schema, "hdl_prompt-stock.json")
         return
+
+    if "--validate" in sys.argv:
+        i = sys.argv.index("--validate")
+        if i + 1 >= len(sys.argv):
+            sys.exit("usage: prompt_arc.py --validate FILE.json")
+        with open(sys.argv[i + 1], encoding="utf-8") as fh:
+            verdict = validate_canonical_v8(json.load(fh))
+        print(json.dumps(verdict, indent=2))
+        sys.exit(0 if verdict["valid"] else 1)
 
     if "--canonical-v8" in sys.argv:
         schema = build_canonical_v8(HDLTUIState().load_stock())
