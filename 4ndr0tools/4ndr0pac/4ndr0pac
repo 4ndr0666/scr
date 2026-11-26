@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "4NDR0PAC"
-VERSION = "1.6.1"
+VERSION = "1.7.0"
 BACKEND_NAME = "4ndr0pac.sh"
 EXIT_OK = 0
 EXIT_BACKEND = 1
@@ -51,6 +51,7 @@ DIRECTIVES: list[tuple[str, str, bool]] = [
     ("Topgrade", "topgrade", False),
     ("Remove Desktop", "y", True),
     ("Manual / Help", "h", False),
+    ("Arch Linux News", "news", False),
 ]
 
 BACKEND_WORDS = {
@@ -59,7 +60,7 @@ BACKEND_WORDS = {
     "x", "ls", "listsize", "w", "ua", "force-aur", "n", "la", "list-aur", "d", "down",
     "downgrade", "p", "info", "f", "find", "find-file", "o", "fo", "files-in-pkg",
     "c", "cachyos", "g", "chaotic", "k", "cleanup", "clean", "topgrade", "y",
-    "remove-de", "de", "h", "help", "s", "analyze", "health", "diff", "version",
+    "remove-de", "de", "h", "help", "s", "analyze", "health", "news", "arch-news", "diff", "version",
 }
 
 DANGER_FLAGS = {flag.lower() for _, flag, danger in DIRECTIVES if danger}

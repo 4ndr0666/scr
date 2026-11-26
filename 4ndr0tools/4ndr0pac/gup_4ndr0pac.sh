@@ -64,7 +64,7 @@ DRY_OUTPUT="$(python3 "$FRONTEND" --backend "$BACKEND" --dry-run "Remove Package
 run_expect 130 run_with_confirmation n 6
 
 CLEANUP_SENTINEL="/tmp/4ndr0pac-gup-cleanup-sentinel"
-CLEANUP_FIXTURE="/tmp/gup-cleanup-fixture.$RANDOM.$RANDOM"
+CLEANUP_FIXTURE="${TMPDIR:-/tmp}/gup-cleanup-fixture.$RANDOM.$RANDOM"
 CLEANUP_SHIM="$CLEANUP_FIXTURE/shim"
 CLEANUP_LOG="$CLEANUP_FIXTURE/cleanup.log"
 mkdir -p "$CLEANUP_SHIM"

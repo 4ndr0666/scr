@@ -1503,9 +1503,21 @@ func_cleanup() {
 	sudo pacman -Sc --noconfirm
 
 	local orphans=()
-	local orphan_output
-	if ! orphan_output="$(pacman -Qtdq 2>/dev/null)"; then
+	local orphan_output="" orphan_err_file orphan_rc=0
+	orphan_err_file="$(mktemp "${TMPDIR:-/tmp}/4ndr0pac-orphan.XXXXXX")"
+	if orphan_output="$(pacman -Qtdq 2>"$orphan_err_file")"; then
+		orphan_rc=0
+	else
+		orphan_rc=$?
+	fi
+	local orphan_err=""
+	[[ -s "$orphan_err_file" ]] && orphan_err="$(cat "$orphan_err_file")"
+	rm -f -- "$orphan_err_file"
+	# Arch pacman -Qtdq exits 1 with empty stderr when zero orphans exist.
+	if ((orphan_rc != 0)) && { ((orphan_rc > 1)) || [[ -n "$orphan_err" ]]; }; then
 		echo -e " ${BRED}Unable to query orphaned packages; cleanup aborted.${RESET}"
+		[[ -n "$orphan_err" ]] && printf '  %s
+' "$orphan_err" >&2
 		return 1
 	fi
 	if [[ -n "$orphan_output" ]]; then
@@ -1668,6 +1680,20 @@ func_remove_de() {
 }
 
 # ==============================================================================
+# FUNC_NEWS — Arch Linux News RSS Reader (consolidated from 4ndr0update)
+# ==============================================================================
+func_news() {
+	local script_dir news_script
+	script_dir="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+	news_script="${script_dir}/arch_news.py"
+	if [[ ! -f "$news_script" ]]; then
+		echo -e " ${BRED}arch_news.py not found at ${news_script}.${RESET}" >&2
+		return 1
+	fi
+	python3 "$news_script" "$@"
+}
+
+# ==============================================================================
 # FUNC_ANALYZE — v1.6: Read-Only System Health Report (directive 's')
 # ==============================================================================
 func_analyze() {
@@ -1714,6 +1740,17 @@ func_analyze() {
 			LC_ALL=C systemctl list-units --state=failed --no-legend 2>/dev/null | head -n 10
 		else
 			echo -e " Failed systemd units:  0"
+		fi
+	fi
+
+	if command -v journalctl &>/dev/null; then
+		local j_errs
+		j_errs="$(journalctl -p 3 -xb --no-pager -n 15 2>/dev/null || true)"
+		if [[ -n "$j_errs" && "$j_errs" != *"-- No entries --"* ]]; then
+			echo ""
+			echo -e " ${BRED}High-priority boot journal errors (priority 3):${RESET}"
+			printf '%s
+' "$j_errs"
 		fi
 	fi
 
@@ -1892,7 +1929,8 @@ if [[ $# -gt 0 ]]; then
 	y | remove-de | de) func_remove_de ;;
 	h | help) func_help ;;
 	s | analyze | health) func_analyze ;;
-	version) echo -e " 4ndr0pac backend v1.6.0 (bash) — frontend: 4ndr0pac (python) v1.6.0" ;;
+	news | arch-news) func_news "$@" ;;
+	version) echo -e " 4ndr0pac backend v1.7.0 (bash) — frontend: 4ndr0pac (python) v1.7.0" ;;
 	diff) func_diff ;;
 	*)
 		echo -e " ${BRED}Unknown option: $key. Press ENTER to start 4ndr0pac UI.${RESET}"
